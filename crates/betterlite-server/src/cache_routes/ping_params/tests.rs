@@ -73,7 +73,7 @@ fn the_masked_cache_params_keep_ttl_namespace_and_flush_size() {
 
 #[test]
 fn a_local_cache_has_empty_health_params() {
-    let health = health_check_params(&local_cache());
+    let health = health_check_params(&local_cache(), &overrides());
     assert_eq!(health.host, None);
     assert_eq!(health.port, None);
     assert_eq!(health.redis_kwargs, None);
@@ -90,7 +90,10 @@ fn unreachable_overrides() -> RedisOverrides {
 
 #[tokio::test]
 async fn a_redis_cache_reports_its_connection_health_params() {
-    let health = health_check_params(&redis_cache_from(unreachable_overrides()).await);
+    let health = health_check_params(
+        &redis_cache_from(unreachable_overrides()).await,
+        &unreachable_overrides(),
+    );
     assert_eq!(health.host, None);
     assert_eq!(health.port, None);
     assert_eq!(health.namespace, None);
@@ -112,7 +115,7 @@ async fn a_redis_cache_reports_its_connection_health_params() {
 async fn a_redis_cache_masks_its_password_in_the_health_params() {
     let mut settings = unreachable_overrides();
     settings.password = Some(Some(SecretString::from("super-secret-password".to_owned())));
-    let health = health_check_params(&redis_cache_from(settings).await);
+    let health = health_check_params(&redis_cache_from(settings.clone()).await, &settings);
     let kwargs = health.redis_kwargs.expect("the redis kwargs");
     let expected = SensitiveDataMasker::default().mask_value("super-secret-password");
     assert_eq!(kwargs.get("password"), Some(&Json::Text(expected)));
@@ -126,6 +129,6 @@ async fn a_redis_cache_masks_its_password_in_the_health_params() {
 async fn a_redis_cache_health_params_carry_the_cache_namespace() {
     let mut cache = redis_cache_from(unreachable_overrides()).await;
     cache.namespace = Some("team-ns".to_owned());
-    let health = health_check_params(&cache);
+    let health = health_check_params(&cache, &unreachable_overrides());
     assert_eq!(health.namespace.as_deref(), Some("team-ns"));
 }

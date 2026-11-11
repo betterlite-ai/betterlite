@@ -21,10 +21,7 @@ use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
-use betterlite_redis::redis_connection_settings::model::settings::{
-    ClientKind, RedisConnectionSettings, RedisOverrides,
-};
-use betterlite_redis::redis_connection_settings::resolve::resolve_redis_kwargs;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use indexmap::IndexMap;
 
@@ -148,12 +145,6 @@ impl BreakerGate for ClosedGate {
 // The same overrides redis-py receives when nothing is configured.
 pub(crate) fn overrides() -> RedisOverrides {
     serde_json::from_str("{}").expect("the empty overrides deserialize")
-}
-
-// The settings Redis resolves when nothing is configured, before a test changes one field.
-pub(crate) fn connection_settings() -> RedisConnectionSettings {
-    resolve_redis_kwargs(overrides(), ClientKind::Async, &BTreeMap::new())
-        .expect("the empty overrides resolve")
 }
 
 // A cache that opens without a server: every operation fails, which is the Redis-failure path the routes answer.

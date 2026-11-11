@@ -3,6 +3,7 @@ use betterlite_cache::types::cache_type::CacheMode;
 use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_cache::types::ping::{HealthCheckCacheParams, TextOrNumber};
 use betterlite_cache::types::semantic::SemanticCacheScope;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use serde::Serialize;
 use serde_json::Number;
 
@@ -42,7 +43,7 @@ pub fn masked_cache_params(cache: &Cache) -> String {
 
 // LiteLLM's HealthCheckCacheParams(**vars(litellm.cache.cache)).model_dump(), masked.
 #[must_use]
-pub fn health_check_params(cache: &Cache) -> HealthCheckCacheParams {
+pub fn health_check_params(cache: &Cache, overrides: &RedisOverrides) -> HealthCheckCacheParams {
     let Backend::Redis(redis) = &cache.backend else {
         return HealthCheckCacheParams {
             host: None,
@@ -55,7 +56,7 @@ pub fn health_check_params(cache: &Cache) -> HealthCheckCacheParams {
     HealthCheckCacheParams {
         host: None,
         port: None,
-        redis_kwargs: Some(redis_kwargs(&redis.transport.settings)),
+        redis_kwargs: Some(redis_kwargs(overrides)),
         namespace: cache.namespace.clone(),
         redis_version: Some(TextOrNumber::Number(Number::from(
             redis.redis_major_version,

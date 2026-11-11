@@ -7,12 +7,19 @@ use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::ping::HealthCheckCacheParams;
 use betterlite_redis::redis_cache_admin::RedisCacheAdmin;
 use betterlite_redis::redis_cache_admin::info_parse::InfoValue;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use indexmap::IndexMap;
 
 use super::admin::{CacheAdmin, CacheAdminError, RedisAdmin};
 // POST /cache/settings replaces the server's cache while it runs, so a request asks for the current one.
 pub trait LiveResponseCache: Send + Sync {
     fn current(&self) -> Option<Arc<dyn CacheAdmin>>;
+}
+
+// The Cache a request reads and the redis kwargs it was opened with, which the Cache does not keep.
+pub struct LiveCache {
+    pub cache: Arc<Cache>,
+    pub redis: RedisOverrides,
 }
 
 // B8650 builds this once from Shared.response_cache; get runs on every request.
@@ -23,11 +30,13 @@ pub struct SlotCache<F> {
 
 impl<F> LiveResponseCache for SlotCache<F>
 where
-    F: Fn() -> Option<Arc<Cache>> + Send + Sync,
+    F: Fn() -> Option<LiveCache> + Send + Sync,
 {
     fn current(&self) -> Option<Arc<dyn CacheAdmin>> {
+        let live = (self.get)()?;
         let cache: Arc<dyn CacheAdmin> = Arc::new(CacheHandle {
-            cache: (self.get)()?,
+            cache: live.cache,
+            redis: live.redis,
             clock: Arc::clone(&self.clock),
         });
         Some(cache)
@@ -37,6 +46,7 @@ where
 // The live Cache behind the cache-admin port the routes read.
 pub struct CacheHandle {
     pub cache: Arc<Cache>,
+    pub redis: RedisOverrides,
     pub clock: Clock,
 }
 
@@ -51,7 +61,7 @@ impl CacheAdmin for CacheHandle {
     }
 
     fn health_check_params(&self) -> HealthCheckCacheParams {
-        super::ping_params::health_check_params(&self.cache)
+        super::ping_params::health_check_params(&self.cache, &self.redis)
     }
 
     async fn ping(&self) -> Result<bool, CacheAdminError> {

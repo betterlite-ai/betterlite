@@ -34,3 +34,18 @@ deviations:
       Betterlite's RedisCache keeps only redis_major_version, which its Redis protocol version gates read;
       the full INFO text is not retained on the cache.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L656-L661
+  - what: >-
+      The redis_kwargs in /cache/ping hide the password in a url kwarg (the userinfo password and the
+      values of sensitive query parameters), where LiteLLM prints url as given because its masker only
+      looks at the key name.
+    why: >-
+      A redis url routinely carries the password, so LiteLLM's response leaks a credential to any caller
+      of the route. No working setup can rely on reading it back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L41-L44
+  - what: >-
+      The redis_kwargs in /cache/ping leave out credential_provider, which LiteLLM lists as the provider
+      object's attributes.
+    why: >-
+      Betterlite keeps the provider as a flag with typed settings, so there is no attribute dictionary to
+      print, and the settings hold the cloud credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L642-L646

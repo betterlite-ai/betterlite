@@ -23,7 +23,7 @@ const CLIENT_LIST_UNAVAILABLE: &str = "CLIENT LIST command not available on this
 #[serde(untagged)]
 enum ClientCount {
     Listed(usize),
-    Unavailable(i8),
+    Unavailable(isize),
 }
 
 #[derive(Serialize)]
