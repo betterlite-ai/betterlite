@@ -80,6 +80,18 @@ async fn replica_identity_selects_plain_visible_litellm_tables() {
 }
 
 #[tokio::test]
+async fn apply_replica_identity_full_applies_on_the_database() {
+    let test = PostgresTest::new().await;
+    test.client
+        .batch_execute("CREATE TABLE LiteLLM_Applied (id text PRIMARY KEY);")
+        .await
+        .unwrap();
+    assert!(apply_replica_identity_full(&test.fixture.options.url, Duration::from_secs(60)).await);
+    assert_eq!(replica_identity(&test.client, "LiteLLM_Applied").await, "f");
+    test.finish().await;
+}
+
+#[tokio::test]
 async fn replica_identity_already_full_unchanged() {
     let test = PostgresTest::new().await;
     let owner = role_name("owner");

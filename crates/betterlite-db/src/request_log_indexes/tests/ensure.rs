@@ -1,9 +1,38 @@
+use secrecy::SecretString;
+
 use crate::request_log_index_catalog::definitions::RequestLogIndex;
+use crate::request_log_indexes::ensure::ensure_request_log_indexes;
 
 use super::support::{
-    API_KEY_INDEX, CALL_ID_INDEX, FakeDatabase, FakeFault, FixedJitter, RecordingPause, SPEND_LOGS,
-    index_by_name, informed, install_logs, plain_table, run_ensure, valid_index, warned,
+    API_KEY_INDEX, CALL_ID_INDEX, FakeDatabase, FakeFault, FixedJitter, PostgresTest,
+    RecordingPause, SPEND_LOGS, index_by_name, informed, install_logs, plain_table, run_ensure,
+    valid_index, warned,
 };
+
+#[tokio::test]
+async fn ensure_request_log_indexes_all_in_place_on_empty_list() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    assert!(ensure_request_log_indexes(&test.fixture.options.url, &test.schema, &[]).await);
+    assert!(informed(
+        &logs.contents(),
+        "Request-log indexes are all in place"
+    ));
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn ensure_request_log_indexes_connection_failure_warns() {
+    let (logs, _guard) = install_logs();
+    let url = SecretString::from(
+        "postgresql://betterlite:betterlite@127.0.0.1:1/betterlite?sslmode=disable",
+    );
+    assert!(!ensure_request_log_indexes(&url, "public", &[]).await);
+    assert!(warned(
+        &logs.contents(),
+        "Could not build the request-log indexes, leaving them for the next index build"
+    ));
+}
 
 #[tokio::test]
 async fn empty_index_list_succeeds() {

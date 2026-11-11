@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
 use crate::request_log_index_catalog::catalog::IndexState;
 use crate::request_log_indexes::database::IndexRef;
 use crate::request_log_indexes::locks::HANDOVER;
@@ -12,6 +13,78 @@ use super::support::{
     install_logs, invalid_index, leave_invalid_index, oid_in_schema, other_schema, plain_table,
     relation_kind, run_leaf, valid_index, warned,
 };
+
+#[tokio::test]
+async fn postgres_coordinator_lock_held_skips_leaf() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    let (holder, mut drivers) = test.another_client().await;
+    holder
+        .query_one("SELECT pg_advisory_lock($1)", &[&MIGRATION_LOCK_KEY])
+        .await
+        .unwrap();
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    let built = run_leaf(
+        &builder,
+        SPEND_LOGS,
+        API_KEY_INDEX,
+        index_by_name(API_KEY_INDEX),
+    )
+    .await;
+    assert!(!built);
+    assert!(recorder.statements().is_empty());
+    assert!(informed(
+        &logs.contents(),
+        "Another process holds the migration lock, leaving the request-log indexes to the next index build"
+    ));
+    holder
+        .query_one("SELECT pg_advisory_unlock($1)", &[&MIGRATION_LOCK_KEY])
+        .await
+        .unwrap();
+    drivers.shutdown().await;
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn postgres_coordinator_released_after_leaf() {
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    let (probe, mut drivers) = test.another_client().await;
+    let acquired: bool = probe
+        .query_one(
+            "SELECT pg_try_advisory_lock($1) AS acquired",
+            &[&MIGRATION_LOCK_KEY],
+        )
+        .await
+        .unwrap()
+        .get("acquired");
+    assert!(acquired);
+    probe
+        .query_one("SELECT pg_advisory_unlock($1)", &[&MIGRATION_LOCK_KEY])
+        .await
+        .unwrap();
+    drivers.shutdown().await;
+    test.finish().await;
+}
 
 async fn assert_leaf_repair_state(
     test: &PostgresTest,
