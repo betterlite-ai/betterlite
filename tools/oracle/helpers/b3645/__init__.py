@@ -1,52 +1,38 @@
-from typing import TypeAlias
+from typing import Literal, TypeAlias, TypedDict
 
 import httpx
 from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
     transcribe_passthrough_logging_handler as handler,
 )
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+class ErrorTypeInput(TypedDict):
+    function: Literal["error_type"]
+    body: str
 
 
-def string_value(input_value: dict[str, Json], name: str) -> str:
-    value = input_value[name]
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
+class S3UrlInput(TypedDict):
+    function: Literal["s3_url"]
+    media_uri: str
+    region: str
 
 
-def number_value(input_value: dict[str, Json], name: str) -> float:
-    value = input_value[name]
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError(f"{name} must be a number")
-    return float(value)
+class PredatesInput(TypedDict):
+    function: Literal["predates"]
+    headers: dict[str, str]
+    job_created_at: float
 
 
-def header_value(value: Json) -> str:
-    if not isinstance(value, str):
-        raise ValueError("each header value must be a string")
-    return value
+Input: TypeAlias = ErrorTypeInput | S3UrlInput | PredatesInput
 
 
-def header_map(input_value: dict[str, Json]) -> httpx.Headers:
-    value = input_value["headers"]
-    if not isinstance(value, dict):
-        raise ValueError("headers must be an object")
-    return httpx.Headers(
-        {name: header_value(entry) for name, entry in value.items()}
-    )
-
-
-def run(input_value: dict[str, Json]) -> Json:
-    function = string_value(input_value, "function")
-    if function == "error_type":
-        body = string_value(input_value, "body")
-        return handler.aws_error_type(httpx.Response(400, content=body.encode()))
-    if function == "s3_url":
-        return handler.s3_media_url(
-            string_value(input_value, "media_uri"),
-            string_value(input_value, "region"),
+def run(input_value: Input) -> str | bool | None:
+    if input_value["function"] == "error_type":
+        return handler.aws_error_type(
+            httpx.Response(400, content=input_value["body"].encode())
         )
+    if input_value["function"] == "s3_url":
+        return handler.s3_media_url(input_value["media_uri"], input_value["region"])
     return handler.media_predates_job(
-        header_map(input_value), number_value(input_value, "job_created_at")
+        httpx.Headers(input_value["headers"]), input_value["job_created_at"]
     )
