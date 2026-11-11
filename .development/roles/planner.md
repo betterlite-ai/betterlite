@@ -46,6 +46,7 @@ Checks:
 - A behavior-tests check runs every crate the description puts code and tests in.
 - The gate runs no tests beyond the task's own commands, so a task that changes code other tests cover (a shared type, a renamed field) names those test modules in a check too.
 - Every check fails on the base branch. A corpus check first requires files this branch added, `test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- <dir>)"`, or greps for the new operation or key. A grep looks for what the parser reads: a helper seed names its operation as the variant tag under call.
+- Every run command passes shellcheck's default checks: `cargo gate shellcheck <task file>` runs it, and the hooks run it on every task file a change adds.
 - A config key is supported only when a named betterlite-config test loads it. A grep for its name in a seed doesn't count.
 - Cases use provider names, model names, config keys and env vars that LiteLLM accepts at the pinned commit, and rstest case names are Rust identifiers that start with a letter.
 - A task on the config, router or wire-format crates lists mutants in checks.optional. A task that parses bytes from outside (config, request bodies, SSE) names the decoder function and its input, and adds a cargo-fuzz target in the decoder's crate plus a check that replays its corpus. A task that only transforms parsed records has no fuzz target.
