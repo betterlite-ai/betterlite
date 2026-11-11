@@ -1,0 +1,11 @@
+kind: helper
+name: logging-mcp-tool-hook-seed-live
+call:
+  b9650:
+    result: {content: [{type: text, text: seed}], structured_content: {seed: true}}
+    dynamic_success: []
+    global_success:
+      - {name: broken, behavior: fail}
+      - {name: guardrail, behavior: rewrite_live, content: [{type: text, text: blocked}], structured_content: {blocked: true}}
+env: {}
+compare: {ignore: []}

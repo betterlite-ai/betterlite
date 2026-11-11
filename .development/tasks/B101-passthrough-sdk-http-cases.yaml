@@ -1,0 +1,117 @@
+id: B101
+title: Prove the passthrough SDK call's errors, block and header rules over HTTP
+description: >-
+  B101's parts build LiteLLM's `allm_passthrough_route` and everything around it: B8690 the SDK call, B3572 the stream relay, B8691 the router executor, B8692 the route choice, B8693 the reply shaping and exception mapping, and B8694 the proxy pipeline that runs them for route type `allm_passthrough_route`. None of them could run an HTTP case at its own gate, and each one points at B8640 for that. B8640's cases only reach configured pass-through endpoints and the config routes, so they never touch this call. B8609 mounts the `/vllm` and `/gigachat` routes and takes over B3627's router-model cases, but those only cover a 200 answer. Nothing proves over HTTP what a client sees when the upstream fails, when the model is blocked, or which caller headers reach the upstream. This task adds those cases. It writes no Rust: the code already exists in the parts, and the cases prove it through the booted proxy.
+
+
+  Where. Seven HTTP cases in tools/oracle/cases/server/passthrough-sdk-call/, one file each, with these names and `name` fields that repeat the file name with a `passthrough-sdk-call-` prefix. Every case sends `authorization: Bearer oracle-master` and `content-type: application/json`, and a fixed `x-litellm-call-id` so the call id header is comparable. Every config sets `router_settings: {num_retries: 0}`, so a failed upstream gets exactly one request and the request counts match.
+
+
+  Two configs. The GigaChat cases use one deployment, `model_name: gigachat-oracle` with litellm_params `{model: gigachat/GigaChat-2, api_base: "{{upstream}}"}` and `model_info: {id: oracle-gigachat-1}`, and env `GIGACHAT_ACCESS_TOKEN: oracle-gigachat-token`. With that env value LiteLLM's get_access_token returns the token at once and makes no OAuth call, so the mock gets only the provider request. A request to `/gigachat/chat/completions` with `model: gigachat-oracle` takes the router-model branch (handle_gigachat_passthrough_router_model), which runs base_passthrough_process_llm_request and so the whole pipeline: pre-call, route choice, the router hop, the SDK call, reply shaping and _handle_llm_api_exception. The VLLM cases use `model_name: vllm-oracle` with litellm_params `{model: hosted_vllm/oracle-model, api_base: "{{upstream}}", api_key: oracle-vllm-key}`. Their requests go to `/vllm/v1/chat/completions` with `model: vllm-oracle`, and that route calls the router's allm_passthrough_route directly with the caller's headers and query parameters.
+
+
+  The cases.
+
+  1. gigachat-upstream-400.yaml. Body `{model: gigachat-oracle, messages: [{role: user, content: hi}]}`. The mock answers 400 with content-type application/json and body `{status: 400, message: "Invalid params: temperature"}`. allm_passthrough_route rethrows httpx.HTTPStatusError unchanged (passthrough/main.py L351-L354), and _handle_llm_api_exception turns it into an HTTPException with the upstream status and detail `{"error": <the upstream body decoded as UTF-8 text>}` (common_request_processing.py L3709-L3721). The client gets 400 with body `{"detail": {"error": "..."}}`. Compare headers content-type, x-litellm-call-id, x-litellm-model-id and llm_provider-content-type (the upstream headers come back with the llm_provider- prefix from get_response_headers), and upstream headers authorization, content-type and accept (GigaChat's validate_environment sets all three).
+
+  2. gigachat-upstream-503-text.yaml. The same request; the mock answers 503 with content-type text/plain and the string body `upstream overloaded`. The client gets 503 and `{"detail": {"error": "upstream overloaded"}}`: the text is put in as it is, never parsed as JSON. Compare the same headers as case 1.
+
+  3. gigachat-stream-upstream-429.yaml. The body adds `stream: true`. The mock answers 429 with content-type application/json, `retry-after: "7"`, `x-ratelimit-remaining-requests: "0"` and body `{status: 429, message: "Too many requests"}`. GigaChat's is_streaming_request reads `stream` from the json, so the call sends with stream=True, and the stream wrapper checks the status before the first chunk, reads the body and raises (passthrough/main.py L107-L129). The client gets a 429 JSON error with the same detail shape as case 1, never an event stream. Compare headers content-type, x-litellm-call-id, llm_provider-retry-after, llm_provider-x-ratelimit-remaining-requests and x-ratelimit-remaining-requests (get_response_headers copies the four x-ratelimit- names without a prefix too). No retry-after header without the prefix: _apply_router_cooldown_retry_after adds one only for a RouterRateLimitError.
+
+  4. gigachat-stream-relay.yaml. The body adds `stream: true`; the mock answers 200 with content-type text/event-stream, `x-request-id: gc-oracle-1` and two events, a GigaChat chunk `{"choices":[{"delta":{"role":"assistant","content":"Hi"},"index":0}],"created":1700000000,"model":"GigaChat-2","object":"chat.completion"}` and `[DONE]`. The client gets 200 with the upstream bytes unchanged. Compare headers content-type, x-request-id and x-litellm-call-id. This is the one success case here, kept because B8609's GigaChat cases send no stream.
+
+  5. gigachat-blocked-model.yaml. The deployment's model_info is `{id: oracle-gigachat-1, blocked: true}`. Router.get_model_names still lists a blocked model, so the route takes the router-model branch, and route_request's _raise_if_model_fully_blocked (route_llm_request.py L58-L73, L545-L546) raises PermissionDeniedError "Model is blocked". The client gets 403 with LiteLLM's error envelope and `upstream: []`; the mock must see no request. Compare headers content-type and x-litellm-call-id.
+
+  6. vllm-xpass-protected.yaml. Body `{model: vllm-oracle, messages: [{role: user, content: hi}]}` with request headers `x-pass-x-oracle-tag: tag-1`, `x-pass-authorization: Bearer client-secret`, `x-pass-x-api-key: client-key` and `x-pass-x-amz-date: 20260101T000000Z`. The mock answers 200 JSON. forward_headers_from_request runs with forward_headers false (passthrough/utils.py L58-L103), so only x-pass- headers reach the upstream, with the prefix cut off, and the protected names are skipped. The upstream gets `x-oracle-tag: tag-1` and none of authorization, x-api-key or x-amz-date. Compare upstream headers x-oracle-tag, authorization, x-api-key and x-amz-date, so a value on either side fails the case.
+
+  7. vllm-query-and-model.yaml. Path `/vllm/v1/chat/completions?oracle_tag=q1`, the same body. The mock answers 200 JSON. The upstream request target keeps `?oracle_tag=q1` (VLLM's get_complete_url passes the request query params to format_url), the upstream body's `model` is `oracle-model` (the resolved model, with the hosted_vllm/ prefix and the gateway name both gone), and the upstream gets no x-api-key although the deployment has api_key oracle-vllm-key, since VLLM's get_api_key always returns None (vllm/common_utils.py L55-L57). Compare upstream headers x-api-key and authorization.
+
+
+  When a case fails against betterlite, the bug is in a part's module, not here: say in the report which case failed, the difference the oracle printed and the task that owns the code (B8690 for the request it builds, B3572 for the stream status check, B8692 for the block, B8693 for the error body and headers, B8694 for the pipeline), and change nothing outside the case folder.
+
+
+  Size. Seven cases of about 30 lines each, about 210 lines. The task reimplements no LiteLLM function body; the LiteLLM code it proves is listed in references.
+scope:
+  paths:
+    - tools/oracle/cases/server/passthrough-sdk-call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L267-L354
+    why: allm_passthrough_route; an httpx.HTTPStatusError leaves it unchanged (L351-L354), so the proxy sees the upstream status and body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L107-L129
+    why: The stream wrapper raises on a 4xx or 5xx before the first chunk, after reading the body; case 3.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L604-L633
+    why: _async_passthrough_request reads a non-streaming body and raises for its status; cases 1 and 2.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L11-L28
+    why: The protected header names and the x-amz- prefix that an x-pass- header may not set; case 6.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L58-L103
+    why: forward_headers_from_request with forward_headers false forwards only x-pass- headers, prefix cut off; case 6.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3074-L3109
+    why: base_passthrough_process_llm_request runs the common pipeline with route type allm_passthrough_route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3650-L3721
+    why: The failure headers (custom headers over the llm_provider- copy of the upstream headers, unsafe names dropped) and the HTTPStatusError branch that answers detail {"error" text}; cases 1 to 3.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_headers.py#L5-L49
+    why: get_response_headers prefixes every upstream header with llm_provider- and copies the four x-ratelimit- names as they are; case 3.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L58-L73
+    why: _raise_if_model_fully_blocked and its PermissionDeniedError "Model is blocked"; case 5.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L545-L546
+    why: The block check runs first whenever a router exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11757-L11763
+    why: A model is fully blocked when every deployment has model_info.blocked true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3801-L3861
+    why: The /gigachat route and its router-model check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3894-L4022
+    why: handle_gigachat_passthrough_router_model, the record it builds, its pooled client and the exception handling around the pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L481-L540
+    why: The /vllm route calls the router directly with the request headers, the query params and the json body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L24-L69
+    why: GigaChat's passthrough config, its streaming flag from the json and the three headers validate_environment sets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L64-L88
+    why: GIGACHAT_ACCESS_TOKEN returns the token without an OAuth call, so the mock sees only the provider request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/common_utils.py#L31-L57
+    why: VLLM sets x-api-key only from the api key get_api_key returns, and get_api_key always returns None; case 7.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/passthrough/transformation.py#L11-L32
+    why: VLLM's URL keeps the request query params; case 7.
+dod:
+  - text: An upstream 4xx or 5xx on the GigaChat router-model path answers the upstream status with detail {"error" text} and LiteLLM's failure headers, for a JSON body, a text body and a streaming request.
+    proof: [sdk-call-cases, oracle]
+  - text: A streaming GigaChat router-model call relays the upstream events and headers as LiteLLM does.
+    proof: [sdk-call-cases, oracle]
+  - text: A model whose deployments are all blocked answers 403 and sends nothing upstream.
+    proof: [sdk-call-cases, oracle]
+  - text: On the VLLM router-model path only x-pass- headers reach the upstream, protected names never do, the query string is kept and the model is the resolved one.
+    proof: [sdk-call-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: sdk-call-cases
+      why: the passthrough SDK call's error, block or header cases are missing on this branch
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/server/passthrough-sdk-call | wc -l)" -ge 7
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-sdk-call/gigachat-upstream-400.yaml
+  - tools/oracle/cases/server/passthrough-sdk-call/gigachat-upstream-503-text.yaml
+  - tools/oracle/cases/server/passthrough-sdk-call/gigachat-stream-upstream-429.yaml
+  - tools/oracle/cases/server/passthrough-sdk-call/gigachat-stream-relay.yaml
+  - tools/oracle/cases/server/passthrough-sdk-call/gigachat-blocked-model.yaml
+  - tools/oracle/cases/server/passthrough-sdk-call/vllm-xpass-protected.yaml
+  - tools/oracle/cases/server/passthrough-sdk-call/vllm-query-and-model.yaml
+deviations: []
+out_of_scope:
+  - "AsyncPassthroughStreamingResponse, PassthroughStreamingResponse, _SpendCollection, _as_async_generator, _as_generator and _async_passthrough_request (passthrough/main.py L30-L265, L604-L633): B3572."
+  - "allm_passthrough_route and llm_passthrough_route (passthrough/main.py L267-L601): B8690, which builds the async call and records the blocking path as a deviation."
+  - "passthrough/__init__.py only re-exports allm_passthrough_route, llm_passthrough_route and BasePassthroughUtils: B8690 owns the Rust call, B3571 the utils, and B7890 the Python package's names."
+  - "passthrough/README.md is documentation; B7890 and B161 cover it."
+  - "llms/pass_through/__init__.py holds only a module docstring: B3574."
+  - "The router executor and its RouterGeneric registration: B8691 and B8631. The route choice: B8692. Reply shaping and exception mapping: B8693. The pipeline and its ports: B8694. The /vllm and /gigachat mounts: B8609."
+  - "An upstream error on the /vllm router-model branch: B3627 relays the upstream status and body where LiteLLM answers 500, and records that as its deviation, so no case here sends one."
+pitfalls:
+  - "The failure body is `{\"detail\": {\"error\": \"<text>\"}}` from an HTTPException, not LiteLLM's `{\"error\": {...}}` envelope; only the block in case 5 goes through ProxyException and its envelope."
+  - "Leave `GIGACHAT_ACCESS_TOKEN` in every GigaChat case's env; without it get_access_token goes to the OAuth URL, which is not the mock, and the case hangs or fails on both sides."
+  - "The gigachat route removes `api_base` and `api_key` from the record, so the mock's address has to come from the deployment's litellm_params, never from the request body."
+  - "Keep `router_settings: {num_retries: 0}`; with retries the router sends the failing request again and the upstream request counts no longer match the one scripted answer."
+  - "Case 7's deployment carries api_key on purpose: the point is that VLLM's get_api_key returns None, so no key header reaches the upstream."
+  - "x-pass-x-amz-date is blocked by the x-amz- prefix rule, not by the name list; keep it in case 6 so both rules are proven."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

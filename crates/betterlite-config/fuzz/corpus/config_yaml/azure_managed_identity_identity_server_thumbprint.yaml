@@ -1,0 +1,7 @@
+model_list:
+  - model_name: azure-managed-identity
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: https://example.openai.azure.com
+environment_variables:
+  IDENTITY_SERVER_THUMBPRINT: 00112233445566778899aabbccddeeff00112233

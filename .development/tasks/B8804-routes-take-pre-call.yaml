@@ -5,6 +5,8 @@ description: >-
 
   Edits. In each routes(state) function below, replace only the `PreCallStep::standalone(..)` construction with `app::inference::pre_call_step(state)` (B8802), built once per routes call; handlers and their tests stay as their owners wrote them. The files: routes/responses.rs (B080; B8636 also edits this function, keep its edit), routes/anthropic_messages.rs (B081), routes/image.rs (B082), routes/video_create.rs (B3343), routes/video_content_remix.rs (B3344), routes/video_character.rs (B3345), routes/video_edit.rs (B6360), routes/responses_ws_auth.rs (B941), routes/realtime_websocket.rs (B1125) routes/batch_read.rs (B1051), routes/containers.rs (B7326), routes/container_files.rs (B3372), routes/responses_read.rs (B938), routes/responses_input_tokens.rs (B939) and routes/cursor_responses_compat.rs (B940; B8635 and B8636 also edit this function, keep their edits), all under crates/betterlite-server/src. After the edit no file under crates/betterlite-server/src/routes names PreCallStep::standalone.
 
+  Messages route services. routes/anthropic_messages.rs builds B9800's standalone_routing, B081's PassThroughHooks, no model read-through and no a2a port until this task. Here it also replaces PassThroughHooks with a MessagesHooks adapter over B8399's ProxyLogging, the standalone routing with a MessagesRouting over B8611 and B8631's router views (B6021's anthropic_messages and B4788's a2a), and the None read-through with B8231's. It passes B312's adopted-fallback header refresh to B9801. The adapters go in new files under app/inference/route_pre_call/. This task also owns the cases context-errors-use-their-status (it needs B972's compaction check reached through B1134) and proxy-errors-keep-headers-and-optional-details (a hook-raised ProxyException with headers, the parallel request limiter for one): B081's standalone hooks cannot raise either over HTTP.
+
   Tests go in crates/betterlite-server, module `app::inference::route_pre_call` (app/inference/route_pre_call.rs and route_pre_call/tests.rs), and drive the real routers through tower's oneshot with a ServerState built from a config.yaml that has a blocking pre_call `generic_guardrail_api` guardrail and a model_alias_map entry: POST /v1/responses, /v1/messages and /v1/images/generations are blocked by the guardrail (only the production step runs hooks), and an aliased model reaches the mock upstream under its target name.
 scope:
   paths:
@@ -25,6 +27,8 @@ scope:
     - crates/betterlite-server/src/routes/cursor_responses_compat.rs
     - crates/betterlite-server/src/app/inference/route_pre_call.rs
     - crates/betterlite-server/src/app/inference/route_pre_call/**
+    - tools/oracle/cases/api/anthropic-messages-routes/context-errors-use-their-status.yaml
+    - tools/oracle/cases/api/anthropic-messages-routes/proxy-errors-keep-headers-and-optional-details.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2241
@@ -34,6 +38,8 @@ dod:
     proof: [no-standalone, route-tests]
   - text: Responses, Anthropic messages and image generation requests are blocked by a pre_call guardrail and see the model alias map through the production step.
     proof: [route-tests]
+  - text: /v1/messages runs MessagesHooks over ProxyLogging, MessagesRouting over the router and B8231's model read-through, and the context-errors and proxy-errors cases match LiteLLM over HTTP.
+    proof: [route-tests, oracle]
 checks:
   optional: []
   commands:
@@ -43,7 +49,9 @@ checks:
     - id: route-tests
       why: a route still runs the stand-in step or the production step is not reached
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::route_pre_call::tests::/)'
-oracle_cases: []
+oracle_cases:
+  - tools/oracle/cases/api/anthropic-messages-routes/context-errors-use-their-status.yaml
+  - tools/oracle/cases/api/anthropic-messages-routes/proxy-errors-keep-headers-and-optional-details.yaml
 deviations: []
 out_of_scope:
   - "The handlers and their own HTTP cases: the route tasks listed above. The production step: B8802."

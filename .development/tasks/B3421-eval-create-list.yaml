@@ -78,7 +78,7 @@ deviations:
 
 out_of_scope:
   - Provider factory owned by B523 or a utility owner (ProviderConfigManager.get_provider_evals_api_config).
-  - HTTP handler implementation and transport dispatch (owned by the handler/transport owner identified by B096's external-calls table).
+  - HTTP handler implementation and transport dispatch (B9370, api::eval_http).
   - Request/response transformation for OpenAI (owned by B523).
   - Logging infrastructure and observability (B247).
   - Exception type mapping from provider errors to OpenAI vs. other/fallback (B185, B186).
