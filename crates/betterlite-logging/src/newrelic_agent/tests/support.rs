@@ -490,7 +490,10 @@ impl<'writer> MakeWriter<'writer> for LogBuffer {
     }
 }
 
-pub(super) fn capture_logs<T, F: FnOnce() -> T>(action: F) -> (T, String) {
+pub(super) fn capture_logs<T, F>(action: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
     let buffer = LogBuffer::default();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)

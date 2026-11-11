@@ -30,7 +30,6 @@ impl SummaryEvent {
     #[must_use]
     pub fn attributes(&self) -> IndexMap<String, Json> {
         let mut attributes = self.core_attributes();
-        attributes.extend(self.usage_attributes());
         self.optional_attributes(&mut attributes);
         attributes
     }
@@ -63,8 +62,7 @@ impl SummaryEvent {
         attributes
     }
 
-    fn usage_attributes(&self) -> IndexMap<String, Json> {
-        let mut attributes = IndexMap::new();
+    fn optional_attributes(&self, attributes: &mut IndexMap<String, Json>) {
         attributes.insert(
             "response.usage.prompt_tokens".to_owned(),
             Json::Number(Number::from(self.usage.prompt_tokens)),
@@ -77,10 +75,6 @@ impl SummaryEvent {
             "response.usage.total_tokens".to_owned(),
             Json::Number(Number::from(self.usage.total_tokens)),
         );
-        attributes
-    }
-
-    fn optional_attributes(&self, attributes: &mut IndexMap<String, Json>) {
         // LiteLLM always has a trace id here, so the attribute is only absent for an empty one
         if !self.trace_id.is_empty() {
             attributes.insert("trace_id".to_owned(), Json::Text(self.trace_id.clone()));
@@ -165,20 +159,16 @@ pub struct ConnectionTestEvent {
 impl ConnectionTestEvent {
     #[must_use]
     pub fn attributes(&self) -> IndexMap<String, Json> {
-        let mut attributes = IndexMap::new();
-        attributes.insert("is_test_event".to_owned(), Json::Bool(true));
-        attributes.insert(
-            "app_name".to_owned(),
-            self.app_name.clone().map_or(Json::Null, Json::Text),
-        );
-        attributes.insert(
-            "source".to_owned(),
-            Json::Text(CONNECTION_TEST_SOURCE.to_owned()),
-        );
-        attributes.insert(
-            "timestamp".to_owned(),
-            Number::from_f64(self.timestamp).map_or(Json::Null, Json::Number),
-        );
-        attributes
+        let app_name = self.app_name.clone().map_or(Json::Null, Json::Text);
+        let timestamp = Number::from_f64(self.timestamp).map_or(Json::Null, Json::Number);
+        IndexMap::from([
+            ("is_test_event".to_owned(), Json::Bool(true)),
+            ("app_name".to_owned(), app_name),
+            (
+                "source".to_owned(),
+                Json::Text(CONNECTION_TEST_SOURCE.to_owned()),
+            ),
+            ("timestamp".to_owned(), timestamp),
+        ])
     }
 }
