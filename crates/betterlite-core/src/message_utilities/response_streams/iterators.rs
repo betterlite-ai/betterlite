@@ -122,17 +122,13 @@ impl ModelResponseListIterator {
     }
 
     fn wait_for_delay(&mut self, cx: &mut Context<'_>) -> Poll<()> {
-        let Some(delay) = self.delay.filter(|delay| !delay.is_zero()) else {
+        let Some(delay) = self.delay else {
             return Poll::Ready(());
         };
         let Some(deadline) = self.next_at.or_else(|| Instant::now().checked_add(delay)) else {
             return Poll::Ready(());
         };
         self.next_at = Some(deadline);
-        if Instant::now() >= deadline {
-            self.next_at = None;
-            return Poll::Ready(());
-        }
         let mut sleep = pin!(sleep_until(deadline));
         if sleep.as_mut().poll(cx).is_pending() {
             return Poll::Pending;
@@ -157,7 +153,7 @@ impl Iterator for ModelResponseListIterator {
     fn next(&mut self) -> Option<Json> {
         let response = self.responses.get(self.index)?.clone();
         self.index = self.index.saturating_add(1);
-        if let Some(delay) = self.delay.filter(|delay| !delay.is_zero()) {
+        if let Some(delay) = self.delay {
             park_timeout(delay);
         }
         Some(response)

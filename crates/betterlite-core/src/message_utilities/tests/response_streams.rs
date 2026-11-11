@@ -1,8 +1,10 @@
 use betterlite_models::decisions::Json;
 use std::iter::{empty, once};
+use std::time::Duration;
 
 use futures_util::stream::iter as stream_iter;
 use futures_util::{StreamExt, TryStreamExt as _};
+use tokio::time::Instant;
 
 use super::support;
 use crate::message_utilities::response_streams::StreamError;
@@ -197,4 +199,17 @@ async fn text_completion_stream_has_no_output_for_no_chunks() {
         wrapper.collect::<Result<Vec<Json>, StreamError>>().unwrap(),
         Vec::new()
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn model_response_list_iterator_waits_for_the_delay_before_each_response() {
+    let first = support::value(r#"{"id": "a"}"#);
+    let second = support::value(r#"{"id": "b"}"#);
+    let mut stream =
+        ModelResponseListIterator::new(vec![first.clone(), second.clone()], Some(2.0_f64)).unwrap();
+    let started = Instant::now();
+    assert_eq!(StreamExt::next(&mut stream).await, Some(first));
+    assert_eq!(started.elapsed(), Duration::from_secs(2));
+    assert_eq!(StreamExt::next(&mut stream).await, Some(second));
+    assert_eq!(started.elapsed(), Duration::from_secs(4));
 }

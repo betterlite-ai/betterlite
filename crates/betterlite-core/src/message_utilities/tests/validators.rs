@@ -97,10 +97,9 @@ async fn validate_and_fix_messages_rejects_a_bad_user_content_type() {
 #[tokio::test]
 async fn validate_and_fix_messages_rejects_a_non_object_message() {
     let messages = support::values(r#"["hi"]"#);
-    assert_eq!(
-        fix_openai_messages(&messages),
-        Err(ValidationError::NotAnObject)
-    );
+    let error = fix_openai_messages(&messages).unwrap_err();
+    assert_eq!(error, ValidationError::NotAnObject);
+    assert!(error.class().is_none());
 }
 
 #[tokio::test]
@@ -227,17 +226,18 @@ async fn tool_choice_rejects_an_object_missing_its_parts(#[case] input: &str) {
 }
 
 #[rstest]
-#[case::number("5")]
-#[case::boolean("true")]
-#[case::list(r#"["auto"]"#)]
+#[case::number("5", "number")]
+#[case::boolean("true", "bool")]
+#[case::list(r#"["auto"]"#, "list")]
 #[tokio::test]
-async fn tool_choice_rejects_other_types(#[case] input: &str) {
+async fn tool_choice_rejects_other_types(#[case] input: &str, #[case] kind: &str) {
     let error = validate_tool_choice(&support::value(input)).unwrap_err();
     assert!(matches!(
         error,
         ValidationError::InvalidToolChoiceType { .. }
     ));
     assert_eq!(error.class().unwrap().metadata().status_code, 400);
+    assert!(error.to_string().contains(&format!("Got={kind}.")));
     let messages = support::values(r#"[{"role": "user", "content": "hi"}]"#);
     assert_eq!(validate_openai_user_messages(&messages), Ok(messages));
 }
