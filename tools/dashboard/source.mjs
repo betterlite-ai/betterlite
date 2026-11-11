@@ -1,11 +1,10 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { applyPatches } from "./patches.mjs";
+import { applyPatches, sha256Hex } from "./patches.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, "../..");
@@ -35,10 +34,6 @@ export class SourceError extends Error {
   }
 }
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
 function isolatedEnvironment(extra) {
   const environment = { ...process.env };
   for (const name of Object.keys(environment)) {
@@ -65,25 +60,18 @@ function killGroup(child) {
   }
 }
 
-function spawnGit(args, options) {
+function collectGit(child, args, options) {
   return new Promise((resolve, reject) => {
-    const child = spawn("git", args, {
-      cwd: options.cwd,
-      env: isolatedEnvironment(options.env),
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    CHILDREN.add(child);
     const chunks = [];
+    const limit = options.maxStdoutBytes ?? MAX_SMALL_OUTPUT;
     let captured = 0;
     let stderr = "";
     let timedOut = false;
-    const limit = options.maxStdoutBytes ?? MAX_SMALL_OUTPUT;
     const timer = setTimeout(() => {
       timedOut = true;
       killGroup(child);
     }, options.timeoutMs);
-    const finish = (callback) => {
+    const settle = (callback) => {
       clearTimeout(timer);
       CHILDREN.delete(child);
       callback();
@@ -92,7 +80,7 @@ function spawnGit(args, options) {
       captured += chunk.length;
       if (captured > limit) {
         killGroup(child);
-        finish(() => reject(new SourceError("output-limit", `git ${args[0]} wrote more than ${limit} bytes`)));
+        settle(() => reject(new SourceError("output-limit", `git ${args[0]} wrote more than ${limit} bytes`)));
         return;
       }
       chunks.push(chunk);
@@ -102,10 +90,10 @@ function spawnGit(args, options) {
       if (stderr.length < 8192) stderr += chunk;
     });
     child.on("error", (error) => {
-      finish(() => reject(new SourceError("git-spawn", `could not run git: ${error.message}`)));
+      settle(() => reject(new SourceError("git-spawn", `could not run git: ${error.message}`)));
     });
     child.on("close", (status) => {
-      finish(() => {
+      settle(() => {
         if (timedOut) {
           reject(new SourceError("timeout", `git ${args[0]} did not finish within ${options.timeoutMs} ms`));
           return;
@@ -114,6 +102,17 @@ function spawnGit(args, options) {
       });
     });
   });
+}
+
+function spawnGit(args, options) {
+  const child = spawn("git", args, {
+    cwd: options.cwd,
+    env: isolatedEnvironment(options.env),
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  CHILDREN.add(child);
+  return collectGit(child, args, options);
 }
 
 async function runGit(args, options = {}) {
@@ -127,10 +126,6 @@ async function runGit(args, options = {}) {
     throw new SourceError(options.code ?? "git", `git ${args[0]} failed: ${result.stderr || `exit ${result.status}`}`);
   }
   return result;
-}
-
-function text(result) {
-  return result.stdout.toString("utf8").trim();
 }
 
 function checkPin(pin) {
@@ -174,16 +169,17 @@ export async function loadPin(pinPath) {
 }
 
 async function verifyCommit(repoDir, pin, timeoutMs) {
-  const type = await runGit(["-C", repoDir, "cat-file", "-t", pin.commit], { timeoutMs, allowFailure: true });
-  if (type.status !== 0 || text(type) !== "commit") {
+  const kind = await runGit(["-C", repoDir, "cat-file", "-t", pin.commit], { timeoutMs, allowFailure: true });
+  const objectType = kind.stdout.toString("utf8").trim();
+  if (kind.status !== 0 || objectType !== "commit") {
     throw new SourceError("source-commit", `${repoDir} does not contain the pinned commit ${pin.commit}`);
   }
   const peeled = await runGit(["-C", repoDir, "rev-parse", "--verify", "--quiet", `${pin.commit}^{commit}`], { timeoutMs, allowFailure: true });
-  if (peeled.status !== 0 || text(peeled) !== pin.commit) {
+  if (peeled.status !== 0 || peeled.stdout.toString("utf8").trim() !== pin.commit) {
     throw new SourceError("source-commit", `${pin.commit} is not the pinned commit object; tags and other object kinds are refused`);
   }
   const tree = await runGit(["-C", repoDir, "rev-parse", "--verify", "--quiet", `${pin.commit}:${pin.dashboardPath}`], { timeoutMs, allowFailure: true });
-  if (tree.status !== 0 || text(tree) !== pin.dashboardTree) {
+  if (tree.status !== 0 || tree.stdout.toString("utf8").trim() !== pin.dashboardTree) {
     throw new SourceError("dashboard-tree", `${pin.dashboardPath} at ${pin.commit} is not tree ${pin.dashboardTree}`);
   }
 }
@@ -261,7 +257,7 @@ async function obtainArchive(settings, pin, source) {
       if (error.code !== "ENOENT") throw error;
     }
     if (cached !== null) {
-      const actual = sha256(cached);
+      const actual = sha256Hex(cached);
       if (actual !== pin.archiveSha256) {
         throw new SourceError("cache-corrupt", `${cacheArchive} has SHA-256 ${actual}, the pin expects ${pin.archiveSha256}; delete ${settings.cacheDir} to refetch`);
       }
@@ -269,7 +265,7 @@ async function obtainArchive(settings, pin, source) {
     }
   }
   const bytes = await archiveBytes(source.repoDir, pin, settings.archiveTimeoutMs);
-  const actual = sha256(bytes);
+  const actual = sha256Hex(bytes);
   if (actual !== pin.archiveSha256) {
     throw new SourceError("archive-mismatch", `git archive produced SHA-256 ${actual}, the pin expects ${pin.archiveSha256}`);
   }
@@ -331,6 +327,54 @@ function paxRecords(payload) {
   return values;
 }
 
+function nameFromHeader(header) {
+  const name = readString(header, 0, 100);
+  if (readString(header, 257, 5) !== "ustar") return name;
+  const prefix = readString(header, 345, 155);
+  return prefix === "" ? name : `${prefix}/${name}`;
+}
+
+function applyPax(entry, pending) {
+  if (pending.has("path")) entry.name = pending.get("path");
+  if (pending.has("linkpath")) entry.linkname = pending.get("linkpath");
+  if (!pending.has("size")) return;
+  const size = Number.parseInt(pending.get("size"), 10);
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new SourceError("tar-invalid", `${entry.name}: its pax size is not a number`);
+  }
+  entry.size = size;
+}
+
+function readTarEntry(bytes, offset, pending) {
+  const header = bytes.subarray(offset, offset + 512);
+  if (header.every((byte) => byte === 0)) return null;
+  verifyChecksum(header);
+  const size = readOctal(header, 124, 12, "size");
+  const type = String.fromCharCode(header[156] === 0 ? 0x30 : header[156]);
+  const bodyStart = offset + 512;
+  if (type === "x" || type === "g") {
+    if (bodyStart + size > bytes.length) {
+      throw new SourceError("tar-invalid", "a pax header runs past the end of the archive");
+    }
+    const next = bodyStart + Math.ceil(size / 512) * 512;
+    return { meta: true, next, pending: type === "x" ? paxRecords(bytes.subarray(bodyStart, bodyStart + size)) : null };
+  }
+  const entry = {
+    name: nameFromHeader(header),
+    mode: readOctal(header, 100, 8, "mode"),
+    size,
+    type,
+    linkname: readString(header, 157, 100),
+  };
+  if (pending !== null) applyPax(entry, pending);
+  if (bodyStart + entry.size > bytes.length) {
+    throw new SourceError("tar-invalid", `${entry.name} runs past the end of the archive`);
+  }
+  entry.payload = bytes.subarray(bodyStart, bodyStart + entry.size);
+  entry.next = bodyStart + Math.ceil(entry.size / 512) * 512;
+  return entry;
+}
+
 function relativeEntry(name, directory) {
   const trimmed = directory ? name.replace(/\/+$/, "") : name;
   if (trimmed.length === 0) return null;
@@ -344,11 +388,11 @@ function relativeEntry(name, directory) {
   return segments.join("/");
 }
 
-export function isSelectedPath(relative, pin) {
+function isSelectedPath(relative, pin) {
   return pin.archivePaths.some((root) => relative === root || relative.startsWith(`${root}/`) || root.startsWith(`${relative}/`));
 }
 
-export function isExcludedPath(relative, pin) {
+function isExcludedPath(relative, pin) {
   if (relative.split("/").some((segment) => segment === "enterprise" || segment.endsWith("_enterprise"))) return true;
   return pin.excludedPrefixes.some((prefix) => relative === prefix || relative.startsWith(`${prefix}/`));
 }
@@ -376,6 +420,35 @@ async function writeDirectory(root, relative, mode, directoryModes) {
   directoryModes.push([absolute, mode & 0o777]);
 }
 
+async function writeTarEntry(root, entry, pin, directoryModes) {
+  const directory = entry.type === "5";
+  const relative = relativeEntry(entry.name, directory);
+  if (relative === null) {
+    if (directory) return false;
+    throw new SourceError("tar-invalid", "a tar entry has an empty name");
+  }
+  if (isExcludedPath(relative, pin)) return false;
+  if (!isSelectedPath(relative, pin)) {
+    throw new SourceError("unselected-path", `tar entry ${relative} is outside the selected export`);
+  }
+  if (directory) {
+    await writeDirectory(root, relative, entry.mode, directoryModes);
+    return true;
+  }
+  if (entry.type === "0") {
+    await writeEntry(root, relative, entry.mode, entry.payload);
+    return true;
+  }
+  if (entry.type === "2") {
+    const absolute = path.join(root, relative);
+    checkLink(root, absolute, entry.linkname);
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await fs.symlink(entry.linkname, absolute);
+    return true;
+  }
+  throw new SourceError("unsupported-entry", `tar entry ${relative} has unsupported type ${entry.type}`);
+}
+
 export async function extractArchive(bytes, destDir, pin) {
   const root = path.resolve(destDir);
   await fs.mkdir(root, { recursive: true });
@@ -384,76 +457,15 @@ export async function extractArchive(bytes, destDir, pin) {
   let pending = null;
   let written = 0;
   while (offset + 512 <= bytes.length) {
-    const header = bytes.subarray(offset, offset + 512);
-    if (header.every((byte) => byte === 0)) break;
-    verifyChecksum(header);
-    let name = readString(header, 0, 100);
-    if (readString(header, 257, 5) === "ustar") {
-      const prefix = readString(header, 345, 155);
-      if (prefix !== "") name = `${prefix}/${name}`;
-    }
-    let mode = readOctal(header, 100, 8, "mode");
-    const bodyStart = offset + 512;
-    const headerSize = readOctal(header, 124, 12, "size");
-    const type = String.fromCharCode(header[156] === 0 ? 0x30 : header[156]);
-    let linkname = readString(header, 157, 100);
-    if (type === "x" || type === "g") {
-      if (bodyStart + headerSize > bytes.length) {
-        throw new SourceError("tar-invalid", `a pax header runs past the end of the archive`);
-      }
-      pending = type === "x" ? paxRecords(bytes.subarray(bodyStart, bodyStart + headerSize)) : null;
-      offset = bodyStart + Math.ceil(headerSize / 512) * 512;
+    const entry = readTarEntry(bytes, offset, pending);
+    if (entry === null) break;
+    offset = entry.next;
+    if (entry.meta) {
+      pending = entry.pending;
       continue;
     }
-    let size = headerSize;
-    if (pending !== null) {
-      if (pending.has("path")) name = pending.get("path");
-      if (pending.has("linkpath")) linkname = pending.get("linkpath");
-      if (pending.has("size")) {
-        const overridden = Number.parseInt(pending.get("size"), 10);
-        if (!Number.isSafeInteger(overridden) || overridden < 0) {
-          throw new SourceError("tar-invalid", `${name}: its pax size is not a number`);
-        }
-        size = overridden;
-      }
-      pending = null;
-    }
-    if (bodyStart + size > bytes.length) {
-      throw new SourceError("tar-invalid", `${name} runs past the end of the archive`);
-    }
-    const payload = bytes.subarray(bodyStart, bodyStart + size);
-    offset = bodyStart + Math.ceil(size / 512) * 512;
-    if (type === "5") {
-      const relative = relativeEntry(name, true);
-      if (relative === null) continue;
-      if (isExcludedPath(relative, pin)) continue;
-      if (!isSelectedPath(relative, pin)) {
-        throw new SourceError("unselected-path", `tar entry ${relative} is outside the selected export`);
-      }
-      await writeDirectory(root, relative, mode, directoryModes);
-      written += 1;
-      continue;
-    }
-    const relative = relativeEntry(name, false);
-    if (relative === null) {
-      throw new SourceError("tar-invalid", "a tar entry has an empty name");
-    }
-    if (isExcludedPath(relative, pin)) continue;
-    if (!isSelectedPath(relative, pin)) {
-      throw new SourceError("unselected-path", `tar entry ${relative} is outside the selected export`);
-    }
-    if (type === "0") {
-      await writeEntry(root, relative, mode, payload);
-      written += 1;
-    } else if (type === "2") {
-      const absolute = path.join(root, relative);
-      checkLink(root, absolute, linkname);
-      await fs.mkdir(path.dirname(absolute), { recursive: true });
-      await fs.symlink(linkname, absolute);
-      written += 1;
-    } else {
-      throw new SourceError("unsupported-entry", `tar entry ${relative} has unsupported type ${type}`);
-    }
+    pending = null;
+    if (await writeTarEntry(root, entry, pin, directoryModes)) written += 1;
   }
   for (const [absolute, mode] of directoryModes) {
     await fs.chmod(absolute, mode);
@@ -470,7 +482,7 @@ async function verifyProtected(root, pin) {
       if (error.code === "ENOENT") throw new SourceError("protected-file", `${file.path} is missing from the prepared tree`);
       throw error;
     }
-    const actual = sha256(bytes);
+    const actual = sha256Hex(bytes);
     if (actual !== file.sha256) {
       throw new SourceError("protected-file", `${file.path} has SHA-256 ${actual}, upstream is ${file.sha256}`);
     }
@@ -558,9 +570,9 @@ async function snapshot(root) {
         entries.push({ path: child, mode: stat.mode & 0o777, sha256: null });
         await walk(absolute, child);
       } else if (stat.isSymbolicLink()) {
-        entries.push({ path: child, mode: stat.mode & 0o777, sha256: sha256(await fs.readlink(absolute)) });
+        entries.push({ path: child, mode: stat.mode & 0o777, sha256: sha256Hex(await fs.readlink(absolute)) });
       } else if (stat.isFile()) {
-        entries.push({ path: child, mode: stat.mode & 0o777, sha256: sha256(await fs.readFile(absolute)) });
+        entries.push({ path: child, mode: stat.mode & 0o777, sha256: sha256Hex(await fs.readFile(absolute)) });
       } else {
         throw new SourceError("unexpected-entry", `${absolute} is not a file, directory or symlink`);
       }
@@ -580,7 +592,7 @@ export async function compareTrees(first, second) {
       throw new SourceError("reproducibility", `the two preparations differ at ${one?.path ?? two?.path}: ${JSON.stringify(one)} and ${JSON.stringify(two)}`);
     }
   }
-  return left.length;
+  return left;
 }
 
 export async function verifyRepeat(options = {}) {
@@ -594,8 +606,14 @@ export async function verifyRepeat(options = {}) {
   try {
     const one = await prepare({ ...options, pin, outDir: first });
     await prepare({ ...options, pin, outDir: second });
-    const entries = await compareTrees(first, second);
-    return { commit: pin.commit, archiveSha256: one.archiveSha256, entries, patches: one.patches };
+    const compared = await compareTrees(first, second);
+    return {
+      commit: pin.commit,
+      archiveSha256: one.archiveSha256,
+      entries: compared.length,
+      comparedPaths: compared.map((entry) => entry.path),
+      patches: one.patches,
+    };
   } finally {
     await fs.rm(first, { recursive: true, force: true }).catch(() => undefined);
     await fs.rm(second, { recursive: true, force: true }).catch(() => undefined);

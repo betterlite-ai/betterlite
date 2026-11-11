@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +17,41 @@ async function rejected(promise, code) {
     assert.equal(error.code, code, error.message);
     return true;
   });
+}
+
+async function waitForPid(file) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const value = await fs.readFile(file, "utf8").then((text) => Number(text.trim()), () => 0);
+    if (Number.isSafeInteger(value) && value > 0) return value;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("the fake git did not record a child pid");
+}
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code !== "ESRCH") throw error;
+    return false;
+  }
+}
+
+async function waitForGone(pid) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (!alive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
+
+function killQuietly(pid) {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return;
+  }
 }
 
 test("prepare publishes the selected export and leaves proprietary subtrees out", async (t) => {
@@ -70,6 +105,38 @@ test("a modified working tree in the source checkout is not used", async (t) => 
     patchesDir: fixture.paths.patchesDir,
   });
   assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "ui/litellm-dashboard/next.config.mjs"), "utf8"), fixture.files["ui/litellm-dashboard/next.config.mjs"]);
+});
+
+test("hostile inherited git configuration cannot change the archive", async (t) => {
+  const fixture = await createFixture(t);
+  const hostile = {
+    GIT_DIR: path.join(fixture.base, "not-a-repository"),
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "tar.umask",
+    GIT_CONFIG_VALUE_0: "0077",
+    GIT_CONFIG_PARAMETERS: "'tar.umask'='0077'",
+  };
+  const saved = new Map();
+  for (const [name, value] of Object.entries(hostile)) {
+    saved.set(name, process.env[name]);
+    process.env[name] = value;
+  }
+  try {
+    const result = await prepare({
+      pin: fixture.pin,
+      sourceRepo: fixture.repo,
+      cacheDir: fixture.paths.cacheDir,
+      outDir: fixture.paths.outDir,
+      patchesDir: fixture.paths.patchesDir,
+    });
+    assert.equal(result.archiveSha256, fixture.pin.archiveSha256);
+    assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "LICENSE"), "utf8"), fixture.files.LICENSE);
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });
 
 test("a corrupted cached archive fails before the next tree is published", async (t) => {
@@ -235,6 +302,23 @@ test("a patch whose preimage does not match fails before publishing", async (t) 
   assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "sentinel"), "utf8"), "keep");
 });
 
+test("a patch whose hunk does not apply fails the git apply check", async (t) => {
+  const fixture = await createFixture(t);
+  const target = "ui/litellm-dashboard/next.config.mjs";
+  const before = fixture.files[target];
+  const after = "export default { output: \"export\" };\n";
+  await writePatchPair(fixture.paths.patchesDir, "10-badhunk.patch", singleLinePatch(target, "export default { output: \"other\" };\n", after), [
+    { path: target, preimage: hashText(before), postimage: hashText(after) },
+  ]);
+  await fs.mkdir(fixture.paths.outDir, { recursive: true });
+  await fs.writeFile(path.join(fixture.paths.outDir, "sentinel"), "keep");
+  await rejected(
+    prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir }),
+    "patch-check",
+  );
+  assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "sentinel"), "utf8"), "keep");
+});
+
 test("a patch that writes outside the selected export is rejected", async (t) => {
   const fixture = await createFixture(t);
   const target = "litellm/proxy/extra.py";
@@ -287,17 +371,19 @@ test("a patch that changes a pinned dependency file is rejected", async (t) => {
   );
 });
 
-test("a patch whose +++ header names another path is rejected", async (t) => {
+test("a patch whose file headers name another path than its diff is rejected", async (t) => {
   const fixture = await createFixture(t);
   const listed = "ui/litellm-dashboard/next.config.mjs";
-  const smuggled = "litellm/proxy/extra.py";
+  const applied = "ui/litellm-dashboard/src/app/page.tsx";
   const patch = [
     `diff --git a/${listed} b/${listed}`,
-    `--- a/${listed}`,
-    `+++ b/${smuggled}`,
-    "@@ -1 +1 @@",
-    `-${fixture.files[listed].replace(/\n$/, "")}`,
-    "+export default {};",
+    `--- a/${applied}`,
+    `+++ b/${applied}`,
+    "@@ -1,3 +1,3 @@",
+    " export default function Page() {",
+    "-  return null;",
+    "+  return false;",
+    " }",
     "",
   ].join("\n");
   await writePatchPair(fixture.paths.patchesDir, "10-smuggle.patch", patch, [
@@ -305,7 +391,7 @@ test("a patch whose +++ header names another path is rejected", async (t) => {
   ]);
   await rejected(
     prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir }),
-    "patch-form",
+    "patch-record",
   );
 });
 
@@ -346,12 +432,14 @@ test("a patch without its adjacent record is rejected", async (t) => {
   );
 });
 
-test("git subprocesses time out and their process group is killed", async (t) => {
+const FAKE_GIT = "#!/bin/sh\nsleep 60 &\nprintf '%s' \"$!\" > \"$FAKE_GIT_PID_FILE\"\nwait\n";
+
+test("git subprocesses time out and kill their whole process group", async (t) => {
   const fixture = await createFixture(t);
   const fake = path.join(fixture.base, "fake-git");
   const pidFile = path.join(fixture.base, "fake-git.pid");
   await fs.mkdir(fake);
-  await fs.writeFile(path.join(fake, "git"), "#!/bin/sh\nprintf '%s' \"$$\" > \"$FAKE_GIT_PID_FILE\"\nexec sleep 60\n", { mode: 0o755 });
+  await fs.writeFile(path.join(fake, "git"), FAKE_GIT, { mode: 0o755 });
   const originalPath = process.env.PATH;
   process.env.PATH = `${fake}${path.delimiter}${originalPath}`;
   process.env.FAKE_GIT_PID_FILE = pidFile;
@@ -364,26 +452,45 @@ test("git subprocesses time out and their process group is killed", async (t) =>
     process.env.PATH = originalPath;
     delete process.env.FAKE_GIT_PID_FILE;
   }
-  let pid = null;
-  for (let attempt = 0; attempt < 100 && pid === null; attempt += 1) {
-    try {
-      pid = Number(await fs.readFile(pidFile, "utf8"));
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  }
-  assert.ok(Number.isSafeInteger(pid) && pid > 0, "the fake git recorded its process id");
-  let gone = false;
-  for (let attempt = 0; attempt < 100 && !gone; attempt += 1) {
-    try {
-      process.kill(pid, 0);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    } catch (error) {
-      if (error.code !== "ESRCH") throw error;
-      gone = true;
-    }
-  }
-  assert.ok(gone, "the timed out process group is gone");
+  const pid = await waitForPid(pidFile);
+  t.after(() => killQuietly(pid));
+  assert.equal(await waitForGone(pid), true, "the grandchild of the timed out git is gone");
+});
+
+test("SIGTERM kills the git process group and leaves no published tree", async (t) => {
+  const fixture = await createFixture(t);
+  await fs.writeFile(fixture.paths.pinPath, `${JSON.stringify(fixture.pin, null, 2)}\n`);
+  const fake = path.join(fixture.base, "fake-git");
+  const pidFile = path.join(fixture.base, "cli-git.pid");
+  await fs.mkdir(fake);
+  await fs.writeFile(path.join(fake, "git"), FAKE_GIT, { mode: 0o755 });
+  const child = spawn(
+    process.execPath,
+    [
+      SOURCE, "prepare",
+      "--pin", fixture.paths.pinPath,
+      "--source-repo", fixture.repo,
+      "--cache", fixture.paths.cacheDir,
+      "--out", fixture.paths.outDir,
+      "--patches", fixture.paths.patchesDir,
+    ],
+    {
+      env: { ...process.env, PATH: `${fake}${path.delimiter}${process.env.PATH}`, FAKE_GIT_PID_FILE: pidFile },
+      stdio: "ignore",
+    },
+  );
+  const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve({ code, signal })));
+  const pid = await waitForPid(pidFile);
+  t.after(() => {
+    killQuietly(pid);
+    child.kill("SIGKILL");
+  });
+  child.kill("SIGTERM");
+  const { code, signal } = await exited;
+  assert.equal(code, 143);
+  assert.equal(signal, null);
+  assert.equal(await waitForGone(pid), true, "the cancelled git grandchild is gone");
+  assert.equal(await exists(fixture.paths.outDir), false);
 });
 
 test("verify --repeat prepares two matching trees through the command line", async (t) => {
@@ -414,7 +521,7 @@ test("compareTrees reports a difference in content, mode or presence", async (t)
     await fs.writeFile(path.join(directory, "a.txt"), "same\n");
     await fs.chmod(path.join(directory, "a.txt"), 0o664);
   }
-  assert.equal(await compareTrees(first, second), 1);
+  assert.equal((await compareTrees(first, second)).length, 1);
   for (const [change, restore] of [
     [() => fs.writeFile(path.join(second, "a.txt"), "different\n"), () => fs.writeFile(path.join(second, "a.txt"), "same\n")],
     [() => fs.chmod(path.join(second, "a.txt"), 0o600), () => fs.chmod(path.join(second, "a.txt"), 0o664)],
@@ -424,7 +531,7 @@ test("compareTrees reports a difference in content, mode or presence", async (t)
     await rejected(compareTrees(first, second), "reproducibility");
     await restore();
   }
-  assert.equal(await compareTrees(first, second), 1);
+  assert.equal((await compareTrees(first, second)).length, 1);
 });
 
 test("verifyRepeat compares the two prepared trees", async (t) => {
@@ -437,4 +544,8 @@ test("verifyRepeat compares the two prepared trees", async (t) => {
   });
   assert.equal(result.commit, fixture.pin.commit);
   assert.ok(result.entries > 0);
+  assert.equal(result.comparedPaths.length, result.entries);
+  assert.ok(result.comparedPaths.includes("LICENSE"));
+  assert.ok(result.comparedPaths.includes("ui/litellm-dashboard/package-lock.json"));
+  assert.equal(result.comparedPaths.includes("ui/litellm-dashboard/_experimental/out/index.html"), false);
 });

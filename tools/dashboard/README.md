@@ -43,7 +43,7 @@ Patches are checked into `ui/dashboard/patches` and applied in filename order. E
       ]
     }
 
-`preimage` is `null` for a file the patch creates and `postimage` is `null` for one it deletes. The record must list exactly the paths named by the patch's `diff --git` headers, every path must be inside the selected export, and no path may name a protected file. Preimages are checked against the current tree before the patch runs, postimages after it, so a later patch sees the output of an earlier one. Rename and copy patches are not part of the contract.
+`preimage` is `null` for a file the patch creates and `postimage` is `null` for one it deletes. The record must list exactly the paths `git apply --numstat` reports for the patch, every path must be inside the selected export, and no path may name a protected file. Preimages are checked against the current tree before the patch runs, postimages after it, so a later patch sees the output of an earlier one. Rename and copy patches are not part of the contract.
 
 Each patch runs `git apply --check --binary` before `git apply --binary`. A failed hunk, a wrong hash, an unlisted path or a missing record stops the run. Every preparation starts from the pristine verified export and applies the patches again; an old prepared tree is never patched in place.
 

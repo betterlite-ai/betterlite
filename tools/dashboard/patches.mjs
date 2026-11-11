@@ -12,7 +12,7 @@ export class PatchError extends Error {
   }
 }
 
-function digest(bytes) {
+export function sha256Hex(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
@@ -45,7 +45,7 @@ function readRecord(text, patch) {
   if (record === null || typeof record !== "object" || !Array.isArray(record.targets)) {
     throw new PatchError("patch-record", `${patch}: its .json record needs a targets array`);
   }
-  const targets = record.targets.map((target) => {
+  return record.targets.map((target) => {
     if (target === null || typeof target !== "object") {
       throw new PatchError("patch-record", `${patch}: every target must be an object`);
     }
@@ -56,105 +56,34 @@ function readRecord(text, patch) {
       postimage: hashValue(target.postimage, `${file} postimage`, patch),
     };
   });
-  return targets;
 }
 
-function splitQuoted(text, start) {
-  let value = "";
-  let index = start + 1;
-  while (index < text.length && text[index] !== '"') {
-    const character = text[index];
-    if (character !== "\\") {
-      value += character;
-      index += 1;
-      continue;
+function targetPaths(output, patch) {
+  const fields = output.toString("utf8").split("\0");
+  const summary = fields.pop();
+  const touched = new Set();
+  for (const field of fields) {
+    const parts = field.split("\t");
+    if (parts.length !== 3) {
+      throw new PatchError("patch-form", `${patch}: git apply printed an unexpected numstat record`);
     }
-    const escaped = text[index + 1];
-    const escapes = { '"': '"', "\\": "\\", n: "\n", t: "\t", r: "\r", b: "\b", f: "\f", v: "\v" };
-    if (Object.hasOwn(escapes, escaped)) {
-      value += escapes[escaped];
-      index += 2;
-      continue;
-    }
-    const octal = /^[0-7]{1,3}/.exec(text.slice(index + 1));
-    if (octal === null) {
-      throw new PatchError("patch-form", `unsupported escape in a quoted patch path at offset ${index}`);
-    }
-    value += String.fromCharCode(Number.parseInt(octal[0], 8));
-    index += 1 + octal[0].length;
+    touched.add(relativePath(parts[2], patch));
   }
-  if (text[index] !== '"') {
-    throw new PatchError("patch-form", "a quoted patch path does not end");
-  }
-  return { value, end: index + 1 };
-}
-
-function twoPaths(text) {
-  const first = text.startsWith('"') ? splitQuoted(text, 0) : { value: text.split(" ")[0], end: text.split(" ")[0].length };
-  let rest = text.slice(first.end);
-  if (!rest.startsWith(" ")) {
-    throw new PatchError("patch-form", `cannot separate the two paths in 'diff --git ${text}'`);
-  }
-  rest = rest.slice(1);
-  const second = rest.startsWith('"') ? splitQuoted(rest, 0) : { value: rest.split(" ")[0], end: rest.split(" ")[0].length };
-  if (second.end !== rest.length) {
-    throw new PatchError("patch-form", `unexpected text after the paths in 'diff --git ${text}'`);
-  }
-  return [first.value, second.value];
-}
-
-function prefixed(value, prefix, patch) {
-  if (!value.startsWith(prefix)) {
-    throw new PatchError("patch-form", `${patch}: '${value}' does not use the ${prefix} prefix`);
-  }
-  return relativePath(value.slice(prefix.length), patch);
-}
-
-function headerPath(value, prefix, paths, patch) {
-  if (value === "/dev/null") return;
-  const file = prefixed(value, prefix, patch);
-  if (!paths.has(file)) {
-    throw new PatchError("patch-form", `${patch}: a ${prefix === "a/" ? "---" : "+++"} header names ${file}, which no diff header names`);
-  }
-}
-
-export function patchPaths(text, patch) {
-  const paths = new Set();
-  let header = true;
-  for (const line of text.split("\n")) {
-    if (line.startsWith("rename from ") || line.startsWith("rename to ")) {
-      throw new PatchError("patch-form", `${patch}: renames are not part of the patch contract`);
-    }
-    if (line.startsWith("copy from ") || line.startsWith("copy to ")) {
-      throw new PatchError("patch-form", `${patch}: copies are not part of the patch contract`);
-    }
-    if (line.startsWith("diff --git ")) {
-      const [first, second] = twoPaths(line.slice("diff --git ".length));
-      const left = prefixed(first, "a/", patch);
-      const right = prefixed(second, "b/", patch);
-      if (left !== right) {
-        throw new PatchError("patch-form", `${patch}: ${left} and ${right} differ inside one diff; renames and copies are not part of the contract`);
-      }
-      paths.add(left);
-      header = true;
-    } else if (header && line.startsWith("--- ")) {
-      headerPath(line.slice(4), "a/", paths, patch);
-    } else if (header && line.startsWith("+++ ")) {
-      headerPath(line.slice(4), "b/", paths, patch);
-      header = false;
-    } else if (line.startsWith("@@") || line.startsWith("GIT binary patch")) {
-      header = false;
+  for (const line of summary.split("\n")) {
+    const text = line.trimStart();
+    if (text.startsWith("rename ") || text.startsWith("copy ")) {
+      throw new PatchError("patch-form", `${patch}: renames and copies are not part of the patch contract`);
     }
   }
-  if (paths.size === 0) {
-    throw new PatchError("patch-form", `${patch}: no 'diff --git' header names a target`);
+  if (touched.size === 0) {
+    throw new PatchError("patch-form", `${patch}: git apply reports no target path`);
   }
-  return paths;
+  return touched;
 }
 
 async function digestOrNull(file) {
   try {
-    return digest(await fs.readFile(file));
+    return sha256Hex(await fs.readFile(file));
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
@@ -169,12 +98,60 @@ async function checkTarget(root, target, expected, patch, side) {
   throw new PatchError("patch-hash", `${patch}: ${target.path} ${side} is ${seen}, the record says ${want}`);
 }
 
-async function run(root, runGit, args, timeoutMs, code, patch) {
+async function readRecordFile(recordPath, patch) {
+  try {
+    return readRecord(await fs.readFile(recordPath, "utf8"), patch);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new PatchError("patch-record", `${patch} has no adjacent ${path.basename(recordPath)} record`);
+    }
+    throw error;
+  }
+}
+
+async function runApply({ root, runGit, args, timeoutMs, code, patch }) {
   try {
     return await runGit(args, { cwd: root, timeoutMs, ceiling: path.dirname(root) });
   } catch (error) {
-    throw new PatchError(code, `${patch}: git apply ${args.includes("--check") ? "--check " : ""}failed: ${error.message}`);
+    throw new PatchError(code, `${patch}: git apply failed: ${error.message}`);
   }
+}
+
+async function checkTargets({ root, patch, targets, declared, isAllowedPath, isProtectedPath }) {
+  const recorded = new Set(targets.map((target) => target.path));
+  for (const file of declared) {
+    if (!recorded.has(file)) {
+      throw new PatchError("patch-record", `${patch}: the patch touches ${file}, which its record does not list`);
+    }
+  }
+  for (const target of targets) {
+    if (!declared.has(target.path)) {
+      throw new PatchError("patch-record", `${patch}: its record lists ${target.path}, which the patch does not touch`);
+    }
+    if (isProtectedPath(target.path)) {
+      throw new PatchError("patch-protected", `${patch}: ${target.path} is pinned upstream content and cannot be patched`);
+    }
+    if (!isAllowedPath(target.path)) {
+      throw new PatchError("patch-path", `${patch}: ${target.path} is outside the selected dashboard export`);
+    }
+    await checkTarget(root, target, target.preimage, patch, "before the patch");
+  }
+}
+
+async function applyOnePatch({ root, name, patchesDir, isAllowedPath, isProtectedPath, runGit, timeoutMs }) {
+  const patchPath = path.join(patchesDir, name);
+  const targets = await readRecordFile(patchPath.slice(0, -".patch".length) + ".json", name);
+  const check = await runApply({
+    root, runGit, timeoutMs, patch: name, code: "patch-check",
+    args: ["apply", "--check", "--binary", "--numstat", "--summary", "-z", patchPath],
+  });
+  const declared = targetPaths(check.stdout, name);
+  await checkTargets({ root, patch: name, targets, declared, isAllowedPath, isProtectedPath });
+  await runApply({ root, runGit, args: ["apply", "--binary", patchPath], timeoutMs, code: "patch-apply", patch: name });
+  for (const target of targets) {
+    await checkTarget(root, target, target.postimage, name, "after the patch");
+  }
+  return name;
 }
 
 export async function applyPatches({ root, patchesDir, isAllowedPath, isProtectedPath, runGit, timeoutMs }) {
@@ -189,48 +166,8 @@ export async function applyPatches({ root, patchesDir, isAllowedPath, isProtecte
     .filter((entry) => entry.isFile() && entry.name.endsWith(".patch"))
     .map((entry) => entry.name)
     .sort();
-  const applied = [];
   for (const name of names) {
-    const patchPath = path.join(patchesDir, name);
-    const recordPath = patchPath.slice(0, -".patch".length) + ".json";
-    let recordText;
-    try {
-      recordText = await fs.readFile(recordPath, "utf8");
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        throw new PatchError("patch-record", `${name} has no adjacent ${path.basename(recordPath)} record`);
-      }
-      throw error;
-    }
-    const targets = readRecord(recordText, name);
-    const text = await fs.readFile(patchPath, "utf8");
-    const declared = patchPaths(text, name);
-    const recorded = new Set(targets.map((target) => target.path));
-    for (const file of declared) {
-      if (!recorded.has(file)) {
-        throw new PatchError("patch-record", `${name}: the patch touches ${file}, which its record does not list`);
-      }
-    }
-    for (const target of targets) {
-      if (!declared.has(target.path)) {
-        throw new PatchError("patch-record", `${name}: its record lists ${target.path}, which the patch does not touch`);
-      }
-      if (isProtectedPath(target.path)) {
-        throw new PatchError("patch-protected", `${name}: ${target.path} is pinned upstream content and cannot be patched`);
-      }
-      if (!isAllowedPath(target.path)) {
-        throw new PatchError("patch-path", `${name}: ${target.path} is outside the selected dashboard export`);
-      }
-      await checkTarget(root, target, target.preimage, name, "before the patch");
-    }
-    await run(root, runGit, ["apply", "--check", "--binary", patchPath], timeoutMs, "patch-check", name);
-    await run(root, runGit, ["apply", "--binary", patchPath], timeoutMs, "patch-apply", name);
-    for (const target of targets) {
-      await checkTarget(root, target, target.postimage, name, "after the patch");
-    }
-    applied.push(name);
+    await applyOnePatch({ root, name, patchesDir, isAllowedPath, isProtectedPath, runGit, timeoutMs });
   }
-  return applied;
+  return names;
 }
-
-export { digest as sha256Hex };
