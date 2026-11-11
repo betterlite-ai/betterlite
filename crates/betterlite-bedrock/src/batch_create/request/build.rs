@@ -49,8 +49,9 @@ pub fn build_create_request(
         .filter(|value| !value.is_empty())
         .ok_or(BatchCreateError::InputFileIdRequired)?;
     let (input_bucket, input_key) = parse_s3_uri(file_id)?;
-    let output_bucket = output_bucket(input, &input_bucket)?;
-    let role_arn = role_arn(input)?;
+    let output_bucket =
+        first_non_empty(input, &OUTPUT_BUCKET)?.unwrap_or_else(|| input_bucket.clone());
+    let role_arn = first_non_empty(input, &ROLE_ARN)?.ok_or(BatchCreateError::RoleArnRequired)?;
     if input.model.is_empty() {
         return Err(BatchCreateError::ModelRequired);
     }
@@ -109,39 +110,43 @@ fn data_configs(
     )
 }
 
-fn output_bucket(
-    input: &CreateBatchInput<'_>,
-    input_bucket: &str,
-) -> Result<String, BatchCreateError> {
-    let configured =
-        read_param::<Option<String>>(input.deployment_params, OUTPUT_BUCKET_PARAM)?.flatten();
-    Ok(configured
-        .filter(|bucket| !bucket.is_empty())
-        .or_else(|| {
-            input
-                .environment
-                .get(OUTPUT_BUCKET_ENV)
-                .filter(|bucket| !bucket.is_empty())
-                .cloned()
-        })
-        .unwrap_or_else(|| input_bucket.to_owned()))
+struct Setting {
+    param: &'static str,
+    environment: &'static str,
+    request: Option<&'static str>,
 }
 
-fn role_arn(input: &CreateBatchInput<'_>) -> Result<String, BatchCreateError> {
+const OUTPUT_BUCKET: Setting = Setting {
+    param: OUTPUT_BUCKET_PARAM,
+    environment: OUTPUT_BUCKET_ENV,
+    request: None,
+};
+const ROLE_ARN: Setting = Setting {
+    param: ROLE_ARN_PARAM,
+    environment: ROLE_ARN_ENV,
+    request: Some(ROLE_ARN_PARAM),
+};
+
+fn first_non_empty(
+    input: &CreateBatchInput<'_>,
+    setting: &Setting,
+) -> Result<Option<String>, BatchCreateError> {
     let deployment =
-        read_param::<Option<String>>(input.deployment_params, ROLE_ARN_PARAM)?.flatten();
-    let request = read_param::<Option<String>>(input.request_params, ROLE_ARN_PARAM)?.flatten();
-    deployment
-        .filter(|role| !role.is_empty())
-        .or_else(|| request.filter(|role| !role.is_empty()))
+        read_param::<Option<String>>(input.deployment_params, setting.param)?.flatten();
+    let request = match setting.request {
+        Some(param) => read_param::<Option<String>>(input.request_params, param)?.flatten(),
+        None => None,
+    };
+    Ok(deployment
+        .filter(|value| !value.is_empty())
+        .or_else(|| request.filter(|value| !value.is_empty()))
         .or_else(|| {
             input
                 .environment
-                .get(ROLE_ARN_ENV)
-                .filter(|role| !role.is_empty())
+                .get(setting.environment)
+                .filter(|value| !value.is_empty())
                 .cloned()
-        })
-        .ok_or(BatchCreateError::RoleArnRequired)
+        }))
 }
 
 fn tag_source(input: &CreateBatchInput<'_>) -> Result<Option<Json>, BatchCreateError> {
