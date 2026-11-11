@@ -35,7 +35,7 @@ busy() {
   [ "$(awk '/^MemAvailable:/ {print int($2 / 1048576)}' /proc/meminfo)" -lt 14 ] && return 0
   [ "$(df --output=pcent /home | tail -1 | tr -dc 0-9)" -ge 89 ] && return 0
   [ "$(df --output=pcent /tmp | tail -1 | tr -dc 0-9)" -ge 50 ] && return 0
-  [ "$(waiting_seats)" -ge 4 ] && return 0
+  [ "$(waiting_seats)" -ge 8 ] && return 0
   return 1
 }
 while busy; do

@@ -1,14 +1,14 @@
 id: B8971
 milestone: M9 agents and mcp
 title: MCP per-message trace context bridge
-status: todo
+status: done
 depends_on: [B3847]
 file: tasks/B8971-mcp-message-tracing.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/server.py"
 parent: B136
 split_from: B136
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1257

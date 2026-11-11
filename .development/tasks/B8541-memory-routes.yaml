@@ -64,8 +64,8 @@ scope:
     - tools/oracle/src/helpers/server/b8541/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L285-L386
-    why: create_memory and list_memory with their decorators, query bounds and the AND filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L53-L386
+    why: the router declaration, create_memory and list_memory with their decorators, query bounds and the AND filter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L413-L562
     why: get_memory, upsert_memory with the race fallback, and delete_memory.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19995

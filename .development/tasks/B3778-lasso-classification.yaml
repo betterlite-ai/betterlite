@@ -135,7 +135,7 @@ deviations:
 
 out_of_scope:
   - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook);
-    B3779 owns the hook logic.
+    B9451 owns the hook bodies and their orchestration.
   - Message expansion and masking application (_run_lasso_guardrail, _handle_masking, _handle_classification,
     _expand_messages_for_classification, _map_masked_messages_back, _apply_masking_to_model_response);
     B3779 owns these.
