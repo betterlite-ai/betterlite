@@ -44,6 +44,26 @@ fn allowlist_gates_request_tags_and_nested_metadata() {
 }
 
 #[test]
+fn allowlist_carries_nested_metadata_tags() {
+    let payload = support::default_payload()
+        .set(
+            "/metadata/spend_logs_metadata",
+            support::object(vec![
+                ("platform", support::text("web")),
+                ("ignored", support::text("x")),
+            ]),
+        )
+        .set(
+            "/metadata/requester_metadata",
+            support::object(vec![("region", support::text("eu"))]),
+        );
+    let found = tags(&["platform", "region"], &payload);
+    assert_eq!(support::tag(&found, "platform"), Some("web"));
+    assert_eq!(support::tag(&found, "region"), Some("eu"));
+    assert_eq!(support::tag(&found, "ignored"), None);
+}
+
+#[test]
 fn allowlist_carries_a_declared_metadata_field() {
     let payload = support::default_payload().set(
         "/metadata/user_api_key_user_email",

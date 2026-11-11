@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 from collections.abc import Sequence
 from typing import Literal, Protocol, TypeAlias, TypedDict
@@ -9,8 +8,11 @@ from litellm.integrations.datadog.datadog_cost_management import (
     DatadogCostManagementLogger,
 )
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
+from pydantic import JsonValue, TypeAdapter
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+BODY_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 CONTENT_TYPE_HEADER = "content-type"
 API_KEY_HEADER = "dd-api-key"
@@ -65,7 +67,7 @@ class Call(TypedDict):
     content_type: str | None
     api_key: str | None
     app_key: str | None
-    body: Json
+    body: JsonValue
 
 
 class InitOutput(TypedDict):
@@ -117,7 +119,7 @@ class Script:
         self.calls: list[Call] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        body: Json = json.loads(request.content)
+        body = BODY_ADAPTER.validate_json(request.content)
         self.calls.append(
             {
                 "url": str(request.url),
@@ -167,7 +169,7 @@ async def execute(scenario: Scenario, script: Script) -> ScenarioOutput:
         },
         "results": results,
         "calls": script.calls,
-        "queue_length": len(calls.log_queue),
+        "queue_length": results[-1]["queue_length"] if results else 0,
     }
 
 
