@@ -3,7 +3,12 @@
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
+use serde_json::{Value, json};
+
+use super::Op;
 use crate::case::{HelperCase, helper::validate_helper};
+use crate::helpers::Helper as _;
 
 #[test]
 fn helper_seeds_select_bedrock_aws_settings() {
@@ -29,4 +34,17 @@ fn helper_seeds_select_bedrock_aws_settings() {
             && serde_saphyr::from_str::<HelperCase>(source)
                 .is_ok_and(|case| case.call.operation == "bedrock_aws_settings")
     }));
+}
+
+#[rstest]
+#[case::web_identity(json!({"aws_web_identity_token": "token", "aws_role_name": "role", "aws_session_name": "session"}), "web_identity")]
+#[case::role(json!({"aws_role_name": "role"}), "role")]
+#[case::profile(json!({"aws_profile_name": "profile"}), "profile")]
+#[case::session_token(json!({"aws_access_key_id": "access", "aws_secret_access_key": "secret", "aws_session_token": "token"}), "session_token")]
+#[case::static_pair(json!({"aws_access_key_id": "access", "aws_secret_access_key": "secret", "aws_region_name": "us-west-2"}), "static")]
+#[case::environment(json!({}), "env")]
+fn auth_selector_reports_the_first_matching_source(#[case] params: Value, #[case] source: &str) {
+    let input = json!({"operation": "auth_selector", "params": params});
+    let output = Op::decode_and_run(&input).unwrap();
+    assert_eq!(output["source"], source);
 }

@@ -245,7 +245,6 @@ tools/oracle/helpers/batch_delivery.py
 tools/oracle/helpers/batch_token_cost.py
 tools/oracle/helpers/bedrock_assume_role.py
 tools/oracle/helpers/bedrock_aws_endpoints.py
-tools/oracle/helpers/bedrock_aws_settings.py
 tools/oracle/helpers/bedrock_chunking.py
 tools/oracle/helpers/bedrock_config_selection.py
 tools/oracle/helpers/bedrock_content.py

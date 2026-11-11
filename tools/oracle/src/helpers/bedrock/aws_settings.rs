@@ -38,9 +38,9 @@ impl Helper for Op {
             .map_err(failure)?;
         match input {
             Input::StaticKeyPair(value) => Ok(pair(value)),
-            Input::CanonicalTags(tags) => {
-                Ok(json!({"value": canonicalize_tags(tags.tags.clone()).map_err(failure)?}))
-            }
+            Input::CanonicalTags(role) => Ok(
+                json!({"value": canonicalize_tags(role.tags.clone()).map_err(failure)?.filter(|tags| !tags.is_empty())}),
+            ),
             Input::AssumeRole(role) => Ok(
                 json!({"value": assume_role_parameters(role.role_arn.clone(), role.session_name.clone(), role.external_id.clone(), canonicalize_tags(role.tags.clone()).map_err(failure)?)}),
             ),
@@ -124,5 +124,18 @@ fn pair(input: &input::Pair) -> Value {
 fn selector(input: &input::Config) -> Value {
     let [web_identity, role, profile, session_token, static_pair] =
         auth_selector_presence(&AwsSettings::from(input));
-    json!({"web_identity": web_identity, "role": role, "profile": profile, "session_token": session_token, "static": static_pair})
+    let source = if web_identity {
+        "web_identity"
+    } else if role {
+        "role"
+    } else if profile {
+        "profile"
+    } else if session_token {
+        "session_token"
+    } else if static_pair {
+        "static"
+    } else {
+        "env"
+    };
+    json!({"source": source})
 }

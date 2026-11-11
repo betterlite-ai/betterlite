@@ -13,7 +13,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 pub(super) async fn cache(input: &Cache) -> HelperResult {
     let clock = Arc::new(AtomicU32::new(0));
@@ -62,7 +61,7 @@ async fn replay(input: &Cache, storage: &CredentialCache, clock: &AtomicU32) -> 
                         secret_access_key: SecretString::from("fixture".to_owned()),
                         session_token: None,
                     },
-                    cache_ttl: step.ttl.map(|ttl| Duration::from_secs(u64::from(ttl))),
+                    cache_ttl: None,
                 })
             })
             .await;

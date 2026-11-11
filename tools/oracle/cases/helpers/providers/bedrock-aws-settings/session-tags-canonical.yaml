@@ -5,6 +5,8 @@
     "bedrock_aws_settings": {
       "operation": "canonical_tags",
       "params": {
+        "role_arn": "arn:aws:iam::123:role/demo",
+        "session_name": "session",
         "tags": [
           {
             "Key": "a",

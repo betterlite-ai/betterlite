@@ -52,7 +52,6 @@ pub(super) async fn local(input: &Local) -> HelperResult {
             value.access_key_id.expose_secret().to_owned(),
             value.secret_access_key.expose_secret().to_owned(),
             value.session_token.map(|token| token.expose_secret().to_owned()),
-        ),
-        "ttl": result.cache_ttl.map(|ttl| ttl.as_secs()),
+        )
     }))
 }

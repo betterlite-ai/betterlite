@@ -11,7 +11,7 @@ use serde_json::value::RawValue;
 #[serde(tag = "operation", content = "params", rename_all = "snake_case")]
 pub(crate) enum Input {
     StaticKeyPair(Pair),
-    CanonicalTags(Tags),
+    CanonicalTags(AssumeRole),
     AssumeRole(AssumeRole),
     WebPolicy,
     Bearer(Bearer),
@@ -28,12 +28,6 @@ pub(crate) enum Input {
 pub(crate) struct Pair {
     pub(crate) s3_access_key_id: Option<SecretString>,
     pub(crate) s3_secret_access_key: Option<SecretString>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Tags {
-    pub(crate) tags: Option<SessionTagValue>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,7 +115,6 @@ pub(crate) struct Cache {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Step {
     pub(crate) now: u32,
-    pub(crate) ttl: Option<u32>,
     pub(crate) access: Option<String>,
     #[serde(default)]
     pub(crate) fail: bool,
