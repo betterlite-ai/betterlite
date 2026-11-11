@@ -1,0 +1,11 @@
+kind: helper
+name: raw-request-input-dict
+call:
+  b3856:
+    function: set_raw_request_attributes
+    kwargs:
+      litellm_params: {custom_llm_provider: anthropic}
+      additional_args:
+        complete_input_dict: {model: claude-3, max_tokens: 1024, stream: true}
+env: {}
+compare: {ignore: []}

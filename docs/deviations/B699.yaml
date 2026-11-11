@@ -1,0 +1,11 @@
+task: B699
+deviations:
+  - what: A Cloud Shell reply that is not JSON and carries no Content-Type is a CredentialUnavailableError naming an empty content type, where the SDK calls startswith on a None content type and raises AttributeError.
+    why: An AttributeError on a malformed upstream reply is an unhandled crash that no working setup can rely on; betterlite returns the typed error that names what was wrong.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/managed_identity_client.py#L46-L60
+  - what: A JSON null token reply on an MSAL-backed hosted protocol, and a Service Fabric reply whose error member is not an object, become a typed reply-value error instead of the AttributeError the SDK raises.
+    why: Both are malformed replies that crash the SDK with an unhandled exception; betterlite rejects them with the same typed category it uses for every other unusable value.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/managed_identity.py#L626-L648
+  - what: The Cloud Shell "Unexpected response" text also runs through betterlite's secret redactor, so a key-shaped value such as a refresh_token, and the access_token member itself, show as REDACTED instead of the SDK's "****" mask; the token is still masked with "****" wherever else it appears.
+    why: The SDK prints the reply body with only the access token masked; betterlite never lets a key-shaped secret from a reply body reach an error message.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/managed_identity_client.py#L46-L60

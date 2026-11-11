@@ -1,0 +1,27 @@
+kind: helper
+name: choices-tool-calls-last-choice-wins
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      litellm_params: {custom_llm_provider: openai}
+      standard_logging_object:
+        call_type: acompletion
+        metadata: {}
+    response:
+      id: chatcmpl-1
+      choices:
+        - finish_reason: tool_calls
+          message:
+            role: assistant
+            tool_calls:
+              - id: call_1
+                function: {name: first, arguments: '{"q":1}'}
+        - finish_reason: tool_calls
+          message:
+            role: assistant
+            tool_calls:
+              - id: call_2
+                function: {name: second, arguments: '{"q":2}'}
+env: {}
+compare: {ignore: []}
