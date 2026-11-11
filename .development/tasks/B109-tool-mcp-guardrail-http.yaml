@@ -1,0 +1,250 @@
+id: B109
+title: Booted-proxy cases for the tool permission, tool policy, MCP permission and MCP JWT signer guardrails
+description: >-
+  B109's parts built five guardrails and the MCP JWT signer, all before a booted proxy could run a guardrail, so every
+  one of them was proved with helper cases or unit tests only: B3810 to B3813 the tool_permission guardrail, B3814 the
+  tool_policy guardrail, B3815 mcp_end_user_permission and mcp_security, B3816 and B3817 the signer and its claims, B8254
+  the signer's initializer and its JwtSignerSlot. B3818's MCP translation already has HTTP cases in B8992. What is left
+  is the proof that these pieces answer a real request the way LiteLLM does once they are composed: B3682 and B8521
+  register the wire names, B3683 starts the config guardrails, B8666 runs a held guardrail through its class, B8613
+  installs the callbacks and the signer slot, B8399 runs the proxy hooks, B3680 runs the unified apply_guardrail path,
+  and the routes come from B004 and B6370 (chat), B081 (/v1/messages), B8626 (/mcp-rest), B8624 (the well-known
+  documents), B830 (/end_user/new), B062 (/v1/tool/policy) and B055 (/key/generate), B8464 hands the signer's headers
+  to the MCP call, and B9850 lets a case skip one captured request body or header value. This task writes no Rust and
+  registers no route, guardrail kind, class or callback. A case that fails because a part answers differently from
+  LiteLLM goes back to that part's task as a finding and is never patched here.
+
+
+  Cases go in tools/oracle/cases/guardrails/tool-mcp-http. Use the booted-proxy case format (kind http_scenario where a
+  case has more than one request) with general_settings.master_key oracle-master and router_settings.num_retries 0.
+  The chat deployment is `chat` on `openai/gpt-oracle` with api_base {{upstream}} and api_key oracle-key; the messages
+  deployment is `claude` on `anthropic/claude-oracle` with the same api_base and key. Configure each guardrail in the
+  top-level `guardrails:` list with litellm_params.guardrail set to its wire name (tool_permission, tool_policy,
+  mcp_security, mcp_end_user_permission, mcp_jwt_signer) and default_on true unless a case says otherwise. Compare
+  status, content-type, every error field and x-litellm-applied-guardrails where LiteLLM records it. Compare the
+  provider requests the mock captured, so a 200 can't hide a skipped check, and so a rewrite is checked on the request
+  the provider got. Ignore a field only where a case below names it, each with its reason, never a whole error or
+  every header.
+
+
+  tool_permission. All but the last two cases call POST /v1/chat/completions. The guardrail's options are rules (each
+  with id, tool_name or tool_type as a fullmatch regex, decision allow or deny, optional allowed_param_patterns),
+  default_action (default deny) and on_disallowed_action (default block). tool-permission-request-block: mode
+  pre_call, one rule {id: deny-bash, tool_name: Bash, decision: deny}, default_action allow, and a request with
+  function tools Bash and Read; the client gets 400 with {"error": "Violated guardrail policy", "detection_message":
+  "Tool 'Bash' denied by rule 'deny-bash'"} and the provider is never called. tool-permission-request-rewrite: the
+  same rule with on_disallowed_action rewrite, and the request also forces tool_choice {type: function, function:
+  {name: Bash}}; the provider receives only the Read tool and tool_choice "none". tool-permission-default-deny: no
+  rule matches Write, default_action deny, a rule {id: allow-read, tool_name: Read, decision: allow} and rewrite; the
+  provider receives only Read. tool-permission-not-selected: default_on false and no `guardrails` list in the body,
+  so the provider receives Bash untouched; a second step names the guardrail in the body's `guardrails` list and gets
+  the 400.
+
+
+  tool-permission-response-rewrite: mode post_call, rewrite, and the provider answers with finish_reason tool_calls and
+  two tool calls, Bash (id call_bash) and Read (id call_read); the client gets only the Read call, and the message
+  content is "Permission denied: Tool 'Bash' denied by rule 'deny-bash' (Rule: deny-bash)". tool-permission-response-block:
+  the same answer with on_disallowed_action block; the client gets the guardrail error LiteLLM raises from
+  GuardrailRaisedException. tool-permission-argument-pattern: post_call, rewrite, default_action deny and one rule
+  {id: read-workspace, tool_name: Read, decision: allow, allowed_param_patterns: {path: "/workspace/.*"}}; the
+  provider calls Read with arguments {"path": "/etc/passwd"} and no other tool, so the call is dropped, the content
+  carries the pattern failure "Value '/etc/passwd' for path 'path' does not match allowed pattern '/workspace/.*' for
+  tool 'Read'" with no rule suffix, and finish_reason turns into stop. tool-permission-stream-rewrite: stream true,
+  post_call, rewrite; the provider streams a Bash tool call whose arguments arrive in two deltas and ends with
+  finish_reason tool_calls; compare the decoded SSE events the client receives after LiteLLM rebuilds the stream,
+  ignoring only the chunk id and created with their reason. tool-permission-messages-rewrite: POST /v1/messages to
+  `claude`, post_call, rewrite; the provider answers an Anthropic message with a text block and a tool_use block for
+  Bash (id toolu_bash); the client gets the text block followed by one text block holding the denial and stop_reason
+  end_turn.
+
+
+  tool_policy. These cases are http_scenarios on the isolated Postgres database (general_settings.database_url
+  {{postgres}}), so the tool policy registry starts initialized. tool-policy-blocked: POST /v1/tool/policy
+  {tool_name: Bash, input_policy: blocked} with the master key, then a pre_call chat request with the Bash function
+  tool; the client gets 400 with {"error": "Violated tool policy", "blocked_tools": ["Bash"], "message": ...} and the
+  provider is never called. tool-policy-key-override: POST /key/generate with the master key, capture /key as a
+  secret and /token, POST /v1/tool/policy {tool_name: Read, input_policy: blocked, key_hash: ${capture.token}}, then
+  send a chat request with the Read tool once with the new key (400) and once with the master key (the provider
+  answers), so the override reaches only that key's object permission. tool-policy-trust-chain: set Bash to
+  input_policy trusted and web_fetch to output_policy untrusted, then send a post_call chat request whose messages
+  hold an assistant tool call web_fetch (id call_web) and its tool result, and let the provider answer with a Bash
+  tool call; the client gets 400 with blocked_tools ["Bash"], untrusted_sources ["web_fetch"] and the message "Bash
+  requires trusted input but conversation contains untrusted output from web_fetch.".
+
+
+  mcp_security and mcp_end_user_permission. mcp-security-unregistered-block: one mcp_servers entry `github` with url
+  {{upstream}} and transport http, an mcp_security guardrail with mode pre_call and on_violation block, and a chat
+  request whose tools are three `type: mcp` tools with server_url litellm_proxy/mcp/github, litellm_proxy/mcp/zeta and
+  litellm_proxy/mcp/alpha; the client gets 400 with {"error": "Violated guardrail policy", "guardrail":
+  "mcp_security", "unregistered_servers": ["alpha", "zeta"], "detection_message": "MCP Security: request references
+  unregistered MCP server(s): alpha, zeta. Only servers registered on this gateway are allowed."} and neither the
+  provider nor the MCP server is called. mcp-end-user-filter is an http_scenario on Postgres: an mcp_end_user_permission
+  guardrail with mode pre_call and no default_on key (its initializer turns that into on), POST /end_user/new
+  {user_id: eu-restricted, object_permission: {mcp_servers: [github]}} and {user_id: eu-open}, then POST /v1/messages
+  to `claude` with Anthropic tools github-create_issue, jira-create_ticket and local_lookup. Sent with header
+  x-litellm-end-user-id eu-restricted, the provider receives github-create_issue and local_lookup only; with eu-open
+  and with no end user header it receives all three. A last step sends the eu-restricted request with OpenAI function
+  tools to /v1/chat/completions. LiteLLM looks for the end user id only at the top level and in litellm_metadata, and
+  chat requests keep it in metadata, so LiteLLM forwards all three tools there. betterlite filters them (B3815's
+  deviation row reads the metadata key too), so betterlite's provider receives github-create_issue and local_lookup
+  only. This step ignores the captured provider body (B9850's /upstream/{i}/body selector for that step's call)
+  with that reason, and compares the rest; B3815's unit tests prove the filter on the metadata key.
+
+
+  mcp_jwt_signer. Every signer case configures the guardrail with mode pre_mcp_call. jwt-jwks-configured-key: env
+  MCP_JWT_SIGNING_KEY holds a synthetic RSA-2048 PKCS#8 PEM generated for this case and used nowhere else; GET
+  /.well-known/jwks.json returns one key {kty RSA, alg RS256, use sig, kid, n, e}, all compared, with Cache-Control
+  "public, max-age=3600". jwt-jwks-generated-key: no signing key, so each side generates its own; ignore
+  /keys/0/kid and /keys/0/n with that reason, and compare the rest and "public, max-age=300". jwt-jwks-no-signer: no
+  signer guardrail at all; the answer is {"keys": []} with "public, max-age=60". That contrast proves the earlier two read the
+  slot the signer filled. jwt-openid-configuration: GET /.well-known/openid-configuration with a signer configured
+  carries jwks_uri ending in /.well-known/jwks.json and id_token_signing_alg_values_supported ["RS256"]; ignore only the
+  URL-valued fields, since each side builds them from its own port. jwt-introspection-inactive: access_token_discovery_uri
+  {{upstream}}/.well-known/openid-configuration, token_introspection_endpoint {{upstream}}/introspect, one mcp_servers
+  entry `github` with url {{upstream}}, and POST /mcp-rest/tools/call {server_id: github, name: create_issue,
+  arguments: {title: oracle}} with Authorization "Bearer oracle-master". The master key has no dots, so the signer
+  introspects it: after the startup listing (see pitfalls), the mock's answer is {"active": false}, its captured request is a form POST of token=oracle-master,
+  and the client gets 401 with detail {"error": ...}. Ignore /detail/error with B3816's deviation as the reason (the
+  text after "incoming token verification failed: " is betterlite's own). jwt-required-claims: required_claims [email]
+  and no discovery uri, so an API key caller has no claims and the client gets 403 with detail {"error": ...} before
+  any MCP traffic; ignore /detail/error because it prints the missing list as Python list text, and
+  docs/compatibility.md leaves that text to betterlite.
+
+
+  jwt-signed-tool-call: MCP_JWT_SIGNING_KEY holds the same synthetic PEM as jwt-jwks-configured-key, the signer has
+  no discovery uri, one mcp_servers entry `github` has url {{upstream}} and transport http, and POST
+  /mcp-rest/tools/call {server_id: github, name: create_issue, arguments: {title: oracle}} goes out with Authorization
+  "Bearer oracle-master". The mock captures six requests: LiteLLM's startup listing of every configured server
+  (initialize, notifications/initialized, tools/list, with no caller and so no signed token), then the call's own
+  session (initialize, notifications/initialized, tools/call {name: create_issue, arguments: {title: oracle}}), every
+  one of those three carrying the signed Authorization header. Script the answers in that order: an initialize result
+  without an Mcp-Session-Id header, 202 with an empty body for each notification, a tools/list result that lists
+  create_issue, and a tools/call result with one text content block; each JSON-RPC answer echoes the id its request
+  carries, which counts from 1 in each session. The client gets 200 with that tool result. List authorization in
+  upstream_headers, so the startup listing shows the header absent on both sides. Name five selectors, each with its
+  why: `/upstream/0/body` and `/upstream/3/body`, since each initialize carries its own side's clientInfo, and
+  `/upstream/3/headers/authorization`, `/upstream/4/headers/authorization` and `/upstream/5/headers/authorization`,
+  since the token's iat and exp come from the clock. The tools/list and tools/call bodies stay compared, and the
+  token's claims stay with B3816's and B3817's tests.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/tool-mcp-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L9-L110
+    why: The rule fields, the default_action and on_disallowed_action defaults and their lowercase normalizing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L253-L305
+    why: The rule-order decision and the "denied by rule" and "denied by default action" texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L366-L462
+    why: allowed_param_patterns and the pattern failure that becomes the default-deny message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L543-L604
+    why: Response blocking through GuardrailRaisedException and the Anthropic content rewrite with end_turn.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L606-L704
+    why: Which request tools are read and how rewrite drops them and turns a named tool_choice into "none".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L706-L787
+    why: The "Permission denied" content, the rule id suffix and the finish_reason change.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L789-L953
+    why: The pre_call, post_call and streaming hooks with the 400 detail and the rebuilt stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L124-L232
+    why: Blocked tools, per-key overrides through object permission ids and the trust chain check on responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L585-L690
+    why: POST /v1/tool/policy with its global and key_hash forms and the registry resync.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8858-L8870
+    why: The tool policy registry is synced from the database at startup, so it is initialized in the Postgres cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_security/mcp_security_guardrail.py#L39-L110
+    why: The unregistered server check, the sorted list and the block detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L60-L61
+    why: The litellm_proxy/mcp/ prefix a gateway server_url carries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/__init__.py#L11-L26
+    why: default_on is true unless the config sets it to false.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/mcp_end_user_permission.py#L53-L247
+    why: The end user lookup, where it reads the end user id, and the server-prefix filter on tool names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L239-L245
+    why: /v1/messages keeps request metadata in litellm_metadata, and chat keeps it in metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1585-L1588
+    why: x-litellm-end-user-id sets the end user on any route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py#L13-L68
+    why: The signer must run in mode pre_mcp_call and takes its options from the guardrail entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L377-L404
+    why: The JWKS document and its max age for a configured or generated key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L494-L554
+    why: Introspection of an opaque token and the 403 for missing required claims.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L793-L858
+    why: The pre-call hook, the dot count that picks introspection, and the 401 mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2872-L2928
+    why: openid_configuration and jwks_json, including the empty key set with max-age 60.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5857-L5880
+    why: The incoming bearer token handed to the signer comes from the raw Authorization header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1360
+    why: The tools/call route, its raw headers and the HTTPException it re-raises.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L693-L747
+    why: The signed claims, with iat, exp and nbf taken from time.time(), so the Authorization value differs on every run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6671-L6714
+    why: Config load lists every configured server's tools at startup with no caller, the first three requests the mock captures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+    why: Each session starts with initialize and notifications/initialized, and the initialize body carries the client's own clientInfo.
+dod:
+  - text: Booted-proxy cases show tool_permission blocking and rewriting request tools and a forced tool_choice, its default action, and that a guardrail with default_on false runs only when the request names it.
+    proof: [oracle]
+  - text: Booted-proxy cases show tool_permission rewriting and blocking tool calls in chat answers, a failed argument pattern, a rebuilt stream, and an Anthropic messages answer.
+    proof: [oracle]
+  - text: Booted-proxy cases on Postgres show tool_policy blocking a globally blocked tool, a per-key override that leaves the master key alone, and a trust chain violation.
+    proof: [oracle]
+  - text: Booted-proxy cases show mcp_security blocking unregistered MCP servers with the sorted list, and mcp_end_user_permission filtering an end user's tools on /v1/messages and behaving as LiteLLM does on chat.
+    proof: [oracle]
+  - text: Booted-proxy cases show the JWKS document for a configured and a generated key and without a signer, the OpenID document's signer fields, a 401 for an inactive introspected token and a 403 for missing required claims.
+    proof: [oracle]
+  - text: A booted-proxy case shows a signed MCP tool call sending a signed Authorization header on every request of its upstream session and none on the startup listing, with the tools/call body compared.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-request-block.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-request-rewrite.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-default-deny.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-not-selected.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-response-rewrite.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-response-block.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-argument-pattern.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-stream-rewrite.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-permission-messages-rewrite.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-policy-blocked.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-policy-key-override.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/tool-policy-trust-chain.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/mcp-security-unregistered-block.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/mcp-end-user-filter.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/jwt-jwks-configured-key.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/jwt-jwks-generated-key.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/jwt-jwks-no-signer.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/jwt-openid-configuration.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/jwt-introspection-inactive.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/jwt-required-claims.yaml
+  - tools/oracle/cases/guardrails/tool-mcp-http/jwt-signed-tool-call.yaml
+deviations: []
+out_of_scope:
+  - "Every function of mcp_jwt_signer.py and mcp_jwt_signer/__init__.py: B3816 (keys, JWKS, IdP documents, incoming token, pre-call flow, upstream helper), B3817 (claims, scope, debug header) and B8254 (initialize_guardrail, the registry entries and JwtSignerSlot for get_mcp_jwt_signer). The two registries become B8521's mcp_jwt_signer arm; get_supported_event_hooks is B8521's supported_event_hooks list."
+  - "The guardrail classes: B3810 to B3813 (tool_permission), B3814 (tool_policy), B3815 (mcp_end_user_permission and mcp_security). Registry arms: B3682 and B8521. Running a held guardrail: B8666. Callbacks and the signer slot at startup: B8613 and B8610. Proxy hooks: B8399. The unified apply_guardrail path: B3680. The tool policy registry and its refresh: B1606 and B8384, wired by B8665."
+  - "Routes and mounts: B004 and B6370 (chat), B081 (/v1/messages), B8626 (/mcp-rest), B8624 over B7321 (the well-known documents), B830 (/end_user/new), B062 (/v1/tool/policy), B055 (/key/generate). The MCP tool pre-check that hands the signer its bearer token: B8464; the tools/list JWT gate: B8462 over B8461."
+  - "B3818's MCP guardrail translation over HTTP: B8992."
+  - "The compare.ignore selector forms jwt-signed-tool-call and the startup listing use: B9850. The claims inside the signed token, which a header selector leaves uncompared: B3816's and B3817's tests."
+  - "mcp_security with on_violation alert and a request that names only registered servers: past the guardrail the request enters B140's MCP tool handling, which this task doesn't depend on."
+  - "The pre_mcp_call mode check in the signer's initializer: it fails at startup, and the oracle has no startup-failure case kind. B8254's tests cover it."
+  - "An Anthropic SSE stream through tool_permission: raw-frame stream guardrails wait on B8993's blocker."
+  - "violation_message_template on tool_permission: B3811 renders the default text until B3664's render_violation_message lands, so a template case would fail on a part this task can't fix."
+pitfalls:
+  - "tool_permission skips request tools whose type isn't function, so Anthropic-style request tools on /v1/messages are never checked at pre_call; use post_call there."
+  - "Rewrite turns a forced tool_choice naming a denied tool into the string \"none\", not into auto, and drops only function tools whose name was denied."
+  - "When an allowed_param_patterns rule fails and default_action is deny, the message is the pattern failure text and has no (Rule: ...) suffix, because the rule id is None."
+  - "post_call block raises GuardrailRaisedException, not the HTTPException with detection_message that pre_call raises, so the two block cases have different error bodies."
+  - "tool_policy's registry is only initialized when the proxy has a database, so a tool_policy case without {{postgres}} passes every tool through."
+  - "/key/generate returns the raw key in key and its hash in token; /v1/tool/policy takes the hash as key_hash, and the hash differs on each side, so ignore /key_hash in that answer with this reason."
+  - "mcp_security only reads tools of type mcp whose server_url starts with litellm_proxy/mcp/; a server_url with a full http URL is not checked by this guardrail."
+  - "mcp_end_user_permission takes the server name as the part of the tool name before the first hyphen, so name tools github-create_issue and jira-create_ticket, and keep local_lookup free of hyphens so it is kept as a non-MCP tool."
+  - "The JWT signer treats a bearer token with exactly two dots as a JWT and anything else as opaque, so the master key oracle-master goes to introspection; a master key with two dots would fetch the discovery document instead."
+  - "LiteLLM lists the tools of every mcp_servers entry at startup (mcp_server_manager.py L6683-L6714), so any case with `github` on {{upstream}} first captures initialize, notifications/initialized and tools/list: script those three answers ahead of the case's own, give that initialize `/upstream/0/body` with the clientInfo reason, and in jwt-introspection-inactive the introspection answer {\"active\": false} comes fourth. Run each signer case with --self-check first and take the indices from its capture."
+  - "The signed Authorization goes into the MCP session's transport headers, so the call session's initialize and notifications/initialized carry it too, not only tools/call; a selector on tools/call alone leaves the other two failing."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

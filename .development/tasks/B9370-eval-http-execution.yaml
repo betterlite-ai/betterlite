@@ -1,0 +1,77 @@
+id: B9370
+title: Eval create, list, get, update, delete and cancel HTTP execution
+description: >-
+  The six eval operations (B3421, B3422, B3423) end in BaseLLMHTTPHandler's eval handlers in litellm/llms/custom_httpx/llm_http_handler.py (L12514-L13137), and no task builds them, so every eval call stops before the upstream request. This task builds them in betterlite-core, module `api::eval_http` (crates/betterlite-core/src/api/eval_http.rs, tests in eval_http/tests.rs). The operations call these functions; this module never calls back into them.
+
+
+  One function per LiteLLM handler pair. LiteLLM writes a sync handler that hands off to an async twin when `_is_async` is set; betterlite-http (B173) has one async client, so each pair becomes one async function with LiteLLM's sync name and no `_is_async` flag: `create_eval_handler`, `list_evals_handler`, `get_eval_handler`, `update_eval_handler`, `delete_eval_handler` and `cancel_eval_handler`. Each takes the URL the operation got from the provider transform, the headers the operation got back from `validate_environment` (LiteLLM's `extra_headers`, an empty map when absent), the provider config as `&dyn BaseEvalsAPIConfig` (B3420, crates/betterlite-openai/src/evals/transformation.rs), `custom_llm_provider`, the litellm params, B249's logging state, the timeout and the pooled client from B173. Create and update also take the request body map, list takes the query map. Read the merged signatures of B173's client and B249's pre_call before you write yours.
+
+
+  Every handler runs the same four steps, and only the method, the timeout, the logged fields and the response transform differ, so write the steps once as `eval_exchange` (a public function B9371's run handlers call too) that takes a small `EvalExchange` value naming the method, the optional JSON body, the optional query, the optional timeout and the logged input text and additional_args. Step 1: log through B249's pre_call with `api_key` "" and the input and additional_args below. Step 2: send through the pooled client. Step 3: a transport failure goes through B2402's `_handle_error` conversion with the provider config, so `get_error_class` builds the error. Step 4: hand the reply's status, headers and text to the provider transform as B3420's `EvalsHttpResponse`.
+
+
+  Per handler, from the pinned lines. create: POST the body as JSON with the timeout; input is the body's `name` string, else ""; additional_args are complete_input_dict (the body), api_base (the URL) and headers. list: GET with the query as params and no timeout, so the client's own deadline holds; input ""; additional_args complete_input_dict (the query), api_base, headers. get: GET with no params and no timeout; input ""; additional_args api_base and headers only. update: POST the body as JSON with the timeout; input is the body's `display_name` string, else ""; additional_args complete_input_dict, api_base, headers. delete: DELETE with no body and the timeout; input ""; api_base and headers. cancel: POST the JSON body `{}` with the timeout, whatever body the transform built; input ""; api_base and headers. Then call the matching transform_*_response.
+
+
+  Status handling follows LiteLLM's client, not a uniform rule. LiteLLM's HTTPHandler.post and .delete call raise_for_status (http_handler.py L1514, L1669), so a POST or DELETE reply with status 400 or above goes through `_handle_error` with the reply's status, text and headers. HTTPHandler.get never does (L1435-L1455), so a GET reply with any status goes to the transform, and a 404 error body reaches transform_get_eval_response, which fails to read it as an Eval. Keep both paths.
+
+
+  Tests in api::eval_http::tests run every handler against a local axum upstream on 127.0.0.1 that records method, path, query, headers and body: the method and body per handler, cancel sending `{}`, the timeout passed for create, update, delete and cancel and not for list and get, the logged input and additional_args per handler (a recording logger), a POST 404 and a DELETE 500 converted through `_handle_error` with the upstream status and text, a GET 404 handed to the transform, and a connection refused converted through `_handle_error` with status 500 marked synthesized. No oracle case here: the handlers do I/O, so helper cases can't reach them, and B8775's HTTP cases prove them through the booted proxy once B3421-B3423 call them.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/eval_http.rs
+    - crates/betterlite-core/src/api/eval_http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12514-L12618
+    why: create_eval_handler and its async twin; the sync one logs display_name, the async one name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12620-L12724
+    why: list_evals_handler pair; GET with params and no timeout, complete_input_dict is the query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12726-L12825
+    why: get_eval_handler pair; GET with no params and no timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12827-L12931
+    why: update_eval_handler pair; POST with timeout, logs display_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12933-L13032
+    why: delete_eval_handler pair; DELETE with timeout and no body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13034-L13137
+    why: cancel_eval_handler pair; POST json={} ignoring the transform's body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6052-L6111
+    why: _handle_error, the transport failure conversion B2402 builds and these handlers call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1435-L1569
+    why: GET returns any status, POST raises for status, which decides which replies reach _handle_error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1630-L1680
+    why: DELETE raises for status too.
+dod:
+  - text: The six handlers send the method, body, query and timeout LiteLLM sends, with cancel posting `{}` and list and get sending no timeout.
+    proof: [eval-http-tests]
+  - text: Each handler logs pre_call with LiteLLM's input and additional_args before it sends.
+    proof: [eval-http-tests]
+  - text: POST and DELETE replies at 400 or above and transport failures go through `_handle_error`; GET replies of any status go to the transform.
+    proof: [eval-http-tests]
+  - text: eval_exchange is public and takes the method, body, query, timeout and logged fields, so the run handlers reuse it.
+    proof: [eval-http-tests]
+checks:
+  optional: []
+  commands:
+    - id: eval-http-tests
+      why: a handler sends the wrong method, body, query or timeout, logs the wrong fields, or converts the wrong replies
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::eval_http::/)'
+oracle_cases: []
+deviations:
+  - what: create_eval_handler logs the body's `name` as the pre_call input on every call, including calls from the sync create_eval.
+    why: LiteLLM's sync handler reads `display_name`, a key CreateEvalRequest doesn't have, so it always logs "", while the async handler the proxy uses reads `name`; betterlite has one async handler and keeps the async behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12550-L12552
+out_of_scope:
+  - "The eval operations that call these handlers (create_eval, list_evals, get_eval, update_eval, delete_eval, cancel_eval and their async twins in litellm/evals/main.py): B3421, B3422 and B3423."
+  - "The eval run handlers at L13139-L13652: B9371, which calls eval_exchange from here."
+  - "_handle_error: B2402. The pooled client, ssl_verify and timeouts inside the client: B173. pre_call logging: B249. The provider transforms and get_error_class: B3420 and B523."
+  - "Every other handler in llm_http_handler.py belongs to the API family that calls it (containers B3363-B3365, vector stores B2402 and the like)."
+pitfalls:
+  - "update_eval_handler logs `display_name` and create_eval_handler logs `name`; UpdateEvalRequest has no display_name either, so update logs \"\" for every LiteLLM-shaped body, and that is the pinned behavior."
+  - "cancel posts the literal `{}` and drops the body transform_cancel_eval_request returned; OpenAI's transform returns `{}` today, so a test needs a fake config that returns a non-empty body to see the difference."
+  - "list and get pass no timeout to the client, so the request deadline is the pool's default and not the operation's `timeout or request_timeout`."
+  - "A GET that answers 404 must not go through `_handle_error`; the error comes from the transform failing to read the body, and B3422's exception mapping decides what the caller sees."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

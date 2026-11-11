@@ -177,14 +177,14 @@ out_of_scope:
 - >-
   The router-stubs entries are only stubs here; the owner named beside each entry fills it and adds its regression
   cases, with no dependency on those tasks here.
-- Python callbacks and class compatibility (B162/B165).
+- Python callbacks and class compatibility (B8356/B165).
 - B364 owns static deployment eligibility; consume its tested public interface.
 - B395 owns native routing strategy dispatch; consume its tested public interface.
 - B396 owns pass-through deployment selection; consume its tested public interface.
 - litellm/router_utils/response_headers.py has no functions at the pin; its exports/data are accounted for by the
   owning native module, with no Python wrapper port.
-- 'litellm/router.py: B012 owns: Router._redact_prompt_text_if_needed (L14121-L14151).'
-- 'litellm/router.py: B013 owns: _cost_value_as_float (L391-L397), _replay_live_router_model_cost (L707-L710), Router._inherit_builtin_cache_pricing
+- 'litellm/router.py: B362 owns: Router._redact_prompt_text_if_needed (L14121-L14151).'
+- 'litellm/router.py: B846 owns: _cost_value_as_float (L391-L397). B9710 owns: _replay_live_router_model_cost (L707-L710), Router._inherit_builtin_cache_pricing
   (L8800-L8826), Router._inherit_builtin_service_tier_pricing (L8839-L8861), Router._inherit_builtin_base_rates_for_off_peak
   (L8864-L8907), Router._inherit_builtin_tiered_output_rate (L8910-L8940), Router._deployment_model_cost_payload
   (L10032-L10066), Router._register_deployment_pricing (L10069-L10081), Router._register_deployment_in_model_cost
@@ -211,8 +211,8 @@ out_of_scope:
   Router.get_model_list (L12041-L12078), Router._invalidate_model_group_info_cache (L12099-L12111), Router._invalidate_access_groups_cache
   (L12113-L12118), Router.get_model_access_groups (L12120-L12164), Router._filter_deployments_by_model_access_groups
   (L12941-L12993).'
-- 'litellm/router.py: B066 owns: Router.get_settings (L12185-L12225), Router.update_settings (L12227-L12291).'
-- 'litellm/router.py: B086 owns: Router.aguardrail (L5183-L5210), Router._aguardrail_helper (L5212-L5239), Router.get_available_guardrail
+- 'litellm/router.py: B9711 owns: Router.get_settings (L12185-L12225), Router.update_settings (L12227-L12291).'
+- 'litellm/router.py: B9711 owns get_available_guardrail; aguardrail and _aguardrail_helper have no caller at the pin: Router.aguardrail (L5183-L5210), Router._aguardrail_helper (L5212-L5239), Router.get_available_guardrail
   (L5241-L5270).'
 - 'litellm/router.py: Router._initialize_alerting (L14697-L14717) is not built: the proxy reaches it only through router_settings.alerting_config, which LiteLLM keeps as a dict and fails on at startup; only Python SDK callers pass a typed AlertingConfig.'
 - 'litellm/router.py: B8440 owns: _silent_experiment_targets (L483-L494), _silent_experiment_kwargs_snapshot (L497-L501),
