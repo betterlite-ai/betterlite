@@ -1,0 +1,13 @@
+kind: helper
+name: logging-mcp-tool-hook-logger-in-both-lists-runs-once
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+      structured_content: {answer: 42}
+    dynamic_success: [guard]
+    global_success:
+      - {name: guard, behavior: edit_in_place}
+      - {name: guard, behavior: edit_in_place}
+env: {}
+compare: {ignore: []}

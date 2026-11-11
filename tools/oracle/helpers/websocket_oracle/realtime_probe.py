@@ -1,7 +1,5 @@
 import asyncio
 import json
-
-# ruff: noqa: INP001 - websocket_oracle.py supplies this service namespace via __path__.
 from collections.abc import Callable
 from typing import Protocol, TypedDict, cast
 

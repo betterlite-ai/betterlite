@@ -1,0 +1,26 @@
+kind: helper
+name: unterminated-line
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000071
+    scenarios:
+      - reads:
+          - |-
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"lost"}}}}
+      - reads: []
+      - reads:
+          - ""
+      - reads:
+          - |-
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"kept"}}
+          - |
+            }}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"first"}}}}
+          - |-
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"residual"}}}}
+env: {}
+compare: {ignore: []}

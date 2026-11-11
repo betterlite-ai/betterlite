@@ -1,0 +1,51 @@
+kind: helper
+name: incremental-sse-stream
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+    scenarios:
+      - reads:
+          - |-
+            data: {"event":{"contentBlockDelta":{"del
+          - |
+            ta":{"text":"he"}}}}
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"llo"}}}}
+
+          - "\n"
+          - |
+            event: ping
+          - |
+            data:
+          - |
+            data: 42
+          - |
+            data: [1]
+          - |
+            data: null
+          - |
+            data: {"event":5}
+          - "  data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"!\"}}}}\r\n"
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{}}}}
+          - |
+            data: {"event":{"contentBlockDelta":{}}}
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":""}}}}
+        headers: [[content-type, text/event-stream]]
+        supplied: sync
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"one"}}}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"two"}}}}
+        headers: [[content-type, text/event-stream]]
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"plain"}}}}
+        headers: []
+env: {}
+compare: {ignore: []}

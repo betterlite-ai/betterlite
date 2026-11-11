@@ -1,0 +1,14 @@
+task: B8295
+deviations:
+  - what: There is no skip for non-request scopes. A request whose scope is not http or websocket goes through the layer untouched.
+    why: axum has no lifespan scope, so every request that reaches a layer is an HTTP request or a WebSocket upgrade, and there is nothing to skip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/redis_request_batch_middleware.py#L17-L20
+  - what: A flush failure is logged and not raised.
+    why: LiteLLM lets it propagate out of the ASGI call after the response is sent, where the server only logs it; a tower layer would turn it into a failed response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/redis_request_batch_middleware.py#L21-L25
+  - what: The flush runs when the inner service returns the response head, not when a streamed body finishes.
+    why: A tower layer sees only the head; LiteLLM's ASGI middleware awaits the whole response before its finally block, so a long stream holds its request batches until the body ends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/redis_request_batch_middleware.py#L21-L25
+  - what: 'The layer has no error-level "Redis request batch flush failed" line. RequestRedisBatches::flush_all is infallible in betterlite, and a failing pipeline is logged by the batch as a WARN ("request_redis_batch: pipeline of N ops failed") and delivered to the operation''s declared result.'
+    why: "B4331's flush_all returns no Result because B4330 catches every pipeline failure and settles it into the operation it came from, so the layer has no error value to log. The failure is still logged rather than swallowed, just inside the batch it belongs to."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L475-L477
