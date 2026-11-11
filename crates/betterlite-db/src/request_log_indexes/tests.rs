@@ -260,8 +260,14 @@ fn assert_replica_failure_logs(logs: &str) {
 
 async fn drop_blocked_owners(test: &PostgresTest, owners: &Owners) {
     let statement = format!(
-        "DROP TABLE \"LiteLLM_OwnedA\"; DROP TABLE \"LiteLLM_OwnedB\"; DROP TABLE \"LiteLLM_Blocked\"; REVOKE \"{}\" FROM \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\";",
-        owners.owner, owners.viewer, owners.viewer, owners.owner, owners.blocked
+        "DROP TABLE \"LiteLLM_OwnedA\"; DROP TABLE \"LiteLLM_OwnedB\"; DROP TABLE \"LiteLLM_Blocked\"; REVOKE USAGE ON SCHEMA \"{}\" FROM \"{}\"; REVOKE \"{}\" FROM \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\";",
+        test.schema,
+        owners.viewer,
+        owners.owner,
+        owners.viewer,
+        owners.viewer,
+        owners.owner,
+        owners.blocked
     );
     test.client.batch_execute(&statement).await.unwrap();
 }

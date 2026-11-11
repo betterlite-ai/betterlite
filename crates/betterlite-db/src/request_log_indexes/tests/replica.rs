@@ -139,7 +139,8 @@ async fn replica_identity_already_full_unchanged() {
     drop(database);
     test.client
         .batch_execute(&format!(
-            "DROP TABLE \"LiteLLM_Full\"; DROP ROLE \"{owner}\"; DROP ROLE \"{viewer}\";"
+            "DROP TABLE \"LiteLLM_Full\"; REVOKE USAGE ON SCHEMA \"{}\" FROM \"{viewer}\"; DROP ROLE \"{owner}\"; DROP ROLE \"{viewer}\";",
+            test.schema
         ))
         .await
         .unwrap();
