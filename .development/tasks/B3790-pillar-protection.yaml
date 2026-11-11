@@ -9,7 +9,7 @@ description: >-
   with halving step sizes, the default allow fallback on backend errors, and header/metadata construction for response
   evidence. Do not implement the async hook methods (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook)
   or the guardrail constructor that calls get_async_httpx_client; those belong to the B108 umbrella. Do not implement
-  add_guardrail_to_applied_guardrails_header; that needs a separate U3 owner for applied-guardrail header bookkeeping.
+  add_guardrail_to_applied_guardrails_header; that is B3680's job, for applied-guardrail header bookkeeping.
 scope:
   paths:
     - crates/betterlite-guardrails/Cargo.toml
@@ -229,7 +229,7 @@ out_of_scope:
 - >-
   `PillarGuardrail.__init__` and HTTP client acquisition via `get_async_httpx_client`; owned by umbrella B108.
 - >-
-  `add_guardrail_to_applied_guardrails_header`: applied-guardrail header bookkeeping; owned by U3.
+  `add_guardrail_to_applied_guardrails_header`: applied-guardrail header bookkeeping; owned by B3680.
 - >-
   `should_run_guardrail`: guardrail framework method; owned by framework task (U1).
 deviations:

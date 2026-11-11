@@ -48,6 +48,7 @@ pub mod search;
 pub mod shadow_evidence;
 pub mod shadow_requests;
 pub mod skills;
+pub mod stream_log_assembly;
 pub mod systemone;
 pub mod vertex_completion_dispatch;
 pub mod vertex_embedding_dispatch;
