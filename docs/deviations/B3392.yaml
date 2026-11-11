@@ -1,0 +1,42 @@
+task: B3392
+deviations:
+  - what: >-
+      betterlite exposes one async create operation (create_skill). LiteLLM's sync
+      create_skill runs the same body, and its acreate_skill copies contextvars, runs
+      the sync function on a worker and awaits any coroutine the sync path returns.
+    why: >-
+      A Rust gateway has one async path and no contextvars. Blocking on a future inside
+      the runtime panics, and the workspace lints deny spawn_blocking, so a second
+      blocking entry point would only duplicate the transport and every argument. The
+      caller passes its call context explicitly, and the request, headers, log line,
+      result and error class are the same on both Python entry points.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L71-L131
+  - what: >-
+      The hosted LiteLLM skills handler is built by an injected factory and cached in
+      the caller-owned HostedSkillsHandlers value on first use. LiteLLM imports
+      LiteLLMSkillsTransformationHandler inside _get_litellm_skills_handler and stores
+      it in the module-level _litellm_skills_handler global.
+    why: >-
+      betterlite keeps no lazy statics, since dependencies enter through constructors.
+      The observable behavior matches: the handler is created once per owner, the first
+      hosted call pays for the import and construction, and later calls reuse it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L59-L68
+  - what: >-
+      The default request timeout comes from the resolved CoreSettings the caller passes
+      in, not from LiteLLM's mutable litellm.constants.request_timeout module global. A
+      process that assigns litellm.request_timeout after import would see the new value
+      in LiteLLM and the startup value in betterlite.
+    why: >-
+      betterlite resolves configuration once at its boundary. The default and the
+      REQUEST_TIMEOUT variable behave the same (6000 seconds, an empty value counts as
+      unset), and assigning a module global has no native equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L574-L577
+  - what: >-
+      A REQUEST_TIMEOUT that parses as a negative or non-finite float fails with a typed
+      timeout error before the request. LiteLLM passes that value through
+      `timeout or request_timeout` to the provider handler, where httpx refuses it.
+    why: >-
+      Duration::try_from_secs_f64 rejects the value, and betterlite resolves the timeout
+      at the call boundary instead of handing an impossible duration to the transport. No
+      working setup configures a negative timeout, and both sides fail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576

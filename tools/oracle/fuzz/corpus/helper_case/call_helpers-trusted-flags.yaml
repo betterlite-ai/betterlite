@@ -1,0 +1,18 @@
+kind: helper
+name: call-helpers-trusted-flags
+call:
+  call_helpers:
+    function: trusted_flags
+    steps:
+      - function: litellm_metadata
+        litellm_params:
+          metadata: {user_api_key_hash: caller}
+          litellm_metadata: {keep: 2}
+      - function: stamped_oauth_token
+        metadata: {used_client_oauth_token: false}
+        litellm_params: {litellm_metadata: {used_client_oauth_token: true}}
+      - function: add_missing_spend_metadata
+        litellm_metadata: {keep: 1}
+        metadata: {user_api_key_hash: caller}
+env: {}
+compare: {ignore: []}

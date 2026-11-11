@@ -30,7 +30,12 @@ description: >-
 
 
   Deployment hooks (L1475-L1584) run over a `DeploymentHook` trait with three methods and a guardrail marker. An unknown
-  call type becomes `None`. The pre-call hook passes a request copy through each callback and takes any non-empty result,
+  call type becomes `None`. The trait is object safe, `Send + Sync` and held as `Arc<dyn DeploymentHook>`: the server's
+  SDK callback list (B9821) hands the three hook functions a slice of them in litellm.callbacks order, and the interception
+  callbacks (B9822, B9823, B9824) implement it. Give it `callback_name(&self) -> &str`, `is_guardrail(&self) -> bool`
+  (default false), and default bodies for the three methods that do what CustomLogger's do (custom_logger.py L276-L349:
+  no change to the request, no replacement response, nothing on failure), so a callback overrides only what it needs.
+  Each of the three functions takes that slice as an argument rather than reading a list it owns. The pre-call hook passes a request copy through each callback and takes any non-empty result,
   and an error goes to the caller. The success hook does the same with the response, but logs an error and moves to the next
   callback unless that callback is a guardrail, and a guardrail's error goes to the caller. The failure hook drops
   `attempted_targets` from the request data, reads an integer `fallback_depth` from it, and logs every callback error.
@@ -163,6 +168,7 @@ out_of_scope:
 - >-
   The wrapper that calls this code is B5368. `check_coroutine` L1470-L1472 is not built, because Rust's async is in the type.
 - The real credential store is B1601, and the Python names for these functions arrive with B158 and B166.
+- The server's SDK callback list that supplies the deployment hook slice is B9821, and running the hooks on the gateway's chat, messages and responses calls is B9825.
 - Owners for the rest of litellm/utils.py are in the B157 inventory.
 pitfalls:
 - >-
@@ -177,6 +183,6 @@ pitfalls:
 - '`_is_same_registered_custom_logger` compares the exact class, so a subclass is a different logger.'
 - Redact before formatting in the debug text. A value formatted first can't be taken back out.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2500
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,15 @@
+kind: helper
+name: call-setup-function-setup-other-types
+call:
+  b5367:
+    action: setup
+    call_type: text_completion
+    request:
+      model: gpt-4o
+      prompt: hello there
+      litellm_call_id: call-2
+      litellm_trace_id: trace-2
+      success_callback: []
+    resolver: {}
+env: {}
+compare: {ignore: []}

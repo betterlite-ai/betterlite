@@ -1,0 +1,258 @@
+id: B118
+title: Shadow eval success hook and the call details it reads
+description: >-
+  LiteLLM's ShadowEvalLogger is a success logger. After a real request succeeds it decides whether that request is a
+  sample for an active shadow evaluation job, and if so it starts one detached pipeline that replays the conversation
+  through the job's other arms and has a judge compare the answers. Its parts are planned: B4081 reads response text
+  and costs, B4082 turns the logged call into a chat request and checks the guardrail snapshot, B4083 loads the jobs and
+  counts the funnel, B4084 makes the shadow and judge calls, and B4085 runs one sampled request through every arm. No
+  part builds the logger itself: its constructor, `_sampled_jobs`, `async_log_success_event` and the slot release
+  (shadow_eval_logger.py L819-L849 and L905-L1038). This task builds them in betterlite-server as the module
+  `shadow_eval_logger`, and adds the small seam in betterlite-logging that gives the logger the call details it reads.
+  B069 registers the logger at startup next to the spend logger (proxy_server.py L2751-L2759); this task does not.
+
+
+  The seam. LiteLLM hands this logger `kwargs=model_call_details`, the response object and the guardrail snapshot
+  (litellm_logging.py L3477-L3501). betterlite's LoggerEvent (B8740) carries the standard logging payload and the
+  snapshot but no call details, and the hook needs them: the request metadata under litellm_params, `messages`,
+  `model`, `system`, `instructions` and `litellm_params.proxy_server_request.body`. Do not add a field to LoggerEvent,
+  since ten struct literals on main and every open logger branch build it. Instead, in
+  crates/betterlite-logging/src/callback_logger/event.rs add `pub struct SuccessCall { pub call_details:
+  IndexMap<String, Json>, pub response: Json, pub message_logging_redacted: bool }` (Json is betterlite_models'
+  decisions::Json, as in event.rs). In the CallbackLogger trait (callback_logger.rs) add two methods with default
+  bodies, so every existing logger keeps compiling:`fn reads_call_details(&self) ->
+  bool` returning false, and `async fn async_log_success_call(&self, event: Arc<LoggerEvent>, call: Arc<SuccessCall>)
+  -> Result<(), LoggerError>` whose default calls `self.async_log_success_event(event)`. Change nothing else in those
+  two files. In logging_success, the async loop (run_async_callbacks in handler.rs and deliver_async in delivery.rs)
+  keeps its current order and filters. For a logger whose reads_call_details is true and an event that is not a
+  stream chunk (`plan.stream_event` false), it calls async_log_success_call instead of async_log_success_event. Build
+  the SuccessCall at most once per delivery, only when such a logger is in the list, and share it as one Arc:
+  call_details is a copy of `state.model_call_details` at that point, response is the assembled stream response stored
+  under `async_complete_streaming_response` for a stream and `plan.prepared.result.response()` otherwise, and
+  message_logging_redacted is `should_redact_message_logging(state, handler.privacy)` from request_redaction.rs (the
+  request-level decision only, not the opted-out flag that redacts the shared payload). A stream chunk still goes to
+  async_log_stream_event. The sync loop is unchanged, since LiteLLM's ShadowEvalLogger has no sync events.
+
+
+  The logger. `ShadowEvalLogger` implements CallbackLogger with callback_name "ShadowEvalLogger", reads_call_details
+  true, and async_log_success_call; every other method keeps its default. The name must not contain `_PROXY_`, so a
+  request with `no-log` set never reaches it (should_run_callback, litellm_logging.py L2281-L2303). `new` takes, through
+  one constructor and nothing global: B4083's job loader behind an `ActiveJobSource` trait, B4083's funnel recorder
+  behind a `FunnelRecorder` trait, B4084's `ShadowRouterProvider` (the router, read at call time, may be None), a
+  `ShadowEvaluation` trait whose production impl calls B4085's pipeline entry (its port of `_run_shadow_eval`) with the
+  values below, a `SamplingClock` trait with `fn now(&self) -> DateTime<Utc>`, and the server's `TaskTracker`
+  (tokio-util, already a dependency of betterlite-server) that each pipeline is spawned on. The admission state is one
+  `std::sync::Mutex` holding the in-flight count and the per-job starts map, locked briefly and never across an await.
+  `MAX_CONCURRENT_SHADOW_TASKS` is 16 (L57-L59).
+
+
+  async_log_success_call(event, call) does this, in order, and returns Ok(()) on every path:
+
+  1. request_metadata is B206's get_litellm_metadata_from_kwargs over call.call_details (litellm_metadata, else
+  metadata, under litellm_params), or an empty map. When it holds a truthy `internal_call_origin`, return: the call is
+  one of the gateway's own sub-calls (a shadow or judge call, a classifier). When call.message_logging_redacted is
+  true, return.
+
+  2. The targets are, in this order, ("key", user_api_key_hash), ("team", user_api_key_team_id) and ("user",
+  user_api_key_user_id) from the payload's metadata (event.payload.metadata), each kept only when its value is a
+  non-empty string. No targets, return. The request id is event.payload.id; empty, return.
+
+  3. ops is B4082's surface_ops(event.payload.call_type); None, return. When ops has wire_params and B4082's
+  request_mutating_guardrail_ran(request_metadata) is true, the sample kwargs are B4082's post_guardrail_kwargs(call
+  details, request_metadata, surface, event.guardrail_snapshot), and None means return; otherwise they are the call
+  details as they are. B4082 takes serde_json maps, so convert the call details once with serde_json::to_value.
+
+  4. Read the active jobs from the job source. When the source reports that this read refilled the cache, clear the
+  per-job starts first (LiteLLM resets `_job_starts` on every fill, L899). The candidates are the jobs of each target
+  in target order. The model group is B4083's canonical_group(router, event.payload.model_group or "").
+
+  5. Sampled jobs (L907-L936). Skip a job, with no funnel event, when now >= ends_at, when attempts plus this pod's
+  starts for the job >= max_turns, when max_budget is set and spend >= max_budget, when B4083's direction_admits is
+  false or when B4083's scope_admits is false. When B4083's sample_hits(request id, job id, shadow_percentage) is
+  false, record `not_sampled` for the job and skip it. The rest are eligible, in order. None eligible, return.
+
+  6. sample is B4082's judgeable_sample(ops, sample kwargs, payload.model_parameters, call.response). None means
+  record `unjudgeable` once for each eligible job and return.
+
+  7. The control values, read once: control_tier and real_classifier_cost from B4081's routed_tier and
+  decision_classifier_cost over request_metadata, real_cost from payload.response_cost, real_cache_hit true only when
+  payload.cache_hit is Some(true), real_model is payload.model.
+
+  8. For each eligible job in order: when 16 pipelines are in flight, record `shed` and go on to the next job.
+  Otherwise add the job's arm count (arm_router_names length, not 1) to its starts, add one to the in-flight count and
+  spawn the pipeline on the tracker with the job, request id, messages, real_text, real_model, real_cost,
+  real_classifier_cost, real_cache_hit, control_tier, shadow_params and a copy of request_metadata as parent_metadata.
+  The in-flight count goes down when that pipeline ends for any reason, panic included: hold a guard in the spawned
+  future whose Drop releases the slot (L1037-L1038).
+
+  Anything that fails inside the hook is logged at debug level as "shadow_eval: failed to schedule task: {error}"
+  and the hook still returns Ok(()), as LiteLLM's blanket except does (L1034-L1035); an Err would count a callback
+  failure against a successful request.
+
+
+  Tests. Behavior tests live in crates/betterlite-server/src/shadow_eval_logger/tests/ with rstest cases in four
+  modules: gates (steps 1 to 3), sampling (steps 4 and 5), scheduling (step 8 and the slot release, with a pipeline
+  fake that signals over a bounded channel) and control (steps 6 and 7). The seam tests are in
+  crates/betterlite-logging/src/logging_success/tests/delivery.rs, with names that start with `success_call_`:
+  success_call_carries_call_details_and_response, success_call_carries_the_assembled_stream_response,
+  success_call_skipped_for_a_stream_chunk, success_call_reports_request_redaction and
+  success_call_only_for_loggers_that_read_it; and in callback_logger/tests.rs
+  success_call_default_runs_the_success_event and success_call_reads_no_details_by_default.
+
+
+  Oracle. The helper operation of this task runs one success event through the hook with every dependency scripted
+  and reports what the hook did. Its input: call_details (the kwargs without the payload), payload (id, call_type,
+  model, model_group, response_cost, cache_hit, model_parameters and metadata with the three identity keys), response
+  (a chat or Responses API response object), message_logging_redacted, snapshot (null, or a body and the metadata to
+  capture it under), jobs (each with target_type and target_id plus ActiveShadowEvalJob's fields), model_group_alias
+  (null for no router), in_flight and job_starts. Its output: the funnel events as (job id, stage) in order, the
+  scheduled pipelines with every value step 8 passes, and job_starts afterwards. Use ends_at in 2000 or 2999 so the
+  real clock never matters. The Python adapter builds ShadowEvalLogger with prisma_provider returning None, an
+  InMemoryCache already holding the job mapping under "shadow_eval:active_jobs" (built with
+  ActiveShadowEvalJob.model_validate), a funnel_recorder that appends to a list and router_provider returning None or a
+  litellm Router with an empty model_list and the case's model_group_alias. It replaces `_run_shadow_eval` on the
+  instance with a coroutine that records its arguments, sets `_inflight_shadow_tasks` and `_job_starts`, sets
+  litellm.turn_off_message_logging from message_logging_redacted (and restores it), captures the snapshot with
+  GuardrailRequestSnapshot.capture, puts the payload under standard_logging_object, awaits async_log_success_event and
+  then the tasks it created. The Rust adapter builds the Rust logger with in-memory fakes for the same five
+  dependencies and captures the snapshot with B4082's capture. Snapshot fingerprints differ in text between the two
+  (B4082's deviation), so no output carries one.
+scope:
+  paths:
+    - crates/betterlite-server/src/shadow_eval_logger.rs
+    - crates/betterlite-server/src/shadow_eval_logger/**
+    - crates/betterlite-logging/src/callback_logger.rs
+    - crates/betterlite-logging/src/callback_logger/event.rs
+    - crates/betterlite-logging/src/callback_logger/tests.rs
+    - crates/betterlite-logging/src/logging_success/handler.rs
+    - crates/betterlite-logging/src/logging_success/delivery.rs
+    - crates/betterlite-logging/src/logging_success/tests/delivery.rs
+    - tools/oracle/cases/helpers/shadow-eval-hook/**
+    - tools/oracle/helpers/b118.py
+    - tools/oracle/helpers/b118/**
+    - tools/oracle/src/helpers/server/b118.rs
+    - tools/oracle/src/helpers/server/b118/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L52-L59
+    why: The cache TTL comment and `_MAX_CONCURRENT_SHADOW_TASKS` 16, the in-flight cap that turns a spike into shed samples.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L819-L849
+    why: The class, its targeting rules and the constructor with its six injected providers, the in-flight count and the per-job starts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L895-L903
+    why: The cache fill resets `_job_starts`; the job source must report a refill so the starts reset with it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L905-L936
+    why: "`_sampled_jobs`: expiry, the turn and spend valves, direction and scope, and the not_sampled count."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L938-L1035
+    why: "`async_log_success_event`: the gates, the snapshot choice, sampling, the unjudgeable and shed counts, the control values and the task start."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1037-L1038
+    why: "`_release_shadow_slot`, the done callback that frees the in-flight slot."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3477-L3501
+    why: How the success loop calls this logger, with model_call_details, the result or the assembled stream response, and the guardrail snapshot.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2281-L2303
+    why: should_run_callback lets a no-log request reach only loggers whose class name holds `_PROXY_`.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L349-L366
+    why: get_litellm_metadata_from_kwargs, B206's, the request metadata the hook reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L328-L358
+    why: should_redact_message_logging, the request-level decision that skips a redacted request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1565
+    why: The `internal_call_origin` metadata key that marks the gateway's own sub-calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2751-L2759
+    why: B069's registration; LiteLLM builds this logger only when a database is configured.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/litellm_agent/__init__.py#L1-L5
+    why: The litellm_agent package only re-exports B8253's resolver; nothing to build here.
+dod:
+  - text: A logger that does not override the new trait methods reads no call details and gets async_log_success_event exactly as before.
+    proof: [logging-seam-tests]
+  - text: A logger that reads call details gets one shared SuccessCall with the call details, the response (the assembled one for a stream) and the request-level redaction decision, and a stream chunk still goes to async_log_stream_event.
+    proof: [logging-seam-tests]
+  - text: An internal sub-call, a redacted request, a request with no identity or no id, and an unknown call type are skipped before any job read.
+    proof: [gate-tests, hook-oracle]
+  - text: A wire-params surface whose request a mutating guardrail changed is replayed from a matching snapshot and skipped without one; the chat surface ignores the snapshot.
+    proof: [gate-tests, hook-oracle]
+  - text: Key, team and user targets each match their jobs, and expiry, the turn valve with this pod's starts, the spend valve, direction and scope exclude a job without a funnel event.
+    proof: [sampling-tests, hook-oracle]
+  - text: A job that loses the sampling roll records not_sampled, and an unjudgeable sample records unjudgeable once for each eligible job.
+    proof: [sampling-tests, control-tests, hook-oracle]
+  - text: A refill of the jobs cache clears the per-job starts.
+    proof: [sampling-tests]
+  - text: At 16 pipelines in flight a job records shed and its starts stay; otherwise its starts grow by its arm count and one pipeline is spawned with the control values and the request metadata.
+    proof: [scheduling-tests, control-tests, hook-oracle]
+  - text: The in-flight slot is released when a pipeline ends, also when it panics.
+    proof: [scheduling-tests]
+  - text: The hook returns Ok on every path, including a failure inside it.
+    proof: [gate-tests]
+  - text: The oracle cases agree with pinned LiteLLM and the Python adapter passes lint and type checks.
+    proof: [hook-oracle, helper-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: logging-seam-tests
+      why: the SuccessCall seam tests are missing or fail, or the existing success and logger tests break
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::success_call_/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_success::/) | test(/^callback_logger::/)'
+    - id: gate-tests
+      why: the hook's early gates or the snapshot choice are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_eval_logger::tests::gates::/)'
+    - id: sampling-tests
+      why: target matching, the job valves, the not_sampled count or the starts reset are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_eval_logger::tests::sampling::/)'
+    - id: scheduling-tests
+      why: the in-flight cap, the starts accounting or the slot release are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_eval_logger::tests::scheduling::/)'
+    - id: control-tests
+      why: the unjudgeable count or the control values handed to the pipeline are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_eval_logger::tests::control::/)'
+    - id: helper-python
+      why: the Python adapter for the hook is missing or fails ruff or basedpyright
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b118.py tools/oracle/helpers/b118)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b118.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: hook-oracle
+      why: the hook's skips, funnel events or scheduled pipelines differ from pinned LiteLLM
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/shadow-eval-hook)" && cargo build --locked -p betterlite-oracle && target/debug/betterlite-oracle tools/oracle/cases/helpers/shadow-eval-hook
+oracle_cases:
+  - tools/oracle/cases/helpers/shadow-eval-hook/chat-key-job-scheduled.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/internal-origin-skipped.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/redacted-request-skipped.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/no-identity-skipped.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/unknown-call-type-skipped.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/team-and-user-targets.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/not-sampled-counted.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/own-router-traffic-uncounted.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/model-scope-through-alias.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/turn-valve-counts-arm-starts.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/spend-valve-closed.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/expired-job-skipped.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/unjudgeable-per-job.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/shed-at-capacity.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/mutating-guardrail-without-snapshot.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/responses-replayed-from-snapshot.yaml
+  - tools/oracle/cases/helpers/shadow-eval-hook/cache-hit-and-routed-tier.yaml
+deviations:
+  - what: Shadow pipelines run on a TaskTracker the server drains at shutdown, so shutdown waits for at most 16 in-flight shadow evaluations; LiteLLM's asyncio tasks are dropped when its event loop closes.
+    why: rules.yaml async-hygiene forbids detached tasks; a drained pipeline also writes its attempt row instead of losing a shadow call that already billed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1019-L1033
+out_of_scope:
+  - "Response text, call costs, failure text, routing decision readers and the result records (shadow_eval_logger.py L171-L277, L491-L531, L671-L689, L704-L731): B4081."
+  - "Request normalization, surface ops, the guardrail snapshot and judgeable_sample (L72-L168, L280-L450): B4082."
+  - "sample_hits, the spend counter helpers, direction_admits, ActiveShadowEvalJob, canonical_group, scope_admits, as_active_job, the jobs cache and `_active_jobs`, `_record_attempt` and the default prisma provider (L55, L483-L488, L581-L620, L692-L701, L734-L816, L851-L903, L1218-L1264, L1374-L1382), and the pod-local funnel counters: B4083."
+  - "The judge prompt and budgets, PairwiseVerdict, `_unmask_preference`, the tool text, `_forwarded_team_id`, `_call_router_shadow` and `_call_judge` (L60-L70, L452-L480, L534-L578, L663-L668, L1266-L1371): B4084."
+  - "`_key_or_team_is_over_budget`, `_run_shadow_eval` and `_run_shadow_arm` (L623-L660, L1042-L1216): B4085."
+  - "litellm/integrations/litellm_agent/litellm_agent_model_resolver.py: B8253. Its `__init__.py` only re-exports the resolver, and B8253's betterlite-prompts module is that export. The litellm_agent arms of the logger catalog (litellm_logging.py L4582-L4589 and L5371-L5374) are B8655 and B8742."
+  - "Registering ShadowEvalLogger at startup when a database exists (proxy_server.py L2751-L2759): B069."
+  - "Capturing the snapshot after the guardrails ran (litellm_pre_call_utils.py L1970-L1990): B1105. Flushing the funnel counters in the spend update job (proxy/utils.py L7506-L7529, L7577-L7702): B1744."
+  - "The shadow eval management routes (auto_router_endpoints.py): B356 and its sibling route tasks."
+pitfalls:
+  - "The `internal_call_origin` check reads the request metadata under litellm_params, not the payload; the shadow and judge calls keep the caller's key hash (B4084 forwards identity), so without this check each shadow call would sample itself."
+  - "Targets come from the payload's metadata, but direction, tier, classifier cost, the guardrail check and parent_metadata come from the request metadata; mixing the two picks the wrong routing_decision."
+  - "A JWT request has no user_api_key_hash but still matches a team or user job; an empty string is not a target."
+  - "Out-of-direction and out-of-scope requests are not counted at all; only a job that passed every valve and lost the roll records not_sampled, so the funnel stays a share of the traffic the job admits."
+  - "The turn valve compares attempts plus this pod's starts with max_turns, and one start adds the job's arm count: a three-router job uses three turns per sample."
+  - "A shed job does not add to its starts, and the cap is checked per job, so one request can start one job and shed the next."
+  - "The snapshot only matters for anthropic_messages, responses and aresponses with a mutating guardrail; post_guardrail_kwargs giving None ends the hook before the job read, with no funnel event."
+  - "An unknown call type, such as embedding, returns before the jobs are read, so the hook costs no database read for traffic it can never compare."
+  - "real_cache_hit is true only for cache_hit Some(true); None and Some(false) are both false."
+  - "parent_metadata is the full request metadata, user_api_key_auth included: B4085's budget gate reads it, and B4084 forwards the caller identity from it so shadow and judge spend bills to the sampled key (B356's attribution note)."
+  - "The callback name has no `_PROXY_`, so a no-log request is never shadowed; renaming it to look internal would replay requests the caller asked not to log."
+  - "Hold the admission mutex only for the check and the increments, never across the job read or the spawn's await."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

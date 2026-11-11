@@ -1,0 +1,15 @@
+name: config-includes-license
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /health/liveliness
+  headers: {}
+  body: null
+upstream: []
+config_files:
+  fragments/license.yaml: |
+    general_settings:
+      litellm_license: fixture-license

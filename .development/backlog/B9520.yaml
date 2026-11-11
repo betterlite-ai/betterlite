@@ -1,0 +1,14 @@
+id: B9520
+milestone: M7 observability
+title: Cold-storage object keys in standard logging metadata
+status: done
+depends_on: [B3990, B3992, B253]
+file: tasks/B9520-cold-storage-key.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+parent: B115
+split_from: B115
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1264

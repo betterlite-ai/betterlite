@@ -13,7 +13,7 @@ description: >-
 
 
   With cache_control_injection_points at location tool_config append the cachePoint locally. AnthropicCacheControlHook.record_gateway_injection
-  belongs to B2204 below both this assembly and B119; call the typed helper directly, without importing proxy hooks
+  belongs to B2204 below this assembly; call the typed helper directly, without importing proxy hooks
   or inventing a notification sink. drop_params and modify_params default to false as in the pinned module settings.
 
 
@@ -274,7 +274,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_request_cases::case_[0-9]+_model_arn_request$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_request.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_request.py tools/oracle/helpers/bedrock_converse_request)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -323,7 +323,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 - 'litellm/integrations/anthropic_cache_control_hook.py: AnthropicCacheControlHook.record_gateway_injection belongs
-  to B119; B604 builds the cachePoint and exposes an injection notification.'
+  to B2204, which ports L864-L936; B604 builds the cachePoint and exposes an injection notification.'
 - 'litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
   have no caller at the pin; do not port them.'
 - 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata

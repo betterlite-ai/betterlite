@@ -6,8 +6,8 @@ description: >-
   logger callback whether the answer needs another round (the web search and code interpreter interceptions do), builds a
   follow-up request from the callback's plan, calls the completion again and returns that answer. The Responses API has
   the same loop in B2415, and the plan and follow-up kwargs helpers are shared (B4119 owns the plan types, B4110 owns
-  `build_agentic_followup_kwargs` and the max loops validator, B189 owns the callback trait and the interception prefix
-  helpers). This task builds the chat side only.
+  `build_agentic_followup_kwargs` and the max loops validator, B9820 owns the callback trait `AgenticCallback` and its
+  `overrides()` flags, B189 owns the interception prefix helpers). This task builds the chat side only.
 
   Code goes in crates/betterlite-core/src/api/chat_agentic_loop.rs and chat_agentic_loop/. Files: entry.rs
   (`maybe_run_chat_agentic_loop`), settings.rs, safety.rs, followup.rs (the plan execution), fake_stream.rs and error.rs.
@@ -22,8 +22,9 @@ description: >-
   is an enum `Response(ModelResponse)` or `Stream(ChatStream)`; read the merged type names from the chat response module.
 
   `maybe_run_chat_agentic_loop(response, model, messages, optional_params, kwargs, logging, custom_llm_provider, stream, callbacks, ports) -> Result<Option<ChatLoopResult>, AgenticLoopError>`.
-  `callbacks` is the global callback list followed by the logging object's dynamic success callbacks, in that order.
-  Entries that are not logger instances are skipped. `tools` is `optional_params["tools"]`, or an empty list.
+  `callbacks` is `&[Arc<dyn AgenticCallback>]` (B9820): the global callback list followed by the logging object's dynamic
+  success callbacks, in that order, already reduced to logger instances by the caller (B9825 passes the server's SDK
+  callback list). "Overrides X" below means the callback's `overrides()` flag for X is set. `tools` is `optional_params["tools"]`, or an empty list.
   `settings.rs` reads three values from `kwargs`: `depth` is `_agentic_loop_depth` as an integer when it is an integer or a
   string of digits, else 0 (LiteLLM's `_coerce_int`; a string that is not a number is an error, as `int("x")` raises there);
   `max_loops` is B4110's validator applied to `max_agentic_loops` with the field name "litellm_params.max_agentic_loops",
@@ -148,7 +149,7 @@ deviations:
 
 out_of_scope:
   - "AgenticLoopPlan, AgenticLoopRequestPatch: B4119. build_agentic_followup_kwargs and the max loops validator: B4110."
-  - "The CustomLogger trait and the interception prefix helpers: B189."
+  - "The AgenticCallback trait and its overrides() flags: B9820. The interception prefix helpers: B189. The gateway call site and the list it passes: B9825."
   - "The Responses side of the loop (responses_agentic_execution): B2415 and B2419."
   - "The web search and code interpreter callbacks that implement the gate and the plan: B4117, B4118, B4122."
   - "The CustomStreamWrapper (B005) and MockResponseIterator (B010) types and the call site in main.py (B5656). The FakeStreamPort implementation wraps the response in B010's MockResponseIterator inside B005's CustomStreamWrapper, and B5656 passes it in when it calls the loop."
@@ -156,7 +157,7 @@ out_of_scope:
 pitfalls:
   - "The two safety errors are raised outside the try block. Do not catch them with the hook error handler."
   - "A callback that overrides the plan builder never reaches async_run_agentic_loop. Only a callback without the override does."
-  - "Inherited default hooks must not count as overrides. Compare against the trait's default, as B2419 does."
+  - "Inherited default hooks must not count as overrides. Read the callback's overrides() flags, never call a hook to see what it returns."
   - "The converted stream flag at depth above 0 wraps nothing, so the inner follow-up returns a plain response and the outer call wraps once."
   - "The metadata merge uses all interception prefixes, but the kwargs filter uses only the non-code-interpreter ones."
 

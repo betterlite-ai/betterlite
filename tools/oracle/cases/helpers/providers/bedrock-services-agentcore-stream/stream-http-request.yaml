@@ -1,0 +1,72 @@
+kind: helper
+name: stream-http-request
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000081
+      - 00000000-0000-4000-8000-000000000082
+    scenarios:
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"sent"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        request_headers:
+          - [accept, 'application/json, text/event-stream']
+          - [x-caller, 'yes']
+        data: {prompt: hi}
+        messages: [{role: user, content: hi}]
+        supplied: sync
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"sent"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        request_headers:
+          - [accept, application/json]
+        data: {prompt: hi}
+        messages: [{role: user, content: hi}]
+        supplied: async
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"sent"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        request_headers: []
+        data: {prompt: hi}
+        messages: []
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"signed"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        signed_json_body: [123, 34, 115, 34, 58, 49, 125]
+        data: {prompt: ignored}
+        messages: []
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"raw"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        signed_json_body: [1, 2, 3]
+        data: {prompt: ignored}
+        messages: []
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"fallback"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        signed_json_body: []
+        data: {prompt: fallback}
+        messages: []
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"json"}}}}
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        data: {}
+        signed_json_body: null
+        messages: []
+env: {}
+compare: {ignore: []}
