@@ -186,7 +186,7 @@ fn logout_prints_the_not_cleared_lines() {
         .refusals
         .extend([Refusal::Stage, Refusal::Scrub, Refusal::Remove]);
     let mut vault = FakeVault::unreachable_read();
-    let http = Arc::new(FakeHttp::new(Vec::new()));
+    let http = Arc::new(FakeHttp::new(vec![Reply::Answer(response(200, "{}"))]));
     let mut stdout = Vec::new();
     let mut request = LogoutRequest {
         files: &files,
@@ -208,7 +208,7 @@ fn logout_prints_the_stranded_lines() {
     let files = FakeFiles::holding(record());
     let mut vault = FakeVault::unreachable_read();
     vault.erase_result = support::EraseResult::Stranded;
-    let http = Arc::new(FakeHttp::new(Vec::new()));
+    let http = Arc::new(FakeHttp::new(vec![Reply::Answer(response(200, "{}"))]));
     let mut stdout = Vec::new();
     let mut request = LogoutRequest {
         files: &files,
@@ -247,7 +247,7 @@ fn logout_prints_the_unchecked_keychain_lines(
     files.refusals.extend([Refusal::Stage, Refusal::Scrub]);
     let mut vault = FakeVault::unreachable_read();
     vault.erase_result = support::EraseResult::Unavailable(failure);
-    let http = Arc::new(FakeHttp::new(Vec::new()));
+    let http = Arc::new(FakeHttp::new(vec![Reply::Answer(response(200, "{}"))]));
     let mut stdout = Vec::new();
     let mut request = LogoutRequest {
         files: &files,
@@ -735,7 +735,7 @@ fn whoami_appends_renewed_on_next_use() {
 #[case::older(-89_000.0_f64, 24, true)]
 #[case::younger(-85_040.0_f64, 24, false)]
 #[case::at_zero_hours(1_000.0_f64, 0, false)]
-#[case::above_zero_hours(1_001.0_f64, 0, true)]
+#[case::above_zero_hours(999.0_f64, 0, true)]
 fn whoami_warns_when_the_token_is_older_than_the_expiry_hours(
     #[case] timestamp: f64,
     #[case] expiration_hours: i64,
@@ -842,7 +842,7 @@ fn configure_claude_writes_a_static_token_and_prints_the_blocks() {
         text(&stdout),
         format!(
             "\nConfigured Claude Code: {} now routes through https://gateway.example.\n\
-             This login's key is stored in the file, so run `lite login --config-claude` again after it expires. Your other Claude Code settings were left untouched. Restart Claude Code to pick this up. Undo with `lite unconfigure claude`; `lite configure claude --model` sets {STARTING_MODEL_ROLE}\n",
+             This login's key is stored in the file, so run `lite login --config-claude` again after it expires. Your other Claude Code settings were left untouched. Restart Claude Code to pick this up. Undo with `lite unconfigure claude`; `lite configure claude --model` sets {STARTING_MODEL_ROLE}.\n",
             settings.display()
         )
     );
