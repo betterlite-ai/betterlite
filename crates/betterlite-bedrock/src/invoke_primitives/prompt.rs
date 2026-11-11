@@ -79,17 +79,7 @@ async fn selected_prompt(
             | BedrockInvokeProvider::Mistral
             | BedrockInvokeProvider::Meta
             | BedrockInvokeProvider::Llama,
-        ) => {
-            let template = bedrock_template(&conversion.model.to_lowercase());
-            factory_prompt(
-                &conversion,
-                conversion.model,
-                Some("bedrock"),
-                template,
-                "bedrock",
-            )
-            .await
-        }
+        ) => family_prompt(&conversion).await,
         Some(BedrockInvokeProvider::Cohere) => cohere_prompt(conversion.messages),
         Some(BedrockInvokeProvider::DeepseekR1) => {
             factory_prompt(
@@ -113,6 +103,21 @@ async fn selected_prompt(
         )
         | None => fallback_prompt(conversion.messages),
     }
+}
+
+async fn family_prompt(
+    conversion: &PromptConversion<'_>,
+) -> Result<ConvertedPrompt, ConversionError> {
+    let lower = conversion.model.to_lowercase();
+    let template = bedrock_template(&lower);
+    factory_prompt(
+        conversion,
+        conversion.model,
+        Some("bedrock"),
+        template,
+        "bedrock",
+    )
+    .await
 }
 
 fn fallback_prompt(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError> {
