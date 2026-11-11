@@ -11,17 +11,21 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use url::Url;
 
 use super::adapter::ClickHouseAdapter;
 use super::build;
+use super::rows::{compressed_rows, content_token};
+use super::storage::ClickHouseHttpStorage;
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::clickhouse::clickhouse_logging::batch_logger::ClickHouseBatchLogger;
@@ -30,6 +34,7 @@ use crate::clickhouse::clickhouse_logging::schema::SPEND_LOGS_TABLE;
 use crate::clickhouse::clickhouse_logging::settings::ClickHouseSettings;
 use crate::clickhouse::clickhouse_logging::spend_logger::ClickHouseSpendLogger;
 use crate::clickhouse::clickhouse_logging::storage::ClickHouseStorage;
+use crate::finops::metering::clock::UtcClock;
 use crate::registry::catalog::{CatalogError, CatalogInputs, LoggerCatalog};
 use crate::trace_types::SpendLogRecord;
 
@@ -225,13 +230,22 @@ async fn an_async_success_event_queues_the_spend_row() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].table, SPEND_LOGS_TABLE);
     assert_eq!(calls[0].rows.len(), 1);
-    let row = &calls[0].rows[0];
+    assert_spend_row(&calls[0].rows[0]);
+}
+
+fn assert_spend_row(row: &SpendLogRecord) {
     assert_eq!(row.request_id, "chatcmpl-1");
     assert_eq!(row.response_id, "chatcmpl-1");
     assert_eq!(row.call_type, "completion");
     assert_eq!(row.user, "user-1");
     assert_eq!(row.end_user, "end-user-1");
     assert_eq!(row.model, "gpt-4o");
+    assert_eq!(row.status, "success");
+    assert_spend_usage(row);
+    assert_spend_trace(row);
+}
+
+fn assert_spend_usage(row: &SpendLogRecord) {
     assert_eq!(row.spend, rust_decimal::Decimal::new(5, 1));
     assert_eq!(row.prompt_tokens, 2);
     assert_eq!(row.completion_tokens, 3);
@@ -239,12 +253,14 @@ async fn an_async_success_event_queues_the_spend_row() {
     assert_eq!(row.start_time, 1_704_067_200_000);
     assert_eq!(row.end_time, 1_704_067_201_500);
     assert_eq!(row.completion_start_time, Some(1_704_067_200_500));
+    assert!(!row.cache_hit);
+}
+
+fn assert_spend_trace(row: &SpendLogRecord) {
     assert_eq!(row.session_id, "session-1");
     assert_eq!(row.trace_id, "4bf92f3577b34da6a3ce929d0e0e4736");
     assert_eq!(row.span_id, "b7ad6b7169203331");
     assert_eq!(row.request_tags, vec!["team-a".to_owned()]);
-    assert_eq!(row.status, "success");
-    assert!(!row.cache_hit);
     assert!(row.metadata.contains(r#""litellm_lens_internal":false"#));
     assert_eq!(row.messages, r#"[{"role":"user","content":"Hello"}]"#);
 }
@@ -280,9 +296,224 @@ async fn a_trace_ingest_event_queues_nothing() {
     assert!(storage.calls().is_empty());
 }
 
+#[test]
+fn a_database_with_an_underscore_is_accepted() {
+    let catalog = LoggerCatalog::new(inputs(&[
+        ("CLICKHOUSE_URL", "http://127.0.0.1:8123"),
+        ("CLICKHOUSE_DATABASE", "lit_1"),
+    ]));
+    assert!(
+        catalog
+            .resolve_logger("clickhouse")
+            .expect("the name is available")
+            .is_some()
+    );
+}
+
+#[test]
+fn an_empty_database_is_rejected() {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("valid proxy policy"),
+    );
+    let client = ProxiedClient::outbound(&policy).expect("http client");
+    let url = SecretString::from("http://127.0.0.1:8123".to_owned());
+    assert!(ClickHouseHttpStorage::new(client, "", &url, FixedClock).is_err());
+}
+
+#[test]
+fn rows_encode_one_json_row_per_line() {
+    let body = compressed_rows(&[row("first"), row("second")], 7).expect("the rows encode");
+    let mut text = String::new();
+    GzDecoder::new(body.as_slice())
+        .read_to_string(&mut text)
+        .expect("the body is gzip");
+    let lines: Vec<&str> = text.split('\n').collect();
+    assert_eq!(lines.len(), 2);
+    let first: Json = serde_json::from_str(lines[0]).expect("the first row is JSON");
+    let Json::Object(fields) = &first else {
+        panic!("the row is a JSON object");
+    };
+    assert_eq!(
+        fields.get("request_id"),
+        Some(&Json::Text("first".to_owned()))
+    );
+    assert_eq!(
+        fields.get("EngineReceivedMs"),
+        Some(&Json::Number(serde_json::Number::from(7_u64)))
+    );
+    let _second: Json = serde_json::from_str(lines[1]).expect("the second row is JSON");
+}
+
+#[test]
+fn a_batch_keeps_its_deduplication_token() {
+    let rows = vec![row("first"), row("second")];
+    let token = content_token(&rows).expect("the token is computed");
+    assert_eq!(
+        token,
+        content_token(&rows).expect("the same rows compute the same token")
+    );
+    assert_ne!(
+        token,
+        content_token(&rows[..1]).expect("fewer rows compute another token")
+    );
+    assert_eq!(token.len(), 64);
+}
+
+#[tokio::test]
+async fn an_insert_posts_gzip_json_each_row() {
+    let (base, served) = serve_many(1, 200).await;
+    let storage = http_storage(&base);
+    let rows = vec![row("first"), row("second")];
+    storage
+        .insert_rows(SPEND_LOGS_TABLE, &rows)
+        .await
+        .expect("the insert is accepted");
+    let received = timeout(Duration::from_secs(10), served)
+        .await
+        .expect("the insert request arrived");
+    assert_insert_request(&received[0], &rows);
+}
+
+fn assert_insert_request(request: &Received, rows: &[SpendLogRecord]) {
+    assert_eq!(request.method, "POST");
+    assert_eq!(
+        request.headers.get("content-encoding").map(String::as_str),
+        Some("gzip")
+    );
+    let query = request_query(request);
+    assert_eq!(
+        query.get("query").map(String::as_str),
+        Some("INSERT INTO `litellm`.spend_logs FORMAT JSONEachRow")
+    );
+    assert_eq!(
+        query.get("insert_deduplication_token").map(String::as_str),
+        Some(content_token(rows).expect("the token is computed").as_str())
+    );
+    assert_eq!(query.get("async_insert").map(String::as_str), Some("1"));
+    let decoded = decoded_rows(request);
+    assert_eq!(decoded.len(), rows.len());
+    assert_eq!(
+        decoded[0].get("request_id"),
+        Some(&Json::Text("first".to_owned()))
+    );
+    assert_eq!(
+        decoded[0].get("start_time"),
+        Some(&Json::Text("2024-01-01T00:00:00.000Z".to_owned()))
+    );
+    assert_eq!(
+        decoded[0].get("end_time"),
+        Some(&Json::Text("2024-01-01T00:00:01.500Z".to_owned()))
+    );
+    assert_eq!(
+        decoded[0].get("EngineReceivedMs"),
+        Some(&Json::Number(serde_json::Number::from(
+            1_704_067_200_123_i64
+        )))
+    );
+}
+
+#[tokio::test]
+async fn a_retried_insert_keeps_its_deduplication_token() {
+    let (base, served) = serve_many(3, 200).await;
+    let storage = http_storage(&base);
+    let rows = vec![row("first")];
+    storage
+        .insert_rows(SPEND_LOGS_TABLE, &rows)
+        .await
+        .expect("the insert is accepted");
+    storage
+        .insert_rows(SPEND_LOGS_TABLE, &rows)
+        .await
+        .expect("the retry is accepted");
+    storage
+        .insert_rows(SPEND_LOGS_TABLE, &[row("other")])
+        .await
+        .expect("the insert is accepted");
+    let received = timeout(Duration::from_secs(10), served)
+        .await
+        .expect("the insert requests arrived");
+    let tokens: Vec<String> = received
+        .iter()
+        .map(|request| {
+            request_query(request)
+                .get("insert_deduplication_token")
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect();
+    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens[0], tokens[1]);
+    assert_ne!(tokens[0], tokens[2]);
+}
+
+#[tokio::test]
+async fn an_insert_replaces_the_url_insert_parameters() {
+    let (base, served) = serve_many(1, 200).await;
+    let storage = http_storage(&format!(
+        "{base}/?query=stale&async_insert=0&database=other"
+    ));
+    storage
+        .insert_rows(SPEND_LOGS_TABLE, &[row("first")])
+        .await
+        .expect("the insert is accepted");
+    let received = timeout(Duration::from_secs(10), served)
+        .await
+        .expect("the insert request arrived");
+    let query = request_query(&received[0]);
+    assert_eq!(
+        query.get("query").map(String::as_str),
+        Some("INSERT INTO `litellm`.spend_logs FORMAT JSONEachRow")
+    );
+    assert_eq!(query.get("async_insert").map(String::as_str), Some("1"));
+    assert_eq!(query.get("database").map(String::as_str), Some("other"));
+}
+
+#[tokio::test]
+async fn an_insert_answered_with_an_error_status_is_reported() {
+    let (base, served) = serve_many(1, 500).await;
+    let storage = http_storage(&base);
+    let outcome = storage.insert_rows(SPEND_LOGS_TABLE, &[row("first")]).await;
+    assert!(outcome.is_err());
+    let _received = timeout(Duration::from_secs(10), served)
+        .await
+        .expect("the insert request arrived");
+}
+
+#[tokio::test]
+async fn an_unknown_table_is_rejected() {
+    let storage = http_storage("http://127.0.0.1:1");
+    assert!(
+        storage
+            .insert_rows("otel_traces", &[row("first")])
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn schema_setup_posts_the_database_table_and_ttl() {
+    let (base, served) = serve_many(3, 200).await;
+    let storage = http_storage(&base);
+    storage
+        .ensure_schema(7, 30)
+        .await
+        .expect("the schema is accepted");
+    let received = timeout(Duration::from_secs(10), served)
+        .await
+        .expect("the schema statements arrived");
+    let statements: Vec<String> = received
+        .iter()
+        .map(|request| String::from_utf8(request.body.clone()).expect("a UTF-8 statement"))
+        .collect();
+    assert_eq!(statements.len(), 3);
+    assert!(statements[0].starts_with("CREATE DATABASE IF NOT EXISTS `litellm`"));
+    assert!(statements[1].contains("CREATE TABLE IF NOT EXISTS `litellm`.spend_logs"));
+    assert!(statements[2].contains("MODIFY TTL toDateTime(start_time) + INTERVAL 30 DAY"));
+}
+
 #[tokio::test]
 async fn a_resolved_logger_posts_gzip_json_each_row() {
-    let (base, served) = serve_once().await;
+    let (base, served) = serve_many(1, 200).await;
     let catalog = LoggerCatalog::new(inputs(&[
         ("CLICKHOUSE_URL", &base),
         ("CLICKHOUSE_BATCH_SIZE", "1"),
@@ -295,43 +526,105 @@ async fn a_resolved_logger_posts_gzip_json_each_row() {
         .async_log_success_event(Arc::new(event()))
         .await
         .expect("the event is logged");
-    assert_insert_request(&served.await);
-}
-
-fn assert_insert_request(received: &Received) {
-    assert_eq!(received.method, "POST");
+    let received = timeout(Duration::from_secs(10), served)
+        .await
+        .expect("the insert request arrived");
+    let decoded = decoded_rows(&received[0]);
+    assert_eq!(decoded.len(), 1);
     assert_eq!(
-        received.headers.get("content-encoding").map(String::as_str),
-        Some("gzip")
-    );
-    let url = Url::parse(&format!("http://clickhouse{}", received.path)).expect("a request URL");
-    let query: BTreeMap<String, String> = url.query_pairs().into_owned().collect();
-    assert_eq!(
-        query.get("query").map(String::as_str),
-        Some("INSERT INTO `litellm`.spend_logs FORMAT JSONEachRow")
-    );
-    assert_eq!(query.get("async_insert").map(String::as_str), Some("1"));
-    assert!(query.contains_key("insert_deduplication_token"));
-    let mut gzip = GzDecoder::new(received.body.as_slice());
-    let mut text = String::new();
-    gzip.read_to_string(&mut text).expect("the body is gzip");
-    let row: Json = serde_json::from_str(&text).expect("the body is one JSON row");
-    let Json::Object(fields) = &row else {
-        panic!("the row is a JSON object");
-    };
-    assert_eq!(
-        fields.get("request_id"),
+        decoded[0].get("request_id"),
         Some(&Json::Text("chatcmpl-1".to_owned()))
     );
-    assert_eq!(
-        fields.get("start_time"),
-        Some(&Json::Text("2024-01-01T00:00:00.000Z".to_owned()))
+    assert!(matches!(
+        decoded[0].get("EngineReceivedMs"),
+        Some(Json::Number(_))
+    ));
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FixedClock;
+
+impl UtcClock for FixedClock {
+    fn now(&self) -> DateTime<Utc> {
+        DateTime::<Utc>::from_timestamp_millis(1_704_067_200_123).expect("a valid fixture time")
+    }
+}
+
+fn http_storage(base: &str) -> ClickHouseHttpStorage<FixedClock> {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("valid proxy policy"),
     );
-    assert_eq!(
-        fields.get("end_time"),
-        Some(&Json::Text("2024-01-01T00:00:01.500Z".to_owned()))
-    );
-    assert!(fields.contains_key("EngineReceivedMs"));
+    ClickHouseHttpStorage::new(
+        ProxiedClient::outbound(&policy).expect("http client"),
+        "litellm",
+        &SecretString::from(base.to_owned()),
+        FixedClock,
+    )
+    .expect("the storage builds")
+}
+
+fn row(request_id: &str) -> SpendLogRecord {
+    SpendLogRecord {
+        request_id: request_id.to_owned(),
+        response_id: request_id.to_owned(),
+        call_type: "completion".to_owned(),
+        api_key: String::new(),
+        key_alias: String::new(),
+        team_id: String::new(),
+        team_alias: String::new(),
+        organization_id: String::new(),
+        user: String::new(),
+        end_user: String::new(),
+        model: "gpt-4o".to_owned(),
+        model_group: String::new(),
+        model_id: String::new(),
+        custom_llm_provider: String::new(),
+        api_base: String::new(),
+        spend: rust_decimal::Decimal::ZERO,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        start_time: 1_704_067_200_000,
+        end_time: 1_704_067_201_500,
+        completion_start_time: None,
+        status: "success".to_owned(),
+        error_str: String::new(),
+        cache_hit: false,
+        session_id: String::new(),
+        trace_id: String::new(),
+        span_id: String::new(),
+        request_tags: Vec::new(),
+        metadata: "{}".to_owned(),
+        messages: String::new(),
+        response: String::new(),
+    }
+}
+
+fn request_query(request: &Received) -> BTreeMap<String, String> {
+    Url::parse(&format!("http://clickhouse{}", request.path))
+        .expect("a request URL")
+        .query_pairs()
+        .into_owned()
+        .collect()
+}
+
+fn decoded_rows(request: &Received) -> Vec<IndexMap<String, Json>> {
+    let mut text = String::new();
+    GzDecoder::new(request.body.as_slice())
+        .read_to_string(&mut text)
+        .expect("the body is gzip");
+    text.split('\n')
+        .map(
+            |line| match serde_json::from_str::<Json>(line).expect("a JSON row") {
+                Json::Object(fields) => fields,
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                    panic!("a row object")
+                }
+            },
+        )
+        .collect()
 }
 
 struct Received {
@@ -341,14 +634,17 @@ struct Received {
     body: Vec<u8>,
 }
 
-// The returned future accepts one request and answers it; the test joins it with the call under test.
-async fn serve_once() -> (String, impl Future<Output = Received>) {
+// The returned future accepts count requests and answers each with status; the test joins it with the call under test.
+async fn serve_many(count: usize, status: u16) -> (String, impl Future<Output = Vec<Received>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a free port");
     let address = listener.local_addr().expect("the bound address");
     let served = async move {
-        let (mut stream, _) = listener.accept().await.expect("one request");
-        let received = receive(&mut stream).await;
-        answer(&mut stream).await;
+        let mut received = Vec::new();
+        for _ in 0..count {
+            let (mut stream, _) = listener.accept().await.expect("a request");
+            received.push(receive(&mut stream).await);
+            answer(&mut stream, status).await;
+        }
         received
     };
     (format!("http://{address}"), served)
@@ -392,8 +688,8 @@ async fn receive(stream: &mut TcpStream) -> Received {
     }
 }
 
-async fn answer(stream: &mut TcpStream) {
-    let response = "HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+async fn answer(stream: &mut TcpStream, status: u16) {
+    let response = format!("HTTP/1.1 {status} X\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
     stream
         .write_all(response.as_bytes())
         .await
