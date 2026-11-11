@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-other-image-call-transport-selection
+call:
+  bedrock_other_image_call:
+    function: image_transport_selection
+    probes:
+      - model: amazon.titan-image-generator-v2:0
+        prompt: a cat
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: secret}
+        optional_params: {aws_region_name: us-east-1}
+        aimg_generation: true
+        supplied: none
+        timeout_ms: 2500
+        reply: {body: '{"images": []}'}
+env: {}
+compare: {ignore: []}

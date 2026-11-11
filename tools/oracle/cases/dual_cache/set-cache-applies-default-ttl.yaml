@@ -1,0 +1,16 @@
+kind: helper
+name: dual-cache-set-cache-applies-default-ttl
+call:
+  b4293:
+    set_cache_applies_default_ttl:
+      clock: 1000.0
+      redis_get: null
+      memory: []
+      entries: []
+      key_count: 0
+      default_in_memory_ttl: 30.0
+      key: ttl-key
+      value: payload
+env: {}
+compare:
+  ignore: []

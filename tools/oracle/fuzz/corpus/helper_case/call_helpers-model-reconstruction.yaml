@@ -1,0 +1,11 @@
+kind: helper
+name: call-helpers-model-reconstruction
+call:
+  call_helpers:
+    function: model_reconstruction
+    values:
+      - {model: claude-3, provider: bedrock}
+      - {model: claude-3, provider: anthropic, deployment: anthropic/claude-3}
+      - {model: claude-3}
+env: {}
+compare: {ignore: []}

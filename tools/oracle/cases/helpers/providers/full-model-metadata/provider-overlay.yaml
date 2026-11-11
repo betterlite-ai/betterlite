@@ -1,0 +1,19 @@
+kind: helper
+name: full-model-metadata-provider-overlay
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        xai/grok-2: {litellm_provider: xai, mode: chat, supports_web_search: false}
+        fireworks_ai/llama-v3p1-8b: {litellm_provider: fireworks_ai, mode: chat, supports_function_calling: false, supports_prompt_caching: false}
+        llama3.2: {litellm_provider: ollama, mode: chat}
+      dynamic: {key: runtime, supported_openai_params: []}
+      cache_maxsize: 8
+    steps:
+      - {op: call, model: grok-2, custom_llm_provider: xai, parameters: {kind: absent}}
+      - {op: helper_call, model: grok-2, custom_llm_provider: xai}
+      - {op: call, model: llama-v3p1-8b, custom_llm_provider: fireworks_ai, parameters: {kind: absent}}
+      - {op: helper_call, model: llama-v3p1-8b, custom_llm_provider: fireworks_ai}
+      - {op: call, model: llama3.2, custom_llm_provider: ollama, parameters: {kind: absent}}
+env: {}
+compare: {ignore: []}
