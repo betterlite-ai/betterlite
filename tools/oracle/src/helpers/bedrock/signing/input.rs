@@ -119,7 +119,7 @@ impl BatchRequest {
             data,
             endpoint: &self.endpoint_url,
             optional_params: &self.optional_params,
-            method: self.method.as_deref(),
+            method: self.method.as_deref().unwrap_or("POST"),
             region_inputs: RegionInputs::default(),
             now,
         }

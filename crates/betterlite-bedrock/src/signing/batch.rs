@@ -25,7 +25,7 @@ pub struct BatchRequest<'source> {
     pub data: BatchData<'source>,
     pub endpoint: &'source str,
     pub optional_params: &'source BTreeMap<String, Box<RawValue>>,
-    pub method: Option<&'source str>,
+    pub method: &'source str,
     pub region_inputs: RegionInputs<'source>,
     pub now: SystemTime,
 }
@@ -44,7 +44,7 @@ where
     let credentials = resolve_credentials(&settings, &region)
         .await
         .map_err(SigningError::Credential)?;
-    let method = request.method.unwrap_or("POST").to_ascii_uppercase();
+    let method = request.method.to_ascii_uppercase();
     let (body, initial_headers) = if method == "GET" {
         (String::new(), Vec::new())
     } else {

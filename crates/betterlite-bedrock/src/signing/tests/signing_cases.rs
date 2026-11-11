@@ -178,7 +178,7 @@ struct BatchCase<'source> {
     data: BatchData<'source>,
     endpoint: &'source str,
     params: &'source str,
-    method: Option<&'source str>,
+    method: &'source str,
     fixture: &'source Credentials,
 }
 
@@ -880,7 +880,7 @@ fn test_batch_get(endpoint: &str, fixture: &Credentials) {
         data: BatchData::Json(&ignored),
         endpoint,
         params: REGION_PARAMS,
-        method: Some("get"),
+        method: "get",
         fixture,
     })
     .unwrap();
@@ -903,7 +903,7 @@ fn test_batch_post(endpoint: &str, fixture: &Credentials) {
         data: BatchData::Json(&job),
         endpoint,
         params: REGION_PARAMS,
-        method: None,
+        method: "POST",
         fixture,
     })
     .unwrap();
@@ -926,7 +926,7 @@ fn test_batch_put(fixture: &Credentials) {
         data: BatchData::Text("raw-body"),
         endpoint: "https://s3.us-west-2.amazonaws.com/bucket/key",
         params: TOKEN_PARAMS,
-        method: Some("PUT"),
+        method: "PUT",
         fixture,
     })
     .unwrap();
@@ -953,7 +953,7 @@ fn test_batch_invalid(endpoint: &str, fixture: &Credentials) {
         data: BatchData::Json(&job),
         endpoint,
         params: invalid,
-        method: None,
+        method: "POST",
         fixture,
     })
     .unwrap_err();
