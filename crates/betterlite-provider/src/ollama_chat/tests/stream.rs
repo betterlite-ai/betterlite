@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::super::function::is_function_call_complete;
+use super::super::ids::RandomIds;
 use super::super::stream::chunk::{
     DeltaFunction, DeltaToolCall, OllamaStreamChunk, StreamChoice, StreamDelta,
 };
@@ -237,6 +238,30 @@ fn the_stream_finish_reason_is_the_raw_done_reason() {
         chunk.choices.first().unwrap().finish_reason.as_deref(),
         Some("load")
     );
+}
+
+#[rstest]
+#[case::empty(r#""done_reason": "","#)]
+#[case::null(r#""done_reason": null,"#)]
+#[case::missing("")]
+fn a_done_chunk_without_a_reason_finishes_with_stop(#[case] reason: &str) {
+    let line = format!(r#"{{"model": "m", "message": {{"content": "x"}}, {reason} "done": true}}"#);
+    assert_eq!(
+        parsed(&line)
+            .choices
+            .first()
+            .unwrap()
+            .finish_reason
+            .as_deref(),
+        Some("stop")
+    );
+}
+
+#[test]
+fn random_ids_are_distinct_uuids() {
+    let first = super::super::ids::IdSource::next_id(&RandomIds);
+    uuid::Uuid::parse_str(&first).unwrap();
+    assert_ne!(first, super::super::ids::IdSource::next_id(&RandomIds));
 }
 
 #[rstest]
