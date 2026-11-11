@@ -8,7 +8,7 @@ request:
   method: POST
   path: /proxy/v1/chat/completions
   headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-scalar-root}
-  body: {messages: [{role: user, content: hi}]}
+  body: {model: scalar-root-model, messages: [{role: user, content: hi}]}
 upstream:
   - status: 200
     headers: {content-type: application/json}

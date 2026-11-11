@@ -89,23 +89,10 @@ fn get_request() -> Result<Request<Body>, Box<HelperError>> {
         .map_err(|error| failure("InvalidRequest", error))
 }
 
-async fn run_gzip(input: &Input) -> Result<serde_json::Value, Box<HelperError>> {
-    let size = input
-        .body_size
-        .ok_or_else(|| failure("InvalidInput", "gzip needs body_size"))?;
-    let byte = input.body_byte.unwrap_or(97);
-    let payload = vec![byte; size];
-    let status = StatusCode::from_u16(input.status.unwrap_or(200))
-        .map_err(|error| failure("InvalidInput", error))?;
-    let mut headers = header_map(&input.headers)?;
-    headers.insert(
-        header::CONTENT_LENGTH,
-        HeaderValue::from_str(&size.to_string()).map_err(|error| failure("InvalidInput", error))?,
-    );
-    let response_headers = headers.clone();
-    let app = Router::new()
+fn gzip_app(status: StatusCode, payload: Vec<u8>, headers: HeaderMap) -> Router {
+    Router::new()
         .fallback(move || {
-            let generated = response_headers.clone();
+            let generated = headers.clone();
             let body = payload.clone();
             async move {
                 let mut response = Response::new(Body::from(body));
@@ -114,16 +101,21 @@ async fn run_gzip(input: &Input) -> Result<serde_json::Value, Box<HelperError>> 
                 response
             }
         })
-        .layer(GzipBufferedLayer);
+        .layer(GzipBufferedLayer)
+}
+
+fn gzip_request(input: &Input) -> Result<Request<Body>, Box<HelperError>> {
     let mut builder = Request::builder().method(Method::GET).uri("/");
     if let Some(accept) = &input.accept_encoding {
         builder = builder.header(header::ACCEPT_ENCODING, accept);
     }
-    let request = builder
+    builder
         .body(Body::empty())
-        .map_err(|error| failure("InvalidRequest", error))?;
-    let response = send(app, request).await?;
-    let status = response.status();
+        .map_err(|error| failure("InvalidRequest", error))
+}
+
+async fn gzip_answer(response: Response) -> Result<serde_json::Value, Box<HelperError>> {
+    let status = response.status().as_u16();
     let encoding = header_text(response.headers(), header::CONTENT_ENCODING);
     let vary = header_text(response.headers(), header::VARY);
     let length = header_text(response.headers(), header::CONTENT_LENGTH);
@@ -131,16 +123,16 @@ async fn run_gzip(input: &Input) -> Result<serde_json::Value, Box<HelperError>> 
         .await
         .map_err(|error| failure("ServiceError", error))?;
     let decoded = if encoding.as_deref() == Some("gzip") {
-        let mut decoded = Vec::new();
+        let mut decompressed = Vec::new();
         GzDecoder::new(body.as_ref())
-            .read_to_end(&mut decoded)
+            .read_to_end(&mut decompressed)
             .map_err(|error| failure("DecodeError", error))?;
-        decoded
+        decompressed
     } else {
         body.to_vec()
     };
     Ok(serde_json::json!({
-        "status": status.as_u16(),
+        "status": status,
         "compressed": encoding.as_deref() == Some("gzip"),
         "content_encoding": encoding,
         "vary": vary,
@@ -148,6 +140,23 @@ async fn run_gzip(input: &Input) -> Result<serde_json::Value, Box<HelperError>> 
         "decoded_sha256": hex::encode(Sha256::digest(&decoded)),
         "decoded_length": decoded.len(),
     }))
+}
+
+async fn run_gzip(input: &Input) -> Result<serde_json::Value, Box<HelperError>> {
+    let size = input
+        .body_size
+        .ok_or_else(|| failure("InvalidInput", "gzip needs body_size"))?;
+    let byte = input.body_byte.unwrap_or(97);
+    let status = StatusCode::from_u16(input.status.unwrap_or(200))
+        .map_err(|error| failure("InvalidInput", error))?;
+    let mut headers = header_map(&input.headers)?;
+    headers.insert(
+        header::CONTENT_LENGTH,
+        HeaderValue::from_str(&size.to_string()).map_err(|error| failure("InvalidInput", error))?,
+    );
+    let app = gzip_app(status, vec![byte; size], headers);
+    let response = send(app, gzip_request(input)?).await?;
+    gzip_answer(response).await
 }
 
 async fn run_security_headers(input: &Input) -> Result<serde_json::Value, Box<HelperError>> {
@@ -167,9 +176,9 @@ async fn run_security_headers(input: &Input) -> Result<serde_json::Value, Box<He
         })
         .layer(SecurityHeadersLayer { enable_hsts });
     let response = send(app, get_request()?).await?;
-    let status = response.status().as_u16();
+    let response_status = response.status().as_u16();
     Ok(serde_json::json!({
-        "status": status,
+        "status": response_status,
         "x-frame-options": header_text(response.headers(), header::X_FRAME_OPTIONS),
         "content-security-policy": header_text(response.headers(), header::CONTENT_SECURITY_POLICY),
         "x-content-type-options": header_text(response.headers(), header::X_CONTENT_TYPE_OPTIONS),

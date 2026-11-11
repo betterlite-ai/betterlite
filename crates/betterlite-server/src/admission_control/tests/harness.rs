@@ -122,6 +122,8 @@ pub(super) fn harness(source: &str, root_path: &str, configured: Gates) -> Harne
             &config.sections.admission_control,
         )),
         in_flight: Arc::new(InFlightRequests::default()),
+        // application() wraps the stack with RootPaths, so the scalar is stripped there
+        scalar_root: String::new(),
     };
     let (router, gates) = application(
         &config.sections.request_root_paths,
