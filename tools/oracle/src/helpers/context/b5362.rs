@@ -123,7 +123,10 @@ impl From<serde_json::Error> for Failure {
 }
 
 fn required<T>(value: Option<T>, name: &str) -> Result<T, Failure> {
-    value.ok_or_else(|| Failure::Invalid(format!("a call needs {name}")))
+    let Some(value) = value else {
+        return Err(Failure::Invalid(format!("a call needs {name}")));
+    };
+    Ok(value)
 }
 
 pub(crate) struct Op;

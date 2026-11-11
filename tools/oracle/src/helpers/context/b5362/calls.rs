@@ -32,27 +32,16 @@ fn fixture_mapper(spec: Option<&super::MapperSpec>) -> Option<&dyn mapper::Optio
     spec.map(|fixture| -> &dyn mapper::OptionalParamsMapper { fixture })
 }
 
-fn pre_request(call: &Call) -> Result<pre_process::PreProcessRequest<'_>, Failure> {
-    let request = required(call.request.as_ref(), "request")?;
-    Ok(pre_process::PreProcessRequest {
-        passed_params: &request.passed_params,
-        special_params: &request.special_params,
-        custom_llm_provider: &request.custom_llm_provider,
-        additional_drop_params: request.additional_drop_params.as_deref().unwrap_or_default(),
-    })
-}
-
-fn select(call: &Call) -> Result<Value, Failure> {
-    let names: Vec<&str> = call.default_names.iter().map(String::as_str).collect();
-    let drops = call.additional_drop_params.as_deref().unwrap_or_default();
-    Ok(to_value(filters::select_non_default_params(
-        &call.passed_params,
-        &names,
-        drops,
-    ))?)
-}
-
-fn filter_out(call: &Call) -> Result<Value, Failure> {
+fn named_params(call: &Call) -> Result<Value, Failure> {
+    if matches!(call.function, Function::SelectNonDefault) {
+        let names: Vec<&str> = call.default_names.iter().map(String::as_str).collect();
+        let drops = call.additional_drop_params.as_deref().unwrap_or_default();
+        return Ok(to_value(filters::select_non_default_params(
+            &call.passed_params,
+            &names,
+            drops,
+        ))?);
+    }
     let excluding: Vec<&str> = call.excluding.iter().map(String::as_str).collect();
     Ok(to_value(filters::filter_out_litellm_params(
         &call.kwargs,
@@ -60,7 +49,7 @@ fn filter_out(call: &Call) -> Result<Value, Failure> {
     ))?)
 }
 
-fn bedrock_route(call: &Call) -> Result<Value, Failure> {
+fn route_for_request(call: &Call) -> Result<Value, Failure> {
     let model = required(call.model.as_deref(), "model")?;
     let (routed, filtered) = filters::bedrock_route_for_request(
         model,
@@ -72,8 +61,19 @@ fn bedrock_route(call: &Call) -> Result<Value, Failure> {
     Ok(json!({ "model": routed, "params": filtered }))
 }
 
-fn pre_process(call: &Call) -> Result<Value, Failure> {
-    let request = pre_request(call)?;
+fn pre_process_call(call: &Call) -> Result<Value, Failure> {
+    if matches!(call.function, Function::RemoveSensitiveKeys) {
+        let mut params = call.params.clone();
+        pre_process::remove_sensitive_keys(&mut params);
+        return Ok(to_value(params)?);
+    }
+    let fields = required(call.request.as_ref(), "request")?;
+    let request = pre_process::PreProcessRequest {
+        passed_params: &fields.passed_params,
+        special_params: &fields.special_params,
+        custom_llm_provider: &fields.custom_llm_provider,
+        additional_drop_params: fields.additional_drop_params.as_deref().unwrap_or_default(),
+    };
     let options = pre_process::PreProcessOptions {
         remove_sensitive_keys: call.remove_sensitive_keys.unwrap_or(false),
         add_provider_specific_params: call.add_provider_specific_params.unwrap_or(false),
@@ -83,32 +83,25 @@ fn pre_process(call: &Call) -> Result<Value, Failure> {
     }))
 }
 
-fn remove_sensitive(call: &Call) -> Result<Value, Failure> {
-    let mut params = call.params.clone();
-    pre_process::remove_sensitive_keys(&mut params);
-    Ok(to_value(params)?)
-}
-
-fn function_fallback(call: &Call) -> Result<Value, Failure> {
+fn fallback_params(call: &Call) -> Result<Value, Failure> {
     let provider = required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?;
-    let mut remaining = call.non_default_params.clone();
-    let processed = function_fallback::pre_process_optional_params(
-        &call.passed_params,
-        &mut remaining,
-        provider,
-    );
-    Ok(json!({
-        "optional_params": processed.optional_params,
-        "non_default_params": remaining,
-        "add_function_to_prompt": processed.add_function_to_prompt,
-    }))
-}
-
-fn provider_specific(call: &Call) -> Result<Value, Failure> {
+    if matches!(call.function, Function::FunctionFallback) {
+        let mut remaining = call.non_default_params.clone();
+        let processed = function_fallback::pre_process_optional_params(
+            &call.passed_params,
+            &mut remaining,
+            provider,
+        );
+        return Ok(json!({
+            "optional_params": processed.optional_params,
+            "non_default_params": remaining,
+            "add_function_to_prompt": processed.add_function_to_prompt,
+        }));
+    }
     let openai_params: Vec<&str> = call.openai_params.iter().map(String::as_str).collect();
     let request = extra_body::ProviderSpecificRequest {
         passed_params: &call.passed_params,
-        custom_llm_provider: required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?,
+        custom_llm_provider: provider,
         openai_params: &openai_params,
         additional_drop_params: call.additional_drop_params.as_deref().unwrap_or_default(),
     };
@@ -118,7 +111,29 @@ fn provider_specific(call: &Call) -> Result<Value, Failure> {
     )
 }
 
-fn transcription(call: &Call) -> Result<Value, Failure> {
+fn alias_params(call: &Call) -> Result<Value, Failure> {
+    if matches!(call.function, Function::PeekAliases) {
+        return Ok(to_value(
+            reasoning_aliases::peek_reasoning_summary_aliases(&call.optional_params),
+        )?);
+    }
+    let (stripped, summary) = reasoning_aliases::strip_reasoning_aliases(&call.optional_params);
+    Ok(json!({ "params": stripped, "summary": summary }))
+}
+
+fn media_params(call: &Call) -> Result<Value, Failure> {
+    if matches!(call.function, Function::ImageGeneration) {
+        let request = ImageGenerationRequest {
+            model: call.model.as_deref(),
+            custom_llm_provider: call.custom_llm_provider.as_deref(),
+            params: &call.params,
+            additional_drop_params: call.additional_drop_params.as_deref().unwrap_or_default(),
+            drop_policy: drop_policy(call),
+            provider_config: fixture_mapper(call.provider_config.as_ref()),
+            bedrock_config: fixture_mapper(call.bedrock.as_ref()),
+        };
+        return answer(get_optional_params_image_gen(&request).map_err(|error| error.status_code()));
+    }
     let request = TranscriptionRequest {
         model: required(call.model.as_deref(), "model")?,
         custom_llm_provider: required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?,
@@ -129,43 +144,13 @@ fn transcription(call: &Call) -> Result<Value, Failure> {
     answer(transcription_optional_params(&request).map_err(|error| error.status_code()))
 }
 
-fn image_generation(call: &Call) -> Result<Value, Failure> {
-    let request = ImageGenerationRequest {
-        model: call.model.as_deref(),
-        custom_llm_provider: call.custom_llm_provider.as_deref(),
-        params: &call.params,
-        additional_drop_params: call.additional_drop_params.as_deref().unwrap_or_default(),
-        drop_policy: drop_policy(call),
-        provider_config: fixture_mapper(call.provider_config.as_ref()),
-        bedrock_config: fixture_mapper(call.bedrock.as_ref()),
-    };
-    answer(get_optional_params_image_gen(&request).map_err(|error| error.status_code()))
-}
-
-fn peek_aliases(call: &Call) -> Result<Value, Failure> {
-    Ok(to_value(
-        reasoning_aliases::peek_reasoning_summary_aliases(&call.optional_params),
-    )?)
-}
-
-fn strip_aliases(call: &Call) -> Result<Value, Failure> {
-    let (stripped, summary) =
-        reasoning_aliases::strip_reasoning_aliases(&call.optional_params);
-    Ok(json!({ "params": stripped, "summary": summary }))
-}
-
 pub(super) fn run(call: &Call) -> Result<Value, Failure> {
     match call.function {
-        Function::SelectNonDefault => select(call),
-        Function::FilterOutLitellm => filter_out(call),
-        Function::BedrockRoute => bedrock_route(call),
-        Function::PreProcess => pre_process(call),
-        Function::RemoveSensitiveKeys => remove_sensitive(call),
-        Function::FunctionFallback => function_fallback(call),
-        Function::AddProviderSpecific => provider_specific(call),
-        Function::PeekAliases => peek_aliases(call),
-        Function::StripAliases => strip_aliases(call),
-        Function::Transcription => transcription(call),
-        Function::ImageGeneration => image_generation(call),
+        Function::SelectNonDefault | Function::FilterOutLitellm => named_params(call),
+        Function::BedrockRoute => route_for_request(call),
+        Function::PreProcess | Function::RemoveSensitiveKeys => pre_process_call(call),
+        Function::FunctionFallback | Function::AddProviderSpecific => fallback_params(call),
+        Function::PeekAliases | Function::StripAliases => alias_params(call),
+        Function::Transcription | Function::ImageGeneration => media_params(call),
     }
 }
