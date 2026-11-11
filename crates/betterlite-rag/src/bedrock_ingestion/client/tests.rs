@@ -401,6 +401,7 @@ async fn client_get_data_source_uses_get_without_a_body() {
     );
     assert!(requests[0].body.is_empty());
     assert_eq!(header(&requests[0], "Content-Length"), None);
+    assert_eq!(header(&requests[0], "Content-Type"), None);
 }
 
 #[tokio::test]
@@ -419,6 +420,10 @@ async fn client_create_knowledge_base_sends_the_vector_body() {
     let body: CreateKnowledgeBaseRequest =
         serde_json::from_slice(&requests[0].body).expect("the request body");
     assert_eq!(body, knowledge_base_request());
+    assert_eq!(
+        header(&requests[0], "Content-Type"),
+        Some("application/json")
+    );
 }
 
 #[tokio::test]
