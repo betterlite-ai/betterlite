@@ -1,0 +1,37 @@
+kind: helper
+name: model-metadata-resolution-huggingface-config-metadata
+call:
+  model_metadata_resolution:
+    scenario: huggingface_config_metadata
+    fixture:
+      model_cost: {}
+    queries:
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: status, status: 200, body: '{"max_position_embeddings": 4096}'}
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: status, status: 200, body: '{}'}
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: status, status: 404, body: '{"max_position_embeddings": 1}'}
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: status, status: 200, body: 'not json'}
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: transport_error}
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: timeout}
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: status, status: 304, body: '{"max_position_embeddings": 3}'}
+      - model: org/model
+        custom_llm_provider: huggingface
+        hf: {kind: status, status: 201, body: '{"max_position_embeddings": 5}'}
+      - model: ada
+        custom_llm_provider: huggingface
+        hf: {kind: status, status: 200, body: '{"max_position_embeddings": 6}'}
+env: {}
+compare: {ignore: []}

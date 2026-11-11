@@ -4,6 +4,8 @@ export GH_REPO=betterlite-ai/betterlite
 # Wrong means: a new failed run on its branch (a failed queue run counts once the PR has left the queue, since a PR ahead in the group can cause it), a conflict with main, or leaving the queue without auto-merge.
 # Usage: bash pr-watch.sh <pr>
 pr=$1
+# the land enables auto-merge seconds before this starts, and the queue can drop the PR within that time
+since=$(date -u -d "-2 min" +%Y-%m-%dT%H:%M:%SZ)
 P=$(dirname "$(readlink -f "$0")")
 cd "${BETTERLITE_ROOT:-$(git -C "$P" rev-parse --show-toplevel)}" || exit 1
 query='query($n:Int!){repository(owner:"betterlite-ai",name:"betterlite"){pullRequest(number:$n){state headRefName mergeStateStatus autoMergeRequest{enabledAt} mergeQueueEntry{state} mergeCommit{oid}}}}'
@@ -15,6 +17,10 @@ branch_runs() {
 last_queue_failure() {
   gh run list --workflow gate.yml --limit 30 --json databaseId,headBranch,conclusion -q "[.[] | select(.conclusion == \"failure\") | select(.headBranch | startswith(\"gh-readonly-queue/main/pr-$pr-\"))][0].databaseId // empty" 2>/dev/null
 }
+queue_removal() {
+  gh api graphql -F n="$pr" -f query='query($n:Int!){repository(owner:"betterlite-ai",name:"betterlite"){pullRequest(number:$n){timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{createdAt reason}}}}}}' \
+    -q ".data.repository.pullRequest.timelineItems.nodes[] | select(.createdAt >= \"$since\") | .reason" 2>/dev/null
+}
 first_fail() {
   gh run view "$1" --log-failed 2>/dev/null | grep -a -o -E 'FAIL [a-z-]+ \([0-9]+s\): .*|FAIL \[ *[0-9.]+s\] (\([0-9]+/[0-9]+\) )?[A-Za-z0-9_-]+ [^ ]+' | sed -E 's#\([0-9]+/[0-9]+\) ##' | awk '!seen[$0]++' | head -2 | tr '\n' ' '
 }
@@ -24,6 +30,7 @@ until runs=$(branch_runs "$branch"); do sleep 60; done
 known=$(awk '$3 == "failure" {print $1 ":" $2} NR == 1 && $3 == "cancelled" {print $1}' <<< "$runs")
 outside=0
 stuck=0
+rearmed=0
 while true; do
   info=$(gh api graphql -F n="$pr" -f query="$query" -q '.data.repository.pullRequest | "\(.state) \(.mergeStateStatus) \(.autoMergeRequest != null) \(.mergeQueueEntry != null) \(.mergeCommit.oid // "-")"' 2>/dev/null)
   if [ -z "$info" ]; then sleep 60; continue; fi
@@ -58,6 +65,18 @@ while true; do
   # GitHub sometimes leaves a clean PR with auto-merge outside the queue; re-arming queues it.
   if [ "$auto" = true ] && [ "$queued" = false ] && [ "$merge_state" = CLEAN ]; then stuck=$((stuck + 1)); else stuck=0; fi
   if [ "$stuck" -ge 5 ]; then gh pr merge "$pr" --disable-auto > /dev/null 2>&1; gh pr merge "$pr" --auto --squash > /dev/null 2>&1; stuck=0; fi
-  if [ "$outside" -ge 3 ]; then queue_run=$(last_queue_failure); echo "PR $pr is neither queued nor set to auto-merge ($merge_state)${queue_run:+; last queue run $queue_run failed: $(first_fail "$queue_run")}"; exit 1; fi
+  if [ "$outside" -ge 3 ]; then
+    reason=$(queue_removal) || { sleep 60; continue; }
+    case "$reason" in
+      failed_checks) queue_run=$(last_queue_failure); echo "PR $pr is neither queued nor set to auto-merge ($merge_state)${queue_run:+; last queue run $queue_run failed: $(first_fail "$queue_run")}"; exit 1 ;;
+      merge_conflict) echo "PR $pr conflicts with main (the merge queue removed it for merge_conflict)"; exit 1 ;;
+      # no failed check is behind these, and reporting an older failed queue run would cost a fix round
+      invalid_merge_commit | checks_timed_out)
+        if [ "$rearmed" -lt 3 ]; then gh pr merge "$pr" --auto --squash > /dev/null 2>&1; rearmed=$((rearmed + 1)); outside=0; sleep 60; continue; fi ;;
+      # off with no removal means turned off by hand or never set by the land, so it lets go and names no run
+      "") echo "PR $pr is neither queued nor set to auto-merge ($merge_state); the merge queue has not removed it since the land"; exit 1 ;;
+    esac
+    echo "PR $pr is neither queued nor set to auto-merge ($merge_state); the merge queue removed it for $reason, auto-merge re-armed $rearmed times"; exit 1
+  fi
   sleep 60
 done

@@ -1,0 +1,13 @@
+kind: helper
+name: provider-controls-affinity-existing-header-wins
+call:
+  provider_affinity:
+    operation: add
+    headers:
+      X-Session-Id: caller-value
+      other: kept
+    params:
+      provider_affinity_header: x-session-id
+      session_id: generated
+env: {}
+compare: {ignore: []}

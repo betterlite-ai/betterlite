@@ -1,0 +1,87 @@
+kind: helper
+name: message-utilities-trim-messages
+call:
+  b5366:
+    calls:
+      - function: get_token_count
+        model: gpt-4o
+        messages:
+          - {role: user, content: "What is the capital of France?"}
+          - {role: assistant, content: "The capital of France is Paris."}
+          - {role: user, content: "And of Germany?"}
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 1000
+        messages:
+          - {role: user, content: "What is the capital of France?"}
+          - {role: assistant, content: "The capital of France is Paris."}
+          - {role: user, content: "And of Germany?"}
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 30
+        messages:
+          - {role: user, content: "What is the capital of France?"}
+          - {role: assistant, content: "The capital of France is Paris."}
+          - {role: user, content: "And of Germany?"}
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 12
+        messages:
+          - {role: user, content: "What is the capital of France?"}
+          - {role: assistant, content: "The capital of France is Paris."}
+          - {role: user, content: "And of Germany?"}
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 30
+        return_response_tokens: true
+        messages:
+          - {role: user, content: "What is the capital of France?"}
+          - {role: assistant, content: "The capital of France is Paris."}
+          - {role: user, content: "And of Germany?"}
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 1000
+        return_response_tokens: true
+        messages:
+          - {role: user, content: "What is the capital of France?"}
+          - {role: assistant, content: "The capital of France is Paris."}
+          - {role: user, content: "And of Germany?"}
+      - function: process_system_message
+        system_message: alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon
+        max_tokens: 16
+        model: gpt-4o
+      - function: process_system_message
+        system_message: alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon
+        max_tokens: 30
+        model: gpt-4o
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 40
+        messages:
+          - {role: user, content: alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon }
+      - function: trim_messages
+        model: gpt-4o
+        trim_ratio: 0.0003
+        messages:
+          - {role: system, content: You are a helpful assistant.}
+          - {role: user, content: What is the capital of France?}
+          - {role: assistant, content: The capital of France is Paris.}
+          - {role: user, content: And of Germany?}
+      - function: trim_messages
+        model: together-ai-8.1b-21b
+        trim_ratio: 0.03
+        messages:
+          - {role: system, content: You are a helpful assistant.}
+          - {role: user, content: What is the capital of France?}
+          - {role: assistant, content: The capital of France is Paris.}
+          - {role: user, content: And of Germany?}
+      - function: trim_messages
+        model: minimax/MiniMax-M2
+        trim_ratio: 0.0001
+        messages:
+          - {role: system, content: You are a helpful assistant.}
+          - {role: user, content: What is the capital of France?}
+          - {role: assistant, content: The capital of France is Paris.}
+          - {role: user, content: And of Germany?}
+env: {}
+compare: {ignore: []}

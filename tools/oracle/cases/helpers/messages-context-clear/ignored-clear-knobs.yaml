@@ -1,0 +1,29 @@
+kind: helper
+name: messages-context-clear-ignored-clear-knobs
+call:
+  messages_context_clear:
+    action: editor
+    model: gpt-4o-mini
+    messages:
+      - role: assistant
+        content:
+          - {type: tool_use, id: a, name: lookup, input: {query: one}}
+          - {type: tool_use, id: b}
+          - {type: tool_use, id: c}
+          - {type: tool_use, id: d}
+      - role: user
+        content:
+          - {type: tool_result, tool_use_id: a, content: result a}
+          - {type: tool_result, tool_use_id: b, content: result b}
+          - {type: tool_result, tool_use_id: c, content: result c}
+          - {type: tool_result, tool_use_id: d, content: result d}
+    tools: null
+    system: null
+    edit_spec:
+      clear_at_least: null
+      exclude_tools: [lookup]
+      clear_tool_inputs: false
+      trigger: {value: 999999}
+    counter: {mode: scripted, values: [10]}
+env: {}
+compare: {ignore: []}
