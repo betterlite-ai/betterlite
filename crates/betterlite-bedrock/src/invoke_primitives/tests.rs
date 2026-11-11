@@ -127,12 +127,7 @@ fn sign_fixture(api_key: Option<&SecretString>, fixture: Option<Credentials>) ->
     runtime()
         .block_on(sign_request(
             signing_request(&headers, &optional, &data, api_key, epoch(NOW)),
-            move |_settings, _region| match fixture {
-                Some(credentials) => ready(Ok::<Credentials, CredentialError>(credentials)),
-                None => ready(Err::<Credentials, CredentialError>(
-                    CredentialError::MissingCredentials,
-                )),
-            },
+            move |_settings, _region| ready(fixture.ok_or(CredentialError::MissingCredentials)),
         ))
         .unwrap()
 }

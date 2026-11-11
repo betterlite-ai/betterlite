@@ -45,6 +45,18 @@ pub struct CustomPromptEntry {
     pub final_prompt_value: Option<String>,
 }
 
+impl From<&CustomPromptEntry> for CustomPromptTemplate {
+    fn from(entry: &CustomPromptEntry) -> Self {
+        Self {
+            roles: entry.roles.clone(),
+            initial_prompt_value: entry.initial_prompt_value.clone().unwrap_or_default(),
+            final_prompt_value: entry.final_prompt_value.clone().unwrap_or_default(),
+            bos_token: String::new(),
+            eos_token: String::new(),
+        }
+    }
+}
+
 pub struct PromptConversion<'text> {
     pub model: &'text str,
     pub messages: &'text [Message],
@@ -64,15 +76,8 @@ pub async fn convert_messages_to_prompt(
     conversion: PromptConversion<'_>,
 ) -> Result<ConvertedPrompt, ConversionError> {
     if let Some(entry) = conversion.custom_prompt_dict.get(conversion.model) {
-        let template = CustomPromptTemplate {
-            roles: entry.roles.clone(),
-            initial_prompt_value: entry.initial_prompt_value.clone().unwrap_or_default(),
-            final_prompt_value: entry.final_prompt_value.clone().unwrap_or_default(),
-            bos_token: String::new(),
-            eos_token: String::new(),
-        };
         return Ok(ConvertedPrompt {
-            prompt: custom_prompt(&template, conversion.messages)?,
+            prompt: custom_prompt(&CustomPromptTemplate::from(entry), conversion.messages)?,
             chat_history: None,
         });
     }

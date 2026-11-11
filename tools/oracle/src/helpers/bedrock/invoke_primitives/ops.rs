@@ -102,10 +102,10 @@ fn template_factory(local_assets: bool) -> PromptFactory {
 }
 
 fn base_options(non_default: &Params, optional: &Params, config: &Params) -> HelperResult {
-    let mut mapped = map_openai_params(non_default, optional.clone());
-    apply_config_to_params(config, &mut mapped);
+    let mut params = map_openai_params(non_default, optional.clone());
+    apply_config_to_params(config, &mut params);
     let mapped =
-        serde_json::to_value(&mapped).map_err(|error| failure("SerializationError", &error))?;
+        serde_json::to_value(&params).map_err(|error| failure("SerializationError", &error))?;
     Ok(json!({"supported": SUPPORTED_OPENAI_PARAMS, "mapped": mapped}))
 }
 
@@ -179,12 +179,12 @@ fn metadata_merge(merges: &[MergeCase], projection: &ErrorCase) -> HelperResult 
     for case in merges {
         outcomes.push(metadata_outcome(case));
     }
-    let headers: Vec<(String, String)> = projection
+    let supplied: Vec<(String, String)> = projection
         .headers
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
-    let projected = error_class(projection.message.clone(), projection.status_code, headers)
+    let projected = error_class(projection.message.clone(), projection.status_code, supplied)
         .map_err(|error| failure("BedrockError", &error))?;
     let headers = projected
         .error
@@ -211,10 +211,10 @@ fn metadata_outcome(case: &MergeCase) -> Value {
     let owner = (!case.policy_fields.is_empty()).then_some(BedrockRequestPolicy {
         fields: case.policy_fields.iter().cloned().collect(),
     });
-    match validate_environment(&headers, &mut optional, &params, owner.as_ref()) {
-        Ok(merged) => json!({"headers": merged.into_iter().collect::<BTreeMap<_, _>>()}),
-        Err(_) => json!({"error": true}),
-    }
+    validate_environment(&headers, &mut optional, &params, owner.as_ref()).map_or_else(
+        |_| json!({"error": true}),
+        |merged| json!({"headers": merged.into_iter().collect::<BTreeMap<_, _>>()}),
+    )
 }
 
 fn policy_params(case: &MergeCase) -> PolicyParams {

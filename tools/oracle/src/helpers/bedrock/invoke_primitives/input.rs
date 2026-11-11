@@ -84,7 +84,7 @@ pub(crate) struct SigningCase {
     pub(crate) credentials: CredentialInput,
     pub(crate) headers: BTreeMap<String, Option<String>>,
     #[serde(default)]
-    pub(crate) optional_params: BTreeMap<String, Box<RawValue>>,
+    pub(crate) optional_params: Params,
     #[serde(default)]
     pub(crate) request_data: IndexMap<String, Json>,
     pub(crate) api_base: String,
