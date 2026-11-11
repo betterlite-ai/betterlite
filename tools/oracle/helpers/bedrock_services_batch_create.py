@@ -2,276 +2,222 @@ import os
 
 os.environ["LITELLM_RUST"] = "false"
 
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Final, TypeAlias, cast
-from unittest.mock import MagicMock, patch
-from uuid import UUID
+from typing import Final
+from unittest.mock import MagicMock
 
-import botocore.auth
+import botocore.auth  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/879f8440a4e9ace5d3cf145ce8b3d5e5ffb892ef/botocore/auth.py
 import httpx
 import litellm
-from botocore.credentials import Credentials
+from fastuuid import UUID
 from litellm._uuid import uuid as litellm_uuid
-from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.batches.transformation import (
     BedrockBatchesConfig,
     titan_embedding_usage_from_batch_output,
 )
-from pydantic import BaseModel, ConfigDict
-
-if TYPE_CHECKING:
-    from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
-    from litellm.types.llms.openai import CreateBatchRequest
+from litellm.types.llms.openai import CreateBatchRequest
+from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+JSON: Final = TypeAdapter(JsonValue)
 DEFAULT_UUID: Final = "00000000-0000-4000-8000-000000000000"
+REAL_TIME: Final = time.time
+# boto3's environment provider hands these to LiteLLM when a scenario names no credentials
+TEST_KEY: Final = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
 
 
-class CredentialsInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+@dataclass
+class Credentials:
     access_key_id: str
     secret_access_key: str
     session_token: str | None = None
 
 
-class Scenario(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    model: str | None = None
+@dataclass
+class Scenario:
+    model: str = ""
     input_file_id: str | None = None
     completion_window: str | None = None
-    litellm_params: dict[str, Json] = {}
-    optional_params: dict[str, Json] = {}
-    environment: dict[str, str] = {}
-    original_batch_request: Json = None
-    response_body: str | None = None
-    clock: list[int] = []
+    litellm_params: dict[str, JsonValue] = field(default_factory=dict)
+    optional_params: dict[str, JsonValue] = field(default_factory=dict)
+    environment: dict[str, str] = field(default_factory=dict)
+    original_batch_request: JsonValue = None
+    response_body: str = ""
+    clock: list[int] = field(default_factory=list)
     job_prefix: str | None = None
-    uuid: str | None = None
-    credentials: CredentialsInput | None = None
-    now: int | None = None
+    uuid: str = DEFAULT_UUID
+    credentials: Credentials | None = None
+    now: int = 0
 
 
-class Input(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+@dataclass
+class Input:
     operation: str
-    scenarios: list[Scenario] = []
-    values: list[Json] = []
+    scenarios: list[Scenario] = field(default_factory=list)
+    values: list[JsonValue] = field(default_factory=list)
 
 
-@contextmanager
-def _environment(scenario: Scenario) -> Generator[None, None, None]:
-    values = {"LITELLM_RUST": "false", **scenario.environment}
-    with patch.dict(os.environ, values, clear=True):
-        yield
+@dataclass
+class SignedRequest:
+    method: str
+    url: str
+    headers: dict[str, str]
+    data: str
 
 
-@contextmanager
-def _fixed_uuid(value: str | None) -> Generator[None, None, None]:
-    fixed = UUID(value or DEFAULT_UUID)
-    with patch.object(
-        litellm_uuid,
-        "uuid4",
-        lambda: fixed,
-    ):  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-        yield
+class FixedUuid:
+    def __init__(self, value: str) -> None:
+        self.value = UUID(value)
+
+    def __call__(self) -> UUID:
+        return self.value
 
 
-def _create_batch_data(scenario: Scenario) -> dict[str, Json]:
-    data: dict[str, Json] = {}
-    if scenario.input_file_id is not None:
-        data["input_file_id"] = scenario.input_file_id
-    if scenario.completion_window is not None:
-        data["completion_window"] = scenario.completion_window
-    return data
+class FixedNow:
+    def __init__(self, seconds: int) -> None:
+        self.moment = datetime.fromtimestamp(seconds, tz=UTC).replace(tzinfo=None)
+
+    def __call__(self) -> datetime:
+        return self.moment
 
 
-def _params(scenario: Scenario) -> tuple[dict[str, object], dict[str, object]]:
-    deployment = cast("dict[str, object]", dict(scenario.litellm_params))
-    request = cast("dict[str, object]", dict(scenario.optional_params))
-    return deployment, request
+class Clock:
+    def __init__(self, values: list[int]) -> None:
+        self.remaining = iter(values)
+
+    def __call__(self) -> float:
+        return float(next(self.remaining, 0))
 
 
-def _build_call(scenario: Scenario) -> Json:
-    config = BedrockBatchesConfig()
-    signer = MagicMock()
-    deployment, request = _params(scenario)
-    with (
-        _environment(scenario),
-        _fixed_uuid(scenario.uuid),
-        patch.object(config.common_utils, "sign_aws_request", signer),
-        patch("boto3.Session", lambda: SimpleNamespace(region_name=None)),
-    ):
-        signer.return_value = ({}, b"")
-        try:
-            config.transform_create_batch_request(  # pyright: ignore[reportUnknownMemberType]
-                model=scenario.model or "",
-                create_batch_data=cast(
-                    "CreateBatchRequest", _create_batch_data(scenario)
-                ),
-                optional_params=request,
-                litellm_params=deployment,
-            )
-        except ValueError:
-            return cast(Json, {"failed": True})
-    call = cast("MagicMock", signer.call_args)
-    return cast(Json, {"failed": False, "request": cast(Json, call.kwargs["data"])})
-
-
-def _build_operation(input_value: Input) -> Json:
-    calls = [_build_call(scenario) for scenario in input_value.scenarios]
-    return cast(Json, {"calls": calls})
-
-
-def _signed_call(scenario: Scenario) -> Json:
-    if scenario.credentials is None:
-        return cast(Json, {"failed": True})
+def _environment(scenario: Scenario) -> dict[str, str]:
+    environment = {
+        "LITELLM_RUST": "false",
+        "AWS_CONFIG_FILE": os.devnull,
+        "AWS_SHARED_CREDENTIALS_FILE": os.devnull,
+        "AWS_ACCESS_KEY_ID": "AKIDEXAMPLE",
+        "AWS_SECRET_ACCESS_KEY": TEST_KEY,
+    }
     credentials = scenario.credentials
-    boto_credentials = Credentials(
-        access_key=credentials.access_key_id,
-        secret_key=credentials.secret_access_key,
-        token=credentials.session_token,
+    if credentials is not None:
+        environment["AWS_ACCESS_KEY_ID"] = credentials.access_key_id
+        environment["AWS_SECRET_ACCESS_KEY"] = credentials.secret_access_key
+        if credentials.session_token is not None:
+            environment["AWS_SESSION_TOKEN"] = credentials.session_token
+    environment.update(scenario.environment)
+    return environment
+
+
+def _transform(scenario: Scenario) -> SignedRequest:
+    os.environ.clear()
+    os.environ.update(_environment(scenario))
+    litellm_uuid.uuid4 = FixedUuid(scenario.uuid)
+    botocore.auth.get_current_datetime = FixedNow(scenario.now)  # type: ignore[misc]  # https://github.com/boto/botocore/blob/879f8440a4e9ace5d3cf145ce8b3d5e5ffb892ef/botocore/auth.py
+    batch_request: CreateBatchRequest = {}
+    if scenario.input_file_id is not None:
+        batch_request["input_file_id"] = scenario.input_file_id
+    if scenario.completion_window is not None:
+        batch_request["completion_window"] = scenario.completion_window  # type: ignore[typeddict-item]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L522
+    config = BedrockBatchesConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L104
+    result = config.transform_create_batch_request(
+        model=scenario.model,
+        create_batch_data=batch_request,
+        optional_params=scenario.optional_params,
+        litellm_params=scenario.litellm_params,
     )
-    config = BedrockBatchesConfig()
-    clock = datetime.fromtimestamp(scenario.now or 0, tz=UTC).replace(tzinfo=None)
-    deployment, request = _params(scenario)
-    with (
-        _environment(scenario),
-        _fixed_uuid(scenario.uuid),
-        patch.object(botocore.auth, "get_current_datetime", lambda: clock),
-        patch.object(BaseAWSLLM, "resolve_credentials", return_value=boto_credentials),
-        patch("boto3.Session", lambda: SimpleNamespace(region_name=None)),
-    ):
-        try:
-            result = config.transform_create_batch_request(  # pyright: ignore[reportUnknownMemberType]
-                model=scenario.model or "",
-                create_batch_data=cast(
-                    "CreateBatchRequest", _create_batch_data(scenario)
-                ),
-                optional_params=request,
-                litellm_params=deployment,
-            )
-        except Exception:  # noqa: BLE001 - a refused fixture call is one failed outcome
-            return cast(Json, {"failed": True})
-    return cast(
-        Json,
-        {
-            "failed": False,
-            "method": cast(Json, result["method"]),
-            "url": cast(Json, result["url"]),
-            "headers": cast(Json, result["headers"]),
-            "data": cast(Json, result["data"]),
-        },
-    )
+    return TypeAdapter(SignedRequest).validate_python(result)
 
 
-def _signed_operation(input_value: Input) -> Json:
-    calls = [_signed_call(scenario) for scenario in input_value.scenarios]
-    return cast(Json, {"calls": calls})
+def _request_call(scenario: Scenario) -> JsonValue:
+    try:
+        signed = _transform(scenario)
+    except ValueError:
+        return {"failed": True}
+    return {"failed": False, "request": JSON.validate_json(signed.data)}
 
 
-def _clock(values: list[int]) -> Callable[[], float]:
-    remaining = iter(values)
+def _signed_call(scenario: Scenario) -> JsonValue:
+    if scenario.credentials is None:
+        return {"failed": True}
+    try:
+        signed = _transform(scenario)
+    except ValueError:
+        return {"failed": True}
+    return {
+        "failed": False,
+        "method": signed.method,
+        "url": signed.url,
+        "headers": JSON.validate_python(signed.headers),
+        "data": signed.data,
+    }
 
-    def current() -> float:
-        return float(next(remaining, 0))
 
-    return current
-
-
-def _reply_call(scenario: Scenario) -> Json:
-    litellm_params: dict[str, object] = {}
+def _reply_call(scenario: Scenario) -> JsonValue:
+    litellm_params: dict[str, JsonValue] = {}
     if scenario.original_batch_request is not None:
         litellm_params["original_batch_request"] = scenario.original_batch_request
-    response = httpx.Response(
-        status_code=200,
-        content=(scenario.response_body or "").encode(),
-    )
-    config = BedrockBatchesConfig()
-    with patch(
-        "litellm.llms.bedrock.batches.transformation.time.time",
-        _clock(scenario.clock),
-    ):
-        try:
-            reply = config.transform_create_batch_response(  # pyright: ignore[reportUnknownMemberType]
-                model=None,
-                raw_response=response,
-                logging_obj=cast("LiteLLMLoggingObj", MagicMock()),
-                litellm_params=litellm_params,
-            )
-        except Exception:  # noqa: BLE001 - a refused fixture body is one failed outcome
-            return cast(Json, {"failed": True})
-    return cast(Json, {"failed": False, "reply": cast(Json, reply.model_dump())})
-
-
-def _reply_operation(input_value: Input) -> Json:
-    calls = [_reply_call(scenario) for scenario in input_value.scenarios]
-    return cast(Json, {"calls": calls})
-
-
-def _metadata(input_value: Input) -> Json:
-    values = [
-        cast(
-            Json,
-            BedrockBatchesConfig._get_openai_compatible_batch_metadata(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-                value
-            ),
+    response = httpx.Response(status_code=200, content=scenario.response_body.encode())
+    config = BedrockBatchesConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L104
+    time.time = Clock(scenario.clock)
+    try:
+        reply = config.transform_create_batch_response(
+            model=None,
+            raw_response=response,
+            logging_obj=MagicMock(),
+            litellm_params=litellm_params,
         )
-        for value in input_value.values
-    ]
-    return cast(Json, {"values": values})
+    except ValueError:
+        return {"failed": True}
+    finally:
+        time.time = REAL_TIME
+    return {"failed": False, "reply": JSON.validate_json(reply.model_dump_json())}
 
 
-def _titan(input_value: Input) -> Json:
-    values: list[Json] = []
-    for value in input_value.values:
-        if not isinstance(value, dict):
-            values.append(None)
-            continue
-        usage = titan_embedding_usage_from_batch_output(
-            cast("dict[str, object]", value)
-        )
-        if usage is None:
-            values.append(None)
-            continue
-        values.append(
-            cast(
-                Json,
-                {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens,
-                },
-            )
-        )
-    return cast(Json, {"values": values})
+def _metadata_value(value: JsonValue) -> JsonValue:
+    sanitized = BedrockBatchesConfig._get_openai_compatible_batch_metadata(value)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L376
+    return JSON.validate_python(sanitized)
 
 
-HANDLERS: Final[dict[str, Callable[[Input], Json]]] = {
-    "batch_role_required": _build_operation,
-    "output_bucket_fallback": _build_operation,
-    "tags_validation": _build_operation,
-    "input_24h_window": _build_operation,
-    "generated_job_name": _build_operation,
-    "owner_and_kms": _build_operation,
-    "create_signed_request": _signed_operation,
-    "create_status_mapping": _reply_operation,
-    "create_reply_defaults": _reply_operation,
-    "metadata_sanitization": _metadata,
-    "titan_batch_token_usage": _titan,
+def _titan_value(value: JsonValue) -> JsonValue:
+    usage = None
+    match value:
+        case dict():
+            usage = titan_embedding_usage_from_batch_output(value)
+        case None | bool() | int() | float() | str() | list():
+            usage = None
+    if usage is None:
+        return None
+    return {
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "total_tokens": usage.total_tokens,
+    }
+
+
+SCENARIO_OPERATIONS: Final[dict[str, Callable[[Scenario], JsonValue]]] = {
+    "batch_role_required": _request_call,
+    "output_bucket_fallback": _request_call,
+    "tags_validation": _request_call,
+    "input_24h_window": _request_call,
+    "generated_job_name": _request_call,
+    "owner_and_kms": _request_call,
+    "create_signed_request": _signed_call,
+    "create_status_mapping": _reply_call,
+    "create_reply_defaults": _reply_call,
+}
+VALUE_OPERATIONS: Final[dict[str, Callable[[JsonValue], JsonValue]]] = {
+    "metadata_sanitization": _metadata_value,
+    "titan_batch_token_usage": _titan_value,
 }
 
 
-def run(argument: Json) -> Json:
-    input_value = Input.model_validate(argument)
-    handler = HANDLERS.get(input_value.operation)
-    if handler is None:
-        raise ValueError(f"unknown operation {input_value.operation}")
-    return handler(input_value)
+def run(argument: JsonValue) -> JsonValue:
+    input_value = TypeAdapter(Input).validate_python(argument)
+    if input_value.operation in VALUE_OPERATIONS:
+        value_operation = VALUE_OPERATIONS[input_value.operation]
+        return {"values": [value_operation(value) for value in input_value.values]}
+    scenario_operation = SCENARIO_OPERATIONS[input_value.operation]
+    return {"calls": [scenario_operation(scenario) for scenario in input_value.scenarios]}
