@@ -73,6 +73,50 @@ async fn bounded_lock_ten_attempts_and_jitter() {
     assert_retry_logs(&logs.contents());
 }
 
+#[tokio::test]
+async fn bounded_lock_jitter_upper_bound() {
+    let fake = fake_with_retry_fault();
+    let jitter = FixedJitter::new(u64::MAX);
+    let pause = RecordingPause::new(&fake);
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&fake, "public", &dependencies);
+    let outcome = with_bounded_lock(&builder, "attaching child_idx", || {
+        Box::pin(async { fake.execute(ATTACH).await.map(|()| true) })
+    })
+    .await
+    .unwrap();
+    assert!(!outcome);
+    assert_eq!(
+        pause.delays(),
+        [
+            Duration::from_nanos(499_999_999),
+            Duration::from_nanos(999_999_999),
+            Duration::from_nanos(1_999_999_999),
+            Duration::from_nanos(3_999_999_999),
+            Duration::from_nanos(7_999_999_999),
+            Duration::from_nanos(7_999_999_999),
+            Duration::from_nanos(7_999_999_999),
+            Duration::from_nanos(7_999_999_999),
+            Duration::from_nanos(7_999_999_999),
+        ]
+    );
+    assert_eq!(
+        jitter.draws(),
+        [
+            250_000_000,
+            500_000_000,
+            1_000_000_000,
+            2_000_000_000,
+            4_000_000_000,
+            4_000_000_000,
+            4_000_000_000,
+            4_000_000_000,
+            4_000_000_000,
+        ]
+    );
+    assert!(pause.locked_during().iter().all(|locked| !locked));
+}
+
 fn assert_retry_schedule(pause: &RecordingPause, jitter: &FixedJitter) {
     let expected = [
         Duration::from_millis(250),

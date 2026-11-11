@@ -1,11 +1,13 @@
 use std::time::Duration;
 
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::{Instant, timeout};
+
+use crate::database_url_policy::query::url_query_value;
 
 use super::RequestLogIndexError;
 use super::connect;
-use super::database::{DatabaseFailure, IndexDatabase};
+use super::database::{DatabaseFailure, IndexDatabase, PostgresDatabase};
 
 pub(crate) const REPLICA_IDENTITY_FULL_SQL: &str = r"
 DO $$
@@ -40,7 +42,7 @@ pub async fn apply_replica_identity_full(
     command_timeout: Duration,
 ) -> bool {
     let started = Instant::now();
-    match timeout(command_timeout, connect::open(database_url)).await {
+    match timeout(command_timeout, open_with_schema(database_url)).await {
         Ok(Ok(database)) => apply_on(&database, remaining(command_timeout, started)).await,
         Ok(Err(error)) => {
             tracing::info!("{APPLY_MESSAGE}");
@@ -51,6 +53,29 @@ pub async fn apply_replica_identity_full(
             report::<RequestLogIndexError>(Err(ReplicaFailure::TimedOut))
         }
     }
+}
+
+// Prisma sets search_path from the URL's schema parameter, which the native options drop
+async fn open_with_schema(
+    database_url: &SecretString,
+) -> Result<PostgresDatabase, RequestLogIndexError> {
+    let database = connect::open(database_url).await?;
+    if let Some(statement) = search_path_statement(database_url) {
+        database.execute(&statement).await?;
+    }
+    Ok(database)
+}
+
+fn search_path_statement(database_url: &SecretString) -> Option<String> {
+    let schema = url_query_value(Some(database_url.expose_secret()), "schema").ok()?;
+    if schema.is_empty() {
+        return None;
+    }
+    let quoted = format!("\"{}\"", schema.replace('"', "\"\""));
+    let literal = quoted.replace('\'', "''");
+    Some(format!(
+        "SELECT set_config('search_path', '{literal}', false)"
+    ))
 }
 
 pub(crate) fn remaining(command_timeout: Duration, started: Instant) -> Duration {

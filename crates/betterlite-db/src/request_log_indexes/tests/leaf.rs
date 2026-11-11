@@ -192,6 +192,91 @@ async fn postgres_leaf_repair_and_adoption() {
 }
 
 #[tokio::test]
+async fn invalid_equivalent_is_never_adopted() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    leave_invalid_equivalent(&test, "api_key_broken").await;
+    let invalid_oid = index_oid(&test.client, "api_key_broken").await.unwrap();
+    assert!(
+        !index_state_of(&test.client, "api_key_broken")
+            .await
+            .unwrap()
+            .1
+    );
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert_built_not_adopted(&test, invalid_oid, &recorder).await;
+    assert!(warned(
+        &logs.contents(),
+        "Index api_key_broken on LiteLLM_SpendLogs is a second copy of LiteLLM_SpendLogs_api_key_startTime_idx"
+    ));
+    test.finish().await;
+}
+
+async fn assert_built_not_adopted(
+    test: &PostgresTest,
+    invalid_oid: u32,
+    recorder: &RecordingDatabase,
+) {
+    assert!(index_state_of(&test.client, API_KEY_INDEX).await.unwrap().1);
+    assert_eq!(
+        index_oid(&test.client, "api_key_broken").await.unwrap(),
+        invalid_oid
+    );
+    let statements = recorder.statements();
+    assert!(
+        statements.iter().any(|statement| statement.contains(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS \"LiteLLM_SpendLogs_api_key_startTime_idx\""
+        )),
+        "{statements:?}"
+    );
+    assert!(
+        !statements
+            .iter()
+            .any(|statement| statement.starts_with("ALTER INDEX")),
+        "{statements:?}"
+    );
+}
+
+// A read-only transaction pins the snapshot, so the concurrent build times out and leaves its index invalid
+async fn leave_invalid_equivalent(test: &PostgresTest, name: &str) {
+    let (mut holder, mut drivers) = test.another_client().await;
+    let pin = holder.transaction().await.unwrap();
+    pin.query(&format!("SELECT * FROM \"{SPEND_LOGS}\""), &[])
+        .await
+        .unwrap();
+    test.client
+        .batch_execute("SET statement_timeout = '100ms'")
+        .await
+        .unwrap();
+    test.client
+        .batch_execute(&format!(
+            "CREATE INDEX CONCURRENTLY \"{name}\" ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\")"
+        ))
+        .await
+        .unwrap_err();
+    test.client
+        .batch_execute("SET statement_timeout = 0")
+        .await
+        .unwrap();
+    pin.rollback().await.unwrap();
+    drivers.shutdown().await;
+}
+
+#[tokio::test]
 async fn valid_expected_definition_not_rechecked() {
     let test = PostgresTest::new().await;
     create_spend_logs(&test).await;

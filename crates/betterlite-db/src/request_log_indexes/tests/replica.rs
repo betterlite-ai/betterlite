@@ -1,8 +1,9 @@
 use std::time::{Duration, Instant};
 
 use deadpool_postgres::GenericClient as _;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::database_url_policy::query::with_query_value;
 use crate::request_log_indexes::replica_identity::{apply_on, apply_replica_identity_full};
 
 use super::fake_postgres::delayed_stalled_server;
@@ -89,6 +90,24 @@ async fn apply_replica_identity_full_applies_on_the_database() {
         .unwrap();
     assert!(apply_replica_identity_full(&test.url, Duration::from_secs(60)).await);
     assert_eq!(replica_identity(&test.client, "LiteLLM_Applied").await, "f");
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn replica_identity_uses_the_url_schema_parameter() {
+    let test = PostgresTest::new().await;
+    test.client
+        .batch_execute("CREATE TABLE \"LiteLLM_Prisma\" (id text PRIMARY KEY);")
+        .await
+        .unwrap();
+    let plain = test.fixture.options.url.clone();
+    assert!(apply_replica_identity_full(&plain, Duration::from_secs(60)).await);
+    assert_eq!(replica_identity(&test.client, "LiteLLM_Prisma").await, "d");
+    let url = SecretString::from(
+        with_query_value(plain.expose_secret(), "schema", &test.schema).unwrap(),
+    );
+    assert!(apply_replica_identity_full(&url, Duration::from_secs(60)).await);
+    assert_eq!(replica_identity(&test.client, "LiteLLM_Prisma").await, "f");
     test.finish().await;
 }
 
