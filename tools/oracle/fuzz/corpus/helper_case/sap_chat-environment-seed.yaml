@@ -1,0 +1,12 @@
+kind: helper
+name: sap_chat-environment-seed
+call:
+  b5845:
+    operation: environments
+    calls:
+      - service_key: null
+        session: {token: Bearer case-token, resource_group: default, deployment_url: 'https://dep.example.com/v2'}
+      - service_key: '{}'
+        environment: {vars: {}}
+env: {}
+compare: {ignore: []}
