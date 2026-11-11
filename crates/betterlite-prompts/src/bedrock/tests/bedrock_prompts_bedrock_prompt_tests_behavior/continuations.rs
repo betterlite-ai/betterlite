@@ -2,12 +2,36 @@ use crate::bedrock::assembly::AssistantContinue;
 use crate::bedrock::error::PromptError;
 use crate::bedrock_processor::error::ProcessorError;
 
-use super::prelude::{Harness, Settings, list, messages};
+use super::prelude::{Harness, Settings, assistant_continue_with_call, list, messages};
 
 const TOOL_THEN_USER: &str = r#"[
     {"role":"user","content":"a"},
     {"role":"tool","tool_call_id":"call_1","content":"result"},
     {"role":"user","content":"b"}
+]"#;
+
+const CONTINUE_OVERWRITE_TURNS: &str = r#"[
+    {"role":"user","content":"a"},
+    {"role":"assistant","content":""},
+    {"role":"user","content":"b"},
+    {"role":"assistant","content":"y","tool_calls":[
+        {"id":"c2","type":"function","function":{"name":"get.weather","arguments":"{}"}}
+    ]},
+    {"role":"user","content":"c"}
+]"#;
+
+const CONTINUE_OVERWRITE_EXPECTED: &str = r#"[
+    {"role":"user","content":[{"text":"a"}]},
+    {"role":"assistant","content":[
+        {"text":"x"},
+        {"toolUse":{"input":{},"name":"get_weather","toolUseId":"c1"}}
+    ]},
+    {"role":"user","content":[{"text":"b"}]},
+    {"role":"assistant","content":[
+        {"text":"y"},
+        {"toolUse":{"input":{},"name":"get_weather","toolUseId":"c2"}}
+    ]},
+    {"role":"user","content":[{"text":"c"}]}
 ]"#;
 
 #[tokio::test]
@@ -146,16 +170,7 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_custom_assistant_contin
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_continue_message_tool_call_is_made_valid_and_mapped()
  {
     let harness = Harness::new();
-    let continue_message = AssistantContinue::Message(
-        messages(
-            r#"[{"role":"assistant","content":"x","tool_calls":[
-                {"id":"c1","type":"function","function":{"name":"get weather","arguments":"{}"}}
-            ]}]"#,
-        )
-        .into_iter()
-        .next()
-        .unwrap(),
-    );
+    let continue_message = assistant_continue_with_call();
     let settings = Settings::default().with_assistant_continue(&continue_message);
     let converted = harness
         .convert(
@@ -185,16 +200,7 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_continue_message_tool_c
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_an_unused_continue_message_tool_call_adds_no_mapping()
  {
     let harness = Harness::new();
-    let continue_message = AssistantContinue::Message(
-        messages(
-            r#"[{"role":"assistant","content":"x","tool_calls":[
-                {"id":"c1","type":"function","function":{"name":"get weather","arguments":"{}"}}
-            ]}]"#,
-        )
-        .into_iter()
-        .next()
-        .unwrap(),
-    );
+    let continue_message = assistant_continue_with_call();
     let settings = Settings::default().with_assistant_continue(&continue_message);
     let converted = harness
         .convert(
@@ -215,16 +221,7 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_an_unused_continue_messag
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_continue_message_between_user_turns_adds_no_mapping()
  {
     let harness = Harness::new();
-    let continue_message = AssistantContinue::Message(
-        messages(
-            r#"[{"role":"assistant","content":"x","tool_calls":[
-                {"id":"c1","type":"function","function":{"name":"get weather","arguments":"{}"}}
-            ]}]"#,
-        )
-        .into_iter()
-        .next()
-        .unwrap(),
-    );
+    let continue_message = assistant_continue_with_call();
     let settings = Settings::default().with_assistant_continue(&continue_message);
     let converted = harness
         .convert(&messages(TOOL_THEN_USER), &[], &settings)
@@ -243,6 +240,23 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_continue_message_betwee
         )
     );
     assert!(converted.names.is_empty());
+}
+
+#[tokio::test]
+async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_later_history_call_overwrites_the_continue_mapping()
+ {
+    let harness = Harness::new();
+    let continue_message = assistant_continue_with_call();
+    let settings = Settings::default().with_assistant_continue(&continue_message);
+    let converted = harness
+        .convert(&messages(CONTINUE_OVERWRITE_TURNS), &[], &settings)
+        .await
+        .unwrap();
+    assert_eq!(converted.messages, list(CONTINUE_OVERWRITE_EXPECTED));
+    assert_eq!(
+        converted.names.get("get_weather").map(String::as_str),
+        Some("get.weather")
+    );
 }
 
 #[tokio::test]

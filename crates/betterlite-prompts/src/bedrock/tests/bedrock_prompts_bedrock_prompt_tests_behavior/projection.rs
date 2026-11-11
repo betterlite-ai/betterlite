@@ -87,6 +87,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_a_user_tool_call_name_is_not_ma
                 {"id":"call_1","type":"function","function":{"name":"get weather","arguments":"{}"}}
             ]}]"#,
         ),
+        None,
         &mut names,
     );
     assert_eq!(
@@ -110,6 +111,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_an_assistant_tool_call_name_is_
                 {"id":"call_1","type":"function","function":{"name":"get weather","arguments":"{}"}}
             ]}]"#,
         ),
+        None,
         &mut names,
     );
     assert_eq!(
@@ -135,6 +137,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_an_already_valid_tool_call_name
                 {"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{}"}}
             ]}]"#,
         ),
+        None,
         &mut names,
     );
     assert_eq!(
@@ -157,7 +160,10 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_tool_call_shapes_without_a_name
     #[case] raw: &str,
 ) {
     let mut names = ToolNameMap::new();
-    assert_eq!(project_messages(&messages(raw), &mut names), list(raw));
+    assert_eq!(
+        project_messages(&messages(raw), None, &mut names),
+        list(raw)
+    );
     assert!(names.is_empty());
 }
 
@@ -170,7 +176,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_projection_leaves_the_source_me
             ]}]"#,
     );
     let mut names = ToolNameMap::new();
-    let projected = project_messages(&source, &mut names);
+    let projected = project_messages(&source, None, &mut names);
     assert_eq!(names.len(), 1);
     assert_eq!(
         source,

@@ -11,9 +11,7 @@ use crate::bedrock_tools::tools::{BedrockTools, bedrock_tools};
 use crate::message_content::Message;
 
 use super::error::PromptError;
-use super::projection::{
-    project_message, project_messages, sanitize_tool_call_names, swaps_in_continue,
-};
+use super::projection::{project_message, project_messages};
 
 // LiteLLM's str | ChatCompletionAssistantMessage | None, where a bare string becomes one text block
 #[derive(Debug, Deserialize)]
@@ -63,17 +61,11 @@ where
     Ids: Fn() -> String + Sync,
 {
     let BedrockTools { blocks, mut names } = bedrock_tools(tools, settings.capabilities)?;
-    let projected = project_messages(messages, &mut names);
-    let user_continue = settings.user_continue_message.map(project_message);
     let mut assistant_continue = settings
         .assistant_continue_message
         .map(project_assistant_continue);
-    // LiteLLM renames the continue message's calls only at the blank assistant turn it replaces
-    if messages.iter().any(swaps_in_continue)
-        && let Some(Json::Object(fields)) = &mut assistant_continue
-    {
-        sanitize_tool_call_names(fields, &mut names);
-    }
+    let projected = project_messages(messages, assistant_continue.as_mut(), &mut names);
+    let user_continue = settings.user_continue_message.map(project_message);
     let conversion = Conversion {
         model: settings.model,
         cache_points: deps.cache_points,

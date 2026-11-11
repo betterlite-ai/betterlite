@@ -32,11 +32,20 @@ pub fn project_message(message: &Message) -> Json {
     Json::Object(fields)
 }
 
-// LiteLLM sanitizes a tool call's name where it converts the call, so the reverse map fills in that order
+// LiteLLM records the continue message's names at the blank turn it replaces, before later history calls
 #[must_use]
-pub fn project_messages(messages: &[Message], names: &mut ToolNameMap) -> Vec<Json> {
+pub fn project_messages(
+    messages: &[Message],
+    mut continue_message: Option<&mut Json>,
+    names: &mut ToolNameMap,
+) -> Vec<Json> {
     let mut projected = Vec::with_capacity(messages.len());
     for message in messages {
+        if swaps_in_continue(message)
+            && let Some(Json::Object(fields)) = continue_message.as_deref_mut()
+        {
+            sanitize_tool_call_names(fields, names);
+        }
         let value = if message.role == ASSISTANT {
             project_message_with_names(message, names)
         } else {

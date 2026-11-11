@@ -36,6 +36,18 @@ pub(super) fn messages(raw: &str) -> Vec<Message> {
     serde_json::from_str(raw).unwrap()
 }
 
+pub(super) fn assistant_continue_with_call() -> AssistantContinue {
+    let message = messages(
+        r#"[{"role":"assistant","content":"x","tool_calls":[
+            {"id":"c1","type":"function","function":{"name":"get weather","arguments":"{}"}}
+        ]}]"#,
+    )
+    .into_iter()
+    .next()
+    .unwrap();
+    AssistantContinue::Message(message)
+}
+
 pub(super) fn field<'value>(value: &'value Json, key: &str) -> Option<&'value Json> {
     let fields = value.as_object()?;
     fields.get(key)
