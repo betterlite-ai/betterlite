@@ -71,7 +71,12 @@ pub async fn transform_response(
     let reply = DecodedReply::try_from(input.body)?;
     let (reasoning, content) = message_reasoning(&reply.message);
     let usage = usage_for(&reply, content.as_deref(), input.messages, counter).await;
-    let mapped = mapped_finish_reason(done_reason(&reply));
+    let mapped = mapped_finish_reason(
+        reply
+            .done_reason
+            .as_deref()
+            .unwrap_or(DEFAULT_FINISH_REASON),
+    );
     let json = json_mode(input).then_some(input.litellm_params);
     let (message, override_finish) =
         assistant_message(&reply.message, content, reasoning, json, ids)?;
@@ -85,13 +90,6 @@ pub async fn transform_response(
         }],
         usage,
     })
-}
-
-fn done_reason(reply: &DecodedReply) -> &str {
-    match reply.done_reason.as_deref() {
-        Some(text) if !text.is_empty() => text,
-        Some(_) | None => DEFAULT_FINISH_REASON,
-    }
 }
 
 // LiteLLM parses the content for reasoning tags only when the message has no thinking key at all

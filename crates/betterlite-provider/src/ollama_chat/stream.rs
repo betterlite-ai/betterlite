@@ -142,10 +142,11 @@ impl OllamaChatIterator {
         if self.seen_tool_calls {
             return String::from(TOOL_CALLS_FINISH_REASON);
         }
-        match raw.done_reason.as_deref() {
-            Some(reason) if !reason.is_empty() => String::from(mapped_finish_reason(reason)),
-            Some(_) | None => String::from(STOP_FINISH_REASON),
-        }
+        String::from(
+            raw.done_reason
+                .as_deref()
+                .map_or(STOP_FINISH_REASON, mapped_finish_reason),
+        )
     }
 }
 
