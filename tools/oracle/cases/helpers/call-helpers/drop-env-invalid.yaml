@@ -3,6 +3,6 @@ name: drop-env-invalid
 call:
   call_helpers:
     function: drop_env_invalid
-    values: [null, "", "   ", "true", "false", "yes", "0", always, "  yes  "]
+    values: [null, "", "   ", "true", "false", "yes", "0", "t", "F", "y", "n", always, "  yes  "]
 env: {}
 compare: {ignore: []}

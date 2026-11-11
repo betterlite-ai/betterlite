@@ -3,6 +3,6 @@ name: call-helpers-drop-request
 call:
   call_helpers:
     function: drop_request_invalid
-    values: ["maybe", null, "on", 1, 0.5, []]
+    values: ["maybe", null, "on", "y", "F", 1, 0.5, []]
 env: {}
 compare: {ignore: []}

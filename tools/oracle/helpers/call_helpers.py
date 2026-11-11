@@ -148,13 +148,15 @@ def _token_limits(input_value: Object) -> Json:
 
 
 def _expected_client_error(input_value: Object) -> Json:
-    results: list[Json] = []
-    for raw in _list(input_value.get("facts"), "facts"):
-        if raw is None:
-            results.append(is_expected_client_error(None))
-        else:
-            results.append(is_expected_client_error(_fixture_error(_object(raw, "fact"))))
-    return results
+    return cast(
+        Json,
+        [
+            is_expected_client_error(None)
+            if raw is None
+            else is_expected_client_error(_fixture_error(_object(raw, "fact")))
+            for raw in _list(input_value.get("facts"), "facts")
+        ],
+    )
 
 
 def _metadata_bucket(input_value: Object) -> Json:
@@ -331,11 +333,15 @@ def _safe_divide_seconds(input_value: Object) -> Json:
 
 
 def _request_headers(input_value: Object) -> Json:
-    results: list[Json] = []
-    for raw in _list(input_value.get("steps"), "steps"):
-        params = None if raw is None else _object(raw, "params")
-        results.append(cast(Json, get_proxy_server_request_headers(params)))
-    return results
+    return cast(
+        Json,
+        [
+            get_proxy_server_request_headers(
+                None if raw is None else _object(raw, "params")
+            )
+            for raw in _list(input_value.get("steps"), "steps")
+        ],
+    )
 
 
 def run(input_value: dict[str, Json]) -> Json:  # noqa: C901, PLR0911, PLR0912

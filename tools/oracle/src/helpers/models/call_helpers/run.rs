@@ -42,7 +42,7 @@ pub(super) fn run(input: &Input) -> Value {
                 "trusted": process_response_headers(HeaderSource::Internal(&internal)),
             })
         }
-        Input::SnapshotIsolation { record } => json!(record.clone()),
+        Input::SnapshotIsolation { record } => json!(record),
         Input::FilterInternal { record, additional } => {
             let names: BTreeSet<String> = additional.iter().cloned().collect();
             json!(RequestRecordProjection::filter_internal(
@@ -181,19 +181,16 @@ fn drop_env_flags(values: &[Option<String>]) -> Value {
 }
 
 fn drop_request_flags(values: &[Json]) -> Value {
-    Value::Array(
-        values
-            .iter()
-            .map(|value| {
-                let flag = drop_params_flag(Some(value));
-                json!({
-                    "normalized": normalize_drop_params(Some(value)),
-                    "enabled": flag.enabled,
-                    "warned": flag.warned,
-                })
-            })
-            .collect(),
-    )
+    let mut flags = Vec::with_capacity(values.len());
+    for value in values {
+        let flag = drop_params_flag(Some(value));
+        flags.push(json!({
+            "normalized": normalize_drop_params(Some(value)),
+            "enabled": flag.enabled,
+            "warned": flag.warned,
+        }));
+    }
+    Value::Array(flags)
 }
 
 fn safe_divides(pairs: &[SafeDivideInput]) -> Value {
