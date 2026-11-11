@@ -23,16 +23,8 @@ fn delivery_message(message: String) -> LoggerError {
     }
 }
 
-// LiteLLM's sync success handler calls this logger on the blocking client, so the sync hook starts the same async send
-#[async_trait]
-impl<D: Delivery + 'static> CallbackLogger for BraintrustAdapter<D> {
-    fn callback_name(&self) -> &'static str {
-        "braintrust"
-    }
-
-    fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        let prepared =
-            Prepared::new(&event.payload).map_err(|error| delivery_message(error.to_string()))?;
+impl<D: Delivery + 'static> BraintrustAdapter<D> {
+    fn started(&self, prepared: Prepared) {
         let logger = Arc::clone(&self.logger);
         let _spawned = self.tracker.spawn(async move {
             if let Err(error) = logger
@@ -43,15 +35,33 @@ impl<D: Delivery + 'static> CallbackLogger for BraintrustAdapter<D> {
                 tracing::warn!(%mapped, "the braintrust success event could not be logged");
             }
         });
+    }
+
+    async fn finished(&self, prepared: &Prepared) -> Result<(), LoggerError> {
+        self.logger
+            .log_success_event(&prepared.event(), CallbackPath::Async)
+            .await
+            .map_err(|error| delivery_message(error.to_string()))
+    }
+}
+
+// LiteLLM's sync success handler calls this logger on the blocking client, so the sync hook starts the same async send
+#[async_trait]
+impl<D: Delivery + 'static> CallbackLogger for BraintrustAdapter<D> {
+    fn callback_name(&self) -> &'static str {
+        "braintrust"
+    }
+
+    fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
+        let prepared =
+            Prepared::new(&event.payload).map_err(|error| delivery_message(error.to_string()))?;
+        self.started(prepared);
         Ok(())
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         let prepared =
             Prepared::new(&event.payload).map_err(|error| delivery_message(error.to_string()))?;
-        self.logger
-            .log_success_event(&prepared.event(), CallbackPath::Async)
-            .await
-            .map_err(|error| delivery_message(error.to_string()))
+        self.finished(&prepared).await
     }
 }

@@ -18,6 +18,37 @@ pub(super) struct LiteralAiAdapter<D, I> {
     pub(super) tracker: TaskTracker,
 }
 
+#[derive(Clone, Copy)]
+enum Outcome {
+    Success,
+    Failure,
+}
+
+struct Prepared {
+    kwargs: CallbackKwargs,
+    start_time: DateTime<Utc>,
+    end_time: DateTime<Utc>,
+}
+
+impl Prepared {
+    fn new(event: &LoggerEvent) -> Result<Self, LoggerError> {
+        let payload = &event.payload;
+        Ok(Self {
+            kwargs: callback_kwargs(payload),
+            start_time: utc_at(payload.start_time).ok_or_else(|| invalid_time("startTime"))?,
+            end_time: utc_at(payload.end_time).ok_or_else(|| invalid_time("endTime"))?,
+        })
+    }
+
+    const fn call(&self) -> Call<'_> {
+        Call {
+            kwargs: &self.kwargs,
+            start_time: self.start_time,
+            end_time: self.end_time,
+        }
+    }
+}
+
 fn invalid_time(field: &str) -> LoggerError {
     LoggerError::Delivery {
         callback: "literalai".to_owned(),
@@ -25,13 +56,28 @@ fn invalid_time(field: &str) -> LoggerError {
     }
 }
 
-fn prepare(
-    event: &LoggerEvent,
-) -> Result<(CallbackKwargs, DateTime<Utc>, DateTime<Utc>), LoggerError> {
-    let payload = &event.payload;
-    let start_time = utc_at(payload.start_time).ok_or_else(|| invalid_time("startTime"))?;
-    let end_time = utc_at(payload.end_time).ok_or_else(|| invalid_time("endTime"))?;
-    Ok((callback_kwargs(payload), start_time, end_time))
+impl<D: Delivery + 'static, I: IdSource + 'static> LiteralAiAdapter<D, I> {
+    fn started(&self, event: &LoggerEvent, outcome: Outcome) -> Result<(), LoggerError> {
+        let prepared = Prepared::new(event)?;
+        let logger = Arc::clone(&self.logger);
+        let _spawned = self.tracker.spawn(async move {
+            let call = prepared.call();
+            match outcome {
+                Outcome::Success => logger.log_success_event(call).await,
+                Outcome::Failure => logger.log_failure_event(call).await,
+            }
+        });
+        Ok(())
+    }
+
+    async fn finished(&self, event: &LoggerEvent, outcome: Outcome) -> Result<(), LoggerError> {
+        let prepared = Prepared::new(event)?;
+        match outcome {
+            Outcome::Success => self.logger.async_log_success_event(prepared.call()).await,
+            Outcome::Failure => self.logger.async_log_failure_event(prepared.call()).await,
+        }
+        Ok(())
+    }
 }
 
 // LiteLLM's batch logger queues the step and sends when the batch size is reached, so the sync hook runs the same async body
@@ -42,52 +88,18 @@ impl<D: Delivery + 'static, I: IdSource + 'static> CallbackLogger for LiteralAiA
     }
 
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        let (kwargs, start_time, end_time) = prepare(event)?;
-        let logger = Arc::clone(&self.logger);
-        let _spawned = self.tracker.spawn(async move {
-            let call = Call {
-                kwargs: &kwargs,
-                start_time,
-                end_time,
-            };
-            logger.log_success_event(call).await;
-        });
-        Ok(())
+        self.started(event, Outcome::Success)
     }
 
     fn log_failure_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        let (kwargs, start_time, end_time) = prepare(event)?;
-        let logger = Arc::clone(&self.logger);
-        let _spawned = self.tracker.spawn(async move {
-            let call = Call {
-                kwargs: &kwargs,
-                start_time,
-                end_time,
-            };
-            logger.log_failure_event(call).await;
-        });
-        Ok(())
+        self.started(event, Outcome::Failure)
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let (kwargs, start_time, end_time) = prepare(&event)?;
-        let call = Call {
-            kwargs: &kwargs,
-            start_time,
-            end_time,
-        };
-        self.logger.async_log_success_event(call).await;
-        Ok(())
+        self.finished(&event, Outcome::Success).await
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let (kwargs, start_time, end_time) = prepare(&event)?;
-        let call = Call {
-            kwargs: &kwargs,
-            start_time,
-            end_time,
-        };
-        self.logger.async_log_failure_event(call).await;
-        Ok(())
+        self.finished(&event, Outcome::Failure).await
     }
 }
