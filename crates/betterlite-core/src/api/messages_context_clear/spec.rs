@@ -1,11 +1,11 @@
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
-// LiteLLM reads trigger and keep as total=False dicts, so a null type or value means the default.
+// keep.get("type", "tool_uses") defaults an absent type but not an explicit null, so both states stay distinct
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ClearCountSpec {
-    #[serde(rename = "type", default)]
-    pub kind: Option<Json>,
+    #[serde(rename = "type", default, with = "serde_with::rust::double_option")]
+    pub kind: Option<Option<Json>>,
     #[serde(default)]
     pub value: Option<Json>,
 }

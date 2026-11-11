@@ -394,6 +394,40 @@ fn keep_zero_protects_the_latest_completed_result() {
     );
 }
 
+#[test]
+fn an_absent_keep_type_keeps_the_requested_count() {
+    let counter = ScriptedCounter::new(&[10, 4]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"type":"tool_uses","value":0},"keep":{"value":0}}"#,
+        &counter,
+    );
+    assert_eq!(outcome.applied.expect("edit").cleared_tool_uses, Some(3));
+}
+
+#[test]
+fn an_explicit_null_keep_type_uses_the_default() {
+    let counter = ScriptedCounter::new(&[10, 4]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"type":"tool_uses","value":0},"keep":{"type":null,"value":0}}"#,
+        &counter,
+    );
+    assert_eq!(outcome.applied.expect("edit").cleared_tool_uses, Some(1));
+}
+
+#[test]
+fn a_null_trigger_type_counts_input_tokens() {
+    let counter = ScriptedCounter::new(&[100_001]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"type":null,"value":100001}}"#,
+        &counter,
+    );
+    assert!(outcome.applied.is_none());
+    assert_eq!(counter.call_count(), 1);
+}
+
 #[rstest]
 #[case::negative(r#"{"value":-1}"#)]
 #[case::float(r#"{"value":2.5}"#)]

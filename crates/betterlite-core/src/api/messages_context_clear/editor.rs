@@ -34,6 +34,14 @@ fn is_tool_uses(kind: Option<&Json>) -> bool {
     text == "tool_uses"
 }
 
+fn keep_is_tool_uses(kind: Option<&Option<Json>>) -> bool {
+    match kind {
+        None => true,
+        Some(Some(Json::Text(text))) => text == "tool_uses",
+        Some(_) => false,
+    }
+}
+
 // an integer beyond i128 keeps its side of the range: a huge threshold can never be exceeded and a huge keep keeps everything
 fn integer_value(value: &Json) -> Option<i128> {
     match value {
@@ -70,7 +78,7 @@ fn exceeds(count: usize, threshold: i128) -> bool {
 
 fn resolved_keep_count(keep: &ClearCountSpec) -> usize {
     let default = usize::try_from(DEFAULT_KEEP_TOOL_USES).unwrap_or(usize::MAX);
-    if !is_tool_uses(keep.kind.as_ref()) {
+    if !keep_is_tool_uses(keep.kind.as_ref()) {
         return default;
     }
     match keep.value.as_ref().and_then(integer_value) {
@@ -106,7 +114,7 @@ fn trigger_met(
     request: &EditorRequest<'_>,
     counter: &dyn TokenCounter,
 ) -> Result<(bool, Option<usize>), ClearToolUsesError> {
-    if is_tool_uses(trigger.kind.as_ref()) {
+    if is_tool_uses(trigger.kind.as_ref().and_then(|kind| kind.as_ref())) {
         let Some(threshold) = trigger.value.as_ref().and_then(integer_value) else {
             return Ok((false, None));
         };
