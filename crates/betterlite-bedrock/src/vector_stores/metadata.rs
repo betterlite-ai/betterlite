@@ -6,6 +6,10 @@ use indexmap::IndexMap;
 const SOURCE_URI: &str = "x-amz-bedrock-kb-source-uri";
 const CHUNK_ID: &str = "x-amz-bedrock-kb-chunk-id";
 const DATA_SOURCE_ID: &str = "x-amz-bedrock-kb-data-source-id";
+const PARAM_SCHEMES: [&str; 16] = [
+    "", "ftp", "hdl", "prospero", "http", "imap", "https", "shttp", "rtsp", "rtsps", "rtspu",
+    "sip", "sips", "mms", "sftp", "tel",
+];
 
 #[must_use]
 pub fn file_id_from_metadata(metadata: &IndexMap<String, Json>) -> Json {
@@ -58,24 +62,39 @@ fn split_uri(value: &str) -> Option<UriParts> {
         .collect();
     let without_fragment = stripped.split('#').next().unwrap_or_default();
     let without_query = without_fragment.split('?').next().unwrap_or_default();
-    let rest = split_scheme(without_query);
-    let Some(authority) = rest.strip_prefix("//") else {
-        return Some(UriParts {
-            netloc: String::new(),
-            path: rest.to_owned(),
-        });
+    let (scheme, rest) = split_scheme(without_query);
+    let (netloc, path) = match rest.strip_prefix("//") {
+        None => ("", rest),
+        Some(authority) => {
+            let (host, tail) = authority
+                .find('/')
+                .map_or((authority, ""), |index| authority.split_at(index));
+            let opens = host.contains('[');
+            if opens != host.contains(']') || (opens && !bracketed_netloc_is_valid(host)) {
+                return None;
+            }
+            (host, tail)
+        }
     };
-    let (netloc, path) = authority
-        .find('/')
-        .map_or((authority, ""), |index| authority.split_at(index));
-    let opens = netloc.contains('[');
-    if opens != netloc.contains(']') || (opens && !bracketed_netloc_is_valid(netloc)) {
-        return None;
-    }
+    let keeps_params = PARAM_SCHEMES
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(scheme));
     Some(UriParts {
         netloc: netloc.to_owned(),
-        path: path.to_owned(),
+        path: if keeps_params {
+            without_params(path)
+        } else {
+            path
+        }
+        .to_owned(),
     })
+}
+
+fn without_params(path: &str) -> &str {
+    let start = path.rfind('/').unwrap_or(0);
+    path.match_indices(';')
+        .find(|(index, _)| *index >= start)
+        .map_or(path, |(index, _)| path.split_at(index).0)
 }
 
 fn bracketed_netloc_is_valid(netloc: &str) -> bool {
@@ -106,9 +125,9 @@ fn bracketed_netloc_is_valid(netloc: &str) -> bool {
         && address.parse::<Ipv6Addr>().is_ok()
 }
 
-fn split_scheme(value: &str) -> &str {
+fn split_scheme(value: &str) -> (&str, &str) {
     let Some((candidate, rest)) = value.split_once(':') else {
-        return value;
+        return ("", value);
     };
     let mut characters = candidate.chars();
     let valid = characters
@@ -117,7 +136,11 @@ fn split_scheme(value: &str) -> &str {
         && characters.all(|character| {
             character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
         });
-    if valid { rest } else { value }
+    if valid {
+        (candidate, rest)
+    } else {
+        ("", value)
+    }
 }
 
 #[must_use]

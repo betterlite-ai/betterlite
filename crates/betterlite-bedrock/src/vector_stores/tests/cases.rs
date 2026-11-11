@@ -456,6 +456,50 @@ const FILENAME_CASES: &[(&str, &str)] = &[
         r#""http://[v.x]/box.txt""#,
     ),
     (
+        r#"{"x-amz-bedrock-kb-source-uri":"https://host/a;b.pdf"}"#,
+        r#""a""#,
+    ),
+    (r#"{"x-amz-bedrock-kb-source-uri":"a/b;c"}"#, r#""b""#),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"https://host/x;"}"#,
+        r#""x""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"https://host/;x"}"#,
+        r#""host""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/a;b.txt"}"#,
+        r#""a;b.txt""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"HTTPS://host/a;b"}"#,
+        r#""a""#,
+    ),
+    (r#"{"x-amz-bedrock-kb-source-uri":"a;b"}"#, r#""a""#),
+    (r#"{"x-amz-bedrock-kb-source-uri":";x"}"#, r#""""#),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"ftp://h/d;t/e;f.txt"}"#,
+        r#""e""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"https://host/dir;x/"}"#,
+        r#""host""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"https://host/a;b/c"}"#,
+        r#""c""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"http://host;x"}"#,
+        r#""host;x""#,
+    ),
+    (r#"{"x-amz-bedrock-kb-source-uri":"/;x"}"#, r#""""#),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir;x/"}"#,
+        r#""bucket""#,
+    ),
+    (
         r#"{"x-amz-bedrock-kb-source-uri":"http://u@[::1]:80/box.txt"}"#,
         r#""box.txt""#,
     ),
