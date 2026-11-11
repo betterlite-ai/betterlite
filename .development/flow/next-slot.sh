@@ -18,6 +18,17 @@ log=${L}/dispatch-${id}-$2.log
 tools=${worktrees}/.tools
 cd "${main}" || exit 1
 height=$(cd .development && LC_ALL=C perl "${P}/height.pl" "${id}") || height=0
+# bin/cargo runs these builds for `cargo gate` in task checkouts, so the gate compiles once per version instead of 625 MB in each checkout (27 GB over 44 checkouts on 11-11, Max)
+gates=${worktrees}/tmp/gate
+tree=$(git rev-parse HEAD:.development/gate) || exit 1
+changes=$(git status --porcelain -- .development/gate) || exit 1
+if [[ ! -x ${gates}/${tree}/gate ]] && [[ -z ${changes} ]]; then
+  "${HOME}/.cargo/bin/cargo" build --quiet --locked --manifest-path .development/gate/Cargo.toml || exit 1
+  mkdir -p "${gates}/${tree}" || exit 1
+  copy=$(mktemp "${gates}/${tree}/gate.XXXXXX") || exit 1
+  cp .development/gate/target/debug/gate "${copy}" && chmod 0755 "${copy}" && mv "${copy}" "${gates}/${tree}/gate" || exit 1
+fi
+find "${gates}" -mindepth 1 -maxdepth 1 -mmin +2880 -exec rm -rf -- {} +
 mkdir -p "${L}/locks"
 exec 9> "${L}/locks/admission.lock"
 flock 9
@@ -93,7 +104,7 @@ done
   exit 1
 }
 UV_CACHE_DIR="${HOME}/.cache/uv" GATE_POSTGRES_SOCKET="${socket}" POSTGRES_TEST_URL="postgresql://betterlite:betterlite@127.0.0.1:55432/betterlite?host=${socket_dir}" TMPDIR=${tmp} PATH=${P}/bin:${HOME}/.local/bin:${tools}/bin:${PATH} RUSTC_WRAPPER=${tools}/bin/sccache SCCACHE_IGNORE_SERVER_IO_ERROR=1 CARGO_INCREMENTAL=0 \
-  CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only CARGO_BUILD_JOBS=3 NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=5 \
+  CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only CARGO_BUILD_JOBS=3 NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=5 GATE_SHARED_BUILDS=${gates} \
   systemd-run --user --scope --slice=betterlite-dispatch.slice -p MemoryMax=16G -p MemorySwapMax=4G -q -- nice -n 10 cargo gate dispatch "${id}" ${3:+--note "$3"} ${GRANT:+--grant "${GRANT}"} > "${log}" 2>&1 9>&- &
 child=$!
 while kill -0 "${child}" 2> /dev/null && ! pgrep -f "^([^ ]*/)?gate dispatch ${id}( |$)" > /dev/null; do
