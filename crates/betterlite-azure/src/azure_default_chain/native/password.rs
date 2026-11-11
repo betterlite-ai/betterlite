@@ -31,12 +31,13 @@ pub struct EnvironmentPasswordGrant<'io> {
 }
 
 impl EnvironmentPasswordGrant<'_> {
-    pub fn from_record<'grants, 'io, H: ArcHost>(
+    pub fn from_record<'grants, 'io, H>(
         record: &UsernamePasswordRecord,
         source: &'grants NativeGrants<'io, H>,
     ) -> EnvironmentPasswordGrant<'grants>
     where
         'io: 'grants,
+        H: ArcHost,
     {
         EnvironmentPasswordGrant {
             input: UsernamePasswordInput {
@@ -60,31 +61,7 @@ impl EnvironmentPasswordGrant<'_> {
             state: Mutex::new(State::default()),
         }
     }
-}
 
-impl Grant for EnvironmentPasswordGrant<'_> {
-    fn token(&self) -> Result<ChainToken, LinkError> {
-        let now = self.clock.now_unix_seconds();
-        {
-            let state = self.lock()?;
-            if let Some(token) = &state.token
-                && token.expires_on.is_some_and(|expires_on| {
-                    expires_on.saturating_sub(now) >= REUSE_WINDOW_SECONDS
-                })
-            {
-                return Ok(token.clone());
-            }
-        }
-        let authority = self.authority()?;
-        let response = token::request_token(self.transport, &authority, &self.input)
-            .map_err(|error| LinkError::Authentication(error.to_string()))?;
-        let token = password_token(&response, now)?;
-        self.lock()?.token = Some(token.clone());
-        Ok(token)
-    }
-}
-
-impl EnvironmentPasswordGrant<'_> {
     fn lock(&self) -> Result<MutexGuard<'_, State>, LinkError> {
         self.state.lock().map_err(|_error| {
             LinkError::Authentication("the password token cache is poisoned".to_owned())
@@ -106,6 +83,28 @@ impl EnvironmentPasswordGrant<'_> {
             .map_err(|error| LinkError::Authentication(error.to_string()))?;
         self.lock()?.authority = Some(authority.clone());
         Ok(authority)
+    }
+}
+
+impl Grant for EnvironmentPasswordGrant<'_> {
+    fn token(&self) -> Result<ChainToken, LinkError> {
+        let now = self.clock.now_unix_seconds();
+        {
+            let state = self.lock()?;
+            if let Some(token) = &state.token
+                && token.expires_on.is_some_and(|expires_on| {
+                    expires_on.saturating_sub(now) >= REUSE_WINDOW_SECONDS
+                })
+            {
+                return Ok(token.clone());
+            }
+        }
+        let authority = self.authority()?;
+        let response = token::request_token(self.transport, &authority, &self.input)
+            .map_err(|error| LinkError::Authentication(error.to_string()))?;
+        let token = password_token(&response, now)?;
+        self.lock()?.token = Some(token.clone());
+        Ok(token)
     }
 }
 

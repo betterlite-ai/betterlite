@@ -5,7 +5,7 @@ use super::grant::{
     CertificateRecord, ChainPlacement, ClientSecretRecord, GrantError, Grants,
     ManagedIdentityRecord, UsernamePasswordRecord, WorkloadRecord,
 };
-use super::selection::{Selection, selection};
+use super::selection::selection;
 
 pub const ENVIRONMENT_PASSWORD_WARNING: &str = "Environment is configured to use username and password authentication. This authentication method is deprecated, as it doesn't support multifactor authentication (MFA). For more details, see https://aka.ms/azsdk/identity/mfa.";
 
@@ -101,13 +101,13 @@ where
     if matches!(record, EnvironmentRecord::Password(_)) {
         warnings.push(ENVIRONMENT_PASSWORD_WARNING.to_owned());
     }
-    let inner = match &record {
-        EnvironmentRecord::Secret(record) => grants.client_secret(record),
-        EnvironmentRecord::Certificate(record) => grants.certificate(record),
-        EnvironmentRecord::Password(record) => grants.username_password(record),
+    let grant = match &record {
+        EnvironmentRecord::Secret(secret) => grants.client_secret(secret),
+        EnvironmentRecord::Certificate(certificate) => grants.certificate(certificate),
+        EnvironmentRecord::Password(password) => grants.username_password(password),
     };
-    let inner = match inner {
-        Ok(inner) => LinkInner::Ready(inner),
+    let inner = match grant {
+        Ok(ready) => LinkInner::Ready(ready),
         Err(error) => return Err(construction(record.credential(), error)),
     };
     Ok(Link::Environment(inner))
@@ -144,24 +144,16 @@ pub fn workload_record(environment: &ChainEnvironment, scope: &str) -> Option<Wo
 #[must_use]
 pub fn missing_workload_arguments(environment: &ChainEnvironment) -> Vec<&'static str> {
     let mut missing = Vec::new();
-    if environment
-        .tenant_id
-        .as_deref()
-        .is_none_or(|text| text.is_empty())
-    {
+    if environment.tenant_id.as_deref().is_none_or(str::is_empty) {
         missing.push("tenant_id");
     }
-    if environment
-        .client_id
-        .as_deref()
-        .is_none_or(|text| text.is_empty())
-    {
+    if environment.client_id.as_deref().is_none_or(str::is_empty) {
         missing.push("client_id");
     }
     if environment
         .federated_token_file
         .as_deref()
-        .is_none_or(|text| text.is_empty())
+        .is_none_or(str::is_empty)
     {
         missing.push("token_file_path");
     }

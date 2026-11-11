@@ -72,7 +72,7 @@ impl Recorded {
     }
 
     fn secret(record: &ClientSecretRecord) -> Self {
-        let mut recorded = Recorded::blank("ClientSecretCredential");
+        let mut recorded = Self::blank("ClientSecretCredential");
         recorded.client_id = Some(record.client_id.clone());
         recorded.tenant_id = Some(record.tenant_id.clone());
         recorded.client_secret = Some(exposed(&record.client_secret));
@@ -80,13 +80,13 @@ impl Recorded {
     }
 
     fn certificate(record: &CertificateRecord) -> Self {
-        Recorded {
+        Self {
             client_id: Some(record.client_id.clone()),
             tenant_id: Some(record.tenant_id.clone()),
             certificate_path: Some(record.certificate_path.clone()),
             password: record.password.as_ref().map(exposed),
             send_certificate_chain: Some(record.send_certificate_chain),
-            ..Recorded::blank("CertificateCredential")
+            ..Self::blank("CertificateCredential")
         }
     }
 
@@ -99,7 +99,7 @@ impl Recorded {
     }
 
     fn workload(record: &WorkloadRecord) -> Self {
-        let mut recorded = Recorded::blank("WorkloadIdentityCredential");
+        let mut recorded = Self::blank("WorkloadIdentityCredential");
         recorded.client_id = Some(record.client_id.clone());
         recorded.tenant_id = Some(record.tenant_id.clone());
         recorded.token_file = Some(record.token_file.clone());
@@ -140,6 +140,13 @@ impl FixtureGrants {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    fn grant<'grants>(&'grants self, credential: &'static str) -> ScriptedGrant<'grants> {
+        ScriptedGrant {
+            grants: self,
+            credential: credential.to_owned(),
+        }
     }
 
     pub(super) fn calls(&self) -> Vec<String> {
@@ -218,10 +225,7 @@ impl Grants for FixtureGrants {
         record: &ClientSecretRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
         self.record(Recorded::secret(record))?;
-        Ok(ScriptedGrant {
-            grants: self,
-            credential: "ClientSecretCredential".to_owned(),
-        })
+        Ok(self.grant("ClientSecretCredential"))
     }
 
     fn certificate<'grants>(
@@ -229,10 +233,7 @@ impl Grants for FixtureGrants {
         record: &CertificateRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
         self.record(Recorded::certificate(record))?;
-        Ok(ScriptedGrant {
-            grants: self,
-            credential: "CertificateCredential".to_owned(),
-        })
+        Ok(self.grant("CertificateCredential"))
     }
 
     fn username_password<'grants>(
@@ -240,10 +241,7 @@ impl Grants for FixtureGrants {
         record: &UsernamePasswordRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
         self.record(Recorded::blank("UsernamePasswordCredential").with_user_password(record))?;
-        Ok(ScriptedGrant {
-            grants: self,
-            credential: "UsernamePasswordCredential".to_owned(),
-        })
+        Ok(self.grant("UsernamePasswordCredential"))
     }
 
     fn workload<'grants>(
@@ -251,10 +249,7 @@ impl Grants for FixtureGrants {
         record: &WorkloadRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
         self.record(Recorded::workload(record))?;
-        Ok(ScriptedGrant {
-            grants: self,
-            credential: "WorkloadIdentityCredential".to_owned(),
-        })
+        Ok(self.grant("WorkloadIdentityCredential"))
     }
 
     fn managed_identity<'grants>(

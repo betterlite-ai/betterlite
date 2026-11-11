@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use secrecy::SecretString;
@@ -11,6 +12,7 @@ use crate::azure_client_secret::{ClientSecretInput, SecretResolver};
 use crate::azure_hosted_identity::request::HostedIo;
 use crate::azure_managed_identity::environment::ManagedIdentityEnvironment;
 use crate::azure_managed_identity::runtime::{ImdsIo, TokenFiles};
+use crate::azure_managed_identity::selection::WorkloadSelection;
 use crate::azure_username_password::transport::Transport as PasswordTransport;
 use crate::oidc_exchange::AzureOidcExchange;
 
@@ -56,9 +58,9 @@ pub struct NativeGrants<'io, H: ArcHost> {
 pub enum NativeGrant<'io, H: ArcHost> {
     ClientSecret(Arc<ClientSecretProvider>),
     Certificate(CertificateCredential),
-    UsernamePassword(password::EnvironmentPasswordGrant<'io>),
-    Workload(workload::WorkloadGrant<'io>),
-    ManagedIdentity(managed::ManagedIdentityGrant<'io, H>),
+    UsernamePassword(EnvironmentPasswordGrant<'io>),
+    Workload(WorkloadGrant<'io>),
+    ManagedIdentity(ManagedIdentityGrant<'io, H>),
 }
 
 impl<H: ArcHost> Grant for NativeGrant<'_, H> {
@@ -89,10 +91,10 @@ impl<H: ArcHost> Grant for NativeGrant<'_, H> {
     }
 }
 
-fn grant_error<T, E: std::fmt::Display>(
-    credential: &'static str,
-    result: Result<T, E>,
-) -> Result<T, GrantError> {
+fn grant_error<T, E>(credential: &'static str, result: Result<T, E>) -> Result<T, GrantError>
+where
+    E: Display,
+{
     result.map_err(|error| GrantError {
         credential,
         message: error.to_string(),
@@ -104,6 +106,41 @@ fn poison_error(credential: &'static str) -> GrantError {
         credential,
         message: "the provider cache is poisoned".to_owned(),
     }
+}
+
+fn certificate_input(
+    record: &CertificateRecord,
+    authority_host: Option<String>,
+) -> CertificateInput {
+    CertificateInput {
+        tenant_id: record.tenant_id.clone(),
+        client_id: record.client_id.clone(),
+        scope: Some(record.scope.clone()),
+        certificate_path: Some(record.certificate_path.clone()),
+        certificate_data: None,
+        password: record.password.clone(),
+        send_certificate_chain: record.send_certificate_chain,
+        authority_host,
+    }
+}
+
+fn certificate_grant<'grants, 'io, H>(
+    source: &'grants NativeGrants<'io, H>,
+    record: &CertificateRecord,
+) -> Result<NativeGrant<'grants, H>, GrantError>
+where
+    'io: 'grants,
+    H: ArcHost,
+{
+    let credential = CertificateCredential::new(
+        certificate_input(record, source.authority_host.clone()),
+        source.files,
+        Arc::clone(&source.transport),
+        Arc::clone(&source.clock),
+        Arc::clone(&source.ids),
+    );
+    let provider = grant_error("CertificateCredential", credential)?;
+    Ok(NativeGrant::Certificate(provider))
 }
 
 impl<H: ArcHost> Grants for NativeGrants<'_, H> {
@@ -138,23 +175,7 @@ impl<H: ArcHost> Grants for NativeGrants<'_, H> {
         &'grants self,
         record: &CertificateRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        let credential = CertificateCredential::new(
-            CertificateInput {
-                tenant_id: record.tenant_id.clone(),
-                client_id: record.client_id.clone(),
-                scope: Some(record.scope.clone()),
-                certificate_path: Some(record.certificate_path.clone()),
-                certificate_data: None,
-                password: record.password.clone(),
-                send_certificate_chain: record.send_certificate_chain,
-                authority_host: self.authority_host.clone(),
-            },
-            self.files,
-            Arc::clone(&self.transport),
-            Arc::clone(&self.clock),
-            Arc::clone(&self.ids),
-        );
-        grant_error("CertificateCredential", credential).map(NativeGrant::Certificate)
+        certificate_grant(self, record)
     }
 
     fn username_password<'grants>(
@@ -170,17 +191,23 @@ impl<H: ArcHost> Grants for NativeGrants<'_, H> {
         &'grants self,
         record: &WorkloadRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Ok(NativeGrant::Workload(WorkloadGrant::from_record(
-            record, self,
-        )))
+        Ok(NativeGrant::Workload(WorkloadGrant {
+            exchange: self.exchange,
+            files: self.token_files,
+            selection: WorkloadSelection {
+                client_id: record.client_id.clone(),
+                tenant_id: record.tenant_id.clone(),
+                token_file: record.token_file.clone(),
+            },
+            scope: record.scope.clone(),
+        }))
     }
 
     fn managed_identity<'grants>(
         &'grants self,
         record: &ManagedIdentityRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Ok(NativeGrant::ManagedIdentity(
-            ManagedIdentityGrant::from_record(record, self),
-        ))
+        let grant = ManagedIdentityGrant::from_record(record, self);
+        Ok(NativeGrant::ManagedIdentity(grant))
     }
 }
