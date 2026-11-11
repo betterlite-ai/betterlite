@@ -71,10 +71,10 @@ pub fn parse_control_options(
 }
 
 fn decimal_integer(text: &str) -> Option<u64> {
-    if text.is_empty()
-        || text.len() > MAX_CONTROL_INT_DIGITS
-        || !text.bytes().all(|byte| byte.is_ascii_digit())
-    {
+    if text.is_empty() || text.len() > MAX_CONTROL_INT_DIGITS {
+        return None;
+    }
+    if !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     text.parse::<u64>().ok()
