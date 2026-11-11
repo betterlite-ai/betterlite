@@ -268,7 +268,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - All other functions in search/transformation.py, including credential transport/host checks, constructor, environment,
-  URL, request, signing and error factory are B659. Base SearchResult/SearchResponse types belong to B091.
+  URL, request, signing and error factory are B659. Base SearchResult/SearchResponse types belong to B3270.
 - 'Function ownership inventory litellm/llms/bedrock/search/transformation.py: _gateway_host_match L85-L86; _credential_safe_transport
   L92-L94; AgentCoreSearchConfig.__init__ L158-L160; AgentCoreSearchConfig.ui_friendly_name L162-L164; AgentCoreSearchConfig.validate_environment
   L166-L187; AgentCoreSearchConfig.get_complete_url L189-L203; AgentCoreSearchConfig.transform_search_request L205-L248;

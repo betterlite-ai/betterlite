@@ -1,0 +1,382 @@
+id: B091
+title: Search provider execution and live tool management over HTTP
+description: >-
+  Finish the Search API with the booted-proxy comparisons its parts could not run.
+  B8275 implements both functions in search_endpoints/endpoints.py, B8634 mounts
+  their six paths, and B8673 mounts B3275's management routes. B3272 and B3276 own
+  execution; B3273 owns selection and fallbacks. None needs another implementation
+  here. Add deterministic Postgres fixtures and HTTP cases that exercise those real
+  components together. B048 explicitly hands its provider HTTP cases here. The
+  package search/__init__.py only re-exports search, asearch and
+  search_provider_cost_per_query; B7887 already owns the Python exports. There are
+  zero unimplemented LiteLLM functions in B091's two covered files, so this task
+  owns integration evidence and test infrastructure, not their production logic.
+
+  Use B5076's independent database pair and the existing HTTP request/steps case
+  format. Run the built betterlite binary against pinned LiteLLM, without
+  --self-check as parity proof. Register no route and do not call FastAPI handlers
+  through helpers. The architect supplies the fixture attachment and startup
+  corrections listed in out_of_scope before dispatch. All provider addresses are
+  configured mock addresses using {{upstream}}; no real provider or cloud credential
+  is needed. Set general_settings.master_key to a fixed test key, disable background
+  health checks and use router_settings.num_retries=0 except in the retry case.
+  Give separate fixture groups distinct config text so different seeds never share
+  one booted database. Compare response status, full JSON, content-type, stable
+  x-litellm-* headers and upstream method, path, body and selected headers. The
+  harness's credential fingerprints must distinguish different synthetic keys.
+  Ignore only generated ids, write timestamps and timings at their exact pointers,
+  and /error/message for betterlite's own error prose. A detail-string error or
+  test_connection error message may ignore that string with the same explanation,
+  while retaining its envelope, status and error_type. Never ignore an entire
+  result, tool list, provider request or error object.
+
+  Fixtures. Add tools/postgres-fixture/src/search_tools.rs and its directory, with
+  SearchSeed, a closed serde snake_case enum with empty, catalog and grants variants,
+  and seed(&Client, &SearchSeed) returning this module's SearchSeedError with the
+  database source preserved. No free-form SQL, credentials or URLs come from the
+  enum. The optional database.seed.search_tools field defaults to None, which adds
+  nothing. empty installs the pinned search table with no rows. catalog adds two
+  fixed-id tools, shared and db-only, with distinct fixed UTC created_at timestamps;
+  db-only is newer. Both use tinyfish, a synthetic api_key and no api_base, so
+  TINYFISH_API_BASE={{upstream}} supplies the destination without interpolating a
+  database row. Keep litellm_params/search_tool_info in the same JSON representation
+  Prisma's Json fields and B3271 consume, and verify readback through the real
+  registry in catalog HTTP tests rather than storing a JSON string inside JSON. Use the
+  unique search_tool_name constraint, not an invented duplicate-name dataset.
+  Store DDL and fixed rows under tools/postgres-fixture/fixtures/search-tools/.
+
+  grants extends catalog with LiteLLM_ObjectPermissionTable rows and updates the
+  existing fixture keys/teams by their stable ids and hashed tokens. Cases seed
+  internal-user principals for sk-search-key-denied (key permits only config-only),
+  sk-search-team-denied (key unrestricted, team permits only config-only),
+  sk-search-allowed (key and team permit shared) and sk-search-unrestricted (empty
+  lists). Add a proxy_admin_viewer principal for the management list comparison.
+  Supply their users, teams and keys through the existing seed fields; the extension
+  fails on a missing referenced fixture principal instead of updating zero rows.
+  The DDL adds the pinned object_permission_id relation columns when the baseline
+  lacks them, without changing the shared baseline.sql. Reuse B5076's connection,
+  provisioning deadline and cleanup; this is private fixture data, not a migration.
+
+  Add tools/oracle/src/search_http.rs and its directory for test support. Tests
+  named search_seed_contract and search_seed_isolation in the fixture module verify
+  all three datasets, unique names, chronological order, JSON readback, hashed key
+  linkage and isolation of the two databases. search_case_decode tests the real
+  case::decode_case(path, bytes) with each new seed tag and unknown tags. A new
+  search_case cargo-fuzz target calls that same decoder on bounded arbitrary YAML
+  bytes, and replays_the_search_case_corpus replays its committed inputs. The
+  architect registers this target in the existing fuzz manifest. No second YAML
+  decoder or new crate is needed. Tests named search_provider_http, search_catalog_http
+  and search_lifecycle_http call the real runner with self_check=false and inspect
+  both captures: intended successes must be 200 with the expected nonempty results,
+  lists or mutation effects, not two equal failures. Reuse the existing bounded
+  mock, steps and capture substitution rather than starting another fixture server.
+
+  Provider cases. Give each of B048's 18 provider names a configured search tool
+  with an explicit synthetic key and mock api_base (omit the key for duckduckgo).
+  Use one successful result carrying a distinctive title and URL in each native
+  response. apiserpent uses deep=true and max_results=2 to prove the deep minimum
+  num=10 and GET /api/search, with results.organic. brave uses GET with
+  X-Subscription-Token, result_filter=web,news and dated web/news results.
+  dataforseo uses api_key=fixture:password, a POST task array and two query strings;
+  only the first query and the first task/result's organic item survive, with Basic
+  auth and location_code=2250 when country is absent. duckduckgo sends a keyless GET
+  with format=json and _max_results, then projects an abstract and a nested topic.
+  exa_ai sends x-api-key, numResults, includeDomains and default contents.text=true;
+  serper sends X-API-KEY with q, num and lowercase gl. tavily joins a query list and
+  maps domains to include_domains, country to lowercase and content to snippet.
+  you_com uses /v1/search with X-API-Key and Accept-Encoding=identity, concatenating
+  web then news and selecting the first snippet. fastcrw supplies default
+  scrapeOptions and prefers markdown to description. firecrawl uses the v2-style
+  data.web/data.news response and preserves the news date. linkup proves default
+  depth=standard and outputType=searchResults with text and image results.
+  searxng sends GET /search, format=json and country=JP as language=ja, with no
+  outbound max_results. google_pse sets GOOGLE_PSE_ENGINE_ID=fixture-engine (unset
+  by default), sends the synthetic key and cx in the GET query, caps num at 10 and
+  uses the first domain. searchapi sends engine=google and api_key in its GET query,
+  lowercases gl and projects organic_results. nimble retains X-Client-Source=litellm,
+  splits included/excluded domains and returns additional_data intact. parallel_ai
+  uses /v1/search, x-api-key, default mode=basic, list search_queries and explicit
+  advanced_settings precedence; return excerpts, search_id, session_id,
+  parallel_usage and warnings. perplexity preserves a list query and all four
+  explicit unified options, and does not synthesize max_results or
+  max_tokens_per_page when absent. tinyfish sends GET with X-API-Key and Accept,
+  country as location and a domain rewrite; two consecutive requests with limits
+  one and two must not share the per-call result cap, and response extras survive.
+  Reuse the leaf tasks' declared input types; Python truthiness and JSON formatting
+  are not additional compatibility cases. Provider algorithms remain with those
+  tasks. B048's explicit agentcore/bing_grounding registry limitation is an
+  architect follow-up, not silently converted into successful provider cases here.
+
+  Routing cases. config-only-aliases has no database and no chat deployments,
+  yet its configured search tool must run on POST /v1/search/{search_tool_name},
+  /search/{search_tool_name}, /v1/search and /search. The last two pass the tool
+  name in the body; the path variants also send a conflicting body name to prove
+  the path wins. Exercise GET /v1/search/tools and /search/tools on that same
+  installed router. config-precedence sets top-level search_tools and a different
+  general_settings.search_tools list; only the top-level tools appear. A second
+  config uses only general_settings.search_tools and resolves an os.environ/ key
+  from the injected environment. Both default to no tools when absent, as B8384
+  specifies; this task introduces no config defaults or config section.
+  credentials sends caller api_key, api_base and search_provider that conflict with
+  the configured tool and compares the selected tool's credential fingerprint and
+  destination. Use two paths on the same mock server to expose a wrong base.
+  params has tool max_results=5 and request max_results=2 plus a provider-specific
+  option; the request wins, null extras are omitted and internal LiteLLM fields
+  are not accidentally forwarded. retry configures one matching tool and one
+  allowed retry, returning a 503 then a successful response; assert exactly two
+  upstream requests, so random selection cannot make the fixture flaky. Keep
+  B8634's existing unknown-tool and missing-auth cases in their owner's folder.
+
+  Transport errors run both a GET provider (brave) and a POST provider
+  (perplexity) against 401, 429 with Retry-After and 503 answers, with retries off.
+  Preserve the public error status, type, param and code and the stable projected
+  headers, including absence where the proxy drops a provider header. A syntactically
+  valid 200 response that lacks Nimble's required results proves response validation
+  runs after transport; record the pinned handled error without inventing a
+  provider 500. Connection tests use POST /search_tools/test_connection with
+  perplexity, an operator-configured mock base, query=test, max_results=1 and the
+  route's timeout=10; ignore caller extras such as a supplied query/max_results.
+  Compare both success/results_count and an upstream 401 producing HTTP 200 with
+  status=error and error_type=AuthenticationError. A named tool with no explicit
+  key, PERPLEXITYAI_API_KEY set and PERPLEXITY_API_BASE pointing to a different
+  configured host must refuse to send that key, with zero provider requests. The
+  normal search timeout remains REQUEST_TIMEOUT, default 6000 seconds; this task
+  changes no deadlines and never waits for that default in a test.
+
+  Database cases. catalog-merge uses config-only and a config shared tool whose
+  description/key differ from the database shared row. GET /search_tools/list
+  returns config-only first with null id/timestamps and is_from_config=true,
+  then db-only and shared in descending creation order, with masked params.
+  GET /search_tools/{search_tool_id} is masked and is_from_config=false; search
+  call/list aliases see the same database override, not a separate registry.
+  grants compares key denial, team denial and permitted calls to shared: the
+  denials are 403, type=key_model_access_denied, param=search_tool_name and
+  code="403", with no upstream request. Empty allowlists are unrestricted. The
+  internal user's /search_tools/list is filtered by both grants, whereas
+  /v1/search/tools remains an authenticated unfiltered name/provider list. An
+  admin viewer sees the full management list; do not add a permission policy here.
+
+  lifecycle begins with empty and a fallback config tool. POST /search_tools
+  creates a same-name database override; capture the generated search_tool_id
+  separately for each gateway and use it in later paths. The create response is
+  unmasked. A subsequent named search uses the new key; PUT
+  /search_tools/{search_tool_id} changes the key and description, preserves the
+  creation time and refreshes the next search. DELETE restores the config tool;
+  another search uses its key and GET/PUT/DELETE of the deleted id each returns
+  the handled 404 detail. The only management paths additionally exercised here
+  are GET /search_tools/list and POST /search_tools/test_connection; their seven-path
+  registration, /search_tools/ui/available_providers, no-database and invalid-body
+  cases remain with B3275/B8673. supported-db-objects excludes search_tools using
+  B8380's general_settings.supported_db_objects: a successful write still appears
+  in management reads but leaves the existing config router list and subsequent
+  search unchanged. Preserve commit-then-refresh order; no encompassing transaction.
+
+  The fixture and capture support should need about 500 implementation/fuzz lines
+  plus adjacent tests and compact case files. Those files add no new LiteLLM
+  algorithm and fit one task; do not expand scope to repair a predecessor's
+  handler, provider registry, router constructor or mount.
+scope:
+  paths:
+    - tools/postgres-fixture/src/search_tools.rs
+    - tools/postgres-fixture/src/search_tools/**
+    - tools/postgres-fixture/fixtures/search-tools/**
+    - tools/oracle/src/search_http.rs
+    - tools/oracle/src/search_http/**
+    - tools/oracle/cases/search-parity/**
+    - tools/oracle/fuzz/fuzz_targets/search_case.rs
+    - tools/oracle/fuzz/corpus/search_case/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L17-L240
+    why: All four POST decorators and search; B8275 implements this, while this task adds HTTP composition proof.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L241-L309
+    why: Both GET decorators and the unfiltered list_search_tools function, also implemented by B8275.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/__init__.py#L1-L8
+    why: Only the three exports remain in the package initializer; B7887 owns their Python surface.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L229-L320
+    why: Context for B3272's provider selection, option precedence, initial URL/header validation and error conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L563-L577
+    why: REQUEST_TIMEOUT supplies the shared search deadline, with a 6000-second default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1909-L2011
+    why: B3276's async execution performs a second validation/URL pass, GET without a body and POST with a deadline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/search_api_router.py#L32-L249
+    why: B3273 owns credential source, list replacement, matching, protected keys and per-attempt selection; cases exercise their composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L135-L548
+    why: List/create/update/delete/get decorators and the ordering, masking and refresh contracts implemented by B3275.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L551-L707
+    why: Connection testing and provider listing; only connection execution gains cases here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L82-L244
+    why: B3271's JSON persistence, separate writes, chronological reads and timestamp representation guide fixture readback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L337-L357
+    why: The search_tools allowlist and relations of the real object-permission table used by the grants fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1399-L1406
+    why: The seven search-tool fields and unique name constraint reproduced in the private test database.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5300-L5426
+    why: B749's empty-allowlist rule, exact 403 envelope and key/team intersection exercised through the real routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4370
+    why: ProxyException serializes code as a string, including the search permission denial.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6107-L6160
+    why: B8384 parses top-level tools before general_settings.search_tools and resolves os.environ/ entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6943-L7000
+    why: Startup passes parsed search tools into the router even without chat deployments; existing composition owners must preserve this.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8997-L9072
+    why: B8384's config/database merge, reload gate and immediate post-write refresh; no new production loader here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9859-L9916
+    why: The 20 native provider selections; B5360 owns the tags and B048 currently builds 18 web-provider configurations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/search/transformation.py#L36-L166
+    why: B5834's POST contract, bearer credentials, URL suffix and omission of unset unified parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tinyfish/search/transformation.py#L35-L248
+    why: B048's per-call cap, GET construction and response extras used to detect shared-state or transport mistakes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/parallel_ai/search/transformation.py#L98-L285
+    why: B8025's rich request and reply metadata must survive the full search pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nimble/search/transformation.py#L89-L219
+    why: B8025's client header, domain conversion, additional_data and attributed response-validation failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/transformation.py#L49-L174
+    why: B1552's keyed GET, query mapping and organic result projection, exercised without changing the adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/defaults.py#L16-L66
+    why: Deep search uses /api/search and has a minimum mapped num of 10; quick search uses /api/search/quick.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/brave/search/transformation.py#L103-L302
+    why: B1553's token header, GET parameters and section/date response mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dataforseo/search/transformation.py#L41-L222
+    why: B1554's Basic credentials, task-array request and first-task/first-result behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L47-L254
+    why: B1555's unauthenticated GET and abstract/nested-topic projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/exa_ai/search/transformation.py#L56-L195
+    why: B8020's Exa header, contents default and native result fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/serper/search/transformation.py#L48-L175
+    why: B8020's Serper POST and organic result response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tavily/search/transformation.py#L55-L194
+    why: B8021's joined query, include_domains and content-to-snippet conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/you_com/search/transformation.py#L53-L194
+    why: B8021's /v1/search URL and ordered web/news response mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fastcrw/search/transformation.py#L48-L181
+    why: B8022's scrapeOptions default and markdown preference.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/firecrawl/search/transformation.py#L50-L226
+    why: B8022's web/news result ordering and news date.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/linkup/search/transformation.py#L52-L203
+    why: B8023's depth/outputType defaults and text/image result projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/searxng/search/transformation.py#L45-L229
+    why: B8023's GET query and country-to-language mapping without a result-count parameter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/google_pse/search/transformation.py#L65-L259
+    why: B8024's GET key/cx placement, required engine environment value and first-domain rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/searchapi/search/transformation.py#L61-L241
+    why: B8024's GET api_key, fixed engine, domain query and organic_results projection.
+dod:
+  - text: Search fixtures reproduce the pinned schema and grants, reject missing fixture principals and seed independently without altering ordinary database cases.
+    proof: [fixture-tests, fixture-regression]
+  - text: The production HTTP case decoder reads every seed variant, rejects unknown ones and replays its new fuzz corpus.
+    proof: [case-tests, search-corpus]
+  - text: All 18 registered web providers produce successful nonempty results through real HTTP execution, retaining their native URLs, methods, auth placement, option mapping and response extras.
+    proof: [provider-cases, provider-http-tests, oracle]
+  - text: A config-only router serves all search aliases, top-level tools take precedence, caller credentials cannot replace tool credentials, options merge correctly and one configured retry sends exactly two calls.
+    proof: [routing-cases, provider-http-tests, oracle]
+  - text: GET and POST status failures, a malformed provider response, server-key destination refusal and connection testing retain their distinct public error contracts.
+    proof: [error-cases, oracle]
+  - text: Config/database precedence, masking, list order, key/team grants and unfiltered inference discovery are observable through the booted proxy.
+    proof: [database-cases, catalog-http-tests, oracle]
+  - text: Create, update and delete affect the very next search through one shared list, restore config fallback after deletion and honor supported_db_objects without rolling back committed writes.
+    proof: [database-cases, lifecycle-http-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: fixture-tests
+      why: The search schema, JSON representation, principal linkage or database isolation is wrong or absent.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/::search_seed_contract($|::)/) | test(/::search_seed_isolation($|::)/)'
+    - id: fixture-regression
+      why: The optional seed attachment must leave existing database setup working.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/postgres-fixture/src/search_tools.rs tools/postgres-fixture/src/search_tools)" &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)' &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/)'
+    - id: case-tests
+      why: New seed tags do not reach the actual HTTP decoder or invalid fixture input reaches provisioning.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::search_case_decode($|::)/)'
+    - id: search-corpus
+      why: The changed case input has no fuzz target, new seeds or production-decoder replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/search_case)" &&
+        test -f tools/oracle/fuzz/fuzz_targets/search_case.rs &&
+        grep -rlq 'search_tools:' tools/oracle/fuzz/corpus/search_case &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_search_case_corpus)'
+    - id: provider-http-tests
+      why: Equal errors or empty replies cannot stand in for successful provider dispatch and named-tool routing.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::search_provider_http($|::)/)'
+    - id: catalog-http-tests
+      why: A broken database seed, startup list or grants lookup can make both proxies fail identically.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::search_catalog_http($|::)/)'
+    - id: lifecycle-http-tests
+      why: A committed management write must change subsequent real searches unless the reload is disabled.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::search_lifecycle_http($|::)/)'
+    - id: provider-cases
+      why: The provider helper tests need new HTTP fixtures through the mounted routes.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/search-parity/providers)"
+    - id: routing-cases
+      why: No existing mount case proves populated search execution, credential precedence or retries.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/search-parity/routing)"
+    - id: error-cases
+      why: Transport and connection-route failures need HTTP envelopes rather than helper exception comparisons.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/search-parity/errors)"
+    - id: database-cases
+      why: The management mount's no-database cases do not exercise real registry writes or grants.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/search-parity/database)"
+oracle_cases:
+  - tools/oracle/cases/search-parity/providers/apiserpent.yaml
+  - tools/oracle/cases/search-parity/providers/brave.yaml
+  - tools/oracle/cases/search-parity/providers/dataforseo.yaml
+  - tools/oracle/cases/search-parity/providers/duckduckgo.yaml
+  - tools/oracle/cases/search-parity/providers/exa-ai.yaml
+  - tools/oracle/cases/search-parity/providers/serper.yaml
+  - tools/oracle/cases/search-parity/providers/tavily.yaml
+  - tools/oracle/cases/search-parity/providers/you-com.yaml
+  - tools/oracle/cases/search-parity/providers/fastcrw.yaml
+  - tools/oracle/cases/search-parity/providers/firecrawl.yaml
+  - tools/oracle/cases/search-parity/providers/linkup.yaml
+  - tools/oracle/cases/search-parity/providers/searxng.yaml
+  - tools/oracle/cases/search-parity/providers/google-pse.yaml
+  - tools/oracle/cases/search-parity/providers/searchapi.yaml
+  - tools/oracle/cases/search-parity/providers/nimble.yaml
+  - tools/oracle/cases/search-parity/providers/parallel-ai.yaml
+  - tools/oracle/cases/search-parity/providers/perplexity.yaml
+  - tools/oracle/cases/search-parity/providers/tinyfish.yaml
+  - tools/oracle/cases/search-parity/routing/config-only-aliases.yaml
+  - tools/oracle/cases/search-parity/routing/config-precedence.yaml
+  - tools/oracle/cases/search-parity/routing/general-settings-tools.yaml
+  - tools/oracle/cases/search-parity/routing/credentials.yaml
+  - tools/oracle/cases/search-parity/routing/params.yaml
+  - tools/oracle/cases/search-parity/routing/retry.yaml
+  - tools/oracle/cases/search-parity/errors/get-status.yaml
+  - tools/oracle/cases/search-parity/errors/post-status.yaml
+  - tools/oracle/cases/search-parity/errors/response-shape.yaml
+  - tools/oracle/cases/search-parity/errors/server-key-destination.yaml
+  - tools/oracle/cases/search-parity/errors/connection-result.yaml
+  - tools/oracle/cases/search-parity/database/catalog-merge.yaml
+  - tools/oracle/cases/search-parity/database/grants.yaml
+  - tools/oracle/cases/search-parity/database/lifecycle.yaml
+  - tools/oracle/cases/search-parity/database/supported-db-objects.yaml
+deviations: []
+out_of_scope:
+  - "The only functions in endpoints.py, search and list_search_tools, and their route registration are B8275. B8634 supplies their state and mount; B8610 owns the root aggregator. B3275/B8673 own all seven management routes. B8626/B8701/B8728 mount MCP, not Search."
+  - "search/__init__.py defines no functions: B7887 exports search, asearch and search_provider_cost_per_query over B3272/B3274. B161 is the Python surface umbrella. No export is reimplemented here."
+  - "B3270 implements BaseSearchConfig, SearchResult, SearchResponse and server credential trust; B3272 implements _build_search_optional_params, search and asearch. B3276 implements BaseLLMHTTPHandler.search/async_search. All other llm_http_handler.py methods retain the API owners listed by B3276."
+  - "All SearchAPIRouter functions are B3273; retry/fallback traversal is B310/B017. B8354 owns the call-type table and B8631 its production branch adapters. Router construction and the shared SearchToolList attachment are B8611/B8613, with exact task corrections in the planner report."
+  - "B3271 owns every live SearchToolRegistry operation; get_search_tool_by_name_from_db has no caller at the pin. B3275 owns its management helpers and models. B8384 owns parse_search_tools, load/merge/reload; B8372 schedules reloads and B8380 supplies supported_db_objects."
+  - "B749 owns the search grant functions in auth_checks.py and B737 the team lookup; B3684 supplies masking. Fixtures exercise these implementations rather than implementing access checks."
+  - "B1552/B1553/B1554/B1555 implement APISerpent, Brave, DataForSEO and DuckDuckGo. B5834 implements Perplexity; B8020 through B8025 implement Exa, Serper, Tavily, You.com, fastCRW, Firecrawl, Linkup, SearXNG, Google PSE, SearchAPI, Nimble and Parallel AI. B048 implements TinyFish and the native registry; B5360 owns get_provider_search_config's selector tags. Every provider function stays with its existing owner."
+  - "B048 explicitly leaves agentcore and bing_grounding without executable SearchProvider adapters; B659/B2212/B546 own their leaf logic. Closing that existing registry deviation needs the separate architect decision recorded in notes, not a second registry or a false parity claim."
+  - "B3274 owns search pricing and Parallel AI usage pricing, with spend/logging integration owned by the cost and spend tasks. The B1349 and B032 mentions of B091 as Vertex passthrough consumer are stale; B3639 and B3642 own those consumers."
+  - "The architect declares search_tools in the fixture crate, adds optional FixtureSeed.search_tools with default None, calls its seeder after seed_keys, wraps SearchSeedError in FixtureError and updates existing struct literals. The architect declares search_http in the oracle crate and registers search_case in its fuzz manifest. None of these shared files is worker scope."
+pitfalls:
+  - "An installed router with model_list=[] still owns search_tools; using an empty deployment list as the no-router test makes every config-only named search fail."
+  - "A search_tool_name in the URL replaces the body name before authorization, whereas the provider key and base always come from the chosen tool."
+  - "SearchToolRegistry stores unique names in Postgres; multiple same-name candidates are a config/router feature and cannot be seeded as duplicate database rows."
+  - "GET providers send their transformed parameters in the URL with no body; a successful fixture that never checks the captured query cannot prove their transport works."
+  - "Google PSE's environment validation needs GOOGLE_PSE_ENGINE_ID even when optional_params contains a search_engine_id."
+  - "TinyFish retains _caller_max_results on its config object, so successive searches must receive freshly constructed configs."
+  - "The mutation response can expose a synthetic provider key while list/get mask it; applying one blanket secret assertion to every management response would reject LiteLLM's contract."
+  - "search_tools excluded from supported_db_objects stops router refresh, not the database write or management list read."
+  - "Connection testing wraps an upstream AuthenticationError in a 200 result with error_type; /search returns the normal error envelope for the same provider failure."
+  - "The optional search fixture must not add tables or grants to an unrelated case when its seed is absent."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

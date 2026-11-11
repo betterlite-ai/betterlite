@@ -1,0 +1,6 @@
+model_list:
+  - model_name: io-token-reservations
+    litellm_params:
+      model: openai/gpt-4o
+      itpm: os.environ/IO_TOKEN_RESERVATIONS_ITPM
+      otpm: true

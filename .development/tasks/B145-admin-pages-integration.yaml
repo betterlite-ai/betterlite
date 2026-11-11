@@ -1,0 +1,139 @@
+id: B145
+title: Exercise the retained management pages against a real betterlite process
+description: >-
+  Finish the key, team, user, organization, access-group and project page acceptance after
+  B9730-B9735. Source intake belongs to B9090: no function in these React trees is hand-ported.
+  B9091 builds the verified archive with reviewed patches, B9092 brands it and B9093 serves it.
+  B144 explicitly supplies a locked Playwright package, a real-process Postgres/browser harness
+  and browser-check.sh, so reuse that harness rather than proposing another browser framework.
+  This final part adds browser composition only. All missing HTTP cases are listed in its six
+  children; oracle_cases is deliberately empty here. No MIT page route lacks an existing owner,
+  and registering any management handler again is outside scope.
+
+  The request inventory and ownership evidence live in the children's descriptions: B9730
+  keys (B055/B775/B777/B778/B780/B782/B783/B895), B9731 teams and members
+  (B804/B806/B808/B809/B810/B811/B812/B813/B1207/B1208/B067), B9732 users and invitations
+  (B056/B790/B791/B792/B795/B796/B797/B1203/B8599/B8670), B9733 organizations
+  (B826/B827/B828/B1212/B2342), B9734 access groups (B821/B822) and the four absent project
+  routes, B9735 shared catalogs and form settings with their individually named builders/mounts.
+  B829 owns the budget selector/export reads; B1657 owns user/team default settings. The audit
+  inspected the pinned decorators with cargo gate trace and searched each owner's oracle list
+  and the on-disk HTTP corpus. None of the management form requests is already on disk; the
+  existing bare /models request does not send the selector's query flags. Future owner cases
+  do not count as executed coverage. At dispatch reuse an exact request already added by an
+  owner, without weakening its page-specific body/query/response assertions.
+
+  Run it through B144's harness: bash tools/dashboard/browser-check.sh --test
+  dashboard_admin_pages builds and installs the bundle, sets up the locked browser and runs
+  exactly that test binary with --no-tests=fail. Reuse its process ownership, timeout, browser
+  installation and the database and process lifecycle in tools/dashboard-browser/tests/support
+  through mod support; no edits to the script, the support module, its lockfile or the generated
+  upstream tree. Put the Rust orchestration in
+  tools/dashboard-browser/tests/dashboard_admin_pages.rs and its directory,
+  and the Playwright interactions under tools/dashboard/browser/admin-pages. Preserve strict
+  TypeScript/lint checks from the existing harness. The test process owns every child and
+  temporary database, including on assertion failure; a missing browser or Postgres is failure.
+
+  Name the tests management_pages_round_trip and management_pages_scoped_roles. The first
+  logs in through the real /v2/login page with B144's configured UI_USERNAME/UI_PASSWORD,
+  takes the cookie and decoded key normally, and traverses all six menu pages. Create a user
+  without sending mail, open its invitation link dialog and verify the displayed identity;
+  create an organization and team; create an access group; create a virtual key with team and
+  access-group grants. Open each detail, edit a name/budget, clear a nullable field, refresh
+  the browser and verify the persisted values and populated resource labels. Exercise a team
+  member add/update/remove, CSV team export and the user table search. Block/unblock the key,
+  reset its spend, regenerate it through the actual form, delete it and find its archived row.
+  Delete the access group, team, user and organization in dependency-safe order, checking
+  disappearance and the archived team page. Do not require transactionality between writes.
+  Keep mutations in the browser; fixture preparation only supplies the login identities and
+  fixed local model/resource configuration. Requests and responses come from the real binary,
+  never page.route fulfillment, MSW, hand-built success responses or seeded post-mutation rows.
+
+  The second test signs in with separately prepared team-admin, unrelated-user and admin-viewer
+  identities. Prepare their passwords by opening real invitation links and completing the
+  retained onboarding form: GET /onboarding/get_token?invite_link=<id>, then POST
+  /onboarding/claim_token with invitation_link,user_id,password and the returned onboarding
+  bearer token. B8387 builds those routes and B8671 mounts them; they are setup dependencies,
+  not additional handlers or page-request oracle cases here. Disable external breach lookups
+  only in this local fixture with general_settings.password_policy_check_breached_passwords=false
+  (B786; default true), retaining local password validation. Then log out and sign in normally.
+  Never send password to /user/new, which rejects it with 422. Verify scoped tables and disabled
+  write controls, then send one forbidden write through the same browser session and assert
+  the server's denial. A hidden button alone is not authorization proof. Repeat navigation and
+  one create/readback at SERVER_ROOT_PATH=/gateway with a discovered custom auth_header_name;
+  the default root is empty and default header Authorization. Reuse B144's real session setup,
+  never manufacture a JWT. Other discovery, cookie-expiry, logout and static-asset permutations
+  stay with B144; page requests must remain on the discovered base and retain litellm wire names.
+
+  Paid-tier UI restrictions are removed only by B9730/B9731/B9733's recorded patches; assert that
+  the native organization page and MIT key controls work without a premium claim. B1644's
+  native_feature_eligibility option belongs only to the children's explicitly labelled Python
+  oracle comparisons and is not a browser or production setting. Project APIs have no MIT
+  implementation: assert B9734's unavailable-build state after HTTP 404, disabled create/edit
+  and no cascading team/key queries, not a fake successful project CRUD flow. A project 403 or
+  transient error must still be distinguishable from unavailable functionality.
+
+  Document the page-to-case map, absent-project behavior and the OpenAPI prerequisite in
+  ui/dashboard/ADMIN-PAGES.md. The advanced key form requests
+  components.schemas.GenerateKeyRequest from /openapi.json; B123/B8681's current eleven-path
+  document omits it. The architect must arrange that schema through those existing owners
+  before the B9735 schema case and this advanced form can pass; do not copy an OpenAPI schema
+  into the UI, hide the error or re-register /openapi.json. Backend mismatches revealed by any
+  child are fixed by its named owner, not by widening this task. Budget roughly 150 harness
+  composition lines, 430 browser assertions and 90 documentation/check lines. Unchanged
+  key_team_helpers/key_info_utils/key_scope/key_value_input functions remain B9090 intake.
+scope:
+  paths:
+    - tools/dashboard/browser/admin-pages/**
+    - tools/dashboard-browser/tests/dashboard_admin_pages.rs
+    - tools/dashboard-browser/tests/dashboard_admin_pages/**
+    - ui/dashboard/ADMIN-PAGES.md
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/api-keys/ApiKeysDashboard.tsx#L16-L91
+    why: Real management page composition and session-scoped team setup, retained through source intake.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/TeamsPage/teamsCsvExport.ts#L17-L95
+    why: Browser export follows the real paginated team and member-budget API flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/onboarding_link.tsx#L28-L100
+    why: Invitation display consumes actual server identity and SSO state and constructs a prefixed link.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/organisms/create_key_button.tsx#L1793-L1820
+    why: The advanced form reads GenerateKeyRequest from the shared OpenAPI route, which its owners must supply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/common_components/check_openapi_schema.tsx#L113-L149
+    why: A successful document without the required component still produces a visible form error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17209-L17303
+    why: Real invitation setup returns the short-lived onboarding token used to establish role-test passwords.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17411-L17552
+    why: Password claim validates the onboarding bearer and creates a real native session without a fabricated JWT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L950-L971
+    why: Excluding enterprise imports means project API requests cannot become successful browser workflows.
+dod:
+  - text: The built dashboard completes key, team, user, organization and access-group workflows through real HTTP and persists edits across refresh.
+    proof: [admin-browser, bootstrap-regression]
+  - text: Team-admin, unrelated-user and viewer sessions retain their scopes and server-side denial at root and a prefixed deployment.
+    proof: [admin-browser]
+  - text: Organization controls need no paid claim, project absence is explicit, and the advanced key form receives its required server schema.
+    proof: [admin-browser]
+checks:
+  optional: []
+  commands:
+    - id: admin-browser
+      why: Page contracts pass in isolation but the compiled screens cannot complete their workflows against the native process.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_admin_pages
+    - id: bootstrap-regression
+      why: Extending the harness breaks the existing no-argument foundation run or bypasses its real-session assertions.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_browser
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B9090 retains every unpatched function under the remaining covers, B9091 builds it, and B144 owns the browser/login foundation.
+  - B9730-B9735 own the missing exact-request HTTP comparisons and small page patches; no proxy handler or new decoder is implemented here.
+  - B057 team callback routes and B058 organization activity have no callers in these workflows, so they are not dependencies.
+  - B147 owns logs-page use of key_team_helpers/filter_helpers.fetchAllTeams; fetchTeamFilterOptions and fetchAllOrganizations have no caller at the pin.
+pitfalls:
+  - A generated dashboard left in another worker's target directory is not an input available to the gate.
+  - A 200 from /openapi.json is insufficient when components.schemas.GenerateKeyRequest is absent.
+  - Registering the already-owned /key/list or /team/list again makes axum composition fail before any browser can connect.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,161 @@
+id: B149
+title: Complete the resource-page plan with prompt editor HTTP contracts
+description: >-
+  Finish the original resource-page entry with prompt HTTP scenarios only, approximately
+  550 lines. B9760-B9766 cover MCP, agents, skills/search, vector stores, memory and
+  workflows; B9767 mounts the one unallocated route composition found in that audit.
+  This final task runs their listed UI acceptance cases as well as its new prompt cases,
+  so each split part is a direct case dependency. B144's source/build/branding/static
+  plan and B9090's verified archive intake retain every UI function; no dashboard source
+  is hand-ported and no owned backend route is planned again. This task's own cases use
+  B4061/B4062/B8672, B9010 and the shared B9735 catalogs directly, not B139/B141 umbrellas.
+
+  Prompt read inventory. GET /prompts/list optionally sends a nonempty environment
+  query; default is no query. Read prompts[] with prompt_id,version,environment,
+  litellm_params,prompt_info,created/updated metadata. Reuse B9735's unfiltered prompt
+  catalog case and add environment selection here. GET /prompts/{id}/info optionally
+  sends environment and reads prompt_spec,raw_prompt_template,environments. Clicking
+  a history version changes id to <base>.v<number> with the selected environment.
+  GET /prompts/{id}/versions uses the same optional environment and reads prompts[].
+  B4061 owns all three reads and the unused GET /prompts/{id} info alias; B8672 mounts
+  them. PromptTable's GET /model_group/info reads data[].model_group and model metadata
+  for its model picker (B060); reuse B9735's model-group case.
+
+  Editor writes. POST /prompts sends {prompt_id,litellm_params:{prompt_integration:dotprompt,
+  prompt_id,dotprompt_content},prompt_info:{prompt_type:db,environment}}. The editor
+  normalizes its name by replacing characters outside a-z/A-Z/0-9/_/- with underscore
+  and lowercasing; its initial environment is development. PUT /prompts/{id} sends
+  that same complete payload to create the edited version. DELETE /prompts/{id} has
+  no body; the table sends environment, while the info view omits it to remove all
+  environments. B4062 owns these writes and its unused PATCH alias; B8672 mounts them.
+  Create development and staging versions, read their info/history separately, edit,
+  load an explicit .v1 record, delete one environment, then delete the remaining base.
+  Writes are consumed as success followed by refetch, not a fabricated prompt wrapper.
+
+  Import sequence. AddPromptForm POST /utils/dotprompt_json_converter uses multipart
+  with one file field and a .prompt filename; read prompt_id,json_data. It then POSTs
+  /prompts with the user-entered outer prompt_id, litellm_params containing
+  {prompt_integration:dotprompt,prompt_id:<converted id>,prompt_data:<json_data>} and
+  prompt_info:{prompt_type:db}, omitting environment. Preserve the difference between
+  outer name and uploaded-file-derived id. B9010 owns conversion; its standalone
+  upload cases are planned, not proof of this upload-to-registration sequence.
+
+  Preview sequence. useConversation directly POSTs /prompts/test with application/json
+  and the configured dashboard auth header. The first body is
+  {dotprompt_content,prompt_variables:<values>}; later turns send
+  {dotprompt_content,conversation_history:[prior messages,{role:user,content:input}]},
+  without prompt_variables or a stream field. The endpoint forces streaming. The page
+  reads SSE model,usage,choices[0].delta.content and [DONE]. B9010 owns this endpoint
+  too. Its planned preview/history cases already cover standalone rendering; add only
+  the editor-produced content and two-turn body choices with deterministic mock chunks,
+  asserting upstream system/history order, SSE content and content-type. Do not route
+  preview through a new /chat/completions alias. Code snippets displayed by the page
+  are strings, not additional outbound requests.
+
+  There are no on-disk prompt-page HTTP scenarios for these paths. The read/write
+  owners have future generic cases, B9010 has future converter/preview cases, and
+  B9735 has the shared catalog requests; all are named above and remain their owners'
+  work. New cases use B860 isolated databases, HTTP setup and the standard mock model
+  openai/gpt-4o-mini. Keep default Authorization Bearer/custom auth_header_name behavior,
+  no-body deletes and browser multipart boundaries. Compare status, response envelopes,
+  content-type and existing error type/param/code or detail; capture versions/ids rather
+  than ignoring whole prompt records. Include ordinary-user write denial and preview's
+  existing nonadmin allowance without installing enterprise modules.
+
+  No browser check is added by this task. B144 does provide a real Playwright harness
+  and dashboard_browser_boots; broader page scenarios would need registered fixtures,
+  authenticated sessions, backend resource setup and scenario selection in that shared
+  harness. The requested remainder is exact HTTP coverage, so it does not depend on
+  npm build artifacts or broaden B144's harness here. No new parser requires fuzzing.
+scope:
+  paths:
+    - tools/oracle/cases/ui/prompts/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4420-L4545
+    why: Prompt list/info/history, POST/PUT/DELETE and multipart converter requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/prompts/_components/prompt_editor_view/index.tsx#L192-L223
+    why: Editor-produced body, normalization and environment placement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/prompts/_components/add_prompt_form.tsx#L86-L110
+    why: Uploaded conversion is wrapped into a distinct registration body without environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/prompts/_components/prompt_editor_view/conversation_panel/useConversation.ts#L68-L160
+    why: Direct preview fetch, first-turn variables and later history, with SSE consumption.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L219-L421
+    why: B4061's decorated list and version routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L465-L590
+    why: Both existing info aliases and environment projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L593-L876
+    why: Dependency-owned create, update and delete decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L1010-L1209
+    why: Preview and file conversion are already allocated to B9010.
+dod:
+  - text: The complete retained-resource-page HTTP acceptance corpus runs against the booted gateway using the split parts' cases without copying or redefining them.
+    proof: [oracle]
+  - text: Prompt editor CRUD and version/environment navigation send the exact page bodies and distinguish scoped deletion from deleting all environments.
+    proof: [prompt-page-cases, oracle]
+  - text: File conversion feeds the import registration body and the two-turn editor preview consumes real SSE with the same variables/history choices.
+    proof: [prompt-page-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: prompt-page-cases
+      why: Standalone prompt helpers do not exercise environment navigation, import registration or editor preview through the proxy.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/prompts)"
+oracle_cases:
+  - tools/oracle/cases/ui/mcp-catalog/create-edit-clear-delete.yaml
+  - tools/oracle/cases/ui/mcp-catalog/import-config-results.yaml
+  - tools/oracle/cases/ui/mcp-catalog/health-and-discovery.yaml
+  - tools/oracle/cases/ui/mcp-catalog/submit-approve-reject.yaml
+  - tools/oracle/cases/ui/mcp-catalog/toolset-edit-delete.yaml
+  - tools/oracle/cases/ui/mcp-catalog/stdio-ui-discovery.yaml
+  - tools/oracle/cases/ui/mcp-credentials/temporary-pkce-cookie-and-form.yaml
+  - tools/oracle/cases/ui/mcp-credentials/saved-server-oauth-status.yaml
+  - tools/oracle/cases/ui/mcp-credentials/byok-save-and-admin-revoke.yaml
+  - tools/oracle/cases/ui/mcp-credentials/environment-set-clear-status.yaml
+  - tools/oracle/cases/ui/mcp-credentials/terminate-user-sessions.yaml
+  - tools/oracle/cases/ui/mcp-tools/edit-disabled-and-preview.yaml
+  - tools/oracle/cases/ui/mcp-tools/call-with-provider-auth-and-guardrails.yaml
+  - tools/oracle/cases/ui/mcp-tools/detail-log-dates-and-overrides.yaml
+  - tools/oracle/cases/ui/mcp-tools/key-picker-size-100.yaml
+  - tools/oracle/cases/ui/mcp-tools/network-and-submission-settings.yaml
+  - tools/oracle/cases/ui/agents/create-patch-identity-delete.yaml
+  - tools/oracle/cases/ui/agents/health-toggle-and-detail.yaml
+  - tools/oracle/cases/ui/agents/generate-assign-and-filter-keys.yaml
+  - tools/oracle/cases/ui/skills-search/plugin-source-create-list-delete.yaml
+  - tools/oracle/cases/ui/skills-search/provider-and-wrapped-form-lifecycle.yaml
+  - tools/oracle/cases/ui/skills-search/connection-result-and-named-query.yaml
+  - tools/oracle/cases/ui/skills-search/nonadmin-write-boundaries.yaml
+  - tools/oracle/cases/ui/vector-stores/register-edit-info-delete.yaml
+  - tools/oracle/cases/ui/vector-stores/reusable-credential-options.yaml
+  - tools/oracle/cases/ui/vector-stores/two-browser-file-uploads.yaml
+  - tools/oracle/cases/ui/vector-stores/bedrock-form-missing-credential.yaml
+  - tools/oracle/cases/ui/vector-stores/index-view-and-query-only-search.yaml
+  - tools/oracle/cases/ui/memory-workflows/memory-search-edit-clear-delete.yaml
+  - tools/oracle/cases/ui/memory-workflows/memory-user-boundaries.yaml
+  - tools/oracle/cases/ui/memory-workflows/run-list-limit-and-selected-timeline.yaml
+  - tools/oracle/cases/ui/memory-workflows/workflow-owner-boundaries.yaml
+  - tools/oracle/cases/ui/agent-discovery/well-known-form.yaml
+  - tools/oracle/cases/ui/agent-discovery/langgraph-assistant-form.yaml
+  - tools/oracle/cases/ui/agent-discovery/default-private-url-denied.yaml
+  - tools/oracle/cases/ui/agent-discovery/admin-and-key-boundaries.yaml
+  - tools/oracle/cases/ui/prompts/editor-environments-and-versions.yaml
+  - tools/oracle/cases/ui/prompts/scoped-and-global-delete.yaml
+  - tools/oracle/cases/ui/prompts/file-convert-then-register.yaml
+  - tools/oracle/cases/ui/prompts/editor-two-turn-stream.yaml
+  - tools/oracle/cases/ui/prompts/write-and-preview-permissions.yaml
+  - tools/oracle/cases/ui/management-selectors/prompt-and-tag-options.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every prompt page/component/helper/test function and the complete networking module; B9091/B9092/B9093 handle build, branding and static serving.
+  - B4061/B4062/B8672 and B9010 own all prompt HTTP logic; B060 owns the model picker endpoint and B9735 its exact request case.
+  - B9760-B9767 hold the other original resource-page coverage and the discovery mount; no B139/B141 route is reimplemented here.
+  - B144's browser fixture and runner need an explicit extension before page-level browser scenarios can be registered; HTTP-only cases require none.
+pitfalls:
+  - PromptInfo consumes raw_prompt_template, not an invented prompt_template response field.
+  - Import omits environment while the editor explicitly sends development or its selected environment.
+  - The info view deletes all environments by omitting the table's environment query.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

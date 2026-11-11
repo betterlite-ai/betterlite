@@ -1,0 +1,125 @@
+id: B9763
+title: Cover agent creation, editing, identity and key assignment from the dashboard
+description: >-
+  Write the missing agent-page HTTP transcripts, approximately 650 lines including database
+  setup, without rebuilding the retained agent UI or the existing API. B9090 takes all
+  components/tests in these covers from the archive. B860 provides independent databases;
+  populate agents and assigned keys with real requests, capturing returned identifiers.
+
+  Page inventory. Public GET /public/agents/fields, with no auth/query/body, reads the
+  AgentCreateInfo array's agent_type,display_name,logo_url and credential_fields. B3191's
+  handler is mounted by B8647; reuse its public-fields-no-key case. GET /v1/agents normally
+  has no query and returns a raw array; networking wraps it locally in {agents:data}.
+  Reuse B9735's agents-raw-list case. The health toggle sends ?health_check=true and reads
+  each record's health alongside agent_id,agent_name,agent_card_params,litellm_params,
+  spend,keys and public/access fields. GET /v1/agents/{id} reads a single record, not the
+  list wrapper. Both belong to B4784 and B8647. Test health against a fixed local agent,
+  avoiding internet probes and nondeterministic external state.
+
+  AddAgentForm POST /v1/agents uses {agent_name,litellm_params,agent_card_params,identity?,
+  object_permission?:{mcp_servers?,mcp_access_groups?,mcp_toolsets?,mcp_tool_permissions?,
+  models?,agents?},access_group_ids?,team_id?}. Empty grants are omitted, including the
+  whole object_permission when it has no entries. Guardrails and the optional
+  require_trace_id_on_calls_to_agent,require_trace_id_on_calls_by_agent,max_iterations,
+  max_budget_per_session controls are inside litellm_params, not at the top level.
+  The iteration and budget fields are sent only with outbound tracing enabled.
+  Include the fields selected by the
+  provider metadata form rather than inventing a generic chat model body. Read agent_id
+  and agent_name from success. AgentInfo PATCH /v1/agents/{id} sends the edited fields;
+  DELETE at that path has no body and its JSON is not otherwise consumed. B4785/B8647
+  owns create/PATCH/delete (PUT exists but the page does not call it).
+
+  Identity controls directly GET /v1/agents/identity/providers for Microsoft Entra tenant
+  choices, consuming an issuer string array. GET /v1/agents/{encoded_id}/identity reads
+  enabled,execution_mode,identity.active and last_authenticated_at. B4781/B8647 owns both.
+  Reuse the planned jwt-on-issuers case and add identity status after actual form creation.
+  POST /v1/agents/{encoded_id}/kill_switch has no body; the UI reads status_code and
+  response_body. B4786/B8647 already plans kill-switch-success with this request, so reuse
+  it instead of adding another action route. Do not add make_public calls without a caller.
+
+  Agent discovery POST /v1/a2a/discover sends {url}, or {url,discovery_mode:langgraph_platform,
+  params:{assistant_id}}; read url,agent_card, including skills and capabilities used to
+  fill the form. B8202 implements the handler and B9767 supplies its missing mount and
+  exact HTTP cases. Include those cases here. It is separate from agent invocation.
+
+  Key assignment sends POST /key/generate with {agent_id,key_alias,models:[],team_id?}
+  (or selected models), without user_id, and reads key. B055 owns generation. Selecting
+  an existing key sends POST /key/update {key:<hash>,agent_id}, then refetches; B775 owns
+  update. The picker GET /key/list sends page=1,size=100,return_full_object=true,
+  include_team_keys=true,include_created_by_keys=true,substring_matching=true (B782).
+  Reuse B9762's picker case, and add AgentInfo's same query with agent_id. Read keys[]
+  and each key's token/key_hash,key_alias,agent_id,team_id,models. Prove assignment moves
+  the selected key into the agent-filtered list without returning its raw secret later.
+
+  Other lookups are already allocated. GET /models?include_model_access_groups=True
+  (B007) reads data[].id, even when modelAvailableCall receives false. GET /v1/access_group
+  (B821) reads unified records; use B9734's access-group-list-and-detail-labels. GET
+  /team/list optionally adds user_id; TeamDropdown GET /v2/team/list sends page=1,
+  page_size=50, optional team_alias and nonadmin user_id (B813). Reuse B9731's legacy
+  and paged-selector case. MCP servers/groups/toolsets/tools and v2/v1
+  guardrails use the B9735 cases listed below and their named backend owners, with no
+  second implementation. All nonpublic requests send the configured dashboard auth header.
+
+  No agent-page HTTP cases exist on disk. B8647's planned no-database writes do not cover
+  these successful form payloads, health toggle, identity status or key assignment. The
+  reused public/identity/kill-switch cases are planned evidence, not completed tests.
+  New cases compare permission boundaries, secret redaction, status and error type/param/
+  code as well as the UI-visible record fields, including a nonadmin's denied mutation.
+scope:
+  paths:
+    - tools/oracle/cases/ui/agents/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L6028-L6140
+    why: Raw agent list, health flag, detail, bodyless kill switch and PATCH.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4546-L4650
+    why: Agent create and card-discovery bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L378-L506
+    why: Existing list route, health option, access filtering and redaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L554-L783
+    why: Identity providers/status, create and detail decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L893-L1106
+    why: PATCH, delete and kill-switch requests already owned by B4785/B4786.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L593-L639
+    why: Public field metadata is dependency-owned and accepts no key.
+dod:
+  - text: The agent form can create, fetch, edit and delete a scoped agent, including its identity and permissions, through the booted proxy.
+    proof: [agent-workflows, oracle]
+  - text: Health, discovery, identity choices, kill switch and key creation/reassignment use the exact page requests and return the fields their consumers read.
+    proof: [agent-workflows, oracle]
+checks:
+  optional: []
+  commands:
+    - id: agent-workflows
+      why: Existing handler tests and unavailable-database cases cannot prove a saved dashboard agent works.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/agents)"
+oracle_cases:
+  - tools/oracle/cases/ui/agents/create-patch-identity-delete.yaml
+  - tools/oracle/cases/ui/agents/health-toggle-and-detail.yaml
+  - tools/oracle/cases/ui/agents/generate-assign-and-filter-keys.yaml
+  - tools/oracle/cases/agents/wiring/public-fields-no-key.yaml
+  - tools/oracle/cases/agents/identity-admin/providers-jwt-on-issuers.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-success.yaml
+  - tools/oracle/cases/ui/agent-discovery/well-known-form.yaml
+  - tools/oracle/cases/ui/agent-discovery/langgraph-assistant-form.yaml
+  - tools/oracle/cases/ui/mcp-tools/key-picker-size-100.yaml
+  - tools/oracle/cases/ui/management-selectors/agents-raw-list.yaml
+  - tools/oracle/cases/ui/management-selectors/models-ui-flags-and-team-scope.yaml
+  - tools/oracle/cases/ui/management-selectors/mcp-servers-and-group-labels.yaml
+  - tools/oracle/cases/ui/management-selectors/mcp-toolsets-and-tools.yaml
+  - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
+  - tools/oracle/cases/ui/access-projects/access-group-list-and-detail-labels.yaml
+  - tools/oracle/cases/ui/teams/legacy-and-all-page-selectors.yaml
+deviations: []
+out_of_scope:
+  - B4781/B4784/B4785/B4786/B3191 retain all agent-route functions; B8202 retains discovery and B9767 only mounts it.
+  - B055/B782/B775 implement key generation/list/update; B9731/B9734/B9735 and B9762 own the reused selector scenarios.
+  - Every agent-management/agents component and its helper/test is retained by B9090; invoking an A2A agent is B8648, not a new admin-page endpoint.
+pitfalls:
+  - An HTTP agents wrapper would hide a compatibility failure because only networking.tsx adds that wrapper.
+  - The agent form's key generation deliberately omits user_id.
+  - AgentInfo edits with PATCH even though the backend also exposes PUT.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

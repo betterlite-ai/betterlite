@@ -1,0 +1,150 @@
+id: B9730
+title: Exercise retained key pages with their actual management requests
+description: >-
+  Keep ApiKeysDashboard, VirtualKeysTable, DeletedKeysPage and the imported create_key_button,
+  key_info_view, key_edit_view and RegenerateKeyModal from B9090's verified source intake.
+  This is a client-contract task, not a second key API implementation. Add HTTP cases and
+  narrowly scoped 40-key-pages.patch with its checked hashes; the patch removes the deleted-key
+  Enterprise advertisement and subscription-only controls reached from these pages, retaining
+  isViewOnly, ownership, team permissions and all server checks. Do not set premium_user in the
+  application or replace upstream sources. B9091's check command runs real retained components.
+  This patch is also the sole owner of ModelMaxBudgetEditor's subscription-only disabled
+  controls and MODEL_MAX_BUDGET_PREMIUM_HINT. Remove that presentation gate once in the shared
+  key_team_helpers component, retaining model selection, numeric constraints and parent role
+  restrictions. B9731/B9732 depend on this patch for their team/user editors and must not edit
+  the same component. Its real wire map is {model:{budget_limit,time_period,...preserved extras}},
+  with default time_period=30d; do not replace it with the server's alias spelling.
+  The tests/keys/upstream-tests.json selection reruns the retained DeletedKeysPage.test.tsx,
+  ModelMaxBudgetEditor.test.ts and ModelMaxBudgetEditor.integration.test.tsx, plus tests for
+  any additional key component the patch changes. Adjust only their now-obsolete paid-gate
+  assertions in the reviewed patch; preserve the payload/round-trip tests.
+
+  Request inventory, with no aliases invented by this task. VirtualKeysTable/useKeys sends GET
+  /key/list?page=1&size=50&sort_by=created_at&sort_order=desc&expand=user&return_full_object=true&include_team_keys=true&include_created_by_keys=true&substring_matching=true.
+  Subsequent pages change page/size; search adds search, and filters add team_id, organization_id,
+  user_id, key_hash or status=active|expired|revoked|deleted. TeamVirtualKeysTable adds team_id;
+  ProjectKeysSection would add project_id and key_alias, but the project page is unavailable at
+  this pin as B9734 records. DeletedKeysPage sends page=1,size=50,status=deleted and the four true
+  flags, without expand or sorting. The response consumed is keys[], total_count, current_page,
+  total_pages; rows use token, key_alias, key_name, user_id, user.user_email, team_id, org_id,
+  project_id, models, spend, max_budget, budget_duration, budget_reset_at, expires, blocked,
+  tpm_limit, rpm_limit, metadata, object_permission, access_group_ids, access_group_models,
+  access_group_mcp_server_ids, access_group_agent_ids and created/updated fields. Deleted rows
+  additionally use deleted_at/deleted_by. B782 owns this route, including substring authorization.
+
+  useKeyInfo sends GET /key/info?key=<hash>, reading info plus its token and budget/grant fields;
+  its owner-user lookup GET /v2/user/info?user_id=<id> reads user_id, user_email and budget fields
+  directly, not under user_info. Owners are B778 and B791. ApiKeysDashboard and useAllTeams send
+  GET /v2/team/list?page=1&page_size=100, adding user_id for non-admin readers and following
+  total_pages; B813 owns it, and B9731 covers these exact reads. Organization selectors are
+  B9733's contract. The key hooks also consume B1660 GET /get/ui_settings, specifically
+  apply_user_budget_to_team_keys; B9735 covers that public request.
+
+  create_key_button calls POST /key/generate (B055) with user_id plus the form, or POST
+  /key/service-account/generate (B055) with the form and no forced user_id. Exercise key_alias,
+  team_id, models, max_budget, budget_duration, tpm_limit, rpm_limit, key_type, metadata.description,
+  metadata.guardrails, metadata.policies, model_max_budget, model_rpm_limit, model_tpm_limit,
+  object_permission and access_group_ids. jsonFields are objects/arrays after networking.tsx
+  parses the form strings, not JSON nested in a string; omitted fields remain omitted. Read key,
+  token/token_id, key_name, key_alias and expires in the creation result. key_info_view sends POST
+  /key/update (B775), body {key:<hash>, ...dirty form fields}, then reloads; POST /key/delete
+  (B777), body {keys:[<hash>]}, uses success then list invalidation. useSetKeyBlockedState sends
+  POST /key/block and POST /key/unblock (B783), each {key:<hash>}, and reads blocked, falling back
+  to the requested boolean only if absent. useResetKeySpend sends POST /key/<hash>/reset_spend
+  (B780), body {reset_to:0}; read key_hash, spend, previous_spend, max_budget, budget_reset_at.
+  RegenerateKeyModal sends POST /key/<hash>/regenerate (B895), body key_alias, max_budget,
+  tpm_limit, rpm_limit and optional duration/grace_period, then reads key, token_id/token and
+  expires. The alternative POST /key/regenerate belongs to B895 but is not a page request.
+
+  All authenticated requests use the discovered auth_header_name, default Authorization, with
+  Bearer <decoded session key>, and JSON content type. Compare status, content type, error
+  type/param/code and the full stable body. B860's independent Postgres fixtures and the existing
+  HTTP steps/captures are sufficient: seed the minimal users/teams, create the rich keys through
+  real routes, capture generated secrets per process and encode path/query substitutions. Ignore
+  only generated ids/timestamps/secret values individually, never keys arrays or permissions.
+  Use B1644 native_feature_eligibility=true only for the explicitly labelled virtual-regeneration
+  case, because stock MIT rejects at its license branch; do not call FastAPI handlers in helpers.
+  Setup requests use B055 and B806 only where needed, with fixed configured model names and no
+  real provider traffic. Test same-team and unrelated-user list visibility, the UI session key's
+  exclusion, archived rows after deletion, zero/null budget edits and readback after each mutation.
+
+  Coverage audit at planning time found no existing HTTP request for these management paths in
+  tools/oracle/cases. B055 normal-and-service-success, B775 update-key, B777 archive-fields,
+  B778 key-info, B780 reset-zero, B782 first-page/substring-role-differences and B783 block-key
+  are planned but absent, and do not prove the combined page request yet. Reuse any exact case
+  materialized by those dependencies before adding a duplicate; the new cases below preserve
+  the page-specific query/body and readback combinations. Report a server mismatch to its owner;
+  server implementation files are deliberately outside scope. About 80 patch, 170 component-test
+  and 470 case/fixture lines is one task; none of the retained React tree is ported.
+scope:
+  paths:
+    - ui/dashboard/patches/40-key-pages.patch
+    - ui/dashboard/patches/40-key-pages.json
+    - ui/dashboard/tests/keys/**
+    - tools/oracle/cases/ui/keys/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/api-keys/ApiKeysDashboard.tsx#L16-L91
+    why: The real create-key composition, role-scoped team fetch and form prefill.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/VirtualKeysPage/VirtualKeysTable.tsx#L73-L161
+    why: Default size/sort, expand=user, filters and response fields actually read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/keys/useKeys.ts#L49-L161
+    why: The four true flags and the different archived-key query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/key_team_helpers/ModelMaxBudgetEditor.tsx#L33-L215
+    why: One shared premium-only presentation gate serves key, team and user editors; budget alias preservation is unchanged.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L795-L910
+    why: Both creation paths and the conversion of form JSON before serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L2341-L2410
+    why: Key info and legacy list request construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1940-L2322
+    why: B055 owns both generation decorators and handlers, not this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L3355-L3617
+    why: B775's update body and response contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4069-L4479
+    why: B777 deletion and B778 info decorators, including archive reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5716-L5986
+    why: B895's two regeneration aliases and license-gated virtual branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6175-L6684
+    why: B780 spend reset and B782 list decorators with the page's query flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7288-L7513
+    why: B783 block/unblock route contracts.
+dod:
+  - text: The key table, detail, creation and mutation requests preserve their query flags, serialized field presence and consumed response shapes through real HTTP.
+    proof: [key-cases, oracle, key-components]
+  - text: Archived keys, role-scoped reads and regeneration retain permissions while subscription-only presentation disappears.
+    proof: [key-components, oracle]
+checks:
+  optional: []
+  commands:
+    - id: key-cases
+      why: No new page-specific booted-proxy request was added.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/keys)"
+    - id: key-components
+      why: The retained page emits a different payload or keeps a paid gate after its API tests pass.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/keys
+oracle_cases:
+  - tools/oracle/cases/ui/keys/table-default-expand-user.yaml
+  - tools/oracle/cases/ui/keys/table-search-sort-and-status.yaml
+  - tools/oracle/cases/ui/keys/team-and-caller-visibility.yaml
+  - tools/oracle/cases/ui/keys/create-user-and-service-forms.yaml
+  - tools/oracle/cases/ui/keys/detail-and-owner-budget.yaml
+  - tools/oracle/cases/ui/keys/edit-budget-metadata-and-grants.yaml
+  - tools/oracle/cases/ui/keys/block-unblock-and-reset.yaml
+  - tools/oracle/cases/ui/keys/delete-then-archived-page.yaml
+  - tools/oracle/cases/ui/keys/regenerate-form-eligible-mit.yaml
+deviations:
+  - what: Key pages omit paid-tier advertising and do not disable MIT key controls solely because premiumUser is false.
+    why: The no-paid-tier decision changes presentation; B895 already owns virtual regeneration's backend license removal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/DeletedKeysPage/DeletedKeysPage.tsx#L10-L30
+out_of_scope:
+  - B9090 retains every unchanged function in these covered UI files; B9091 builds them. No React component is translated into Rust.
+  - B055, B775, B777, B778, B780, B782, B783 and B895 keep all key handler implementation and registration; B791 keeps the owner-user read.
+  - B9731 owns team selector requests, B9733 organization selectors, B9735 common models/resources/settings, and B145 the real browser check.
+pitfalls:
+  - expand=user and substring_matching=true are real table requests, not server defaults.
+  - token is the stored key identifier; only creation/regeneration returns a secret to show once.
+  - Eligible MIT regeneration is not evidence that an unmodified unlicensed proxy permits it.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

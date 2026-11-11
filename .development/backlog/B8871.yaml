@@ -1,0 +1,13 @@
+id: B8871
+milestone: M8 platform
+title: Load and invoke configured local MCP tools through embedded Python
+status: todo
+depends_on: [B165, B4680, B4683, B8042, B8043]
+file: tasks/B8871-python-mcp-tools.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

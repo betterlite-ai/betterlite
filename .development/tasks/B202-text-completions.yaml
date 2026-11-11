@@ -112,7 +112,7 @@ deviations: []
 out_of_scope:
 - Streaming and completion/chat bridge are B203; moderation is B015.
 - OpenAI SDK implicit retries are not copied; retries arrive with B017.
-- openai/completion/guardrail_translation/handler.py is B104; B004 openai/chat/guardrail_translation is likewise
+- openai/completion/guardrail_translation/handler.py is B5820; B004 openai/chat/guardrail_translation is likewise
   B104, despite the historical broad covers globs (architect handoff).
 pitfalls:
 - Token IDs must remain numbers in their original nested shape, not strings or decoded chat content.

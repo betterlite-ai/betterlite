@@ -1,0 +1,138 @@
+id: B9753
+title: Exercise template selection, competitor enrichment and installation from the policy page
+description: >-
+  Test the requests made by PolicyTemplates, TemplateParameterModal, AiSuggestionModal and
+  GuardrailSelectionModal through the booted proxy. Their source and networking functions
+  arrive unchanged in B9090's archive; write only HTTP cases here. B3253 owns catalog and
+  suggestion handlers, B3252 the two enrichment handlers, B3249 preview, B3685 guardrail
+  creation and B3248 policy creation. B8790 mounts catalog/suggestion/preview; B9321 mounts
+  B3252's existing router and supplies its production CompetitorModelClient. Do not
+  build another enrich route or substitute a fake client for the production router wiring.
+
+  GET /policy/templates has no body or query and returns an array, not templates[]. Cards
+  read id,title,description,icon,iconColor,iconBg,guardrails,complexity,tags and inherits;
+  selection also consumes guardrailDefinitions,templateData,parameters,llm_enrichment,
+  example_sentences and estimated_latency_ms. Set LITELLM_LOCAL_POLICY_TEMPLATES=true in
+  deterministic cases and reuse B8790's catalog case. The product's default remains the
+  empty env value, remote catalog fetch and local fallback owned by B3253. Model pickers
+  GET /model_group/info without query and read data[].model_group; reuse B9735's case.
+
+  Suggestion POST /policy/templates/suggest sends attack_examples with blank entries
+  filtered out, description and the selected model. Nonblank examples retain surrounding
+  whitespace. Read selected_templates[].template_id/reason and explanation, then join the
+  selected IDs to the catalog locally. B8790's valid-and-unknown-id case already plans this
+  request shape and its unknown-ID filtering; reuse it. No suggestion case currently exists
+  on disk. The SDK suggestion model takes an accepted openai/<model> name with OPENAI_API_KEY
+  and OPENAI_API_BASE pointed at the local oracle provider, as the owner specifies; never use
+  a real external model or assume this SDK path resolves an arbitrary router-only alias.
+
+  Template confirmation POST /policy/templates/enrich sends template_id, parameters as a
+  string map, model only when nonempty and competitors whenever supplied, including [].
+  The page reads guardrailDefinitions and competitors, substitutes the form parameters in
+  the template and opens the guardrail chooser. Add a competitor-mention-detection case
+  with parameters:{brand_name:"Acme"}, explicit competitors, and a selected local model,
+  then use its actual definitions in preview and installation requests. B9324 owns the
+  given-competitors, discovery, auth and validation HTTP cases; reuse those paths below
+  rather than copying their single-request variants. A second case sends the explicit empty
+  competitors list from the form and proves that discovery still occurs, with model omitted
+  only in the variant where the page has no selected model. The omitted model is
+  gpt-4o-mini; configure that exact deployment against the mock when it is needed.
+
+  Discovery/refinement POST /policy/templates/enrich/stream sends template_id,parameters,
+  model, plus instruction only when nonempty and competitors when existingCompetitors was
+  supplied. TemplateParameterModal trims the refinement instruction. The response is SSE:
+  data events type=competitor supply name, type=status supplies message, type=done supplies
+  competitors,competitor_variations,guardrailDefinitions, and type=error supplies message.
+  The page consumes no OpenAI choices delta or [DONE] sentinel. Reuse the stream-discovery,
+  stream-given-competitors, stream-refinement and stream-no-router-error cases B9324 owns
+  (moved there from B3252), comparing
+  event order, Cache-Control, X-Accel-Buffering and content-type. Add the missing generic
+  competitor-template transcript that streams names, refines the current selection and
+  previews the resulting definitions. Keep local provider deltas deterministic and exercise
+  actual route SSE, not the helper that parses name fragments. The browser consumer is
+  exercised by B148; no decoder or fuzz target is introduced in this case-only task.
+
+  Preview POST /policy/templates/test sends {guardrail_definitions:<selected definitions>,
+  text:<test input>}. Read results[].guardrail_name,action,output_text,details and
+  overall_action. Existing B8790 preview cases cover empty definitions and unsupported
+  providers, not a supported content-filter template. Add passed/blocked preview cases for
+  enriched names and a local supported redaction definition, comparing the transformed text
+  as well as the action. Preserve definition order. This does not invoke a completion route.
+
+  Installation first GETs /v2/guardrails/list (fallback /guardrails/list) to collect existing
+  guardrail_name values, then independently POSTs /guardrails with {guardrail:<each selected
+  definition>}, refreshes that list and opens the prefilled policy form. The final POST
+  /policies has templateData.policy_name, description, guardrails_add and guardrails_remove
+  after the user's edits, followed by GET /policies/list. Writes ignore their response bodies
+  except fixture captures; lists prove persisted fields. Cover one existing guardrail that
+  is not selected again and one failed selected creation followed by a successful creation,
+  retaining the partial-success result rather than inventing rollback. B8667/B8669 own these
+  mounted APIs; database.seed.dashboard: {} selects B9740's independent schema. These
+  cross-route requests, the explicit empty
+  competitor list and supported previews are the missing HTTP coverage, about 550 authored
+  lines. Compare status, headers, stable fields and error metadata using per-gateway captures
+  for generated values only. Bearer auth uses discovery's header name, default Authorization.
+scope:
+  paths:
+    - tools/oracle/cases/ui/policy-templates/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3937-L4088
+    why: Catalog, JSON enrichment/suggestion/preview and the exact SSE request and event fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/index.tsx#L260-L386
+    why: Existing-name read, enrichment, independent guardrail creates and prefilled policy form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/template_parameter_modal.tsx#L97-L184
+    why: Model selection and stream discovery/refinement payloads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/ai_suggestion_modal.tsx#L18-L40
+    why: Suggested template and preview result fields consumed by the modal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L626-L753
+    why: Catalog and non-stream enrichment decorators; B3253 and B3252 own these handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L870-L898
+    why: Authenticated enrichment stream with JSON errors before the stream begins.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L1093-L1171
+    why: Suggestion and supported/unsupported template preview routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2012-L2133
+    why: The generic competitor template, its parameter, six definitions and policy prefill.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L335-L437
+    why: B3685's wrapped guardrail create, used once per chosen template definition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L153-L214
+    why: B3248's final policy save; this task never installs a template atomically.
+dod:
+  - text: Catalog and model picks feed the actual suggestion and enrichment bodies, including explicit empty competitors and stream refinement.
+    proof: [template-transcripts, oracle]
+  - text: Supported template previews expose action and transformed text and selected definitions can be saved through the real guardrail and policy routes.
+    proof: [template-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: template-transcripts
+      why: Reused catalogs and error cases alone cannot prove selected templates reach preview and persistence.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/policy-templates)"
+oracle_cases:
+  - tools/oracle/cases/ui/policy-templates/generic-enrich-preview-and-install.yaml
+  - tools/oracle/cases/ui/policy-templates/explicit-empty-competitors.yaml
+  - tools/oracle/cases/ui/policy-templates/generic-stream-refine-and-preview.yaml
+  - tools/oracle/cases/ui/policy-templates/supported-preview-actions.yaml
+  - tools/oracle/cases/ui/policy-templates/existing-and-partially-created-selection.yaml
+  - tools/oracle/cases/policies/templates-catalog/local-true.yaml
+  - tools/oracle/cases/policies/templates-suggest/valid-and-unknown-id.yaml
+  - tools/oracle/cases/policies/templates-enrich/given-competitors-with-variations.yaml
+  - tools/oracle/cases/policies/templates-enrich/discovery-from-model.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-discovery.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-given-competitors.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-refinement.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-no-router-error.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+deviations: []
+out_of_scope:
+  - All functions and tests in these UI files are retained by B9090; template orchestration in index.tsx is retained under B9752's covers and its template HTTP contracts are assigned here.
+  - B3252 owns competitor parsing, generation and both enrich routes; B3253 owns catalog and AI suggestion; B3249 owns preview; B8790/B9321 own production composition.
+  - B3685/B8667 and B3248/B8669 own installation writes. B9752 covers ordinary policy editing and B148 runs the retained template controls in Chromium.
+pitfalls:
+  - An empty competitors array is truthy in the client and is sent, but the enrichment handler treats it as a discovery request.
+  - The chooser creates selected guardrails before saving a policy and retains successes after a later guardrail fails.
+  - The browser reads competitor and status SSE events; replacing them with completion-style chunks would pass an unrelated streaming test.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

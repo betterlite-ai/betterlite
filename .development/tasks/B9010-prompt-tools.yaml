@@ -1,0 +1,182 @@
+id: B9010
+title: Prompt preview and dotprompt upload routes
+description: >-
+  Two prompt utilities have no implementation: test_prompt and convert_prompt_file_to_json in
+  prompt_endpoints.py L1010-L1209, 149 nonblank, noncomment lines including their docstrings and signatures.
+  Build POST /prompts/test and POST /utils/dotprompt_json_converter, with no /v1 or other aliases.
+  Both require the normal key authentication dependency, but neither checks an admin role or requires a database.
+  Add routes/prompt_tools.rs and prompt_tools/ in betterlite-server. Its routes(&Arc<ServerState>) returns only
+  these two method/path pairs. The architect's route stub registration merges this module inside the existing auth
+  layers; do not edit routes.rs, state.rs, the admin area's mount list, or B8672's read/write routers. Add the direct
+  betterlite-prompts dependency to the server manifest if the merged foundation has not already added it.
+
+  Preview. Decode B4050's TestPromptRequest: required dotprompt_content string, optional prompt_variables map and
+  optional conversation_history list of string-valued message maps, both absent/null by default. In
+  betterlite-prompts::dotprompt_templates::preview, assemble the ephemeral template with id test_prompt using
+  B4051's frontmatter parser, PromptTemplate metadata extraction and sandbox. Require its model before rendering.
+  Render with the supplied variables or an empty map directly through the sandbox, without PromptManager.render's
+  input-schema validation; the source calls jinja_env.from_string, not that method. Reuse B4052's
+  dotprompt_compilation::messages::convert_to_messages and require a nonempty result before considering history.
+  With supplied conversation_history, keep only the rendered system messages and append the history unchanged;
+  otherwise keep all rendered messages. Copy optional_params, force stream=true even when metadata says false,
+  build model/messages, and apply optional_params last, including metadata fields such as messages that overwrite
+  the initially assembled data. Input/output/model metadata are already separated by PromptTemplate.
+
+  Send the resulting data through B884's is_request_body_safe before inference, using the loaded general settings
+  and the current router. Then enter the same authenticated acompletion pipeline as chat, with the original
+  request path, headers and principal, no path-model override and no version override. Put the bridge to the
+  existing chat implementation in routes/chat/prompt_execution.rs and its folder: reuse the merged chat state,
+  B8802's production pre_call_step and the send/stream functions behind execute_chat, without an HTTP loopback or
+  a second pre-call. Keep the production SSE generator, response headers and disconnect cleanup from B8633.
+  Do not register a chat alias or directly call ChatExecutor before the pre-call. A complete non-stream response
+  returned by a hook still passes through as JSON; the endpoint forces the request flag, not a particular result
+  variant. Preview neither inserts a prompt nor changes either registry map.
+
+  Conversion. Decode the multipart file field with B1101's decoder. Check the original filename's case-sensitive
+  .prompt suffix before any content parse, then use B2460's safe_filename for both Unix and Windows separators.
+  Remove only the final .prompt extension from the safe basename, retaining earlier dots, to form prompt_id.
+  Decode UTF-8, parse frontmatter through B4051 and trim the remaining content as prompt_file_to_json does.
+  Return {prompt_id, json_data: {content, metadata}}; do not render variables, validate an input schema, require a
+  model, or initialize a manager. A byte-oriented conversion entry in dotprompt_templates/preview.rs can reuse
+  the parser without creating the temporary file and directory used by Python. No uploaded path is ever opened.
+
+  Error surfaces are different from a management CRUD error. Missing model, no rendered messages and a preview
+  ValueError such as invalid YAML are HTTP 400 with a detail string. Converter extension rejection is also 400
+  detail, while invalid UTF-8 or YAML inside its conversion try block is 500 detail. Other preview exceptions are
+  caught and become 500 detail; preserve the category distinction between a frontmatter ValueError and a Jinja
+  syntax/runtime error. Authentication uses the existing OpenAI-style auth error, and a safety ValueError at the
+  explicit preview call site becomes 400 detail, not the 401 used by the auth middleware. Use a local typed error
+  enum retaining sources and never put a prompt body, uploaded bytes or a credential in a diagnostic. Reuse the
+  global HTTPException response convention, whose detail envelope has no invented type, param or code fields.
+
+  Outside bytes enter decode_preview_body(&[u8], &ApiLimits) and decode_prompt_upload(content_type, &[u8],
+  &ApiLimits) in routes/prompt_tools/decode.rs. The first uses serde_json with the existing typed request; the
+  second calls B1101, then the typed filename/UTF-8 conversion. Enforce B1087's 16777216-byte body cap before
+  allocation. Preview keeps the existing sandbox's 65536-byte template limit and 1000000 fuel budget, and uses a
+  capped render writer to stop before output exceeds 1048576 bytes. Run rendering as bounded blocking work using
+  the server's existing request deadline, without detached jobs. Add the prompt_tools cargo-fuzz target in the
+  server crate and seeds tagged for JSON or multipart (the multipart seed carries a length-prefixed Content-Type
+  followed by body bytes). The target calls these exact production decoders and the bounded preview renderer;
+  tests replay every seed. No new config key or environment variable is introduced.
+
+  HTTP cases omit kind (any present kind is read as a helper case), use master key oracle-master and an openai/gpt-4o-mini model behind the mock upstream.
+  Preview cases cover rendered role messages/autoescape, history retaining system messages, forced streaming over
+  metadata stream=false, optional max_tokens, input-schema bypass, missing model, whitespace-only render,
+  invalid YAML, Jinja syntax failure, a forbidden api_base in frontmatter, and absent auth. Conversion cases use
+  body_kind multipart and cover a versioned filename with frontmatter, content with no frontmatter, Unix and
+  Windows directory components, a .PROMPT filename, bad YAML, non-UTF-8 bytes and absent auth. Compare upstream
+  bodies, SSE events, content-type and x-litellm-call-id presence on successful preview responses. Ignore only
+  generated identifiers/times and human error wording at its actual pointer (/detail or /error/message), with
+  a reason; keep status and every existing type/param/code and header. A booted native test with an ordinary
+  authenticated non-admin key proves both utilities have no admin check. Scope the safety-limit assertions in
+  tests as recorded deviations, not equality oracle cases. Behavior tests live under routes::prompt_tools::,
+  routes::chat::prompt_execution:: and dotprompt_templates::preview::; retain the existing chat regression suite.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes/prompt_tools.rs
+    - crates/betterlite-server/src/routes/prompt_tools/**
+    - crates/betterlite-server/src/routes/chat/prompt_execution.rs
+    - crates/betterlite-server/src/routes/chat/prompt_execution/**
+    - crates/betterlite-prompts/src/dotprompt_templates/preview.rs
+    - crates/betterlite-prompts/src/dotprompt_templates/preview/**
+    - crates/betterlite-server/fuzz/fuzz_targets/prompt_tools.rs
+    - crates/betterlite-server/fuzz/corpus/prompt_tools/**
+    - tools/oracle/cases/prompts/tools/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L1010-L1148
+    why: Own the complete decorated preview handler, its assembly order, safety call and error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L1151-L1209
+    why: Own the decorated converter, filename check, JSON shape and conversion error boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L179-L198
+    why: B4051 dependency context for frontmatter parsing, not a second parser implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/prompt_manager.py#L319-L334
+    why: The existing conversion logic trims content and preserves metadata without rendering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/prompt_endpoints.py#L6-L9
+    why: B4050's request fields and absence defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/path_utils.py#L72-L96
+    why: B2460's safe_filename strips both separator styles before prompt_id extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
+    why: The shared HTTP exception handler retains detail rather than an OpenAI error envelope.
+  - url: https://docs.rs/minijinja/latest/minijinja/struct.Environment.html
+    why: Reuse the repository's Minijinja sandbox and fuel support for inline rendering.
+  - url: https://docs.rs/serde_json/latest/serde_json/fn.from_slice.html
+    why: Reuse typed byte deserialization instead of adding a JSON parser.
+dod:
+  - text: Both utility paths are reachable through the booted proxy, require a valid key, accept an ordinary authenticated caller and work without a database.
+    proof: [route-tests, new-http-cases, oracle]
+  - text: Preview preserves the source's render/history/optional-parameter order, skips input-schema validation, runs safety and the shared inference pipeline once, and returns its streamed or complete result without persisting a prompt.
+    proof: [route-tests, preview-tests, new-http-cases, oracle]
+  - text: Conversion validates the original extension, strips path components, preserves version dots, trims unrendered content and keeps the separate 400 and 500 detail error boundaries.
+    proof: [route-tests, preview-tests, new-http-cases, oracle]
+  - text: Body, template, rendered output and render-work limits stop allocation or work at the boundary, and errors reveal no prompt or secret.
+    proof: [limit-tests, preview-tests]
+  - text: Every committed JSON and multipart corpus input reaches the production decoder and bounded renderer without a panic or unbounded work.
+    proof: [decoder-corpus]
+  - text: Existing chat behavior remains intact when the prompt utility reuses its execution and streaming path.
+    proof: [chat-regression]
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: the utility handlers, authentication, original-path handoff or error mapping are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E '(test(/^routes::prompt_tools::/) | test(/^routes::chat::prompt_execution::/)) - test(replay_prompt_tools_corpus)'
+    - id: preview-tests
+      why: inline rendering or conversion does not use the existing sandbox and metadata rules
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^dotprompt_templates::preview::/)'
+    - id: limit-tests
+      why: the safety limits lack assertions for exact-cap and cap-plus-one inputs
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompt_tools::tests::limits_/)'
+    - id: chat-regression
+      why: sharing the execution path changes existing chat behavior
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/routes/chat/prompt_execution.rs crates/betterlite-server/src/routes/chat/prompt_execution)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::/)'
+    - id: decoder-corpus
+      why: no new seed or production fuzz target exists, or corpus replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/prompt_tools)" && test -f crates/betterlite-server/fuzz/fuzz_targets/prompt_tools.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replay_prompt_tools_corpus)'
+    - id: new-http-cases
+      why: the oracle would have no new utility-route coverage
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/prompts/tools)"
+oracle_cases:
+  - tools/oracle/cases/prompts/tools/preview-render.yaml
+  - tools/oracle/cases/prompts/tools/preview-history.yaml
+  - tools/oracle/cases/prompts/tools/preview-stream-and-options.yaml
+  - tools/oracle/cases/prompts/tools/preview-schema-bypass.yaml
+  - tools/oracle/cases/prompts/tools/preview-missing-model.yaml
+  - tools/oracle/cases/prompts/tools/preview-empty-render.yaml
+  - tools/oracle/cases/prompts/tools/preview-bad-frontmatter.yaml
+  - tools/oracle/cases/prompts/tools/preview-template-error.yaml
+  - tools/oracle/cases/prompts/tools/preview-unsafe-destination.yaml
+  - tools/oracle/cases/prompts/tools/preview-auth.yaml
+  - tools/oracle/cases/prompts/tools/convert-versioned.yaml
+  - tools/oracle/cases/prompts/tools/convert-plain.yaml
+  - tools/oracle/cases/prompts/tools/convert-unix-name.yaml
+  - tools/oracle/cases/prompts/tools/convert-windows-name.yaml
+  - tools/oracle/cases/prompts/tools/convert-extension.yaml
+  - tools/oracle/cases/prompts/tools/convert-invalid-yaml.yaml
+  - tools/oracle/cases/prompts/tools/convert-invalid-utf8.yaml
+  - tools/oracle/cases/prompts/tools/convert-auth.yaml
+deviations:
+  - what: Preview and conversion reject a body over 16777216 bytes with 413 invalid_request_error, param body and code request_too_large.
+    why: The handlers read unrestricted bodies at the pin; the shared ApiLimits policy bounds external bytes before allocation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L1177-L1182
+  - what: Preview rejects templates over 65536 bytes and output over 1048576 bytes with 413 invalid_request_error, param dotprompt_content and code prompt_too_large; fuel exhaustion returns 400 invalid_request_error, param dotprompt_content and code prompt_render_limit.
+    why: Reuse the existing native sandbox bounds and stop output allocation in the writer; LiteLLM sets neither a rendering fuel budget nor these byte caps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L1076-L1082
+out_of_scope:
+  - "prompt_endpoints.py L56-L217: _PromptRow accessors/model_dump, _PromptRowData, _PromptTableActions methods, _prompt_table, get_latest_prompt_versions, get_next_version_for_prompt, create_versioned_prompt_spec, Prompt, is_ambiguous_keyed_prompt_data and PatchPromptRequest are B4059."
+  - "list_prompts, get_prompt_versions, _get_prompt_template and get_prompt_info including both GET aliases at L219-L590: B4061; create_prompt, update_prompt, delete_prompt, _reload_prompt_in_registry and patch_prompt at L593-L1007: B4062; mounting those eight routes: B8672."
+  - "PromptManager, PromptTemplate and their parser/sandbox: B4051; message conversion: B4052; TestPromptRequest: B4050; safe_filename: B2460; shared multipart parsing: B1101; request safety: B884."
+  - "Registry mutation, compilation dispatch, startup and their end-to-end composition: B4058-B4060, B8293, B8560 and B117."
+  - "The shared pre-call and streaming algorithms remain B8801-B8803 and B8633; this task supplies a second caller without copying those algorithms."
+pitfalls:
+  - "Checking conversation_history before rendering would let an empty template bypass the source's No messages found rejection."
+  - "Using PromptManager.render for /prompts/test would introduce input-schema checks that the handler deliberately bypasses."
+  - "The final data.update(optional_params) lets a metadata messages field replace the assembled messages, while stream is always overwritten to true first."
+  - "A safe basename determines prompt_id, but the original upload filename determines whether the .prompt suffix is accepted."
+  - "Invalid YAML is 400 on preview and 500 on conversion because their exception boundaries differ."
+  - "POST /prompts/test is a distinct static path beside B4062's /prompts/{prompt_id}; never merge either router a second time."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

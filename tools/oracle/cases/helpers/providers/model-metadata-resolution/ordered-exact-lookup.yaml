@@ -1,0 +1,51 @@
+kind: helper
+name: model-metadata-resolution-ordered-exact-lookup
+call:
+  model_metadata_resolution:
+    scenario: ordered_exact_lookup
+    fixture:
+      model_cost:
+        groq/llama3-8b-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 1}
+        groq/llama3-8b: {litellm_provider: groq, mode: chat, input_cost_per_token: 2}
+        llama3-8b-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 3}
+        llama3-8b: {litellm_provider: groq, mode: chat, input_cost_per_token: 4}
+        groq/groq/llama3-8b-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 5}
+        plain-model: {litellm_provider: groq, mode: chat, input_cost_per_token: 6}
+        split-only-model: {litellm_provider: groq, mode: chat, input_cost_per_token: 7}
+        groq/dated-only: {litellm_provider: groq, mode: chat, input_cost_per_token: 8}
+        solo: {litellm_provider: groq, mode: chat, input_cost_per_token: 9}
+        groq/groq/groq-target: {litellm_provider: groq, mode: chat, input_cost_per_token: 10}
+        groq/mismatch-model: {litellm_provider: openai, mode: chat, input_cost_per_token: 11}
+        mismatch-model: {litellm_provider: groq, mode: chat, input_cost_per_token: 12}
+        exact-model: {litellm_provider: groq, mode: chat, input_cost_per_token: 13}
+        Groq/MiXeD-Case: {litellm_provider: groq, mode: chat, input_cost_per_token: 14}
+        bare-entry: {mode: chat}
+        vertex_ai/null-provider: {litellm_provider: null, mode: chat}
+        groq/duo: {litellm_provider: groq, mode: chat, input_cost_per_token: 15}
+        duo: {litellm_provider: groq, mode: chat, input_cost_per_token: 16}
+        target: {litellm_provider: groq, mode: chat, input_cost_per_token: 17}
+        groq/groq/target-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 18}
+        split-pair-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 21}
+        groq/split-pair: {litellm_provider: groq, mode: chat, input_cost_per_token: 22}
+        converse/x: {litellm_provider: bedrock, mode: chat, input_cost_per_token: 19}
+        x: {litellm_provider: bedrock, mode: chat, input_cost_per_token: 20}
+      fallback_generalizations:
+        - {pattern: "^groq/", model_info: {input_cost_per_token: 99}}
+    queries:
+      - {model: groq/llama3-8b-2024-01-01, custom_llm_provider: groq}
+      - {model: plain-model, custom_llm_provider: groq}
+      - {model: groq/split-only-model, custom_llm_provider: groq}
+      - {model: groq/dated-only-2024-02-02, custom_llm_provider: groq}
+      - {model: solo-2024-04-04, custom_llm_provider: groq}
+      - {model: groq/groq-target, custom_llm_provider: groq}
+      - {model: mismatch-model, custom_llm_provider: groq}
+      - {model: exact-model, custom_llm_provider: groq}
+      - {model: groq/mixed-case, custom_llm_provider: groq}
+      - {model: bare-entry}
+      - {model: vertex_ai/null-provider, custom_llm_provider: vertex_ai}
+      - {model: duo-2024-01-01, custom_llm_provider: groq}
+      - {model: groq/target-2024-01-01, custom_llm_provider: groq}
+      - {model: groq/split-pair-2024-01-01, custom_llm_provider: groq}
+      - {model: converse/x, custom_llm_provider: bedrock}
+env: {}
+compare: {ignore: []}

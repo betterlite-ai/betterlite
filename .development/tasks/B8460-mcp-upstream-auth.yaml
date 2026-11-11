@@ -41,7 +41,7 @@ description: >-
 
 
   The client-forwarded and pass-through arms: client_forwarded_auth_headers copies the oauth2
-  headers and drops Authorization (B4741's without_header) when should_strip_caller_auth is true.
+  headers and drops Authorization (this task's without_header) when should_strip_caller_auth is true.
   take_forwarded_authorization pops Authorization (case-insensitive) out of a header map and
   returns it with the rest. passthrough_token returns a non-empty string credential as is, the
   Authorization entry of a map credential, else None. consumes_caller_auth is true for
@@ -139,7 +139,8 @@ out_of_scope:
   - _resolve_byok_mcp_auth_header calls the BYOK checks in operations.py, so it lives with call_tool in B8465.
   - _redacted_registry_dump is B6764's; _warn_on_* config warnings are B6763's.
   - "_prepare_mcp_server_headers in operations.py, the caller of these rules on the listing path: B8196."
-  - "lookup_mcp_server_auth_in_headers and merge_mcp_headers: B6594. without_header, has_header and strip_auth_scheme: B4741."
+  - "lookup_mcp_server_auth_in_headers and merge_mcp_headers: B6594. strip_auth_scheme: B4741, which exposes it from betterlite-mcp credentials.rs."
+  - "has_header and without_header (litellm/types/mcp.py L319-L335): B4741 filters headers privately inside credentials.rs and exposes neither. Build them here as case-insensitive pub(crate) functions in mcp::upstream_auth, so the strip rules and client_forwarded_auth_headers share one drop operation."
 
 pitfalls:
   - >-

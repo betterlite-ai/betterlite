@@ -7,7 +7,7 @@ description: >-
 
   Caller checks, in this order after the body parses. (1) Admin view: `_user_has_admin_view(user_api_key_dict)` is B124's shared role predicate (B732's roles: proxy_admin and proxy_admin_viewer). (2) If the caller is an admin, `user_id` is the key's `user_id` (it may be null). If not, `user_id` is `require_caller_user_id_for_non_admin(user_api_key_dict)` from B861; its error (a caller with no user id) is returned as that function raises it, before any stream starts. The role names a non-admin can have (internal_user, internal_user_viewer and the like) all take this branch.
 
-  Response. Build the message list as plain `{"role", "content"}` maps and call B3103's `stream_usage_ai_chat(messages, model, user_id, is_admin)`. Wrap its frames with B005's keep-alive wrapper (`wrap_sse_stream_with_keepalive_pings`) using `litellm_settings.sse_keepalive_ping_interval_seconds` (B005 owns the setting and its coercion; default null means no pings) and the ping text `: ping\n\n` (`SSE_COMMENT_PING`). Answer 200 with content type `text/event-stream` and exactly these extra headers: `Cache-Control: no-cache` and `X-Accel-Buffering: no`. Starlette adds `charset=utf-8` to a text media type, so the header value is `text/event-stream; charset=utf-8`. No other header (no x-litellm-* headers) is set by the handler.
+  Response. Build the message list as plain `{"role", "content"}` maps and call B3103's `stream_usage_ai_chat(messages, model, user_id, is_admin)`. Wrap its frames with B005's keep-alive wrapper (`wrap_sse_stream_with_keepalive_pings`) using `litellm_settings.sse_keepalive_ping_interval_seconds` (B089 owns the setting and B005 keeps the wrapping and coercion; default null means no pings) and the ping text `: ping\n\n` (`SSE_COMMENT_PING`). Answer 200 with content type `text/event-stream` and exactly these extra headers: `Cache-Control: no-cache` and `X-Accel-Buffering: no`. Starlette adds `charset=utf-8` to a text media type, so the header value is `text/event-stream; charset=utf-8`. No other header (no x-litellm-* headers) is set by the handler.
 
   Wiring. The route state struct takes the collaborators by constructor: a `UsageChatFactory` trait that returns the `UsageChatParts` for one request (the model client, the data source and the clock; B8673 wires the real ones), the ping interval, and B861's caller-id check. Tests use fakes of each.
 
@@ -66,7 +66,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "stream_usage_ai_chat, the tools, the system prompt and the data fetchers: B3103."
-  - "require_caller_user_id_for_non_admin: B861. The admin-view predicate: B124. The keep-alive wrapper and its setting: B005."
+  - "require_caller_user_id_for_non_admin: B861. The admin-view predicate: B124. The keep-alive wrapper: B005. Its setting: B089."
   - "The role table that lets internal users reach /usage/ai/chat: B742; this task registers the route behind the normal key check."
 pitfalls:
   - "The 401 for a missing key comes before the 422 for a bad body, because the key dependency runs first in FastAPI; a bad body with no key is a 401."

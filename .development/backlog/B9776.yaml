@@ -1,0 +1,14 @@
+id: B9776
+milestone: M10 admin ui
+title: MCP and web-search settings page HTTP acceptance
+status: todo
+depends_on: [B1663, B080, B955, B8201, B8383, B136, B1630, B860, B5076, B9735]
+file: tasks/B9776-dashboard-tool-search-http.yaml
+covers:
+  - "ui/litellm-dashboard/src/components/Settings/AdminSettings/{MCPSemanticFilterSettings,MCPToolSearchSettings,WebSearchInterceptionSettings}/**"
+parent: B150
+split_from: B150
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

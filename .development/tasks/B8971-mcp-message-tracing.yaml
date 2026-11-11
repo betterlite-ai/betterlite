@@ -1,0 +1,122 @@
+id: B8971
+title: MCP per-message trace context bridge
+description: >-
+  Build betterlite-server::mcp::message_tracing, the missing bridge between an HTTP request
+  and the MCP operation that can run later on a persistent session. Own server.py
+  _mcp_meta_trace_carrier and the ten _otel_* functions at L272-L411. B3847 has already built
+  RequestTraceContext and MCP span linking; the old B8720 exclusion saying that no tracing
+  implementation exists is stale. This task supplies a lower-level bridge that B8720 and
+  B8727 can call without depending on the final B136 integration task.
+
+  MessageTrace holds a snapshot of the current request's optional live OpenTelemetry Context,
+  its B3847 McpTransportSpan and an optional typed vector of OtelDestination. Capture it from
+  explicit request inputs immediately before transport dispatch, corresponding to
+  _otel_publish_transport_span_on_scope and _otel_publish_request_destinations_on_scope.
+  Carry it in that individual message's request extensions/envelope, never SessionAuth or
+  a session-id map. A JSON-RPC response POST bypasses the session lock and must not replace
+  the snapshot held by a tool call awaiting that response. An absent snapshot gives no
+  override; a present empty destination vector clears an inherited destination vector for
+  the operation. Accept only the already validated destination type; do not deserialize
+  credentials or read configuration here. Retain a clone of the live SDK Context, not
+  just its SpanContext, so the existing failure path can still write to a recording span.
+  Do not end that span: the HTTP response-body owner closes it.
+
+  meta_carrier takes the parsed params._meta object and copies only the string-valued
+  traceparent and tracestate keys, returning None when neither is present. Preserve their
+  spelling and values for B3847's W3C parser; an empty string is still a string. Do not copy
+  baggage, litellm.team.id or any other metadata. Remote trace context is a span link, never
+  the operation's parent, and never imports caller-controlled identity baggage.
+
+  An explicit MessageTraceScope borrows the operation's RequestTraceContext and uses
+  enter_mcp_message/exit_mcp_message to install and restore carrier, transport and destination
+  state. Save a token before installing destinations, including an empty vector, and restore
+  it on normal return, error and cancellation through Drop. The request-root anchor remains
+  on the most recent recording transport as B3847 specifies; do not restore an earlier root.
+  Preserve the source's absent-transport no-op instead of clearing a pre-existing transport
+  when the message carries no span. Do not attach an SDK ContextGuard across an await or use
+  thread/task locals; the future and its callbacks receive the explicit scoped context.
+  Without a tracing context the scope does nothing and executes the operation normally.
+  B8720 uses this scope only for tools/list and tools/call; its prompt, resource and discover
+  methods have trace=False at the pin. The source's SSE handler and modern fast path do not
+  publish the streamable stateful transport snapshot; do not invent one for those branches.
+
+  Reuse the existing opentelemetry 0.33.1 dependency/API and B3847's types instead of writing
+  a propagator or a second context model. Add betterlite-logging and opentelemetry to the
+  server manifest only if the merged dependencies do not already expose them, with the
+  same release and features needed for trace; use the existing opentelemetry_sdk release
+  for recording-exporter tests. No new package version or environment variable is needed.
+
+  Tests in message_tracing/tests.rs and tests/ cover carrier_whitelist, absent_meta,
+  absent_snapshot, empty_destinations_clear, absent_transport_preserves, per_message_parent,
+  remote_context_is_link, baggage_is_ignored, restore_on_error, restore_on_cancel,
+  root_stays_reanchored and live_span_lifetime. A two-message test gives the second request
+  a different span and destinations while the first is suspended, then completes both;
+  each must retain its own snapshot and the idle session must retain neither live span.
+  Helper cases call only _mcp_meta_trace_carrier with typed request metadata, never a
+  FastAPI handler or a ContextVar setter. B136 owns HTTP and booted-application checks.
+  These functions total 132 nonblank, non-comment lines, 92 excluding docstrings;
+  allow roughly 180 bridge lines, 70 adapter lines and 250 test lines. All input is parsed
+  by existing decoders, so there is no new byte parser or fuzz target.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/mcp/message_tracing.rs
+    - crates/betterlite-server/src/mcp/message_tracing/**
+    - tools/oracle/cases/helpers/mcp-trace-carrier/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-trace-carrier-*
+    - tools/oracle/helpers/b8971.py
+    - tools/oracle/helpers/b8971/**
+    - tools/oracle/src/helpers/server/b8971.rs
+    - tools/oracle/src/helpers/server/b8971/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L248-L411
+    why: Own the metadata whitelist and request-to-message tracing bridge, including no-op and restoration behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L811-L850
+    why: B8720's caller enters and restores the tracing scope around tools/list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L900-L964
+    why: B8720 enables tracing for tools/call and leaves it off for prompt/resource/discover operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2237-L2253
+    why: B8727's streamable dispatch publishes request-scoped span and destination values before updating shared session auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/context.py#L30-L197
+    why: Existing B3847 context API and root-reanchoring behavior; this task calls it.
+dod:
+  - text: Only string traceparent and tracestate values become the carrier, with no baggage or identity metadata.
+    proof: [carrier-tests, oracle, helper-python, helper-corpus]
+  - text: Each message keeps its own live transport and destinations, including a present empty destination list and the no-op behavior for absent inputs.
+    proof: [scope-tests]
+  - text: Operation completion, error and cancellation restore message slots without undoing the new root anchor, and dropping messages releases their live span handles.
+    proof: [scope-tests]
+  - text: The existing OTel resolver parents to the current HTTP request and links remote MCP context without accepting remote identity baggage.
+    proof: [scope-tests]
+checks:
+  optional: []
+  commands:
+    - id: carrier-tests
+      why: The MCP metadata whitelist is absent or accepts baggage.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::message_tracing::tests::carrier::/)'
+    - id: scope-tests
+      why: A message borrows another request's span/destinations or leaks its context after completion.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::message_tracing::tests::scope::/)'
+    - id: helper-python
+      why: The metadata adapter does not pass strict Python checks.
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: The newly assigned metadata operation has no parser seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-trace-carrier-*')" && grep -rlq 'b8971' tools/oracle/fuzz/corpus/helper_case/mcp-trace-carrier-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-trace-carrier/metadata.yaml
+deviations: []
+out_of_scope:
+  - "Other server.py functions: B8720 protocol handlers and session auth, B8721 streamable transport, B8722 modern transport, B8723 session tracking and termination, B8724 request checks, B8725 challenges, B8727 ingress/lifespan/routes, B8728 production ports/mount, and B6593 toolset narrowing."
+  - "B3847 owns all context setters, W3C parsing and span resolution in integrations/otel/plumbing/context.py; B3852 and B3853 own callbacks and error stamping, and B8680 owns the HTTP SERVER span."
+  - "B8720 and B8727 must consume this module at the referenced call sites; the architect changes their dependency lists and stale exclusions before dispatch, rather than this task editing their parent modules."
+pitfalls:
+  - A response POST skips the session lock, so storing litellm_otel_transport_span in SessionAuth misattributes a suspended tool call.
+  - None destinations means no override while Some(empty) removes inherited destinations for this operation.
+  - ExitStack restores the message slots but not the request root that set_mcp_message_transport_span re-anchored.
+  - A SpanContext contains identifiers only and cannot keep the live transport span writable until the tool call completes.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

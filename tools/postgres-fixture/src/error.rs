@@ -7,6 +7,13 @@ use tokio::time::error::Elapsed;
 
 use thiserror::Error;
 
+use crate::daily_usage::DailyUsageError;
+use crate::dashboard::DashboardFixtureError;
+use crate::dashboard_governance::DashboardGovernanceError;
+use crate::discovery_skills::DiscoveryError;
+use crate::finops::FinOpsFixtureError;
+use crate::search_tools::SearchSeedError;
+
 #[derive(Debug, Error)]
 pub enum FixtureError {
     #[error("fixture provisioning task has already completed")]
@@ -78,4 +85,16 @@ pub enum FixtureError {
     },
     #[error("user {user_id} has conflicting roles")]
     ConflictingUserRole { user_id: String },
+    #[error("daily usage fixture seed failed: {0}")]
+    DailyUsage(#[from] DailyUsageError),
+    #[error("finops fixture seed failed: {0}")]
+    FinOps(#[from] FinOpsFixtureError),
+    #[error("discovery skills fixture seed failed: {0}")]
+    DiscoverySkills(#[from] DiscoveryError),
+    #[error("search tools fixture seed failed: {0}")]
+    SearchTools(#[from] SearchSeedError),
+    #[error("dashboard fixture seed failed: {0}")]
+    Dashboard(#[from] DashboardFixtureError),
+    #[error("dashboard governance fixture seed failed: {0}")]
+    DashboardGovernance(#[from] DashboardGovernanceError),
 }

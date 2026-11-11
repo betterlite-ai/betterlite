@@ -15,8 +15,11 @@ description: >-
   enum ProxyRouterError. `RouterParts` holds what LiteLLM passes to Router(...): `deployments: Vec<ModelDeployment>`
   (betterlite-config's type), `settings: RouterSettings` (Config.router_settings: routing_strategy, num_retries, timeout,
   allowed_fails, cooldown_time, fallbacks), the model_group_alias map of B302's deployment_catalog section, the
-  routing_groups of B323's section, and `cache_responses: bool`. `RouterParts::from_config(config: &Config,
-  cache_enabled: bool)` fills it from the loaded config: cache_responses is cache_enabled (LiteLLM sets it to
+  routing_groups of B323's section, the parsed search tools (`search_tools: Vec<SearchToolEntry>`, B3273's entry type,
+  which B8613 fills from B8384's parse_search_tools) and `cache_responses: bool`. `ProxyRouter` keeps one shared
+  `Arc<SearchToolList>` (B3273), seeded from those entries, and `search_tools()` hands out that same Arc, so B8631, B8384
+  and B8634 read and replace one list. `RouterParts::from_config(config: &Config,
+  cache_enabled: bool)` fills it from the loaded config (search_tools stays empty there): cache_responses is cache_enabled (LiteLLM sets it to
   `litellm.cache is not None`), deployments is config.model_list. `ProxyRouter::build(parts: RouterParts) ->
   Result<ProxyRouter, ProxyRouterError>` does what Router.__init__ does with these values in the proxy: it seeds B368's
   DeploymentCatalog through its set_model_list port with ignore_invalid_deployments true (an invalid deployment is logged

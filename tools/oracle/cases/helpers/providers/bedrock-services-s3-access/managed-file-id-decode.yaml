@@ -1,0 +1,11 @@
+kind: helper
+name: managed-file-id-decode
+call:
+  bedrock_services_s3_access:
+    operation: managed_file_id_decode
+    file_ids:
+      - bGl0ZWxsbV9wcm94eTpiZWRyb2NrL21vZGVsO3VuaWZpZWRfaWQsZmlsZS0xMjM7bGxtX291dHB1dF9maWxlX2lkLHMzOi8vbWFuYWdlZC1idWNrZXQvbGl0ZWxsbS1iZWRyb2NrLWZpbGVzLWZpbGUtMTIzLmpzb25sO2xsbV9vdXRwdXRfZmlsZV9tb2RlbF9pZCxhbWF6b24udGl0YW4=
+      - s3://direct/litellm-bedrock-files-key
+      - not-a-managed-id
+env: {}
+compare: {ignore: []}

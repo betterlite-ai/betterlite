@@ -1,0 +1,151 @@
+id: B9752
+title: Compare policy editing, attachment and pipeline page requests with the proxy
+description: >-
+  Supply HTTP transcripts for the retained policies page, not another policy engine or UI.
+  B9090 takes in every component and hook; this task sends their networking.tsx requests to
+  both booted gateways. Use B9750's governance fixture with dashboard: {}, two teams and
+  finops.key_metadata aliases from B9260, an admin
+  session and a non-admin session. Configure a local litellm_content_filter guardrail and a
+  parent policy through the owners' existing configuration. Keep the real policy registries,
+  database writes and cache refresh behavior. Never call a Python handler as an oracle helper.
+
+  Lists and editing. GET /policies/list and GET /policies/attachments/list have no query or
+  body. Their envelopes are policies[] and attachments[]. PolicyTable, policy_info and the
+  version picker consume policy_id,policy_name,inherit,description,guardrails_add,
+  guardrails_remove,condition,pipeline,version_number,version_status,parent_version_id,
+  created_at,updated_at,created_by,updated_by and definition_location. GET /policies/
+  <id> returns the policy itself; GET /policies/<id>/resolved-guardrails returns
+  resolved_guardrails[]. B3248 owns these handlers and B8669 mounts them. POST /policies
+  sends policy_name, nonempty description/inherit when supplied, guardrails_add and
+  guardrails_remove arrays, and condition:{model:<selection>} only when selected.
+  PUT /policies/<id> sends the same form shape. DELETE /policies/<id> has no body.
+  Writes are followed by the actual list/detail requests; do not assert a repository directly.
+
+  Versions. B3244 owns GET and POST /policies/name/<encoded-name>/versions and PUT
+  /policies/<id>/status, also mounted by B8669. The page's create-version POST body is {},
+  not source_policy_id. GET reads versions[] with the Policy fields above. Status bodies are
+  {version_status:"published"} then {version_status:"production"}; mutations return the
+  selected Policy. The pinned initial create defaults to production and PUT only edits a
+  draft. Exercise the resulting 400 when directly editing the initial version, create a draft,
+  edit it, publish and promote, then check list/detail/versions and the previous production
+  status. Keep the original write order; neither the page nor the proxy promises a transaction.
+
+  Attachments. POST /policies/attachments sends one body per selected policy, never a bulk
+  array. buildAttachmentData emits policy_name, scope:"*" for global or nonempty teams,
+  keys,models,tags arrays for specific scope, priority only when numeric (including zero),
+  and default only when true. The teams and keys arrays contain aliases, not IDs/hashes.
+  Read attachment_id,policy_name,scope,teams,keys,models,tags,priority,default,
+  definition_location and creation/update fields in the list. DELETE
+  /policies/attachments/<id> has no body and refreshes the list. B3248/B8669 own both.
+  The form previews the first selected policy by POST /policies/attachments/estimate-impact
+  with that same generated body. ImpactPopover instead sends only policy_name,scope,teams,
+  keys,models,tags from the persisted row, including its null/empty fields; it omits priority
+  and default. B3249 owns impact and B8790 mounts it. Both views read affected_keys_count,
+  affected_teams_count,sample_keys[],sample_teams[]; -1 is the global-scope sentinel.
+
+  PolicyTestPanel POST /policies/resolve sends only nonempty team_alias,key_alias,model,tags
+  selections. No force_sync query is sent. Read effective_guardrails[] and matched_policies[]
+  policy_name,matched_via,guardrails_added. B3250 owns resolution; B9321 mounts it using
+  B9320's shared runtime. Use a config-backed match
+  as well as post-write resolution, without adding force_sync to hide a cache bug. Avoid
+  nondeterministic set order by using one effective guardrail in each compared context.
+
+  Selectors send GET /team/list without a query from AddAttachmentForm and with user_id
+  from PolicyTestPanel, including when that caller is admin (B813). Read team_id/team_alias
+  from the array. Both use B782 GET /key/list?page=1&size=100&return_full_object=true&
+  include_team_keys=true&include_created_by_keys=true&substring_matching=true with no sort,
+  expand or status query, reading keys[].key_alias. Compare role-scoped populated responses,
+  not just empty options. GET /models?include_model_access_groups=True reads data[].id
+  (B007), and GET /v2/guardrails/list with /guardrails/list fallback reads guardrails[]
+  name/params (B3684/B8667). Reuse B9735's exact model and guardrail selector cases.
+
+  PipelineFlowBuilder saves POST /policies or PUT /policies/<id> with policy_name,
+  description when nonempty, guardrails_add equal to the steps' guardrail names,
+  guardrails_remove:[], and pipeline:{mode,steps}. mode is pre_call or post_call; each step
+  has guardrail,on_fail,on_pass and optional on_error,pass_data,modify_response_message.
+  Quick testing and the compliance dialog POST /policies/test-pipeline with that pipeline and
+  test_messages:[{role:"user",content:<prompt>}]. Compliance runs the same request once per
+  selected local compliance prompt, not /utils/test_policies_and_guardrails. B3247 owns the
+  handler; B8790 mounts it. Read terminal_action,modified_data,error_message,
+  modify_response_message and step_results[].guardrail_name,outcome,action_taken,
+  modified_data,error_detail,duration_seconds. Test passing and blocked content with actual
+  built-in guards, a response modification and a two-step chain; do not mock handler results.
+
+  No on-disk HTTP case currently sends these policy routes. B8669's planned cases cover
+  empty/config reads and database-free mutation failures, not successful versioned writes;
+  B3250 covers resolve without a database and invalid/auth requests; B8790's pipeline cases
+  use unknown guards and its impact cases lack a database. B9730's key selector uses size=50,
+  sort and expand, so it cannot cover this size=100 request. Add only the missing transcripts
+  listed below, about 650 case lines. Compare complete stable HTTP responses, content type
+  and error type/param/code. Capture generated IDs per gateway and normalize only those
+  values, timestamps and measured durations, never whole policy/pipeline objects. All auth
+  uses discovery's auth_header_name, Authorization by default, with Bearer session keys.
+scope:
+  paths:
+    - tools/oracle/cases/ui/policy-workflows/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/add_policy_form.tsx#L38-L95
+    why: Omission rules for simple policy form bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/build_attachment_data.ts#L1-L31
+    why: Alias scopes, numeric priority and true-only default serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/add_attachment_form.tsx#L135-L233
+    why: Selector requests, first-policy impact preview and independent attachment writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/impact_popover.tsx#L12-L48
+    why: The persisted-row preview omits default and priority even when they exist on the attachment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/policies/_components/pipeline_flow_builder.tsx#L1577-L1615
+    why: Pipeline policy serialization and the ordered guardrails_add projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3830-L3935
+    why: Policy listing; the compliance utility in this range is not called by these pages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4165-L4417
+    why: Policy versions, status, detail, attachment and impact requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L74-L320
+    why: List/create and B3244's version routes from their decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L383-L648
+    why: B3248 CRUD/resolved guardrails and B3247 pipeline testing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L656-L889
+    why: Attachment listing, creation and deletion, owned by B3248.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L215-L315
+    why: B3250 resolution, with force_sync default false as sent by the page.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L323-L425
+    why: B3249 impact route and its consumed count/sample response.
+dod:
+  - text: Policy create, draft edits, publication, promotion and deletion preserve the actual form bodies and response records over HTTP.
+    proof: [policy-transcripts, oracle]
+  - text: Alias-scoped and global attachments, both preview shapes and no-force-sync resolution work with populated real databases.
+    proof: [policy-transcripts, oracle]
+  - text: Page-sized selectors and both pipeline test callers exercise authorized proxy routes with real guardrail execution.
+    proof: [policy-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: policy-transcripts
+      why: The dependency's empty/error cases would pass without any policy-page success workflow.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/policy-workflows)"
+oracle_cases:
+  - tools/oracle/cases/ui/policy-workflows/create-inherited-conditional-policy.yaml
+  - tools/oracle/cases/ui/policy-workflows/draft-edit-publish-promote.yaml
+  - tools/oracle/cases/ui/policy-workflows/production-edit-error-and-delete.yaml
+  - tools/oracle/cases/ui/policy-workflows/scoped-attachments-and-form-impact.yaml
+  - tools/oracle/cases/ui/policy-workflows/global-default-and-row-impact.yaml
+  - tools/oracle/cases/ui/policy-workflows/resolve-without-force-sync.yaml
+  - tools/oracle/cases/ui/policy-workflows/team-and-key-alias-selectors.yaml
+  - tools/oracle/cases/ui/policy-workflows/save-and-test-pipeline.yaml
+  - tools/oracle/cases/ui/policy-workflows/compliance-prompts-and-modified-response.yaml
+  - tools/oracle/cases/ui/policy-workflows/delete-attachment-and-refetch.yaml
+  - tools/oracle/cases/ui/management-selectors/models-ui-flags-and-team-scope.yaml
+  - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains all UI component, hook, test and compliance-data functions in the covered files; no TypeScript source is translated here.
+  - B3248 owns policy CRUD and attachment handlers; B3244 owns versions; B8669 mounts both. B3247/B3249/B3250 own the other routes, with B8790 and B9321 composing them.
+  - B9753 owns template catalog, suggestion, enrichment and preview contracts called by index.tsx; B148 supplies browser execution.
+  - B813 owns team selectors, B782 key selectors and B9735 the reused model and guardrail selector cases.
+pitfalls:
+  - The New Version control sends {}, while a source_policy_id body would bypass the page's production-version selection path.
+  - ImpactPopover omits priority and default; forwarding its entire attachment object tests a request the pinned page never sends.
+  - A model condition is under condition.model, while an attachment model scope is a models array.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-signing-fixed-clock-sigv4
+call:
+  bedrock_signing:
+    calls:
+      - request_headers:
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          region: us-west-2
+          extra_headers: {}
+          endpoint: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          data:
+            text: '{"messages":[{"role":"user","content":"hello"}]}'
+          headers:
+            content-type: application/json
+            x-custom: keep
+          now: 1767225600
+env: {}
+compare: {ignore: []}

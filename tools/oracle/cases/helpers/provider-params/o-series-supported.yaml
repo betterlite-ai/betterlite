@@ -1,0 +1,25 @@
+kind: helper
+name: provider-params-o-series-supported
+call:
+  provider_params:
+    steps:
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: o3
+          config: o_series
+          capabilities: [catalog_model, function_calling, response_schema]
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: o1-pro
+          config: o_series
+          capabilities:
+            - catalog_model
+            - function_calling
+            - parallel_tool_calls
+            - response_schema
+env: {}
+compare: {ignore: []}
