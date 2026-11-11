@@ -2,7 +2,7 @@ id: B9232
 milestone: M3 providers
 title: GigaChat upload HTTP proof and generated filename comparison
 status: todo
-depends_on: [B900, B8312, B004, B8633]
+depends_on: [B900, B8312, B004, B8633, B9850]
 file: tasks/B9232-gigachat-upload-http.yaml
 covers: []
 parent: B043

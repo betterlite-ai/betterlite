@@ -165,7 +165,7 @@ out_of_scope:
   - "check_pii and raise_exception_if_blocked_entities_detected and anonymize_text and their callees: owned by B3805."
   - "_post_presidio_anonymize and anonymize_text and _finalize_* methods: owned by B3805."
   - "get_supported_event_hooks, __init__, async_pre_call_hook, apply_guardrail and other hooks: owned by lifecycle/application tasks after B3804."
-  - "Example Presidio fixture at litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json: owned by the lifecycle task that loads ad-hoc recognizers."
+  - "Example Presidio fixture at litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json: owned by B9463, which loads ad-hoc recognizers."
 
 pitfalls:
   - "JSON-escaped byte length includes the quotes around the string; subtract 2 from the json.dumps result to measure the content."

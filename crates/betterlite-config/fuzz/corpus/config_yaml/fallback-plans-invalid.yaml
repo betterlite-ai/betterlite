@@ -1,0 +1,5 @@
+router_settings:
+  fallbacks: [{gpt-4o: [claude]}]
+  max_fallbacks: many
+litellm_settings:
+  context_window_fallbacks: {gpt-4o: [long-context]}

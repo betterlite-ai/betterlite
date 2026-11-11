@@ -5,10 +5,13 @@ description: >-
 
   The shared error handler is B2402's `BaseLLMHTTPHandler._handle_error`, used without reimplementation. The streaming iterators from B3487 take the response object and construct chunks incrementally; this handler supplies their hidden_params dictionary before the iterator is returned, with model_id from model_info or the request model parameter (never from a logging method), api_base, cache_key, response_cost and additional_headers from process_response_headers. The handlers are methods on the BaseLLMHTTPHandler singleton; callers pass both provider config and the request/context data. Preserve the sync handler's direct response object return for non-streaming calls, and the async handler's return type annotation as a union of the async streaming iterator or response class. Call B173's public HTTP client API without touching betterlite-http's internal files directly.
 
+  LiteLLM's GenAI transform stores the upstream response in model_call_details["httpx_response"] (google_genai/transformation.py L389), and the logged-response conversion of generate_content calls fails without it. Add `pub httpx_response: Option<betterlite_http::proxy::UpstreamResponse>` to LoggingState in logging_state.rs (None in LoggingState::new, kept out of model_call_details) and set it from the response this handler receives. B9840 only reads it.
+
 scope:
   paths:
   - crates/betterlite-core/src/api/genai_http.rs
   - crates/betterlite-core/src/api/genai_http/**
+  - crates/betterlite-logging/src/logging_state.rs
   - tools/oracle/cases/google/genai-http-*.yaml
   - tools/oracle/helpers/b3488.py
   - tools/oracle/helpers/b3488/**

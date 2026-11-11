@@ -1,0 +1,14 @@
+id: B9440
+milestone: M6 guardrails
+title: Model Armor Vertex token source
+status: todo
+depends_on: [B3733, B1301, B1302, B1303]
+file: tasks/B9440-model-armor-vertex-tokens.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
