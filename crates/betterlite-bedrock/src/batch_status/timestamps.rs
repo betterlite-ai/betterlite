@@ -24,7 +24,7 @@ pub fn parse_iso_timestamp(text: &str) -> Option<i64> {
     Some(epoch_seconds(naive.and_utc()))
 }
 
-// fromisoformat's extended grammar, which rejects a lowercase z, whitespace past the separator, second 60 and year 0
+// fromisoformat's extended grammar; a lowercase z, whitespace past the separator, the leap second and year 0 are rejected
 fn canonical_iso(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let date = date_text(bytes)?;
@@ -50,9 +50,6 @@ fn date_text(bytes: &[u8]) -> Option<String> {
 
 fn time_text(bytes: &[u8]) -> Option<String> {
     let hour = number(bytes, 0, 2)?;
-    if hour > 23 {
-        return None;
-    }
     let Some(separator) = bytes.get(2) else {
         return Some(format!("{hour:02}:00:00"));
     };
@@ -61,9 +58,6 @@ fn time_text(bytes: &[u8]) -> Option<String> {
         return Some(format!("{hour:02}:00:00{offset}"));
     }
     let minute = number(bytes, 3, 2)?;
-    if minute > 59 {
-        return None;
-    }
     let (second, fraction, rest) = seconds(bytes.get(5..)?)?;
     let offset = if rest.is_empty() {
         String::new()
@@ -78,7 +72,7 @@ fn seconds(bytes: &[u8]) -> Option<(String, String, &[u8])> {
         return Some(("00".to_owned(), String::new(), bytes));
     }
     let second = number(bytes, 1, 2)?;
-    if second > 59 {
+    if second == 60 {
         return None;
     }
     let (fraction, rest) = fraction_text(bytes.get(3..)?)?;
@@ -91,21 +85,21 @@ fn fraction_text(bytes: &[u8]) -> Option<(String, &[u8])> {
     }
     let after = bytes.get(1..)?;
     let digits = digit_run(after);
-    if digits == 0 {
+    if digits.is_empty() {
         return None;
     }
-    let kept = after.get(..digits.min(6))?;
+    let kept = digits.get(..digits.len().min(6))?;
     let mut fraction = String::from(".");
     fraction.push_str(str::from_utf8(kept).ok()?);
-    Some((fraction, after.get(digits..)?))
+    Some((fraction, after.get(digits.len()..)?))
 }
 
-fn digit_run(bytes: &[u8]) -> usize {
+fn digit_run(bytes: &[u8]) -> &[u8] {
     let mut count = 0_usize;
     while bytes.get(count).is_some_and(u8::is_ascii_digit) {
         count = count.saturating_add(1);
     }
-    count
+    bytes.get(..count).unwrap_or_default()
 }
 
 fn offset_text(bytes: &[u8], at: usize) -> Option<String> {
@@ -117,28 +111,14 @@ fn offset_text(bytes: &[u8], at: usize) -> Option<String> {
     };
     let hour_at = at.checked_add(1)?;
     let hour = number(bytes, hour_at, 2)?;
-    if hour > 23 {
-        return None;
-    }
     let rest = bytes.get(hour_at.checked_add(2)?..)?;
     let minute = match rest {
         [] => 0,
-        [first, second] | [b':', first, second] => digits_of(*first, *second)?,
+        [b':', _, _] => number(rest, 1, 2)?,
+        [_, _] => number(rest, 0, 2)?,
         _ => return None,
     };
-    if minute > 59 {
-        return None;
-    }
     Some(format!("{mark}{hour:02}:{minute:02}"))
-}
-
-fn digits_of(first: u8, second: u8) -> Option<u32> {
-    if !first.is_ascii_digit() || !second.is_ascii_digit() {
-        return None;
-    }
-    let tens = u32::from(first.checked_sub(b'0')?);
-    let ones = u32::from(second.checked_sub(b'0')?);
-    tens.checked_mul(10)?.checked_add(ones)
 }
 
 fn number(bytes: &[u8], at: usize, count: usize) -> Option<u32> {

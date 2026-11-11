@@ -272,6 +272,11 @@ fn timestamp_formats() {
 }
 
 fn timestamp_edge_forms() {
+    rejected_timestamp_forms();
+    offset_timestamp_forms();
+}
+
+fn rejected_timestamp_forms() {
     let leap = decode(
         r#"{"jobArn":"a","status":"InProgress","submitTime":"2024-06-30T23:59:60Z","jobExpirationTime":"2024-06-30T23:59:60Z"}"#,
     )
@@ -290,6 +295,15 @@ fn timestamp_edge_forms() {
     .expect("the spaced time decodes");
     assert_eq!(spaced.created_at, NOW);
     assert_eq!(spaced.expires_at, None);
+    let year_zero = decode(
+        r#"{"jobArn":"a","status":"InProgress","submitTime":"0000-01-01T00:00:00Z","jobExpirationTime":"0000-01-01T00:00:00Z"}"#,
+    )
+    .expect("the zero year decodes");
+    assert_eq!(year_zero.created_at, NOW);
+    assert_eq!(year_zero.expires_at, None);
+}
+
+fn offset_timestamp_forms() {
     let minute = decode(
         r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30Z","jobExpirationTime":"2024-01-15T10:30+05:30"}"#,
     )
@@ -303,6 +317,21 @@ fn timestamp_edge_forms() {
         decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30"}"#)
             .expect("the naive minute decodes");
     assert_eq!(naive_minute.created_at, 1_705_314_600);
+    let hour_zone = decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10Z"}"#)
+        .expect("the hour-only zone decodes");
+    assert_eq!(hour_zone.created_at, 1_705_312_800);
+    let negative =
+        decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00-05:30"}"#)
+            .expect("the negative offset decodes");
+    assert_eq!(negative.created_at, 1_705_334_400);
+    let hour_offset =
+        decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00+05"}"#)
+            .expect("the hour offset decodes");
+    assert_eq!(hour_offset.created_at, 1_705_296_600);
+    let compact =
+        decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00+0530"}"#)
+            .expect("the compact offset decodes");
+    assert_eq!(compact.created_at, 1_705_294_800);
 }
 
 fn record_counts() {
