@@ -16,13 +16,17 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L55-L56
   - what: >-
       The Cache factories take the native handle factory and the cache callback list as parameters,
-      where LiteLLM imports NativeCacheHandle lazily inside each factory and appends "cache" to
-      litellm's module-level callback lists through CacheFacade.__init__.
+      and their ttl, capacity and max_entry_bytes travel in MemoryHandleOptions or
+      RedisHandleOptions, where LiteLLM imports NativeCacheHandle lazily inside each factory,
+      appends "cache" to litellm's module-level callback lists through CacheFacade.__init__, and
+      spells the defaults as keyword defaults on the factory signature.
     why: >-
       The rust_bridge package is outside the repository inventory, betterlite keeps no module-level
-      mutable state, and dependencies come in through constructors. The handle is still built only
-      inside the factory call, and the callback lists get "cache" once, as Cache.__init__ does.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L62
+      mutable state, dependencies come in through constructors, and Rust functions have no optional
+      arguments. The option struct's Default holds LiteLLM's 600 seconds, 200 items and 4194304
+      bytes, the handle is still built only inside the factory call, and the callback lists get
+      "cache" once, as Cache.__init__ does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L59-L68
   - what: >-
       A handle ttl that is not finite and positive and a redis namespace that is empty are refused by
       the factory with a typed error before the handle factory is called; LiteLLM raises ValueError
