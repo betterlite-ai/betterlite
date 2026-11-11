@@ -230,7 +230,7 @@ impl RecoverySteps for PgSteps<'_> {
     }
 }
 
-// Mirrors the P3009/P3018 name guard: one path component, no backslash, and present in this build's catalog
+// Mirrors the P3009/P3018 name guard: one path component and no backslash
 pub(super) fn recoverable_name(name: &str) -> bool {
     if name.is_empty() || name == "." || name == ".." {
         return false;
