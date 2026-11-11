@@ -4,6 +4,7 @@ use std::sync::Arc;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::resolver::LoggerResolver;
 use betterlite_logging::dynamic_callbacks::DynamicCallback;
+use betterlite_logging::dynamic_callbacks::MAX_CALLBACKS_PER_LIST;
 
 use super::hooks::DeploymentHook;
 
@@ -53,12 +54,20 @@ impl CallbackLists {
             CallbackList::Failure => &mut self.failure,
             CallbackList::AsyncFailure => &mut self.async_failure,
         };
-        if !target.iter().any(|existing| {
+        if target.iter().any(|existing| {
             existing == callback
                 || (list != CallbackList::Input && is_same_registered_logger(existing, callback))
         }) {
-            target.push(callback.clone());
+            return;
         }
+        if target.len() >= MAX_CALLBACKS_PER_LIST {
+            tracing::warn!(
+                limit = MAX_CALLBACKS_PER_LIST,
+                "the callback list is full, the callback is dropped"
+            );
+            return;
+        }
+        target.push(callback.clone());
     }
 }
 

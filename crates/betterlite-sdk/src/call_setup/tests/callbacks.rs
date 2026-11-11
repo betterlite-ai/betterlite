@@ -266,6 +266,68 @@ fn callback_non_list_success_callback_is_rejected() {
     );
 }
 
+fn name_list(count: usize) -> String {
+    let names: Vec<String> = (0..count).map(|index| format!("\"n{index}\"")).collect();
+    format!("[{}]", names.join(","))
+}
+
+#[rstest]
+#[case::callbacks("callbacks")]
+#[case::success_callback("success_callback")]
+#[case::failure_callback("failure_callback")]
+fn callback_request_list_over_the_limit_is_rejected(#[case] field: &str) {
+    let mut fixture = setup();
+    let error = fixture
+        .call(
+            "completion",
+            &[],
+            chat_request(&format!(r#"{{"{field}":{}}}"#, name_list(101))),
+        )
+        .expect_err("101 names are over the limit");
+
+    assert_eq!(
+        error.to_string(),
+        format!("the {field} dynamic callback list holds 101 callbacks, at most 100 are allowed")
+    );
+}
+
+#[rstest]
+#[case::callbacks("callbacks")]
+#[case::success_callback("success_callback")]
+#[case::failure_callback("failure_callback")]
+fn callback_request_list_at_the_limit_is_accepted(#[case] field: &str) {
+    let mut fixture = setup();
+    fixture
+        .call(
+            "completion",
+            &[],
+            chat_request(&format!(r#"{{"{field}":{}}}"#, name_list(100))),
+        )
+        .expect("100 names are within the limit");
+}
+
+#[rstest]
+#[case::one_below_the_limit(99, 100)]
+#[case::at_the_limit(100, 100)]
+fn callback_list_stops_growing_at_the_limit(#[case] existing: u32, #[case] expected: usize) {
+    let mut lists = CallbackLists {
+        failure: (0..existing)
+            .map(|index| name(&format!("n{index}")))
+            .collect(),
+        input: Vec::new(),
+        success: Vec::new(),
+        async_success: Vec::new(),
+        async_failure: Vec::new(),
+    };
+    lists.add(CallbackList::Failure, &name("extra"));
+
+    assert_eq!(lists.failure.len(), expected);
+    assert_eq!(
+        labels(&lists.failure).contains(&String::from("name:extra")),
+        existing < 100
+    );
+}
+
 #[test]
 fn callback_global_success_name_is_kept_when_no_resolver_matches() {
     let mut fixture = setup();

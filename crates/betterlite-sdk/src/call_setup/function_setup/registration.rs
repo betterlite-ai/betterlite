@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::mem;
 
 use betterlite_logging::dynamic_callbacks::DynamicCallback;
+use betterlite_logging::dynamic_callbacks::MAX_CALLBACKS_PER_LIST;
+use betterlite_logging::dynamic_callbacks::error::DynamicCallbackError;
 use betterlite_logging::logging_state::types::DynamicCallbacks;
 use betterlite_models::decisions::Json;
 
@@ -84,6 +86,13 @@ fn string_list(value: Json, field: &'static str) -> Result<Vec<String>, CallSetu
             expected: "a list of strings",
         });
     };
+    if values.len() > MAX_CALLBACKS_PER_LIST {
+        return Err(CallSetupError::Callback(DynamicCallbackError::TooMany {
+            list: field,
+            count: values.len(),
+            limit: MAX_CALLBACKS_PER_LIST,
+        }));
+    }
     let mut names = Vec::with_capacity(values.len());
     for item in values {
         let Json::Text(name) = item else {
