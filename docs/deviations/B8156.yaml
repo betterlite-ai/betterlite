@@ -1,10 +1,7 @@
 task: B8156
 deviations:
-  - what: A generate reply whose `response`, `thinking`, `prompt_eval_count` or `eval_count` has a type the field cannot hold is a decode error.
-    why: LiteLLM's `_OllamaGenerateReasoning.from_response` swallows the pydantic error and falls back to the defaults, and its usage step coerces numeric strings, so one malformed provider field silently changes the reply instead of naming the field.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L57-L62
-  - what: A generate stream line whose `thinking` field is not a string is a decode error; LiteLLM emits the value as reasoning_content.
-    why: LiteLLM reads `chunk.get("thinking") or ""` and puts whatever truthy value it found into the delta, so a numeric thinking field becomes a numeric reasoning_content instead of naming the field.
+  - what: A generate reply field or stream line whose value has a type the field cannot hold is a decode error.
+    why: LiteLLM's `_OllamaGenerateReasoning.from_response` swallows the pydantic error and its usage step coerces numeric strings, and the stream iterator reads `chunk.get("thinking") or ""`, so one malformed provider field silently changes the reply or emits the mistyped value instead of naming the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L563-L572
   - what: A non-2xx Ollama embedding reply fails with the provider's status and body; LiteLLM never checks the status and parses any body.
     why: LiteLLM answers a rejected embedding call with the 500 of its own KeyError, while the provider's 4xx describes the request that failed.

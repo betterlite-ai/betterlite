@@ -38,24 +38,13 @@ pub struct GenerateReply {
     #[serde(default)]
     pub eval_count: OptionalCount,
     #[serde(default)]
-    pub message: OptionalMessage,
+    pub message: Option<ReplyMessage>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReplyMessage {
     #[serde(default)]
     pub content: ResponseText,
-}
-
-// LiteLLM evaluates the message fallback eagerly, so a null message or content fails even when eval_count is present
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(untagged)]
-pub enum OptionalMessage {
-    #[default]
-    #[serde(skip)]
-    Absent,
-    Null,
-    Message(ReplyMessage),
 }
 
 // an absent count falls back to the counter, while an explicit null is a reply-field error
@@ -117,11 +106,12 @@ impl TryFrom<&[u8]> for GenerateReply {
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let value: Json =
             serde_json::from_slice(bytes).map_err(|source| OllamaError::Shape { source })?;
-        if !matches!(value, Json::Object(_)) {
-            return Err(OllamaError::ReplyField { field: "body" });
+        match value.as_object().map(|fields| fields.get("message")) {
+            Some(Some(Json::Null)) => return Err(OllamaError::ReplyField { field: "message" }),
+            None => return Err(OllamaError::ReplyField { field: "body" }),
+            _ => {}
         }
-        let raw = serde_json::to_value(value).map_err(|source| OllamaError::Shape { source })?;
-        serde_json::from_value(raw).map_err(|source| OllamaError::Shape { source })
+        serde_json::from_slice(bytes).map_err(|source| OllamaError::Shape { source })
     }
 }
 
@@ -226,27 +216,23 @@ async fn token_usage(
     counter: &dyn TokenCounter,
 ) -> Result<Usage, OllamaError> {
     let prompt_tokens = match reply.prompt_eval_count {
-        OptionalCount::Count(count) => count,
-        OptionalCount::Absent => counter
+        OptionalCount::Count(count) => Ok(count),
+        OptionalCount::Absent => Ok(counter
             .count_text(prompt_text(request_data)?)
             .await
-            .unwrap_or(0),
-        OptionalCount::Null => {
-            return Err(OllamaError::ReplyField {
-                field: "prompt_eval_count",
-            });
-        }
-    };
-    let counted_completion = message_char_count(&reply.message)?;
+            .unwrap_or(0)),
+        OptionalCount::Null => Err(OllamaError::ReplyField {
+            field: "prompt_eval_count",
+        }),
+    }?;
+    let counted_completion = message_char_count(reply.message.as_ref())?;
     let completion_tokens = match reply.eval_count {
-        OptionalCount::Count(count) => count,
-        OptionalCount::Absent => counted_completion,
-        OptionalCount::Null => {
-            return Err(OllamaError::ReplyField {
-                field: "eval_count",
-            });
-        }
-    };
+        OptionalCount::Count(count) => Ok(count),
+        OptionalCount::Absent => Ok(counted_completion),
+        OptionalCount::Null => Err(OllamaError::ReplyField {
+            field: "eval_count",
+        }),
+    }?;
     Ok(Usage {
         prompt_tokens,
         completion_tokens,
@@ -254,18 +240,15 @@ async fn token_usage(
     })
 }
 
-// LiteLLM builds the message fallback before the eval_count lookup, so this validates the message on every reply
-fn message_char_count(message: &OptionalMessage) -> Result<u64, OllamaError> {
-    match message {
-        OptionalMessage::Absent => Ok(0),
-        OptionalMessage::Null => Err(OllamaError::ReplyField { field: "message" }),
-        OptionalMessage::Message(entry) => match &entry.content {
-            ResponseText::Text(text) => Ok(u64::try_from(text.chars().count()).unwrap_or(u64::MAX)),
-            ResponseText::Absent => Ok(0),
-            ResponseText::Null => Err(OllamaError::ReplyField {
-                field: "message.content",
-            }),
-        },
+fn message_char_count(message: Option<&ReplyMessage>) -> Result<u64, OllamaError> {
+    match message.map(|entry| &entry.content) {
+        Some(ResponseText::Text(text)) => {
+            Ok(u64::try_from(text.chars().count()).unwrap_or(u64::MAX))
+        }
+        Some(ResponseText::Absent) | None => Ok(0),
+        Some(ResponseText::Null) => Err(OllamaError::ReplyField {
+            field: "message.content",
+        }),
     }
 }
 
