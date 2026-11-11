@@ -38,10 +38,10 @@ const CASES: [(&str, fn()); 30] = [
         super::runtime().block_on(reserve_output_case("max_output_tokens", 9, 9));
     }),
     ("max_completion_tokens_wins_over_max_output_tokens", || {
-        super::runtime().block_on(max_completion_tokens_wins());
+        super::runtime().block_on(output_cap_order());
     }),
     ("max_tokens_wins_over_later_fields", || {
-        super::runtime().block_on(max_tokens_wins_over_later_fields());
+        super::runtime().block_on(output_cap_order());
     }),
     ("model_cap_used_without_explicit_cap", || {
         super::runtime().block_on(model_cap_used_without_explicit_cap());
@@ -67,7 +67,7 @@ const CASES: [(&str, fn()); 30] = [
     ("usage_excludes_cached_tokens", usage_excludes_cached_tokens),
     (
         "usage_falls_back_to_standard_logging",
-        usage_falls_back_to_standard_logging,
+        usage_resolution_order,
     ),
     (
         "usage_completion_only_resolves",
@@ -107,7 +107,7 @@ const CASES: [(&str, fn()); 30] = [
     ),
     (
         "usage_prefers_response_over_standard_logging",
-        usage_prefers_response_over_standard_logging,
+        usage_resolution_order,
     ),
 ];
 
@@ -175,12 +175,15 @@ async fn explicit_zero_output_cap_reserves_nothing() {
     assert_eq!(calls[0].ttl_seconds, 60);
 }
 
-async fn reserve_output(name: &str, cap: i64) -> i64 {
+async fn reserve_with_caps(first: Option<(&str, i64)>, second: (&str, i64)) -> i64 {
     let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
     let reservations = support::service(counter, Some(10));
     let deployment = support::deployment(None, Some(100));
     let mut request = support::body();
-    request.insert(name.to_owned(), support::number(cap));
+    if let Some((name, cap)) = first {
+        request.insert(name.to_owned(), support::number(cap));
+    }
+    request.insert(second.0.to_owned(), support::number(second.1));
     reservations
         .pre_call_check(&deployment, &mut request)
         .await
@@ -190,37 +193,19 @@ async fn reserve_output(name: &str, cap: i64) -> i64 {
 }
 
 async fn reserve_output_case(name: &str, cap: i64, expected: i64) {
-    assert_eq!(reserve_output(name, cap).await, expected);
+    assert_eq!(reserve_with_caps(None, (name, cap)).await, expected);
 }
 
-async fn max_completion_tokens_wins() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(counter, Some(10));
-    let deployment = support::deployment(None, Some(100));
-    let mut request = support::body();
-    request.insert("max_completion_tokens".to_owned(), support::number(7));
-    request.insert("max_output_tokens".to_owned(), support::number(9));
-    let reserved = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(reserved.otpm_reserved, 7);
-}
-
-async fn max_tokens_wins_over_later_fields() {
-    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
-    let reservations = support::service(counter, Some(10));
-    let deployment = support::deployment(None, Some(100));
-    let mut request = support::body();
-    request.insert("max_tokens".to_owned(), support::number(20));
-    request.insert("max_completion_tokens".to_owned(), support::number(7));
-    let reserved = reservations
-        .pre_call_check(&deployment, &mut request)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(reserved.otpm_reserved, 20);
+// max_tokens wins over max_completion_tokens, which wins over max_output_tokens
+async fn output_cap_order() {
+    assert_eq!(
+        reserve_with_caps(Some(("max_tokens", 20)), ("max_completion_tokens", 7)).await,
+        20
+    );
+    assert_eq!(
+        reserve_with_caps(Some(("max_completion_tokens", 7)), ("max_output_tokens", 9)).await,
+        7
+    );
 }
 
 async fn model_cap_used_without_explicit_cap() {
@@ -358,8 +343,9 @@ fn usage_excludes_cached_tokens() {
     );
 }
 
-fn usage_falls_back_to_standard_logging() {
-    let usage = resolve_reconcile_usage(
+// a response usage wins over the standard_logging_object copy when both are present
+fn usage_resolution_order() {
+    let fallback = resolve_reconcile_usage(
         None,
         Some(UsageTokens {
             prompt_tokens: 7,
@@ -368,10 +354,30 @@ fn usage_falls_back_to_standard_logging() {
         }),
     );
     assert_eq!(
-        usage,
+        fallback,
         ReconcileUsage {
             billable_input: 4,
             completion_tokens: 0,
+            usage_resolved: true,
+        }
+    );
+    let preferred = resolve_reconcile_usage(
+        Some(UsageTokens {
+            prompt_tokens: 10,
+            completion_tokens: 3,
+            cached_tokens: 4,
+        }),
+        Some(UsageTokens {
+            prompt_tokens: 50,
+            completion_tokens: 20,
+            cached_tokens: 0,
+        }),
+    );
+    assert_eq!(
+        preferred,
+        ReconcileUsage {
+            billable_input: 6,
+            completion_tokens: 3,
             usage_resolved: true,
         }
     );
@@ -399,29 +405,6 @@ fn usage_completion_only_resolves() {
 fn usage_missing_keeps_reservation() {
     let usage = resolve_reconcile_usage(None, None);
     assert_eq!(usage, ReconcileUsage::default());
-}
-
-fn usage_prefers_response_over_standard_logging() {
-    let usage = resolve_reconcile_usage(
-        Some(UsageTokens {
-            prompt_tokens: 10,
-            completion_tokens: 3,
-            cached_tokens: 4,
-        }),
-        Some(UsageTokens {
-            prompt_tokens: 50,
-            completion_tokens: 20,
-            cached_tokens: 0,
-        }),
-    );
-    assert_eq!(
-        usage,
-        ReconcileUsage {
-            billable_input: 6,
-            completion_tokens: 3,
-            usage_resolved: true,
-        }
-    );
 }
 
 async fn messages_and_prompt_estimate_zero() {
