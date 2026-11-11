@@ -59,6 +59,23 @@ fn init_rejects_a_setting_that_is_not_a_count(#[case] name: &str, #[case] value:
 }
 
 #[test]
+fn init_drops_empty_cost_tag_keys() {
+    let params = IndexMap::from([("cost_tag_keys".to_owned(), "capability,,tier,".to_owned())]);
+    let init = CostManagementInit::from_params(&params).expect("the params parse");
+    assert_eq!(init.cost_tag_keys, ["capability", "tier"]);
+}
+
+#[test]
+fn init_ignores_the_generic_custom_logger_settings() {
+    let params = IndexMap::from([
+        ("turn_off_message_logging".to_owned(), "true".to_owned()),
+        ("message_logging".to_owned(), "false".to_owned()),
+    ]);
+    let init = CostManagementInit::from_params(&params).expect("the generic settings are accepted");
+    assert!(init.cost_tag_keys.is_empty());
+}
+
+#[test]
 fn init_rejects_an_unknown_setting() {
     let params = IndexMap::from([("bogus".to_owned(), "1".to_owned())]);
     let error = CostManagementInit::from_params(&params).expect_err("the setting is unknown");
