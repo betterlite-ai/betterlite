@@ -350,6 +350,29 @@ impl TestFiles {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Refused {
+    Stage,
+    Write,
+}
+
+fn refusal_error(refused: Refused, path: &Path) -> TokenRecordError {
+    match refused {
+        Refused::Stage => TokenRecordError::Stage {
+            source: PrivateJsonError::Stage(
+                path.to_path_buf(),
+                IoError::other("the fixture refuses the stage"),
+            ),
+        },
+        Refused::Write => TokenRecordError::Write {
+            source: PrivateJsonError::Commit(
+                path.to_path_buf(),
+                IoError::other("the fixture refuses the write"),
+            ),
+        },
+    }
+}
+
 #[async_trait]
 impl CredentialFiles for TestFiles {
     fn read(&self) -> Option<CliTokenRecord> {
@@ -358,12 +381,7 @@ impl CredentialFiles for TestFiles {
 
     async fn stage(&self, record: &CliTokenRecord) -> Result<StagedFile, TokenRecordError> {
         if self.stage == StageRefusal::Always {
-            return Err(TokenRecordError::Stage {
-                source: PrivateJsonError::Stage(
-                    self.path().to_path_buf(),
-                    IoError::other("the fixture refuses the stage"),
-                ),
-            });
+            return Err(refusal_error(Refused::Stage, self.path()));
         }
         self.inner.stage(record).await
     }
@@ -381,12 +399,7 @@ impl CredentialFiles for TestFiles {
 
     async fn write(&self, record: &CliTokenRecord) -> Result<(), TokenRecordError> {
         if self.refusals.contains(&Refusal::Write) {
-            return Err(TokenRecordError::Write {
-                source: PrivateJsonError::Commit(
-                    self.path().to_path_buf(),
-                    IoError::other("the fixture refuses the write"),
-                ),
-            });
+            return Err(refusal_error(Refused::Write, self.path()));
         }
         self.inner.write(record).await
     }

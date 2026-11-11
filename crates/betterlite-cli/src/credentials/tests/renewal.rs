@@ -46,26 +46,17 @@ fn frozen_clock() -> FixedWallClock {
     FixedWallClock(NOW)
 }
 
-#[derive(Clone, Copy)]
-enum IdentityField {
-    BaseUrl,
-    TokenEndpoint,
-    Resource,
-    UserId,
-    TeamId,
-}
-
-fn change_identity(field: IdentityField, record: &mut CliTokenData) {
+fn set_field(field: &str, value: Option<&str>, record: &mut CliTokenData) {
     match field {
-        IdentityField::BaseUrl => record.base_url = OTHER_SERVER.to_owned(),
-        IdentityField::TokenEndpoint => {
-            record.token_endpoint = Some(String::from("https://gateway.example/other-token"));
-        }
-        IdentityField::Resource => {
-            record.resource = Some(String::from("https://gateway.example/other"));
-        }
-        IdentityField::UserId => record.user_id = String::from("user-2"),
-        IdentityField::TeamId => record.team_id = Some(String::from("team-2")),
+        "base_url" => record.base_url = value.unwrap_or_default().to_owned(),
+        "token_endpoint" => record.token_endpoint = value.map(str::to_owned),
+        "revocation_endpoint" => record.revocation_endpoint = value.map(str::to_owned),
+        "resource" => record.resource = value.map(str::to_owned),
+        "client_id" => record.client_id = value.map(str::to_owned),
+        "user_id" => record.user_id = value.unwrap_or_default().to_owned(),
+        "team_id" => record.team_id = value.map(str::to_owned),
+        "refresh_token" => record.refresh_token = value.map(secret),
+        other => panic!("unknown credential field {other}"),
     }
 }
 
@@ -420,7 +411,7 @@ async fn fresh_api_key_warns_when_the_reloaded_record_is_the_same_credential() {
 async fn fresh_api_key_warns_when_the_reloaded_record_has_another_identity() {
     let previous = record_expiring_at(1_000_100.0_f64);
     let mut foreign = sibling_of(&previous);
-    change_identity(IdentityField::UserId, &mut foreign);
+    set_field("user_id", Some("user-2"), &mut foreign);
     let mut store = scripted_store(Some(foreign));
     let http = scripted_http(vec![Reply::Transport]);
     let clock = frozen_clock();
@@ -465,15 +456,15 @@ fn sibling_rotation_returns_the_key_the_other_process_saved() {
 }
 
 #[rstest]
-#[case::base_url(IdentityField::BaseUrl)]
-#[case::token_endpoint(IdentityField::TokenEndpoint)]
-#[case::resource(IdentityField::Resource)]
-#[case::user_id(IdentityField::UserId)]
-#[case::team_id(IdentityField::TeamId)]
-fn sibling_rotation_rejects_another_identity(#[case] field: IdentityField) {
+#[case::base_url("base_url", Some(OTHER_SERVER))]
+#[case::token_endpoint("token_endpoint", Some("https://gateway.example/other-token"))]
+#[case::resource("resource", Some("https://gateway.example/other"))]
+#[case::user_id("user_id", Some("user-2"))]
+#[case::team_id("team_id", Some("team-2"))]
+fn sibling_rotation_rejects_another_identity(#[case] field: &str, #[case] value: Option<&str>) {
     let previous = record_expiring_at(5_000.0_f64);
     let mut reloaded = sibling_of(&previous);
-    change_identity(field, &mut reloaded);
+    set_field(field, value, &mut reloaded);
 
     assert!(key_rotated_by_a_sibling(Some(&reloaded), &previous, SIBLING_NOW).is_none());
 }
@@ -536,57 +527,28 @@ fn refresh_inputs_returns_the_five_values() {
     assert_eq!(inputs.refresh_token.expose_secret(), "refresh-secret");
 }
 
-#[derive(Clone, Copy)]
-enum RefreshField {
-    TokenEndpoint,
-    RevocationEndpoint,
-    Resource,
-    ClientId,
-    RefreshToken,
-}
-
-fn clear_field(field: RefreshField, record: &mut CliTokenData) {
-    match field {
-        RefreshField::TokenEndpoint => record.token_endpoint = None,
-        RefreshField::RevocationEndpoint => record.revocation_endpoint = None,
-        RefreshField::Resource => record.resource = None,
-        RefreshField::ClientId => record.client_id = None,
-        RefreshField::RefreshToken => record.refresh_token = None,
-    }
-}
-
-fn empty_field(field: RefreshField, record: &mut CliTokenData) {
-    match field {
-        RefreshField::TokenEndpoint => record.token_endpoint = Some(String::new()),
-        RefreshField::RevocationEndpoint => record.revocation_endpoint = Some(String::new()),
-        RefreshField::Resource => record.resource = Some(String::new()),
-        RefreshField::ClientId => record.client_id = Some(String::new()),
-        RefreshField::RefreshToken => record.refresh_token = Some(secret("")),
-    }
-}
-
 #[rstest]
-#[case::token_endpoint(RefreshField::TokenEndpoint)]
-#[case::revocation_endpoint(RefreshField::RevocationEndpoint)]
-#[case::resource(RefreshField::Resource)]
-#[case::client_id(RefreshField::ClientId)]
-#[case::refresh_token(RefreshField::RefreshToken)]
-fn refresh_inputs_rejects_a_missing_field(#[case] field: RefreshField) {
+#[case::token_endpoint("token_endpoint")]
+#[case::revocation_endpoint("revocation_endpoint")]
+#[case::resource("resource")]
+#[case::client_id("client_id")]
+#[case::refresh_token("refresh_token")]
+fn refresh_inputs_rejects_a_missing_field(#[case] field: &str) {
     let mut missing = record();
-    clear_field(field, &mut missing);
+    set_field(field, None, &mut missing);
 
     assert!(refresh_inputs(&missing).is_none());
 }
 
 #[rstest]
-#[case::token_endpoint(RefreshField::TokenEndpoint)]
-#[case::revocation_endpoint(RefreshField::RevocationEndpoint)]
-#[case::resource(RefreshField::Resource)]
-#[case::client_id(RefreshField::ClientId)]
-#[case::refresh_token(RefreshField::RefreshToken)]
-fn refresh_inputs_rejects_an_empty_field(#[case] field: RefreshField) {
+#[case::token_endpoint("token_endpoint")]
+#[case::revocation_endpoint("revocation_endpoint")]
+#[case::resource("resource")]
+#[case::client_id("client_id")]
+#[case::refresh_token("refresh_token")]
+fn refresh_inputs_rejects_an_empty_field(#[case] field: &str) {
     let mut empty = record();
-    empty_field(field, &mut empty);
+    set_field(field, Some(""), &mut empty);
 
     assert!(refresh_inputs(&empty).is_none());
 }
