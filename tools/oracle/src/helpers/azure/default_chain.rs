@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use crate::helpers::OrHelperError as _;
 use crate::helpers::{Helper, HelperError, HelperResult};
 
+mod fields;
 mod fixture;
 mod report;
 mod tests;

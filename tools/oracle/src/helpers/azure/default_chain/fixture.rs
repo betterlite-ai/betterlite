@@ -6,12 +6,15 @@ use betterlite_azure::azure_default_chain::grant::{
     CertificateRecord, ChainToken, ClientSecretRecord, Grant, GrantError, Grants, LinkError,
     ManagedIdentityRecord, UsernamePasswordRecord, WorkloadRecord,
 };
-use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+
+use super::fields::{
+    certificate_fields, managed_fields, password_fields, secret_fields, workload_fields,
+};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,68 +149,6 @@ fn managed_name(record: &ManagedIdentityRecord) -> String {
         Some(client_id) if !client_id.is_empty() => "user".to_owned(),
         Some(_) | None => "system".to_owned(),
     }
-}
-
-fn secret_fields(record: &ClientSecretRecord) -> Value {
-    json!({
-        "tenant_id": record.tenant_id,
-        "client_id": record.client_id,
-        "client_secret": record.client_secret.expose_secret().to_owned(),
-    })
-}
-
-fn certificate_fields(record: &CertificateRecord) -> Value {
-    json!({
-        "tenant_id": record.tenant_id,
-        "client_id": record.client_id,
-        "certificate_path": record.certificate_path,
-        "password": record
-            .password
-            .as_ref()
-            .map(|secret| secret.expose_secret().to_owned()),
-        "send_certificate_chain": record.send_certificate_chain,
-    })
-}
-
-fn password_fields(record: &UsernamePasswordRecord) -> Value {
-    let mut fields = serde_json::Map::new();
-    let tenant_id = json!(record.tenant_id);
-    let client_id = json!(record.client_id);
-    let username = json!(record.username);
-    let password = json!(record.password.expose_secret());
-    fields.insert("tenant_id".to_owned(), tenant_id);
-    fields.insert("client_id".to_owned(), client_id);
-    fields.insert("username".to_owned(), username);
-    fields.insert("password".to_owned(), password);
-    Value::Object(fields)
-}
-
-fn workload_fields(record: &WorkloadRecord) -> Value {
-    json!({
-        "tenant_id": record.tenant_id,
-        "client_id": record.client_id,
-        "token_file": record.token_file,
-    })
-}
-
-fn managed_fields(record: &ManagedIdentityRecord) -> Value {
-    let pairs: [(String, Value); 5] = [
-        ("client_id".to_owned(), json!(record.client_id)),
-        (
-            "exclude_workload_identity".to_owned(),
-            json!(record.exclude_workload_identity),
-        ),
-        ("imds_probe".to_owned(), json!(record.imds_probe)),
-        (
-            "within_credential_chain".to_owned(),
-            json!(record.placement.within_credential_chain()),
-        ),
-        (
-            "within_default_credential".to_owned(),
-            json!(record.placement.within_default_credential()),
-        ),
-    ];
-    Value::Object(pairs.into_iter().collect())
 }
 
 fn grant<'recorder>(
