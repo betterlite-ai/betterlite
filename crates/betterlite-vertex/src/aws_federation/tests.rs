@@ -17,6 +17,8 @@ use super::{
     credentials_from_explicit_aws,
 };
 
+mod exchange;
+
 const AUDIENCE: &str =
     "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/x";
 const SUBJECT_TOKEN_TYPE: &str = "urn:ietf:params:aws:token-type:aws4_request";

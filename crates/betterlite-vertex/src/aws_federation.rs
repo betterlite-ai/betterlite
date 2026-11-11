@@ -7,10 +7,13 @@ use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::sigv4::{Signable, sign_request};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_http::proxy::transport_error::TransportError;
+use http::header::InvalidHeaderValue;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::SecretString;
 use serde::Deserialize;
 
+pub mod exchange;
 mod tests;
 
 const TARGET_RESOURCE_HEADER: &str = "x-goog-cloud-target-resource";
@@ -134,6 +137,34 @@ pub enum FederationError {
     Signing(#[source] SigningError),
     #[error("the AWS subject token could not be encoded")]
     Encode(#[source] serde_json::Error),
+    #[error("the federation credential has no token_url")]
+    TokenUrlRequired,
+    #[error("{field} is not a valid URL")]
+    Url {
+        field: &'static str,
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("the service account cannot be read from service_account_impersonation_url")]
+    ImpersonationTarget,
+    #[error("the Google STS or IAM request failed")]
+    Transport(#[source] TransportError),
+    #[error("the Google STS token exchange answered with status {status}")]
+    StsStatus { status: u16 },
+    #[error("the Google STS answer is not a token response")]
+    StsResponse(#[source] serde_json::Error),
+    #[error("the access token expires too far in the future to represent")]
+    ExpiryOverflow,
+    #[error("the STS access token cannot be sent as a bearer header")]
+    Authorization(#[source] InvalidHeaderValue),
+    #[error("the impersonation request could not be encoded")]
+    ImpersonationBody(#[source] serde_json::Error),
+    #[error("the service account impersonation answered with status {status}")]
+    ImpersonationStatus { status: u16 },
+    #[error("the service account impersonation answer is not a token response")]
+    ImpersonationResponse(#[source] serde_json::Error),
+    #[error("the impersonated token expireTime is not a UTC timestamp")]
+    ExpireTime(#[source] jiff::Error),
 }
 
 pub struct AwsSecuritySupplier<'resolver, R> {
