@@ -141,11 +141,6 @@ def override_call(call: OverrideCall) -> Json:
     return {"names": names, "warning": warning}
 
 
-def unsupported_override(calls: list[OverrideCall]) -> list[Json]:
-    outcomes: list[Json] = [override_call(call) for call in calls]
-    return outcomes
-
-
 def filtered_body_fields(calls: list[BodyCall]) -> list[Json]:
     outcomes: list[Json] = []
     for call in calls:
@@ -177,8 +172,7 @@ def sign(case: SignCase) -> Json:
             case.get("model"),
         ),
     )
-    headers = signature[0]
-    body = signature[1]
+    headers, body = signature
     if body is None:
         return {"signed": False, "headers": headers, "body": None}
     return {
@@ -226,7 +220,8 @@ def run(input_value: Input) -> Object:
         ]
         result = {"models": models}
     elif "unsupported_override" in input_value:
-        result = {"calls": unsupported_override(input_value["unsupported_override"]["calls"])}
+        calls = [override_call(call) for call in input_value["unsupported_override"]["calls"]]
+        result = {"calls": calls}
     elif "filtered_body_fields" in input_value:
         result = {"calls": filtered_body_fields(input_value["filtered_body_fields"]["calls"])}
     elif "platform_signing" in input_value:
