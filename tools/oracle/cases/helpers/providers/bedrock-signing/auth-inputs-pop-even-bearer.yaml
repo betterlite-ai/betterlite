@@ -1,0 +1,64 @@
+kind: helper
+name: bedrock-signing-auth-inputs-pop-even-bearer
+call:
+  bedrock_signing:
+    calls:
+      - request_target:
+          optional_params:
+            aws_region_name: us-west-2
+            aws_access_key_id: AKIDEXAMPLE
+            aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+            aws_session_token: session-token
+            aws_bedrock_runtime_endpoint: https://custom.example
+            temperature: 0.2
+          bearer_token: ''
+          credentials:
+            access_key_id: UNUSED
+            secret_access_key: unused-secret
+      - request_target:
+          optional_params:
+            aws_region_name: us-west-2
+            aws_access_key_id:
+              nested: true
+          bearer_token: tok
+          credentials:
+            access_key_id: UNUSED
+            secret_access_key: unused-secret
+      - request_target:
+          optional_params:
+            aws_region_name: US-East-1
+          bearer_token: ''
+          credentials:
+            access_key_id: UNUSED
+            secret_access_key: unused-secret
+      - request_target:
+          optional_params:
+            aws_region_name: us-west-2
+            aws_access_key_id: AKIDEXAMPLE
+            aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+            aws_session_token: session-token
+            aws_bedrock_runtime_endpoint: https://custom.example
+            temperature: 0.2
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+            session_token: session-token
+      - request_target:
+          optional_params:
+            aws_access_key_id: AKIDEXAMPLE
+            aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          model: arn:aws:bedrock:eu-west-1:123456789012:inference-profile/example
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      - request_target:
+          optional_params:
+            aws_region_name: us-west-2
+            aws_bedrock_runtime_endpoint:
+              nested: true
+          bearer_token: tok
+          credentials:
+            access_key_id: UNUSED
+            secret_access_key: unused-secret
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: provider-controls-affinity-control-character
+call:
+  provider_affinity:
+    operation: add
+    headers: {}
+    params:
+      provider_affinity_header: x-session-id
+      session_id: "line\nbreak"
+env: {}
+compare: {ignore: []}

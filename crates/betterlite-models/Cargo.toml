@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-env = { path = "../betterlite-env" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 fancy-regex = "0.19.2"
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }

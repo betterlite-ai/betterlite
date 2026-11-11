@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock_signing_service_request
+call:
+  bedrock_signing:
+    calls:
+      - service_request:
+          service_name: bedrock
+          headers: {}
+          optional_params:
+            aws_access_key_id: AKIDEXAMPLE
+            aws_secret_access_key: example-secret
+            aws_region_name: us-west-2
+          request_data:
+            a: 1
+          api_base: https://bedrock-runtime.us-west-2.amazonaws.com/model/seed/invoke
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: example-secret
+          now: 1767225600
+env: {}
+compare: {ignore: []}
