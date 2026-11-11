@@ -2,10 +2,9 @@ use rstest::rstest;
 
 use crate::error::FixtureError;
 use crate::finops::FinOpsFixtureError;
-use crate::finops::model::{
-    ConfigName, ConfigRow, FinOpsSeed, KeyRow, OrganizationRow, UsageApiKey,
-};
-use crate::seed::FixtureSeed;
+use crate::finops::FinOpsSeed;
+use crate::finops::model::{ConfigName, ConfigRow, OrganizationRow, UsageApiKey};
+use crate::seed::{FixtureSeed, KeyRow};
 
 use super::support::{
     LIMIT, OVER_LIMIT, VANTAGE_SETTINGS, deterministic_rows, empty_finops, fixture_with,
@@ -50,46 +49,74 @@ fn error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
                 limit: wanted_limit,
             },
         ) => *list == wanted_list && *count == wanted_count && *limit == wanted_limit,
-        (
-            FinOpsFixtureError::DuplicateOrganization { .. },
-            ExpectedError::DuplicateOrganization,
-        )
-        | (FinOpsFixtureError::MissingBudget { .. }, ExpectedError::MissingBudget)
-        | (FinOpsFixtureError::UnknownKeyMetadata { .. }, ExpectedError::UnknownKeyMetadata)
-        | (FinOpsFixtureError::DuplicateKeyMetadata { .. }, ExpectedError::DuplicateKeyMetadata)
+        (FinOpsFixtureError::MissingUser { field, .. }, ExpectedError::MissingUser(wanted))
         | (
-            FinOpsFixtureError::KeyMetadataWithoutTeam { .. },
-            ExpectedError::KeyMetadataWithoutTeam,
-        )
-        | (FinOpsFixtureError::MissingTeam { .. }, ExpectedError::MissingTeam)
-        | (
-            FinOpsFixtureError::ConflictingTeamOrganization { .. },
-            ExpectedError::ConflictingTeamOrganization,
-        )
-        | (
-            FinOpsFixtureError::DuplicateDailyUsageId { .. },
-            ExpectedError::DuplicateDailyUsageId,
-        )
-        | (FinOpsFixtureError::MissingUsageUser { .. }, ExpectedError::MissingUsageUser)
-        | (FinOpsFixtureError::UnknownUsageKey { .. }, ExpectedError::UnknownUsageKey)
-        | (FinOpsFixtureError::InvalidOrphanHash { .. }, ExpectedError::InvalidOrphanHash)
-        | (FinOpsFixtureError::DuplicateUsageTuple { .. }, ExpectedError::DuplicateUsageTuple)
-        | (FinOpsFixtureError::DuplicateConfigName { .. }, ExpectedError::DuplicateConfigName) => {
-            true
-        }
-        (FinOpsFixtureError::MissingUser { field, .. }, ExpectedError::MissingUser(wanted)) => {
-            *field == wanted
-        }
-        (
             FinOpsFixtureError::MissingOrganization { field, .. },
             ExpectedError::MissingOrganization(wanted),
-        ) => *field == wanted,
-        (
+        )
+        | (
             FinOpsFixtureError::InvalidTimestamp { field, .. },
             ExpectedError::InvalidTimestamp(wanted),
         ) => *field == wanted,
-        _ => false,
+        (other, wanted) => unit_error_matches(other, wanted),
     }
+}
+
+fn unit_error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
+    organization_error_matches(source, expected) || usage_error_matches(source, expected)
+}
+
+fn organization_error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
+    matches!(
+        (source, expected),
+        (
+            FinOpsFixtureError::DuplicateOrganization { .. },
+            ExpectedError::DuplicateOrganization,
+        ) | (
+            FinOpsFixtureError::MissingBudget { .. },
+            ExpectedError::MissingBudget
+        ) | (
+            FinOpsFixtureError::UnknownKeyMetadata { .. },
+            ExpectedError::UnknownKeyMetadata
+        ) | (
+            FinOpsFixtureError::DuplicateKeyMetadata { .. },
+            ExpectedError::DuplicateKeyMetadata
+        ) | (
+            FinOpsFixtureError::KeyMetadataWithoutTeam { .. },
+            ExpectedError::KeyMetadataWithoutTeam,
+        ) | (
+            FinOpsFixtureError::MissingTeam { .. },
+            ExpectedError::MissingTeam
+        ) | (
+            FinOpsFixtureError::ConflictingTeamOrganization { .. },
+            ExpectedError::ConflictingTeamOrganization,
+        )
+    )
+}
+
+fn usage_error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
+    matches!(
+        (source, expected),
+        (
+            FinOpsFixtureError::DuplicateDailyUsageId { .. },
+            ExpectedError::DuplicateDailyUsageId,
+        ) | (
+            FinOpsFixtureError::MissingUsageUser { .. },
+            ExpectedError::MissingUsageUser
+        ) | (
+            FinOpsFixtureError::UnknownUsageKey { .. },
+            ExpectedError::UnknownUsageKey
+        ) | (
+            FinOpsFixtureError::InvalidOrphanHash { .. },
+            ExpectedError::InvalidOrphanHash
+        ) | (
+            FinOpsFixtureError::DuplicateUsageTuple { .. },
+            ExpectedError::DuplicateUsageTuple
+        ) | (
+            FinOpsFixtureError::DuplicateConfigName { .. },
+            ExpectedError::DuplicateConfigName
+        )
+    )
 }
 
 fn empty_usage_seed() -> FixtureSeed {
@@ -258,11 +285,10 @@ fn too_many_organizations_seed() -> FixtureSeed {
 }
 
 fn too_many_key_metadata_seed() -> FixtureSeed {
-    seed_with_key_metadata(
-        (0..OVER_LIMIT)
-            .map(|_| metadata_row("sk-alice-token", None, None, None))
-            .collect(),
-    )
+    seed_with_key_metadata(vec![
+        metadata_row("sk-alice-token", None, None, None);
+        OVER_LIMIT
+    ])
 }
 
 fn too_many_daily_usage_seed() -> FixtureSeed {

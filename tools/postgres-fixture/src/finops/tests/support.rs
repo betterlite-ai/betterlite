@@ -3,8 +3,9 @@ use std::cmp::Reverse;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 
+use crate::finops::FinOpsSeed;
 use crate::finops::model::{
-    ConfigName, ConfigRow, FinOpsSeed, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey,
+    ConfigName, ConfigRow, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey,
 };
 use crate::seed::{BudgetRow, CallerRole, FixtureSeed, KeyRow, TeamRow, UserRow};
 
@@ -19,60 +20,76 @@ pub(super) fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
 }
 
+fn fixture_users() -> Vec<UserRow> {
+    vec![
+        UserRow {
+            user_id: "alice".to_owned(),
+            user_email: None,
+        },
+        UserRow {
+            user_id: "bob".to_owned(),
+            user_email: None,
+        },
+    ]
+}
+
+fn fixture_keys() -> Vec<KeyRow> {
+    vec![
+        KeyRow {
+            token: secret("sk-alice-token"),
+            user_id: "alice".to_owned(),
+            team_id: Some("team-red".to_owned()),
+            role: Some(CallerRole::ProxyAdmin),
+        },
+        KeyRow {
+            token: secret("sk-second-red"),
+            user_id: "alice".to_owned(),
+            team_id: Some("team-red".to_owned()),
+            role: None,
+        },
+        KeyRow {
+            token: secret("sk-bob-token"),
+            user_id: "bob".to_owned(),
+            team_id: Some("team-blue".to_owned()),
+            role: None,
+        },
+        KeyRow {
+            token: secret("sk-teamless-token"),
+            user_id: "bob".to_owned(),
+            team_id: None,
+            role: None,
+        },
+    ]
+}
+
+fn fixture_teams() -> Vec<TeamRow> {
+    vec![
+        TeamRow {
+            team_id: "team-red".to_owned(),
+            team_alias: Some("Red Team".to_owned()),
+        },
+        TeamRow {
+            team_id: "team-blue".to_owned(),
+            team_alias: Some("Blue Team".to_owned()),
+        },
+    ]
+}
+
+fn fixture_budgets() -> Vec<BudgetRow> {
+    vec![BudgetRow {
+        budget_id: "budget-1".to_owned(),
+        user_id: "alice".to_owned(),
+        max_budget: Some(Decimal::new(1000, 2)),
+    }]
+}
+
 pub(super) fn fixture_with(finops: FinOpsSeed) -> FixtureSeed {
     FixtureSeed {
-        users: vec![
-            UserRow {
-                user_id: "alice".to_owned(),
-                user_email: None,
-            },
-            UserRow {
-                user_id: "bob".to_owned(),
-                user_email: None,
-            },
-        ],
-        keys: vec![
-            KeyRow {
-                token: secret("sk-alice-token"),
-                user_id: "alice".to_owned(),
-                team_id: Some("team-red".to_owned()),
-                role: Some(CallerRole::ProxyAdmin),
-            },
-            KeyRow {
-                token: secret("sk-second-red"),
-                user_id: "alice".to_owned(),
-                team_id: Some("team-red".to_owned()),
-                role: None,
-            },
-            KeyRow {
-                token: secret("sk-bob-token"),
-                user_id: "bob".to_owned(),
-                team_id: Some("team-blue".to_owned()),
-                role: None,
-            },
-            KeyRow {
-                token: secret("sk-teamless-token"),
-                user_id: "bob".to_owned(),
-                team_id: None,
-                role: None,
-            },
-        ],
-        teams: vec![
-            TeamRow {
-                team_id: "team-red".to_owned(),
-                team_alias: Some("Red Team".to_owned()),
-            },
-            TeamRow {
-                team_id: "team-blue".to_owned(),
-                team_alias: Some("Blue Team".to_owned()),
-            },
-        ],
+        users: fixture_users(),
+        keys: fixture_keys(),
+        teams: fixture_teams(),
         memberships: Vec::new(),
-        budgets: vec![BudgetRow {
-            budget_id: "budget-1".to_owned(),
-            user_id: "alice".to_owned(),
-            max_budget: Some(Decimal::new(1000, 2)),
-        }],
+        budgets: fixture_budgets(),
         jwt_mappings: Vec::new(),
         daily_usage: None,
         finops: Some(finops),
@@ -148,7 +165,7 @@ pub(super) fn usage_row(id: &str, api_key: UsageApiKey) -> FinOpsUsageRow {
     }
 }
 
-pub(super) fn sample_finops() -> FinOpsSeed {
+fn orphan_row() -> FinOpsUsageRow {
     let mut orphan = usage_row(
         "row-orphan",
         UsageApiKey::OrphanHash(ORPHAN_HASH.to_owned()),
@@ -159,36 +176,52 @@ pub(super) fn sample_finops() -> FinOpsSeed {
     orphan.custom_llm_provider = None;
     orphan.mcp_namespaced_tool_name = None;
     orphan.endpoint = None;
+    orphan
+}
+
+fn sample_organizations() -> Vec<OrganizationRow> {
+    vec![
+        organization("org-key", "Key Org"),
+        organization("org-team", "Team Org"),
+        organization("org-other", "Other Org"),
+    ]
+}
+
+fn sample_metadata() -> Vec<KeyMetadataRow> {
+    vec![
+        metadata_row(
+            "sk-alice-token",
+            Some("alice-key"),
+            Some("org-key"),
+            Some("org-team"),
+        ),
+        metadata_row("sk-bob-token", None, None, Some("org-other")),
+    ]
+}
+
+fn sample_config_rows() -> Vec<ConfigRow> {
+    vec![
+        ConfigRow {
+            name: ConfigName::VantageSettings,
+            serialized_value: Some(secret(VANTAGE_SETTINGS)),
+        },
+        ConfigRow {
+            name: ConfigName::CloudzeroSettings,
+            serialized_value: None,
+        },
+    ]
+}
+
+pub(super) fn sample_finops() -> FinOpsSeed {
     FinOpsSeed {
-        organizations: vec![
-            organization("org-key", "Key Org"),
-            organization("org-team", "Team Org"),
-            organization("org-other", "Other Org"),
-        ],
-        key_metadata: vec![
-            metadata_row(
-                "sk-alice-token",
-                Some("alice-key"),
-                Some("org-key"),
-                Some("org-team"),
-            ),
-            metadata_row("sk-bob-token", None, None, Some("org-other")),
-        ],
+        organizations: sample_organizations(),
+        key_metadata: sample_metadata(),
         daily_usage: vec![
             usage_row("row-key", UsageApiKey::Key(secret("sk-alice-token"))),
             usage_row("row-team", UsageApiKey::Key(secret("sk-bob-token"))),
-            orphan,
+            orphan_row(),
         ],
-        config_rows: vec![
-            ConfigRow {
-                name: ConfigName::VantageSettings,
-                serialized_value: Some(secret(VANTAGE_SETTINGS)),
-            },
-            ConfigRow {
-                name: ConfigName::CloudzeroSettings,
-                serialized_value: None,
-            },
-        ],
+        config_rows: sample_config_rows(),
     }
 }
 

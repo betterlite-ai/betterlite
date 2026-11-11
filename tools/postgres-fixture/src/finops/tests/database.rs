@@ -6,7 +6,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::{Client, NoTls, Row};
 use uuid::Uuid;
 
 use crate::connection::{PostgresFixture, RandomDatabaseName};
@@ -19,6 +19,11 @@ use super::support::{
     ORPHAN_HASH, VANTAGE_SETTINGS, deterministic_rows, expected_page, fixture_with, sample_finops,
     sample_seed, seed_with_daily_usage,
 };
+
+// Mirrors the FOCUS export SELECT for the rows the fixture seeds.
+const ORGANIZATION_JOIN: &str = "SELECT COALESCE(vt.\"organization_id\", tt.\"organization_id\"), vt.\"key_alias\", tt.\"team_alias\", org.\"organization_alias\" FROM \"LiteLLM_DailyUserSpend\" dus LEFT JOIN \"LiteLLM_VerificationToken\" vt ON dus.\"api_key\" = vt.\"token\" LEFT JOIN \"LiteLLM_TeamTable\" tt ON vt.\"team_id\" = tt.\"team_id\" LEFT JOIN \"LiteLLM_OrganizationTable\" org ON org.\"organization_id\" = COALESCE(vt.\"organization_id\", tt.\"organization_id\") WHERE dus.\"id\" = $1";
+
+const USAGE_FIELDS: &str = "SELECT \"user_id\", \"model\", \"model_group\", \"custom_llm_provider\", \"mcp_namespaced_tool_name\", \"endpoint\", \"api_key\", \"spend\"::text, \"compression_savings_spend\"::text, \"prompt_caching_savings_spend\"::text, \"gateway_injected_caching_savings_spend\"::text, \"autorouter_savings_spend\"::text, \"cache_creation_input_tokens\", \"cache_read_input_tokens\", \"total_response_time_ms\", \"timed_requests\" FROM \"LiteLLM_DailyUserSpend\" WHERE \"id\" = $1";
 
 #[derive(Parser)]
 struct TestEnvironment {
@@ -126,64 +131,85 @@ async fn check_sampling_boundary(admin_url: &SecretString, count: usize, limit: 
     assert_eq!(page, expected_page(count, limit));
     let all = stored_ids(&client, i64::try_from(count).unwrap()).await;
     assert_eq!(all.len(), count);
+    check_updated_bounds(&client, &first_updated, &last_updated, count).await;
+    disconnect(client, driver).await;
+    fixture.close_async().await.unwrap();
+}
+
+async fn check_updated_bounds(client: &Client, first: &str, last: &str, count: usize) {
     let inclusive = scalar_i64(
-        &client,
+        client,
         "SELECT count(*) FROM \"LiteLLM_DailyUserSpend\" WHERE \"updated_at\" >= $1::timestamp(3) AND \"updated_at\" <= $2::timestamp(3)",
-        &[&first_updated, &last_updated],
+        &[&first, &last],
     )
     .await;
     assert_eq!(inclusive, i64::try_from(count).unwrap());
     let exclusive = scalar_i64(
-        &client,
+        client,
         "SELECT count(*) FROM \"LiteLLM_DailyUserSpend\" WHERE \"updated_at\" > $1::timestamp(3) AND \"updated_at\" < $2::timestamp(3)",
-        &[&first_updated, &last_updated],
+        &[&first, &last],
     )
     .await;
     assert_eq!(
         exclusive,
         i64::try_from(count.checked_sub(2).unwrap()).unwrap()
     );
-    disconnect(client, driver).await;
-    fixture.close_async().await.unwrap();
 }
 
 async fn check_organization_precedence(admin_url: &SecretString) {
     let fixture = provision(admin_url, &sample_seed()).await;
     let (client, driver) = connect(&fixture.options.url).await;
-    let statement = "SELECT COALESCE(vt.\"organization_id\", tt.\"organization_id\"), vt.\"key_alias\", tt.\"team_alias\", org.\"organization_alias\" FROM \"LiteLLM_DailyUserSpend\" dus LEFT JOIN \"LiteLLM_VerificationToken\" vt ON dus.\"api_key\" = vt.\"token\" LEFT JOIN \"LiteLLM_TeamTable\" tt ON vt.\"team_id\" = tt.\"team_id\" LEFT JOIN \"LiteLLM_OrganizationTable\" org ON org.\"organization_id\" = COALESCE(vt.\"organization_id\", tt.\"organization_id\") WHERE dus.\"id\" = $1";
-    let key_row = client.query_one(statement, &[&"row-key"]).await.unwrap();
+    assert_key_join(&client).await;
+    assert_team_join(&client).await;
+    assert_orphan_join(&client).await;
+    assert_key_identity(&client).await;
+    disconnect(client, driver).await;
+    fixture.close_async().await.unwrap();
+}
+
+async fn assert_key_join(client: &Client) {
+    let row = client
+        .query_one(ORGANIZATION_JOIN, &[&"row-key"])
+        .await
+        .unwrap();
+    assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("org-key"));
     assert_eq!(
-        key_row.get::<_, Option<String>>(0).as_deref(),
-        Some("org-key")
-    );
-    assert_eq!(
-        key_row.get::<_, Option<String>>(1).as_deref(),
+        row.get::<_, Option<String>>(1).as_deref(),
         Some("alice-key")
     );
+    assert_eq!(row.get::<_, Option<String>>(2).as_deref(), Some("Red Team"));
+    assert_eq!(row.get::<_, Option<String>>(3).as_deref(), Some("Key Org"));
+}
+
+async fn assert_team_join(client: &Client) {
+    let row = client
+        .query_one(ORGANIZATION_JOIN, &[&"row-team"])
+        .await
+        .unwrap();
     assert_eq!(
-        key_row.get::<_, Option<String>>(2).as_deref(),
-        Some("Red Team")
-    );
-    assert_eq!(
-        key_row.get::<_, Option<String>>(3).as_deref(),
-        Some("Key Org")
-    );
-    let team_row = client.query_one(statement, &[&"row-team"]).await.unwrap();
-    assert_eq!(
-        team_row.get::<_, Option<String>>(0).as_deref(),
+        row.get::<_, Option<String>>(0).as_deref(),
         Some("org-other")
     );
     assert_eq!(
-        team_row.get::<_, Option<String>>(2).as_deref(),
+        row.get::<_, Option<String>>(2).as_deref(),
         Some("Blue Team")
     );
     assert_eq!(
-        team_row.get::<_, Option<String>>(3).as_deref(),
+        row.get::<_, Option<String>>(3).as_deref(),
         Some("Other Org")
     );
-    let orphan_row = client.query_one(statement, &[&"row-orphan"]).await.unwrap();
-    assert_eq!(orphan_row.get::<_, Option<String>>(0), None);
-    assert_eq!(orphan_row.get::<_, Option<String>>(1), None);
+}
+
+async fn assert_orphan_join(client: &Client) {
+    let row = client
+        .query_one(ORGANIZATION_JOIN, &[&"row-orphan"])
+        .await
+        .unwrap();
+    assert_eq!(row.get::<_, Option<String>>(0), None);
+    assert_eq!(row.get::<_, Option<String>>(1), None);
+}
+
+async fn assert_key_identity(client: &Client) {
     let token = FixtureSeed::key_hash("sk-alice-token");
     let key = client
         .query_one(
@@ -203,41 +229,47 @@ async fn check_organization_precedence(admin_url: &SecretString) {
         .unwrap()
         .get(0);
     assert_eq!(role.as_deref(), Some("proxy_admin"));
-    disconnect(client, driver).await;
-    fixture.close_async().await.unwrap();
 }
 
 async fn check_null_models_and_decimals(admin_url: &SecretString) {
     let fixture = provision(admin_url, &sample_seed()).await;
     let (client, driver) = connect(&fixture.options.url).await;
-    let statement = "SELECT \"user_id\", \"model\", \"model_group\", \"custom_llm_provider\", \"mcp_namespaced_tool_name\", \"endpoint\", \"api_key\", \"spend\"::text, \"compression_savings_spend\"::text, \"prompt_caching_savings_spend\"::text, \"gateway_injected_caching_savings_spend\"::text, \"autorouter_savings_spend\"::text, \"cache_creation_input_tokens\", \"cache_read_input_tokens\", \"total_response_time_ms\", \"timed_requests\" FROM \"LiteLLM_DailyUserSpend\" WHERE \"id\" = $1";
-    let row = client.query_one(statement, &[&"row-orphan"]).await.unwrap();
+    let row = client
+        .query_one(USAGE_FIELDS, &[&"row-orphan"])
+        .await
+        .unwrap();
+    assert_null_fields(&row);
+    assert_money_text(&row);
+    assert_token_counters(&row);
+    let keyed = client.query_one(USAGE_FIELDS, &[&"row-key"]).await.unwrap();
+    assert_eq!(
+        keyed.get::<_, String>(6),
+        FixtureSeed::key_hash("sk-alice-token")
+    );
+    disconnect(client, driver).await;
+    fixture.close_async().await.unwrap();
+}
+
+fn assert_null_fields(row: &Row) {
     for column in 0..6 {
         assert_eq!(row.get::<_, Option<String>>(column), None);
     }
+}
+
+fn assert_money_text(row: &Row) {
     assert_eq!(row.get::<_, String>(6), ORPHAN_HASH);
     assert_eq!(row.get::<_, String>(7), "1.25");
     assert_eq!(row.get::<_, String>(8), "0.5");
     assert_eq!(row.get::<_, String>(9), "0.25");
     assert_eq!(row.get::<_, String>(10), "0.125");
     assert_eq!(row.get::<_, String>(11), "0.0625");
+}
+
+fn assert_token_counters(row: &Row) {
     assert_eq!(row.get::<_, i64>(12), 4);
     assert_eq!(row.get::<_, i64>(13), 3);
     assert_eq!(row.get::<_, i64>(14), 120);
     assert_eq!(row.get::<_, i64>(15), 2);
-    let keyed = client
-        .query_one(
-            "SELECT \"api_key\" FROM \"LiteLLM_DailyUserSpend\" WHERE \"id\" = $1",
-            &[&"row-key"],
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        keyed.get::<_, String>(0),
-        FixtureSeed::key_hash("sk-alice-token")
-    );
-    disconnect(client, driver).await;
-    fixture.close_async().await.unwrap();
 }
 
 async fn check_serialized_config(admin_url: &SecretString) {
@@ -276,14 +308,22 @@ async fn check_independent_databases(admin_url: &SecretString) {
     let seed = sample_seed();
     let first = provision(admin_url, &seed).await;
     let second = provision(admin_url, &seed).await;
-    assert_eq!(spend_of(&first, "row-key").await, "1.25");
-    assert_eq!(spend_of(&second, "row-key").await, "1.25");
+    assert_untouched(&first, &second).await;
     set_spend(&first, "row-key", "99.5").await;
-    assert_eq!(spend_of(&first, "row-key").await, "99.5");
-    assert_eq!(spend_of(&second, "row-key").await, "1.25");
-    assert_eq!(spend_of(&second, "row-orphan").await, "1.25");
+    assert_mutated(&first, &second).await;
     first.close_async().await.unwrap();
     second.close_async().await.unwrap();
+}
+
+async fn assert_untouched(first: &PostgresFixture, second: &PostgresFixture) {
+    assert_eq!(spend_of(first, "row-key").await, "1.25");
+    assert_eq!(spend_of(second, "row-key").await, "1.25");
+}
+
+async fn assert_mutated(first: &PostgresFixture, second: &PostgresFixture) {
+    assert_eq!(spend_of(first, "row-key").await, "99.5");
+    assert_eq!(spend_of(second, "row-key").await, "1.25");
+    assert_eq!(spend_of(second, "row-orphan").await, "1.25");
 }
 
 async fn check_failed_insert_cleanup(admin_url: &SecretString) {

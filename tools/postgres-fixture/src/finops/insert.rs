@@ -77,6 +77,24 @@ pub(super) async fn team_metadata(
     .await
 }
 
+struct MoneyText {
+    compression: String,
+    prompt_caching: String,
+    gateway_injected: String,
+    autorouter: String,
+    spend: String,
+}
+
+fn money_text(row: &FinOpsUsageRow) -> MoneyText {
+    MoneyText {
+        compression: row.compression_savings_spend.to_string(),
+        prompt_caching: row.prompt_caching_savings_spend.to_string(),
+        gateway_injected: row.gateway_injected_savings.to_string(),
+        autorouter: row.autorouter_savings_spend.to_string(),
+        spend: row.spend.to_string(),
+    }
+}
+
 pub(super) async fn daily_usage(
     client: &Client,
     row: &FinOpsUsageRow,
@@ -85,11 +103,15 @@ pub(super) async fn daily_usage(
         UsageApiKey::Key(token) => FixtureSeed::key_hash(token.expose_secret()),
         UsageApiKey::OrphanHash(hash) => hash.clone(),
     };
-    let compression_savings = row.compression_savings_spend.to_string();
-    let prompt_caching_savings = row.prompt_caching_savings_spend.to_string();
-    let gateway_injected_savings = row.gateway_injected_savings.to_string();
-    let autorouter_savings = row.autorouter_savings_spend.to_string();
-    let spend = row.spend.to_string();
+    execute_usage(client, row, &api_key, &money_text(row)).await
+}
+
+async fn execute_usage(
+    client: &Client,
+    row: &FinOpsUsageRow,
+    api_key: &str,
+    money: &MoneyText,
+) -> Result<(), FinOpsFixtureError> {
     execute(
         client,
         DAILY_USAGE_INSERT,
@@ -108,11 +130,11 @@ pub(super) async fn daily_usage(
             &row.cache_read_input_tokens,
             &row.cache_creation_input_tokens,
             &row.compression_saved_tokens,
-            &compression_savings,
-            &prompt_caching_savings,
-            &gateway_injected_savings,
-            &autorouter_savings,
-            &spend,
+            &money.compression,
+            &money.prompt_caching,
+            &money.gateway_injected,
+            &money.autorouter,
+            &money.spend,
             &row.api_requests,
             &row.successful_requests,
             &row.failed_requests,
@@ -129,6 +151,6 @@ pub(super) async fn config(client: &Client, row: &ConfigRow) -> Result<(), FinOp
     let value = row
         .serialized_value
         .as_ref()
-        .map(|secret| secret.expose_secret().as_str());
+        .map(|secret| secret.expose_secret().to_owned());
     execute(client, CONFIG_INSERT, &[&row.name.as_wire(), &value]).await
 }

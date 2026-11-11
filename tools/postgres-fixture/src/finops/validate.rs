@@ -4,8 +4,9 @@ use chrono::{DateTime, NaiveDateTime};
 use secrecy::ExposeSecret as _;
 
 use super::FinOpsFixtureError;
+use super::FinOpsSeed;
 use super::model::{
-    ConfigRow, FinOpsSeed, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey, secret_eq,
+    ConfigRow, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey, secret_eq,
 };
 use crate::seed::FixtureSeed;
 
@@ -50,11 +51,11 @@ fn check_row_limits(seed: &FinOpsSeed) -> Result<(), FinOpsFixtureError> {
     Ok(())
 }
 
-fn organizations_by_id<'a>(
-    organizations: &'a [OrganizationRow],
+fn organizations_by_id<'organization>(
+    organizations: &'organization [OrganizationRow],
     budgets: &BTreeSet<&str>,
     users: &BTreeSet<&str>,
-) -> Result<BTreeSet<&'a str>, FinOpsFixtureError> {
+) -> Result<BTreeSet<&'organization str>, FinOpsFixtureError> {
     let mut identities = BTreeSet::new();
     for (row, organization) in organizations.iter().enumerate() {
         if !identities.insert(organization.organization_id.as_str()) {
@@ -120,15 +121,15 @@ fn key_metadata_targets(
 
 fn check_team_assignment(
     row: usize,
-    team_id: Option<&str>,
+    key_team_id: Option<&str>,
     metadata: &KeyMetadataRow,
     fixture: &FixtureSeed,
-    teams: &mut BTreeMap<&str, &str>,
+    teams: &mut BTreeMap<String, String>,
 ) -> Result<(), FinOpsFixtureError> {
     let Some(team_organization_id) = metadata.team_organization_id.as_deref() else {
         return Ok(());
     };
-    let Some(team_id) = team_id else {
+    let Some(team_id) = key_team_id else {
         return Err(FinOpsFixtureError::KeyMetadataWithoutTeam { row });
     };
     if !fixture.teams.iter().any(|team| team.team_id == team_id) {
@@ -137,7 +138,7 @@ fn check_team_assignment(
             team_id: team_id.to_owned(),
         });
     }
-    if let Some(previous) = teams.insert(team_id, team_organization_id)
+    if let Some(previous) = teams.insert(team_id.to_owned(), team_organization_id.to_owned())
         && previous != team_organization_id
     {
         return Err(FinOpsFixtureError::ConflictingTeamOrganization {
@@ -149,11 +150,11 @@ fn check_team_assignment(
 
 fn organization_reference(
     field: &'static str,
-    organization_id: Option<&str>,
+    referenced_id: Option<&str>,
     row: usize,
     organizations: &BTreeSet<&str>,
 ) -> Result<(), FinOpsFixtureError> {
-    if let Some(organization_id) = organization_id
+    if let Some(organization_id) = referenced_id
         && !organizations.contains(organization_id)
     {
         return Err(FinOpsFixtureError::MissingOrganization {

@@ -6,10 +6,10 @@ use std::path::Path;
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
 use betterlite_postgres_fixture::error::FixtureError;
 use betterlite_postgres_fixture::finops::FinOpsFixtureError;
+use betterlite_postgres_fixture::finops::FinOpsSeed;
 use betterlite_postgres_fixture::finops::model::{
-    ConfigName, ConfigRow, FinOpsSeed, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey,
+    ConfigName, ConfigRow, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey,
 };
-use clap::Parser as _;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
