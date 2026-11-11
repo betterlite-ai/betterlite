@@ -7,11 +7,9 @@ use crate::newrelic_extraction::response_fields::Usage;
 
 pub const SUMMARY_EVENT_NAME: &str = "LlmChatCompletionSummary";
 pub const MESSAGE_EVENT_NAME: &str = "LlmChatCompletionMessage";
-pub const CONNECTION_TEST_EVENT_NAME: &str = "LiteLLMConnectionTest";
 pub const ERROR_METRIC_NAME: &str = "LLM/LiteLLM/Error";
 pub const SUPPORTABILITY_METRIC_PREFIX: &str = "Supportability/Python/ML/LiteLLM/";
 pub const INGEST_SOURCE: &str = "litellm";
-pub const CONNECTION_TEST_SOURCE: &str = "litellm-proxy";
 
 pub struct SummaryEvent {
     pub request_id: String,
@@ -29,12 +27,16 @@ pub struct SummaryEvent {
 impl SummaryEvent {
     #[must_use]
     pub fn attributes(&self) -> IndexMap<String, Json> {
-        let mut attributes = self.core_attributes();
+        let mut attributes = self.identity_attributes();
+        attributes.extend(
+            self.usage_attributes()
+                .map(|(name, value)| (name.to_owned(), value)),
+        );
         self.optional_attributes(&mut attributes);
         attributes
     }
 
-    fn core_attributes(&self) -> IndexMap<String, Json> {
+    fn identity_attributes(&self) -> IndexMap<String, Json> {
         let mut attributes = IndexMap::new();
         attributes.insert("id".to_owned(), Json::Text(self.request_id.clone()));
         attributes.insert("request_id".to_owned(), Json::Text(self.request_id.clone()));
@@ -62,19 +64,25 @@ impl SummaryEvent {
         attributes
     }
 
+    fn usage_attributes(&self) -> impl Iterator<Item = (&'static str, Json)> {
+        [
+            (
+                "response.usage.prompt_tokens",
+                Json::Number(Number::from(self.usage.prompt_tokens)),
+            ),
+            (
+                "response.usage.completion_tokens",
+                Json::Number(Number::from(self.usage.completion_tokens)),
+            ),
+            (
+                "response.usage.total_tokens",
+                Json::Number(Number::from(self.usage.total_tokens)),
+            ),
+        ]
+        .into_iter()
+    }
+
     fn optional_attributes(&self, attributes: &mut IndexMap<String, Json>) {
-        attributes.insert(
-            "response.usage.prompt_tokens".to_owned(),
-            Json::Number(Number::from(self.usage.prompt_tokens)),
-        );
-        attributes.insert(
-            "response.usage.completion_tokens".to_owned(),
-            Json::Number(Number::from(self.usage.completion_tokens)),
-        );
-        attributes.insert(
-            "response.usage.total_tokens".to_owned(),
-            Json::Number(Number::from(self.usage.total_tokens)),
-        );
         // LiteLLM always has a trace id here, so the attribute is only absent for an empty one
         if !self.trace_id.is_empty() {
             attributes.insert("trace_id".to_owned(), Json::Text(self.trace_id.clone()));
@@ -148,27 +156,5 @@ impl ChatMessageEvent {
             );
         }
         attributes
-    }
-}
-
-pub struct ConnectionTestEvent {
-    pub app_name: Option<String>,
-    pub timestamp: f64,
-}
-
-impl ConnectionTestEvent {
-    #[must_use]
-    pub fn attributes(&self) -> IndexMap<String, Json> {
-        let app_name = self.app_name.clone().map_or(Json::Null, Json::Text);
-        let timestamp = Number::from_f64(self.timestamp).map_or(Json::Null, Json::Number);
-        IndexMap::from([
-            ("is_test_event".to_owned(), Json::Bool(true)),
-            ("app_name".to_owned(), app_name),
-            (
-                "source".to_owned(),
-                Json::Text(CONNECTION_TEST_SOURCE.to_owned()),
-            ),
-            ("timestamp".to_owned(), timestamp),
-        ])
     }
 }

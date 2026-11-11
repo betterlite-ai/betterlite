@@ -1,9 +1,37 @@
-use super::events::{CONNECTION_TEST_EVENT_NAME, ConnectionTestEvent};
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use serde_json::Number;
+
 use super::logger::NewRelicLogger;
 use crate::exporter_options::health::IntegrationHealthStatus;
 
+pub const CONNECTION_TEST_EVENT_NAME: &str = "LiteLLMConnectionTest";
+const CONNECTION_TEST_SOURCE: &str = "litellm-proxy";
+
 const DISABLED_MESSAGE: &str = "New Relic integration is disabled. Check that NEW_RELIC_LICENSE_KEY and NEW_RELIC_APP_NAME are set and the newrelic package is installed.";
 const NOT_CONNECTED_MESSAGE: &str = "New Relic Python agent not installed. Review the New Relic integration documentation at https://docs.litellm.ai/docs/observability/newrelic.";
+
+pub struct ConnectionTestEvent {
+    pub app_name: Option<String>,
+    pub timestamp: f64,
+}
+
+impl ConnectionTestEvent {
+    #[must_use]
+    pub fn attributes(&self) -> IndexMap<String, Json> {
+        let app_name = self.app_name.clone().map_or(Json::Null, Json::Text);
+        let timestamp = Number::from_f64(self.timestamp).map_or(Json::Null, Json::Number);
+        IndexMap::from([
+            ("is_test_event".to_owned(), Json::Bool(true)),
+            ("app_name".to_owned(), app_name),
+            (
+                "source".to_owned(),
+                Json::Text(CONNECTION_TEST_SOURCE.to_owned()),
+            ),
+            ("timestamp".to_owned(), timestamp),
+        ])
+    }
+}
 
 // LiteLLM's async_health_check only records an in-memory event, so this check never awaits
 #[must_use]

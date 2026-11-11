@@ -1,6 +1,19 @@
 task: B3942
 deviations:
   - what: >-
+      A traceparent header sent by the client does not become the New Relic trace id
+      through the logging callback path: betterlite's LoggerEvent carries no inbound
+      request headers, so process_event has no headers to pass to the trace-context
+      resolution and uses StandardLoggingPayload.trace_id, or a generated id when that
+      is empty. LiteLLM reads litellm_params.metadata.headers.traceparent first.
+    why: >-
+      The callback event is owned by B189 (logging callback registration and dispatch),
+      which is out of this task's scope. B3941's trace-context resolution already
+      prefers a case-insensitive traceparent when headers are supplied, and the direct
+      process_success path and its test exercise that; B189 must put the logging-safe
+      inbound headers on the event and this logger passes them through unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L280-L292
+  - what: >-
       The newrelic.agent module is an injected boundary rather than an import. With no
       agent installed the New Relic logger disables itself with the "New Relic Python
       agent not installed" error and records no events or metrics, which is the same

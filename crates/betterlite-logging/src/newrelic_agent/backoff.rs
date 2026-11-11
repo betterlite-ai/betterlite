@@ -11,16 +11,9 @@ pub struct MetricBackoff {
 }
 
 impl MetricBackoff {
-    // The first read is the quick check; the re-check under the lock makes sure only one caller claims the window
+    // The check and the update share one critical section, so two callers cannot both claim the same window
     #[must_use]
     pub fn claim(&self, now: Duration) -> bool {
-        let observed = *self
-            .last_emission
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if now.saturating_sub(observed) < METRIC_WINDOW {
-            return false;
-        }
         let mut last = self
             .last_emission
             .lock()

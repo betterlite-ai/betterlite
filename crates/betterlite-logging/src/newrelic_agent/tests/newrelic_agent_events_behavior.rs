@@ -5,6 +5,8 @@ use super::support::{
     Fixture, call_kwargs, capture_logs, default_fixture, event, event_with_dynamic,
     fallback_kwargs, fallback_response, json, number_value, object, payload,
 };
+use uuid::Uuid;
+
 use crate::callback_logger::CallbackLogger as _;
 use crate::fields::timestamps::Moment;
 use crate::newrelic_agent::events::SUMMARY_EVENT_NAME;
@@ -176,6 +178,35 @@ fn message_events_carry_the_trace_id() {
     );
     assert_eq!(
         attribute_value(&messages[1], "trace_id"),
+        Json::Text("trace-1".to_owned())
+    );
+}
+
+#[test]
+fn message_events_share_the_summary_request_id() {
+    let fixture = default_fixture();
+    let logger = fixture.build();
+    logger.log_success_event(&event(payload())).unwrap();
+    let summary_id = attribute_value(&summary_attributes(&fixture), "id");
+    let messages = message_attributes(&fixture);
+    assert_eq!(attribute_value(&messages[0], "request_id"), summary_id);
+    assert_eq!(attribute_value(&messages[0], "completion_id"), summary_id);
+    assert_eq!(attribute_value(&messages[1], "request_id"), summary_id);
+    assert_eq!(attribute_value(&messages[1], "completion_id"), summary_id);
+}
+
+#[test]
+fn the_summary_id_is_the_generated_request_uuid() {
+    let fixture = default_fixture();
+    let logger = fixture.build();
+    logger.log_success_event(&event(payload())).unwrap();
+    let summary = summary_attributes(&fixture);
+    assert_eq!(
+        attribute_value(&summary, "id"),
+        Json::Text(Uuid::from_u128(1).to_string())
+    );
+    assert_eq!(
+        attribute_value(&summary, "trace_id"),
         Json::Text("trace-1".to_owned())
     );
 }

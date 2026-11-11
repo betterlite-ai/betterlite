@@ -1,7 +1,6 @@
 use super::support::{AgentKind, attribute, default_fixture, environment, json, number_value};
 use crate::exporter_options::health::HealthState;
-use crate::newrelic_agent::events::CONNECTION_TEST_EVENT_NAME;
-use crate::newrelic_agent::health::async_health_check;
+use crate::newrelic_agent::health::{CONNECTION_TEST_EVENT_NAME, async_health_check};
 
 #[test]
 fn a_healthy_application_records_a_connection_test_event() {
