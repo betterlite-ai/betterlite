@@ -142,9 +142,8 @@ def bedrock_route(call: Call) -> Json:
 
 def pre_process(call: Call) -> Json:
     request = call["request"]
-    passed = dict(request["passed_params"])
     return utils.pre_process_non_default_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4281
-        passed_params=passed,
+        passed_params=dict(request["passed_params"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4282
         special_params=request["special_params"],
         custom_llm_provider=request["custom_llm_provider"],
         additional_drop_params=request.get("additional_drop_params"),
@@ -198,13 +197,12 @@ def transcription(call: Call) -> Json:
 
 def image_generation(call: Call) -> Json:
     BedrockImageGeneration.get_config_class = Provide(build_mapper(call.get("bedrock")))  # type: ignore[method-assign, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L66
-    config = build_mapper(call.get("provider_config"))
     return utils.get_optional_params_image_gen(  # type: ignore[misc, no-any-return]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3617
         **call["params"],  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3617
         model=call.get("model"),
         custom_llm_provider=call.get("custom_llm_provider"),
         additional_drop_params=call.get("additional_drop_params"),
-        provider_config=config,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3628
+        provider_config=build_mapper(call.get("provider_config")),  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3628
         drop_params=call.get("drop_params"),
     )
 
@@ -252,11 +250,9 @@ def run(input_value: Input) -> Json:
         litellm.add_function_to_prompt = False
         try:
             if call["function"] == "peek_aliases":
-                optional = call["optional_params"]
-                results.append(utils.peek_reasoning_summary_aliases(optional))  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10243
+                results.append(utils.peek_reasoning_summary_aliases(call["optional_params"]))  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10243
             elif call["function"] == "remove_sensitive_keys":
-                params = dict(call["params"])
-                results.append(utils.remove_sensitive_keys_from_dict(params))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4342
+                results.append(utils.remove_sensitive_keys_from_dict(dict(call["params"])))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4342
             else:
                 results.append(HANDLERS[call["function"]](call))
         except FixtureError as failure:
