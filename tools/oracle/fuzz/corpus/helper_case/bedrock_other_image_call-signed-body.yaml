@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-other-image-call-signed-body
+call:
+  bedrock_other_image_call:
+    function: signed_json_body
+    probes:
+      - model: amazon.nova-canvas-v1:0
+        prompt: a cat
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: secret}
+        optional_params: {aws_region_name: us-west-2}
+        extra_headers: {x-custom: v}
+env: {}
+compare: {ignore: []}

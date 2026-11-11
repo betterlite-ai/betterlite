@@ -1,0 +1,32 @@
+kind: helper
+name: image-family-dispatch
+call:
+  bedrock_other_image_call:
+    function: image_family_dispatch
+    probes:
+      - model: amazon.titan-image-generator-v2:0
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["dGl0YW4="]}'}
+      - model: amazon.nova-canvas-v1:0
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["bm92YQ=="]}'}
+      - model: stability.sd3-large-v1:0
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["czM="]}'}
+      - model: stability.stable-diffusion-xl-v1
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"artifacts": [{"base64": "czE="}]}'}
+      - model: amazon.titan-image-generator-v2:0
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1, model_id: amazon.nova-canvas-v1:0}
+        reply: {body: '{"images": ["dGl0YW4="]}'}
+      - model: amazon.nova-canvas-amazon.titan-image-generator-v2:0
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["Ym90aA=="]}'}
+env: {}
+compare: {ignore: []}
