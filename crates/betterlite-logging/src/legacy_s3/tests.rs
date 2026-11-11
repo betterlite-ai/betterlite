@@ -279,9 +279,20 @@ async fn callback_logger_skips_a_missing_payload() {
 
 #[tokio::test]
 async fn callback_logger_skips_when_no_bucket_is_configured() {
-    let harness = harness(&[], &[]);
-    harness.logger.uploads.upload(Some(&payload())).await;
-    assert!(recorded(&harness.requests).is_empty());
+    let settings = settings_from(&[]);
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let tasks = TaskTracker::new();
+    let logger = S3Logger::new(settings, None, Arc::new(environment(&[])), tasks);
+    let buffer = Buffer::default();
+    let guard = subscribe(&buffer);
+    logger.uploads.upload(Some(&payload())).await;
+    drop(guard);
+    assert!(recorded(&requests).is_empty());
+    assert!(
+        buffer.contents().contains("s3 Layer Error"),
+        "{}",
+        buffer.contents()
+    );
 }
 
 #[tokio::test]
