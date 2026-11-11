@@ -1,4 +1,4 @@
-use std::io::Write as _;
+use std::io::{Error as IoError, Result as IoResult, Write};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use flate2::Compression;
@@ -20,21 +20,63 @@ pub(super) fn content_token(rows: &[SpendLogRecord]) -> Result<String, ClickHous
     Ok(hex::encode(hasher.finalize()))
 }
 
+// counts the encoded bytes before compression, the way LiteLLM's native insert caps a batch
+struct LimitedWriter<W> {
+    inner: W,
+    remaining: usize,
+    exceeded: bool,
+}
+
+impl<W: Write> Write for LimitedWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        if buf.len() > self.remaining {
+            self.exceeded = true;
+            return Err(IoError::other("the encoded rows exceed the insert limit"));
+        }
+        let written = self.inner.write(buf)?;
+        self.remaining = self.remaining.saturating_sub(written);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        self.inner.flush()
+    }
+}
+
 pub(super) fn compressed_rows(
     rows: &[SpendLogRecord],
     received_ms: u64,
+    limit: usize,
 ) -> Result<Vec<u8>, ClickHouseStorageError> {
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut writer = LimitedWriter {
+        inner: GzEncoder::new(Vec::new(), Compression::default()),
+        remaining: limit,
+        exceeded: false,
+    };
     for (index, row) in rows.iter().enumerate() {
-        if index > 0 {
-            encoder
-                .write_all(b"\n")
-                .map_err(ClickHouseStorageError::Compress)?;
+        if index > 0
+            && let Err(error) = writer.write_all(b"\n")
+        {
+            return Err(if writer.exceeded {
+                ClickHouseStorageError::InsertTooLarge
+            } else {
+                ClickHouseStorageError::Compress(error)
+            });
         }
-        serde_json::to_writer(&mut encoder, &InsertRow::from_row(row, received_ms)?)
-            .map_err(ClickHouseStorageError::Encode)?;
+        if let Err(error) =
+            serde_json::to_writer(&mut writer, &InsertRow::from_row(row, received_ms)?)
+        {
+            return Err(if writer.exceeded {
+                ClickHouseStorageError::InsertTooLarge
+            } else {
+                ClickHouseStorageError::Encode(error)
+            });
+        }
     }
-    encoder.finish().map_err(ClickHouseStorageError::Compress)
+    writer
+        .inner
+        .finish()
+        .map_err(ClickHouseStorageError::Compress)
 }
 
 #[derive(Serialize)]

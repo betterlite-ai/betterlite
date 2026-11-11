@@ -17,6 +17,7 @@ use crate::finops::metering::clock::UtcClock;
 use crate::trace_types::SpendLogRecord;
 
 const INSERT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_INSERT_BYTES: usize = 64 * 1024 * 1024;
 const REPLACED_URL_PARAMS: [&str; 6] = [
     "query",
     "async_insert",
@@ -55,6 +56,8 @@ pub(super) enum ClickHouseStorageError {
     Encode(#[source] serde_json::Error),
     #[error("the ClickHouse insert body could not be compressed")]
     Compress(#[source] IoError),
+    #[error("the encoded ClickHouse insert rows exceed 64 MiB")]
+    InsertTooLarge,
     #[error("ClickHouse insert failed with HTTP status {0}")]
     InsertFailed(u16),
     #[error("ClickHouse schema setup failed with HTTP status {0}")]
@@ -140,8 +143,8 @@ impl<Time: UtcClock + Send + Sync + 'static> ClickHouseStorage for ClickHouseHtt
         if table != SPEND_LOGS_TABLE {
             return Err(ClickHouseStorageError::InvalidTable);
         }
+        let body = compressed_rows(rows, self.received_millis()?, MAX_INSERT_BYTES)?;
         let token = content_token(rows)?;
-        let body = compressed_rows(rows, self.received_millis()?)?;
         let response = self
             .client
             .send_buffered(self.insert_request(table, body, token))

@@ -325,9 +325,17 @@ async fn a_success_event_posts_the_metadata_when_a_request_id_comes_back() {
     let body = &requests[1].body;
     assert_eq!(field(body, "request_id"), &Json::Text("req-1".to_owned()));
     assert_eq!(field(body, "api_key"), &Json::Text("pl-key".to_owned()));
+    let Json::Object(posted) = field(body, "metadata") else {
+        panic!("the posted metadata is a JSON object");
+    };
+    let set: IndexMap<String, Json> = posted
+        .iter()
+        .filter(|(_name, value)| !matches!(value, Json::Null))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
     assert_eq!(
-        field(body, "metadata"),
-        &Json::Object(IndexMap::from([
+        set,
+        IndexMap::from([
             (
                 "user_api_key_user_id".to_owned(),
                 Json::Text("user-1".to_owned())
@@ -342,8 +350,38 @@ async fn a_success_event_posts_the_metadata_when_a_request_id_comes_back() {
                     ])
                 )]))
             ),
-        ]))
+        ])
     );
+}
+
+#[tokio::test]
+async fn a_null_metadata_value_is_posted_as_null_and_pl_tags_still_split_off() {
+    let capture = Capture::answering(SUCCESS_WITH_REQUEST);
+    let adapter = adapter(capture.clone(), settings(Some("pl-key")));
+    let with_null = event_from(
+        &PAYLOAD.replace(
+            r#""requester_metadata": {"pl_tags": ["tag-1", "tag-2"]}"#,
+            r#""requester_metadata": {"pl_tags": ["tag-1", "tag-2"], "stage": null}"#,
+        ),
+        false,
+    );
+    deliver(&with_null, &adapter).await;
+    let requests = capture.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        field(&requests[0].body, "tags"),
+        &Json::List(vec![
+            Json::Text("tag-1".to_owned()),
+            Json::Text("tag-2".to_owned())
+        ])
+    );
+    let metadata = field(&requests[1].body, "metadata");
+    assert_eq!(field(metadata, "stage"), &Json::Null);
+    assert_eq!(field(metadata, "user_api_key_org_id"), &Json::Null);
+    let Json::Object(posted) = metadata else {
+        panic!("the posted metadata is a JSON object");
+    };
+    assert!(!posted.contains_key("pl_tags"));
 }
 
 #[tokio::test]

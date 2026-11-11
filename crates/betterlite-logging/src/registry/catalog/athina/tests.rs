@@ -248,11 +248,24 @@ fn assert_request_fields(body: &Json) {
     assert_request_metadata(body);
 }
 
+fn set_values(metadata: &Json) -> Json {
+    let Json::Object(fields) = metadata else {
+        panic!("the posted metadata is a JSON object");
+    };
+    Json::Object(
+        fields
+            .iter()
+            .filter(|(_name, value)| !matches!(value, Json::Null))
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect(),
+    )
+}
+
 fn assert_request_metadata(body: &Json) {
     let request = field(body, "request");
     assert_eq!(
-        field(field(request, "litellm_params"), "metadata"),
-        &Json::Object(IndexMap::from([
+        set_values(field(field(request, "litellm_params"), "metadata")),
+        Json::Object(IndexMap::from([
             (
                 "user_api_key_user_id".to_owned(),
                 Json::Text("user-1".to_owned())
@@ -313,6 +326,39 @@ async fn a_success_event_posts_the_mapped_fields() {
         Some("application/json")
     );
     assert_mapped_body(&requests[0].body);
+}
+
+#[tokio::test]
+async fn a_null_metadata_value_is_posted_as_null() {
+    let capture = Captured::default();
+    let tracker = TaskTracker::new();
+    let adapter = AthinaAdapter {
+        logger: Arc::new(AthinaLogger {
+            delivery: capture.clone(),
+            settings: settings(Some("athina-key")),
+        }),
+        tracker: tracker.clone(),
+    };
+    let with_null = event_from(
+        &PAYLOAD.replace(r#""environment": "production""#, r#""environment": null"#),
+        false,
+    );
+    adapter
+        .log_success_event(&with_null)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_eq!(requests.len(), 1);
+    let body = &requests[0].body;
+    assert_eq!(field(body, "environment"), &Json::Null);
+    let metadata = field(field(field(body, "request"), "litellm_params"), "metadata");
+    assert_eq!(field(metadata, "environment"), &Json::Null);
+    assert_eq!(field(metadata, "user_api_key_org_id"), &Json::Null);
+    assert_eq!(
+        field(metadata, "prompt_slug"),
+        &Json::Text("greeting".to_owned())
+    );
 }
 
 #[tokio::test]

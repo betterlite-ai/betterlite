@@ -42,7 +42,6 @@ fn metadata_object(payload: &StandardLoggingPayload) -> Json {
                 return Json::Object(IndexMap::new());
             }
         };
-    fields.retain(|_name, value| !matches!(value, Json::Null));
     if let Some(Json::Object(requester)) = payload.metadata.requester_metadata.as_ref() {
         for (name, value) in requester {
             fields.insert(name.clone(), value.clone());

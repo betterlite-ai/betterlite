@@ -14,6 +14,7 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -25,7 +26,7 @@ use url::Url;
 use super::adapter::ClickHouseAdapter;
 use super::build;
 use super::rows::{compressed_rows, content_token};
-use super::storage::ClickHouseHttpStorage;
+use super::storage::{ClickHouseHttpStorage, ClickHouseStorageError};
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::clickhouse::clickhouse_logging::batch_logger::ClickHouseBatchLogger;
@@ -265,6 +266,46 @@ fn assert_spend_trace(row: &SpendLogRecord) {
     assert_eq!(row.messages, r#"[{"role":"user","content":"Hello"}]"#);
 }
 
+#[rstest]
+#[case::the_payload_session_wins(r#""session_id": "session-1","#, "session-1")]
+#[case::the_request_metadata_session_fills_in("", "request-session")]
+#[tokio::test]
+async fn the_request_metadata_supplies_the_session_id(
+    #[case] payload_session: &str,
+    #[case] expected: &str,
+) {
+    let storage = FakeStorage::default();
+    let adapter = adapter(storage.clone());
+    let payload = PAYLOAD
+        .replace(r#""session_id": "session-1","#, payload_session)
+        .replace(
+            r#""user_api_key_user_id": "user-1","#,
+            r#""user_api_key_user_id": "user-1", "requester_metadata": {"session_id": "request-session"},"#,
+        );
+    adapter
+        .async_log_success_event(Arc::new(event_from(&payload)))
+        .await
+        .expect("the event is logged");
+    adapter.logger.batch.flush_queue().await;
+    assert_eq!(storage.calls()[0].rows[0].session_id, expected);
+}
+
+#[tokio::test]
+async fn a_requester_metadata_that_is_not_an_object_is_ignored() {
+    let storage = FakeStorage::default();
+    let adapter = adapter(storage.clone());
+    let payload = PAYLOAD.replace(
+        r#""user_api_key_user_id": "user-1","#,
+        r#""user_api_key_user_id": "user-1", "requester_metadata": "plain text","#,
+    );
+    adapter
+        .async_log_success_event(Arc::new(event_from(&payload)))
+        .await
+        .expect("the event is logged");
+    adapter.logger.batch.flush_queue().await;
+    assert_eq!(storage.calls()[0].rows[0].session_id, "session-1");
+}
+
 #[tokio::test]
 async fn an_async_failure_event_queues_the_spend_row() {
     let storage = FakeStorage::default();
@@ -322,7 +363,8 @@ fn an_empty_database_is_rejected() {
 
 #[test]
 fn rows_encode_one_json_row_per_line() {
-    let body = compressed_rows(&[row("first"), row("second")], 7).expect("the rows encode");
+    let body =
+        compressed_rows(&[row("first"), row("second")], 7, usize::MAX).expect("the rows encode");
     let mut text = String::new();
     GzDecoder::new(body.as_slice())
         .read_to_string(&mut text)
@@ -342,6 +384,42 @@ fn rows_encode_one_json_row_per_line() {
         Some(&Json::Number(serde_json::Number::from(7_u64)))
     );
     let _second: Json = serde_json::from_str(lines[1]).expect("the second row is JSON");
+}
+
+fn encoded_text(rows: &[SpendLogRecord]) -> String {
+    let body = compressed_rows(rows, 7, usize::MAX).expect("the rows encode");
+    let mut text = String::new();
+    GzDecoder::new(body.as_slice())
+        .read_to_string(&mut text)
+        .expect("the body is gzip");
+    text
+}
+
+#[rstest]
+#[case::exactly_at_the_limit(0, true)]
+#[case::one_byte_over_the_limit(1, false)]
+fn the_encoded_rows_are_capped_at_the_insert_limit(#[case] shortfall: usize, #[case] fits: bool) {
+    let rows = [row("first"), row("second")];
+    let limit = encoded_text(&rows).len().saturating_sub(shortfall);
+    let result = compressed_rows(&rows, 7, limit);
+    assert_eq!(result.is_ok(), fits);
+    if !fits {
+        assert!(matches!(
+            result,
+            Err(ClickHouseStorageError::InsertTooLarge)
+        ));
+    }
+}
+
+#[test]
+fn a_limit_that_ends_with_the_first_row_rejects_the_separator() {
+    let rows = [row("first"), row("second")];
+    let text = encoded_text(&rows);
+    let first_row = text.find('\n').expect("the rows are newline separated");
+    assert!(matches!(
+        compressed_rows(&rows, 7, first_row),
+        Err(ClickHouseStorageError::InsertTooLarge)
+    ));
 }
 
 #[test]
@@ -372,6 +450,22 @@ async fn an_insert_posts_gzip_json_each_row() {
         .await
         .expect("the insert request arrived");
     assert_insert_request(&received[0], &rows);
+}
+
+#[tokio::test]
+async fn an_insert_of_a_few_megabytes_is_sent() {
+    let (base, served) = serve_many(1, 200).await;
+    let storage = http_storage(&base);
+    let mut large = row("large");
+    large.response = "a".repeat(2 * 1024 * 1024);
+    storage
+        .insert_rows(SPEND_LOGS_TABLE, &[large])
+        .await
+        .expect("the insert is accepted");
+    let received = timeout(Duration::from_secs(10), served)
+        .await
+        .expect("the insert request arrived");
+    assert_eq!(received.len(), 1);
 }
 
 fn assert_insert_request(request: &Received, rows: &[SpendLogRecord]) {
