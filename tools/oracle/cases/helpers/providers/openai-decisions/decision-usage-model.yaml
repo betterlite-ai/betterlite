@@ -1,0 +1,62 @@
+kind: helper
+name: openai-decisions-usage-model
+call:
+  openai_decisions:
+    response_to_ir:
+      - request:
+          input: the input
+          questions:
+            - type: predicate
+              instructions: is it true?
+        response:
+          model: gpt-4o
+          answers:
+            - {type: predicate, name: null, probability: 0.5}
+          usage:
+            input_tokens: 7
+            input_tokens_details: {cached_tokens: 2, cache_write_tokens: 3}
+            output_tokens: 5
+            output_tokens_details: {reasoning_tokens: 4}
+            total_tokens: 12
+    ir_to_response:
+      - requested_model: requested-model
+        request:
+          input: {state: "the input"}
+          questions:
+            - predicate:
+                instructions: is it true?
+        response:
+          model: null
+          answers: [refusal]
+          usage: {input_tokens: 7, output_tokens: 5, cached_tokens: 2, cache_write_tokens: 3, reasoning_tokens: 4}
+      - requested_model: requested-model
+        request:
+          input: {state: "the input"}
+          questions:
+            - predicate:
+                instructions: is it true?
+        response:
+          model: provider-model
+          answers: [refusal]
+          usage: {input_tokens: 1, output_tokens: 2}
+    ir_to_request:
+      - model: gpt-4o
+        request:
+          input: {state: {k: 1}}
+          questions:
+            - predicate:
+                instructions: is it true?
+    request_roundtrip:
+      - model: gpt-4o
+        request:
+          input:
+            - {role: user, type: message, content: first}
+            - role: user
+              type: message
+              content:
+                - {type: input_text, text: second}
+                - {type: input_image, image_url: "https://example.test/i.png"}
+          questions:
+            - {type: predicate, instructions: "is it true?"}
+env: {}
+compare: {ignore: []}

@@ -1,9 +1,176 @@
+use std::collections::BTreeMap;
+
+use betterlite_models::decisions::openai;
+use betterlite_openai::credentials::LiteLlmGlobals;
+use betterlite_openai::decisions::openai::config::OpenAiDecisionsConfig;
+use betterlite_openai::decisions::openai::request::{ir_to_openai_request, openai_request_to_ir};
+use betterlite_openai::decisions::openai::response::to_ir::openai_response_to_ir;
+use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_response;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
+use secrecy::SecretString;
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use self::input::{IrRequest, IrResponse};
+
+mod input;
+mod ir;
+mod tests;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    #[serde(default)]
+    ir_to_request: Vec<IrToRequestCall>,
+    #[serde(default)]
+    request_roundtrip: Vec<RequestRoundtripCall>,
+    #[serde(default)]
+    response_to_ir: Vec<ResponseToIrCall>,
+    #[serde(default)]
+    ir_to_response: Vec<IrToResponseCall>,
+    #[serde(default)]
+    parse_response: Vec<ParseResponseCall>,
+    #[serde(default)]
+    settings: Vec<SettingsCall>,
+}
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("openai_decisions")
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IrToRequestCall {
+    model: String,
+    request: IrRequest,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequestRoundtripCall {
+    model: String,
+    request: openai::DecisionRequestBody,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResponseToIrCall {
+    request: openai::DecisionRequestBody,
+    response: openai::DecisionResponse,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IrToResponseCall {
+    requested_model: String,
+    request: IrRequest,
+    response: IrResponse,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ParseResponseCall {
+    request: openai::DecisionRequestBody,
+    payload: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SettingsCall {
+    api_base: Option<String>,
+    api_key: Option<String>,
+    #[serde(default)]
+    globals: GlobalsCall,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GlobalsCall {
+    api_base: Option<String>,
+    api_key: Option<String>,
+    openai_key: Option<String>,
+}
+
+impl crate::helpers::Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        Ok(json!({
+            "ir_to_request": input.ir_to_request.iter().map(call_ir_to_request).collect::<Vec<_>>(),
+            "request_roundtrip": input.request_roundtrip.iter().map(call_request_roundtrip).collect::<Vec<_>>(),
+            "response_to_ir": input.response_to_ir.iter().map(call_response_to_ir).collect::<Vec<_>>(),
+            "ir_to_response": input.ir_to_response.iter().map(call_ir_to_response).collect::<Vec<_>>(),
+            "parse_response": input.parse_response.iter().map(call_parse_response).collect::<Vec<_>>(),
+            "settings": input.settings.iter().map(call_settings).collect::<Vec<_>>(),
+        }))
+    }
+}
+
+fn call_ir_to_request(call: &IrToRequestCall) -> Value {
+    let request = ir::ir_request(&call.request);
+    match ir_to_openai_request(&call.model, &request) {
+        Ok(wire) => wire_value(wire),
+        Err(_unsupported) => json!({"ok": false}),
+    }
+}
+
+fn call_request_roundtrip(call: &RequestRoundtripCall) -> Value {
+    let request = openai_request_to_ir(&call.request);
+    match ir_to_openai_request(&call.model, &request) {
+        Ok(wire) => wire_value(wire),
+        Err(_unsupported) => json!({"ok": false}),
+    }
+}
+
+fn call_response_to_ir(call: &ResponseToIrCall) -> Value {
+    let request = openai_request_to_ir(&call.request);
+    let response = openai_response_to_ir(&call.response, &request);
+    json!({"ok": true, "value": ir::ir_response_json(&response)})
+}
+
+fn call_ir_to_response(call: &IrToResponseCall) -> Value {
+    let request = ir::ir_request(&call.request);
+    let ir_response = ir::ir_response(&call.response);
+    match ir_to_openai_response(&ir_response, &request, &call.requested_model) {
+        Ok(converted) => wire_value(converted),
+        Err(_mismatch) => json!({"ok": false}),
+    }
+}
+
+fn call_parse_response(call: &ParseResponseCall) -> Value {
+    let request = openai_request_to_ir(&call.request);
+    let config = OpenAiDecisionsConfig::default();
+    let Ok(payload) = serde_json::to_vec(&call.payload) else {
+        return json!({"ok": false});
+    };
+    match config.parse_response(&payload, &request) {
+        Ok(response) => json!({"ok": true, "value": ir::ir_response_json(&response)}),
+        Err(_invalid) => json!({"ok": false}),
+    }
+}
+
+fn call_settings(call: &SettingsCall) -> Value {
+    let config = OpenAiDecisionsConfig {
+        globals: LiteLlmGlobals {
+            api_base: call.globals.api_base.clone(),
+            api_key: call.globals.api_key.clone().map(SecretString::from),
+            openai_key: call.globals.openai_key.clone().map(SecretString::from),
+            organization: None,
+        },
+    };
+    let lookup = |name: &str| call.env.get(name).cloned().unwrap_or_default();
+    json!({
+        "api_base": config.resolve_api_base_with(call.api_base.as_deref(), &lookup),
+        "api_key": config.resolve_api_key_with(call.api_key.as_deref(), &lookup),
+    })
+}
+
+fn wire_value<T>(wire: T) -> Value
+where
+    T: serde::Serialize,
+{
+    match serde_json::to_value(&wire) {
+        Ok(value) => json!({"ok": true, "value": value}),
+        Err(_encode) => json!({"ok": false}),
     }
 }

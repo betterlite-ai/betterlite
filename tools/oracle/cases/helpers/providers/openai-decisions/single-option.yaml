@@ -1,0 +1,60 @@
+kind: helper
+name: openai-decisions-single-option
+call:
+  openai_decisions:
+    ir_to_request:
+      - model: gpt-4o
+        request:
+          input: {state: "the input"}
+          questions:
+            - choice:
+                name: one
+                instructions: pick
+                choices:
+                  - {value: only}
+      - model: gpt-4o
+        request:
+          input: {state: "the input"}
+          questions:
+            - choice:
+                name: zero
+                instructions: pick
+                choices: []
+      - model: gpt-4o
+        request:
+          input: {state: "the input"}
+          questions:
+            - score:
+                name: one-level
+                instructions: rate
+                levels:
+                  - {label: only}
+      - model: gpt-4o
+        request:
+          input: {state: "the input"}
+          questions:
+            - score:
+                name: zero-levels
+                instructions: rate
+                levels: []
+      - model: gpt-4o
+        request:
+          input: {state: "the input"}
+          questions:
+            - predicate:
+                name: truth
+                instructions: is it true?
+            - choice:
+                name: two
+                instructions: pick
+                choices:
+                  - {value: a}
+                  - {value: b}
+            - score:
+                name: two-levels
+                instructions: rate
+                levels:
+                  - {label: low}
+                  - {label: high}
+env: {}
+compare: {ignore: []}
