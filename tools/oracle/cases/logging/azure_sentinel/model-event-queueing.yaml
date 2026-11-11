@@ -1,0 +1,64 @@
+# async_log_success_event and async_log_failure_event append the StandardLoggingPayload to log_queue and send once the queue reaches batch_size, unless a retry is pending
+kind: helper
+name: azure-sentinel-model-event-queueing
+call:
+  b4002:
+    scenarios:
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        actions:
+          - {do: model, ids: [a, b]}
+          - {do: model, ids: [c], failure: true}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+          - {status: 204}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: model, ids: [b]}
+          - {do: model, ids: [c], failure: true}
+          - {do: model, ids: [d], failure: true}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 202}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: model, ids: [b]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 500, body: boom}
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: model, ids: [b]}
+          - {do: model, ids: [c], failure: true}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 3
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b]}
+          - {do: flush}
+          - {do: model, ids: [c]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, stream_name: Custom-Models, audit_stream_name: Custom-Audit, endpoint: "https://dce.example.test/", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: audit, ids: [x]}
+          - {do: flush}
+env: {}
+compare: {ignore: []}
