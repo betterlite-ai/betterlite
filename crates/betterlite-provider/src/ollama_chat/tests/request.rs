@@ -79,6 +79,11 @@ fn body(request: &OllamaChatRequest) -> Json {
     "{}",
     r#"{"model": "llama3", "messages": [{"role": "assistant", "content": "hello", "images": []}], "options": {}, "stream": false}"#
 )]
+#[case::null_reasoning_stops_the_tag_parse(
+    r#"[{"role": "assistant", "content": "<think>inner</think>answer", "reasoning": null}]"#,
+    "{}",
+    r#"{"model": "llama3", "messages": [{"role": "assistant", "content": "<think>inner</think>answer", "images": []}], "options": {}, "stream": false}"#
+)]
 #[case::think_tags_stay_in_content(
     r#"[{"role": "assistant", "content": "<think>inner</think>answer"}]"#,
     "{}",
@@ -113,6 +118,11 @@ fn body(request: &OllamaChatRequest) -> Json {
     r#"[{"role": "assistant", "content": "x", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{\"a\": 1}"}}, {"id": "c2", "type": "other", "function": {"name": "g", "arguments": "{}"}}]}]"#,
     "{}",
     r#"{"model": "llama3", "messages": [{"role": "assistant", "content": "x", "images": [], "tool_calls": [{"function": {"name": "f", "arguments": {"a": 1}}}]}], "options": {}, "stream": false}"#
+)]
+#[case::tool_call_without_arguments(
+    r#"[{"role": "assistant", "content": "x", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f"}}]}]"#,
+    "{}",
+    r#"{"model": "llama3", "messages": [{"role": "assistant", "content": "x", "images": [], "tool_calls": [{"function": {"name": "f", "arguments": {}}}]}], "options": {}, "stream": false}"#
 )]
 #[case::empty_tool_calls(
     r#"[{"role": "assistant", "content": "x", "tool_calls": []}]"#,
@@ -229,17 +239,6 @@ fn a_tool_call_without_a_name_gets_an_empty_one() {
             r#"{"model": "llama3", "messages": [{"role": "assistant", "content": "x", "images": [], "tool_calls": [{"function": {"name": "", "arguments": {}}}]}], "options": {}, "stream": false}"#
         )
     );
-}
-
-#[test]
-fn a_tool_call_without_arguments_is_a_client_error() {
-    let error = transformed(
-        "llama3",
-        r#"[{"role": "assistant", "content": "x", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f"}}]}]"#,
-        "{}",
-    )
-    .unwrap_err();
-    assert_eq!(error.status(), Some(400));
 }
 
 #[test]

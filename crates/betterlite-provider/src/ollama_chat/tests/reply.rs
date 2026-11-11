@@ -125,15 +125,18 @@ async fn an_empty_thinking_is_kept_as_empty_reasoning() {
 }
 
 #[tokio::test]
-async fn a_null_thinking_is_treated_like_an_absent_one() {
+async fn a_null_thinking_stops_the_content_from_being_parsed() {
     let response = reply_with(
         r#"{"model": "llama3", "message": {"role": "assistant", "content": "<think>inner</think>answer", "thinking": null}}"#,
     )
     .await
     .unwrap();
     let message = &response.choices.first().unwrap().message;
-    assert_eq!(message.reasoning_content.as_deref(), Some("inner"));
-    assert_eq!(message.content.as_deref(), Some("answer"));
+    assert_eq!(message.reasoning_content, None);
+    assert_eq!(
+        message.content.as_deref(),
+        Some("<think>inner</think>answer")
+    );
 }
 
 #[tokio::test]

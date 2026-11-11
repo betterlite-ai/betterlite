@@ -4,16 +4,47 @@ use serde::Deserialize;
 use super::error::OllamaError;
 
 pub const ARGUMENTS_FIELD: &str = "message.tool_calls.function.arguments";
+pub const FUNCTION_TYPE: &str = "function";
+const ASSISTANT_ROLE: &str = "assistant";
+
+// LiteLLM tells a missing thinking key from a null one: only a missing key sends the content to the tag parser
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Thinking {
+    #[default]
+    #[serde(skip)]
+    Absent,
+    Null,
+    Text(String),
+}
+
+impl Thinking {
+    #[must_use]
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Absent | Self::Null => None,
+        }
+    }
+}
+
+fn default_role() -> String {
+    String::from(ASSISTANT_ROLE)
+}
+
+fn default_kind() -> String {
+    String::from(FUNCTION_TYPE)
+}
 
 // the tool-call shapes shared by a reply and a stream chunk
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct WireMessage {
-    #[serde(default)]
-    pub role: Option<String>,
+    #[serde(default = "default_role")]
+    pub role: String,
     #[serde(default)]
     pub content: Option<String>,
     #[serde(default)]
-    pub thinking: Option<String>,
+    pub thinking: Thinking,
     #[serde(default)]
     pub tool_calls: Option<Vec<WireToolCall>>,
 }
@@ -22,8 +53,8 @@ pub struct WireMessage {
 pub struct WireToolCall {
     #[serde(default)]
     pub id: Option<String>,
-    #[serde(default, rename = "type")]
-    pub kind: Option<String>,
+    #[serde(default = "default_kind", rename = "type")]
+    pub kind: String,
     #[serde(default)]
     pub index: Option<u32>,
     pub function: WireFunction,

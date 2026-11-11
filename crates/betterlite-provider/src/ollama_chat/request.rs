@@ -1,6 +1,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::message_content::{Content, Message, convert_content_list_to_str};
+use betterlite_prompts::message_content::{Message, convert_content_list_to_str};
 use betterlite_prompts::message_fields::image_hoist::extract_images_from_message;
+use betterlite_prompts::reasoning_fields::content_split::extract_reasoning_content;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::Serialize;
@@ -8,9 +9,9 @@ use serde_with::skip_serializing_none;
 
 use super::config::OllamaChatConfig;
 use super::error::OllamaError;
-use super::reasoning::parse_content_for_reasoning;
+use super::function::FUNCTION_TYPE;
 
-const FUNCTION_TYPE: &str = "function";
+const REASONING_FIELDS: [&str; 2] = ["reasoning_content", "reasoning"];
 
 pub struct RequestInput<'request> {
     pub model: &'request str,
@@ -67,7 +68,8 @@ struct RequestToolCall {
 struct RequestFunction {
     #[serde(default)]
     name: Option<String>,
-    arguments: String,
+    #[serde(default)]
+    arguments: Option<String>,
 }
 
 pub fn transform_request(
@@ -115,18 +117,24 @@ fn take_nullable(optional: &mut IndexMap<String, Json>, name: &str) -> Option<Js
 }
 
 fn ollama_message(message: &Message, index: usize) -> Result<OllamaMessage, OllamaError> {
+    let fields = &message.provider_specific_fields;
+    let explicit = first_text(fields, &REASONING_FIELDS, index)?;
+    // a present reasoning key, even null, stops LiteLLM from reading the content for think tags
+    let thinking = if REASONING_FIELDS
+        .iter()
+        .any(|name| fields.contains_key(*name))
+    {
+        explicit
+    } else {
+        extract_reasoning_content(message).0
+    };
     Ok(OllamaMessage {
         role: message.role.clone(),
-        thinking: first_text(
-            &message.provider_specific_fields,
-            &["reasoning_content", "reasoning"],
-            index,
-        )?
-        .or_else(|| content_reasoning(message)),
+        thinking,
         content: convert_content_list_to_str(message),
         images: extract_images_from_message(message),
         tool_calls: tool_calls_from_message(message, index)?,
-        tool_call_id: first_text(&message.provider_specific_fields, &["tool_call_id"], index)?,
+        tool_call_id: first_text(fields, &["tool_call_id"], index)?,
     })
 }
 
@@ -146,13 +154,6 @@ fn first_text(
         }
     }
     Ok(None)
-}
-
-fn content_reasoning(message: &Message) -> Option<String> {
-    match &message.content {
-        Some(Content::Text(text)) => parse_content_for_reasoning(text).0.map(str::to_owned),
-        Some(Content::Parts(_)) | None => None,
-    }
 }
 
 fn tool_calls_from_message(
@@ -177,8 +178,11 @@ fn tool_calls_from_message(
         if call.kind != FUNCTION_TYPE {
             continue;
         }
-        let arguments = serde_json::from_str::<Json>(&call.function.arguments)
-            .map_err(|source| OllamaError::RequestToolArguments { index, source })?;
+        let arguments = match call.function.arguments {
+            Some(text) => serde_json::from_str::<Json>(&text)
+                .map_err(|source| OllamaError::RequestToolArguments { index, source })?,
+            None => Json::Object(IndexMap::new()),
+        };
         converted.push(OllamaToolCall {
             function: OllamaCallFunction {
                 name: call.function.name.unwrap_or_default(),

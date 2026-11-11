@@ -1,13 +1,13 @@
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::message_content::Message;
+use betterlite_prompts::reasoning_fields::content_split::parse_content_for_reasoning;
 use betterlite_streaming::stream_chunk_shaping::tokens::mapped_finish_reason;
 use indexmap::IndexMap;
 
 use self::decode::DecodedReply;
 use super::error::OllamaError;
-use super::function::WireMessage;
+use super::function::{FUNCTION_TYPE, Thinking, WireMessage};
 use super::ids::IdSource;
-use super::reasoning::parse_content_for_reasoning;
 use super::usage::{TokenCounter, Usage};
 
 pub mod decode;
@@ -15,9 +15,7 @@ pub mod decode;
 const OLLAMA_CHAT_PREFIX: &str = "ollama_chat/";
 const JSON_FORMAT: &str = "json";
 const JSON_MODE_CALL_ID: &str = "call_";
-const FUNCTION_TYPE: &str = "function";
 const TOOL_CALLS_FINISH_REASON: &str = "tool_calls";
-const DEFAULT_ROLE: &str = "assistant";
 const DEFAULT_FINISH_REASON: &str = "stop";
 
 pub struct ReplyInput<'request> {
@@ -96,17 +94,13 @@ fn done_reason(reply: &DecodedReply) -> &str {
     }
 }
 
-// LiteLLM only parses the content for reasoning tags when the message carries no thinking text
+// LiteLLM parses the content for reasoning tags only when the message has no thinking key at all
 fn message_reasoning(message: &WireMessage) -> (Option<String>, Option<String>) {
-    message.thinking.as_ref().map_or_else(
-        || {
-            message.content.as_deref().map_or((None, None), |text| {
-                let (reasoning, content) = parse_content_for_reasoning(text);
-                (reasoning.map(str::to_owned), Some(content.to_owned()))
-            })
-        },
-        |thinking| (Some(thinking.clone()), message.content.clone()),
-    )
+    match &message.thinking {
+        Thinking::Absent => parse_content_for_reasoning(message.content.as_deref()),
+        Thinking::Null => (None, message.content.clone()),
+        Thinking::Text(thinking) => (Some(thinking.clone()), message.content.clone()),
+    }
 }
 
 fn json_mode(input: &ReplyInput<'_>) -> bool {
@@ -128,10 +122,7 @@ fn assistant_message(
     json: Option<&IndexMap<String, Json>>,
     ids: &dyn IdSource,
 ) -> Result<(AssistantMessage, Option<&'static str>), OllamaError> {
-    let role = message
-        .role
-        .clone()
-        .unwrap_or_else(|| String::from(DEFAULT_ROLE));
+    let role = message.role.clone();
     if let Some(litellm_params) = json {
         let built = json_mode_message(role, content.as_deref(), reasoning, litellm_params, ids)?;
         return Ok((built, Some(TOOL_CALLS_FINISH_REASON)));
@@ -164,10 +155,7 @@ fn reply_tool_calls(
     for call in calls {
         converted.push(ToolCall {
             id: call.id.clone().unwrap_or_else(|| ids.next_id()),
-            kind: call
-                .kind
-                .clone()
-                .unwrap_or_else(|| String::from(FUNCTION_TYPE)),
+            kind: call.kind.clone(),
             function: Function {
                 name: call.function.name.clone(),
                 arguments: call.function.call_arguments()?.arguments,

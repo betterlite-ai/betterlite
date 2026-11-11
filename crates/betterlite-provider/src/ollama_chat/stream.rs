@@ -1,4 +1,5 @@
 use betterlite_prompts::arguments::json::Json;
+use betterlite_streaming::stream_chunk_shaping::tokens::mapped_finish_reason;
 
 use self::chunk::{DeltaFunction, DeltaToolCall, OllamaStreamChunk, StreamChoice, StreamDelta};
 use self::wire::{RawChunk, decode_chunk};
@@ -14,7 +15,6 @@ const CHUNK_OBJECT: &str = "chat.completion.chunk";
 const DATA_PREFIX: &str = "data: ";
 const DATA_PREFIX_WITHOUT_SPACE: &str = "data:";
 const DONE_MARKER: &str = "[DONE]";
-const TOOL_CALL_TYPE: &str = "function";
 const STOP_FINISH_REASON: &str = "stop";
 const TOOL_CALLS_FINISH_REASON: &str = "tool_calls";
 const THINK_OPEN: &str = "<think>";
@@ -103,7 +103,7 @@ impl OllamaChatIterator {
             self.seen_tool_calls = true;
             delta.tool_calls = Some(delta_tool_calls(calls, ids)?);
         }
-        if let Some(thinking) = message.thinking.as_deref().filter(|text| !text.is_empty()) {
+        if let Some(thinking) = message.thinking.text().filter(|text| !text.is_empty()) {
             delta.reasoning_content = Some(thinking.to_owned());
             self.start_reasoning();
         }
@@ -143,7 +143,7 @@ impl OllamaChatIterator {
             return String::from(TOOL_CALLS_FINISH_REASON);
         }
         match raw.done_reason.as_deref() {
-            Some(reason) if !reason.is_empty() => reason.to_owned(),
+            Some(reason) if !reason.is_empty() => String::from(mapped_finish_reason(reason)),
             Some(_) | None => String::from(STOP_FINISH_REASON),
         }
     }
@@ -181,10 +181,7 @@ fn delta_tool_calls(
             } else {
                 call.id.clone()
             },
-            kind: call
-                .kind
-                .clone()
-                .unwrap_or_else(|| String::from(TOOL_CALL_TYPE)),
+            kind: call.kind.clone(),
             index,
             function: DeltaFunction {
                 name: call.function.name.clone(),

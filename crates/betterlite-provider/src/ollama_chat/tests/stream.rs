@@ -230,17 +230,6 @@ fn chunks_without_both_counts_have_no_usage(#[case] line: &str) {
 }
 
 #[test]
-fn the_stream_finish_reason_is_the_raw_done_reason() {
-    let chunk = parsed(
-        r#"{"model": "m", "message": {"content": "x"}, "done": true, "done_reason": "load"}"#,
-    );
-    assert_eq!(
-        chunk.choices.first().unwrap().finish_reason.as_deref(),
-        Some("load")
-    );
-}
-
-#[test]
 fn random_ids_are_distinct_uuids() {
     let first = super::super::ids::IdSource::next_id(&RandomIds);
     uuid::Uuid::parse_str(&first).unwrap();
@@ -250,13 +239,11 @@ fn random_ids_are_distinct_uuids() {
 #[rstest]
 #[case::length(r#""done_reason": "length","#, "length")]
 #[case::stop(r#""done_reason": "stop","#, "stop")]
+#[case::unmapped_load(r#""done_reason": "load","#, "stop")]
 #[case::empty(r#""done_reason": "","#, "stop")]
 #[case::null(r#""done_reason": null,"#, "stop")]
 #[case::missing("", "stop")]
-fn the_done_reason_passes_through_or_defaults_to_stop(
-    #[case] reason: &str,
-    #[case] expected: &str,
-) {
+fn the_done_reason_is_mapped_or_defaults_to_stop(#[case] reason: &str, #[case] expected: &str) {
     let line = format!(r#"{{"model": "m", "message": {{"content": "x"}}, {reason} "done": true}}"#);
     assert_eq!(
         parsed(&line)

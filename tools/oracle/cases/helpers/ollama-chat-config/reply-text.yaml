@@ -11,6 +11,7 @@ call:
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello", "thinking": "why"}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello", "thinking": ""}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "hello", "thinking": null}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "<think>inner</think>answer", "thinking": null}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": ""}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": null}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "<think>inner</think>answer"}}'}
