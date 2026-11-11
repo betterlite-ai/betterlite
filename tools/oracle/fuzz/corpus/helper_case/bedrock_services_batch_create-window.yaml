@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-batch-create-window-seed
+call:
+  bedrock_services_batch_create:
+    operation: input_24h_window
+    scenarios:
+      - model: m
+        input_file_id: s3://b/k
+        completion_window: 24h
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+kind: helper
+name: metadata-sanitization
+call:
+  bedrock_services_batch_create:
+    operation: metadata_sanitization
+    values:
+      - user: alice
+        none: null
+        number: 1
+        float: 0.5
+        flag: true
+        standard_logging_guardrail_information:
+          x: 1
+      - [1, 2]
+      - text
+      - 3
+      - null
+      - {}
+      - nul: "a\0b"
+env: {}
+compare: {ignore: []}

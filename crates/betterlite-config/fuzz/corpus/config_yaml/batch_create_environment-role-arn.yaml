@@ -1,0 +1,7 @@
+# AWS_BATCH_ROLE_ARN is the last role source for a Bedrock batch create
+model_list:
+  - model_name: bedrock/batch-environment
+    litellm_params:
+      model: bedrock/anthropic.claude-3-haiku-20240307-v1:0
+      aws_batch_role_arn: ""
+litellm_settings: {}

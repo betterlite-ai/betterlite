@@ -1,0 +1,25 @@
+kind: helper
+name: titan-batch-token-usage
+call:
+  bedrock_services_batch_create:
+    operation: titan_batch_token_usage
+    values:
+      - embedding: [1]
+        inputTextTokenCount: 7
+      - embeddingsByType: null
+        inputTextTokenCount: 0
+      - embedding: null
+        inputTextTokenCount: -3
+      - inputTextTokenCount: 7
+      - embedding: [1]
+      - embedding: [1]
+        inputTextTokenCount: true
+      - embedding: [1]
+        inputTextTokenCount: 1.5
+      - embedding: [1]
+        inputTextTokenCount: "7"
+      - embedding: [1]
+        inputTextTokenCount: null
+      - [1, 2]
+env: {}
+compare: {ignore: []}

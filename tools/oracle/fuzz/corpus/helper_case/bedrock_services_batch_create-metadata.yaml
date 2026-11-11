@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-batch-create-metadata-seed
+call:
+  bedrock_services_batch_create:
+    operation: metadata_sanitization
+    values:
+      - user: alice
+        none: null
+        flag: true
+        standard_logging_guardrail_information:
+          x: 1
+      - [1, 2]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,44 @@
+kind: helper
+name: owner-and-kms
+call:
+  bedrock_services_batch_create:
+    operation: owner_and_kms
+    scenarios:
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          s3_bucket_owner: "111111111111"
+          s3_encryption_key_id: kms-key
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+        optional_params:
+          s3_bucket_owner: "222222222222"
+          s3_encryption_key_id: optional-key
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+        environment:
+          AWS_S3_BUCKET_OWNER: "333333333333"
+          AWS_S3_ENCRYPTION_KEY_ID: env-key
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          s3_bucket_owner: ""
+          s3_encryption_key_id: ""
+        environment:
+          AWS_S3_BUCKET_OWNER: "333333333333"
+          AWS_S3_ENCRYPTION_KEY_ID: env-key
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+        environment:
+          AWS_S3_BUCKET_OWNER: ""
+          AWS_S3_ENCRYPTION_KEY_ID: ""
+env: {}
+compare: {ignore: []}

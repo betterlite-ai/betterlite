@@ -2,7 +2,9 @@
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::ready;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -14,7 +16,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
     OidcTokenCache,
 };
 use rstest::rstest;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 use serde_json::value::RawValue;
 use tokio::runtime::{Builder, Runtime};
 
@@ -22,10 +24,9 @@ use super::BatchCreateError;
 use super::reply::{
     OriginalBatchRequest, create_batch_reply, decode_created_batch, openai_batch_metadata,
 };
-use super::request::{
-    BedrockCreateRequest, CreateBatchInput, S3InputDataConfig, SignedBatchRequest,
-    build_create_request, transform_create_batch_request,
-};
+use super::request::build::{CreateBatchInput, build_create_request};
+use super::request::sign::transform_create_batch_request;
+use super::request::wire::{BedrockCreateRequest, S3InputDataConfig, SignedBatchRequest};
 use super::tags::BedrockTag;
 use super::titan::{TitanBatchUsage, titan_batch_token_usage as titan_usage};
 use crate::aws_settings::sources::Credentials;
@@ -857,124 +858,33 @@ fn titan_usage_rejections() {
 }
 
 #[test]
-fn bedrock_services_batch_create_credential_identity_isolation() {
-    deployment_identity_is_isolated();
-    request_identity_is_isolated();
+fn replays_the_bedrock_services_batch_create_corpus() {
+    let seeds = replay_batch_create_corpus();
+    assert!(seeds >= 4, "the corpus holds only {seeds} seeds");
 }
 
-fn deployment_identity_is_isolated() {
-    let deployment = Sources::new(
-        r#"{"aws_access_key_id": "DEPLOYKEY", "aws_secret_access_key": "deploy-secret", "aws_region_name": "us-east-1", "aws_role_name": "deploy-role"}"#,
-        r#"{"aws_access_key_id": "REQUESTKEY", "aws_secret_access_key": "request-secret", "aws_profile_name": "request-profile"}"#,
-        &[],
-    );
-    let signed = runtime()
-        .block_on(transform_create_batch_request(
-            deployment.input("m", Some("s3://b/k")),
-            |settings, _region| {
-                assert_eq!(
-                    settings
-                        .access_key_id
-                        .as_ref()
-                        .map(ExposeSecret::expose_secret),
-                    Some("DEPLOYKEY")
-                );
-                assert_eq!(settings.profile_name, None);
-                ready(Ok::<Credentials, CredentialError>(fixture_credentials(
-                    "DEPLOYKEY",
-                    None,
-                )))
-            },
-        ))
-        .expect("the deployment identity signs");
-    let authorization = signed.headers.get("Authorization").expect("signed");
-    assert!(authorization.contains("DEPLOYKEY"));
-    assert!(!authorization.contains("REQUESTKEY"));
-}
-
-fn request_identity_is_isolated() {
-    let request_only = Sources::new(
-        "{}",
-        r#"{"aws_access_key_id": "REQUESTKEY", "aws_secret_access_key": "request-secret", "aws_region_name": "eu-west-1"}"#,
-        &[],
-    );
-    let signed = runtime()
-        .block_on(transform_create_batch_request(
-            request_only.input("m", Some("s3://b/k")),
-            |settings, _region| {
-                assert_eq!(
-                    settings
-                        .access_key_id
-                        .as_ref()
-                        .map(ExposeSecret::expose_secret),
-                    Some("REQUESTKEY")
-                );
-                assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
-                ready(Ok::<Credentials, CredentialError>(fixture_credentials(
-                    "REQUESTKEY",
-                    None,
-                )))
-            },
-        ))
-        .expect("the request identity signs");
-    let authorization = signed.headers.get("Authorization").expect("signed");
-    assert!(authorization.contains("REQUESTKEY"));
-    assert!(!authorization.contains("DEPLOYKEY"));
-}
-
-#[test]
-fn bedrock_services_batch_create_secret_safe_failure() {
-    failure_text_keeps_secrets_out();
-    successful_debug_keeps_secrets_out();
-}
-
-fn secret_fixture() -> Sources {
-    Sources::new(
-        r#"{"aws_access_key_id": "LEAKEDACCESS", "aws_secret_access_key": "leaked-secret-key", "aws_session_token": "session-token-fixture"}"#,
-        "{}",
-        &[],
-    )
-}
-
-fn failure_text_keeps_secrets_out() {
-    let sources = secret_fixture();
-    let error = runtime()
-        .block_on(transform_create_batch_request(
-            sources.input("m", Some("s3://b/k")),
-            |_settings, _region| {
-                ready(Err::<Credentials, CredentialError>(
-                    CredentialError::MissingCredentials,
-                ))
-            },
-        ))
-        .expect_err("the credential lookup fails");
-    let rendered = format!("{error} {error:?}");
-    for secret in ["LEAKEDACCESS", "leaked-secret-key", SESSION_TOKEN] {
-        assert!(!rendered.contains(secret), "{secret} reached the failure");
+fn replay_batch_create_corpus() -> usize {
+    let corpus =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_services_batch_create");
+    let entries = fs::read_dir(corpus).expect("the corpus directory exists");
+    let mut seeds = 0_usize;
+    for entry in entries {
+        let path = entry.expect("the corpus entry reads").path();
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("the seed name is UTF-8")
+            .to_owned();
+        let bytes = fs::read(&path).expect("the seed reads");
+        let expected = name.starts_with("valid") || name.starts_with("boundary-valid");
+        assert_eq!(
+            decode_created_batch(&bytes).is_ok(),
+            expected,
+            "seed {name}"
+        );
+        seeds = seeds.saturating_add(1);
     }
+    seeds
 }
 
-fn successful_debug_keeps_secrets_out() {
-    let sources = secret_fixture();
-    let signed = runtime()
-        .block_on(transform_create_batch_request(
-            sources.input("m", Some("s3://b/k")),
-            |_settings, _region| {
-                ready(Ok::<Credentials, CredentialError>(fixture_credentials(
-                    "LEAKEDACCESS",
-                    Some(SESSION_TOKEN),
-                )))
-            },
-        ))
-        .expect("the request signs");
-    let rendered = format!("{signed:?} {}", signed.data);
-    for secret in ["LEAKEDACCESS", "leaked-secret-key", SESSION_TOKEN] {
-        assert!(!rendered.contains(secret), "{secret} reached Debug");
-    }
-    assert!(
-        signed
-            .headers
-            .get("X-Amz-Security-Token")
-            .is_some_and(|value| value == SESSION_TOKEN)
-    );
-}
+mod invariants;

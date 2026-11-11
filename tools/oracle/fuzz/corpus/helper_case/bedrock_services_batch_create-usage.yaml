@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-batch-create-usage-seed
+call:
+  bedrock_services_batch_create:
+    operation: titan_batch_token_usage
+    values:
+      - embedding: [1]
+        inputTextTokenCount: 7
+      - embedding: [1]
+        inputTextTokenCount: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,54 @@
+kind: helper
+name: create-signed-request
+call:
+  bedrock_services_batch_create:
+    operation: create_signed_request
+    scenarios:
+      - model: m
+        input_file_id: s3://in-bucket/in.jsonl
+        completion_window: 24h
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          s3_output_bucket_name: out-bucket
+          aws_region_name: us-west-2
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          bedrock_tags:
+            - key: team
+              value: genai
+        uuid: 11111111-2222-4333-8444-555555555555
+        now: 1767225600
+        credentials:
+          access_key_id: AKIDEXAMPLE
+          secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+        environment:
+          AWS_REGION_NAME: cn-north-1
+        now: 1767225600
+        credentials:
+          access_key_id: AKIDEXAMPLE
+          secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+        now: 1767225600
+        credentials:
+          access_key_id: AKIDEXAMPLE
+          secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          aws_region_name: BAD_REGION
+        now: 1767225600
+        credentials:
+          access_key_id: AKIDEXAMPLE
+          secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+env: {}
+compare: {ignore: []}
