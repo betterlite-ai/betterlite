@@ -6,6 +6,13 @@ use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
+fn environment_lookup(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
+    environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
 #[rstest]
 #[case::loads_default_max_tokens("", &[], Ok((false, 4096)))]
 #[case::loads_default_max_tokens("", &[("DEFAULT_MAX_TOKENS", " +100 ")], Ok((false, 100)))]
@@ -31,10 +38,7 @@ fn provider_base_config_cases(
     #[case] environment: &[(&str, &str)],
     #[case] expected: Result<(bool, i64), &str>,
 ) {
-    let lookup: BTreeMap<String, String> = environment
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
+    let lookup = environment_lookup(environment);
     let loaded = ConfigLoader { lookup }.load(source);
     match (loaded, expected) {
         (Ok(config), Ok(settings)) => {
@@ -75,10 +79,7 @@ fn provider_base_config_drop_params_cases(
     #[case] environment: &[(&str, &str)],
     #[case] expected: bool,
 ) {
-    let lookup: BTreeMap<String, String> = environment
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
+    let lookup = environment_lookup(environment);
     let loaded = ConfigLoader { lookup }.load(source).unwrap();
     assert_eq!(loaded.litellm_settings.drop_params, expected);
     assert_eq!(
