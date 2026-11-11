@@ -77,10 +77,10 @@ fn canonical_json(value: &JsonValue, out: &mut String) -> Option<()> {
     match value {
         JsonValue::Array(items) => {
             out.push('[');
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    out.push(',');
-                }
+            let mut separator = "";
+            for item in items {
+                out.push_str(separator);
+                separator = ",";
                 canonical_json(item, out)?;
             }
             out.push(']');
@@ -88,10 +88,10 @@ fn canonical_json(value: &JsonValue, out: &mut String) -> Option<()> {
         JsonValue::Object(fields) => {
             let sorted: BTreeMap<&String, &JsonValue> = fields.iter().collect();
             out.push('{');
-            for (index, (key, item)) in sorted.into_iter().enumerate() {
-                if index > 0 {
-                    out.push(',');
-                }
+            let mut separator = "";
+            for (key, item) in sorted {
+                out.push_str(separator);
+                separator = ",";
                 out.push_str(&serde_json::to_string(key).ok()?);
                 out.push(':');
                 canonical_json(item, out)?;

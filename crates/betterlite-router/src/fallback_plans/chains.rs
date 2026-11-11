@@ -42,7 +42,7 @@ pub fn get_fallback_model_group<'plan>(
                 if matched {
                     stripped = Some(targets.as_slice());
                 }
-                if !matched && name == "*" {
+                if name == "*" {
                     generic = Some(targets.as_slice());
                 }
             }

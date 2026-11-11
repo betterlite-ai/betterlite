@@ -155,30 +155,61 @@ fn lookup_names_resolve(slugs: &[String]) {
 #[test]
 fn fallback_plans_boundaries() {
     let slugs = slugs();
-    let plain = no_inference;
     let names = ProviderNames {
         slugs: &slugs,
-        inferred: &plain,
+        inferred: &no_inference,
     };
-    let empty: Vec<FallbackChainEntry> = Vec::new();
-    assert!(get_fallback_model_group(&empty, "gpt-4", &names).is_none());
-    assert!(resolve_for_lookup_groups(&empty, &["gpt-4"], &names).is_none());
+    empty_chains_resolve_to_nothing(&names);
+    unmatched_entries_stay_out_of_the_way(&names);
+    lookup_group_selection();
+    depth_bounds();
+    canonical_targets_keep_distinct_parameters();
+}
 
+fn empty_chains_resolve_to_nothing(names: &ProviderNames<'_>) {
+    let empty: Vec<FallbackChainEntry> = Vec::new();
+    assert!(get_fallback_model_group(&empty, "gpt-4", names).is_none());
+    assert!(resolve_for_lookup_groups(&empty, &["gpt-4"], names).is_none());
+}
+
+fn unmatched_entries_stay_out_of_the_way(names: &ProviderNames<'_>) {
     let repeated = vec![
         group("gpt-4", vec![name("first")]),
         group("gpt-4", vec![name("second")]),
     ];
     assert_eq!(
-        matched_models(get_fallback_model_group(&repeated, "openai/gpt-4", &names)),
+        matched_models(get_fallback_model_group(&repeated, "openai/gpt-4", names)),
         ["second"]
     );
+    let unmatched = vec![group("gpt-4", vec![name("claude")])];
+    assert!(get_fallback_model_group(&unmatched, "openai/other", names).is_none());
+    assert!(get_fallback_model_group(&unmatched, "gpt-3.5", names).is_none());
 
     let wildcard = vec![group("*", vec![name("backup")])];
-    let stripped_wildcard = get_fallback_model_group(&wildcard, "openai/*", &names).unwrap();
+    let stripped_wildcard = get_fallback_model_group(&wildcard, "openai/*", names).unwrap();
     assert!(!stripped_wildcard.generic);
-    let generic = get_fallback_model_group(&wildcard, "anything", &names).unwrap();
+    let generic = get_fallback_model_group(&wildcard, "anything", names).unwrap();
     assert!(generic.generic);
+}
 
+fn lookup_group_selection() {
+    let mut state = request_state(bucket(None, None, None), Bucket::default());
+    assert!(fallback_lookup_groups(&state, None).is_empty());
+    state.metadata = bucket(Some("tier"), Some("routed"), Some("original"));
+    assert_eq!(
+        fallback_lookup_groups(&state, Some("requested")),
+        ["tier", "routed", "requested", "original"]
+    );
+    assert_eq!(
+        fallback_lookup_groups(&state, Some("tier")),
+        ["tier", "routed", "original"]
+    );
+    let mut explicit_empty = request_state(bucket(Some(""), None, None), Bucket::default());
+    explicit_empty.metadata.values.model_group = Some(String::new());
+    assert!(fallback_lookup_groups(&explicit_empty, Some("")).is_empty());
+}
+
+fn depth_bounds() {
     assert_eq!(
         advance_depth(FallbackBudget {
             depth: 0,
@@ -193,18 +224,37 @@ fn fallback_plans_boundaries() {
         }),
         DepthOutcome::Continue { next_depth: 5 }
     );
+}
 
-    let mut state = request_state(bucket(None, None, None), Bucket::default());
-    assert!(fallback_lookup_groups(&state, None).is_empty());
-    state.metadata = bucket(Some("tier"), Some("routed"), Some("original"));
-    assert_eq!(
-        fallback_lookup_groups(&state, Some("requested")),
-        ["tier", "routed", "requested", "original"]
+#[test]
+fn canonical_targets_keep_distinct_parameters() {
+    let first = parameterized(
+        "claude",
+        &[
+            ("a", json!(1_i64)),
+            ("b", json!(2_i64)),
+            ("list", json!([1_i64, 2_i64])),
+        ],
     );
-    assert_eq!(
-        fallback_lookup_groups(&state, Some("tier")),
-        ["tier", "routed", "original"]
+    let reordered = parameterized(
+        "claude",
+        &[
+            ("list", json!([1_i64, 2_i64])),
+            ("b", json!(2_i64)),
+            ("a", json!(1_i64)),
+        ],
     );
+    let colliding = parameterized(
+        "claude",
+        &[
+            ("a", json!(1_i64)),
+            ("b", json!(2_i64)),
+            ("list", json!([12_i64])),
+        ],
+    );
+    let recorded = AttemptedTargets::from_targets(&[first]);
+    assert!(recorded.contains(&reordered));
+    assert!(!recorded.contains(&colliding));
 }
 
 fn request_chains_resolve(slugs: &[String]) {
