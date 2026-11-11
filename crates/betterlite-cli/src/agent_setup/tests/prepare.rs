@@ -657,6 +657,39 @@ async fn prepare_repair_model_asks_when_the_saved_model_is_not_served() {
 }
 
 #[tokio::test]
+async fn prepare_repair_codex_asks_when_the_saved_model_is_not_served() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[("codex-a", None)]))]).await;
+    saved_profile(
+        &environment,
+        Target::Codex,
+        &proxy.base_url,
+        "sk-saved",
+        Some("gone"),
+    )
+    .await;
+    let ctx = context(&proxy.base_url, None);
+    let mut prompter = ScriptedPrompter::new(vec![Reply::Model("codex-a".to_owned())]);
+    let mut run = codex_run(&ctx, &environment);
+    run.stdin_is_terminal = true;
+    let (result, _stdout, _stderr) = execute(&run, &mut prompter).await;
+    result.unwrap();
+    assert_eq!(
+        prompter.calls,
+        vec![Call::Model {
+            message: CODEX_MODEL_MESSAGE.to_owned(),
+            choices: vec!["codex-a".to_owned()],
+            selected: 0,
+        }]
+    );
+    let profile = read_saved_setup(Target::Codex, &environment)
+        .unwrap()
+        .unwrap();
+    assert_eq!(profile.model.as_deref(), Some("codex-a"));
+}
+
+#[tokio::test]
 async fn prepare_repair_relists_with_a_replacement_key() {
     let home = TempDir::new().unwrap();
     let environment = FakeEnvironment::with_home(home.path());
