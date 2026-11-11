@@ -13,7 +13,6 @@ probes:
             - {gpt-4: [claude]}
           max_fallbacks: 5
         request: {}
-        providers: [openai, anthropic]
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:
@@ -26,8 +25,6 @@ probes:
             - {openai/gpt-4: [claude]}
           max_fallbacks: 5
         request: {}
-        providers: [openai, anthropic]
-        inferred: {gpt-4: openai}
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:
@@ -41,7 +38,6 @@ probes:
             - {gpt-4: [second]}
           max_fallbacks: 5
         request: {}
-        providers: [openai, anthropic]
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:
@@ -54,7 +50,6 @@ probes:
             - {gpt-4: [claude]}
           max_fallbacks: 5
         request: {}
-        providers: [openai, anthropic]
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:
@@ -68,4 +63,27 @@ probes:
             - {gpt-4: [claude]}
           max_fallbacks: 5
         request: {}
-        providers: [openai, anthropic]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: azure/gpt-4
+          lookup_model_group: azure/gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {azure/gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}

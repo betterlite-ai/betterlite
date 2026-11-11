@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
 use betterlite_config::sections::settings::JsonValue;
 use serde::{Deserialize, Serialize};
@@ -19,11 +17,6 @@ pub struct Payload {
     pub request: RequestChains,
     #[serde(default)]
     pub attempted: Vec<FallbackTarget>,
-    // the provider names and inference the router would supply at run time
-    #[serde(default)]
-    pub providers: Vec<String>,
-    #[serde(default)]
-    pub inferred: BTreeMap<String, String>,
     #[serde(default)]
     pub record_selection: Option<String>,
     #[serde(default)]

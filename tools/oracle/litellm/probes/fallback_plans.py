@@ -170,8 +170,6 @@ class FallbackPlans(Operation):
     config: PlanConfig
     request: RequestChains
     attempted: list[JsonValue] = Field(default_factory=list)
-    providers: list[str] = Field(default_factory=list)
-    inferred: dict[str, str] = Field(default_factory=dict)
     record_selection: str | None = None
     record_disable: bool | None = None
 
@@ -238,9 +236,7 @@ class FallbackPlans(Operation):
     ) -> ChainOutput:
         if fallbacks is None:
             return ChainOutput(resolved=False, targets=[], has_unattempted=False)
-        resolved, _generic = get_fallback_model_group_for_lookup_groups(
-            fallbacks=fallbacks, lookup_groups=groups
-        )
+        resolved, _generic = get_fallback_model_group_for_lookup_groups(fallbacks=fallbacks, lookup_groups=groups)
         if resolved is None:
             return ChainOutput(resolved=False, targets=[], has_unattempted=False)
         return ChainOutput(
@@ -265,9 +261,7 @@ class FallbackPlans(Operation):
 
     def hop(self, kwargs: dict[str, object]) -> HopOutput:
         controls = per_request_fallback_controls(kwargs)
-        hop = mid_stream_fallback_hop_kwargs(
-            self.state.model or "", probe_function, controls, kwargs
-        )
+        hop = mid_stream_fallback_hop_kwargs(self.state.model or "", probe_function, controls, kwargs)
         return HopOutput(
             model=cast("str", hop.get("model", "")),
             fallbacks=hop_field(hop, "fallbacks"),

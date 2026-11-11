@@ -3,8 +3,12 @@ pub mod types;
 pub type Input = types::Input;
 pub type Output = types::Output;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_config::sections::fallback_plans::chains::FallbackChainEntry;
+use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_router::fallback_plans::attempts::AttemptedTargets;
 use betterlite_router::fallback_plans::chains::ProviderNames;
 use betterlite_router::fallback_plans::controls::HopRequest;
@@ -50,7 +54,7 @@ pub(crate) fn run(
     let mut snapshot = request_metadata(&payload.snapshot);
     carry_pre_routing_selection(&state, &mut snapshot);
     let (ordinary, context_window, content_policy) =
-        chain_outputs(payload, selected, &group_refs, &attempted);
+        chain_outputs(selected, &group_refs, &attempted);
     Ok(ProbeOutput::FallbackPlans(types::Output(Box::new(
         PlanOutput {
             lookup_groups,
@@ -104,16 +108,22 @@ fn overrides(payload: &Payload) -> RequestOverrides<'_> {
     }
 }
 
+// LiteLLM infers a provider from its bundled model_cost, so the router reads the bundled catalog too.
 fn chain_outputs(
-    payload: &Payload,
     selected: SelectedChains<'_>,
     lookup_groups: &[&str],
     attempted: &AttemptedTargets,
 ) -> (ChainOutput, ChainOutput, ChainOutput) {
-    let inference = |model: &str| payload.inferred.get(model).cloned();
+    let catalog = BundledCatalog::default().get();
+    let known_model_names = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let registry = JSONProviderRegistry::load();
     let names = ProviderNames {
-        slugs: &payload.providers,
-        inferred: &inference,
+        catalog: &catalog,
+        known_model_names: &known_model_names,
+        custom_providers: &known_model_names,
+        environment: &environment,
+        registry: &registry,
     };
     (
         chain_output(resolve_chain(
@@ -153,11 +163,7 @@ fn hop_output(
     live: &RequestMetadata,
 ) -> HopOutput {
     let model = payload.state.model.as_deref().unwrap_or_default();
-    let hop = HopRequest {
-        model,
-        overrides,
-        metadata: live.clone(),
-    };
+    let hop = HopRequest::for_hop(model, overrides, live);
     HopOutput {
         model: hop.model.to_owned(),
         fallbacks: hop.overrides.fallbacks.map(<[FallbackChainEntry]>::to_vec),

@@ -1,8 +1,44 @@
-use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
+use std::collections::{BTreeMap, BTreeSet};
 
-pub struct ProviderNames<'names> {
-    pub slugs: &'names [String],
-    pub inferred: &'names dyn Fn(&str) -> Option<String>,
+use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
+use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
+use betterlite_models::resolution::inferred::inferred_provider;
+use strum::VariantArray as _;
+
+// The caller owns the resolver's tables, the same split the guardrails crate uses for its provider names.
+pub struct ProviderNames<'context> {
+    pub catalog: &'context ModelCatalog,
+    pub known_model_names: &'context BTreeSet<String>,
+    pub custom_providers: &'context BTreeSet<String>,
+    pub environment: &'context BTreeMap<String, String>,
+    pub registry: &'context JSONProviderRegistry,
+}
+
+impl ProviderNames<'_> {
+    // litellm.provider_list is every LlmProviders member, which is the ProviderId catalog.
+    fn slugs() -> impl Iterator<Item = &'static str> {
+        ProviderId::VARIANTS
+            .iter()
+            .map(|provider| <&'static str>::from(*provider))
+    }
+
+    fn inferred(&self, model: &str) -> Option<String> {
+        let context = ResolutionContext {
+            catalog: self.catalog,
+            known_model_names: self.known_model_names,
+            custom_providers: self.custom_providers,
+            environment: self.environment,
+            registry: self.registry.clone(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        };
+        inferred_provider(model, &context).map(|provider| provider.slug().to_owned())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,7 +53,7 @@ pub fn get_fallback_model_group<'plan>(
     model_group: &str,
     names: &ProviderNames<'_>,
 ) -> Option<ChainMatch<'plan>> {
-    let prefixed = prefixed_model_group(model_group, &chain_keys(chain), names.inferred);
+    let prefixed = prefixed_model_group(model_group, &chain_keys(chain), names);
     let mut generic: Option<&'plan [FallbackTarget]> = None;
     let mut stripped: Option<&'plan [FallbackTarget]> = None;
     let mut resolved: Option<ChainMatch<'plan>> = None;
@@ -35,7 +71,7 @@ pub fn get_fallback_model_group<'plan>(
                     break;
                 }
                 let matched = prefixed.as_deref() == Some(name.as_str())
-                    || stripped_model_group(model_group, name, names.slugs);
+                    || stripped_model_group(model_group, name);
                 if matched {
                     stripped = Some(targets.as_slice());
                 }
@@ -104,9 +140,9 @@ pub fn resolve_for_lookup_groups<'plan>(
 }
 
 // LiteLLM strips every occurrence with str.replace, so a group naming its provider twice loses both
-fn stripped_model_group(model_group: &str, fallback_key: &str, slugs: &[String]) -> bool {
-    for slug in slugs {
-        let Some(rest) = model_group.strip_prefix(slug.as_str()) else {
+fn stripped_model_group(model_group: &str, fallback_key: &str) -> bool {
+    for slug in ProviderNames::slugs() {
+        let Some(rest) = model_group.strip_prefix(slug) else {
             continue;
         };
         if !rest.starts_with('/') {
@@ -123,18 +159,18 @@ fn stripped_model_group(model_group: &str, fallback_key: &str, slugs: &[String])
 fn prefixed_model_group(
     model_group: &str,
     fallback_keys: &[&str],
-    inferred: &dyn Fn(&str) -> Option<String>,
+    names: &ProviderNames<'_>,
 ) -> Option<String> {
     if model_group.contains('/') {
         return None;
     }
-    let named = fallback_keys.iter().any(|key| {
+    let listed = fallback_keys.iter().any(|key| {
         key.strip_suffix(model_group)
             .is_some_and(|prefix| prefix.ends_with('/'))
     });
-    if !named {
+    if !listed {
         return None;
     }
-    let provider = inferred(model_group)?;
+    let provider = names.inferred(model_group)?;
     Some(format!("{provider}/{model_group}"))
 }
