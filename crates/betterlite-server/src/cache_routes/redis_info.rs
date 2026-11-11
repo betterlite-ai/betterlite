@@ -18,9 +18,17 @@ mod tests;
 
 const CLIENT_LIST_UNAVAILABLE: &str = "CLIENT LIST command not available on this Redis instance";
 
+// LiteLLM writes -1 when CLIENT LIST is restricted and the client list length otherwise.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum ClientCount {
+    Listed(usize),
+    Unavailable(i8),
+}
+
 #[derive(Serialize)]
 struct RedisInfoResponse {
-    num_clients: i64,
+    num_clients: ClientCount,
     clients: RedisClients,
     info: IndexMap<String, InfoValue>,
 }
@@ -44,14 +52,17 @@ pub async fn cache_redis_info(State(state): State<CacheRoutesState>) -> Response
     let (num_clients, clients) =
         match blocking(Arc::clone(&redis), |admin| admin.client_list()).await {
             Ok(clients) => (
-                i64::try_from(clients.len()).unwrap_or(i64::MAX),
+                ClientCount::Listed(clients.len()),
                 RedisClients::Listed(clients),
             ),
             Err(error) => {
                 tracing::warn!(
                     "CLIENT LIST command failed (likely restricted on managed Redis): {error}"
                 );
-                (-1, RedisClients::Unavailable([CLIENT_LIST_UNAVAILABLE]))
+                (
+                    ClientCount::Unavailable(-1),
+                    RedisClients::Unavailable([CLIENT_LIST_UNAVAILABLE]),
+                )
             }
         };
     let info = match blocking(redis, |admin| admin.info()).await {

@@ -9,7 +9,6 @@ use betterlite_cache::types::ping::{HealthCheckCacheParams, TextOrNumber};
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-use super::super::ping_params::empty_health_params;
 use super::super::support_tests::{
     ErrorBody, FakeCache, FakeLive, PingBody, admin_router, call_json, fake_cache,
     parsed_cache_params, ping_failure,
@@ -72,10 +71,17 @@ async fn a_redis_ping_reports_healthy_with_the_test_write() {
 
 #[tokio::test]
 async fn a_failed_redis_ping_answers_503_and_skips_the_test_write() {
+    let empty_health = HealthCheckCacheParams {
+        host: None,
+        port: None,
+        redis_kwargs: None,
+        namespace: None,
+        redis_version: None,
+    };
     let mut cache = fake_cache();
     cache.kind = "redis".to_owned();
     cache.params = r#"{"type": "redis"}"#.to_owned();
-    cache.health = empty_health_params();
+    cache.health = empty_health.clone();
     cache.ping = Mutex::new(Some(Err(())));
     let case = Arc::new(cache);
     let (status, body): (StatusCode, ErrorBody) = call_json(
@@ -89,7 +95,7 @@ async fn a_failed_redis_ping_answers_503_and_skips_the_test_write() {
     assert_eq!(body.error.error_type, "cache_ping_error");
     assert_eq!(body.error.param, "cache_ping");
     assert_eq!(body.error.code, "503");
-    let health_text = serde_json::to_string(&empty_health_params()).unwrap();
+    let health_text = serde_json::to_string(&empty_health).unwrap();
     let expected = format!(
         r#"{{"message": "Service Unhealthy", "litellm_cache_params": {}, "health_check_cache_params": {}}}"#,
         serde_json::to_string(r#"{"type": "redis"}"#).unwrap(),

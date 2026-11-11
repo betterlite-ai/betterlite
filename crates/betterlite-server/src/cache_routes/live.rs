@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_cache::configuration::cache::{Backend, Cache};
+use betterlite_cache::envelope::facade::Clock;
 use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::ping::HealthCheckCacheParams;
 use betterlite_redis::redis_cache_admin::RedisCacheAdmin;
@@ -17,6 +18,7 @@ pub trait LiveResponseCache: Send + Sync {
 // B8650 builds this once from Shared.response_cache; get runs on every request.
 pub struct SlotCache<F> {
     pub get: F,
+    pub clock: Clock,
 }
 
 impl<F> LiveResponseCache for SlotCache<F>
@@ -26,6 +28,7 @@ where
     fn current(&self) -> Option<Arc<dyn CacheAdmin>> {
         let cache: Arc<dyn CacheAdmin> = Arc::new(CacheHandle {
             cache: (self.get)()?,
+            clock: Arc::clone(&self.clock),
         });
         Some(cache)
     }
@@ -34,6 +37,7 @@ where
 // The live Cache behind the cache-admin port the routes read.
 pub struct CacheHandle {
     pub cache: Arc<Cache>,
+    pub clock: Clock,
 }
 
 #[async_trait]
@@ -59,7 +63,7 @@ impl CacheAdmin for CacheHandle {
     }
 
     async fn add_test_key(&self) -> Result<(), CacheAdminError> {
-        super::test_write::add_test_key(Arc::clone(&self.cache)).await
+        super::test_write::add_test_key(Arc::clone(&self.cache), Arc::clone(&self.clock)).await
     }
 
     async fn delete_cache_keys(&self, keys: &[String]) -> Result<(), CacheAdminError> {

@@ -13,7 +13,7 @@ use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
 use betterlite_redact::structured::Payload;
 
 use super::super::redis_support::{local_cache, unreachable_redis_cache};
-use super::{ErrorLogger, RedisValues, SilentConsole, add_test_key, now_seconds, test_messages};
+use super::{ErrorLogger, RedisValues, SilentConsole, add_test_key, test_messages};
 
 fn local_bridge() -> RedisValues {
     RedisValues {
@@ -97,13 +97,6 @@ fn the_logger_writes_the_error_payload() {
 }
 
 #[test]
-fn the_clock_is_the_current_time() {
-    let now = now_seconds();
-    assert!(now > 1_700_000_000.0_f64);
-    assert!(now < 2_100_000_000.0_f64);
-}
-
-#[test]
 fn the_test_message_has_litellms_shape() {
     let KeyValue::Array(items) = test_messages() else {
         panic!("the test messages are an array");
@@ -122,16 +115,26 @@ fn the_test_message_has_litellms_shape() {
     );
 }
 
+#[test]
+fn the_envelope_uses_the_injected_clock() {
+    let envelope = super::test_envelope(&Arc::new(local_cache()), Arc::new(|| 1_234.5_f64))
+        .expect("the envelope opens");
+    assert_eq!((envelope.clock)().to_bits(), 1_234.5_f64.to_bits());
+}
+
 #[tokio::test]
 async fn add_test_key_accepts_a_redis_cache() {
-    add_test_key(Arc::new(unreachable_redis_cache().await))
-        .await
-        .expect("the test write completes");
+    add_test_key(
+        Arc::new(unreachable_redis_cache().await),
+        Arc::new(|| 1_700_000_000.0_f64),
+    )
+    .await
+    .expect("the test write completes");
 }
 
 #[tokio::test]
 async fn add_test_key_accepts_a_cache_without_redis() {
-    add_test_key(Arc::new(local_cache()))
+    add_test_key(Arc::new(local_cache()), Arc::new(|| 1_700_000_000.0_f64))
         .await
         .expect("the test write completes");
 }
@@ -140,7 +143,7 @@ async fn add_test_key_accepts_a_cache_without_redis() {
 async fn a_flush_size_past_the_envelope_range_is_reported() {
     let mut cache = local_cache();
     cache.redis_flush_size = Some(usize::MAX);
-    let error = add_test_key(Arc::new(cache))
+    let error = add_test_key(Arc::new(cache), Arc::new(|| 1_700_000_000.0_f64))
         .await
         .expect_err("the flush size does not fit an i64");
     assert!(

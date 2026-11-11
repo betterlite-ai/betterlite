@@ -23,6 +23,7 @@ fn with_injected_redis_type() -> Cache {
 fn the_slot_returns_the_cache_it_holds() {
     let slot = SlotCache {
         get: || Some(Arc::new(local_cache())),
+        clock: Arc::new(|| 1_700_000_000.0_f64),
     };
     let cache = slot.current().expect("the slot holds a cache");
     assert_eq!(cache.cache_type(), "local");
@@ -32,6 +33,7 @@ fn the_slot_returns_the_cache_it_holds() {
 fn the_slot_returns_none_without_a_cache() {
     let slot = SlotCache {
         get: || None::<Arc<Cache>>,
+        clock: Arc::new(|| 1_700_000_000.0_f64),
     };
     assert!(slot.current().is_none());
 }
@@ -40,6 +42,7 @@ fn the_slot_returns_none_without_a_cache() {
 fn the_handle_reports_a_local_cache() {
     let handle = CacheHandle {
         cache: Arc::new(local_cache()),
+        clock: Arc::new(|| 1_700_000_000.0_f64),
     };
     assert_eq!(handle.cache_type(), "local");
     let params = parsed_cache_params(&handle.masked_cache_params());
@@ -52,6 +55,7 @@ fn the_handle_reports_a_local_cache() {
 async fn the_handle_deletes_keys_of_a_local_cache() {
     let handle = CacheHandle {
         cache: Arc::new(local_cache()),
+        clock: Arc::new(|| 1_700_000_000.0_f64),
     };
     handle
         .delete_cache_keys(&["key".to_owned()])
@@ -63,6 +67,7 @@ async fn the_handle_deletes_keys_of_a_local_cache() {
 async fn the_handle_ping_reports_false_without_a_redis_backend() {
     let handle = CacheHandle {
         cache: Arc::new(with_injected_redis_type()),
+        clock: Arc::new(|| 1_700_000_000.0_f64),
     };
     assert_eq!(handle.ping().await.ok(), Some(false));
 }
@@ -73,6 +78,7 @@ async fn the_handle_reports_a_test_write_that_cannot_be_prepared() {
     cache.redis_flush_size = Some(usize::MAX);
     let handle = CacheHandle {
         cache: Arc::new(cache),
+        clock: Arc::new(|| 1_700_000_000.0_f64),
     };
     handle
         .add_test_key()
@@ -84,6 +90,7 @@ async fn the_handle_reports_a_test_write_that_cannot_be_prepared() {
 async fn the_handle_reports_a_redis_cache_and_its_failures() {
     let handle = CacheHandle {
         cache: Arc::new(unreachable_redis_cache().await),
+        clock: Arc::new(|| 1_700_000_000.0_f64),
     };
     assert_eq!(handle.cache_type(), "redis");
     assert!(handle.health_check_params().redis_kwargs.is_some());

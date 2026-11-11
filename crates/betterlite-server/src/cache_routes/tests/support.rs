@@ -58,7 +58,13 @@ pub(crate) fn fake_cache() -> FakeCache {
     FakeCache {
         kind: "local".to_owned(),
         params: r#"{"type": "local"}"#.to_owned(),
-        health: super::ping_params::empty_health_params(),
+        health: HealthCheckCacheParams {
+            host: None,
+            port: None,
+            redis_kwargs: None,
+            namespace: None,
+            redis_version: None,
+        },
         ping: Mutex::new(Some(Ok(true))),
         delete: Mutex::new(Some(Ok(()))),
         deleted: Mutex::new(Vec::new()),

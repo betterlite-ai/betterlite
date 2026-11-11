@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_cache::backend::{BackendError, CacheBackend, CacheResult, Ttl};
@@ -9,7 +8,7 @@ use betterlite_cache::cache_key::value::{KeyObject, KeyValue};
 use betterlite_cache::configuration::cache::{Backend, Cache};
 use betterlite_cache::configuration::settings::DEFAULT_REDIS_TTL_SECONDS;
 use betterlite_cache::envelope::backend::StoredBackend;
-use betterlite_cache::envelope::facade::{EnvelopeSettings, ResponseCache};
+use betterlite_cache::envelope::facade::{Clock, EnvelopeSettings, ResponseCache};
 use betterlite_cache::envelope::request::EnvelopeRequest;
 use betterlite_cache::types::control::DynamicCacheControl;
 use betterlite_context::local_ttl_cache::CacheValue;
@@ -100,18 +99,21 @@ fn log_write<Stored>(outcome: Result<Stored, RedisCacheValuesError>) {
     }
 }
 
-// LiteLLM's /cache/ping test write: async_add_cache(result="test_key", model="test-model", messages=[...]).
-pub(crate) async fn add_test_key(cache: Arc<Cache>) -> Result<(), CacheAdminError> {
+// The envelope B4297's async_add_cache writes through, opened for the live cache with its flush size converted.
+fn test_envelope(
+    cache: &Arc<Cache>,
+    clock: Clock,
+) -> Result<ResponseCache<ErrorLogger, SilentConsole>, CacheAdminError> {
     let redis_flush_size = match cache.redis_flush_size {
         Some(size) => Some(
             i64::try_from(size).map_err(|source| CacheAdminError::FlushSize { size, source })?,
         ),
         None => None,
     };
-    let facade = ResponseCache {
+    Ok(ResponseCache {
         backend: Arc::new(StoredBackend {
             backend: Arc::new(RedisValues {
-                cache: Arc::clone(&cache),
+                cache: Arc::clone(cache),
             }),
         }),
         key_settings: CacheKeySettings {
@@ -126,9 +128,33 @@ pub(crate) async fn add_test_key(cache: Arc<Cache>) -> Result<(), CacheAdminErro
             redis_flush_size,
         },
         hooks: test_hooks()?,
-        clock: Arc::new(now_seconds),
+        clock,
+    })
+}
+
+// LiteLLM's /cache/ping test write: async_add_cache(result="test_key", model="test-model", messages=[...]).
+pub(crate) async fn add_test_key(cache: Arc<Cache>, clock: Clock) -> Result<(), CacheAdminError> {
+    let facade = test_envelope(&cache, clock)?;
+    let mut request = EnvelopeRequest {
+        cache_key: None,
+        key: CacheKeyRequest {
+            params: vec![
+                KeyParam {
+                    name: "model".to_owned(),
+                    value: KeyValue::String(TEST_MODEL.to_owned()),
+                },
+                KeyParam {
+                    name: "messages".to_owned(),
+                    value: test_messages(),
+                },
+            ],
+            metadata: None,
+            litellm_metadata: None,
+            litellm_params: None,
+            cache_control: None,
+        },
+        control: DynamicCacheControl::default(),
     };
-    let mut request = test_request();
     facade
         .async_add_cache(
             None,
@@ -150,36 +176,6 @@ fn test_hooks() -> Result<VerboseHooks<ErrorLogger, SilentConsole>, CacheAdminEr
     })
 }
 
-fn test_request() -> EnvelopeRequest {
-    EnvelopeRequest {
-        cache_key: None,
-        key: CacheKeyRequest {
-            params: vec![
-                KeyParam {
-                    name: "model".to_owned(),
-                    value: KeyValue::String(TEST_MODEL.to_owned()),
-                },
-                KeyParam {
-                    name: "messages".to_owned(),
-                    value: test_messages(),
-                },
-            ],
-            metadata: None,
-            litellm_metadata: None,
-            litellm_params: None,
-            cache_control: None,
-        },
-        control: DynamicCacheControl {
-            ttl: None,
-            namespace: None,
-            s_maxage: None,
-            s_max_age: None,
-            no_cache: None,
-            no_store: None,
-        },
-    }
-}
-
 fn test_messages() -> KeyValue {
     let mut message = KeyObject::new();
     message.insert("role".to_owned(), KeyValue::String(TEST_ROLE.to_owned()));
@@ -188,13 +184,6 @@ fn test_messages() -> KeyValue {
         KeyValue::String(TEST_CONTENT.to_owned()),
     );
     KeyValue::Array(vec![KeyValue::Object(message)])
-}
-
-fn now_seconds() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64()
 }
 
 mod tests;
