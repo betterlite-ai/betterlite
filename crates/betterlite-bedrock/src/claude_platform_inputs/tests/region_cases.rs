@@ -293,9 +293,10 @@ fn empty_base_needs_no_region() {
         .unwrap(),
         "/v1/messages"
     );
-    assert_eq!(
-        url(Some(""), None, &empty_params(), &[]).unwrap(),
-        "/v1/messages"
+    let explicit_empty = url(Some(""), None, &empty_params(), &[]).unwrap_err();
+    assert!(
+        matches!(explicit_empty, PlatformInputError::MissingRegion),
+        "{explicit_empty}"
     );
 }
 

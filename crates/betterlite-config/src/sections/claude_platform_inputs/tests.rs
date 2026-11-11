@@ -231,15 +231,15 @@ fn claude_platform_inputs_config_cases(#[case] case: Case) {
             let both = load(&deployment_and_settings(key), &[]).unwrap();
             assert_eq!(
                 both.deployments.first().unwrap().unsupported_params,
-                Some(UnsupportedParams::List(vec![PlatformValue::Text(
+                Some(UnsupportedParams::Other(PlatformValue::Text(
                     "deploy-value".to_owned()
-                )]))
+                )))
             );
             assert_eq!(
                 both.litellm_settings.unsupported_params,
-                Some(UnsupportedParams::List(vec![PlatformValue::Text(
+                Some(UnsupportedParams::Other(PlatformValue::Text(
                     "global-value".to_owned()
-                )]))
+                )))
             );
             let scalar = load(&deployment(key, "not-a-list"), &[]).unwrap();
             assert_eq!(
