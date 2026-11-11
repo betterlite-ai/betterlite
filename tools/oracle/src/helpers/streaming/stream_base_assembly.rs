@@ -25,9 +25,9 @@ pub(crate) enum Input {
     },
     UpdateHiddenParams {
         #[serde(default)]
-        response: ResponseSpec,
+        response: Box<ResponseSpec>,
         #[serde(default)]
-        chunk: Option<Chunk>,
+        chunk: Option<Box<Chunk>>,
     },
     AssembledProviderMetadata {
         cases: Vec<ProviderScenario>,
@@ -91,7 +91,7 @@ impl crate::helpers::Helper for Op {
                 Ok(views::response_json(chunks))
             }
             Input::UpdateHiddenParams { response, chunk } => {
-                Ok(views::update_json(response, chunk.as_ref()))
+                Ok(views::update_json(response, chunk.as_deref()))
             }
             Input::AssembledProviderMetadata { cases } => fixtures::assembled_json(cases),
         }
