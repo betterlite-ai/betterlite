@@ -225,3 +225,40 @@ fn non_object_contents_parts_are_ignored() {
     }));
     assert_eq!(text_of(&request.messages[0]), "kept");
 }
+
+#[test]
+fn a_model_part_with_text_and_a_function_call_keeps_only_the_text() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [{"role": "model", "parts": [
+            {"text": "text wins", "functionCall": {"name": "lookup", "args": {}}},
+        ]}],
+    }));
+    assert_eq!(
+        request.messages[0].content,
+        Some(MessageContent::Text(String::from("text wins")))
+    );
+    assert_eq!(request.messages[0].tool_calls, None);
+}
+
+#[test]
+fn a_null_function_call_args_encodes_as_an_empty_object() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [{"role": "model", "parts": [{"functionCall": {"name": "lookup", "args": null}}]}],
+    }));
+    let calls = request.messages[0].tool_calls.as_ref().expect("tool calls");
+    assert_eq!(calls[0].function.arguments, "{}");
+}
+
+#[test]
+fn a_null_function_response_encodes_as_an_empty_object() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [{"parts": [{"functionResponse": {"name": "lookup", "response": null}}]}],
+    }));
+    let Some(MessageContent::Text(content)) = &request.messages[0].content else {
+        panic!("expected tool content");
+    };
+    assert_eq!(content, "{}");
+}

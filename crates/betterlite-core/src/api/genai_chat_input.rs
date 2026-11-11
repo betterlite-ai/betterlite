@@ -106,28 +106,31 @@ fn messages(
             .unwrap_or("user");
         match role {
             "user" => user_messages(parts, &mut messages)?,
-            "model" => model_message(parts, &mut messages)?,
+            "model" => messages.push(model_message(parts)?),
             // LiteLLM transforms only the user and model roles and drops every other role without a word
             _other => {}
         }
     }
     Ok(messages)
 }
+fn part_text(part: &Value) -> Option<&str> {
+    match part {
+        Value::String(text) => Some(text),
+        Value::Object(fields) => fields.get("text").and_then(Value::as_str),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => None,
+    }
+}
 fn user_messages(parts: &[Value], messages: &mut Vec<Value>) -> Result<(), GenAiInputError> {
     let mut content_parts = Vec::new();
     let mut tool_messages = Vec::new();
     for part in parts {
-        if let Some(text) = part.as_str() {
+        if let Some(text) = part_text(part) {
             content_parts.push(json!({"type": "text", "text": text}));
             continue;
         }
         let Some(fields) = part.as_object() else {
             continue;
         };
-        if let Some(text) = fields.get("text").and_then(Value::as_str) {
-            content_parts.push(json!({"type": "text", "text": text}));
-            continue;
-        }
         if let Some(inline) = fields.get("inline_data") {
             let mime = inline.get("mime_type").and_then(Value::as_str);
             let data = inline
@@ -144,9 +147,7 @@ fn user_messages(parts: &[Value], messages: &mut Vec<Value>) -> Result<(), GenAi
     }
     if !content_parts.is_empty() {
         let lone_text = match content_parts.as_slice() {
-            [part] if part.get("type").and_then(Value::as_str) == Some("text") => {
-                part.get("text").and_then(Value::as_str).map(str::to_owned)
-            }
+            [part] => part.get("text").and_then(Value::as_str).map(str::to_owned),
             _ => None,
         };
         let content = lone_text.map_or_else(|| Value::Array(content_parts), Value::String);
@@ -169,24 +170,20 @@ fn encode_json(value: Option<&Value>) -> Result<String, GenAiInputError> {
     };
     Ok(serde_json::to_string(given)?)
 }
-fn model_message(parts: &[Value], messages: &mut Vec<Value>) -> Result<(), GenAiInputError> {
-    let mut text = String::new();
+fn model_message(parts: &[Value]) -> Result<Value, GenAiInputError> {
+    let text: String = parts.iter().filter_map(part_text).collect();
     let mut tool_calls = Vec::new();
     for part in parts {
-        match part.get("functionCall") {
-            Some(call) if part.get("text").is_none() => tool_calls.push(tool_call(call)?),
-            _ => {
-                let part_text = part
-                    .as_str()
-                    .or_else(|| part.get("text").and_then(Value::as_str));
-                text.push_str(part_text.unwrap_or_default());
-            }
+        if part_text(part).is_some() {
+            continue;
+        }
+        if let Some(call) = part.get("functionCall") {
+            tool_calls.push(tool_call(call)?);
         }
     }
     let content = (!text.is_empty()).then_some(Value::String(text));
     let calls = (!tool_calls.is_empty()).then_some(tool_calls);
-    messages.push(json!({"role": "assistant", "content": content, "tool_calls": calls}));
-    Ok(())
+    Ok(json!({"role": "assistant", "content": content, "tool_calls": calls}))
 }
 fn tool_call(call: &Value) -> Result<Value, GenAiInputError> {
     let named = call.get("name").and_then(Value::as_str);

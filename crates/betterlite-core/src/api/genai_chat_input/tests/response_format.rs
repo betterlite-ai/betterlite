@@ -2,7 +2,8 @@ use betterlite_openai::chat::ChatRequest;
 use rstest::rstest;
 use serde_json::{Value, json};
 
-use super::prelude::translate;
+use super::prelude::{translate, translate_with};
+use crate::api::genai_chat_input::GenerateLiteLLMParams;
 
 fn body(config: &Value) -> Value {
     json!({"model": "m", "contents": [], "generationConfig": config})
@@ -131,4 +132,69 @@ fn the_json_schema_key_wins_over_the_schema_key() {
         "responseJsonSchema": {"type": "object", "chosen": "json_schema"},
     })));
     assert_eq!(schema_of(&request)["chosen"], "json_schema");
+}
+
+fn provider_params(provider: Option<&str>) -> GenerateLiteLLMParams {
+    GenerateLiteLLMParams {
+        api_base: None,
+        api_key: None,
+        api_version: None,
+        custom_llm_provider: provider.map(str::to_owned),
+        max_retries: None,
+    }
+}
+
+#[rstest]
+#[case::gpt_4("gpt-4", None, false)]
+#[case::gpt_3_5_16k("gpt-3.5-turbo-16k", None, false)]
+#[case::gpt_4o("gpt-4o", None, true)]
+#[case::custom_anthropic("gpt-4", Some("anthropic"), true)]
+#[case::empty_provider("gpt-4", Some(""), false)]
+#[case::openai_provider("gpt-4", Some("openai"), false)]
+fn the_provider_response_format_support_decides_the_field(
+    #[case] model: &str,
+    #[case] provider: Option<&str>,
+    #[case] supported: bool,
+) {
+    let (request, _) = translate_with(
+        json!({
+            "model": model,
+            "contents": [],
+            "generationConfig": {"responseSchema": {"type": "object", "properties": {}}},
+        }),
+        &provider_params(provider),
+    );
+    assert_eq!(request.response_format.is_some(), supported);
+}
+
+fn nested_schema(depth: usize, total: usize, marked: &[(usize, &str)]) -> Value {
+    let mut object = json!({"type": "object"});
+    if let Some((_, key)) = marked.iter().find(|(at, _)| *at == depth) {
+        object[*key] = json!(["x"]);
+    }
+    if depth < total {
+        object["properties"] =
+            json!({"next": nested_schema(depth.saturating_add(1), total, marked)});
+    }
+    object
+}
+
+fn descend(schema: &Value, depth: usize) -> &Value {
+    if depth == 0 {
+        return schema;
+    }
+    descend(&schema["properties"]["next"], depth.saturating_sub(1))
+}
+
+#[test]
+fn the_gemini_key_filter_stops_past_litellms_recursion_bound() {
+    let schema = nested_schema(
+        0,
+        101,
+        &[(100, "propertyOrdering"), (101, "property_ordering")],
+    );
+    let request = translate(body(&json!({"responseSchema": schema})));
+    let cleaned = schema_of(&request);
+    assert!(descend(&cleaned, 100).get("propertyOrdering").is_none());
+    assert!(descend(&cleaned, 101).get("property_ordering").is_some());
 }
