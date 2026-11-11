@@ -362,7 +362,7 @@ fn validate_config_checks_the_embedding_model_against_the_embedding_pool() {
 fn validate_config_skips_the_embedding_check_when_semantic_matching_is_disabled() {
     let mut config = config();
     config.semantic_matching = SemanticMatchingChoice::Disabled;
-    let without_embeddings = vec![model("alpha", "chat")];
+    let without_embeddings = vec![model("alpha", "chat"), model("beta", "chat")];
     assert_eq!(validate_config(&config, &without_embeddings), Ok(()));
 }
 
