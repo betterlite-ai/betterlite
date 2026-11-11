@@ -3,7 +3,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use super::Params;
 use super::error::NonDefaultParamsError;
 use super::extra_body::{ProviderSpecificRequest, add_provider_specific_params};
-use super::filters::{select_non_default_params, supports_vertex_params};
+use super::filters::select_non_default_params;
 use super::names::DEFAULT_CHAT_COMPLETION_PARAMS;
 
 const NEVER_NON_DEFAULT: &[&str] = &[
@@ -43,7 +43,10 @@ fn special_param_is_dropped(key: &str, custom_llm_provider: &str) -> bool {
         _ if key.starts_with("aws_") => {
             custom_llm_provider != "bedrock" && !custom_llm_provider.starts_with("sagemaker")
         }
-        _ if key.starts_with("vertex_") => !supports_vertex_params(custom_llm_provider),
+        // gdc is the only provider config besides vertex_ai that sets supports_vertex_params.
+        _ if key.starts_with("vertex_") => {
+            !matches!(custom_llm_provider, "vertex_ai" | "vertex_ai_beta" | "gdc")
+        }
         _ => false,
     }
 }

@@ -75,12 +75,6 @@ pub fn filter_out_litellm_params(kwargs: &Params, excluding: &[&str]) -> Params 
     kept
 }
 
-// gdc is the only provider config besides vertex_ai that sets supports_vertex_params.
-#[must_use]
-pub fn supports_vertex_params(custom_llm_provider: &str) -> bool {
-    matches!(custom_llm_provider, "vertex_ai" | "vertex_ai_beta" | "gdc")
-}
-
 // Without a supported list there is nothing to send, so the result is empty.
 #[must_use]
 pub fn remove_unsupported_params(
