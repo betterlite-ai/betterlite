@@ -78,9 +78,7 @@ impl DeploymentHook for Hook {
         request: &mut RequestMap,
         _call_type: Option<CallType>,
     ) -> Result<Option<RequestMap>, HookError> {
-        let mut calls = self.pre_calls.lock().expect("the call counter is free");
-        *calls = calls.saturating_add(1);
-        drop(calls);
+        bump(&self.pre_calls);
         if self.fault == Fault::Pre {
             return Err(HookError::Failed {
                 hook: self.label.clone(),
@@ -99,9 +97,7 @@ impl DeploymentHook for Hook {
         _response: &Json,
         _call_type: Option<CallType>,
     ) -> Result<Option<Json>, HookError> {
-        let mut calls = self.success_calls.lock().expect("the call counter is free");
-        *calls = calls.saturating_add(1);
-        drop(calls);
+        bump(&self.success_calls);
         if self.fault == Fault::Success {
             return Err(HookError::Failed {
                 hook: self.label.clone(),
@@ -151,6 +147,11 @@ fn failure() -> ErrorClass {
 
 fn arc(hook: Hook) -> Arc<dyn DeploymentHook> {
     Arc::new(hook)
+}
+
+fn bump(counter: &Mutex<usize>) {
+    let mut calls = counter.lock().expect("the call counter is free");
+    *calls = calls.saturating_add(1);
 }
 
 #[rstest]

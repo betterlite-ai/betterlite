@@ -311,6 +311,18 @@ pub(crate) fn setup_with(outcomes: &[(&str, Outcome)]) -> Setup {
     Setup::new(Resolver::with(outcomes))
 }
 
+pub(crate) fn message_texts(messages: Option<Vec<Json>>) -> Vec<String> {
+    let mut texts = Vec::new();
+    for message in messages.unwrap_or_default() {
+        if let Json::Object(fields) = message
+            && let Some(Json::Text(text)) = fields.get("content")
+        {
+            texts.push(text.clone());
+        }
+    }
+    texts
+}
+
 pub(crate) fn labels(list: &[DynamicCallback]) -> Vec<String> {
     list.iter()
         .map(|entry| match entry {

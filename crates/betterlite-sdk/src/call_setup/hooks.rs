@@ -92,19 +92,30 @@ pub async fn success_deployment_hook(
     let typed = hook_call_type(call_type);
     let mut modified = response.clone();
     for hook in hooks {
-        match hook
-            .success_deployment_hook(request_data, &modified, typed)
-            .await
-        {
-            Ok(Some(replacement)) => modified = replacement,
-            Ok(None) => {}
-            Err(error) if hook.guardrail().is_some() => return Err(error),
-            Err(error) => {
-                tracing::error!(hook = hook.callback_name(), %error, "the success deployment hook failed");
-            }
-        }
+        modified = apply_success_hook(hook.as_ref(), request_data, modified, typed).await?;
     }
     Ok(modified)
+}
+
+// A guardrail's error stops the call, while a broken logger only loses its own hook
+async fn apply_success_hook(
+    hook: &dyn DeploymentHook,
+    request_data: &RequestMap,
+    current: Json,
+    call_type: Option<CallType>,
+) -> Result<Json, HookError> {
+    match hook
+        .success_deployment_hook(request_data, &current, call_type)
+        .await
+    {
+        Ok(Some(replacement)) => Ok(replacement),
+        Ok(None) => Ok(current),
+        Err(error) if hook.guardrail().is_some() => Err(error),
+        Err(error) => {
+            tracing::error!(hook = hook.callback_name(), %error, "the success deployment hook failed");
+            Ok(current)
+        }
+    }
 }
 
 pub async fn failure_deployment_hook(

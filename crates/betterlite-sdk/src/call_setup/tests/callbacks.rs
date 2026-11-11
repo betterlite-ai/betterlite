@@ -135,6 +135,24 @@ fn callback_every_known_global_success_name_is_resolved() {
 }
 
 #[test]
+fn callback_known_global_success_name_stays_when_its_logger_is_registered() {
+    let mut fixture = setup_with(&[("langfuse", Outcome::Logger(String::from("langfuse")))]);
+    fixture.lists.success.push(name("langfuse"));
+    fixture
+        .call(
+            "completion",
+            &[],
+            chat_request(r#"{"callbacks":["langfuse"]}"#),
+        )
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        labels(&fixture.lists.success),
+        ["name:langfuse", "logger:langfuse"]
+    );
+}
+
+#[test]
 fn callback_known_global_failure_name_is_resolved() {
     let mut fixture = setup_with(&[("langfuse", Outcome::Logger(String::from("langfuse")))]);
     fixture.lists.failure.push(name("langfuse"));

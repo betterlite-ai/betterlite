@@ -149,39 +149,39 @@ pub(super) fn register_request_callbacks(
     }
 }
 
+// LiteLLM removes each resolved name from the list it is scanning, so only the last pass touches every name
 pub(super) fn resolve_global_callbacks(lists: &mut CallbackLists, loggers: &CustomLoggers<'_>) {
-    resolve_success_callbacks(lists, loggers);
-    resolve_failure_callbacks(lists, loggers);
-}
-
-// LiteLLM keeps scanning its list while the logger insert shifts it, so a second known name is skipped
-fn resolve_success_callbacks(lists: &mut CallbackLists, loggers: &CustomLoggers<'_>) {
-    let originals = mem::take(&mut lists.success);
-    let mut known = Vec::new();
-    for entry in originals {
-        match &entry {
-            DynamicCallback::Name(name) if matches!(name.as_str(), "dynamodb" | "openmeter") => {
-                lists.add_async_success(&entry);
+    for (event, originals) in [
+        (CallbackEvent::Success, mem::take(&mut lists.success)),
+        (CallbackEvent::Failure, mem::take(&mut lists.failure)),
+    ] {
+        let mut known = Vec::new();
+        for entry in originals {
+            match &entry {
+                DynamicCallback::Name(name)
+                    if event == CallbackEvent::Success
+                        && matches!(name.as_str(), "dynamodb" | "openmeter") =>
+                {
+                    lists.add_async_success(&entry);
+                }
+                DynamicCallback::Name(name) if (loggers.known)(name) => {
+                    known.push(name.clone());
+                    push_event_list(event, lists, entry);
+                }
+                DynamicCallback::Name(_) | DynamicCallback::Logger(_) => {
+                    push_event_list(event, lists, entry);
+                }
             }
-            DynamicCallback::Name(name) if (loggers.known)(name) => known.push(name.clone()),
-            DynamicCallback::Name(_) | DynamicCallback::Logger(_) => lists.success.push(entry),
         }
-    }
-    for name in known {
-        add_known_logger_callback(&name, CallbackEvent::Success, loggers, lists);
+        for name in known {
+            add_known_logger_callback(&name, event, loggers, lists);
+        }
     }
 }
 
-fn resolve_failure_callbacks(lists: &mut CallbackLists, loggers: &CustomLoggers<'_>) {
-    let originals = mem::take(&mut lists.failure);
-    let mut known = Vec::new();
-    for entry in originals {
-        match &entry {
-            DynamicCallback::Name(name) if (loggers.known)(name) => known.push(name.clone()),
-            DynamicCallback::Name(_) | DynamicCallback::Logger(_) => lists.failure.push(entry),
-        }
-    }
-    for name in known {
-        add_known_logger_callback(&name, CallbackEvent::Failure, loggers, lists);
+fn push_event_list(event: CallbackEvent, lists: &mut CallbackLists, entry: DynamicCallback) {
+    match event {
+        CallbackEvent::Success => lists.success.push(entry),
+        CallbackEvent::Failure => lists.failure.push(entry),
     }
 }

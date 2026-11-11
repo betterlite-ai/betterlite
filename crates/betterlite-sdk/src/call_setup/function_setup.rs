@@ -1,4 +1,5 @@
 pub mod breadcrumb;
+pub mod environment;
 pub mod messages;
 mod registration;
 
@@ -21,8 +22,6 @@ use betterlite_logging::logging_state::correlation::CorrelationSetup;
 use betterlite_logging::logging_state::types::CallbackPolicy;
 use betterlite_logging::logging_state::types::Messages;
 use betterlite_logging::logging_state::types::RequestLoggingFlags;
-use betterlite_logging::logging_state::updates::CallUpdate;
-use betterlite_logging::logging_state::updates::update_environment_variables;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use chrono::DateTime;
@@ -32,6 +31,7 @@ use secrecy::SecretString;
 use thiserror::Error;
 
 use self::breadcrumb::BreadcrumbSink;
+use self::environment::apply_environment;
 use self::registration::DynamicInputs;
 use self::registration::register_request_callbacks;
 use self::registration::resolve_global_callbacks;
@@ -110,13 +110,14 @@ where
 {
     custom_llm_setup(deps.providers);
     let applied_guardrails = get_applied_guardrails(&request, deps.callbacks)?;
-    let function_id = function_id(&request)?;
+    let function_id = optional_text(&request, "id")?.unwrap_or_default();
     let dynamic = take_dynamic_callbacks(&mut request)?;
     let all_callbacks = get_dynamic_callbacks(deps.callbacks, dynamic.callbacks.as_deref());
     register_request_callbacks(&all_callbacks, &deps.loggers, &mut *deps.lists);
     resolve_global_callbacks(&mut *deps.lists, &deps.loggers);
     breadcrumb::add_call_breadcrumb(&request, deps.breadcrumbs, deps.turn_off_message_logging)?;
-    let model = required_text(&request, "model")?;
+    let model =
+        optional_text(&request, "model")?.ok_or(CallSetupError::MissingField { field: "model" })?;
     let messages = messages::message_source(original_function, &mut request, &model, rules)?;
     let stream = is_streaming_request(&request, original_function);
     let input = LoggingInput {
@@ -194,11 +195,15 @@ fn logging_init(
         model: input.model,
         call_type: input.call_type,
         start_time: input.start_time,
-        litellm_call_id: required_text(request, "litellm_call_id")?,
+        litellm_call_id: optional_text(request, "litellm_call_id")?.ok_or(
+            CallSetupError::MissingField {
+                field: "litellm_call_id",
+            },
+        )?,
         function_id: input.function_id,
         messages: input.messages,
         stream: Some(input.stream),
-        litellm_trace_id: trace_id(request)?,
+        litellm_trace_id: optional_text(request, "litellm_trace_id")?,
         kwargs: request.clone(),
         litellm_params,
         callback_dynamic_params,
@@ -211,46 +216,15 @@ fn logging_init(
     })
 }
 
-fn apply_environment(state: &mut LoggingState, request: &RequestMap) -> Result<(), CallSetupError> {
-    let update = CallUpdate {
-        model: Some(state.model.clone()),
-        user: Some(String::new()),
-        optional_params: IndexMap::new(),
-        additional_params: stream_options(request),
-    };
-    let params = call_litellm_params(request);
-    update_environment_variables(state, &params, update)?;
-    Ok(())
-}
-
-fn function_id(request: &RequestMap) -> Result<String, CallSetupError> {
-    match request.get("id") {
-        None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Text(id)) => Ok(id.clone()),
-        Some(_) => Err(CallSetupError::FieldType {
-            field: "id",
-            expected: "a string",
-        }),
-    }
-}
-
-fn required_text(request: &RequestMap, field: &'static str) -> Result<String, CallSetupError> {
+fn optional_text(
+    request: &RequestMap,
+    field: &'static str,
+) -> Result<Option<String>, CallSetupError> {
     match request.get(field) {
-        Some(Json::Text(text)) => Ok(text.clone()),
-        None | Some(Json::Null) => Err(CallSetupError::MissingField { field }),
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(_) => Err(CallSetupError::FieldType {
             field,
-            expected: "a string",
-        }),
-    }
-}
-
-fn trace_id(request: &RequestMap) -> Result<Option<String>, CallSetupError> {
-    match request.get("litellm_trace_id") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(id)) => Ok(Some(id.clone())),
-        Some(_) => Err(CallSetupError::FieldType {
-            field: "litellm_trace_id",
             expected: "a string",
         }),
     }
@@ -285,35 +259,4 @@ fn privacy_request(request: &RequestMap) -> Result<PrivacyRequest, CallSetupErro
     let encoded = serde_json::to_vec(request)?;
     let privacy = serde_json::from_slice(&encoded)?;
     Ok(privacy)
-}
-
-fn call_litellm_params(request: &RequestMap) -> IndexMap<String, Json> {
-    let mut params = IndexMap::new();
-    params.insert(String::from("api_base"), Json::Text(String::new()));
-    if let Some(metadata) = request.get("metadata") {
-        params.insert(String::from("metadata"), metadata.clone());
-    }
-    if let Some(Json::Object(litellm_metadata)) = request.get("litellm_metadata") {
-        params.insert(
-            String::from("litellm_metadata"),
-            Json::Object(litellm_metadata.clone()),
-        );
-        if matches!(params.get("metadata"), None | Some(Json::Null)) {
-            params.insert(
-                String::from("metadata"),
-                Json::Object(litellm_metadata.clone()),
-            );
-        }
-    }
-    params
-}
-
-fn stream_options(request: &RequestMap) -> IndexMap<String, Json> {
-    let mut params = IndexMap::new();
-    if let Some(options) = request.get("stream_options")
-        && !matches!(options, Json::Null)
-    {
-        params.insert(String::from("stream_options"), options.clone());
-    }
-    params
 }

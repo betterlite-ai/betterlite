@@ -61,21 +61,23 @@ where
 {
     match call_type {
         "completion" | "acompletion" | "anthropic_messages" => chat_messages(request, model, rules),
-        "embedding" | "aembedding" => value_messages(request, "input"),
+        "embedding" | "aembedding" => field_messages(request, "input"),
         "image_generation" | "aimage_generation" | "atext_completion" | "text_completion" => {
             required_messages(request, "prompt")
         }
         "moderation" | "amoderation" => required_messages(request, "input"),
-        "rerank" | "arerank" => value_messages(request, "query"),
+        "rerank" | "arerank" => field_messages(request, "query"),
         "search" | "asearch" => search_messages(request),
         "decisions" | "adecisions" | "systemone" | "asystemone" => decision_messages(request),
-        "image_edit" | "aimage_edit" => value_messages(request, "prompt"),
+        "image_edit" | "aimage_edit" => field_messages(request, "prompt"),
         "ocr" | "aocr" => Ok(Some(Messages::Text(ocr_document_summary(
             request.get("document"),
             None,
         )))),
         "atranscription" | "transcription" => transcription_messages(request),
-        "aspeech" | "speech" => speech_messages(request),
+        "aspeech" | "speech" => Ok(Some(
+            field_messages(request, "input")?.unwrap_or(Messages::Text(String::from("speech"))),
+        )),
         "aresponses" | "responses" => responses_messages(request),
         "generate_content"
         | "agenerate_content"
@@ -141,7 +143,6 @@ where
     Ok(())
 }
 
-// The provider resolution for a bare model belongs to B174; until then only an explicit provider decides
 fn strip_thought_signatures(request: &mut RequestMap, model: &str) {
     let provider = match request.get("custom_llm_provider") {
         Some(Json::Text(provider)) => Some(provider.as_str()),
@@ -161,7 +162,7 @@ fn strip_thought_signatures(request: &mut RequestMap, model: &str) {
     }
 }
 
-fn value_messages(
+fn field_messages(
     request: &RequestMap,
     field: &'static str,
 ) -> Result<Option<Messages>, CallSetupError> {
@@ -186,34 +187,33 @@ fn required_messages(
     {
         return Err(CallSetupError::MissingField { field });
     }
-    value_messages(request, field)
+    field_messages(request, field)
 }
 
 fn search_messages(request: &RequestMap) -> Result<Option<Messages>, CallSetupError> {
     match request.get("query") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(Messages::Text(text.clone()))),
-        Some(Json::List(parts)) => {
-            let mut joined = String::new();
-            for (index, part) in parts.iter().enumerate() {
-                let Json::Text(text) = part else {
-                    return Err(CallSetupError::FieldType {
-                        field: "query",
-                        expected: "a list of strings",
-                    });
-                };
-                if index > 0 {
-                    joined.push('\n');
-                }
-                joined.push_str(text);
-            }
-            Ok(Some(Messages::Text(joined)))
-        }
+        Some(Json::List(parts)) => joined_parts(parts),
         Some(_) => Err(CallSetupError::FieldType {
             field: "query",
             expected: "a string or a list",
         }),
     }
+}
+
+fn joined_parts(parts: &[Json]) -> Result<Option<Messages>, CallSetupError> {
+    let mut text = Vec::with_capacity(parts.len());
+    for part in parts {
+        let Json::Text(item) = part else {
+            return Err(CallSetupError::FieldType {
+                field: "query",
+                expected: "a list of strings",
+            });
+        };
+        text.push(item.as_str());
+    }
+    Ok(Some(Messages::Text(text.join("\n"))))
 }
 
 fn decision_messages(request: &RequestMap) -> Result<Option<Messages>, CallSetupError> {
@@ -264,28 +264,11 @@ fn set_file_checksum(request: &mut RequestMap, checksum: &str) -> Result<(), Cal
     Ok(())
 }
 
-fn speech_messages(request: &RequestMap) -> Result<Option<Messages>, CallSetupError> {
-    if request
-        .get("input")
-        .is_some_and(|value| !matches!(value, Json::Null))
-    {
-        return value_messages(request, "input");
-    }
-    Ok(Some(Messages::Text(String::from("speech"))))
-}
-
 fn responses_messages(request: &RequestMap) -> Result<Option<Messages>, CallSetupError> {
-    if request
-        .get("input")
-        .is_some_and(|value| !matches!(value, Json::Null))
-    {
-        return value_messages(request, "input");
-    }
-    if request
-        .get("messages")
-        .is_some_and(|value| !matches!(value, Json::Null))
-    {
-        return value_messages(request, "messages");
+    for field in ["input", "messages"] {
+        if let Some(messages) = field_messages(request, field)? {
+            return Ok(Some(messages));
+        }
     }
     Ok(Some(Messages::Text(DEFAULT_MESSAGE_VALUE.to_owned())))
 }
