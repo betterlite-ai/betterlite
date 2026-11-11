@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,11 +14,12 @@ use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
 use crate::error::HttpError;
-use crate::proxy::limits::{ReadError, TransportLimits, check_headers, read_bounded};
+use crate::proxy::limits::{TransportLimits, check_headers};
 use crate::proxy::outbound::OutboundRequest;
 use crate::proxy::transport_error::TransportError;
 use crate::tls::{TlsError, apply_policy};
 
+pub mod buffered;
 pub mod limits;
 pub mod mock;
 pub mod multipart;
@@ -167,34 +167,6 @@ impl ProxiedClient {
             .map_err(HttpError::Request)
     }
 
-    // Buffers a request the caller built on this client, with the caller's own cap: a management answer is small and the caller knows how small.
-    pub async fn execute_buffered(
-        &self,
-        request: Request,
-        body_limit: usize,
-    ) -> Result<UpstreamResponse, HttpError> {
-        let _token = self.tracker.token();
-        let mut response = self.execute(request).await.map_err(timed_out)?;
-        check_headers(response.headers(), self.limits.header_bytes).map_err(|exceeded| {
-            HttpError::TooLarge {
-                limit: exceeded.limit,
-            }
-        })?;
-        let status = response.status().as_u16();
-        let body =
-            read_bounded(&mut response, body_limit)
-                .await
-                .map_err(|failure| match failure {
-                    ReadError::TooLarge { limit } => HttpError::TooLarge { limit },
-                    ReadError::Failed(source) => timed_out(HttpError::Request(source)),
-                })?;
-        Ok(UpstreamResponse {
-            status,
-            headers: mem::take(response.headers_mut()),
-            body,
-        })
-    }
-
     pub async fn drain(&self, deadline: Duration) -> Result<(), TransportError> {
         self.tracker.close();
         timeout(deadline, self.tracker.wait())
@@ -266,7 +238,7 @@ impl ProxiedClient {
     pub async fn post_json(&self, post: JsonPost) -> Result<UpstreamResponse, HttpError> {
         let body_limit = post.body_limit;
         let request = self.json_request(post, "application/json")?;
-        self.execute_buffered(request, body_limit).await
+        buffered::execute_buffered(self, request, body_limit).await
     }
 
     pub fn json_request(&self, post: JsonPost, accept: &'static str) -> Result<Request, HttpError> {

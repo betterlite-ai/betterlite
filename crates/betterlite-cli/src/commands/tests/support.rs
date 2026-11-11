@@ -24,40 +24,40 @@ pub(crate) struct Answer {
 }
 
 impl Answer {
-    pub(crate) fn json(status: u16, body: &str) -> Self {
-        Self {
-            status,
-            reason: "OK",
-            headers: vec![(
-                String::from("content-type"),
-                String::from("application/json"),
-            )],
-            body: body.as_bytes().to_vec(),
-            declared_length: None,
-            pause: None,
-        }
-    }
-
-    pub(crate) fn text(status: u16, body: &str) -> Self {
-        Self {
-            status,
-            reason: "ERROR",
-            headers: Vec::new(),
-            body: body.as_bytes().to_vec(),
-            declared_length: None,
-            pause: None,
-        }
-    }
-
-    pub(crate) fn empty(status: u16, reason: &'static str) -> Self {
+    fn new(
+        status: u16,
+        reason: &'static str,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    ) -> Self {
         Self {
             status,
             reason,
-            headers: Vec::new(),
-            body: Vec::new(),
+            headers,
+            body,
             declared_length: None,
             pause: None,
         }
+    }
+
+    pub(crate) fn json(status: u16, body: &str) -> Self {
+        Self::new(
+            status,
+            "OK",
+            vec![(
+                String::from("content-type"),
+                String::from("application/json"),
+            )],
+            body.as_bytes().to_vec(),
+        )
+    }
+
+    pub(crate) fn text(status: u16, body: &str) -> Self {
+        Self::new(status, "ERROR", Vec::new(), body.as_bytes().to_vec())
+    }
+
+    pub(crate) fn empty(status: u16, reason: &'static str) -> Self {
+        Self::new(status, reason, Vec::new(), Vec::new())
     }
 
     pub(crate) fn with_header(mut self, name: &str, value: &str) -> Self {

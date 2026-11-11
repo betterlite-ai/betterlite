@@ -2,13 +2,16 @@ use std::io::Write;
 
 use clap::{Args, Subcommand};
 use http::Method;
-use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
+use serde::Deserialize;
 
-use super::{
-    Client, ClientError, OutputFormat, Payload, Request, print_http_error, write_json_response,
-    write_table,
-};
+use crate::pkce_login::HttpResponse;
+
+use super::tables::{OutputFormat, print_http_error, write_json_response, write_table};
+use super::{Client, ClientError, Payload, Request};
+
+mod create;
+mod delete;
+mod get;
 
 const CREDENTIALS_PATH: &str = "/credentials";
 const JSON_HEADER: (&str, &str) = ("content-type", "application/json");
@@ -94,16 +97,6 @@ struct CredentialInfo {
     custom_llm_provider: Option<String>,
 }
 
-#[derive(Serialize)]
-struct CreateBody<'request> {
-    #[serde(rename = "credential_name")]
-    name: &'request str,
-    #[serde(rename = "credential_info")]
-    info: &'request RawValue,
-    #[serde(rename = "credential_values")]
-    values: &'request RawValue,
-}
-
 pub fn run_credentials_command(
     command: CredentialsCommand,
     client: &Client,
@@ -112,9 +105,13 @@ pub fn run_credentials_command(
 ) -> Result<(), CredentialsError> {
     match command {
         CredentialsCommand::List(options) => list_credentials(&options, client, stdout),
-        CredentialsCommand::Create(options) => create_credential(&options, client, stdout, stderr),
-        CredentialsCommand::Delete(options) => delete_credential(&options, client, stdout, stderr),
-        CredentialsCommand::Get(options) => get_credential(&options, client, stdout),
+        CredentialsCommand::Create(options) => {
+            create::create_credential(&options, client, stdout, stderr)
+        }
+        CredentialsCommand::Delete(options) => {
+            delete::delete_credential(&options, client, stdout, stderr)
+        }
+        CredentialsCommand::Get(options) => get::get_credential(&options, client, stdout),
     }
 }
 
@@ -129,12 +126,7 @@ fn list_credentials(
         headers: vec![(String::from(JSON_HEADER.0), String::from(JSON_HEADER.1))],
         payload: Payload::Empty,
     };
-    let response = client.send(request)?;
-    if response.status >= 400 {
-        return Err(CredentialsError::Http {
-            status: response.status,
-        });
-    }
+    let response = send_or_http_error(client, request)?;
     if options.format == OutputFormat::Json {
         return write_json_response(&response.body, stdout).map_err(|source| {
             CredentialsError::Response {
@@ -172,99 +164,28 @@ fn credential_rows(view: CredentialsView) -> Vec<Vec<String>> {
         .collect()
 }
 
-fn create_credential(
-    options: &CreateCredential,
+fn send_or_abort(
     client: &Client,
+    request: Request,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
-) -> Result<(), CredentialsError> {
-    let info: &RawValue =
-        serde_json::from_str(&options.info).map_err(|source| CredentialsError::Usage {
-            message: format!("Invalid JSON: {source}"),
-        })?;
-    let values: &RawValue =
-        serde_json::from_str(&options.values).map_err(|source| CredentialsError::Usage {
-            message: format!("Invalid JSON: {source}"),
-        })?;
-    let body = serde_json::to_vec(&CreateBody {
-        name: &options.credential_name,
-        info,
-        values,
-    })
-    .map_err(CredentialsError::Encode)?;
-    let request = Request {
-        method: Method::POST,
-        url: client.resolve(CREDENTIALS_PATH)?,
-        headers: Vec::new(),
-        payload: Payload::Json(body),
-    };
+) -> Result<HttpResponse, CredentialsError> {
     let response = client.send(request)?;
     if response.status >= 400 {
         print_http_error(response.status, &response.body, stdout, stderr);
         return Err(CredentialsError::Aborted);
     }
-    write_json_response(&response.body, stdout).map_err(|source| CredentialsError::Response {
-        path: CREDENTIALS_PATH,
-        source,
-    })
+    Ok(response)
 }
 
-fn delete_credential(
-    options: &DeleteCredential,
-    client: &Client,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> Result<(), CredentialsError> {
-    let mut url = client.resolve(CREDENTIALS_PATH)?;
-    url.path_segments_mut()
-        .map_err(|()| CredentialsError::Uri {
-            uri: CREDENTIALS_PATH,
-        })?
-        .push(&options.credential_name);
-    let request = Request {
-        method: Method::DELETE,
-        url,
-        headers: vec![(String::from(JSON_HEADER.0), String::from(JSON_HEADER.1))],
-        payload: Payload::Empty,
-    };
-    let response = client.send(request)?;
-    if response.status >= 400 {
-        print_http_error(response.status, &response.body, stdout, stderr);
-        return Err(CredentialsError::Aborted);
-    }
-    write_json_response(&response.body, stdout).map_err(|source| CredentialsError::Response {
-        path: CREDENTIALS_PATH,
-        source,
-    })
-}
-
-fn get_credential(
-    options: &GetCredential,
-    client: &Client,
-    stdout: &mut dyn Write,
-) -> Result<(), CredentialsError> {
-    let mut url = client.resolve(CREDENTIALS_PATH)?;
-    url.path_segments_mut()
-        .map_err(|()| CredentialsError::Uri {
-            uri: CREDENTIALS_PATH,
-        })?
-        .extend(["by_name", options.credential_name.as_str()]);
-    let request = Request {
-        method: Method::GET,
-        url,
-        headers: vec![(String::from(JSON_HEADER.0), String::from(JSON_HEADER.1))],
-        payload: Payload::Empty,
-    };
+fn send_or_http_error(client: &Client, request: Request) -> Result<HttpResponse, CredentialsError> {
     let response = client.send(request)?;
     if response.status >= 400 {
         return Err(CredentialsError::Http {
             status: response.status,
         });
     }
-    write_json_response(&response.body, stdout).map_err(|source| CredentialsError::Response {
-        path: CREDENTIALS_PATH,
-        source,
-    })
+    Ok(response)
 }
 
 mod tests;

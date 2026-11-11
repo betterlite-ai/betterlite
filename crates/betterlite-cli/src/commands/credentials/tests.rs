@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::commands::OutputFormat;
+use crate::commands::tables::OutputFormat;
 use crate::commands::tests::support::{Answer, TestServer, client_for};
 
 use super::{

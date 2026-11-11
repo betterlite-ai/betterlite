@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use crate::commands::OutputFormat;
+use crate::commands::tables::OutputFormat;
 use crate::commands::tests::support::{Answer, TestServer, client_for};
 
 use super::{ListModelGroups, ModelGroupsCommand, ModelGroupsError, run_model_groups_command};

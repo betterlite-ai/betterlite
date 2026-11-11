@@ -6,9 +6,8 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use super::{
-    Client, ClientError, OutputFormat, Payload, Request, write_json_response, write_table,
-};
+use super::tables::{OutputFormat, write_json_response, write_table};
+use super::{Client, ClientError, Payload, Request};
 
 const INFO_PATH: &str = "/model_group/info";
 

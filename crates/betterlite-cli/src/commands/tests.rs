@@ -9,9 +9,8 @@ use betterlite_http::error::HttpError;
 use http::Method;
 use rstest::rstest;
 
-use crate::commands::{
-    BODY_LIMIT_BYTES, Client, ClientError, Payload, REQUEST_TIMEOUT, Request, print_http_error,
-};
+use crate::commands::tables::print_http_error;
+use crate::commands::{BODY_LIMIT_BYTES, Client, ClientError, Payload, REQUEST_TIMEOUT, Request};
 use crate::pkce_login::{Http as _, HttpBody, models::PkceFailure};
 
 use support::{Answer, TestServer, client, client_for, client_with_environment, secret};

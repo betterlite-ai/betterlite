@@ -3,14 +3,16 @@ use std::io::Write;
 use clap::{Args, Subcommand};
 use http::Method;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use super::{Client, ClientError, Payload, Request, write_json_response, write_table};
+use super::tables::{write_json_response, write_table};
+use super::{Client, ClientError, Payload, Request};
+
+mod create;
+mod delete;
+mod get;
 
 const LIST_PATH: &str = "/user/list";
-const INFO_PATH: &str = "/user/info";
-const NEW_PATH: &str = "/user/new";
-const DELETE_PATH: &str = "/user/delete";
 const JSON_HEADER: (&str, &str) = ("content-type", "application/json");
 
 #[derive(Debug, Subcommand)]
@@ -83,26 +85,6 @@ struct UserItem {
     teams: Option<Vec<String>>,
 }
 
-#[derive(Serialize)]
-struct CreateUserBody<'request> {
-    user_email: &'request str,
-    user_role: &'request str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    user_alias: Option<&'request str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    teams: Option<&'request [String]>,
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::arbitrary_precision_option"
-    )]
-    max_budget: Option<Decimal>,
-}
-
-#[derive(Serialize)]
-struct DeleteUsersBody<'request> {
-    user_ids: &'request [String],
-}
-
 pub fn run_users_command(
     command: UsersCommand,
     client: &Client,
@@ -110,9 +92,9 @@ pub fn run_users_command(
 ) -> Result<(), UsersError> {
     match command {
         UsersCommand::List(options) => list_users(&options, client, stdout),
-        UsersCommand::Get(options) => get_user(&options, client, stdout),
-        UsersCommand::Create(options) => create_user(&options, client, stdout),
-        UsersCommand::Delete(options) => delete_user(&options, client, stdout),
+        UsersCommand::Get(options) => get::get_user(&options, client, stdout),
+        UsersCommand::Create(options) => create::create_user(&options, client, stdout),
+        UsersCommand::Delete(options) => delete::delete_user(&options, client, stdout),
     }
 }
 
@@ -162,86 +144,35 @@ fn list_users(
     Ok(())
 }
 
-fn get_user(options: &GetUser, client: &Client, stdout: &mut dyn Write) -> Result<(), UsersError> {
-    let mut url = client.resolve(INFO_PATH)?;
-    if let Some(user_id) = &options.user_id {
-        url.query_pairs_mut().append_pair("user_id", user_id);
-    }
-    let request = Request {
-        method: Method::GET,
-        url,
-        headers: vec![(String::from(JSON_HEADER.0), String::from(JSON_HEADER.1))],
-        payload: Payload::Empty,
-    };
-    let response = client.send(request)?;
-    if response.status >= 400 {
-        return Err(UsersError::Http {
-            status: response.status,
-        });
-    }
-    write_json_response(&response.body, stdout).map_err(|source| UsersError::Response {
-        path: INFO_PATH,
-        source,
-    })
-}
-
-fn create_user(
-    options: &CreateUser,
+fn post_user(
     client: &Client,
+    path: &'static str,
+    body: Vec<u8>,
     stdout: &mut dyn Write,
 ) -> Result<(), UsersError> {
-    let teams = (!options.team.is_empty()).then_some(options.team.as_slice());
-    let body = serde_json::to_vec(&CreateUserBody {
-        user_email: &options.email,
-        user_role: &options.role,
-        user_alias: options.alias.as_deref(),
-        teams,
-        max_budget: options.max_budget,
-    })
-    .map_err(UsersError::Encode)?;
     let request = Request {
         method: Method::POST,
-        url: client.resolve(NEW_PATH)?,
+        url: client.resolve(path)?,
         headers: Vec::new(),
         payload: Payload::Json(body),
     };
-    let response = client.send(request)?;
-    if response.status >= 400 {
-        return Err(UsersError::Http {
-            status: response.status,
-        });
-    }
-    write_json_response(&response.body, stdout).map_err(|source| UsersError::Response {
-        path: NEW_PATH,
-        source,
-    })
+    send_and_write(client, request, path, stdout)
 }
 
-fn delete_user(
-    options: &DeleteUser,
+fn send_and_write(
     client: &Client,
+    request: Request,
+    path: &'static str,
     stdout: &mut dyn Write,
 ) -> Result<(), UsersError> {
-    let body = serde_json::to_vec(&DeleteUsersBody {
-        user_ids: &options.user_ids,
-    })
-    .map_err(UsersError::Encode)?;
-    let request = Request {
-        method: Method::POST,
-        url: client.resolve(DELETE_PATH)?,
-        headers: Vec::new(),
-        payload: Payload::Json(body),
-    };
     let response = client.send(request)?;
     if response.status >= 400 {
         return Err(UsersError::Http {
             status: response.status,
         });
     }
-    write_json_response(&response.body, stdout).map_err(|source| UsersError::Response {
-        path: DELETE_PATH,
-        source,
-    })
+    write_json_response(&response.body, stdout)
+        .map_err(|source| UsersError::Response { path, source })
 }
 
 mod tests;

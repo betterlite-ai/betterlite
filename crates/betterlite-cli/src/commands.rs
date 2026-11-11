@@ -7,11 +7,13 @@ pub mod http;
 pub mod keys;
 pub mod model_groups;
 pub mod models;
+mod pkce_transport;
+mod tables;
 pub mod teams;
 pub mod users;
 
 use std::collections::BTreeMap;
-use std::io::{self, Write};
+use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,15 +26,14 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::buffered::execute_buffered;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
-use comfy_table::Table;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::value::RawValue;
 use tokio::runtime::{Builder, Runtime};
 use url::Url;
 
 use crate::cli_context::CliContext;
-use crate::pkce_login::{Http, HttpBody, HttpResponse, models::PkceFailure};
+use crate::pkce_login::HttpResponse;
 
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub const BODY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
@@ -52,12 +53,6 @@ const PROXY_VARIABLES: [&str; 12] = [
     "NETRC",
     "HOME",
 ];
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
-pub enum OutputFormat {
-    Table,
-    Json,
-}
 
 #[derive(Debug)]
 pub enum Payload {
@@ -191,7 +186,7 @@ impl Client {
             .map_err(|source| ClientError::Transport(HttpError::Request(source)))?;
         let response = self
             .runtime
-            .block_on(transport.execute_buffered(built, BODY_LIMIT_BYTES))
+            .block_on(execute_buffered(transport, built, BODY_LIMIT_BYTES))
             .map_err(ClientError::Transport)?;
         Ok(reply(response))
     }
@@ -250,64 +245,6 @@ fn encode_payload(payload: Payload, header_map: &mut HeaderMap) -> Vec<u8> {
     }
 }
 
-impl Http for Client {
-    fn get(&self, url: &str, timeout_seconds: u64) -> Result<HttpResponse, PkceFailure> {
-        let request = Request {
-            method: Method::GET,
-            url: Url::parse(url).map_err(|source| PkceFailure::InvalidBaseUrl { source })?,
-            headers: Vec::new(),
-            payload: Payload::Empty,
-        };
-        self.exchange(Exchange {
-            transport: &self.without_redirects,
-            request,
-            timeout: Duration::from_secs(timeout_seconds),
-            authorization: None,
-        })
-        .map_err(pkce_failure)
-    }
-
-    // The transport never follows a redirect for either flag, so a 3xx comes back as the answer the caller checks.
-    fn post(
-        &self,
-        url: &str,
-        body: HttpBody,
-        timeout_seconds: u64,
-        _follow_redirects: bool,
-    ) -> Result<HttpResponse, PkceFailure> {
-        let payload = match body {
-            HttpBody::Json(bytes) => Payload::Json(bytes),
-            HttpBody::Form(fields) => Payload::Form(fields),
-        };
-        let request = Request {
-            method: Method::POST,
-            url: Url::parse(url).map_err(|source| PkceFailure::InvalidBaseUrl { source })?,
-            headers: Vec::new(),
-            payload,
-        };
-        self.exchange(Exchange {
-            transport: &self.without_redirects,
-            request,
-            timeout: Duration::from_secs(timeout_seconds),
-            authorization: None,
-        })
-        .map_err(pkce_failure)
-    }
-}
-
-fn pkce_failure(error: ClientError) -> PkceFailure {
-    match error {
-        ClientError::Url { source, .. } => PkceFailure::InvalidBaseUrl { source },
-        ClientError::Client(source) | ClientError::Transport(source) => {
-            PkceFailure::Transport { source }
-        }
-        ClientError::ProxySettings(source) => PkceFailure::Protocol(source.to_string()),
-        ClientError::Runtime(source) => PkceFailure::Protocol(source.to_string()),
-        ClientError::HeaderName { source, .. } => PkceFailure::Protocol(source.to_string()),
-        ClientError::HeaderValue { source, .. } => PkceFailure::Protocol(source.to_string()),
-    }
-}
-
 fn reply(response: UpstreamResponse) -> HttpResponse {
     let headers = response
         .headers
@@ -335,36 +272,6 @@ fn proxy_environment(environment: &dyn EnvironmentLookup) -> BTreeMap<String, St
                 .map(|value| (name.to_owned(), value))
         })
         .collect()
-}
-
-pub fn print_http_error(status: u16, body: &[u8], stdout: &mut dyn Write, stderr: &mut dyn Write) {
-    let _wrote_status = writeln!(stderr, "Error: HTTP {status}");
-    let parsed_as_json = serde_json::from_slice::<&RawValue>(body).is_ok();
-    let target: &mut dyn Write = if parsed_as_json { stdout } else { stderr };
-    let _wrote_body = target.write_all(body);
-    if !body.ends_with(b"\n") {
-        let _wrote_terminator = target.write_all(b"\n");
-    }
-}
-
-pub fn write_json_response(body: &[u8], stdout: &mut dyn Write) -> Result<(), serde_json::Error> {
-    serde_json::from_slice::<&RawValue>(body)?;
-    let _wrote_body = stdout.write_all(body);
-    if !body.ends_with(b"\n") {
-        let _wrote_terminator = stdout.write_all(b"\n");
-    }
-    Ok(())
-}
-
-pub fn write_table(title: &str, headers: &[&str], rows: Vec<Vec<String>>, stdout: &mut dyn Write) {
-    let mut table = Table::new();
-    table.set_header(headers.to_vec());
-    for row in rows {
-        table.add_row(row);
-    }
-    // rich draws a table's title on the line above it, and comfy-table has no title of its own
-    let _wrote_title = writeln!(stdout, "{title}");
-    let _wrote_table = writeln!(stdout, "{table}");
 }
 
 mod tests;
