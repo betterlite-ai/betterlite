@@ -1,0 +1,30 @@
+kind: helper
+name: billing-text-embedding-list-and-missing-transcription-prompt
+call:
+  billing_text:
+    calls:
+      - function: formatted_prompt
+        call_type: embedding
+        data:
+          input: [one, two]
+      - function: formatted_prompt
+        call_type: moderation
+        data:
+          input: single
+      - function: formatted_prompt
+        call_type: audio_transcription
+        data: {}
+      - function: formatted_prompt
+        call_type: audio_transcription
+        data:
+          prompt: spoken
+      - function: formatted_prompt
+        call_type: text_completion
+        data:
+          prompt: plain
+      - function: formatted_prompt
+        call_type: image_generation
+        data:
+          prompt: picture
+env: {}
+compare: {ignore: []}
