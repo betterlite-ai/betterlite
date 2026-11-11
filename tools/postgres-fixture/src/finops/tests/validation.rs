@@ -247,6 +247,19 @@ fn invalid_updated_at_seed() -> FixtureSeed {
     seed_with_daily_usage(vec![row])
 }
 
+fn non_utc_offset_seed() -> FixtureSeed {
+    let mut row = usage_row("row-time", UsageApiKey::Key(secret("sk-alice-token")));
+    row.created_at = "2025-01-01T23:30:00-02:00".to_owned();
+    seed_with_daily_usage(vec![row])
+}
+
+fn utc_offset_seed() -> FixtureSeed {
+    let mut row = usage_row("row-time", UsageApiKey::Key(secret("sk-alice-token")));
+    row.created_at = "2025-01-01T00:00:00Z".to_owned();
+    row.updated_at = "2025-01-02T00:00:00+00:00".to_owned();
+    seed_with_daily_usage(vec![row])
+}
+
 fn duplicate_tuple_seed() -> FixtureSeed {
     let first = usage_row("row-first", UsageApiKey::Key(secret("sk-alice-token")));
     let mut second = first.clone();
@@ -450,6 +463,11 @@ fn boundary_daily_usage_seed() -> FixtureSeed {
     invalid_updated_at_seed,
     Expected::Fixture("finops daily usage row 0 field updated_at is not a valid timestamp")
 )]
+#[case::non_utc_offset(
+    non_utc_offset_seed,
+    Expected::Fixture("finops daily usage row 0 field created_at is not a valid timestamp")
+)]
+#[case::utc_offset(utc_offset_seed, Expected::Accepted)]
 #[case::duplicate_tuple(
     duplicate_tuple_seed,
     Expected::Fixture("finops daily usage row 1 repeats a non-null unique tuple")

@@ -247,9 +247,11 @@ fn check_timestamps(row: &FinOpsUsageRow, row_index: usize) -> Result<(), FinOps
 }
 
 fn is_timestamp(text: &str) -> bool {
-    DateTime::parse_from_rfc3339(text).is_ok()
-        || NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f").is_ok()
+    // the insert casts text to timestamp(3), which drops any non-UTC offset without an error
+    NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f").is_ok()
         || NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.f").is_ok()
+        || DateTime::parse_from_rfc3339(text)
+            .is_ok_and(|moment| moment.offset().local_minus_utc() == 0_i32)
 }
 
 fn config_names(rows: &[ConfigRow]) -> Result<(), FinOpsFixtureError> {
