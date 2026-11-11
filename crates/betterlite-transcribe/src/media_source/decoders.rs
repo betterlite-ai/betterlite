@@ -76,7 +76,7 @@ where
     media.seek(SeekFrom::Start(0)).ok()?;
     let mut header = [0_u8; 10];
     media.read_exact(&mut header).ok()?;
-    if header.starts_with(b"ID3") {
+    let tag_end = if header.starts_with(b"ID3") {
         let size = header.get(6..10)?.iter().try_fold(0_u64, |size, byte| {
             size.checked_mul(128)?.checked_add(u64::from(byte & 0x7F))
         })?;
@@ -85,12 +85,13 @@ where
         } else {
             10_u64
         };
-        let skip = i64::try_from(size.checked_add(footer)?).ok()?;
-        media.seek(SeekFrom::Current(skip)).ok()?;
+        size.checked_add(10)?.checked_add(footer)?
     } else {
-        media.seek(SeekFrom::Start(0)).ok()?;
-    }
-    let mss = MediaSourceStream::new(Box::new(media), MediaSourceStreamOptions::default());
+        0_u64
+    };
+    media.seek(SeekFrom::Start(0)).ok()?;
+    let mut mss = MediaSourceStream::new(Box::new(media), MediaSourceStreamOptions::default());
+    mss.seek(SeekFrom::Start(tag_end)).ok()?;
     let mut probe = Probe::new();
     probe.register_format::<MpaReader<'_>>();
     let format = probe
