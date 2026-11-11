@@ -54,25 +54,21 @@ pub(crate) fn message(role: &str, content: &str) -> Message {
     }
 }
 
-pub(crate) fn text_part(text: &str) -> ContentPart {
+fn part(kind: &str, name: &str, value: &str) -> ContentPart {
     let mut fields = Object::new();
-    fields.insert("text".to_owned(), ContentJson::Text(text.to_owned()));
+    fields.insert(name.to_owned(), ContentJson::Text(value.to_owned()));
     ContentPart {
-        kind: "text".to_owned(),
+        kind: kind.to_owned(),
         fields,
     }
 }
 
+pub(crate) fn text_part(text: &str) -> ContentPart {
+    part("text", "text", text)
+}
+
 pub(crate) fn image_part() -> ContentPart {
-    let mut fields = Object::new();
-    fields.insert(
-        "image_url".to_owned(),
-        ContentJson::Text("data:image/png;base64,AAAA".to_owned()),
-    );
-    ContentPart {
-        kind: "image_url".to_owned(),
-        fields,
-    }
+    part("image_url", "image_url", "data:image/png;base64,AAAA")
 }
 
 pub(crate) fn multipart(role: &str, parts: Vec<ContentPart>) -> Message {
