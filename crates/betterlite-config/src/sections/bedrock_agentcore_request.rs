@@ -77,16 +77,11 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let mut merged = Settings::default();
+        let mut merged = resolve_fields(self.litellm_settings, "litellm_settings", lookup)?;
         for (index, deployment) in self.model_list.into_iter().enumerate() {
             let prefix = format!("model_list.{index}.litellm_params");
             merged.overlay(resolve_fields(deployment.litellm_params, &prefix, lookup)?);
         }
-        merged.overlay(resolve_fields(
-            self.litellm_settings,
-            "litellm_settings",
-            lookup,
-        )?);
         Ok(merged)
     }
 }
