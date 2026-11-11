@@ -471,6 +471,10 @@ fn status_defaults() {
         decode_created_batch(b"not-json"),
         Err(BatchCreateError::ResponseParse { .. })
     ));
+    assert!(matches!(
+        decode_created_batch(br#"{"jobArn": 7, "status": "Submitted"}"#),
+        Err(BatchCreateError::ResponseParse { .. })
+    ));
 }
 
 fn metadata_sanitization() {
@@ -719,7 +723,7 @@ fn reply_defaults() {
     let clock = scripted_clock(&[111, 222]);
     let reply = create_batch_reply(
         format!(r#"{{"jobArn": "{JOB_ARN}", "status": "Submitted"}}"#).as_bytes(),
-        &empty_original(),
+        empty_original(),
         &clock,
     )
     .expect("the reply projects");
@@ -752,16 +756,16 @@ fn assert_unset_fields(reply: &super::reply::BatchCreateReply) {
 
 fn reply_supplied_request() {
     let original = OriginalBatchRequest {
-        endpoint: Some("/v1/embeddings".to_owned()),
-        input_file_id: Some("s3://b/in.jsonl".to_owned()),
-        completion_window: Some("48h".to_owned()),
-        metadata: Some(json_of(
+        endpoint: "/v1/embeddings".to_owned(),
+        input_file_id: "s3://b/in.jsonl".to_owned(),
+        completion_window: "48h".to_owned(),
+        metadata: json_of(
             r#"{"user": "alice", "none": null, "standard_logging_guardrail_information": {"x": 1}}"#,
-        )),
+        ),
     };
     let reply = create_batch_reply(
         br#"{"jobArn": "job", "status": "Completed"}"#,
-        &original,
+        original,
         &scripted_clock(&[111]),
     )
     .expect("the reply projects");
@@ -783,7 +787,7 @@ fn reply_supplied_request() {
 fn reply_in_progress_timestamps() {
     let reply = create_batch_reply(
         br#"{"jobArn": "job", "status": "InProgress"}"#,
-        &empty_original(),
+        empty_original(),
         &scripted_clock(&[111, 222]),
     )
     .expect("the reply projects");
@@ -792,19 +796,19 @@ fn reply_in_progress_timestamps() {
 
     let scheduled = create_batch_reply(
         br#"{"jobArn": "job", "status": "Scheduled"}"#,
-        &empty_original(),
+        empty_original(),
         &scripted_clock(&[111, 222]),
     )
     .expect("the reply projects");
     assert_eq!(scheduled.in_progress_at, None);
 
     let supplied = OriginalBatchRequest {
-        endpoint: Some(String::new()),
-        input_file_id: Some(String::new()),
-        completion_window: Some(String::new()),
-        metadata: None,
+        endpoint: String::new(),
+        input_file_id: String::new(),
+        completion_window: String::new(),
+        metadata: Json::Null,
     };
-    let empty = create_batch_reply(br#"{"jobArn": ""}"#, &supplied, &scripted_clock(&[5]))
+    let empty = create_batch_reply(br#"{"jobArn": ""}"#, supplied, &scripted_clock(&[5]))
         .expect("the reply projects");
     assert_eq!(empty.endpoint, "");
     assert_eq!(empty.input_file_id, "");

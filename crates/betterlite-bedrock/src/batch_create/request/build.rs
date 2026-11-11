@@ -69,7 +69,7 @@ pub fn build_create_request(
         .map(|raw| validate_bedrock_tags(&raw))
         .transpose()?;
     let (input_data_config, output_data_config) =
-        data_configs(&input_key, &output_bucket, &job_name, &input_bucket, &owned);
+        data_configs(&input_key, &output_bucket, &job_name, &input_bucket, owned);
     Ok(BedrockCreateRequest {
         model_id: input.model.to_owned(),
         job_name,
@@ -89,22 +89,23 @@ fn data_configs(
     output_bucket: &str,
     job_name: &str,
     input_bucket: &str,
-    owned: &OwnedSettings,
+    owned: OwnedSettings,
 ) -> (InputDataConfig, OutputDataConfig) {
     let input_uri = format!("s3://{input_bucket}/{input_key}");
     let output_uri = format!("s3://{output_bucket}/litellm-batch-outputs/{job_name}/");
+    let input_owner = owned.owner.clone();
     (
         InputDataConfig {
             s3_input_data_config: S3InputDataConfig {
                 s3_uri: input_uri,
-                s3_bucket_owner: owned.owner.clone(),
+                s3_bucket_owner: input_owner,
             },
         },
         OutputDataConfig {
             s3_output_data_config: S3OutputDataConfig {
                 s3_uri: output_uri,
-                s3_bucket_owner: owned.owner.clone(),
-                s3_encryption_key_id: owned.encryption_key_id.clone(),
+                s3_bucket_owner: owned.owner,
+                s3_encryption_key_id: owned.encryption_key_id,
             },
         },
     )

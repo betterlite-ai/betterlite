@@ -9,12 +9,13 @@ use betterlite_bedrock::batch_create::request::build::{CreateBatchInput, build_c
 use betterlite_bedrock::batch_create::request::sign::transform_create_batch_request;
 use betterlite_bedrock::batch_create::titan::titan_batch_token_usage;
 use betterlite_bedrock::credentials::error::CredentialError;
+use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_models::decisions::Json;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use serde_json::{Value, json};
 
 use super::input::{Input, Operation, Scenario};
-use super::support::{DEFAULT_UUID, epoch, fixture_credentials, region_inputs, runtime, secrets};
+use super::support::{epoch, runtime, secrets};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 pub(super) fn run(input: &Input) -> HelperResult {
@@ -60,7 +61,7 @@ fn create_input<'text>(
     secrets: &'text SecretLookup,
 ) -> Result<CreateBatchInput<'text>, Box<HelperError>> {
     Ok(CreateBatchInput {
-        model: scenario.model.as_deref().unwrap_or(""),
+        model: &scenario.model,
         input_file_id: scenario.input_file_id.as_deref(),
         completion_window: scenario.completion_window.as_deref(),
         deployment_params: &scenario.litellm_params,
@@ -68,9 +69,16 @@ fn create_input<'text>(
         environment: &scenario.environment,
         secrets,
         job_prefix: scenario.job_prefix.as_deref(),
-        unique_id: scenario.uuid.as_deref().unwrap_or(DEFAULT_UUID),
-        region_inputs: region_inputs(&scenario.environment),
-        now: epoch(scenario.now.unwrap_or_default())?,
+        unique_id: &scenario.uuid,
+        region_inputs: RegionInputs {
+            environment_region_name: scenario
+                .environment
+                .get("AWS_REGION_NAME")
+                .map(String::as_str),
+            environment_region: scenario.environment.get("AWS_REGION").map(String::as_str),
+            session_region: None,
+        },
+        now: epoch(scenario.now)?,
     })
 }
 
@@ -78,7 +86,11 @@ fn signed_call(scenario: &Scenario) -> Value {
     let Some(credentials) = scenario.credentials.as_ref() else {
         return json!({"failed": true});
     };
-    let held = fixture_credentials(credentials);
+    let held = Credentials {
+        access_key_id: credentials.access_key_id.clone(),
+        secret_access_key: credentials.secret_access_key.clone(),
+        session_token: credentials.session_token.clone(),
+    };
     let secrets = secrets();
     let Ok(input) = create_input(scenario, &secrets) else {
         return json!({"failed": true});
@@ -106,9 +118,9 @@ fn reply_call(scenario: &Scenario) -> Value {
     let Ok(original) = original_request(scenario) else {
         return json!({"failed": true});
     };
-    let body = scenario.response_body.as_deref().unwrap_or("");
+    let body = &scenario.response_body;
     let clock = scripted_clock(&scenario.clock);
-    match create_batch_reply(body.as_bytes(), &original, &clock) {
+    match create_batch_reply(body.as_bytes(), original, &clock) {
         Ok(reply) => json!({"failed": false, "reply": reply}),
         Err(_error) => json!({"failed": true}),
     }

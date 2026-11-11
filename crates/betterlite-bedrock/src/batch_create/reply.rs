@@ -14,16 +14,39 @@ const DEFAULT_COMPLETION_WINDOW: &str = "24h";
 const UNSERIALIZABLE: &str = "Unserializable Object";
 
 // the API caller's own create request, carried on litellm_params.original_batch_request
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct OriginalBatchRequest {
+    #[serde(default = "default_endpoint")]
+    pub endpoint: String,
     #[serde(default)]
-    pub endpoint: Option<String>,
-    #[serde(default)]
-    pub input_file_id: Option<String>,
-    #[serde(default)]
-    pub completion_window: Option<String>,
-    #[serde(default)]
-    pub metadata: Option<Json>,
+    pub input_file_id: String,
+    #[serde(default = "default_completion_window")]
+    pub completion_window: String,
+    #[serde(default = "default_metadata")]
+    pub metadata: Json,
+}
+
+fn default_endpoint() -> String {
+    DEFAULT_ENDPOINT.to_owned()
+}
+
+fn default_completion_window() -> String {
+    DEFAULT_COMPLETION_WINDOW.to_owned()
+}
+
+fn default_metadata() -> Json {
+    Json::Object(IndexMap::new())
+}
+
+impl Default for OriginalBatchRequest {
+    fn default() -> Self {
+        Self {
+            endpoint: default_endpoint(),
+            input_file_id: String::new(),
+            completion_window: default_completion_window(),
+            metadata: default_metadata(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +85,7 @@ pub struct BatchCreateReply {
 #[derive(Debug, Deserialize)]
 struct RawCreatedBatch {
     #[serde(rename = "jobArn", default)]
-    job_arn: Option<Json>,
+    job_arn: Option<String>,
     #[serde(default)]
     status: Option<Json>,
 }
@@ -70,18 +93,13 @@ struct RawCreatedBatch {
 pub fn decode_created_batch(body: &[u8]) -> Result<CreatedBatch, BatchCreateError> {
     let raw: RawCreatedBatch = serde_json::from_slice(body)
         .map_err(|source| BatchCreateError::ResponseParse { source })?;
-    let job_arn = match raw.job_arn {
-        None | Some(Json::Null) => String::new(),
-        Some(Json::Text(text)) => text,
-        Some(_) => return Err(BatchCreateError::JobArnType),
-    };
     let (status, in_progress) = match raw.status {
         Some(Json::Text(text)) if text == "InProgress" => (BatchStatus::InProgress, true),
         Some(Json::Text(text)) => (bedrock_batch_status(&text), false),
         _ => (BatchStatus::Validating, false),
     };
     Ok(CreatedBatch {
-        job_arn,
+        job_arn: raw.job_arn.unwrap_or_default(),
         status,
         in_progress,
     })
@@ -89,29 +107,20 @@ pub fn decode_created_batch(body: &[u8]) -> Result<CreatedBatch, BatchCreateErro
 
 pub fn create_batch_reply(
     body: &[u8],
-    original: &OriginalBatchRequest,
+    original: OriginalBatchRequest,
     clock: &dyn Fn() -> i64,
 ) -> Result<BatchCreateReply, BatchCreateError> {
     let created = decode_created_batch(body)?;
     let created_at = clock();
     let in_progress_at = created.in_progress.then(clock);
-    let metadata = original
-        .metadata
-        .as_ref()
-        .map_or_else(IndexMap::new, openai_batch_metadata);
+    let metadata = openai_batch_metadata(&original.metadata);
     Ok(BatchCreateReply {
         id: created.job_arn,
         object: BatchObjectKind::Batch,
-        endpoint: original
-            .endpoint
-            .clone()
-            .unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned()),
+        endpoint: original.endpoint,
         errors: None,
-        input_file_id: original.input_file_id.clone().unwrap_or_default(),
-        completion_window: original
-            .completion_window
-            .clone()
-            .unwrap_or_else(|| DEFAULT_COMPLETION_WINDOW.to_owned()),
+        input_file_id: original.input_file_id,
+        completion_window: original.completion_window,
         status: created.status,
         output_file_id: None,
         error_file_id: None,

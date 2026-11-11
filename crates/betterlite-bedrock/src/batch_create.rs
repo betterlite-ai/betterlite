@@ -39,8 +39,6 @@ pub enum BatchCreateError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("jobArn: Input should be a valid string")]
-    JobArnType,
     #[error("the signed request body is not UTF-8")]
     SignedBody(#[source] FromUtf8Error),
     #[error(transparent)]

@@ -1,9 +1,6 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use betterlite_bedrock::aws_settings::sources::Credentials;
-use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
@@ -12,10 +9,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime};
 
-use super::input::CredentialsInput;
 use crate::helpers::{HelperError, OrHelperError as _};
-
-pub(super) const DEFAULT_UUID: &str = "00000000-0000-4000-8000-000000000000";
 
 struct NoOidc;
 
@@ -65,20 +59,4 @@ pub(super) fn epoch(seconds: i64) -> Result<SystemTime, Box<HelperError>> {
         .checked_add(Duration::from_secs(bounded))
         .ok_or("now is out of range")
         .or_value_error()
-}
-
-pub(super) fn fixture_credentials(input: &CredentialsInput) -> Credentials {
-    Credentials {
-        access_key_id: input.access_key_id.clone(),
-        secret_access_key: input.secret_access_key.clone(),
-        session_token: input.session_token.clone(),
-    }
-}
-
-pub(super) fn region_inputs(environment: &BTreeMap<String, String>) -> RegionInputs<'_> {
-    RegionInputs {
-        environment_region_name: environment.get("AWS_REGION_NAME").map(String::as_str),
-        environment_region: environment.get("AWS_REGION").map(String::as_str),
-        session_region: None,
-    }
 }

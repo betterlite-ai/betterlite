@@ -31,11 +31,11 @@ pub(crate) struct Input {
     pub(crate) values: Vec<Value>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Scenario {
     #[serde(default)]
-    pub(crate) model: Option<String>,
+    pub(crate) model: String,
     #[serde(default)]
     pub(crate) input_file_id: Option<String>,
     #[serde(default)]
@@ -49,17 +49,23 @@ pub(crate) struct Scenario {
     #[serde(default)]
     pub(crate) original_batch_request: Option<Value>,
     #[serde(default)]
-    pub(crate) response_body: Option<String>,
+    pub(crate) response_body: String,
     #[serde(default)]
     pub(crate) clock: Vec<i64>,
     #[serde(default)]
     pub(crate) job_prefix: Option<String>,
-    #[serde(default)]
-    pub(crate) uuid: Option<String>,
+    #[serde(default = "default_uuid")]
+    pub(crate) uuid: String,
     #[serde(default)]
     pub(crate) credentials: Option<CredentialsInput>,
     #[serde(default)]
-    pub(crate) now: Option<i64>,
+    pub(crate) now: i64,
+}
+
+pub(crate) const DEFAULT_UUID: &str = "00000000-0000-4000-8000-000000000000";
+
+fn default_uuid() -> String {
+    DEFAULT_UUID.to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize)]
