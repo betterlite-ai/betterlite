@@ -466,7 +466,7 @@ async fn an_unknown_typed_usage_is_replaced_for_later_attempts() {
     let prepared = prepare_attempts(&input).await;
 
     assert_eq!(counts(&prepared.attempts[0]), (10, 5, 7, 0));
-    assert_eq!(counts(&prepared.attempts[1]), (10, 5, 0, 0));
+    assert_eq!(counts(&prepared.attempts[1]), (10, 5, 7, 0));
     let replaced = prepared
         .replaced_usage
         .as_ref()
