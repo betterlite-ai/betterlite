@@ -134,7 +134,7 @@ def build_logger(
     virtual_hosted = settings.get("use_virtual_hosted_style")
     drop_terminal = settings.get("drop_on_terminal_error")
     adaptive = settings.get("adaptive_concurrency")
-    logger._init_s3_params(
+    logger._init_s3_params(  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
         params_source=empty_source,
         s3_bucket_name=settings["bucket_name"],
         s3_region_name=settings["region_name"],
@@ -146,10 +146,10 @@ def build_logger(
         s3_adaptive_concurrency=False if adaptive is None else adaptive,
     )
     logger.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L227
-    logger.get_credentials = CredentialProvider(keys)
+    logger.get_credentials = CredentialProvider(keys)  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L346
     if limiter is not None:
-        logger._upload_limiter = limiter
-    logger._flush_dropped = {}
+        logger._upload_limiter = limiter  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L213
+    logger._flush_dropped = {}  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L247
     return logger
 
 
@@ -178,7 +178,7 @@ async def execute(input_value: Input) -> dict[str, Json]:
             content_type="application/json" if content_type_value is None else content_type_value,
         )
         delivered = await logger.async_upload_data_to_s3(element)
-        dropped = id(element) in logger._flush_dropped  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L247
+        dropped = id(element) in logger._flush_dropped  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L247
         outcome = "dropped" if dropped else ("delivered" if delivered else "retry")
         if limiter is not None:
             samples = limiter.samples
@@ -188,7 +188,7 @@ async def execute(input_value: Input) -> dict[str, Json]:
             raise ValueError("a get call needs an object_key")
         download = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
             Callable[[str], Awaitable[dict[str, Json] | None]],
-            logger._download_object_from_s3,  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
+            logger._download_object_from_s3,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
         )
         object_value = await download(object_key)
     return {
