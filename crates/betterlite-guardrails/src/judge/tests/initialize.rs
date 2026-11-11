@@ -30,6 +30,7 @@ enum Case {
     InvalidOnFailure,
     UnknownMode,
     TypedParamsWin,
+    DefaultsWhenAbsent,
 }
 
 fn with_weights(weights: &[GuardrailValue]) -> BTreeMap<String, GuardrailValue> {
@@ -87,6 +88,7 @@ fn initialize(params: &JudgeParams, mapping: &BTreeMap<String, GuardrailValue>) 
 #[case::invalid_on_failure(Case::InvalidOnFailure)]
 #[case::unknown_mode(Case::UnknownMode)]
 #[case::typed_params_win(Case::TypedParamsWin)]
+#[case::defaults_when_absent(Case::DefaultsWhenAbsent)]
 fn judge_initialize_tests_behavior(#[case] case: Case) {
     let params = JudgeParams::default();
     match case {
@@ -209,6 +211,16 @@ fn judge_initialize_tests_behavior(#[case] case: Case) {
             let result = initialize(&typed, &mapping).result;
             let guardrail = result.expect("valid config");
             assert_eq!(guardrail.judge_model, "typed-judge");
+        }
+        Case::DefaultsWhenAbsent => {
+            let mut mapping = valid_mapping();
+            mapping.remove("overall_threshold");
+            mapping.remove("on_failure");
+            let Initialized { result, registered } = initialize(&params, &mapping);
+            let guardrail = result.expect("the defaults fill in");
+            assert_eq!(registered, 1);
+            assert_eq!(guardrail.overall_threshold.to_bits(), 80.0_f64.to_bits());
+            assert_eq!(guardrail.on_failure, OnFailure::Block);
         }
     }
 }
