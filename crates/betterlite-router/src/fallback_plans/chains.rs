@@ -19,12 +19,26 @@ pub struct ProviderNames<'context> {
     pub registry: &'context JSONProviderRegistry,
 }
 
+// providers.json registers these slugs, but litellm.types.utils.LlmProviders does not, so provider_list lacks them.
+const REGISTRY_ONLY_PROVIDERS: [ProviderId; 8] = [
+    ProviderId::Abliteration,
+    ProviderId::Aihubmix,
+    ProviderId::Crusoe,
+    ProviderId::Empiriolabs,
+    ProviderId::Gmi,
+    ProviderId::Llamagate,
+    ProviderId::Sarvam,
+    ProviderId::Veniceai,
+];
+
 impl ProviderNames<'_> {
-    // litellm.provider_list is every LlmProviders member, which is the ProviderId catalog.
-    fn slugs() -> impl Iterator<Item = &'static str> {
-        ProviderId::VARIANTS
+    // litellm.provider_list is list(LlmProviders) plus each custom_provider_map provider (custom_llm_setup).
+    fn slugs(&self) -> impl Iterator<Item = &str> {
+        let listed = ProviderId::VARIANTS
             .iter()
-            .map(|provider| <&'static str>::from(*provider))
+            .filter(|provider| !REGISTRY_ONLY_PROVIDERS.contains(provider))
+            .map(|provider| <&'static str>::from(*provider));
+        listed.chain(self.custom_providers.iter().map(String::as_str))
     }
 
     fn inferred(&self, model: &str) -> Option<String> {
@@ -71,7 +85,7 @@ pub fn get_fallback_model_group<'plan>(
                     break;
                 }
                 let matched = prefixed.as_deref() == Some(name.as_str())
-                    || stripped_model_group(model_group, name);
+                    || stripped_model_group(model_group, name, names);
                 if matched {
                     stripped = Some(targets.as_slice());
                 }
@@ -140,8 +154,8 @@ pub fn resolve_for_lookup_groups<'plan>(
 }
 
 // LiteLLM strips every occurrence with str.replace, so a group naming its provider twice loses both
-fn stripped_model_group(model_group: &str, fallback_key: &str) -> bool {
-    for slug in ProviderNames::slugs() {
+fn stripped_model_group(model_group: &str, fallback_key: &str, names: &ProviderNames<'_>) -> bool {
+    for slug in names.slugs() {
         let Some(rest) = model_group.strip_prefix(slug) else {
             continue;
         };

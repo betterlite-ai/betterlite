@@ -31,6 +31,7 @@ const CATALOG: &str = r#"{"gpt-4": {"litellm_provider": "openai"}}"#;
 struct Tables {
     catalog: ModelCatalog,
     names: BTreeSet<String>,
+    custom_providers: BTreeSet<String>,
     environment: BTreeMap<String, String>,
     registry: JSONProviderRegistry,
 }
@@ -40,6 +41,7 @@ impl Tables {
         Self {
             catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap(),
             names: BTreeSet::new(),
+            custom_providers: BTreeSet::from(["my-llm".to_owned()]),
             environment: BTreeMap::new(),
             registry: JSONProviderRegistry::load(),
         }
@@ -49,7 +51,7 @@ impl Tables {
         ProviderNames {
             catalog: &self.catalog,
             known_model_names: &self.names,
-            custom_providers: &self.names,
+            custom_providers: &self.custom_providers,
             environment: &self.environment,
             registry: &self.registry,
         }
@@ -133,6 +135,8 @@ fn fallback_plans_behaviors() {
 #[case::azure("azure/gpt-4", true)]
 #[case::vertex_ai("vertex_ai/gpt-4", true)]
 #[case::an_unlisted_provider("unknown/gpt-4", false)]
+#[case::a_registry_only_provider("crusoe/gpt-4", false)]
+#[case::a_custom_provider("my-llm/gpt-4", true)]
 fn the_stripped_name_matches_every_provider_slug(#[case] model_group: &str, #[case] matches: bool) {
     let tables = Tables::load();
     let stripped = vec![group("gpt-4", vec![name("claude")])];
