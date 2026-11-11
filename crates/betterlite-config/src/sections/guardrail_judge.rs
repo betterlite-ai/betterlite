@@ -71,11 +71,24 @@ pub struct Criterion {
 }
 
 // LiteLLM renders a YAML integer weight as "60" and a float one as "60.0" in the judge prompt.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(untagged, try_from = "serde_json::Number")]
 pub enum CriterionWeight {
     Integer(i64),
     Float(f64),
+}
+
+// serde_json's arbitrary_precision feature visits a float as the map behind serde_json::Number.
+impl TryFrom<serde_json::Number> for CriterionWeight {
+    type Error = &'static str;
+
+    fn try_from(number: serde_json::Number) -> Result<Self, Self::Error> {
+        number
+            .as_i64()
+            .map(Self::Integer)
+            .or_else(|| number.as_f64().map(Self::Float))
+            .ok_or("the criterion weight is not a finite number")
+    }
 }
 
 impl Default for CriterionWeight {

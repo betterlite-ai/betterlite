@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_judge::JudgeParams;
 use serde::de::DeserializeOwned;
+use serde_json::value::RawValue;
 
 use super::error::JudgeError;
 
@@ -43,12 +44,15 @@ pub struct GuardrailEntry<'guardrail> {
     pub litellm_params: Option<LitellmParamsSource<'guardrail>>,
 }
 
+// A float arrives as the map behind serde_json::Number under arbitrary_precision, so read raw text.
 fn attribute(params: &JudgeParams, key: ParamKey) -> Option<GuardrailValue> {
     let encoded = serde_json::to_string(params).ok()?;
-    let GuardrailValue::Object(fields) = serde_json::from_str(&encoded).ok()? else {
-        return None;
-    };
-    fields.get(key.name()).cloned()
+    let fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(&encoded).ok()?;
+    let text = fields.get(key.name())?.get();
+    text.parse::<f64>()
+        .ok()
+        .map(GuardrailValue::Decimal)
+        .or_else(|| serde_json::from_str(text).ok())
 }
 
 pub(crate) fn get_param(

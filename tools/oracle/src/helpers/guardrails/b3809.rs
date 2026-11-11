@@ -162,18 +162,7 @@ fn collect(
                     blocked: Some(BlockedOutput { status, detail }),
                     guardrail_records,
                 }),
-                failed @ (JudgeError::MissingGuardrailName
-                | JudgeError::MissingJudgeModel
-                | JudgeError::MissingCriteria
-                | JudgeError::WeightSum { .. }
-                | JudgeError::UnrepresentableWeight
-                | JudgeError::WeightOverflow
-                | JudgeError::InvalidOnFailure { .. }
-                | JudgeError::InvalidEventHook { .. }
-                | JudgeError::UnsupportedEventHook { .. }
-                | JudgeError::InvalidParam { .. }) => {
-                    Err(failure("RuntimeError", failed.to_string()))
-                }
+                failed => Err(failure("RuntimeError", failed.to_string())),
             }
         }
     }

@@ -10,7 +10,7 @@ use crate::judge::config::{GuardrailEntry, LitellmParamsSource, ParamKey, get_pa
 use crate::judge::error::JudgeError;
 use crate::judge::hooks::{EventHookConfig, GuardrailEventHook, coerce_event_hook};
 
-use super::support::params_with_model;
+use super::support::{criterion, params_with_model};
 
 #[derive(Debug, Clone, Copy)]
 enum Case {
@@ -19,6 +19,8 @@ enum Case {
     ParsedAttribute,
     AbsentEverywhere,
     WrongType,
+    TypedFloatThreshold,
+    TypedFloatWeights,
     IntegerThreshold,
     FloatThreshold,
     TextThreshold,
@@ -69,6 +71,8 @@ fn text(value: &str) -> GuardrailValue {
 #[case::parsed_attribute(Case::ParsedAttribute)]
 #[case::absent_everywhere(Case::AbsentEverywhere)]
 #[case::wrong_type(Case::WrongType)]
+#[case::typed_float_threshold(Case::TypedFloatThreshold)]
+#[case::typed_float_weights(Case::TypedFloatWeights)]
 #[case::integer_threshold(Case::IntegerThreshold)]
 #[case::float_threshold(Case::FloatThreshold)]
 #[case::text_threshold(Case::TextThreshold)]
@@ -124,6 +128,59 @@ fn judge_config_tests_behavior(#[case] case: Case) {
                     ..
                 }
             ));
+        }
+        Case::TypedFloatThreshold => {
+            let params = JudgeParams {
+                judge_model: None,
+                criteria: None,
+                overall_threshold: Some(72.5_f64),
+                on_failure: None,
+                mode: None,
+                default_on: None,
+            };
+            let mapping = BTreeMap::new();
+            let resolved = parse_param::<f64>(
+                &params,
+                &mapping_entry(&mapping),
+                ParamKey::OverallThreshold,
+            )
+            .expect("param");
+            assert_eq!(resolved.map(f64::to_bits), Some(72.5_f64.to_bits()));
+        }
+        Case::TypedFloatWeights => {
+            let params = JudgeParams {
+                judge_model: None,
+                criteria: Some(vec![
+                    criterion("a", CriterionWeight::Integer(50), "first"),
+                    criterion("b", CriterionWeight::Float(50.0), "second"),
+                ]),
+                overall_threshold: None,
+                on_failure: None,
+                mode: None,
+                default_on: None,
+            };
+            let mapping = BTreeMap::new();
+            let resolved = parse_param::<Vec<Criterion>>(
+                &params,
+                &mapping_entry(&mapping),
+                ParamKey::Criteria,
+            )
+            .expect("param");
+            assert_eq!(
+                resolved,
+                Some(vec![
+                    Criterion {
+                        name: "a".to_owned(),
+                        description: "first".to_owned(),
+                        weight: CriterionWeight::Integer(50),
+                    },
+                    Criterion {
+                        name: "b".to_owned(),
+                        description: "second".to_owned(),
+                        weight: CriterionWeight::Float(50.0),
+                    },
+                ])
+            );
         }
         Case::IntegerThreshold => {
             let params = JudgeParams::default();
