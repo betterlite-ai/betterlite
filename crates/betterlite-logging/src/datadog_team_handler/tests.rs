@@ -370,6 +370,17 @@ fn the_agent_host_and_port_are_passed_as_given() {
 }
 
 #[test]
+fn the_team_logger_uses_the_default_datadog_options() {
+    let cache = cache();
+    let builds = Arc::new(AtomicUsize::new(0));
+    let params = map(&[("dd_api_key", "team-key"), ("dd_site", "us5.datadoghq.com")]);
+    let environment = map(&[]);
+    let logger = get(&params, &cache, &environment, &builds).expect("the team logger");
+    assert!(!logger.settings.use_v1);
+    assert!(!logger.settings.options.turn_off_message_logging);
+}
+
+#[test]
 fn a_new_logger_logs_the_team_scope_without_the_credentials() {
     let (captured, _guard) = capture_debug();
     let cache = cache();
