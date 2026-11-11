@@ -73,6 +73,33 @@ async fn comparison_failure_warns() {
 }
 
 #[test]
+fn difference_summary_names_facts() {
+    let expected = contract(vec![
+        fact(ObjectKind::Relation, "LiteLLM_Base", "", Attribute::Kind),
+        fact(
+            ObjectKind::Column,
+            "LiteLLM_Base",
+            "removed",
+            Attribute::Type,
+        ),
+    ]);
+    let live = contract(vec![
+        fact(ObjectKind::Relation, "LiteLLM_Base", "", Attribute::Kind),
+        fact(
+            ObjectKind::Index,
+            "LiteLLM_Base",
+            "extra_idx",
+            Attribute::Method,
+        ),
+    ]);
+    let comparison = expected.compare(&live);
+    assert_eq!(comparison.differences.len(), 2);
+    let rendered = summary(&comparison);
+    assert!(rendered.contains("LiteLLM_Base.removed"), "{rendered}");
+    assert!(rendered.contains("LiteLLM_Base.extra_idx"), "{rendered}");
+}
+
+#[test]
 fn difference_summary_is_bounded() {
     let expected = base_contract();
     let extras: Vec<Fact> = (0_u8..7)

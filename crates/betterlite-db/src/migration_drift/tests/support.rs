@@ -13,7 +13,7 @@ use super::fixtures::{
 use super::guard::{LensGuardError, raise_if_lens_rename_pending, spend_logs_is_partitioned};
 use super::index_repair::{
     INDEX_REPAIR_LOCK_KEY, InvalidIndex, index_repair, invalid_litellm_indexes,
-    repair_connection_url, repair_invalid_indexes,
+    repair_connection_url, repair_invalid_indexes, repair_under_migration_lock,
 };
 use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
 use crate::schema_agent_identity::MIGRATION_CATALOG as B709;
@@ -96,6 +96,40 @@ fn index_names(indexes: &[InvalidIndex]) -> Vec<&str> {
     indexes.iter().map(|index| index.name.as_str()).collect()
 }
 
+async fn ahead_unavailable_is_silent(known: &[String]) {
+    let absent = MigrationDriftCheck {
+        database_url: None,
+        direct_url: None,
+    };
+    assert!(warn_if_db_ahead_of_head(&absent, known).await.is_empty());
+    let malformed = MigrationDriftCheck {
+        database_url: Some(SecretString::from("postgresql://[::1/db")),
+        direct_url: None,
+    };
+    assert!(warn_if_db_ahead_of_head(&malformed, known).await.is_empty());
+}
+
+async fn assert_repair_result(client: &PostgresClient, schema: &str, captured: &str) {
+    assert!(captured.contains("found invalid indexes"), "{captured}");
+    assert!(
+        captured.contains("LiteLLM_aaa_repairable (table size"),
+        "{captured}"
+    );
+    assert!(captured.contains("Dropped leftover"), "{captured}");
+    assert!(captured.contains("Rebuilt"), "{captured}");
+    let remaining = invalid_litellm_indexes(client, schema).await.unwrap();
+    assert!(remaining.is_empty());
+    assert_eq!(
+        index_valid(client, schema, "LiteLLM_aaa_repairable").await,
+        Some(true)
+    );
+    assert_eq!(
+        index_valid(client, schema, "LiteLLM_ccc_leftover_ccnew1").await,
+        None
+    );
+    assert_eq!(index_valid(client, schema, "other_idx").await, Some(false));
+}
+
 async fn schema_check(
     database: &TestDatabase,
     expected: &SchemaContract,
@@ -134,6 +168,7 @@ async fn insert_ledger(client: &PostgresClient) {
         .batch_execute(
             "INSERT INTO _prisma_migrations (id, checksum, migration_name, started_at, finished_at, rolled_back_at) VALUES \
              ('row-known', 'checksum', '20261001100000_rename_lens', now(), now(), NULL), \
+             ('row-same', 'checksum', '20261001100000_parallel', now(), now(), NULL), \
              ('row-newer', 'checksum', '20261101000000_future', now(), now(), NULL), \
              ('row-older', 'checksum', '20200101000000_old', now(), now(), NULL), \
              ('row-rolled-back', 'checksum', '20261201000000_rolled_back', now(), now(), now()), \

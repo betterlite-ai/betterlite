@@ -17,6 +17,7 @@ async fn newer_db_warns() {
         );
         assert!(captured.contains("20261101000000_future"), "{captured}");
         assert!(!captured.contains("20200101000000_old"), "{captured}");
+        assert!(!captured.contains("20261001100000_parallel"), "{captured}");
         assert!(!captured.contains("unexpected_name"), "{captured}");
 
         client
@@ -24,21 +25,7 @@ async fn newer_db_warns() {
             .await
             .unwrap();
         assert!(warn_if_db_ahead_of_head(&check, &known).await.is_empty());
-
-        let absent = MigrationDriftCheck {
-            database_url: None,
-            direct_url: None,
-        };
-        assert!(warn_if_db_ahead_of_head(&absent, &known).await.is_empty());
-        let malformed = MigrationDriftCheck {
-            database_url: Some(SecretString::from("postgresql://[::1/db")),
-            direct_url: None,
-        };
-        assert!(
-            warn_if_db_ahead_of_head(&malformed, &known)
-                .await
-                .is_empty()
-        );
+        ahead_unavailable_is_silent(&known).await;
     }))
     .await;
 }
@@ -54,6 +41,13 @@ fn ahead_warning_truncates_after_five() {
     let message = shown(&hostile);
     assert!(message.ends_with(" ..."), "{message}");
     assert_eq!(message.matches(", ").count(), 4);
+
+    let five: Vec<String> = (1_u8..=5)
+        .map(|index| format!("2027{index:02}01000000_later"))
+        .collect();
+    let five_hostile = hostile_names(&five, &known);
+    assert_eq!(five_hostile.len(), 5);
+    assert_eq!(shown(&five_hostile), five_hostile.join(", "));
 
     let malformed = hostile_names(
         &[

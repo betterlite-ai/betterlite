@@ -15,28 +15,28 @@ async fn invalid_index_repair() {
         let (logs, dispatch) = capture();
         let _guard = set_default(&dispatch);
         assert!(repair_invalid_indexes(&database.check(), "30s").await);
-        let captured = logs.joined();
-        assert!(captured.contains("found invalid indexes"), "{captured}");
-        assert!(captured.contains("Dropped leftover"), "{captured}");
-        assert!(captured.contains("Rebuilt"), "{captured}");
-        assert!(
-            invalid_litellm_indexes(raw, &database.schema)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        assert_eq!(
-            index_valid(raw, &database.schema, "LiteLLM_aaa_repairable").await,
-            Some(true)
-        );
-        assert_eq!(
-            index_valid(raw, &database.schema, "LiteLLM_ccc_leftover_ccnew1").await,
-            None
-        );
-        assert_eq!(
-            index_valid(raw, &database.schema, "other_idx").await,
-            Some(false)
-        );
+        assert_repair_result(raw, &database.schema, &logs.joined()).await;
+    }))
+    .await;
+}
+
+#[tokio::test]
+async fn repair_skips_an_index_that_vanished() {
+    Box::pin(with_schema(|database| async move {
+        let client = database.pool.get().await.unwrap();
+        let raw = &**client;
+        duplicate_table(raw, "LiteLLM_Stuck").await;
+        invalid_unique_index(raw, "LiteLLM_Stuck", "LiteLLM_zzz_stuck").await;
+        let (logs, dispatch) = capture();
+        let _guard = set_default(&dispatch);
+        let vanished = InvalidIndex {
+            schema: database.schema.clone(),
+            name: "LiteLLM_gone".to_owned(),
+            table_size: String::new(),
+        };
+        let repaired = repair_under_migration_lock(raw, &database.schema, &vanished).await;
+        assert!(repaired.unwrap());
+        assert!(logs.joined().is_empty(), "{}", logs.joined());
     }))
     .await;
 }
