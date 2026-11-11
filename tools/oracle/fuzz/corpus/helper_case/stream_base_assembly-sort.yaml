@@ -1,0 +1,11 @@
+kind: helper
+name: stream-base-assembly-sort
+call:
+  stream_base_assembly:
+    function: conditional_sort_original_first
+    chunks:
+      - {id: a, _hidden_params: {created_at: 2}}
+      - {id: b, _hidden_params: {created_at: 1}}
+      - {id: c}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}
