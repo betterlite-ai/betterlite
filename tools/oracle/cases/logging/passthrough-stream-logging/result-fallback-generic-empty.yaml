@@ -1,0 +1,12 @@
+kind: helper
+name: result-fallback-generic-empty
+call:
+  b3608:
+    operation: build_result
+    endpoint_type: generic
+    url_route: https://example.com/v1/generateContent
+    request_body: {}
+    model: null
+    chunks: []
+env: {}
+compare: {ignore: []}

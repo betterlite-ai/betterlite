@@ -181,7 +181,7 @@ out_of_scope:
   - "B4505 owns the worker routes under /lens/worker (claim, progress, sample, content, model, result, heartbeat), worker_auth, assigned, claim_candidate, validate_finding and merge_results of endpoints.py. It imports get_lens, required and source_reader from this task's lens_access module."
   - "The cases need no database and no tracing store, so rows, paging, 403 for non-admin callers and the success bodies of the database routes are covered by native tests only. The oracle worker sandbox has no Postgres for either gateway."
   - "B4501 owns LensRepository and its SQL, B4500 the records, can_access, queue_job, current_job and replace_job, B4502 the SourceReader, Storage port and parse_execution, B4504 validate_key."
-  - "The ClickHouse implementation of the lens_* storage queries and provide_storage are owned by B3867 and the later storage task, not here. No task owns the Lens storage queries yet; the architect names the owner."
+  - "The ClickHouse implementation of the lens_* storage queries and provide_storage are owned by B3867 and the later storage task, not here. No task owns the Lens storage queries yet; the architect names the owner. B9030 owns Postgres administration and credential HTTP behavior, and B132 owns worker execution and billing."
   - "B844 owns get_model_names. The route-group task that owns _types.py litellm_native_routes decides which lens paths a non-admin key can reach before user_scope runs."
   - "B8682 mounts lens_admin_routes::router through app::edge::mount and B4505's router through mount_public; this task never mounts itself."
 pitfalls:

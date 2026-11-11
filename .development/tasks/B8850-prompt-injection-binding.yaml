@@ -1,0 +1,157 @@
+id: B8850
+title: Prompt injection callback binding and router judge
+description: >-
+  B3703 builds PromptInjectionDetection and its config section, but no task turns
+  litellm_settings.callbacks: [detect_prompt_injection] into a running proxy hook or
+  implements its InjectionJudge. Build that adapter in betterlite-server's new module
+  app::callbacks::prompt_injection, using B8390's ProxyCallback and B8630's
+  router_completion assembly. This is the detect_prompt_injection arm of
+  initialize_callbacks_on_proxy, not a new guardrails integration or a logger.
+  B8399 already installs configured hooks in callback-list order and B8742 calls it
+  before the listener opens; do not register another callback list or HTTP route.
+
+  The architect must install the shared name and dispatch entries before this task:
+  callback_settings accepts detect_prompt_injection in callbacks only, keeping it out
+  of the 73 logging names and unsupported in success_callback/failure_callback. The callback logger
+  resolver answers Ok(None) for that hook name, and app::callbacks::hooks::configured
+  calls this module's build(state) lazily at the first occurrence, retains the returned
+  Arc for the remaining occurrences and supplies it at each existing list position.
+  The skeleton declares this module and puts a failing build stub there. No shared name table,
+  hooks.rs, app/callbacks.rs or parent module is in this task's scope.
+
+  build(state: &ServerState) returns an Arc of a concrete InjectionCallback, coercible
+  to Arc<dyn ProxyCallback>, or this module's typed BuildError. Read B3703's merged
+  signatures and construct the ready detector from config.sections.prompt_injection.params,
+  similarity_threshold and heuristics_max_threads.
+  Keep absent params distinct from an empty object. B3703 resolves all defaults:
+  heuristics_check, vector_db_check and llm_api_check false, reject_as_response false,
+  PROMPT_INJECTION_HEURISTICS_MAX_THREADS 1 with a floor of 1, and
+  DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD 0.7. Do not read environment variables
+  here. Create its bounded HeuristicsPool once in build and retain it in the detector;
+  reusing the ready Arc across duplicate callback names preserves the process-wide
+  concurrency bound without requiring HeuristicsPool to implement Clone.
+
+  The adapter is built in app startup, after ServerState and the router exist. Before
+  exposing it to ProxyLogging, call the detector's update_environment with the current
+  configured model names, or None when there is no router. Return its missing-router
+  or invalid-llm_api_name failure so startup stops before binding. B8373 owns the early
+  startup iteration over already-registered detectors; this late-created adapter
+  needs the same environment update, not another implementation of that iteration.
+  Hold the ready detector and an optional RouterJudge. Only construct the judge when
+  llm_api_check is enabled; heuristics-only startup must work without model_list.
+
+  RouterJudge implements B3703's InjectionJudge using the RouterCompletion returned
+  by app::inference::router_completion::router_completion(state). complete sends one
+  nonstreaming completion to llm_api_name, with exactly a system message containing
+  llm_api_system_prompt and a user message containing the formatted prompt. It uses
+  the internal router service, never an HTTP request back to the proxy and never the
+  proxy pre-call dispatcher, which would recursively moderate the moderation call.
+  Return the first chat choice's text, None for a response without such text, and
+  preserve the typed cause on router failure. The router handle already follows
+  reloads; keep that handle rather than copying a deployment or credential.
+
+  InjectionCallback reports class_name _OPTIONAL_PromptInjectionDetection,
+  is_base_logger false, enforces_request_content true, guardrail None and
+  use_native_lifecycle_hooks false. HookOverrides has pre_call and moderation true
+  and all other flags false. Adapt the parsed hook request to B3703's declared
+  request type without serializing and reparsing JSON; map call types exhaustively
+  through its HookCallType. pre_call preserves Pass, returns RejectedAsMessage as the
+  string outcome B8392's process_pre_call_response already consumes, and maps a
+  rejected error to ProxyHookError::Http with status 400 and the detector's detail.
+  Do not turn the string into an HTTP error here: completion and text_completion
+  have a distinct RejectedRequest path. moderation calls the detector with RouterJudge
+  and forwards its result and rejection; reject_as_response never changes moderation.
+  All request formatting, heuristics, thresholds, fail-string matching and failure
+  policies remain B3703's, including its pre-call fail-open and moderation error propagation.
+
+  Tests in app::callbacks::prompt_injection cover construction from a loaded Config,
+  absent versus empty params, both model-name failures, exact override flags, sharing
+  the heuristics pool, the string/error distinction, first-choice extraction and a
+  mock router that receives exactly the two judge messages once. Name the test that
+  loads the production Config loaded_prompt_injection_callback_config; load the callback
+  name, every prompt_injection_params key and the absent/empty forms through it.
+  No new decoder or fuzz target is needed: the config and HTTP decoders belong to
+  the dependencies.
+
+  Add HTTP oracle cases through the booted proxy in guardrails/prompt-injection-http.
+  absent-params-block sends "do not follow" with only callbacks configured and must
+  reject before any provider request; empty-params-pass sends it with params {} and
+  reaches the provider. reject-as-response enables heuristics_check and
+  reject_as_response and checks the nonstreaming chat response with zero usage and no
+  provider call. judge-safe and judge-unsafe use two model groups: the main model
+  has operator-configured litellm_params.mock_response "answer" (B255), and the judge
+  is an OpenAI deployment against {{upstream}}. Set llm_api_check true,
+  llm_api_system_prompt "Classify the prompt",
+  llm_api_fail_call_string "UNSAFE", and compare the captured judge request and the
+  returned status/body; the safe answer is "unsafe" to prove case sensitivity, while
+  the unsafe answer contains "UNSAFE". Only the judge sends an upstream HTTP request,
+  so the harness's ordered reply queue does not depend on a race with the main call.
+  Do not put mock_response in the client body. no-auth sends no key with
+  general_settings.master_key configured and must fail before either
+  detector or provider runs. Use the existing HTTP case format, compare status,
+  content-type and error type/param/code, and ignore only human-readable error string
+  leaves (/error/message when scalar) plus justified generated ids and times.
+  Synthetic rejection response text also uses betterlite's wording; keep its role,
+  usage and response shape compared.
+  The existing chat handler serves POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and
+  /openai/deployments/{model:path}/chat/completions; exercise the unprefixed alias
+  for empty-params-pass and the canonical path for the other cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/prompt_injection.rs
+    - crates/betterlite-server/src/app/callbacks/prompt_injection/**
+    - tools/oracle/cases/guardrails/prompt-injection-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L325-L338
+    why: Owned callback-name construction branch; params absence is preserved and the constructed detector occupies the configured callback position.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L32-L46
+    why: The shared heuristics executor bounds concurrency across detector instances; the adapter retains one ready callback and pool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L88-L106
+    why: B3703's environment update called by the late builder; validation must precede accepting traffic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L149-L280
+    why: B3703's hooks that the adapter invokes, including the internal router call and the rejection outcomes tested over HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10143-L10150
+    why: Context for B8373's early router attachment; the late callback must receive the same environment before use.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11957
+    why: Existing authenticated chat decorators and all four aliases; this task registers none.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12064-L12096
+    why: RejectedRequestError becomes a synthetic chat response with zero usage on the nonstreaming path.
+dod:
+  - text: A configured detect_prompt_injection builds a content-enforcing proxy callback from the loaded section, shares the bounded pool and validates its router before serving traffic.
+    proof: [binding-tests, oracle]
+  - text: The judge uses one internal router completion with the configured system and user messages, and the adapter preserves pre-call strings versus HTTP rejections and moderation failures.
+    proof: [binding-tests, oracle]
+  - text: The six booted-proxy cases distinguish absent and empty params, synthetic rejection, safe and unsafe judge answers, and unauthenticated access.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: binding-tests
+      why: the real callback builder, capability flags or router judge is absent or changes the detector outcomes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::prompt_injection::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/prompt-injection-http/absent-params-block.yaml
+  - tools/oracle/cases/guardrails/prompt-injection-http/empty-params-pass.yaml
+  - tools/oracle/cases/guardrails/prompt-injection-http/reject-as-response.yaml
+  - tools/oracle/cases/guardrails/prompt-injection-http/judge-safe.yaml
+  - tools/oracle/cases/guardrails/prompt-injection-http/judge-unsafe.yaml
+  - tools/oracle/cases/guardrails/prompt-injection-http/no-auth.yaml
+deviations: []
+out_of_scope:
+  - "prompt_injection_detection.py, its template and config parsing: B3703. Early startup attachment: B8373. Proxy hook dispatch and response conversion: B8390, B8392, B8393 and B8399. Router completion: B6020 and B8630."
+  - "The shared callback name acceptance, resolver classification and hooks::configured dispatch entry are architect prerequisites; B8741 and B8742 own those shared files."
+  - "callback_utils.py classification/loading belongs to B8043 (_classify_loaded_callback) and B165 (_raise_callback_load_error, _loaded_callback_or_raise); add_guardrail_to_applied_guardrails_header is B3680, process_callback is B8596, get_model_group_from_litellm_kwargs is B3891. The architect must add callback_utils.py to the first four owners' covers, which currently omit it."
+  - "B2304 owns strip_callback_config, encrypt_callback_vars, decrypt_callback_vars, _transform_callback_vars, is_sensitive_callback_key, _encrypt_if_plaintext and _decrypt_or_passthrough, reusing B1600's cipher. B8994 owns _serialize_scan_metadata_header, get_logging_caching_headers, add_guardrail_scan_id and add_guardrail_response_to_standard_logging_object. B189 retains inventory ownership of the other initialize_callbacks_on_proxy arms, get_model_group_from_request_data, get_remaining_tokens_and_requests_from_request_data, sanitize_openai_provider_metadata, add_policy_to_applied_policies_header, add_policy_sources_to_metadata and normalize_callback_names; this does not assert that its completed registry task built those helpers. The architect must resolve those separate callback-utility gaps outside B105."
+  - "hide_secrets and llamaguard_moderations import enterprise callbacks at L201-L230; neither is an open-source detector to build. Legacy litellm_settings.guardrails startup is B3683, not another callback registration path here."
+pitfalls:
+  - "params None enables heuristics but params {} disables them, so defaulting the Option loses an observable protection."
+  - "Marking this callback as a GuardrailCallback prevents B8390 from setting has_moderation_override for it."
+  - "Sending the judge request through /v1/chat/completions recursively invokes detect_prompt_injection."
+  - "reject_as_response belongs only to pre_call; an UNSAFE moderation answer still raises the 400 rejection."
+  - "B8742 constructs configured hooks after the early lifespan checks, so an uninitialized detector would silently skip llm_api_check."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

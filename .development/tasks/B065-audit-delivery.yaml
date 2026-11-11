@@ -17,7 +17,8 @@ description: >-
   because betterlite has no paid tier. Remove the later premium-only return too.
   Reuse B189's installed callback resolver and B165's configured Python instances. Unknown
   names warn and skip. Cache only successful named resolutions, and expose reset on config
-  reload. s3_v2 with non-null s3_audit_callback_params constructs a dedicated B3992 S3 sink,
+  reload. Expose whether the audit_log_callbacks key was present, the cache reset, and clear and append
+  operations on the configured callback list, which B8872 calls at startup. s3_v2 with non-null s3_audit_callback_params constructs a dedicated B3992 S3 sink,
   separate from the normal callback singleton; ordinary names retain the shared resolver.
   Build payload timestamps as ISO strings, table names as enum values, missing actor/key
   as empty strings, and preserve before_value/updated_values fields. Normalize dict values

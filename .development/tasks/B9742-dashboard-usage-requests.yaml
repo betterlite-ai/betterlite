@@ -1,0 +1,152 @@
+id: B9742
+title: Exercise usage entity filters, exports and legacy charts through HTTP
+description: >-
+  Keep the usage and old-usage pages, UsagePage and EntityUsageExport from B9090's intake.
+  Add the page-query combinations absent from B8482/B8661/B8662's planned generic HTTP cases,
+  using the owner map in B147-route-audit.md. The backend is already assigned: B3096/B3097/B3098
+  implement keys/aggregate/search/export, B8482 mounts the family, B3100/B3101/B3102 with B8661
+  supply user-agent/gateway activity, and B1721-B1724 with B8662 supply legacy spend. This task
+  registers nothing. B074 now owns the exact /usage/ai/chat model/history/tool/SSE HTTP cases;
+  do not copy them or take its engine into this task. B147 exercises that existing flow in-browser.
+
+  Each entity-<name>.yaml uses real HTTP steps for the entity's aggregate, keys, search,
+  model_top_keys and export paths, with a shared page-selected query. The six entities are user,
+  team, tag, organization, customer and agent; the UI does not request the /end_user alias.
+  Use start_date=2026-01-14,end_date=2026-01-16,timezone=-60, a configured model alias and a
+  seeded key hash. Entity query names are user_id (only the first selection), team_ids,tags,
+  organization_ids,end_user_ids,agent_ids (comma-separated for all but user). In the team case
+  include exclude_team_ids=litellm-dashboard even when team_ids is present. For organization,
+  customer and agent exercise the matching exclude_organization_ids,exclude_end_user_ids and
+  exclude_agent_ids when a selection is excluded. Do not add include_current_utc_day to these
+  ordinary Usage calls. Cost optimization's user=true form is B9743.
+
+  Follow each aggregate with the page's offset/limit key-page request, a search containing a
+  space or plus, and a model_top_keys request with model_group and explicit by_model_group.
+  Exercise both true and false in different entity flows. Do not confuse the public model group
+  with the model id. Exports use the same filters plus export_type and format; cover daily CSV,
+  daily_with_keys JSON, daily_with_models CSV and daily_with_users JSON where the modal offers
+  them. The modal hides daily_with_users only for entity user, so never invent that click there.
+  At least one export has nonempty rows. Compare CSV text, heading order and Content-Disposition,
+  not a JSON approximation of the download. Complete metadata and all breakdown maps remain
+  compared, including nested key aliases/user_email/key_exists and caching/savings totals.
+
+  B9740's empty dashboard seed installs the final schema independently. Use B9270 daily_usage
+  to populate user/team/tag rows with two users, two dates and different token/spend totals;
+  B9260 finops supplies key aliases and an organization join where needed. The other three
+  entity tables may be empty: their query parsing, auth and response shape are still real, while
+  repository population coverage stays with their owners. Include an internal-user query and
+  an admin-viewer read among the six flows, with a second user's distinguishable rows. Do not
+  assert every role sees global totals. Model and date filters must visibly affect at least
+  one populated result. All data is provisioned separately for Python and Rust, never by a
+  production repository or a handler helper. Use the ordinary HTTP case discriminator and
+  B5076's boot setup, with no real provider network traffic.
+
+  team-user-and-gateway.yaml sends the TeamUserSpendCard request to GET /team/spend/by_user
+  with comma-separated team_ids and the same YYYY-MM-DD window, GET /gateway/daily/activity
+  for the chosen range and GET /tag/list with the page's dates. Read member totals, gateway
+  daily categories and tag names, preserving the real empty/nonempty envelope of each route.
+  The generic gateway default/custom-window and tag-list tests stay with B8661/B1604; if their
+  materialized case already sends this full request, list that dependency case instead of
+  writing another identical one. Shared organization/team/customer/agent/model selectors
+  belong to B9731/B9733/B9735, not a second list API project here.
+
+  user-agent-selected-tags.yaml sends /tag/dau,/tag/wau,/tag/mau with end_date and two repeated
+  tag_filters query parameters, /tag/summary with dates and the same repeated tags, and
+  /tag/user-agent/per-user-analytics?page=1&page_size=50 with those tags but no dates. Then send
+  page=2. apiClient serializes arrays as repeated fields, unlike the daily-activity comma lists.
+  The per-user endpoint owns its last-30-day window; do not add a client date parameter to force
+  historical seed rows into it. Keep its empty shape when the fixed test interval is old.
+  /tag/distinct with no query is already planned by B8661 and needs no new generic case.
+
+  legacy-load-and-filter.yaml reproduces old-usage's initial GET /global/spend/logs, /keys?limit=5,
+  /models?limit=5 and /teams under the /global/spend prefix, and POST /global/spend/end_users
+  with {}. Then send that POST with api_key,startTime,endTime ISO values, GET /global/spend/tags
+  with ISO dates and comma-separated tags, /global/spend/provider with dates, and /global/activity
+  plus /global/activity/model with the selected dates. B8662 plans individual route cases;
+  this case adds the initial omitted fields and page-specific limits/filters in one transcript.
+  /global/spend/all_tag_names and /sso/get/ui_settings already have their exact generic requests
+  planned. Keep the DISABLE_EXPENSIVE_DB_QUERIES branch in component tests: when true, the
+  expensive top-key/model/team requests are not sent. Do not remove it as a paid gate.
+
+  Add 51-usage-pages.patch and its checked hashes only for subscription-only guards and branding
+  within these covered sources. In particular old-usage's tag selector must not advertise or
+  require premiumUser when its MIT route is available. Keep isAdminRole, isUserRole, viewer and
+  team membership decisions. Retain ActivityMetrics calculations and all daily adapters; no
+  rewrite of charts or networking is needed. ui/dashboard/tests/usage renders the real page
+  adapters and export modal, with tests usageEntityRequestMatrix, usageDownloadUsesBlob,
+  usageAgentTagsRemainRepeated and legacyUsageHonorsExpensiveQueryFlag. Freeze the component
+  clock and browser timezone to make the concrete -60 query reproducible. Include upstream
+  activity_metrics, per_user_usage, user_agent_activity, EntityUsageExport and changed UsagePage
+  tests through upstream-tests.json. Assert displayed totals from the fetched record, not a
+  response assembled by the test from the expected UI value. For HTTP compare status, content
+  type, download headers and stable bodies; only generated timestamps/ids and error wording
+  may use documented narrow ignores. Roughly 650 compact case lines, a small patch and focused
+  component tests fit this task; no retained LiteLLM function is translated.
+scope:
+  paths:
+    - ui/dashboard/patches/51-usage-pages.patch
+    - ui/dashboard/patches/51-usage-pages.json
+    - ui/dashboard/tests/usage/**
+    - tools/oracle/cases/ui/usage/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1298-L1410
+    why: Entity-specific query names, timezone, exclusions and current-day flag omission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/UsagePage/dailyActivityApi.ts#L1-L101
+    why: Response metadata and nested breakdown fields consumed by all six views.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/EntityUsageExport/ExportTypeSelector.tsx#L10-L36
+    why: Export choices, including the user-only exclusion of daily_with_users.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/old-usage/_components/usage.tsx#L310-L433
+    why: Legacy initial requests, expensive-query flag and omitted end-user dates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/user_agent_activity.tsx#L88-L177
+    why: Repeated selected-tag arrays and independent daily/weekly/monthly requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L273-L547
+    why: B3096/B3097/B3098 already own decorators and mounted entity families, including aliases the UI does not call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L162-L332
+    why: B3100's distinct, DAU and WAU route query contracts, not new implementations here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L426-L698
+    why: B3101's MAU, summary and per-user route parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4190-L4239
+    why: B1722's POST accepts the initial empty body as well as the legacy selected-date form.
+dod:
+  - text: All six usage entity views send the retained filters, timezone, key/search/model continuations and valid export requests through the actual proxy.
+    proof: [usage-http-cases, oracle, usage-components]
+  - text: Populated usage and download values, repeated agent tags, legacy omitted fields and the expensive-query suppression remain observable in the retained components.
+    proof: [usage-components, usage-http-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: usage-http-cases
+      why: No new actual page query is present, or helper fixtures replace the required HTTP requests.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/usage)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/usage
+    - id: usage-components
+      why: The retained usage adapter serializes filters incorrectly, drops response values or fails to download the HTTP blob.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/usage
+oracle_cases:
+  - tools/oracle/cases/ui/usage/entity-user.yaml
+  - tools/oracle/cases/ui/usage/entity-team.yaml
+  - tools/oracle/cases/ui/usage/entity-tag.yaml
+  - tools/oracle/cases/ui/usage/entity-organization.yaml
+  - tools/oracle/cases/ui/usage/entity-customer.yaml
+  - tools/oracle/cases/ui/usage/entity-agent.yaml
+  - tools/oracle/cases/ui/usage/team-user-and-gateway.yaml
+  - tools/oracle/cases/ui/usage/user-agent-selected-tags.yaml
+  - tools/oracle/cases/ui/usage/legacy-load-and-filter.yaml
+deviations:
+  - what: Available MIT usage filters no longer depend on premiumUser or advertise an upgrade.
+    why: README requires no paid tier; role checks and DISABLE_EXPENSIVE_DB_QUERIES are operational controls and remain in force.
+out_of_scope:
+  - B9090 retains every unchanged function in the usage, old-usage, UsagePage, EntityUsageExport and auxiliary usage files; B9091 builds them.
+  - B8482/B8661/B8662 compose the existing activity and spend services; B815 and B1604 own team-member spend and tag listing.
+  - B074 owns /usage/ai/chat HTTP coverage and B8673 its mount; B147 owns browser SSE rendering using those dependencies.
+  - Shared model/team/organization/resource selectors are B9731/B9733/B9735 client contracts with B007/B060/B813/B1212/B059/B4784 backend owners.
+pitfalls:
+  - timezone is minutes west of UTC, so a Berlin winter page sends -60 rather than 60.
+  - Repeated tag_filters in agent activity must not be replaced with the comma-separated tags used by daily spend.
+  - The usage export modal suppresses daily_with_users for user but permits it for the other entities.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

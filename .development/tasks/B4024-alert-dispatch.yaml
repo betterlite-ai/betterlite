@@ -13,7 +13,7 @@ description: >-
   the B4021 flush task drains them when their interval expires. Format alert messages with alert
   type, level (except for daily reports and new model added), timestamp, kwargs and alerting
   metadata. Append `PROXY_BASE_URL` when set. Trigger the batch sending via `flush_queue` when
-  the queue reaches batch size, but never call `send_alert` itself or B116's constructor from
+  the queue reaches batch size, but never call `send_alert` itself or B8890's constructor from
   this entry point.
 scope:
   paths:

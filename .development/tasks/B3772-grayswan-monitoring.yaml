@@ -183,7 +183,7 @@ out_of_scope:
   - "GraySwanGuardrail.apply_guardrail body and decision/enforcement (belongs to B3771)"
   - "GraySwanGuardrail._process_response_internal and violation formatting (belongs to B3771)"
   - "Lifecycle entry points and callback registration (belong to B107)"
-  - "Frame dispatch and route registration (belong to B104 and gateway framework)"
+  - "Frame dispatch and route registration (belong to B8666 for live class dispatch and the gateway framework)"
 
 pitfalls:
   - >-

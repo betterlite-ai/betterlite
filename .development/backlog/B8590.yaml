@@ -4,7 +4,8 @@ title: Config load steps for environment, credentials, registries, policies, ale
 status: todo
 depends_on: [B8500, B4421, B4412, B4419, B4470, B1601]
 file: tasks/B8590-config-boot-steps.yaml
-covers: []
+covers:
+  - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B124
 resolution: null

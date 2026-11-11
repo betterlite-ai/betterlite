@@ -34,7 +34,7 @@ description: >-
   general_settings.disable_custom_api_keys=false. Preserve the key-generation membership checks at key_management_endpoints.py:676-681
   and 737-743.
 
-  Call B120 coerce_bool, B800 _get_user_in_team/_get_caller_team_role and
+  Call B4140 coerce_bool, B800 _get_user_in_team/_get_caller_team_role and
   TeamMemberPermissionChecks, B246 logging_metadata_config_error, B770 typed requests/table handles,
   B724 TeamRepository and B2314 is_team_service_account. No B736/B737 lookup or B892 delegation
   helper is called by these ranges. _is_team_key checks non-null, so even '' means team scope.

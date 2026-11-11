@@ -144,7 +144,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L424-L430
 out_of_scope:
   - "CustomGuardrail base class construction and initialization (__init__) is owned by B3664, B3665, and B3666."
-  - "should_run_guardrail checking, add_standard_logging_guardrail_information_to_request_data, and log_guardrail_information decorator are unresolved B104 dependencies."
+  - "should_run_guardrail checking, add_standard_logging_guardrail_information_to_request_data, and log_guardrail_information decorator are owned by B3665 (should_run_guardrail) and B3664 (logging)."
   - "async_pre_call_hook, verdict enforcement, error handling (_handle_caller_fault, _handle_unavailable, _handle_throttled, _enforce_verdict) and verdict recording are B3742's responsibility."
 pitfalls:
   - 'The oracle helpers for this task are pre-registered as agent_365_token_exchange and agent_365_payload_assembly in the guardrails group. Replace the stub Ops in tools/oracle/src/helpers/guardrails/b3741.rs and agent_365_payload_assembly.rs with impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b3741.py and agent_365_payload_assembly.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

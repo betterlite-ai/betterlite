@@ -21,6 +21,8 @@ description: >-
   Authorization Bearer {token}. The reply id is cached and returned. Any failure at any step returns none after the caller's
   log line, never an error. LiteLLM keeps the cache in a process-wide dict. Here the cache is a bounded map owned by the
   uploader value (capacity is a constructor argument) and the oldest entry leaves first when it is full.
+  upload_file_async (file_handler.py L154) and its private downloader _download_image_async (L73) have no caller at the
+  pin and are not built.
 
   gigachat_passthrough. GigaChatPassthroughConfig. is_streaming_request(request) is the request's stream field, false when
   absent. The URL is {base}/{endpoint with leading "/" removed}, with the base from api_base, else the GIGACHAT_API_BASE value,

@@ -5,10 +5,12 @@ description: >-
   in betterlite-server::workflow_events, using the existing typed table repositories. Implement
   four routes with optimistic sequence-number concurrency, atomic event+status transactions,
   and ascending sequence-ordered reads. Enforce run ownership via _require_run on both
-  event and message routes, but preserve the GET/POST asymmetry: GET routes pass
-  _read_scope_caller output to _require_run, which returns None for admin-view callers,
-  causing ownership checks to be skipped; POST routes pass the raw auth dict, so ownership
-  is enforced uniformly.
+  event and message routes. GET routes pass _read_scope_caller output to _require_run,
+  which returns None for admin-view callers, so those callers can read foreign runs. POST
+  routes pass the raw auth dict, so only a full PROXY_ADMIN caller skips the ownership
+  check on writes. A booted view-only caller is rejected on writes by route auth, and an
+  ordinary workflow key needs an explicit allowed_routes grant, which B076 installs
+  through B775's /key/update.
 
   On append_workflow_event, generate the next sequence number, attempt insertion up to five times
   on unique-constraint collisions (incrementing the sequence number each retry), and execute event
@@ -34,7 +36,6 @@ scope:
   paths:
     - crates/betterlite-server/src/workflow_events.rs
     - crates/betterlite-server/src/workflow_events/**
-    - tools/oracle/cases/management/workflows/**
     - tools/oracle/helpers/b3160.py
     - tools/oracle/helpers/b3160/**
     - tools/oracle/src/helpers/server/b3160.rs
@@ -51,48 +52,35 @@ dod:
   - text: >-
       POST /v1/workflows/runs/{run_id}/events appends an event with optimistic concurrency,
       retries up to five times on sequence-number collision, and executes event creation and
-      status update in a single transaction; the fifth failed attempt raises 409.
-    proof: [workflow-events-tests, oracle]
+      status update in a single transaction; the fifth failed attempt raises 409. Collision
+      and exhaustion are covered by deterministic tests.
+    proof: [workflow-events-tests]
   - text: >-
       GET /v1/workflows/runs/{run_id}/events returns events ordered ascending by sequence_number
       with configurable limit (default 100, max 500). GET routes skip ownership checks for
       admin-view callers but enforce them for non-admin keys.
-    proof: [workflow-events-tests, oracle]
+    proof: [workflow-events-tests]
   - text: >-
       POST /v1/workflows/runs/{run_id}/messages appends a message with independent optimistic
       concurrency retries, storing full content and optional session_id; the fifth failed
       attempt raises 409.
-    proof: [workflow-events-tests, oracle]
+    proof: [workflow-events-tests]
   - text: >-
       GET /v1/workflows/runs/{run_id}/messages returns messages ordered ascending by sequence_number
       with configurable limit (default 100, max 500). GET routes skip ownership checks for
       admin-view callers but enforce them for non-admin keys.
-    proof: [workflow-events-tests, oracle]
+    proof: [workflow-events-tests]
   - text: >-
       All four routes return 500 with CommonProxyErrors.db_not_connected_error detail when
       the database is absent.
-    proof: [workflow-events-tests, oracle]
+    proof: [workflow-events-tests]
 checks:
   optional: []
   commands:
     - id: workflow-events-tests
       why: Event/message append, list and transaction/collision logic fail or ownership is not enforced.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^workflow_events::/)'
-oracle_cases:
-  - tools/oracle/cases/management/workflows/append-event-stores-status-update.yaml
-  - tools/oracle/cases/management/workflows/append-event-collision-retry.yaml
-  - tools/oracle/cases/management/workflows/append-event-409-exhaustion.yaml
-  - tools/oracle/cases/management/workflows/list-events-ascending-sequence.yaml
-  - tools/oracle/cases/management/workflows/list-events-respects-limit.yaml
-  - tools/oracle/cases/management/workflows/append-message-stores-content.yaml
-  - tools/oracle/cases/management/workflows/append-message-collision-retry.yaml
-  - tools/oracle/cases/management/workflows/append-message-409-exhaustion.yaml
-  - tools/oracle/cases/management/workflows/list-messages-ascending-sequence.yaml
-  - tools/oracle/cases/management/workflows/list-messages-respects-limit.yaml
-  - tools/oracle/cases/management/workflows/events-db-absent.yaml
-  - tools/oracle/cases/management/workflows/messages-db-absent.yaml
-  - tools/oracle/cases/management/workflows/list-events-admin-view-skips-ownership.yaml
-  - tools/oracle/cases/management/workflows/post-events-enforces-ownership.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B003 owns user_api_key_auth integration, the HTTP error boundary and route registration with the axum application.
@@ -105,9 +93,9 @@ pitfalls:
   - >-
     GET routes call _read_scope_caller, which returns None for admin-view callers,
     causing _require_run to skip ownership enforcement; POST routes pass the raw auth
-    dict, so ownership is enforced uniformly on all POST writes. This asymmetry allows
-    admin and view-only callers to list or read another key's events and messages, but
-    prevents them from modifying (appending to) another key's runs.
+    dict, so only a full PROXY_ADMIN caller skips the check on POST writes. Admin-view
+    callers can list another key's events and messages but cannot append to its runs
+    unless they are full PROXY_ADMIN. Router-local oneshot tests cover both.
   - >-
     The fifth failed attempt raises 409 directly inside the retry loop — no sixth call
     is made. The loop iterates from 0 to 4 (five total), and when attempt 4 fails with

@@ -1,0 +1,28 @@
+task: B5366
+deviations:
+- what: >-
+    A message content part that is not text (an image_url, input_audio or document block) makes the token count fail,
+    so trim_messages returns the caller's messages unchanged and is_prompt_caching_valid_prompt returns false where
+    LiteLLM counts the part's tokens.
+  why: >-
+    B196's counter rejects content it cannot encode as text, and counting image tokens belongs to that crate; this task
+    cannot change it. use_default_image_token_count, which LiteLLM passes in the cache check, has no equivalent there.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L442-L458
+- what: >-
+    get_prompt_cache_min_tokens resolves the model's cost-map entry by exact name, case-insensitively, and by dropping
+    a provider prefix. It does not apply LiteLLM's further normalization of fine-tune ids, dated snapshots and
+    provider families, so such a name falls back to the default minimum where LiteLLM finds the base model's value.
+  why: >-
+    Full get_model_info resolution is B2225's full_model_metadata, which this task cannot call yet.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5786-L5844
+- what: >-
+    A failure inside TextCompletionStreamWrapper is a typed StreamError raised at the failed chunk. LiteLLM re-raises it
+    through exception_type, which for a provider-backed call is the provider's exception class with its status, and the
+    wrapper's model and custom_llm_provider fields exist only to name that exception.
+  why: >-
+    The wrapper does not know the provider in betterlite; the caller that owns the stream maps the error, so no status
+    is decided here.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7369-L7396
+- what: '`get_first_chars_messages` returns the first 100 characters of the JSON text, where LiteLLM uses Python `str()` on the list.'
+  why: The text only goes into an error message, and a Python repr printer in Rust would add code for no use.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5374-L5380

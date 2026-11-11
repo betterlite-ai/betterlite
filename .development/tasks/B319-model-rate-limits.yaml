@@ -118,7 +118,7 @@ oracle_cases:
 - tools/oracle/cases/routing/model-rate-limits/composition-no-double-rpm.yaml
 deviations: []
 out_of_scope:
-- Virtual-key and team rate-limit middleware (B072).
+- Virtual-key and team rate-limit middleware (B3055 constructs the shared limiter, B8399 wires its hooks).
 - Input/output token reservations (B019).
 pitfalls:
 - A rate-limit rejection and a Redis failure have different behavior.

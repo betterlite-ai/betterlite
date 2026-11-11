@@ -76,7 +76,7 @@ pitfalls:
 - 'The include_fallback_errors drop runs for non-streamed chat too, since LiteLLM does it in the shared pre-call step.'
 - 'The mock stream path (mock_response) goes through the generator as well; LiteLLM streams mock responses through the same generator.'
 - 'ChunkLog must not borrow the item stream; the cleanup reads it after the stream is dropped.'
-- 'stream_headers stay as they are; the generator only changes the body.'
+- 'Merge B8994 logging_caching_headers into the chat success, initial streaming and failure headers at the timing LiteLLM does; call that utility and do not copy it.'
 review_level: security
 budget:
   max_changed_lines: 1500

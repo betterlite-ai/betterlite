@@ -113,13 +113,20 @@ description: >-
 
 
   Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/openai/openai_dispatch.rs
-  and its loader wiring: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER, enable_preview_features. Module-level settings
+  and its loader wiring: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER, enable_preview_features,
+  LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT. Module-level settings
   enter litellm_settings; deployment settings enter litellm_params; environment lookup is injected. Keep the defaults
   and precedence specified above and in the linked branches; existing key owners remain unchanged. Write config
   rstest openai_provider_config_cases with named cases loads_experimental_openai_base_llm_http_handler, loads_enable_preview_features,
-  plus rejects_unrelated_key. Each loads case calls the real config loader with that key and asserts the resolved
+  loads_default_embedding_encoding_format, plus rejects_unrelated_key. Each loads case calls the real config loader with that key and asserts the resolved
   value, default, precedence and secret redaction where applicable. Seed B002 config_yaml with new openai_provider*
   files for every key; reuse its parser/fuzz target.
+
+  Embedding encoding format (litellm/main.py L6529-L6537): this task owns this resolution, which runs before any provider arm. The requested
+  format is the explicit encoding_format argument, else optional_params encoding_format, else
+  LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT. When it is unset, or its trimmed lowercase text is the sentinel none,
+  encoding_format is dropped from optional_params; otherwise it is set to the requested text unchanged. B040's
+  hosted_vllm cases supply the HTTP proof.
 
 
   Write standalone openai_provider_unsupported_operation in betterlite-provider for this Rust-specific invariant;
@@ -221,6 +228,10 @@ dod:
   proof:
   - config-enable-preview-features
   - config-corpus
+- text: LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT is accepted by the config loader, and the none sentinel drops encoding_format.
+  proof:
+  - config-default-embedding-encoding-format
+  - config-corpus
 - text: Unrelated unsupported config still fails with its complete field path.
   proof:
   - config-unknown-key
@@ -309,6 +320,10 @@ checks:
     why: The enable_preview_features setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_loads_enable_preview_features$/)'
       && grep -lq 'enable_preview_features' crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*
+  - id: config-default-embedding-encoding-format
+    why: The LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT setting is not loaded, or the none sentinel keeps encoding_format.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_loads_default_embedding_encoding_format$/)'
+      && grep -lq 'LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT' crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
@@ -372,9 +387,9 @@ out_of_scope:
   L393-L401; unbind_budget_reservation_from_callbacks L404-L406; set_response_cost_in_hidden_params L762-L772 belong
   to B069.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: redact_nested_match_and_regex_keys L715-L751
-  belong to B104.'
+  belong to B3688.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: _get_parent_otel_span_from_kwargs L429-L450
-  belong to B110.'
+  belong to B3847.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: safe_divide_seconds L33-L48; normalize_drop_params
   L54-L60; drop_params_flag L63-L67; drop_params_env_flag L73-L83; safe_divide L86-L104; _is_litellm_limit_rejection
   L107-L113; _is_proxy_rejection L116-L123; _is_provider_originated L126-L133; is_expected_client_error L136-L165;
@@ -475,7 +490,7 @@ out_of_scope:
   _validated_tools L31-L36; _has_chat_tool L39-L40; _chat_tool_key L43-L48; _indexed_keys L51-L57; _namespace_members
   L60-L64; _function_fields L67-L69; _member_description L72-L75; _rebuilt_member L78-L96; _rebuilt_flattened_members
   L99-L113; _rebuilt_namespace L116-L140; _merged_original L143-L161; merge_guardrailed_tools L164-L185 belong to
-  B104.'
+  B3669.'
 - 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
   to B025.'
 - 'Function ownership inventory litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026.'
@@ -530,7 +545,8 @@ out_of_scope:
   L7385-L7386; atext_completion L7389-L7456; text_completion L7459-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
   L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7792-L7864; atranscription L7870-L7929;
   transcription L7932-L8195; aspeech L8198-L8234; speech L8237-L8719; ahealth_check L8725-L8831; config_completion
-  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158.'
+  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158, except the embedding encoding_format
+  resolution at L6529-L6537, which belongs to this task, and the provider arms inside embedding, which belong to their provider tasks.'
 - 'Function ownership inventory litellm/main.py: _load_default_encoding L9394-L9397 belong to B195.'
 - 'Function ownership inventory litellm/main.py: _load_module_encoding L9379-L9382; _get_encoding L9385-L9391 belong
   to B196.'

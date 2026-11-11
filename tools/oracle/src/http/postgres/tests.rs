@@ -128,9 +128,11 @@ fn empty_configured_url_is_kept_for_the_fixture() {
 #[test]
 fn replays_the_http_case_corpus() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/http_case");
+    // a seed folder under http_case belongs to the fixture extension that replays it
     let mut paths = fs::read_dir(root)
         .unwrap()
         .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
         .collect::<Vec<_>>();
     paths.sort();
     paths
