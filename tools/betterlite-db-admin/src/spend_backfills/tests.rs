@@ -163,6 +163,29 @@ async fn rejects_bad_arguments() {
 }
 
 #[tokio::test]
+async fn exposes_operator_caveats() {
+    let (daily_status, daily_lines) = run_command(
+        &["daily-tool-spend", "--help"],
+        "postgresql://pinned.example/db",
+    )
+    .await;
+    assert_eq!(daily_status, ExitStatus::Success);
+    let daily_help = daily_lines.join("\n");
+    assert!(daily_help.contains("declared but never invoked"));
+    assert!(daily_help.contains("retention"));
+    let (history_status, history_lines) = run_command(
+        &["key-total-spend-from-logs", "--help"],
+        "postgresql://pinned.example/db",
+    )
+    .await;
+    assert_eq!(history_status, ExitStatus::Success);
+    let history_help = history_lines.join("\n");
+    assert!(history_help.contains("Run key-total-spend first"));
+    assert!(history_help.contains("retention"));
+    assert!(history_help.contains("traffic paused"));
+}
+
+#[tokio::test]
 async fn dispatches_native_operation() {
     let postgres = Postgres::new().await;
     postgres
