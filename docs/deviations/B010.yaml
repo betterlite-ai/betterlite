@@ -19,6 +19,15 @@ deviations:
       fixes it, and betterlite answers streams through one incremental path for every provider.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_handler.py#L274-L295
   - what: >-
+      An aiohttp_openai call that gets a 4xx or 5xx answer keeps the upstream status and error body, so a 429 reaches
+      the client as 429 and a 401 as 401. LiteLLM's aiohttp handler calls raise_for_status, and _handle_error reads
+      status_code from a ClientResponseError that only carries status, so every upstream failure becomes a 500.
+    why: >-
+      A rate limit or an authentication failure reported as a server error breaks the retry and cooldown decisions of
+      every client; no working setup can rely on that, so rule owned-behavior-is-built fixes it. A Rust test sends the
+      429 and 401 answers through the route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_handler.py#L670-L687
+  - what: >-
       Every provider family that B010 registers as an executable stub (azure, azure_ai, anthropic, bedrock,
       vertex_ai, gemini, xai_mistral, embedding_rerank, compatible, legacy, self_hosted, subscription, media and
       speech providers) answers a 501 naming the provider instead of running a call.

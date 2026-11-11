@@ -21,7 +21,7 @@ upstream:
       id: chatcmpl-aiohttp-alias
       object: chat.completion
       created: 1700000010
-      model: gpt-upstream
+      model: gpt-upstream-reported
       system_fingerprint: fp_aiohttp
       choices:
         - index: 0
