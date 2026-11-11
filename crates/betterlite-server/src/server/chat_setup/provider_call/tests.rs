@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -5,7 +7,6 @@ use std::time::Duration;
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use betterlite_config::loader::ConfigLoader;
-use betterlite_models::controls::json_value::JsonValue;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -18,11 +19,16 @@ use tower::ServiceExt as _;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 
-const FULL_ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
 
 #[derive(Deserialize)]
-struct Answer {
-    usage: Option<JsonValue>,
+struct Reply {
+    usage: Option<Usage>,
+}
+
+#[derive(Deserialize)]
+struct Usage {
+    total_tokens: u64,
 }
 
 async fn upstream(listener: TcpListener) -> String {
@@ -37,8 +43,8 @@ async fn upstream(listener: TcpListener) -> String {
     let mut body = vec![0_u8; 4096];
     let read = stream.read(&mut body).await.unwrap();
     let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{FULL_ANSWER}",
-        FULL_ANSWER.len()
+        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{ANSWER}",
+        ANSWER.len()
     );
     stream.write_all(head.as_bytes()).await.unwrap();
     body.truncate(read);
@@ -46,11 +52,11 @@ async fn upstream(listener: TcpListener) -> String {
     String::from_utf8(received).unwrap().to_lowercase()
 }
 
-async fn call(model: &str, key: &str) -> (u16, Vec<u8>, String) {
+async fn call(model: &str) -> (u16, Vec<u8>, String) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let source = format!(
-        "model_list:\n  - {{model_name: g, litellm_params: {{model: {model}, api_base: '{base}', api_key: {key}}}, model_info: {{id: dep-1}}}}\n"
+        "model_list:\n  - {{model_name: g, litellm_params: {{model: {model}, api_base: '{base}', api_key: own-key}}, model_info: {{id: dep-1}}}}\n"
     );
     let environment = BTreeMap::from([
         ("OPENAI_API_KEY".to_owned(), "env-key".to_owned()),
@@ -86,14 +92,17 @@ async fn provider_framework_tests_behavior(
     #[case] status: u16,
     #[case] reached: Option<(bool, bool)>,
 ) {
-    let (answered, body, sent) = call(model, "own-key").await;
+    let (answered, body, sent) = call(model).await;
     assert_eq!(answered, status);
     let Some((has_usage, sends_organization)) = reached else {
         assert_eq!(sent, "");
         return;
     };
-    let reply: Answer = serde_json::from_slice(&body).unwrap();
-    assert_eq!(reply.usage.is_some(), has_usage);
+    let reply: Reply = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        reply.usage.map(|usage| usage.total_tokens),
+        has_usage.then_some(3)
+    );
     assert!(sent.contains("authorization: bearer own-key"));
     assert_eq!(
         sent.contains("openai-organization: org-9"),

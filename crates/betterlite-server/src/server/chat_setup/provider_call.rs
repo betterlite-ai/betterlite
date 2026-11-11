@@ -115,3 +115,5 @@ pub(crate) fn chat_error(error: OperationError) -> ChatError {
         },
     }
 }
+
+mod tests;

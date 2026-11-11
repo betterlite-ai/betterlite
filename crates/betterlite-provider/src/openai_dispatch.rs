@@ -1,5 +1,6 @@
 use std::io::Error as IoError;
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::response::ChatResponse;
@@ -12,6 +13,7 @@ use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Error as JsonError;
 
 use crate::operation::{
@@ -80,12 +82,16 @@ impl OpenAi {
             }
             Upstream::Buffered(response) => {
                 if let PreparedRequest::Chat(chat) = prepared {
-                    let checked = success(response)?;
-                    return decode_chat(&checked.body, chat.client_model.as_deref());
+                    let decoded: ChatResponse = parse(response, "chat")?;
+                    let completion = decoded.for_client(chat.client_model.as_deref());
+                    return Ok(OperationResult::Chat(ChatCompletion::OpenAi(Box::new(
+                        completion,
+                    ))));
                 }
                 if let PreparedRequest::Embedding(embedding) = prepared {
-                    let checked = success(response)?;
-                    return decode_embedding(&checked.body, embedding.client_model.as_deref());
+                    let mut decoded: EmbeddingResponse = parse(response, "embedding")?;
+                    decoded.model = embedding.client_model.clone().unwrap_or(decoded.model);
+                    return Ok(OperationResult::Embedding(Box::new(decoded)));
                 }
                 Err(unsupported())
             }
@@ -267,31 +273,13 @@ fn embedding_request(
     })))
 }
 
-fn decode_chat(body: &[u8], client_model: Option<&str>) -> Result<OperationResult, OperationError> {
-    let decoded: ChatResponse =
-        serde_json::from_slice(body).map_err(|source| OperationError::Decode {
-            operation: "chat",
-            source,
-        })?;
-    let completion = decoded.for_client(client_model);
-    Ok(OperationResult::Chat(ChatCompletion::OpenAi(Box::new(
-        completion,
-    ))))
-}
-
-fn decode_embedding(
-    body: &[u8],
-    client_model: Option<&str>,
-) -> Result<OperationResult, OperationError> {
-    let mut decoded: EmbeddingResponse =
-        serde_json::from_slice(body).map_err(|source| OperationError::Decode {
-            operation: "embedding",
-            source,
-        })?;
-    if let Some(model) = client_model {
-        model.clone_into(&mut decoded.model);
-    }
-    Ok(OperationResult::Embedding(Box::new(decoded)))
+fn parse<T>(response: UpstreamResponse, operation: &'static str) -> Result<T, OperationError>
+where
+    T: DeserializeOwned,
+{
+    let checked = success(response)?;
+    serde_json::from_slice(&checked.body)
+        .map_err(|source| OperationError::Decode { operation, source })
 }
 
 fn header_value(text: &str, name: &str) -> Result<HeaderValue, OperationError> {

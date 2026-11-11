@@ -165,6 +165,9 @@ async fn provider_embedding(
 }
 
 fn embedding_error(error: OperationError) -> EmbeddingError {
+    let timed_out = EmbeddingError::Http {
+        source: HttpError::Timeout,
+    };
     match error {
         OperationError::Provider { response } => EmbeddingError::Provider { response },
         OperationError::MissingApiKey => EmbeddingError::MissingApiKey,
@@ -180,9 +183,7 @@ fn embedding_error(error: OperationError) -> EmbeddingError {
         | OperationError::Http { .. }
         | OperationError::InvalidHeader { .. }
         | OperationError::Deployment(_)
-        | OperationError::TransformRetry(_) => EmbeddingError::Http {
-            source: HttpError::Timeout,
-        },
+        | OperationError::TransformRetry(_) => timed_out,
     }
 }
 

@@ -126,9 +126,7 @@ fn text(value: Option<JsonValue>, field: &'static str) -> Result<Option<String>,
     match value {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Text(text)) => Ok(Some(text)),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(DeploymentError::FieldType {
+        Some(_other) => Err(DeploymentError::FieldType {
             field,
             expected: "a string",
         }),
@@ -166,11 +164,14 @@ fn seconds(value: Option<JsonValue>) -> Result<Duration, DeploymentError> {
 }
 
 fn retries(value: Option<JsonValue>) -> Result<Option<u32>, DeploymentError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Number(number)) => retry_count(&number),
-        Some(JsonValue::Text(text)) => retry_text(text),
-        Some(JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_)) => {
+    let Some(given) = value else {
+        return Ok(None);
+    };
+    match given {
+        JsonValue::Null => Ok(None),
+        JsonValue::Number(number) => retry_count(&number),
+        JsonValue::Text(text) => retry_text(text),
+        JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
             Err(DeploymentError::FieldType {
                 field: "max_retries",
                 expected: "an integer",
@@ -213,16 +214,16 @@ fn drop_params(value: Option<JsonValue>) -> Option<DropParams> {
 }
 
 fn affinity_header(value: Option<JsonValue>) -> Result<Option<String>, DeploymentError> {
-    if let Some(header) = text(value, "provider_affinity_header")? {
-        validate_affinity_header(&header).map_err(|source| {
+    let header = text(value, "provider_affinity_header")?;
+    if let Some(name) = &header {
+        validate_affinity_header(name).map_err(|source| {
             DeploymentError::ProviderAffinityHeader {
-                value: header.clone(),
+                value: name.clone(),
                 source,
             }
         })?;
-        return Ok(Some(header));
     }
-    Ok(None)
+    Ok(header)
 }
 
 #[derive(Debug, Error)]
