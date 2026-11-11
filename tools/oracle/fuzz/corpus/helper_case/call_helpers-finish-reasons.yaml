@@ -1,0 +1,8 @@
+kind: helper
+name: call-helpers-finish-reasons
+call:
+  call_helpers:
+    function: finish_reasons
+    values: [end_turn, max_tokens, tool_use, refusal, STOP, stop, content_filter, something_new]
+env: {}
+compare: {ignore: []}
