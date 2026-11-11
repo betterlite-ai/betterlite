@@ -106,9 +106,9 @@ fn workspaces(cases: &[WorkspaceCase]) -> HelperResult {
     Ok(json!({"workspaces": outcomes}))
 }
 
-fn region_outcome(outcome: Result<String, PlatformInputError>) -> Value {
+fn string_outcome(key: &str, outcome: Result<String, PlatformInputError>) -> Value {
     match outcome {
-        Ok(region) => json!({"region": region}),
+        Ok(value) => json!({key: value}),
         Err(error) => json!({"error": error_code(&error)}),
     }
 }
@@ -118,35 +118,32 @@ fn regions(cases: &[RegionCase]) -> HelperResult {
         .iter()
         .map(|case| {
             let config = config(&case.environment)?;
-            Ok(region_outcome(resolve_region(
-                &case.optional_params,
-                &config.sections.bedrock_aws_endpoints,
-            )))
+            Ok(string_outcome(
+                "region",
+                resolve_region(
+                    &case.optional_params,
+                    &config.sections.bedrock_aws_endpoints,
+                ),
+            ))
         })
         .collect::<Result<Vec<_>, _>>()
         .map(|outcomes| json!({"regions": outcomes}))
 }
 
-fn url_case(case: &UrlCase, config: &Config) -> Value {
-    let outcome = complete_url(
-        &UrlInputs {
-            api_base: case.api_base.as_deref(),
-            litellm_api_base: case.litellm_api_base.as_deref(),
-            optional_params: &case.optional_params,
-        },
-        &config.sections.claude_platform_inputs.environment,
-        &config.sections.bedrock_aws_endpoints,
-    );
-    match outcome {
-        Ok(url) => json!({"url": url}),
-        Err(error) => json!({"error": error_code(&error)}),
-    }
-}
-
 fn urls(cases: &[UrlCase]) -> HelperResult {
     let mut outcomes = Vec::with_capacity(cases.len());
     for case in cases {
-        outcomes.push(url_case(case, &config(&case.environment)?));
+        let config = config(&case.environment)?;
+        let outcome = complete_url(
+            &UrlInputs {
+                api_base: case.api_base.as_deref(),
+                litellm_api_base: case.litellm_api_base.as_deref(),
+                optional_params: &case.optional_params,
+            },
+            &config.sections.claude_platform_inputs.environment,
+            &config.sections.bedrock_aws_endpoints,
+        );
+        outcomes.push(string_outcome("url", outcome));
     }
     Ok(json!({"urls": outcomes}))
 }

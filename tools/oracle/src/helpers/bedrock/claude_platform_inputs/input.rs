@@ -45,9 +45,7 @@ pub(crate) struct RegionCase {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct UrlCase {
-    #[serde(default)]
     pub(crate) api_base: Option<String>,
-    #[serde(default)]
     pub(crate) litellm_api_base: Option<String>,
     #[serde(default)]
     pub(crate) optional_params: ParamMap,
@@ -58,9 +56,7 @@ pub(crate) struct UrlCase {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OverrideCall {
-    #[serde(default)]
     pub(crate) deployment: Option<UnsupportedParams>,
-    #[serde(default)]
     pub(crate) optional: Option<UnsupportedParams>,
     #[serde(default = "default_true")]
     pub(crate) log_invalid: bool,
@@ -71,7 +67,6 @@ pub(crate) struct OverrideCall {
 pub(crate) struct BodyCall {
     #[serde(default)]
     pub(crate) params: ParamMap,
-    #[serde(default)]
     pub(crate) unsupported: Option<Vec<String>>,
     #[serde(default = "default_true")]
     pub(crate) log_dropped: bool,
@@ -94,9 +89,7 @@ pub(crate) struct SignCall {
     #[serde(default)]
     pub(crate) request_data: IndexMap<String, Json>,
     pub(crate) api_base: String,
-    #[serde(default)]
     pub(crate) api_key: Option<SecretString>,
-    #[serde(default)]
     pub(crate) model: Option<String>,
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,
@@ -118,7 +111,6 @@ pub(crate) struct ErrorClassCall {
 pub(crate) struct CredentialInput {
     pub(crate) access_key_id: SecretString,
     pub(crate) secret_access_key: SecretString,
-    #[serde(default)]
     pub(crate) session_token: Option<SecretString>,
 }
 
