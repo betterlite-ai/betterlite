@@ -135,7 +135,12 @@ fn probe_in_chain() {
     chained_probe(&fixture).unwrap();
     let requests = fixture.imds.recorded();
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].headers.len(), 0);
+    assert_eq!(requests[0].headers.len(), 1);
+    assert_eq!(
+        requests[0].header("x-ms-client-request-id"),
+        Some(REQUEST_ID)
+    );
+    assert_eq!(requests[0].header("metadata"), None);
     assert_eq!(requests[0].timeout_seconds, 1);
     assert_eq!(requests[1].header("metadata"), Some("true"));
     assert_eq!(requests[1].timeout_seconds, 2);

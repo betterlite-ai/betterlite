@@ -24,6 +24,7 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 NOW = 1_700_000_000
 DEFAULT_SCOPE = "https://cognitiveservices.azure.com/.default"
 REQUEST_ID = "00000000-0000-4000-8000-000000000001"
+REQUEST_ID_HEADER = "x-ms-client-request-id"
 KEPT_HEADERS = frozenset(
     (
         "metadata",
@@ -31,7 +32,7 @@ KEPT_HEADERS = frozenset(
         "x-identity-header",
         "x-client-sku",
         "x-client-ver",
-        "x-ms-client-request-id",
+        REQUEST_ID_HEADER,
     )
 )
 CREDENTIAL_NAMES = {
@@ -56,6 +57,7 @@ class MsalModule(Protocol):
 
 
 msal_managed_identity = cast(MsalModule, import_module("msal.managed_identity"))
+core_universal = import_module("azure.core.pipeline.policies._universal")
 
 
 class Reply(TypedDict):
@@ -161,6 +163,8 @@ def mapping_of(value: object) -> dict[str, str] | None:
 def recorded_request(request: HttpRequestLike, options: Mapping[str, Json]) -> dict[str, Json]:
     parts = urlsplit(request.url)
     timeout = options.get("connection_timeout")
+    # the workload token POST belongs to the OIDC exchange task, which sends no request id
+    kept = KEPT_HEADERS if request.method == "GET" else KEPT_HEADERS - {REQUEST_ID_HEADER}
     return cast(
         "dict[str, Json]",
         {
@@ -170,7 +174,7 @@ def recorded_request(request: HttpRequestLike, options: Mapping[str, Json]) -> d
             "headers": {
                 name.lower(): value
                 for name, value in request.headers.items()
-                if name.lower() in KEPT_HEADERS
+                if name.lower() in kept
             },
             "form": mapping_of(request.body),
             "timeout": timeout
@@ -195,6 +199,9 @@ def fixture_host(step: HostStep, now: int | None = None) -> Generator[None]:
         mock.patch.object(msal_managed_identity, "os", msal_os),
         mock.patch.object(
             msal_managed_identity, "uuid", mock.Mock(uuid4=mock.Mock(return_value=REQUEST_ID))
+        ),
+        mock.patch.object(
+            core_universal, "uuid", mock.Mock(uuid1=mock.Mock(return_value=REQUEST_ID))
         ),
         mock.patch.object(builtins, "open", files.open),
     ):
@@ -260,7 +267,11 @@ def select_step(step: SelectStep) -> dict[str, Json]:
                 transport=FixtureTransport([]),
                 _exclude_workload_identity_credential=bool(step.get("exclude_workload_identity")),
             )
-            selected = CREDENTIAL_NAMES.get(type(credential._credential).__name__, "unknown")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            selected = (
+                "none"
+                if credential._credential is None  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                else CREDENTIAL_NAMES[type(credential._credential).__name__]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            )
             inner = (
                 source_name(msal_managed_identity.get_managed_identity_source())
                 if isinstance(credential._credential, MsalManagedIdentityClient)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
@@ -286,7 +297,11 @@ def token_step(step: TokenStep) -> dict[str, Json]:
                 transport=transport,
                 _exclude_workload_identity_credential=bool(step.get("exclude_workload_identity")),
             )
-            selected = CREDENTIAL_NAMES.get(type(credential._credential).__name__, "unknown")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            selected = (
+                "none"
+                if credential._credential is None  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                else CREDENTIAL_NAMES[type(credential._credential).__name__]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            )
             info = cast("AccessTokenLike", credential.get_token_info(scope))
             bearer = litellm_bearer(credential, scope, info.token)
             if selected == "workload":

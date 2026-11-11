@@ -78,23 +78,23 @@ fn query(resource: &str, client_id: Option<&str>) -> Vec<(String, String)> {
     query
 }
 
-// the availability probe sends no headers and a shorter timeout than the token request
+// the availability probe goes through azure-core, so it carries only the request id and a shorter timeout
 fn request(
     environment: &ManagedIdentityEnvironment,
     resource: &str,
     client_id: Option<&str>,
-    request_id: Option<&str>,
+    request_id: &str,
+    probe: bool,
 ) -> ImdsRequest {
-    let mut headers = Vec::new();
-    if let Some(id) = request_id {
+    let mut headers = vec![("x-ms-client-request-id".to_owned(), request_id.to_owned())];
+    if !probe {
         headers.extend([
             ("Metadata".to_owned(), "true".to_owned()),
             ("x-client-SKU".to_owned(), CLIENT_SKU.to_owned()),
             ("x-client-Ver".to_owned(), CLIENT_VERSION.to_owned()),
-            ("x-ms-client-request-id".to_owned(), id.to_owned()),
         ]);
     }
-    let timeout_seconds = if request_id.is_none() {
+    let timeout_seconds = if probe {
         PROBE_TIMEOUT_SECONDS
     } else {
         CONNECTION_TIMEOUT_SECONDS
@@ -121,7 +121,7 @@ fn check_probe(
     resource: &str,
     client_id: Option<&str>,
 ) -> Result<(), ManagedIdentityError> {
-    let request = request(environment, resource, client_id, None);
+    let request = request(environment, resource, client_id, &io.ids.next_id(), true);
     let response = io
         .transport
         .get(&request)
@@ -205,7 +205,7 @@ pub fn acquire(
     if probe.active() && !available {
         check_probe(environment, io, resource, client_id)?;
     }
-    let request = request(environment, resource, client_id, Some(&io.ids.next_id()));
+    let request = request(environment, resource, client_id, &io.ids.next_id(), false);
     let started = io.clock.now_unix_seconds();
     let response = send(io, &request, TOKEN_BUDGET)?;
     let finished = io.clock.now_unix_seconds();

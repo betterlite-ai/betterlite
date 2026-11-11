@@ -21,19 +21,26 @@ fn settings(variables: &[(&str, &str)]) -> Settings {
 }
 
 #[rstest]
-#[case::loads_identity_endpoint("IDENTITY_ENDPOINT", "http://sf.test/token", |settings: &Settings| settings.identity_endpoint.clone(), false)]
-#[case::loads_identity_header("IDENTITY_HEADER", "fixture-header-secret", |settings: &Settings| settings.identity_header.as_ref().map(|secret| secret.expose_secret().to_owned()), true)]
-#[case::loads_identity_server_thumbprint("IDENTITY_SERVER_THUMBPRINT", "00112233445566778899aabbccddeeff00112233", |settings: &Settings| settings.identity_server_thumbprint.clone(), false)]
-#[case::loads_imds_endpoint("IMDS_ENDPOINT", "http://arc.test/imds", |settings: &Settings| settings.imds_endpoint.clone(), false)]
-#[case::loads_msi_endpoint("MSI_ENDPOINT", "http://ml.test/token", |settings: &Settings| settings.msi_endpoint.clone(), false)]
-#[case::loads_msi_secret("MSI_SECRET", "fixture-msi-secret", |settings: &Settings| settings.msi_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), true)]
-#[case::loads_azure_pod_identity_authority_host("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://169.254.170.2", |settings: &Settings| settings.pod_identity_authority_host.clone(), false)]
+#[case::loads_identity_endpoint("IDENTITY_ENDPOINT", "http://sf.test/token", |settings: &Settings| settings.identity_endpoint.clone(), false, false)]
+#[case::loads_identity_header("IDENTITY_HEADER", "fixture-header-secret", |settings: &Settings| settings.identity_header.as_ref().map(|secret| secret.expose_secret().to_owned()), true, false)]
+#[case::loads_identity_server_thumbprint("IDENTITY_SERVER_THUMBPRINT", "00112233445566778899aabbccddeeff00112233", |settings: &Settings| settings.identity_server_thumbprint.clone(), false, false)]
+#[case::loads_imds_endpoint("IMDS_ENDPOINT", "http://arc.test/imds", |settings: &Settings| settings.imds_endpoint.clone(), false, false)]
+#[case::loads_msi_endpoint("MSI_ENDPOINT", "http://ml.test/token", |settings: &Settings| settings.msi_endpoint.clone(), false, false)]
+#[case::loads_msi_secret("MSI_SECRET", "fixture-msi-secret", |settings: &Settings| settings.msi_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), true, false)]
+#[case::loads_azure_pod_identity_authority_host("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://169.254.170.2", |settings: &Settings| settings.pod_identity_authority_host.clone(), false, false)]
+#[case::rejects_unrelated_key("UNRELATED_IDENTITY_ENDPOINT", "http://elsewhere.test/token", |settings: &Settings| settings.identity_endpoint.clone(), false, true)]
 fn azure_managed_identity_config_cases(
     #[case] name: &str,
     #[case] value: &str,
     #[case] read: fn(&Settings) -> Option<String>,
     #[case] secret: bool,
+    #[case] unrelated: bool,
 ) {
+    if unrelated {
+        assert_eq!(read(&settings(&[(name, value)])), None);
+        rejects_unrelated_key();
+        return;
+    }
     let explicit = settings(&[(name, value)]);
     assert_eq!(read(&explicit).as_deref(), Some(value));
     assert_eq!(read(&settings(&[])), None);
@@ -48,10 +55,7 @@ fn azure_managed_identity_config_cases(
     }
 }
 
-#[test]
 fn rejects_unrelated_key() {
-    let unrelated = settings(&[("UNRELATED_IDENTITY_ENDPOINT", "http://elsewhere.test/token")]);
-    assert_eq!(unrelated.identity_endpoint, None);
     let source = "litellm_settings:\n  azure_managed_identity_unrelated_key: 1\n";
     let error = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),

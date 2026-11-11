@@ -1,7 +1,7 @@
 kind: helper
 name: imds-unavailable
 call: {azure_managed_identity: {steps: [
-  {action: token, environment: {}, probe: true, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"probe","expires_in":3600}'}, {status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"imds-token","expires_in":3600}'}]},
+  {action: token, environment: {}, probe: true, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"probe","expires_in":3600,"resource":"https://cognitiveservices.azure.com"}'}, {status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"imds-token","expires_in":3600}'}]},
   {action: token, environment: {}, probe: true, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: []},
   {action: token, environment: {}, probe: true, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 403, headers: {Content-Type: application/json}, body: '{"error":"unreachable"}'}]},
   {action: token, environment: {}, probe: true, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: [{status: 403, headers: {Content-Type: application/json}, body: '{"error":"denied"}'}, {status: 200, headers: {Content-Type: application/json}, body: '{"access_token":"after-probe","expires_in":3600}'}]},
