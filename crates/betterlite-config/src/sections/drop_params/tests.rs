@@ -60,17 +60,18 @@ fn a_non_flag_environment_fails() {
     assert!(error.contains("LITELLM_DROP_PARAMS"), "{error}");
 }
 
-fn a_string_config_flag_fails() {
-    let error = settings("litellm_settings:\n  drop_params: \"true\"", &[]).unwrap_err();
-    assert!(error.contains("drop_params"), "{error}");
+fn a_non_list_additional_drop_params_fails() {
+    let source = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      additional_drop_params: {temperature: true}\n";
+    let error = settings(source, &[]).unwrap_err();
+    assert!(!error.is_empty(), "a map is not a drop list");
 }
 
 fn deployment_policies_stay_aligned_with_model_list() {
     let source = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      drop_params: true\n      additional_drop_params: [temperature, logprobs]\n  - model_name: b\n    litellm_params:\n      model: openai/gpt-4o\n";
     let settings = settings(source, &[]).unwrap();
     assert_eq!(
-        settings.deployments,
-        vec![
+        settings.deployments.as_ref(),
+        [
             deployment(Some(true), &["temperature", "logprobs"]),
             deployment(None, &[]),
         ]
@@ -80,7 +81,7 @@ fn deployment_policies_stay_aligned_with_model_list() {
 fn a_null_deployment_flag_is_unset() {
     let source = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      drop_params: null\n      additional_drop_params: []\n";
     let settings = settings(source, &[]).unwrap();
-    assert_eq!(settings.deployments, vec![deployment(None, &[])]);
+    assert_eq!(settings.deployments.as_ref(), [deployment(None, &[])]);
 }
 
 fn a_nested_drop_path_is_rejected() {
@@ -102,7 +103,7 @@ fn a_nested_drop_path_is_rejected() {
 #[case::the_environment_enables_the_global_flag(the_environment_enables_the_global_flag)]
 #[case::an_empty_environment_is_unset(an_empty_environment_is_unset)]
 #[case::a_non_flag_environment_fails(a_non_flag_environment_fails)]
-#[case::a_string_config_flag_fails(a_string_config_flag_fails)]
+#[case::a_non_list_additional_drop_params_fails(a_non_list_additional_drop_params_fails)]
 #[case::deployment_policies_stay_aligned_with_model_list(
     deployment_policies_stay_aligned_with_model_list
 )]

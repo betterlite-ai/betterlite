@@ -51,13 +51,25 @@ pub enum CallType {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ChatParameters {
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(
+        default,
+        serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize"
+    )]
     pub temperature: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(
+        default,
+        serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize"
+    )]
     pub top_p: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(
+        default,
+        serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize"
+    )]
     pub presence_penalty: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(
+        default,
+        serialize_with = "rust_decimal::serde::arbitrary_precision_option::serialize"
+    )]
     pub frequency_penalty: Option<Decimal>,
     #[serde(rename = "n")]
     pub choice_count: Option<u64>,

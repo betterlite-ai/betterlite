@@ -40,7 +40,7 @@ pub struct DeploymentDropPolicy {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub global_drop_params: bool,
-    pub deployments: Vec<DeploymentDropPolicy>,
+    pub deployments: Box<[DeploymentDropPolicy]>,
 }
 
 impl Section for Raw {
@@ -82,7 +82,7 @@ impl Section for Raw {
                 .drop_params
                 .or(environment)
                 .unwrap_or(false),
-            deployments,
+            deployments: deployments.into_boxed_slice(),
         })
     }
 }
