@@ -6,7 +6,7 @@ use crate::router_probes::comparison;
 
 pub(crate) mod helper;
 pub(crate) mod multipart;
-pub(crate) mod upstream;
+mod upstream;
 mod value;
 
 pub(crate) use value::{first_difference, remove_pointer};
