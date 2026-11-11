@@ -219,6 +219,15 @@ fn decode_error() {
     }
 }
 
+fn the_debug_text_hides_the_key() {
+    let shown = format!(
+        "{:?}",
+        chat_prepared(r#"{"model":"g","messages":[]}"#, false)
+    );
+    assert!(!shown.contains("configured-key"));
+    assert!(shown.contains("Sensitive"));
+}
+
 fn parallel_prepares_do_not_share_state() {
     let runtime = RuntimeBuilder::new_current_thread()
         .enable_all()
@@ -250,6 +259,7 @@ fn parallel_prepares_do_not_share_state() {
 #[case::embedding_request(embedding_request)]
 #[case::decode_chat(decode_chat)]
 #[case::decode_error(decode_error)]
+#[case::debug_hides_key(the_debug_text_hides_the_key)]
 #[case::parallel_prepares(parallel_prepares_do_not_share_state)]
 fn provider_framework_tests_behavior(#[case] check: fn()) {
     check();

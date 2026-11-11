@@ -118,7 +118,7 @@ fn response_copies_only_the_projected_fields() {
     let written: JsonValue =
         serde_json::from_slice(&serde_json::to_vec(&*completion).unwrap()).unwrap();
     let wanted: JsonValue = serde_json::from_str(
-        r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","system_fingerprint":"fp","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#,
+        r#"{"id":"c1","object":"chat.completion","created":7,"model":"g","system_fingerprint":"fp","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#,
     )
     .unwrap();
     assert_eq!(written, wanted);
@@ -136,7 +136,7 @@ fn missing_finish_reason_is_stop_and_choice_nulls_are_dropped() {
     let written: JsonValue =
         serde_json::from_slice(&serde_json::to_vec(&*completion).unwrap()).unwrap();
     let wanted: JsonValue = serde_json::from_str(
-        r#"{"id":"c1","object":"chat.completion","created":7,"model":"m","choices":[{"index":0,"bar":1,"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}"#,
+        r#"{"id":"c1","object":"chat.completion","created":7,"model":"g","choices":[{"index":0,"bar":1,"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}"#,
     )
     .unwrap();
     assert_eq!(written, wanted);
@@ -177,7 +177,121 @@ fn embedding_is_unsupported_before_http() {
     ));
 }
 
+fn decoded_answer(answer: &str) -> JsonValue {
+    let prepared = prepared("https://host", Some("k"), false);
+    let decoded = AiohttpOpenAi
+        .decode(&prepared, buffered(200, answer))
+        .unwrap();
+    let OperationResult::Chat(ChatCompletion::AiohttpOpenAi(completion)) = decoded else {
+        panic!("the aiohttp projection decodes to its own completion");
+    };
+    serde_json::from_slice(&serde_json::to_vec(&*completion).unwrap()).unwrap()
+}
+
+fn choices_answer(choices: &str) -> String {
+    format!(
+        r#"{{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{choices}]}}"#
+    )
+}
+
+fn choices_of(answer: &str) -> JsonValue {
+    let JsonValue::Object(mut fields) = decoded_answer(answer) else {
+        panic!("a completion is an object");
+    };
+    fields.shift_remove("choices").unwrap()
+}
+
+fn finish_reasons_are_mapped_and_the_native_one_is_kept() {
+    let answer = choices_answer(
+        r#"{"index":0,"message":{"role":"assistant","content":"a"},"finish_reason":"max_tokens"},
+        {"index":1,"message":{"role":"assistant","content":"b"},"finish_reason":"made_up"},
+        {"index":2,"message":{"role":"assistant","content":"c"},"finish_reason":"length"},
+        {"index":3,"message":{"role":"assistant","content":"d"},"finish_reason":null}"#,
+    );
+    let wanted: JsonValue = serde_json::from_str(
+        r#"[
+        {"index":0,"message":{"role":"assistant","content":"a"},"finish_reason":"length","provider_specific_fields":{"native_finish_reason":"max_tokens"}},
+        {"index":1,"message":{"role":"assistant","content":"b"},"finish_reason":"stop","provider_specific_fields":{"native_finish_reason":"made_up"}},
+        {"index":2,"message":{"role":"assistant","content":"c"},"finish_reason":"length"},
+        {"index":3,"message":{"role":"assistant","content":"d"},"finish_reason":"stop"}]"#,
+    )
+    .unwrap();
+    assert_eq!(choices_of(&answer), wanted);
+}
+
+fn role_defaults_to_assistant_and_empty_tool_calls_are_dropped() {
+    let answer = choices_answer(
+        r#"{"index":0,"message":{"content":"x","tool_calls":[]},"finish_reason":"stop"},
+        {"index":1,"message":{"role":"user","content":"y","tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":"tool_calls"}"#,
+    );
+    let wanted: JsonValue = serde_json::from_str(
+        r#"[
+        {"index":0,"message":{"role":"assistant","content":"x"},"finish_reason":"stop"},
+        {"index":1,"message":{"role":"user","content":"y","tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":"tool_calls"}]"#,
+    )
+    .unwrap();
+    assert_eq!(choices_of(&answer), wanted);
+}
+
+fn the_reply_names_the_model_the_client_asked_for() {
+    let answer = choices_answer(r#"{"index":0,"message":{"content":"x"}}"#);
+    let JsonValue::Object(fields) = decoded_answer(&answer) else {
+        panic!("a completion is an object");
+    };
+    assert_eq!(
+        fields.get("model"),
+        Some(&JsonValue::Text(String::from("g")))
+    );
+}
+
+fn max_completion_tokens_is_sent_as_max_tokens() {
+    let operation = Box::new(ChatOperation {
+        model: String::from("up"),
+        request: ChatRequest::parse(br#"{"model":"g","messages":[],"max_completion_tokens":5}"#)
+            .unwrap(),
+        control: ControlOptions::default(),
+    });
+    let PreparedRequest::Chat(chat) = AiohttpOpenAi
+        .prepare(
+            &OperationRequest::Chat(operation),
+            &deployment("https://host", Some("k")),
+            &catalog(),
+        )
+        .unwrap()
+    else {
+        panic!("a buffered chat prepares the chat request");
+    };
+    let sent = String::from_utf8(chat.http.body).unwrap();
+    assert!(sent.contains(r#""max_tokens":5"#));
+    assert!(!sent.contains("max_completion_tokens"));
+}
+
+fn the_debug_text_hides_the_key() {
+    let shown = format!(
+        "{:?}",
+        prepared("https://host", Some("secret-key-9"), false)
+    );
+    assert!(!shown.contains("secret-key-9"));
+    assert!(shown.contains("Sensitive"));
+}
+
+fn an_absent_base_reaches_the_bare_openai_host() {
+    let PreparedRequest::Chat(chat) = prepared(DEFAULT_AIOHTTP_BASE, None, false) else {
+        panic!("a buffered chat prepares the chat request");
+    };
+    assert_eq!(
+        chat.http.url.as_str(),
+        "https://api.openai.com/chat/completions"
+    );
+}
+
 #[rstest]
+#[case::finish_reason_mapping(finish_reasons_are_mapped_and_the_native_one_is_kept)]
+#[case::role_and_tool_calls(role_defaults_to_assistant_and_empty_tool_calls_are_dropped)]
+#[case::client_model(the_reply_names_the_model_the_client_asked_for)]
+#[case::max_completion_tokens(max_completion_tokens_is_sent_as_max_tokens)]
+#[case::debug_hides_key(the_debug_text_hides_the_key)]
+#[case::absent_base(an_absent_base_reaches_the_bare_openai_host)]
 #[case::bare_base(bare_base_gets_the_chat_path)]
 #[case::bearer_without_fallback(bearer_never_falls_back_to_the_environment)]
 #[case::projection_drops_usage(response_copies_only_the_projected_fields)]
