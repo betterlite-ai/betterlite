@@ -67,5 +67,11 @@ call:
       - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
         points: [{location: message, role: user, index: "", control: null}]
         max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: "１", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: m0}, {role: user, content: m1}, {role: user, content: m2}, {role: user, content: m3}, {role: user, content: m4}, {role: user, content: m5}, {role: user, content: m6}, {role: user, content: m7}, {role: user, content: m8}, {role: user, content: m9}, {role: user, content: m10}, {role: user, content: m11}]
+        points: [{location: message, role: user, index: "١_٠", control: null}]
+        max_blocks: 4
 env: {}
 compare: {ignore: []}

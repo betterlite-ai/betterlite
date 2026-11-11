@@ -67,6 +67,9 @@ fn a_text_index_is_read_as_an_integer(#[case] index: &str, #[case] expected: Vec
 #[case::trailing_underscore("1_", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
 #[case::empty("", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
 #[case::not_a_number("first", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+#[case::fullwidth("\u{ff11}", vec![1])]
+#[case::arabic_indic_underscore("\u{661}_\u{660}", vec![10])]
+#[case::devanagari("\u{967}", vec![1])]
 fn a_text_index_is_read_like_python_int(#[case] index: &str, #[case] expected: Vec<usize>) {
     let point = single_point(&format!(r#"{{"index": "{index}", "role": "user"}}"#));
     assert_eq!(resolve_target_indices(&point, &twelve_users()), expected);
