@@ -269,6 +269,14 @@ fn timestamp_formats() {
         decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00+05:30"}"#)
             .expect("the offset time decodes");
     assert_eq!(offset.created_at, 1_705_294_800);
+    let new_year =
+        decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-01T00:00:00"}"#)
+            .expect("the new year time decodes");
+    assert_eq!(new_year.created_at, 1_704_067_200);
+    let earliest =
+        decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"0001-01-02T00:00:00"}"#)
+            .expect("the earliest accepted naive time decodes");
+    assert_eq!(earliest.created_at, -62_135_510_400);
 }
 
 fn timestamp_edge_forms() {
@@ -307,6 +315,12 @@ fn rejected_timestamp_forms() {
     .expect("the bad separator decodes");
     assert_eq!(separator.created_at, NOW);
     assert_eq!(separator.expires_at, None);
+    let early = decode(
+        r#"{"jobArn":"a","status":"InProgress","submitTime":"0001-01-01T00:00:00","jobExpirationTime":"0001-01-01T00:00:00"}"#,
+    )
+    .expect("the early naive time decodes");
+    assert_eq!(early.created_at, NOW);
+    assert_eq!(early.expires_at, None);
 }
 
 fn offset_timestamp_forms() {

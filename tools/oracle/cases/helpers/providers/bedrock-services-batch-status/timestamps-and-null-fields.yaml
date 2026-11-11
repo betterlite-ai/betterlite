@@ -32,6 +32,9 @@ call:
       - '{"jobArn":"a","status":"InProgress","submitTime":"2024x01-15T00:00:00Z","jobExpirationTime":"2024x01-15T00:00:00Z"}'
       - '{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10Z","jobExpirationTime":"2024-01-15T10:30:00-05:30"}'
       - '{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00+05","jobExpirationTime":"2024-01-15T10:30:00+0530"}'
+      - '{"jobArn":"a","status":"InProgress","submitTime":"0001-01-01T00:00:00","jobExpirationTime":"0001-01-01T00:00:00"}'
+      - '{"jobArn":"a","status":"Submitted","submitTime":"2024-01-01T00:00:00"}'
+      - '{"jobArn":"a","status":"Submitted","submitTime":"0001-01-02T00:00:00"}'
 env:
   TZ: UTC
 compare: {ignore: []}

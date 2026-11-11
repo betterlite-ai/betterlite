@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike as _, NaiveDateTime, Utc};
 
 // int(timestamp) truncates toward zero, so a pre-1970 moment with a fraction moves up a second
 pub(crate) const fn epoch_seconds(moment: DateTime<Utc>) -> i64 {
@@ -21,6 +21,10 @@ pub fn parse_iso_timestamp(text: &str) -> Option<i64> {
         return Some(epoch_seconds(moment.with_timezone(&Utc)));
     }
     let naive = NaiveDateTime::parse_from_str(&canonical, "%Y-%m-%dT%H:%M:%S%.f").ok()?;
+    // a naive timestamp checks the previous local day, so CPython cannot take 0001-01-01 itself
+    if naive.year() == 1_i32 && (naive.month(), naive.day()) < (1_u32, 2_u32) {
+        return None;
+    }
     Some(epoch_seconds(naive.and_utc()))
 }
 
