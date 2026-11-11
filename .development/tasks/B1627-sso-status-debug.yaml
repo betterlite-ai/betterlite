@@ -9,7 +9,7 @@ description: >-
   generic client ID and reports missing variables in source order; missing requirements
   yield 503. It deliberately ignores SAML, while UI settings call B881's SAML-aware
   has_user_setup_sso. UI output includes PROXY_BASE_URL, PROXY_LOGOUT_URL and
-  LITELLM_UI_API_DOC_BASE_URL, all absent by default, and B121's spend_logs_row_count (initially
+  LITELLM_UI_API_DOC_BASE_URL, all absent by default, and B4172's spend_logs_row_count (written by B8396, initially
   zero). DISABLE_EXPENSIVE_DB_QUERIES is count > MAX_SPENDLOG_ROWS_TO_QUERY=1000000.
   general_settings.default_team_disabled defaults false; PROXY_DEFAULT_TEAM_DISABLED only
   forces true when its lowercased value is true, never forces a configured true back to false.
@@ -75,7 +75,7 @@ deviations:
     why: LiteLLM scrubs only the other two projections here, leaving a credential disclosure that violates secrets-stay-secret.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4816-L4844
 out_of_scope:
-  - B769 owns the rebranded escaped HTML template, B121 maintains spend-row state and B063 assigns all other ui_sso.py functions.
+  - B769 owns the rebranded escaped HTML template, B4172 and B8396 maintain spend-row state and B063 assigns all other ui_sso.py functions.
 pitfalls:
   - A SAML-only deployment reports SSO_ENABLED=true but readiness says sso_configured=false because that route checks only OAuth IDs.
   - Debug callback URL construction does not add SERVER_ROOT_PATH in the way the normal callback helper does.

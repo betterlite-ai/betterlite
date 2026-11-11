@@ -1,0 +1,22 @@
+kind: helper
+name: openai-decisions-ir-to-response
+call:
+  openai_decisions:
+    ir_to_response:
+      - requested_model: requested-model
+        target:
+          input: the input
+          questions:
+            - {type: predicate, name: truth, instructions: "is it true?"}
+        source:
+          systemone:
+            request:
+              state: the input
+              questions:
+                truth: {type: noul, instructions: "is it true?"}
+            response:
+              model: null
+              answers:
+                truth: {type: noul, noul: 0.5}
+env: {}
+compare: {ignore: []}

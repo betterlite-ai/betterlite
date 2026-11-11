@@ -1,0 +1,125 @@
+id: B7980
+title: Production ports and HTTP proof for the shared streaming generator
+description: >-
+  B9720 builds LiteLLM's shared streaming generator (ProxyBaseLLMRequestProcessing.async_streaming_data_generator and async_sse_data_generator) as `SharedStreamGenerator<Key, H>` in crates/betterlite-server/src/shared_stream.rs, and the two routes that stream through it build `SharedStreamGenerator::standalone(..)`: B081's /v1/messages handler (routes/anthropic_messages.rs, the stream branch and the blocked-response stream) and B8648's A2A state (app/agents/a2a/state.rs), from which B8589 builds one `A2aStreamHooks` per message/stream and tasks/resubscribe request. The standalone generator runs no proxy hooks, no cost injection, no reservation release and no disconnect cleanup, and always pings every 15 seconds. This task writes the production ports, reads litellm_settings.anthropic_sse_ping_interval_seconds, swaps the production generator into those two places, and proves the shared generator over HTTP. It is the last part of the B7980 umbrella. Code goes in crates/betterlite-server, module `app::inference::shared_stream_ports` (crates/betterlite-server/src/app/inference/shared_stream_ports.rs and shared_stream_ports/: release.rs, cost.rs, tests.rs), plus one config section and the two one-line swaps. Every name stays at 30 characters or fewer.
+
+
+  Config. Section `anthropic_sse_ping` (crates/betterlite-config/src/sections/anthropic_sse_ping.rs and anthropic_sse_ping/tests.rs) reads litellm_settings.anthropic_sse_ping_interval_seconds, LiteLLM's `float | str | None` with default 15.0. Its value is `AnthropicSsePing { interval: PingValue }`, where `PingValue` is `Seconds(f64)` or `Text(String)`: a JSON number is Seconds, a string is Text kept as written (B7324's coerce_keepalive_interval parses it later, so "abc" or "0" load fine and only turn the pings off), absent or null is Seconds(15.0) (docs/compatibility.md), and any other type is a config error naming the key. No environment variable feeds it. The skeleton creates the section stub and declares it in sections.rs, so fill only the section's own files, and commit seeds crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-sse-ping-number.yaml, anthropic-sse-ping-text.yaml and anthropic-sse-ping-null.yaml.
+
+
+  Production ports (shared_stream_ports/).
+  - `ProxyReservationRelease` implements B9720's `ReservationRelease<UserAPIKeyAuth>`: release_on_cancel spawns, on `state.shared.http.tracker` (the TaskTracker the server drains on shutdown, the one B8633 uses), B3003's release_budget_reservation_on_cancel (crates/betterlite-auth/src/reservation_settlement.rs) with the key's budget_reservation, and logs an Err at error "budget reservation release on cancel failed: {error}". Build B3003's inputs the way the server's other callers of reservation_settlement build them (read them on main first); write no second counter store.
+  - `ProxyCostInjection` implements B9720's `CostInjection` over B8930's `StreamCostInjector` (crates/betterlite-server/src/stream_usage_cost.rs): a chunk's body goes through process_object and comes back as a chunk of the same kind and hidden params, Bytes through process_bytes and Text through process_text, each with the model name and the call log the adapter was built with. Build the injector the way B8931's passthrough_runtime does, and reuse that construction instead of writing a second one.
+  - Builder `shared_stream_generator(state: &ServerState, cleanup: Arc<dyn StreamCleanup<UserAPIKeyAuth>>, call_log: Option<Arc<Mutex<LoggingState>>>) -> SharedStreamGenerator<UserAPIKeyAuth, ProxyStreamHooks>`: the hooks are B8632's `ProxyStreamHooks`, built the way B8632's `stream_generator` builds them; the reservation release above; the cleanup the caller passes; `Some(ProxyCostInjection)` only when `config.sections.stream_usage_cost.enabled` is true (litellm_settings.include_cost_in_streaming_usage, B8930), else None; the server's client redactor (the one the chat route's failure path uses, None when secret redaction is off); the limits max_json_bytes 16777216, max_event_bytes 1048576 and max_items 65536; and `config.sections.anthropic_sse_ping.interval` turned into B7324's `PingSetting` (Seconds to Seconds, Text to Text). `call_log` is the request's B247 logging state (crates/betterlite-logging/src/logging_state.rs) when the caller holds one; the std Mutex is locked only inside the sync inject call.
+
+
+  Swaps, the way B8636 swaps B8604's generator. In crates/betterlite-server/src/routes/anthropic_messages.rs replace only the `SharedStreamGenerator::standalone(..)` construction with `shared_stream_generator(state, cleanup, call_log)`, where `cleanup` is the per-request B8605 `DisconnectCleanup` that B8633's constructor in app::inference::chat_stream builds (reuse it, do not write a second one) and `call_log` is the request's logging state when the handler holds one. B8804 also edits that file's routes(state) function; keep its edit. In crates/betterlite-server/src/app/agents/a2a/state.rs replace only the standalone generator B8648 builds with the production one, built the same way. Handlers and their tests stay as their owners wrote them, and after the edit no file under crates/betterlite-server/src names `SharedStreamGenerator::standalone` outside shared_stream itself.
+
+
+  HTTP oracle cases through the booted proxy, master key oracle-master, no database.
+  In tools/oracle/cases/api/messages-stream/: (1) restamp-client-model: model_name `oracle-alias` routed to `anthropic/claude-3-5-haiku-20241022` with api_base "{{upstream}}" and api_key oracle-key, POST /v1/messages with model oracle-alias, max_tokens 16, one user message and stream true; the upstream streams message_start (message.model "claude-3-5-haiku-20241022"), content_block_start, one content_block_delta with text "hello", content_block_stop, message_delta with stop_reason end_turn and message_stop; the client's message_start carries model "oracle-alias" and every other event is unchanged. (2) raw-model-name-kept: the same request with metadata {"_complexity_router_return_raw_model_name": true}, so the provider's model stays. (3) same-model-frames: model_name equal to the provider model, so the events are relayed in order with nothing restamped.
+  In tools/oracle/cases/agents/a2a-stream/: an agent configured under `agents` with agent_name oracle-agent and agent_card_params whose url is "{{upstream}}", set up like B8648's card-config-agent case. (4) resubscribe-events: POST /a2a/oracle-agent with {"jsonrpc": "2.0", "id": "oracle-resubscribe", "method": "tasks/resubscribe", "params": {"id": "task-1"}}; the upstream streams two status-update results for task-1 (state working with final false, then completed with final true) and the client gets both as data frames in order. (5) resubscribe-upstream-404: the upstream answers 404 with a JSON body that has no "error" key, and the client gets one data frame with the -32603 error and message "Not Found".
+  The existing stream cases of B081 must keep passing, so they are listed in oracle_cases too.
+  This task also writes tools/oracle/cases/api/anthropic-messages-routes/blocked-response-preserves-paid-usage.yaml, with a passthrough guardrail that blocks the response. B081 runs standalone hooks that cannot raise it over HTTP.
+
+
+  Rust tests in app::inference::shared_stream_ports::tests. messages_stream_gets_ping_event boots the application through tower's oneshot against a local upstream that sends message_start, waits 1.5 seconds and sends the rest, with anthropic_sse_ping_interval_seconds 1, and asserts one `event: ping\ndata: {"type": "ping"}\n\n` frame sits between the two (the oracle mock has no per-event delay). The builder passes a cost injection only when include_cost_in_streaming_usage is true. ProxyReservationRelease runs B3003's release once on the tracker it was built with for a key holding an open reservation, and an Err from it is logged instead of lost. A message/stream body dropped before its first event through the production A2A state releases the reservation once.
+scope:
+  paths:
+  - crates/betterlite-server/src/app/inference/shared_stream_ports.rs
+  - crates/betterlite-server/src/app/inference/shared_stream_ports/**
+  - crates/betterlite-server/src/routes/anthropic_messages.rs
+  - crates/betterlite-server/src/app/agents/a2a/state.rs
+  - crates/betterlite-config/src/sections/anthropic_sse_ping.rs
+  - crates/betterlite-config/src/sections/anthropic_sse_ping/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-sse-ping-*
+  - tools/oracle/cases/api/messages-stream/**
+  - tools/oracle/cases/api/anthropic-messages-routes/blocked-response-preserves-paid-usage.yaml
+  - tools/oracle/cases/agents/a2a-stream/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2774-L2798
+  why: The messages stream branch, the restamp model choice and the keepalive wrap with litellm.anthropic_sse_ping_interval_seconds.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L266
+  why: anthropic_sse_ping_interval_seconds and its default 15.0.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L373
+  why: include_cost_in_streaming_usage, which turns the cost injection port on.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3866-L4017
+  why: async_streaming_data_generator, what the production ports serve.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L396-L420
+  why: release_budget_reservation_on_cancel, the finalized guard and the input-cost settlement B3003 builds.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L226
+  why: The /v1/messages route, its processing call and the blocked-response stream.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L270-L409
+  why: The tasks/resubscribe event source, its non-2xx error event and the relay through the shared generator.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L993-L1013
+  why: The tasks/resubscribe call site with the proxy hooks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7059-L7066
+  why: Agents load from the `agents` (or `agent_list`) config key.
+dod:
+- text: >-
+    A streamed /v1/messages answer goes through the production shared generator, with the message_start model restamped to the client's
+    model unless _complexity_router_return_raw_model_name is true, and the other events relayed in order.
+  proof: [wiring-tests, oracle]
+- text: >-
+    A2A tasks/resubscribe streams relay the agent's events through the production hooks, and a non-2xx agent answer is one -32603 frame.
+  proof: [oracle]
+- text: >-
+    anthropic_sse_ping_interval_seconds loads as a number, as text and as the default 15.0 when absent or null, reaches the generator, and a
+    quiet upstream gets the Anthropic ping event at that interval.
+  proof: [config-tests, config-corpus, wiring-tests]
+- text: >-
+    The production generator carries the cost injection only when include_cost_in_streaming_usage is true, and the reservation release runs
+    B3003's cancel settlement once on the server tracker, with an Err logged.
+  proof: [wiring-tests]
+- text: >-
+    The /v1/messages route and the A2A state build the production generator, and their own tests still pass.
+  proof: [no-standalone-left, route-tests, a2a-state-tests]
+checks:
+  optional: [mutants]
+  commands:
+  - id: wiring-tests
+    why: the production ports, the builder, the ping interval or the reservation release is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::shared_stream_ports::/)'
+  - id: config-tests
+    why: anthropic_sse_ping_interval_seconds does not load with its types and default 15.0
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::anthropic_sse_ping::/)'
+  - id: config-corpus
+    why: no new anthropic_sse_ping seed is accepted by the production YAML parser
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-sse-ping-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: no-standalone-left
+    why: a route or the A2A state still builds the standalone generator
+    run: grep -q 'shared_stream_generator' crates/betterlite-server/src/routes/anthropic_messages.rs && grep -q 'shared_stream_generator' crates/betterlite-server/src/app/agents/a2a/state.rs && ! grep -rq 'SharedStreamGenerator::standalone' crates/betterlite-server/src/routes crates/betterlite-server/src/app crates/betterlite-server/src/api crates/betterlite-server/src/agent_endpoints
+  - id: route-tests
+    why: the swap broke the /v1/messages handler tests B081 wrote
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::/) - test(/::replays_corpus$/)'
+  - id: a2a-state-tests
+    why: the swap broke the A2A state tests B8648 wrote
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::a2a::/)'
+oracle_cases:
+- tools/oracle/cases/api/messages-stream/restamp-client-model.yaml
+- tools/oracle/cases/api/messages-stream/raw-model-name-kept.yaml
+- tools/oracle/cases/api/messages-stream/same-model-frames.yaml
+- tools/oracle/cases/agents/a2a-stream/resubscribe-events.yaml
+- tools/oracle/cases/agents/a2a-stream/resubscribe-upstream-404.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/strips-only-dictionary-usage.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/blocked-response-preserves-paid-usage.yaml
+deviations:
+- what: When a caller has no logging state to hand the builder, injected stream cost is priced from the model catalog only, without the deployment's own prices that LiteLLM's logging object would apply first.
+  why: The per-call logging state is a constructor argument here, not an attribute read off request_data; include_cost_in_streaming_usage is off by default, and every caller that holds the state passes it.
+out_of_scope:
+- "The generator, its SSE and A2A flavors, the tail seal, the pings and the standalone ports: B9720."
+- "ProxyStreamHooks: B8632. DisconnectCleanup and its ports: B8605 and B8633. StreamCostInjector: B8930, built as B8931 builds it. The cancel settlement: B3003."
+- "The /v1/messages route, its processing call and the blocked-response branch: B081. The A2A handlers and per-request A2aStreamHooks: B8589. The A2A mount and its state: B8648. The A2A relay functions: B4789."
+- "create_response and the first-chunk checks: B9801. _arm_detached_stream_failure_hook and the rest of ProxyBaseLLMRequestProcessing: no task builds the shared class (B7324); see the notes of the B7980 plan."
+- "proxy_server.py's async_data_generator and its helpers: B8604, B8602 and B8603, the other parts of this umbrella."
+pitfalls:
+- 'anthropic_sse_ping_interval_seconds is a litellm_settings key, not general_settings, and its default is 15.0, so pings are on unless a user sets 0, a negative number or text that does not parse.'
+- 'The Anthropic ping is a full event, `event: ping\ndata: {"type": "ping"}\n\n`, not the ": ping" comment the chat and A2A streams use.'
+- 'The reservation release runs only when no chunk was delivered and no provider output is held back; it settles to the input cost, not to zero.'
+- 'The swap must leave the blocked-response stream on the same generator, since B081''s blocked stream case compares it with LiteLLM.'
+- 'The tasks/resubscribe error event for a non-2xx agent answer comes from B4789''s event source, not from the generator''s failure path, so it is a normal event that the hooks see.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

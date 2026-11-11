@@ -2,8 +2,8 @@ id: B140
 milestone: M9 agents and mcp
 title: MCP client and MCP tools in chat and Responses calls
 status: todo
-depends_on: [B4740, B4741, B4742, B4743, B4744, B4745, B4746, B955, B957]
-file: null
+depends_on: [B014, B080, B4731, B5849, B6591, B6593, B8195, B8197, B8394, B8399, B8465, B8610, B8620, B8621, B8626, B8630, B8803, B948, B949, B950, B951, B955, B956, B957, B9654, B136]
+file: tasks/B140-mcp-llm-tools-wiring.yaml
 covers:
   - "litellm/experimental_mcp_client/Readme.md"
   - "litellm/responses/mcp/**"

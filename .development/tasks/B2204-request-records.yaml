@@ -252,7 +252,7 @@ out_of_scope:
   L1010-L1013; AnthropicCacheControlHook.should_run_prompt_management L1015-L1022; AnthropicCacheControlHook._compile_prompt_helper
   L1024-L1040; AnthropicCacheControlHook.async_compile_prompt_helper L1042-L1059; AnthropicCacheControlHook.async_get_chat_completion_prompt
   L1061-L1090; AnthropicCacheControlHook.should_use_anthropic_cache_control_hook L1092-L1096; AnthropicCacheControlHook.get_custom_logger_for_anthropic_cache_control_hook
-  L1098-L1112 belong to B119.'
+  L1098-L1112 belong to B4123 to B4126 (B4126 ports L1098-L1112).'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: max_retries_per_request_hit L313-L320
   belong to B017.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: is_codex_user_agent L29-L30 belong to

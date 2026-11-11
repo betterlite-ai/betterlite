@@ -1,0 +1,13 @@
+router_settings:
+  fallbacks:
+    - gpt-4o: [claude-sonnet]
+    - "*": [backup-model]
+  context_window_fallbacks:
+    - gpt-4o: [long-context]
+  content_policy_fallbacks:
+    - gpt-4o: [{model: safe-model, temperature: 0}]
+  default_fallbacks: [last-resort]
+  max_fallbacks: 3
+litellm_settings:
+  fallbacks:
+    - gpt-4o-mini: [claude-haiku]
