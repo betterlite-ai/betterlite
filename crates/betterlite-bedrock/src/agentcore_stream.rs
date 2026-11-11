@@ -171,10 +171,8 @@ impl AgentCoreStream {
 }
 
 fn chunk_for(model: &str, ids: &dyn IdSource, event: LineEvent) -> Chunk {
-    match event {
-        LineEvent::Content(text) => chunk(
-            model,
-            ids,
+    let (delta, finish_reason, usage) = match event {
+        LineEvent::Content(text) => (
             Delta {
                 role: Some("assistant".to_owned()),
                 content: Some(text),
@@ -185,17 +183,14 @@ fn chunk_for(model: &str, ids: &dyn IdSource, event: LineEvent) -> Chunk {
             None,
             None,
         ),
-        LineEvent::Usage(usage) => chunk(
-            model,
-            ids,
+        LineEvent::Usage(usage) => (
             Delta::default(),
             Some("stop".to_owned()),
             Some(usage.to_chat_usage()),
         ),
-        LineEvent::MessageStop => {
-            chunk(model, ids, Delta::default(), Some("stop".to_owned()), None)
-        }
-    }
+        LineEvent::MessageStop => (Delta::default(), Some("stop".to_owned()), None),
+    };
+    chunk(model, ids, delta, finish_reason, usage)
 }
 
 fn chunk(

@@ -461,22 +461,11 @@ fn non_200_error() {
     }
 }
 
-fn early_json_error() {
-    let mut early = Scenario::json(r#"{"result":{"content":[{"text":"kept"}]}}"#);
-    early.status = 201;
-    for outcome in both(&early, &ids(2)) {
-        let (status, _, response_status) = provider_fields(&outcome.emitted.unwrap_err());
-        assert_eq!(status, 201);
-        assert_eq!(response_status, 201);
-    }
-}
-
-fn broken_json_error() {
-    let broken = Scenario::json(r#"{"result":"#);
-    for outcome in both(&broken, &ids(2)) {
-        let (status, headers, response_status) = provider_fields(&outcome.emitted.unwrap_err());
-        assert_eq!(status, 200);
-        assert_eq!(response_status, 200);
+fn json_error(scenario: &Scenario, status: u16) {
+    for outcome in both(scenario, &ids(2)) {
+        let (found, headers, response_status) = provider_fields(&outcome.emitted.unwrap_err());
+        assert_eq!(found, status);
+        assert_eq!(response_status, status);
         assert_eq!(
             headers,
             vec![("content-type".to_owned(), "application/json".to_owned())]
@@ -496,8 +485,10 @@ fn projection_error() {
 
 fn stream_http_errors() {
     non_200_error();
-    early_json_error();
-    broken_json_error();
+    let mut early = Scenario::json(r#"{"result":{"content":[{"text":"kept"}]}}"#);
+    early.status = 201;
+    json_error(&early, 201);
+    json_error(&Scenario::json(r#"{"result":"#), 200);
     projection_error();
 }
 

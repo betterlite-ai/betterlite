@@ -266,16 +266,22 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Self {
+    fn build(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Self {
+        let supplied = scenario
+            .supplied
+            .map(|supplied_kind| Arc::new(FixtureHandler::new(supplied_kind, scenario)));
+        let default = Arc::new(FixtureHandler::new(kind, scenario));
+        let logger = FixtureLogger::default();
+        let id_source = Arc::new(FixedIds::new(ids));
+        let data = scenario.data.clone();
+        let messages = scenario.messages.clone();
         Self {
-            supplied: scenario
-                .supplied
-                .map(|supplied_kind| Arc::new(FixtureHandler::new(supplied_kind, scenario))),
-            default: Arc::new(FixtureHandler::new(kind, scenario)),
-            logger: FixtureLogger::default(),
-            id_source: Arc::new(FixedIds::new(ids)),
-            data: scenario.data.clone(),
-            messages: scenario.messages.clone(),
+            supplied,
+            default,
+            logger,
+            id_source,
+            data,
+            messages,
         }
     }
 
@@ -317,7 +323,7 @@ impl Fixture {
 }
 
 pub(super) fn run(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Outcome {
-    let fixture = Fixture::new(kind, scenario, ids);
+    let fixture = Fixture::build(kind, scenario, ids);
     let opened = fixture.open(kind, scenario);
     let (provider, emitted) = match opened {
         Ok(mut stream) => {

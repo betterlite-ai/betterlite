@@ -106,13 +106,17 @@ fn content_delta(
     event: &IndexMap<String, Json>,
     events: &mut Vec<LineEvent>,
 ) -> Result<(), LineError> {
-    match event.get("contentBlockDelta") {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::Object(block)) => text_delta(block, events),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+    let Some(value) = event.get("contentBlockDelta") else {
+        return Ok(());
+    };
+    let Json::Object(block) = value else {
+        return if matches!(value, Json::Null) {
+            Ok(())
+        } else {
             Err(LineError::DeltaEventNotObject)
-        }
-    }
+        };
+    };
+    text_delta(block, events)
 }
 
 fn text_delta(
