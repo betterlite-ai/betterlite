@@ -14,11 +14,11 @@ use betterlite_bedrock::invoke_primitives::config::{
 };
 use betterlite_bedrock::invoke_primitives::environment::{error_class, validate_environment};
 use betterlite_bedrock::invoke_primitives::guardrail::guardrail_headers;
-use betterlite_bedrock::invoke_primitives::prompt::{
-    PromptConversion, convert_messages_to_prompt,
-};
+use betterlite_bedrock::invoke_primitives::prompt::{PromptConversion, convert_messages_to_prompt};
 use betterlite_bedrock::invoke_primitives::signing::{SignRequest, sign_request};
-use betterlite_bedrock::invoke_primitives::url::{CompleteUrl, InvokeEnvironment, invoke_model_url};
+use betterlite_bedrock::invoke_primitives::url::{
+    CompleteUrl, InvokeEnvironment, invoke_model_url,
+};
 use betterlite_bedrock::request_policy::{
     BedrockRequestPolicy, Params as PolicyParams, RequestValue,
 };
@@ -56,7 +56,10 @@ pub(crate) fn run(input: &Input) -> HelperResult {
     }
 }
 
-fn failure(class: &'static str, error: &impl Display) -> Box<HelperError> {
+fn failure<E>(class: &'static str, error: &E) -> Box<HelperError>
+where
+    E: Display,
+{
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
@@ -178,12 +181,8 @@ fn metadata_merge(merges: &[MergeCase], projection: &ErrorCase) -> HelperResult 
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
-    let projected = error_class(
-        projection.message.clone(),
-        projection.status_code,
-        headers,
-    )
-    .map_err(|error| failure("BedrockError", &error))?;
+    let projected = error_class(projection.message.clone(), projection.status_code, headers)
+        .map_err(|error| failure("BedrockError", &error))?;
     let headers = projected
         .error
         .headers
@@ -285,12 +284,14 @@ fn prompts(cases: &[PromptCase], local_assets: bool) -> HelperResult {
             prompts: &prompts,
             now: clock()?,
         };
-        results.push(match runtime.block_on(convert_messages_to_prompt(conversion)) {
-            Ok(converted) => {
-                json!({"prompt": converted.prompt, "chat_history": converted.chat_history})
-            }
-            Err(error) => json!({"message": error.to_string()}),
-        });
+        results.push(
+            match runtime.block_on(convert_messages_to_prompt(conversion)) {
+                Ok(converted) => {
+                    json!({"prompt": converted.prompt, "chat_history": converted.chat_history})
+                }
+                Err(error) => json!({"message": error.to_string()}),
+            },
+        );
     }
     Ok(json!({"results": results}))
 }
