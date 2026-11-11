@@ -30,7 +30,8 @@ async fn postgres_pinned_rows() {
 
 #[tokio::test]
 async fn postgres_failure_effects() {
-    Box::pin(with_schema(|database| async move {
+    Box::pin(with_databases(1, |mut databases| async move {
+        let database = databases.remove(0);
         let client = database.pool.get().await.unwrap();
         let raw = &**client;
         create_stuck_indexes(raw).await;

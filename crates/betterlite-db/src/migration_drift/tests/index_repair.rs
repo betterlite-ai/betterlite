@@ -1,6 +1,7 @@
 #[tokio::test]
 async fn invalid_index_repair() {
-    Box::pin(with_schema(|database| async move {
+    Box::pin(with_databases(1, |mut databases| async move {
+        let database = databases.remove(0);
         let client = database.pool.get().await.unwrap();
         let raw = &**client;
         create_repairable_indexes(raw).await;
@@ -44,7 +45,8 @@ async fn repair_without_database_returns_false() {
 
 #[tokio::test]
 async fn repair_skips_an_index_that_vanished() {
-    Box::pin(with_schema(|database| async move {
+    Box::pin(with_databases(1, |mut databases| async move {
+        let database = databases.remove(0);
         let client = database.pool.get().await.unwrap();
         let raw = &**client;
         duplicate_table(raw, "LiteLLM_Stuck").await;
@@ -107,7 +109,8 @@ fn transient_suffix_selects_drop(#[case] name: &str, #[case] transient: bool) {
 
 #[tokio::test]
 async fn repair_connects_over_direct_url() {
-    Box::pin(with_schema(|database| async move {
+    Box::pin(with_databases(1, |mut databases| async move {
+        let database = databases.remove(0);
         let client = database.pool.get().await.unwrap();
         let raw = &**client;
         duplicate_table(raw, "LiteLLM_Direct").await;
