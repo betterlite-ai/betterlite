@@ -16,7 +16,7 @@ description: >-
   A bad element rejects the entire per-model map. A requested model checks that map first, then global;
   no model skips map validation. Key global wins over team per-model because key metadata is resolved
   before team metadata. Malformed map/global fields fail independently, allowing the other field or
-  team default to survive. No configured estimate returns None to B072's heuristic; no new default is invented.
+  team default to survive. No configured estimate returns None to B3041's estimate heuristic (called by B3055); no new default is invented.
 
   Management admin checks compare resulting values, not presence. Explicit metadata replaces the
   stored blob, including None/{} clearing it; omitted metadata preserves it. Nonnull top-level estimate

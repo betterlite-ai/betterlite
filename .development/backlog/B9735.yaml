@@ -1,0 +1,15 @@
+id: B9735
+milestone: M10 admin ui
+title: Cover the shared catalogs consumed by management-page selectors
+status: todo
+depends_on: [B9090, B9091, B860, B5076, B007, B052, B842, B060, B123, B8681, B829, B4720, B8625, B4725, B8701, B4727, B8626, B4784, B8647, B1070, B3275, B8673, B992, B993, B3684, B8667, B3248, B8669, B3250, B9321, B4061, B8672, B1603, B1604, B348, B3617, B8640, B1660, B1627, B8770]
+file: tasks/B9735-dashboard-resource-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/components/permissions/**"
+  - "ui/litellm-dashboard/src/components/{object_permissions_view,object_permission_types}.*"
+parent: B145
+split_from: B145
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

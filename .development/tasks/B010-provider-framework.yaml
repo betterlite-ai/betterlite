@@ -59,6 +59,7 @@ scope:
   - crates/betterlite-provider/src/embedding_rerank_providers.rs
   - crates/betterlite-provider/src/compatible_providers.rs
   - crates/betterlite-provider/src/legacy_dispatch.rs
+  - crates/betterlite-provider/src/self_hosted_dispatch.rs
   - crates/betterlite-provider/src/api/image_contracts.rs
   - crates/betterlite-provider/src/api/rerank_contracts.rs
   - crates/betterlite-provider/src/api/file_contracts.rs
@@ -177,6 +178,7 @@ checks:
       provider EmbeddingRerank embedding_rerank_providers
       provider Compatible compatible_providers
       provider Legacy legacy_dispatch
+      provider SelfHosted self_hosted_dispatch
       provider Subscription provider/subscription
       provider MediaProviders provider/media_providers
       provider SpeechProviders provider/speech_providers
@@ -191,6 +193,7 @@ checks:
       operation EmbeddingRerank embedding_rerank_providers
       operation Compatible compatible_providers
       operation Legacy legacy_dispatch
+      operation SelfHosted self_hosted_dispatch
       operation Image api/image_contracts
       operation Rerank api/rerank_contracts
       operation File api/file_contracts

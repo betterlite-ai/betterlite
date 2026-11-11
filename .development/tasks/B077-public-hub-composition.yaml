@@ -1,0 +1,284 @@
+id: B077
+title: Complete the public hub routes and their production composition
+description: >-
+  Finish the public-endpoints umbrella after its fifteen existing parts. The remaining
+  handlers are public_model_hub_info, get_litellm_model_cost_map and
+  get_litellm_blog_posts. Build them in betterlite-server::public_endpoints::hub_surface,
+  with typed responses and its own error enum. Build the composition in
+  betterlite-server::app::admin::public_hubs. B9300 provides discovery settings and a
+  native blog feed; B3192, B3193 and B3194 keep their own handlers and router constructors.
+  This task merges those routers once and never registers their paths again.
+
+  GET /public/model_hub/info returns PublicModelHubInfo with docs_title from
+  config.sections.public_discovery, custom_docs_description null because the enterprise
+  import is absent, litellm_version containing the native package version, and
+  useful_links from the current public_model_groups_links setting. Default title is
+  LiteLLM API and default links is {}. Keep the litellm_version wire name. Both legacy
+  string-valued links and object-valued links survive, including index and extra members;
+  never fetch their URLs. DOCS_TITLE is enabled without licensing by B9300's recorded
+  deviation. DOCS_DESCRIPTION must not populate the missing enterprise description.
+
+  GET /public/litellm_model_cost_map returns the current adopted model-cost mapping as
+  the top-level object, with no data or models envelope, no paging and no filtering to
+  configured/public model groups. Read B194's live catalog service per request, not
+  a second bundled catalog or a startup-only copy. Use the lossless public serialization
+  supplied by the catalog prerequisite: preserve explicit null and absent members,
+  sample_spec, expanded aliases and runtime price registrations, while
+  fallback_generalizations and aliases directives have already been consumed by
+  finalization. Prices remain exact decimals serialized as JSON numbers. Do not
+  reconstruct this response by serializing ModelFields and PriceFields: today's
+  ModelCatalog discards sample_spec and input-member presence and those serializers
+  inject default fields. The architect must correct B193/B194's public snapshot
+  contract and arrange the shared handoff before dispatch, as detailed in the report.
+  Catalog read/serialization failures take the existing HTTPException-style 500
+  boundary; there is no request-triggered reload and no new failure code.
+
+  GET /public/litellm_blog_posts calls B9300's one BlogFeed instance. If that call
+  raises, warn and try its local-post source again, matching the endpoint's outer
+  fallback in addition to the feed service's inner fallback. Validate the final posts
+  as BlogPost and return {"posts": the first at most five}. A failing second backup
+  load or final response validation propagates through the server's existing 500
+  handling. Do not swallow it as an empty success or retry the network. Constructor
+  inputs include the shared outbound client and resolved B9300 settings, so two
+  requests to one app share the feed cache and two apps do not.
+
+  public_hubs::mount_public(router, state) builds the adapters from Config and B8610's
+  Shared. It merges hub_surface's three GET routes, B3192's preset router for
+  /public/autorouter_presets, /public/complexity_router/scorer_defaults and
+  /public/complexity_router/fuse_presets, B3193's legacy /public/model_hub router,
+  and B3194's /public/agent_hub, /public/mcp_hub and /public/skill_hub router.
+  These routes have no user_api_key_auth dependency at the pin. All are GET-only;
+  there are no /v1, /openai/v1 or provider-prefix aliases for them.
+
+  B3193's other router supplies GET /public/v1/model_hub and
+  /public/v1/model_hub/{facet}, with providers, modes and features the accepted facets.
+  Pass that router through B8610's routes::with_key_auth exactly once before merging
+  it into the public tree. Its declared auth dependency still runs custom auth and
+  pre-auth checks before B868's built-in public-path shortcut, even though the four
+  recognized paths allow a missing or invalid bearer. Do not exempt /public/v1/* as
+  a wildcard: an unknown facet without a key is not in that public set. The legacy
+  hub does not acquire this dependency. B3193 owns facet validation and problem
+  responses; the planning report corrects its unsupported 400 deviation to the
+  pinned 422 validation response for an authenticated unknown facet.
+
+  Supply the model hub with Shared's live RouterHandle through B8611's views, and
+  the existing health-store adapters over shared.db; never freeze a missing router
+  at mount time. Read public lists and useful links from B8380's live litellm settings
+  snapshot, using B839's public_model_groups view and B9300's useful-link view.
+  A successful B839 update must be visible on the next hub request without restart;
+  reuse its saved-state/publication path and preserve its write order. Pass
+  shared.agents.registry from B8612 together with B8647's one PublicAgentGroups
+  holder to the agent projection; the holder used by make_public must be shared
+  with this reader, as the report's B8647/B8610 correction specifies. Pass
+  shared.mcp_registry from B8614 to the MCP projection and use its live
+  RegistrySettings.public_mcp_servers for the explicit flag, since B8627's
+  PublicServerSetting writes that value. Pass shared.db to B3194's plugin repository.
+  B3194 owns agent stable/legacy-id intersection, the request-base URL projection,
+  MCP public/explicit flags and the enabled-plugin query. No second registry or
+  database pool is created. Constructor adapters live under public_hubs/ and call
+  the merged part APIs, rather than copying filters, SQL or list-framework code.
+
+  The architect adds the public_hubs module declaration and exactly one call from
+  app::admin::mount_public; neither that aggregator nor app.rs/routes.rs is in scope.
+  Shared must expose the SAME catalog service used by startup, reloads and runtime
+  registrations. B8676/B8681 already claim provider metadata mounts and B8647 owns
+  /public/agents/fields, so none of those routers is merged here. No router returned
+  here carries a fallback. The duplicate provider mount in the other tasks is an
+  architect prerequisite, not permission to register a third copy.
+
+  Native hub_surface tests cover exact response shape, links read again after an
+  update, live catalog replacement, outer blog fallback warning/order, five-post
+  slicing and a failing second backup load. public_hubs tests boot the real
+  application constructor, so they fail if the architect's call is absent. Cover
+  every listed path, v1 custom_auth_runs_once, legacy_skips_custom_auth,
+  unknown_facet_requires_auth, late_router_installation, shared_registry_updates,
+  useful_links_after_save and no_duplicate_route_or_fallback. Reuse B860's equivalent
+  Postgres fixtures for plugin and health rows. Do not call FastAPI handlers through
+  a helper adapter: they depend on proxy globals.
+
+  B3192-B3194's planned HTTP cases move here, since those tasks cannot pass a
+  booted-server gate before this composition exists. Keep their native handler
+  tests with the parts. Add the following cases in public/hub-composition with a
+  configured master key and no bearer unless specified. info-defaults checks all
+  four fields, ignoring only /body/litellm_version with the version deviation;
+  info-mixed-links configures both useful-link variants. cost-map-local sets
+  LITELLM_LOCAL_MODEL_COST_MAP=true and compares the whole mapping, with no broad
+  body ignore. blog-local uses LITELLM_LOCAL_BLOG_POSTS=true; blog-rss points
+  litellm_settings.blog_posts_url at the mock RSS endpoint and returns only the
+  first valid item; blog-http-fallback and blog-malformed-fallback return bundled
+  posts after a 503 or broken XML. blog-cache uses an HTTP case with two steps in
+  one process and one upstream answer, and blog-fallback-retries uses a failing
+  answer then valid RSS and proves a second GET. Do not compare the automatic
+  HTTP client's User-Agent as a product header. info-post-method sends POST with
+  the master key and compares the pinned method error. The v1-no-key and
+  v1-invalid-key cases reach the list handler with an empty published set;
+  v1-unknown-facet-no-key compares the auth failure, and
+  v1-unknown-facet-with-key compares the 422 validation envelope.
+
+  presets-remote-fetch configures litellm_settings.autorouter_presets_url to the
+  mock provider and returns a valid catalog with all four required tiers;
+  presets-http-fallback returns 503 there and checks the bundled catalog.
+  mcp-nonstrict-public reuses B3194's configured-server fixture, sets
+  public_mcp_hub_strict_whitelist=false with no explicit public_mcp_servers, and
+  gives that server available_on_public_internet=true; the public hub must keep
+  it with mcp_info.is_public=true and is_public_explicit=false. Preserve the
+  response's declared timestamp fields, without a separate oracle comparison
+  of Python str(datetime) formatting.
+
+  Compare status, content-type, null/member presence and error type/param/code;
+  ignore /error/message only for errors that use that envelope, with the project
+  wording reason. Keep problem-document details and FastAPI validation locations
+  distinct from that error format. Existing part cases cover default paging,
+  health enrichment/failure, list filtering, explicit agent/MCP publication and
+  plugin manifests. For a real health database failure, v1-list-health-lookup-failure-empty
+  expects an otherwise successful list without enrichment: B7640's
+  fetch_latest_health_checks_for_models logs and returns an empty tuple. A raised
+  enrichment callback still becomes a problem document in B3193's native unit
+  tests, but a booted database-failure case cannot manufacture that exception.
+  Register no new byte decoder: the routes consume parsed
+  records, B9300 owns RSS/settings decoding and the existing list framework owns
+  query parsing. The unassigned handlers occupy 46 nonblank noncomment source
+  lines including decorators and excluding docstrings; composition and native/HTTP tests
+  bring this to roughly 700 changed non-fixture lines, below the fixed budget.
+scope:
+  paths:
+    - crates/betterlite-server/src/public_endpoints/hub_surface.rs
+    - crates/betterlite-server/src/public_endpoints/hub_surface/**
+    - crates/betterlite-server/src/app/admin/public_hubs.rs
+    - crates/betterlite-server/src/app/admin/public_hubs/**
+    - tools/oracle/cases/public/hub-composition/**
+    - tools/oracle/cases/public/model-hub/**
+    - tools/oracle/cases/public/resource-hubs/**
+    - tools/oracle/cases/public/autorouter-presets.yaml
+    - tools/oracle/cases/public/scorer-defaults.yaml
+    - tools/oracle/cases/public/fuse-presets.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L362-L383
+    why: Owned model-hub information route, including its decorator and the missing-enterprise fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L7-L14
+    why: Native PublicModelHubInfo response shape and both useful-link forms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L452-L492
+    why: Owned cost-map and blog routes, error/fallback boundaries and final five-post projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L216-L359
+    why: Composition context for B3193's legacy hub and B3194's resource hubs, each without an auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L422-L449
+    why: B3192's two complexity-router GET paths and lack of auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L558-L572
+    why: B3192's autorouter preset GET path and its existing service call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/model_hub.py#L226-L323
+    why: B3193 owns the list/facet handlers; their declared auth dependencies must survive composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_v1/__init__.py#L1-L14
+    why: The /public/v1 prefix, already owned by B3193 and applied only once.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19949-L19953
+    why: The composition seam includes the two public routers once each.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1547-L1599
+    why: Custom auth runs before the built-in public-path shortcut; B052 owns this policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L823-L844
+    why: B868's exact public set contains the three known facet paths, not a /public/v1 wildcard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L566
+    why: Catalog prerequisite context, owned by B193/B194, explaining which finalized live mapping the route must return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2870-L2911
+    why: B839 saves before publishing useful_links; the public reader must observe that same live value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/health_check_latest.py#L82-L100
+    why: B7640's production health reads swallow database errors, including for the v1 page enrichment.
+dod:
+  - text: The information, model-cost and blog handlers preserve the pinned response shapes, current-state reads, error boundaries and double fallback order.
+    proof: [surface-tests, oracle, http-cases]
+  - text: The actual application reaches every remaining public route exactly once and preserves v1 auth execution without key-gating the legacy hub or other unkeyed routes.
+    proof: [composition-tests, oracle, http-cases]
+  - text: Model, agent, MCP, plugin and settings adapters read the shared live services, so late installation and successful updates are visible without rebuilding the app.
+    proof: [composition-tests, oracle]
+  - text: The preset, model-hub and resource-hub HTTP cases transferred from the parts run through both booted proxies, including real Postgres fixtures where required.
+    proof: [oracle, http-cases]
+checks:
+  optional: []
+  commands:
+    - id: surface-tests
+      why: A remaining handler changes its wire projection, captures stale data or hides a fallback failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::hub_surface::/)'
+    - id: composition-tests
+      why: The real application omits a mount, duplicates a route, bypasses v1 auth or reads a second registry/settings instance.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::public_hubs::/)'
+    - id: http-cases
+      why: No new booted-proxy fixtures prove the remaining route contracts.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/public/hub-composition)" && test -f tools/oracle/cases/public/autorouter-presets.yaml && test -f tools/oracle/cases/public/model-hub/legacy-route-basic.yaml && test -f tools/oracle/cases/public/resource-hubs/skill-hub-basic-manifest-parsing.yaml
+oracle_cases:
+  - tools/oracle/cases/public/hub-composition/info-defaults.yaml
+  - tools/oracle/cases/public/hub-composition/info-mixed-links.yaml
+  - tools/oracle/cases/public/hub-composition/cost-map-local.yaml
+  - tools/oracle/cases/public/hub-composition/blog-local.yaml
+  - tools/oracle/cases/public/hub-composition/blog-rss.yaml
+  - tools/oracle/cases/public/hub-composition/blog-http-fallback.yaml
+  - tools/oracle/cases/public/hub-composition/blog-malformed-fallback.yaml
+  - tools/oracle/cases/public/hub-composition/blog-cache.yaml
+  - tools/oracle/cases/public/hub-composition/blog-fallback-retries.yaml
+  - tools/oracle/cases/public/hub-composition/info-post-method.yaml
+  - tools/oracle/cases/public/hub-composition/v1-no-key.yaml
+  - tools/oracle/cases/public/hub-composition/v1-invalid-key.yaml
+  - tools/oracle/cases/public/hub-composition/v1-unknown-facet-no-key.yaml
+  - tools/oracle/cases/public/hub-composition/v1-unknown-facet-with-key.yaml
+  - tools/oracle/cases/public/hub-composition/presets-remote-fetch.yaml
+  - tools/oracle/cases/public/hub-composition/presets-http-fallback.yaml
+  - tools/oracle/cases/public/hub-composition/mcp-nonstrict-public.yaml
+  - tools/oracle/cases/public/autorouter-presets.yaml
+  - tools/oracle/cases/public/scorer-defaults.yaml
+  - tools/oracle/cases/public/fuse-presets.yaml
+  - tools/oracle/cases/public/model-hub/legacy-route-basic.yaml
+  - tools/oracle/cases/public/model-hub/legacy-route-health-swallowed.yaml
+  - tools/oracle/cases/public/model-hub/legacy-route-no-database.yaml
+  - tools/oracle/cases/public/model-hub/legacy-route-no-router-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-default-page.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-filter-providers.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-filter-features-or.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-sort-by-cost.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-search-by-group.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-pagination-and-tiebreaker.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-health-enriched-success.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-health-lookup-failure-empty.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-no-router-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-bad-filter-operator-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-list-unsupported-sort-field-400.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-providers.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-modes.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-features-or-semantics.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-with-filter.yaml
+  - tools/oracle/cases/public/model-hub/v1-facet-health-not-fetched.yaml
+  - tools/oracle/cases/public/resource-hubs/agent-hub-empty-when-disabled.yaml
+  - tools/oracle/cases/public/resource-hubs/agent-hub-filters-by-allowlist.yaml
+  - tools/oracle/cases/public/resource-hubs/agent-hub-includes-public-url.yaml
+  - tools/oracle/cases/public/resource-hubs/agent-hub-isdisjoint-check.yaml
+  - tools/oracle/cases/public/resource-hubs/mcp-hub-empty-when-disabled.yaml
+  - tools/oracle/cases/public/resource-hubs/mcp-hub-filters-by-allowlist.yaml
+  - tools/oracle/cases/public/resource-hubs/mcp-hub-overrides-is-public-fields.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-basic-manifest-parsing.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-missing-manifest-fields.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-null-manifest.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-manifest-parse-error-500.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-database-error-500.yaml
+  - tools/oracle/cases/public/resource-hubs/skill-hub-count-and-response-shape.yaml
+deviations:
+  - what: GET /public/model_hub/info keeps litellm_version as the field name but returns the running betterlite version.
+    why: Reporting LiteLLM's package version as the native server's version would be false; the compatibility pin remains separate from executable versioning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L378-L382
+out_of_scope:
+  - "public_endpoints.py L48-L66 and L101-L210: B3190 owns provider/endpoint records, metadata, _clean_display_name, _build_endpoints and _load_endpoints; get_supported_providers, get_provider_fields and get_supported_endpoints also remain B3190. Its data fragments are B3180-B3189. B8676/B8681 already own the provider mount and must be reconciled by the architect."
+  - "public_endpoints.py L69-L94 and L268-L359: B3194 owns _PluginRow's properties, _PluginTableActions.find_many, _plugin_table, get_agents, get_mcp_servers and public_skill_hub; only their production adapter composition and HTTP cases are here."
+  - "public_endpoints.py L216-L265: B3193 owns public_model_hub; it also owns every function/protocol in public_v1/model_hub.py and the exports/prefix in both public_endpoints/__init__.py and public_v1/__init__.py."
+  - "public_endpoints.py L422-L449 and L495-L572: B3192 owns get_complexity_scorer_defaults, get_public_fuse_presets, _load_bundled_autorouter_presets, _fetch_remote_autorouter_presets, _resolve_autorouter_presets, _AutoRouterPresetsCache, get_autorouter_presets and get_public_autorouter_presets."
+  - "public_endpoints.py L593-L639: B3191 owns get_agent_fields and its agent credential projection; B8647 owns its existing mount and HTTP coverage."
+  - "types/proxy/public_endpoints/public_endpoints.py: B3190 owns ProviderCredentialField, ProviderCreateInfo, EndpointProvider, SupportedEndpoint and SupportedEndpointsResponse; B3191 owns AgentCredentialField and AgentCreateInfo; B3192 owns AutoRouterPresetTiers, AutoRouterPresetConfig, AutoRouterPresetRecord and ComplexityScorerDefaults. B7947 owns the separate Python exports. Only the native PublicModelHubInfo is added here."
+  - B9300 owns all get_blog_posts.py functions, production BlogPost/BlogPostsResponse, settings defaults and RSS decoding; B193/B194 own catalog loading, finalization, serialization retention and adoption, which must be corrected before this task runs.
+  - B8610 owns the shared server inputs and aggregate mount calls, B8611 router views, B8612 agent read-through, B8614 MCP boot registries, B8647 the live public-agent holder, B8380 settings snapshots and B839 model/link writes; this task implements only the adapters into the already owned handlers.
+  - The import of EnterpriseProxyConfig.get_custom_docs_description has no open-source implementation and is not built; the reachable exception fallback is custom_docs_description null.
+pitfalls:
+  - A v1 path in B868's public set still executes user_api_key_auth, so moving it wholly outside auth silently bypasses custom auth.
+  - public_model_groups controls the hub listings but never filters /public/litellm_model_cost_map.
+  - Serving a newly loaded bundled map hides runtime registrations and every later successful reload.
+  - The blog handler retries local loading after a feed-service exception, but its final five-post projection is outside that catch.
+  - A providers_routes merge here would duplicate the mounts already assigned to B8676/B8681 and can panic during application construction.
+  - The useful-link update publishes after save_config, so reading an unrelated startup clone makes a successful admin update invisible.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

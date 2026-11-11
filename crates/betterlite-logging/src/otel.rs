@@ -11,6 +11,7 @@ pub mod legacy_lifecycle;
 pub mod legacy_metrics;
 pub mod legacy_policy;
 pub mod logger;
+pub mod logger_runtime;
 pub mod mappers;
 pub mod model;
 pub mod plumbing;

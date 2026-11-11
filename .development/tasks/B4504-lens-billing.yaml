@@ -175,7 +175,7 @@ deviations:
     why: There is no ASGI layer in betterlite. The observable parts (path, content-type, client address, scheme) are kept.
 out_of_scope:
   - "ChatRunner implementation: B004 does not cover _handle_llm_api_exception, so it does not own it. B5102 owns only that handler's status mapping. No task owns the failure hook itself (limit release and failure recording), so the ChatRunner implementation owner must be named when the proxy chat route task is written; this task only calls the hook."
-  - "Routes and access checks: B4503 owns the billing-key route that calls validate_key, B4505 owns the worker model route that calls analyze. This task registers nothing, so HTTP oracle cases come with those tasks."
+  - "Routes and access checks: B4503 owns the billing-key route that calls validate_key, B4505 owns the worker model route that calls analyze. This task registers nothing, so HTTP oracle cases come with those tasks: B132 for model billing, B9030 for credential administration, and B8682 for unavailable-dependency cases."
   - "authorize_internal_virtual_key and its route, budget and rate checks: B052 owns them. Reservation counters and release_unbound_budget_reservation: B3003. This task only calls them."
   - "get_model_list, get_model_info and completion_cost: B844, B2225 and B068 own them. Message privacy scope: B188. The Lens spend flag: B4001. Client IP resolution: B743."
   - "Repository persistence and the version-checked update: B4501. Lens records and renew_budget, current_job, replace_job: B4500."

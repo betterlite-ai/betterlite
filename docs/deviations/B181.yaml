@@ -1,0 +1,8 @@
+task: B181
+deviations:
+  - what: A tool name inside an assistant tool call is sanitized with the ASCII rule [a-zA-Z][a-zA-Z0-9_-]* before the toolUse block is built; LiteLLM's message path keeps non-ASCII letters and digits, so a call named "café" reaches Bedrock unchanged.
+    why: The same sanitizer already guards Bedrock's tool list, and the request has to fail the same way for a call and its definition; Bedrock rejects a non-ASCII toolUse name, so no working LiteLLM setup could rely on the Unicode form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3667
+  - what: The reverse tool-name map lives on the conversion result, one map per call; LiteLLM stores it in a process-global InMemoryCache capped at 50 entries with a 600 second TTL.
+    why: A global map renames a tool in a later request with an earlier request's original name and evicts the 51st rename, so parallel requests can exchange names; betterlite returns the map with the messages and tools it produced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L51

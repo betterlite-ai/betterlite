@@ -24,6 +24,7 @@ indexmap = "2.14.2"
 keyring-core = { version = "1.0.1", optional = true }
 num-traits = "0.2.19"
 regex.workspace = true
+rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["float_roundtrip", "raw_value"] }

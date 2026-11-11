@@ -7,6 +7,7 @@ file: tasks/B8156-ollama-generate-embed.yaml
 covers:
   - "litellm/llms/ollama/completion/handler.py"
   - "litellm/llms/ollama/completion/transformation.py"
+  - "litellm/llms/ollama/common_utils.py"
 parent: B040
 split_from: B040
 resolution: null

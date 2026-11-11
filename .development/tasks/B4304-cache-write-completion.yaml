@@ -30,7 +30,7 @@ description: >-
   `async_set_cache` and `store_response_sync` for `sync_set_cache`. Both do nothing when no cache is
   configured. Both copy the kwargs, merge in the positional arguments with B4300's argument projection (the
   merge overwrites kwargs of the same name), and check `should_store_result_in_cache`. The async version
-  then adds `parent_otel_span` from the kwargs (B110's helper) and picks one of three writes. A chat,
+  then adds `parent_otel_span` from the kwargs (B3847's helper) and picks one of three writes. A chat,
   embedding, transcription, rerank or Responses result that is an embedding response and whose cache
   backend is not S3 goes to `async_add_cache_pipeline` with the handler's dual cache and the kwargs (S3 has
   no bulk write, so embeddings go the single-write way there). Any other typed result is serialized to its

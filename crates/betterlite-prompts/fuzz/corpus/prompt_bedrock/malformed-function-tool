@@ -1,0 +1,1 @@
+{"messages":[{"role":"user","content":"go"}],"tools":[{"toolSpec":{"name":"native"}},{"type":"function","function":"get_weather"}],"model":"anthropic.claude-sonnet-4-5-20250929-v1:0"}

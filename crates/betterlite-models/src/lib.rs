@@ -34,7 +34,7 @@ pub mod headers;
 pub mod identity;
 pub mod image_cost;
 pub mod json_provider_registry;
-pub(crate) mod judge_primitives;
+pub mod judge_primitives;
 pub mod key_digest;
 pub mod lemonade_model_metadata;
 pub mod lookup;

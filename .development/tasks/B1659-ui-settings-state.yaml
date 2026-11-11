@@ -13,14 +13,14 @@ description: >-
   disable_custom_api_keys, disable_key_generate_for_org_admin and enable_chat_ui.
   enabled_ui_pages_internal_users defaults null and team_admin_editable_team_fields defaults [];
   its schema enum uses B1200's sorted permission set. Load these effective general_settings
-  keys through B120's SettingsStore, preserving config/DB/default provenance and existing
+  keys through B4140's SettingsStore, preserving config/DB/default provenance and existing
   bindings owned by other policy tasks. loads_ui_setting_flags must exercise every key and
   defaults via the real config loader, not merely deserialize the response model.
   The derived enable_ptu_cost_attribution value comes from B1664's PTU flag service and
   LITELLM_ENABLE_PTU_COST_ATTRIBUTION=false; apply_user_budget_to_team_keys is true only for
   the exact Boolean true in general_settings. Neither belongs to the persisted UI allowlist.
   Source reporting for PTU is config when its env value exists or the value is true; the
-  user-budget flag is config only when true. All other sources use B120 source_for and
+  user-budget flag is config only when true. All other sources use B4140 source_for and
   B1656's model defaults. Do not recreate the absent enterprise field-registration mechanism.
   Read ui_settings:settings_dict from B125's dual cache first; return any cached dictionary
   unchanged. On a miss without DB return {} without caching. Otherwise read UISettingsRepository
