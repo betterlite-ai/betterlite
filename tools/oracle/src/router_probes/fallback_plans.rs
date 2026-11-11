@@ -37,7 +37,12 @@ pub(crate) fn run(
     let group_refs: Vec<&str> = lookup_groups.iter().map(String::as_str).collect();
     let attempted = AttemptedTargets::from_targets(&payload.attempted);
     let overrides = overrides(payload);
-    let configured = plans(payload);
+    let configured = Settings {
+        fallbacks: payload.config.fallbacks.clone(),
+        context_window_fallbacks: payload.config.context_window_fallbacks.clone(),
+        content_policy_fallbacks: payload.config.content_policy_fallbacks.clone(),
+        max_fallbacks: payload.config.max_fallbacks,
+    };
     let selected = select_chains(&configured, &overrides);
     let disabled = fallbacks_disabled_for_request(&state, payload.state.disable_fallbacks);
     apply(&mut state, payload);
@@ -86,15 +91,6 @@ fn lookup_groups(state: &RequestMetadata, payload: &Payload) -> Vec<String> {
         .into_iter()
         .map(str::to_owned)
         .collect()
-}
-
-fn plans(payload: &Payload) -> Settings {
-    Settings {
-        fallbacks: payload.config.fallbacks.clone(),
-        context_window_fallbacks: payload.config.context_window_fallbacks.clone(),
-        content_policy_fallbacks: payload.config.content_policy_fallbacks.clone(),
-        max_fallbacks: payload.config.max_fallbacks,
-    }
 }
 
 fn overrides(payload: &Payload) -> RequestOverrides<'_> {
