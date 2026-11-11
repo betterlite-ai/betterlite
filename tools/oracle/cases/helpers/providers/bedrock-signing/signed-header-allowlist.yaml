@@ -1,0 +1,32 @@
+kind: helper
+name: bedrock-signing-signed-header-allowlist
+call:
+  bedrock_signing:
+    calls:
+      - request_headers:
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          region: us-west-2
+          extra_headers: {}
+          endpoint: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          data:
+            text: '{"inputText":"hello"}'
+          headers:
+            host: bedrock-runtime.us-west-2.amazonaws.com
+            Content-Type: application/json
+            X-Amz-Date: 20260101T000000Z
+            x-amz-security-token: stale-token
+            X-Amz-Content-SHA256: abc
+            x-amz-algorithm: AWS4-HMAC-SHA256
+            x-amz-credential: AKIDEXAMPLE/20260101/us-west-2/bedrock/aws4_request
+            x-amz-signedheaders: host
+            x-amz-signature: deadbeef
+            x-amzn-trace-id: Root=1-abc
+            x-custom: keep
+            user-agent: fixture
+            connection: keep-alive
+            x-null: null
+          now: 1767225600
+env: {}
+compare: {ignore: []}
