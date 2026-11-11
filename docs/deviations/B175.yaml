@@ -1,0 +1,35 @@
+task: B175
+deviations:
+  - what: >-
+      A passthrough parameter named api_key, api_base, base_url, timeout, litellm_metadata, messages,
+      prompt, system, mock_response or another request control is rejected with a typed error naming the
+      field, at the top level and inside extra_body, where LiteLLM copies every keyword outside
+      DEFAULT_CHAT_COMPLETION_PARAM_VALUES into extra_body and sends it to the provider.
+    why: >-
+      extra_body is the request body's passthrough channel, so a client-supplied credential name or an
+      internal metadata key reaches the provider as a body field. Betterlite reserves those names, which
+      keeps the passthrough map from impersonating deployment credentials, content or trusted controls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5060-L5080
+  - what: >-
+      An additional_drop_params entry containing '.' or '[' is refused when the config loads and by the
+      parameter mapping with an error naming the entry, where LiteLLM reads it as a JSON path and deletes
+      the nested value after mapping.
+    why: >-
+      delete_nested_value supports field, a.b, a[*], a[0] and a[*].b paths; betterlite's dot-path engine is
+      B213. Refusing the policy names the entry instead of accepting a drop that never happens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5035-L5041
+  - what: >-
+      A request extra_body that is not an object is a client error naming the field, where LiteLLM passes it
+      to dict() and the caller sees a 500 from the ValueError.
+    why: >-
+      The value comes from the client request, so a 4xx belongs where LiteLLM raises an unhandled
+      ValueError; no working setup can rely on the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5063
+  - what: >-
+      A typed standard parameter name such as temperature, user, stream or thinking inside extra_body is
+      rejected with a typed error naming the field, where LiteLLM keeps it in optional_params["extra_body"]
+      and sends it to the provider.
+    why: >-
+      The mapping result has one slot per parameter, so accepting a typed name through the passthrough
+      channel would let passthrough overwrite a standard typed field, which the task forbids.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5060-L5083

@@ -1,0 +1,42 @@
+kind: helper
+name: provider-params-allowed-openai-params
+call:
+  provider_params:
+    steps:
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          reasoning_effort: low
+          temperature: 0.5
+        policy:
+          allowed_openai_params: [reasoning_effort]
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          response_format: {type: json_object}
+        policy:
+          allowed_openai_params: [response_format]
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          reasoning_effort: low
+          thinking: {type: enabled, budget_tokens: 2048}
+        policy:
+          allowed_openai_params: [reasoning_effort, thinking]
+env: {}
+compare: {ignore: []}
