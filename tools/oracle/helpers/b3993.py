@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from functools import partial
-from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L33
 import httpx
@@ -150,7 +150,9 @@ class ScriptedLogger(S3Logger):
         client: ScriptedClient,
         limiter: RecordingLimiter | None,
     ) -> None:
-        init_params: InitParams = self._init_s3_params  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
+        init_params = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
+            InitParams, self._init_s3_params
+        )
         empty_source: dict[str, str] = {}
         init_params(
             params_source=empty_source,
