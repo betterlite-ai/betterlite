@@ -499,6 +499,16 @@ fn guardrail_titan_headers() {
     assert_eq!(headers["x-amz-bedrock-guardrail-identifier"], "gr");
     assert_eq!(headers["x-amz-bedrock-guardrail-version"], "");
     assert_eq!(headers["x-custom"], "v");
+    // the optional guardrail replaces the extra header of the same name instead of adding a second one
+    assert_eq!(
+        titan
+            .posted()
+            .headers
+            .iter()
+            .filter(|(name, _)| name == "x-amz-bedrock-guardrail-identifier")
+            .count(),
+        1
+    );
     assert_eq!(
         titan.body(),
         params(vec![
