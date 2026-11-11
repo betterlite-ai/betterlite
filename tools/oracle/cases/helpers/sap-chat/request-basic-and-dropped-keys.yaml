@@ -1,0 +1,40 @@
+kind: helper
+name: sap-chat-request-basic-and-dropped-keys
+call:
+  b5845:
+    operation: requests
+    calls:
+      - model: anthropic--claude-3.5-sonnet
+        messages:
+          - {role: system, content: be nice}
+          - {role: user, content: hi}
+          - role: assistant
+            content: hello
+            tool_calls:
+              - id: t1
+                type: function
+                function: {name: f, arguments: '{"a":1}'}
+          - {role: tool, tool_call_id: t1, content: result}
+          - {role: developer, content: dev}
+        optional_params:
+          deployment_url: https://ignored.example.com
+          stream: true
+          tool_choice: auto
+          temperature: 0.5
+          top_p: 0.9
+          max_tokens: 12
+          seed: 7
+          stop: [END]
+      - model: gpt-4o
+        messages: [{role: user, content: '{"a":1}'}]
+        optional_params: {}
+      - model: m
+        messages: []
+        optional_params: {n: 2, functions: [{name: f}], function_call: auto, logit_bias: {'1': 2}, logprobs: true, top_logprobs: 2}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          model_version: '2024-05-13'
+          temperature: 0.1
+env: {}
+compare: {ignore: []}
