@@ -8,8 +8,7 @@ use betterlite_config::sections::guardrail_judge::JudgeParams;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::judge::apply::{JudgeInputs, LLMAsAJudgeGuardrail, RequestData};
 use betterlite_guardrails::judge::call::{
-    JudgeCompletion, JudgeCompletionError, JudgeCompletionRequest, JudgeCompletionResponse,
-    JudgeReply,
+    JudgeCompletion, JudgeCompletionRequest, JudgeCompletionResponse, JudgeReply,
 };
 use betterlite_guardrails::judge::config::{GuardrailEntry, LitellmParamsSource};
 use betterlite_guardrails::judge::error::{JudgeBlockDetail, JudgeError};
@@ -55,15 +54,15 @@ struct RecordingCompletion {
 
 #[async_trait]
 impl JudgeCompletion for RecordingCompletion {
+    type Error = io::Error;
+
     async fn complete(
         &self,
         request: &JudgeCompletionRequest,
-    ) -> Result<JudgeCompletionResponse, JudgeCompletionError> {
+    ) -> Result<JudgeCompletionResponse, Self::Error> {
         *self.request.lock().unwrap_or_else(PoisonError::into_inner) = Some(request.clone());
         if let Some(message) = &self.outcome.error {
-            return Err(JudgeCompletionError {
-                source: Box::new(io::Error::other(message.clone())),
-            });
+            return Err(io::Error::other(message.clone()));
         }
         Ok(JudgeCompletionResponse {
             choices: vec![JudgeReply {
@@ -75,8 +74,8 @@ impl JudgeCompletion for RecordingCompletion {
 
 struct DiscardRegistry;
 
-impl CallbackRegistry for DiscardRegistry {
-    fn add_litellm_callback(&mut self, _guardrail: Arc<LLMAsAJudgeGuardrail>) {}
+impl CallbackRegistry<io::Error> for DiscardRegistry {
+    fn add_litellm_callback(&mut self, _guardrail: Arc<LLMAsAJudgeGuardrail<io::Error>>) {}
 }
 
 #[derive(serde::Serialize)]
@@ -111,7 +110,7 @@ fn execute(input: &ApplyInput) -> Result<Output, Box<HelperError>> {
         )),
     };
     let request: Arc<Mutex<Option<JudgeCompletionRequest>>> = Arc::new(Mutex::new(None));
-    let completion: Arc<dyn JudgeCompletion> = Arc::new(RecordingCompletion {
+    let completion = Arc::new(RecordingCompletion {
         outcome: input.judge.clone(),
         request: Arc::clone(&request),
     });
@@ -172,10 +171,9 @@ fn collect(
                 | JudgeError::InvalidOnFailure { .. }
                 | JudgeError::InvalidEventHook { .. }
                 | JudgeError::UnsupportedEventHook { .. }
-                | JudgeError::InvalidParam { .. }
-                | JudgeError::NoChoices
-                | JudgeError::Completion { .. }
-                | JudgeError::Verdict { .. }) => Err(failure("RuntimeError", failed.to_string())),
+                | JudgeError::InvalidParam { .. }) => {
+                    Err(failure("RuntimeError", failed.to_string()))
+                }
             }
         }
     }

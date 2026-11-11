@@ -1,11 +1,9 @@
 use betterlite_models::decisions::Json;
-use betterlite_models::judge_primitives::error::JudgePrimitivesError;
 use reqwest::StatusCode;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use thiserror::Error;
 
-use super::call::JudgeCompletionError;
 use super::hooks::GuardrailEventHook;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -45,18 +43,6 @@ pub enum JudgeError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the judge model returned no choices")]
-    NoChoices,
-    #[error("the judge model call failed: {source}")]
-    Completion {
-        #[source]
-        source: JudgeCompletionError,
-    },
-    #[error("the judge model reply is not a verdict: {source}")]
-    Verdict {
-        #[source]
-        source: JudgePrimitivesError,
-    },
     #[error("the LLM judge rejected the input: score below threshold")]
     Blocked { detail: JudgeBlockDetail },
 }
@@ -75,10 +61,7 @@ impl JudgeError {
             | Self::InvalidOnFailure { .. }
             | Self::InvalidEventHook { .. }
             | Self::UnsupportedEventHook { .. }
-            | Self::InvalidParam { .. }
-            | Self::NoChoices
-            | Self::Completion { .. }
-            | Self::Verdict { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | Self::InvalidParam { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

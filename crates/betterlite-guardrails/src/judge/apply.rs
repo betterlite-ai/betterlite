@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -35,7 +36,7 @@ impl OnFailure {
     }
 }
 
-pub struct LLMAsAJudgeGuardrail {
+pub struct LLMAsAJudgeGuardrail<E: Error + Send + Sync + 'static> {
     pub guardrail_name: String,
     pub judge_model: String,
     pub criteria: Vec<Criterion>,
@@ -43,7 +44,7 @@ pub struct LLMAsAJudgeGuardrail {
     pub on_failure: OnFailure,
     pub event_hook: EventHookConfig,
     pub default_on: bool,
-    pub completion: Arc<dyn JudgeCompletion>,
+    pub completion: Arc<dyn JudgeCompletion<Error = E>>,
     pub now: fn() -> SystemTime,
 }
 
@@ -91,7 +92,7 @@ fn judge_messages(inputs: &JudgeInputs, request_data: &RequestData) -> Vec<Messa
 
 type Evaluation = (GuardrailStatus, JudgeVerdict, Option<JudgeError>);
 
-impl LLMAsAJudgeGuardrail {
+impl<E: Error + Send + Sync + 'static> LLMAsAJudgeGuardrail<E> {
     pub async fn apply_guardrail(
         &self,
         inputs: JudgeInputs,

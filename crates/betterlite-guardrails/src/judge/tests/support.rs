@@ -14,8 +14,7 @@ use crate::judge::apply::{
     JudgeInputs, LLMAsAJudgeGuardrail, OnFailure, RequestData, RequestMetadata,
 };
 use crate::judge::call::{
-    JudgeCompletion, JudgeCompletionError, JudgeCompletionRequest, JudgeCompletionResponse,
-    JudgeReply,
+    JudgeCompletion, JudgeCompletionRequest, JudgeCompletionResponse, JudgeReply,
 };
 use crate::judge::config::{GuardrailEntry, LitellmParamsSource};
 use crate::judge::hooks::{EventHookConfig, GuardrailEventHook};
@@ -143,10 +142,12 @@ impl RecordingCompletion {
 
 #[async_trait]
 impl JudgeCompletion for RecordingCompletion {
+    type Error = io::Error;
+
     async fn complete(
         &self,
         request: &JudgeCompletionRequest,
-    ) -> Result<JudgeCompletionResponse, JudgeCompletionError> {
+    ) -> Result<JudgeCompletionResponse, Self::Error> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -160,25 +161,25 @@ impl JudgeCompletion for RecordingCompletion {
             Outcome::NoChoices => Ok(JudgeCompletionResponse {
                 choices: Vec::new(),
             }),
-            Outcome::Failure => Err(JudgeCompletionError {
-                source: Box::new(io::Error::other("judge endpoint down")),
-            }),
+            Outcome::Failure => Err(io::Error::other("judge endpoint down")),
         }
     }
 }
 
 #[derive(Default)]
 pub(crate) struct RecordingRegistry {
-    pub(crate) registered: Vec<Arc<LLMAsAJudgeGuardrail>>,
+    pub(crate) registered: Vec<Arc<LLMAsAJudgeGuardrail<io::Error>>>,
 }
 
-impl CallbackRegistry for RecordingRegistry {
-    fn add_litellm_callback(&mut self, guardrail: Arc<LLMAsAJudgeGuardrail>) {
+impl CallbackRegistry<io::Error> for RecordingRegistry {
+    fn add_litellm_callback(&mut self, guardrail: Arc<LLMAsAJudgeGuardrail<io::Error>>) {
         self.registered.push(guardrail);
     }
 }
 
-pub(crate) fn guardrail_with(completion: Arc<RecordingCompletion>) -> LLMAsAJudgeGuardrail {
+pub(crate) fn guardrail_with(
+    completion: Arc<RecordingCompletion>,
+) -> LLMAsAJudgeGuardrail<io::Error> {
     LLMAsAJudgeGuardrail {
         guardrail_name: "test_judge".to_owned(),
         judge_model: "gpt-4o-mini".to_owned(),

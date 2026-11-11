@@ -3,6 +3,7 @@ use std::error::Error;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use betterlite_models::judge_primitives::error::JudgePrimitivesError;
 use betterlite_models::judge_primitives::judge_verdict_parsing::parse_json_verdict;
 use betterlite_prompts::message_content::Message;
 use indexmap::IndexMap;
@@ -11,7 +12,6 @@ use serde::Serialize;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 
 use super::apply::LLMAsAJudgeGuardrail;
-use super::error::JudgeError;
 use super::hooks::{INTERNAL_CALL_ORIGIN, JUDGE_CALL_ORIGIN};
 use super::prompt::{build_judge_prompt, system_prompt};
 
@@ -48,28 +48,41 @@ pub struct JudgeCompletionResponse {
     pub choices: Vec<JudgeReply>,
 }
 
-// The backend's error type lives in the crate that implements the trait, so this crate can only hold it boxed.
 #[derive(Debug, thiserror::Error)]
-#[error("{source}")]
-pub struct JudgeCompletionError {
-    #[source]
-    pub source: Box<dyn Error + Send + Sync>,
+pub enum JudgeCallError<E> {
+    #[error("the judge model call failed: {source}")]
+    Completion {
+        #[source]
+        source: E,
+    },
+    #[error("the judge model returned no choices")]
+    NoChoices,
+    #[error("the judge model reply is not a verdict: {source}")]
+    Verdict {
+        #[source]
+        source: JudgePrimitivesError,
+    },
 }
 
 #[async_trait]
 pub trait JudgeCompletion: Send + Sync {
+    type Error: Error + Send + Sync + 'static;
+
     async fn complete(
         &self,
         request: &JudgeCompletionRequest,
-    ) -> Result<JudgeCompletionResponse, JudgeCompletionError>;
+    ) -> Result<JudgeCompletionResponse, Self::Error>;
 }
 
-pub async fn run_judge(
-    guardrail: &LLMAsAJudgeGuardrail,
+pub async fn run_judge<E>(
+    guardrail: &LLMAsAJudgeGuardrail<E>,
     messages: &[Message],
     text_under_review: &str,
     input_type: GuardrailInputType,
-) -> Result<JudgeVerdict, JudgeError> {
+) -> Result<JudgeVerdict, JudgeCallError<E>>
+where
+    E: Error + Send + Sync + 'static,
+{
     let request = JudgeCompletionRequest {
         model: guardrail.judge_model.clone(),
         messages: vec![
@@ -98,12 +111,12 @@ pub async fn run_judge(
         .completion
         .complete(&request)
         .await
-        .map_err(|source| JudgeError::Completion { source })?;
-    let reply = response.choices.first().ok_or(JudgeError::NoChoices)?;
+        .map_err(|source| JudgeCallError::Completion { source })?;
+    let reply = response.choices.first().ok_or(JudgeCallError::NoChoices)?;
     let content = reply
         .content
         .as_deref()
         .filter(|text| !text.is_empty())
         .unwrap_or("{}");
-    parse_json_verdict(content).map_err(|source| JudgeError::Verdict { source })
+    parse_json_verdict(content).map_err(|source| JudgeCallError::Verdict { source })
 }

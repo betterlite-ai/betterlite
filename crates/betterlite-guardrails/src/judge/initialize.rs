@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -13,8 +14,8 @@ use super::hooks::{EventHookConfig, coerce_event_hook, validate_event_hook};
 pub const DEFAULT_THRESHOLD: f64 = 80.0;
 pub const DEFAULT_ON_FAILURE: &str = "block";
 
-pub trait CallbackRegistry {
-    fn add_litellm_callback(&mut self, guardrail: Arc<LLMAsAJudgeGuardrail>);
+pub trait CallbackRegistry<E: Error + Send + Sync + 'static> {
+    fn add_litellm_callback(&mut self, guardrail: Arc<LLMAsAJudgeGuardrail<E>>);
 }
 
 struct Resolved {
@@ -27,14 +28,15 @@ struct Resolved {
     default_on: bool,
 }
 
-pub fn initialize_guardrail<R>(
+pub fn initialize_guardrail<C, R>(
     params: &JudgeParams,
     guardrail: &GuardrailEntry<'_>,
-    completion: Arc<dyn JudgeCompletion>,
+    completion: Arc<C>,
     registry: &mut R,
-) -> Result<Arc<LLMAsAJudgeGuardrail>, JudgeError>
+) -> Result<Arc<LLMAsAJudgeGuardrail<C::Error>>, JudgeError>
 where
-    R: CallbackRegistry,
+    C: JudgeCompletion + 'static,
+    R: CallbackRegistry<C::Error>,
 {
     let resolved = resolve(params, guardrail)?;
     let instance = Arc::new(LLMAsAJudgeGuardrail {

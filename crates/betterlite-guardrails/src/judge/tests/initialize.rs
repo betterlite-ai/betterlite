@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -55,7 +56,7 @@ fn with_weights(weights: &[GuardrailValue]) -> BTreeMap<String, GuardrailValue> 
 }
 
 struct Initialized {
-    result: Result<Arc<LLMAsAJudgeGuardrail>, JudgeError>,
+    result: Result<Arc<LLMAsAJudgeGuardrail<io::Error>>, JudgeError>,
     registered: usize,
 }
 
