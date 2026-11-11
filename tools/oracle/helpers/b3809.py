@@ -1,22 +1,27 @@
 import asyncio
-from typing import TYPE_CHECKING, Literal, NotRequired, TypeAlias, TypedDict, cast
-from unittest.mock import patch
+from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
-import litellm
 from fastapi import HTTPException
+from litellm.proxy.guardrails.guardrail_hooks import llm_as_a_judge
 from litellm.proxy.guardrails.guardrail_hooks.llm_as_a_judge import (
+    LLMAsAJudgeGuardrail,
     initialize_guardrail,
 )
-from litellm.types.guardrails import Guardrail, LitellmParams
-
-if TYPE_CHECKING:
-    from litellm.types.utils import GenericGuardrailAPIInputs
+from litellm.router import Router
+from litellm.types.guardrails import LitellmParams
+from litellm.types.utils import ModelResponse
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-RECORD_KEYS = ("guardrail_name", "guardrail_provider", "guardrail_mode", "guardrail_response",
-               "guardrail_status", "start_time", "end_time")
-JUDGE_CALL_TARGET = "litellm.proxy.guardrails.guardrail_hooks.llm_as_a_judge.judge_acompletion"
+RECORD_KEYS = (
+    "guardrail_name",
+    "guardrail_provider",
+    "guardrail_mode",
+    "guardrail_response",
+    "guardrail_status",
+    "start_time",
+    "end_time",
+)
 
 
 class JudgeOutcome(TypedDict, total=False):
@@ -44,66 +49,71 @@ class _FakeJudge:
 
     async def __call__(
         self,
-        _router: object,
-        model: str,
+        _router: Router | None,
+        judge_model: str,
         messages: list[dict[str, Json]],
-        **kwargs: Json,
-    ) -> litellm.ModelResponse:
-        self.captured["model"] = model
-        self.captured["messages"] = cast(Json, messages)
-        for name, value in kwargs.items():
+        **params: Json,
+    ) -> ModelResponse:
+        self.captured["model"] = judge_model
+        self.captured["messages"] = cast(Json, messages)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+        for name, value in params.items():
             self.captured[name] = value
         error = self.outcome.get("error")
         if error is not None:
             raise RuntimeError(error)
-        return litellm.ModelResponse(
-            choices=[
-                {
-                    "message": {
-                        "role": "assistant",
-                        "content": self.outcome.get("content"),
-                    }
-                }
-            ]
-        )
+        content = self.outcome.get("content")
+        choice = {"message": {"role": "assistant", "content": content}}
+        return ModelResponse(choices=[choice])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
 
 
-def run(input_value: dict[str, Json]) -> Json:
-    fields = cast(Input, input_value)
-    config = fields["guardrail"]
+def _initialize(config: GuardrailConfig) -> LLMAsAJudgeGuardrail:
     parameters = LitellmParams(**config["litellm_params"])
-    guardrail_entry = cast(
-        Guardrail,
-        {"guardrail_name": config["guardrail_name"], "litellm_params": parameters},
-    )
-    guardrail = initialize_guardrail(parameters, guardrail_entry)
+    entry = {"guardrail_name": config["guardrail_name"], "litellm_params": parameters}
+    return initialize_guardrail(parameters, entry)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+
+
+def run(input_value: Input) -> Json:
+    config = input_value["guardrail"]
+    guardrail = _initialize(config)
     captured: dict[str, Json] = {}
-    outcome = fields.get("judge") or {}
-    request_data = fields.get("request_data") or {}
-    inputs = cast("GenericGuardrailAPIInputs", fields["inputs"])
+    outcome = input_value.get("judge")
+    if outcome is None:
+        outcome = JudgeOutcome()
+    request_data = input_value.get("request_data")
+    if request_data is None:
+        request_data = {}
     blocked: Json = None
     result: Json = None
-    with patch(JUDGE_CALL_TARGET, new=_FakeJudge(captured, outcome)):
-        try:
-            returned = asyncio.run(
-                guardrail.apply_guardrail(  # pyright: ignore[reportUnknownMemberType]
-                    inputs=inputs,
-                    request_data=request_data,
-                    input_type=fields["input_type"],
-                )
-            )
-            result = cast(Json, returned)
-        except HTTPException as error:
-            blocked = {"status": error.status_code, "detail": cast(Json, error.detail)}
-    metadata = cast(dict[str, Json], request_data.get("metadata") or {})
-    entries = cast(
-        list[dict[str, Json]], metadata.get("standard_logging_guardrail_information") or []
-    )
-    records: list[Json] = [{key: entry[key] for key in RECORD_KEYS} for entry in entries]
+    fake = _FakeJudge(captured, outcome)
+    llm_as_a_judge.judge_acompletion = fake  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+    try:
+        inputs = input_value["inputs"]
+        input_type = input_value["input_type"]
+        coro = guardrail.apply_guardrail(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+            inputs,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+            request_data,
+            input_type,
+        )
+        returned = asyncio.run(coro)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+        result = cast(Json, returned)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+        blocked = {
+            "status": error.status_code,
+            "detail": cast(Json, error.detail),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+        }
+    metadata = request_data.get("metadata")
+    entries_value = None
+    eval_information = None
+    if metadata is not None:
+        info = cast(dict[str, Json], metadata)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+        entries_value = info.get("standard_logging_guardrail_information")
+        eval_information = info.get("eval_information")
+    entries = [] if entries_value is None else cast(list[dict[str, Json]], entries_value)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
+    records = [{key: entry[key] for key in RECORD_KEYS} for entry in entries]
     return {
-        "judge_call": captured or None,
+        "judge_call": captured if len(captured) > 0 else None,
         "inputs": result,
-        "eval_information": metadata.get("eval_information"),
+        "eval_information": eval_information,
         "blocked": blocked,
-        "guardrail_records": records or None,
+        "guardrail_records": None if len(records) == 0 else cast(Json, records),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
     }
