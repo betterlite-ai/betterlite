@@ -53,6 +53,7 @@ scope:
     - crates/betterlite-core/fuzz/corpus/genai_chat_input/**
     - Cargo.toml
     - crates/betterlite-core/src/api/genai_chat_input/tests/**
+    - crates/betterlite-core/src/api/genai_chat_input/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L63-L145
