@@ -4,8 +4,6 @@ os.environ["LITELLM_RUST"] = "false"
 
 import litellm
 
-from .handlers import run
-
-__all__ = ["run"]
+from .handlers import run as run
 
 _ = litellm

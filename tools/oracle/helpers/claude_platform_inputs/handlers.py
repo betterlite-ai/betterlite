@@ -135,7 +135,21 @@ def filtered_body_fields(calls: list[BodyCall]) -> list[Json]:
     return outcomes
 
 
-def project_signature(signature: tuple[Object, bytes | None], api_base: str) -> Json:
+def sign(case: SignCase) -> Json:
+    set_environment(case.get("environment"))
+    botocore.auth.get_current_datetime = FrozenClock(case["now"])  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L433
+    BaseAWSLLM.resolve_credentials = CredentialProvider(case["credentials"])  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
+    signature = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L147
+        "tuple[Object, bytes | None]",
+        BedrockClaudePlatformMixin().sign_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L147
+            case.get("headers") or EMPTY_HEADER_MAP,
+            case.get("optional_params") or EMPTY_PARAMS,
+            case.get("request_data") or EMPTY_PARAMS,
+            case["api_base"],
+            case.get("api_key"),
+            case.get("model"),
+        ),
+    )
     headers = signature[0]
     body = signature[1]
     if body is None:
@@ -143,30 +157,10 @@ def project_signature(signature: tuple[Object, bytes | None], api_base: str) -> 
     return {
         "signed": True,
         "method": "POST",
-        "url": api_base,
+        "url": case["api_base"],
         "headers": headers,
         "body": base64.b64encode(body).decode(),
     }
-
-
-def sign(case: SignCase) -> Json:
-    set_environment(case.get("environment"))
-    botocore.auth.get_current_datetime = FrozenClock(case["now"])  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L433
-    BaseAWSLLM.resolve_credentials = CredentialProvider(case["credentials"])  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
-    sign_request = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L147
-        "Callable[[dict[str, str | None], dict[str, Json], dict[str, Json], str, str | None, "
-        "str | None], tuple[Object, bytes | None]]",
-        BedrockClaudePlatformMixin().sign_request,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L147
-    )
-    signature = sign_request(
-        case.get("headers") or EMPTY_HEADER_MAP,
-        case.get("optional_params") or EMPTY_PARAMS,
-        case.get("request_data") or EMPTY_PARAMS,
-        case["api_base"],
-        case.get("api_key"),
-        case.get("model"),
-    )
-    return project_signature(signature, case["api_base"])
 
 
 def error_class(case: ErrorClassCall) -> Json:

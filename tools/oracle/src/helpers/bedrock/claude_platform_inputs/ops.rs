@@ -43,14 +43,6 @@ pub(super) fn config(environment: &BTreeMap<String, String>) -> Result<Config, B
     .map_err(invalid)
 }
 
-const fn error_code(error: &PlatformInputError) -> &'static str {
-    match error {
-        PlatformInputError::MissingRegion => "missing_region",
-        PlatformInputError::Region(_) => "invalid_region",
-        PlatformInputError::ValueType { .. } | PlatformInputError::Signing(_) => "other",
-    }
-}
-
 fn warning_json(warning: &PlatformWarning) -> Value {
     match warning {
         PlatformWarning::DroppedUnsupported { params } => {
@@ -101,7 +93,11 @@ fn workspaces(cases: &[WorkspaceCase]) -> HelperResult {
 fn string_outcome(key: &str, outcome: Result<String, PlatformInputError>) -> Value {
     match outcome {
         Ok(value) => json!({key: value}),
-        Err(error) => json!({"error": error_code(&error)}),
+        Err(error) => json!({"error": match error {
+            PlatformInputError::MissingRegion => "missing_region",
+            PlatformInputError::Region(_) => "invalid_region",
+            PlatformInputError::ValueType { .. } | PlatformInputError::Signing(_) => "other",
+        }}),
     }
 }
 
