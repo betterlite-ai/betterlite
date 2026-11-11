@@ -599,6 +599,15 @@ fn generated_document_round_trips_through_yaml() {
         deployment_names(&parsed.model_list),
         deployment_names(&document.model_list)
     );
+    let proxy = parsed
+        .model_list
+        .iter()
+        .find_map(|deployment| match &deployment.litellm_params {
+            DeploymentParams::Proxy(params) => Some(params),
+            DeploymentParams::AutoRouter(_params) => None,
+        })
+        .expect("a proxy deployment");
+    assert_eq!(proxy.api_key.expose_secret(), "sk-test");
     let key = master_key_from_config(&parsed).expect("the round-tripped key");
     assert_eq!(key.expose_secret(), "sk-persisted");
 }
