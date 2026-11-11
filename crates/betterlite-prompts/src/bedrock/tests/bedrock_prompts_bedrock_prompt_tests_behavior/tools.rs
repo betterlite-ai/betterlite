@@ -15,12 +15,20 @@ const GET_WEATHER_TOOL: &str = r#"[
     {"type": "function", "function": {"name": "get_weather", "description": "Get the weather", "parameters": {"type": "object"}}}
 ]"#;
 
+const SANITIZED_TOOL: &str = r#"[
+    {"type": "function", "function": {"name": "get weather", "description": "Get the weather", "parameters": {"type": "object"}}}
+]"#;
+
 #[tokio::test]
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_native_blocks_pass_through_and_functions_become_tool_specs()
  {
     let harness = Harness::new();
     let converted = harness
-        .convert(&[], &list(NATIVE_AND_FUNCTION_TOOLS), &Settings::default())
+        .convert(
+            &messages(r#"[{"role":"user","content":"go"}]"#),
+            &list(NATIVE_AND_FUNCTION_TOOLS),
+            &Settings::default(),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -49,7 +57,7 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_message_tool_calls_and_to
                         {"id":"call_1","type":"function","function":{"name":"other tool","arguments":"{}"}}
                     ]}]"#,
             ),
-            &list(GET_WEATHER_TOOL),
+            &list(SANITIZED_TOOL),
             &Settings::default(),
         )
         .await
@@ -64,7 +72,11 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_message_tool_calls_and_to
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_valid_tool_name_adds_no_reverse_mapping() {
     let harness = Harness::new();
     let converted = harness
-        .convert(&[], &list(GET_WEATHER_TOOL), &Settings::default())
+        .convert(
+            &messages(r#"[{"role":"user","content":"go"}]"#),
+            &list(GET_WEATHER_TOOL),
+            &Settings::default(),
+        )
         .await
         .unwrap();
     assert!(converted.names.is_empty());
@@ -89,7 +101,14 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_strict_tools_follow_the_i
     } else {
         Settings::default()
     };
-    let converted = harness.convert(&[], &tools, &settings).await.unwrap();
+    let converted = harness
+        .convert(
+            &messages(r#"[{"role":"user","content":"go"}]"#),
+            &tools,
+            &settings,
+        )
+        .await
+        .unwrap();
     let spec = field(converted.tools.first().unwrap(), "toolSpec").unwrap();
     assert_eq!(field(spec, "strict").is_some(), emitted);
 }
@@ -111,7 +130,14 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_tool_cache_control_foll
     let settings = Settings::default()
         .with_model("anthropic.claude-sonnet-4-5-20250929-v1:0")
         .with_cache_points(support);
-    let converted = harness.convert(&[], &tools, &settings).await.unwrap();
+    let converted = harness
+        .convert(
+            &messages(r#"[{"role":"user","content":"go"}]"#),
+            &tools,
+            &settings,
+        )
+        .await
+        .unwrap();
     let point = converted
         .tools
         .iter()

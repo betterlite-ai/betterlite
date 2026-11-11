@@ -163,7 +163,11 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_native_tool_block_passe
     let harness = Harness::new();
     let tools = list(r#"[{"toolSpec": null}, {"cachePoint": {"type": "default"}}]"#);
     let converted = harness
-        .convert(&[], &tools, &Settings::default())
+        .convert(
+            &messages(r#"[{"role":"user","content":"go"}]"#),
+            &tools,
+            &Settings::default(),
+        )
         .await
         .unwrap();
     assert_eq!(converted.tools, tools);
