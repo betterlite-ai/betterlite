@@ -1,0 +1,26 @@
+task: B3456
+deviations:
+  - what: AWS calls are SigV4-signed HTTPS requests built by betterlite, not boto3 clients. Oracle cases compare the operation name and its AWS-named parameters, and native tests check the wire method, path and signing.
+    why: Rust has no boto3, and the rules forbid pulling an AWS SDK service crate for four calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L587-L616
+  - what: Endpoints come only from region and partition. AWS_ENDPOINT_URL, AWS_ENDPOINT_URL_S3 and shared-config endpoint overrides that boto3 reads are ignored.
+    why: Overrides are hidden global destinations; betterlite sends requests only to the URLs this task derives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L229-L244
+  - what: A non-numeric ingestion_timeout is a typed SettingsError returned from settings parsing.
+    why: Python int() raises ValueError at construction too, so the only change is the error type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L36-L40
+  - what: The missing-boto3 ImportError branch of _get_boto3_client does not exist.
+    why: There is no optional dependency to import.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L587-L592
+  - what: A 2xx answer whose body is not the declared response shape is a typed BedrockIngestionError::Response. Python raises KeyError or JSONDecodeError there.
+    why: A malformed provider answer is an error a caller can name and handle instead of an internal crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L540-L562
+  - what: create_data_source and auto_detect_config return a typed error when the knowledge base id or the S3 bucket is absent; Python formats None into the request (arn:aws:s3:::None) or a null knowledgeBaseId.
+    why: A working setup always provides them, and a typed error names what is missing instead of sending an invalid request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L564-L585
+  - what: An AWS error body that is not UTF-8 is reported as a placeholder instead of its bytes.
+    why: Error messages are Strings; the first 1024 bytes of a JSON error body are always UTF-8 in practice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L587-L616
+  - what: A GetDataSource answer whose dataSourceConfiguration or s3Configuration is null is treated as absent, so the configured s3_bucket is used or the NoS3Bucket error is returned. Python crashes with an AttributeError there.
+    why: A null in the declared optional fields is a valid answer, and an unhandled internal error serves no working setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L170-L172
