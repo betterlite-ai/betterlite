@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_judge::JudgeParams;
+use reqwest::StatusCode;
 use rstest::rstest;
 
 use crate::judge::apply::{LLMAsAJudgeGuardrail, OnFailure};
@@ -128,6 +129,7 @@ fn judge_initialize_tests_behavior(#[case] case: Case) {
             .err()
             .expect("a name is required");
             assert!(matches!(error, JudgeError::MissingGuardrailName));
+            assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
             assert!(registry.registered.is_empty());
         }
         Case::EmptyName => {

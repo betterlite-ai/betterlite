@@ -50,18 +50,10 @@ pub enum JudgeError {
 impl JudgeError {
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {
-        match self {
-            Self::Blocked { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::MissingGuardrailName
-            | Self::MissingJudgeModel
-            | Self::MissingCriteria
-            | Self::WeightSum { .. }
-            | Self::UnrepresentableWeight
-            | Self::WeightOverflow
-            | Self::InvalidOnFailure { .. }
-            | Self::InvalidEventHook { .. }
-            | Self::UnsupportedEventHook { .. }
-            | Self::InvalidParam { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        if matches!(self, Self::Blocked { .. }) {
+            StatusCode::UNPROCESSABLE_ENTITY
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }

@@ -55,12 +55,7 @@ where
 }
 
 fn resolve(params: &JudgeParams, guardrail: &GuardrailEntry<'_>) -> Result<Resolved, JudgeError> {
-    // LiteLLM rejects an empty name with the same ValueError it uses for a missing one.
-    let Some(guardrail_name) = guardrail
-        .guardrail_name
-        .filter(|name| !name.is_empty())
-        .map(str::to_owned)
-    else {
+    let Some(guardrail_name) = guardrail.guardrail_name.filter(|name| !name.is_empty()) else {
         return Err(JudgeError::MissingGuardrailName);
     };
     let Some(judge_model) = parse_param::<String>(params, guardrail, ParamKey::JudgeModel)?
@@ -75,7 +70,7 @@ fn resolve(params: &JudgeParams, guardrail: &GuardrailEntry<'_>) -> Result<Resol
     }
     validate_weights(&criteria)?;
     Ok(Resolved {
-        guardrail_name,
+        guardrail_name: guardrail_name.to_owned(),
         judge_model,
         criteria,
         on_failure: resolve_on_failure(params, guardrail)?,
