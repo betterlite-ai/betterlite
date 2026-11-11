@@ -2482,6 +2482,7 @@ dependencies = [
  "jsonwebtoken",
  "mutants",
  "pem",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
