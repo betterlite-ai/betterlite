@@ -1,0 +1,19 @@
+kind: helper
+name: detect-first-source
+call:
+  b3456:
+    step: detect
+    vector:
+      vector_store_id: KB123
+    environment: {}
+    data_sources:
+      - dataSourceId: DS1
+      - dataSourceId: DS2
+    data_source:
+      dataSource:
+        dataSourceConfiguration:
+          s3Configuration:
+            bucketArn: "arn:aws:s3:::docs-bucket"
+            inclusionPrefixes: ["kb/docs/", "other/"]
+env: {}
+compare: {ignore: []}
