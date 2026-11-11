@@ -33,7 +33,7 @@ pub(super) enum Candidate<'source> {
 }
 
 impl Candidate<'_> {
-    fn is_effective(self) -> bool {
+    fn is_effective(&self) -> bool {
         match self {
             Self::Text(value) => !value.is_empty(),
             Self::Param { value, .. } => is_effective(value),
@@ -49,24 +49,16 @@ impl Candidate<'_> {
 }
 
 // Python's `a or b or c` keeps the last operand when none of them is truthy
-fn select<const N: usize>(operands: [Option<Candidate<'_>>; N]) -> Option<Candidate<'_>> {
+fn select_matching<T, const N: usize>(
+    operands: [Option<T>; N],
+    is_effective: fn(&T) -> bool,
+) -> Option<T> {
     let mut selected = None;
     for operand in operands {
-        if operand.is_some_and(Candidate::is_effective) {
+        if operand.as_ref().is_some_and(is_effective) {
             return operand;
         }
         selected = operand;
-    }
-    selected
-}
-
-fn select_text<const N: usize>(values: [Option<&str>; N]) -> Option<&str> {
-    let mut selected = None;
-    for value in values {
-        if value.is_some_and(|text| !text.is_empty()) {
-            return value;
-        }
-        selected = value;
     }
     selected
 }

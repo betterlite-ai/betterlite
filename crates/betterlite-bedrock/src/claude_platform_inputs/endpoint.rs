@@ -2,7 +2,7 @@ use betterlite_config::sections::bedrock_aws_endpoints::Settings as AwsEndpointS
 use betterlite_config::sections::claude_platform_inputs::PlatformEnvironment;
 
 use super::error::PlatformInputError;
-use super::{CLAUDE_PLATFORM_SERVICE_NAME, Candidate, select, select_text};
+use super::{CLAUDE_PLATFORM_SERVICE_NAME, Candidate, select_matching};
 use crate::aws_endpoints::region::validate_region;
 use crate::model_routes::{ParamMap, ParamValue};
 
@@ -16,21 +16,24 @@ pub fn resolve_region(
     optional_params: &ParamMap,
     environment: &AwsEndpointSettings,
 ) -> Result<String, PlatformInputError> {
-    let selected = select([
-        optional_params
-            .get("aws_region_name")
-            .filter(|value| !matches!(value, ParamValue::Null))
-            .map(|value| Candidate::Param {
-                field: "aws_region_name",
-                value,
-            }),
-        environment.aws_region_name.as_deref().map(Candidate::Text),
-        environment.aws_region.as_deref().map(Candidate::Text),
-        environment
-            .aws_default_region
-            .as_deref()
-            .map(Candidate::Text),
-    ])
+    let selected = select_matching(
+        [
+            optional_params
+                .get("aws_region_name")
+                .filter(|value| !matches!(value, ParamValue::Null))
+                .map(|value| Candidate::Param {
+                    field: "aws_region_name",
+                    value,
+                }),
+            environment.aws_region_name.as_deref().map(Candidate::Text),
+            environment.aws_region.as_deref().map(Candidate::Text),
+            environment
+                .aws_default_region
+                .as_deref()
+                .map(Candidate::Text),
+        ],
+        Candidate::is_effective,
+    )
     .ok_or(PlatformInputError::MissingRegion)?;
     let region = selected.render()?;
     validate_region(Some(&region))?;
@@ -42,12 +45,15 @@ pub fn complete_url(
     environment: &PlatformEnvironment,
     aws: &AwsEndpointSettings,
 ) -> Result<String, PlatformInputError> {
-    let selected = select_text([
-        inputs.api_base,
-        inputs.litellm_api_base,
-        environment.anthropic_aws_base_url.as_deref(),
-        environment.anthropic_aws_api_base.as_deref(),
-    ]);
+    let selected = select_matching(
+        [
+            inputs.api_base,
+            inputs.litellm_api_base,
+            environment.anthropic_aws_base_url.as_deref(),
+            environment.anthropic_aws_api_base.as_deref(),
+        ],
+        |text| !text.is_empty(),
+    );
     if let Some(base) = selected {
         return Ok(finish_url(base));
     }

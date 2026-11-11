@@ -17,6 +17,9 @@ call:
         - optional: {other: not-a-list}
         - optional: {other: not-a-list}
           log_invalid: false
+        - optional: {other: null}
+        - deployment: {list: [context_management]}
+          optional: {other: null}
         - deployment: {list: [context_management]}
           optional: {other: not-a-list}
         - deployment: {other: 5}

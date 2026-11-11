@@ -31,12 +31,10 @@ fn sign(request: PlatformSignRequest<'_>) -> Result<PlatformSignature, PlatformI
 }
 
 fn supplied_headers_of(signature: PlatformSignature) -> Vec<(String, Option<String>)> {
-    match signature {
-        PlatformSignature::Supplied { headers } => headers,
-        PlatformSignature::Signed(signed) => {
-            panic!("expected supplied headers, signed {}", signed.url)
-        }
-    }
+    let PlatformSignature::Supplied { headers } = signature else {
+        panic!("expected supplied headers, signed request");
+    };
+    headers
 }
 
 fn signed(signature: PlatformSignature) -> AwsSignedRequest {
@@ -74,61 +72,42 @@ fn supplied_headers() -> Vec<(String, Option<String>)> {
     ]
 }
 
-fn explicit_key_supplies_headers() {
+fn sign_supplied(
+    api_key: Option<&SecretString>,
+    environment_api_key: Option<&SecretString>,
+) -> Vec<(String, Option<String>)> {
     let headers = supplied_headers();
     let data = support::request_data();
     let optional_params = BTreeMap::new();
-    let explicit = SecretString::from("explicit-fixture-key");
     let matched = sign(PlatformSignRequest {
         headers: &headers,
         optional_params: &optional_params,
         request_data: &data,
         api_base: API_BASE,
-        api_key: Some(&explicit),
-        environment_api_key: None,
+        api_key,
+        environment_api_key,
         configured_bearer: None,
         model: None,
         region_inputs: RegionInputs::default(),
         now: support::epoch(NOW),
     })
     .unwrap();
-    assert_eq!(supplied_headers_of(matched), headers);
+    supplied_headers_of(matched)
+}
+
+fn explicit_key_supplies_headers() {
+    let explicit = SecretString::from("explicit-fixture-key");
+    let matched = sign_supplied(Some(&explicit), None);
+    assert_eq!(matched, supplied_headers());
 }
 
 fn environment_key_supplies_headers() {
-    let headers = supplied_headers();
-    let data = support::request_data();
-    let optional_params = BTreeMap::new();
     let environment = SecretString::from("environment-fixture-key");
+    let from_environment = sign_supplied(None, Some(&environment));
+    assert_eq!(from_environment, supplied_headers());
     let empty = SecretString::from("");
-    let from_environment = sign(PlatformSignRequest {
-        headers: &headers,
-        optional_params: &optional_params,
-        request_data: &data,
-        api_base: API_BASE,
-        api_key: None,
-        environment_api_key: Some(&environment),
-        configured_bearer: None,
-        model: None,
-        region_inputs: RegionInputs::default(),
-        now: support::epoch(NOW),
-    })
-    .unwrap();
-    assert_eq!(supplied_headers_of(from_environment), headers);
-    let empty_explicit = sign(PlatformSignRequest {
-        headers: &headers,
-        optional_params: &optional_params,
-        request_data: &data,
-        api_base: API_BASE,
-        api_key: Some(&empty),
-        environment_api_key: Some(&environment),
-        configured_bearer: None,
-        model: None,
-        region_inputs: RegionInputs::default(),
-        now: support::epoch(NOW),
-    })
-    .unwrap();
-    assert_eq!(supplied_headers_of(empty_explicit), headers);
+    let empty_explicit = sign_supplied(Some(&empty), Some(&environment));
+    assert_eq!(empty_explicit, supplied_headers());
 }
 
 fn bearer_token_signs() {

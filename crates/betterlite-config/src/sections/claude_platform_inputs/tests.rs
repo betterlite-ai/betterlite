@@ -87,17 +87,28 @@ fn claude_workspace_aliases_config_cases(#[case] key: &str, #[case] read: Read) 
     assert_workspace_alias(key, read);
 }
 
+#[derive(Clone, Copy)]
+enum Case {
+    AnthropicAwsWorkspaceId,
+    AnthropicWorkspaceId,
+    AnthropicAwsBaseUrl,
+    AnthropicAwsApiBase,
+    AnthropicAwsApiKey,
+    UnsupportedParams,
+    RejectsUnrelatedKey,
+}
+
 #[rstest]
-#[case::loads_anthropic_aws_workspace_id(0)]
-#[case::loads_anthropic_workspace_id(1)]
-#[case::loads_anthropic_aws_base_url(2)]
-#[case::loads_anthropic_aws_api_base(3)]
-#[case::loads_anthropic_aws_api_key(4)]
-#[case::loads_claude_platform_unsupported_params(5)]
-#[case::rejects_unrelated_key(6)]
-fn claude_platform_inputs_config_cases(#[case] case: u8) {
+#[case::loads_anthropic_aws_workspace_id(Case::AnthropicAwsWorkspaceId)]
+#[case::loads_anthropic_workspace_id(Case::AnthropicWorkspaceId)]
+#[case::loads_anthropic_aws_base_url(Case::AnthropicAwsBaseUrl)]
+#[case::loads_anthropic_aws_api_base(Case::AnthropicAwsApiBase)]
+#[case::loads_anthropic_aws_api_key(Case::AnthropicAwsApiKey)]
+#[case::loads_claude_platform_unsupported_params(Case::UnsupportedParams)]
+#[case::rejects_unrelated_key(Case::RejectsUnrelatedKey)]
+fn claude_platform_inputs_config_cases(#[case] case: Case) {
     match case {
-        0 => {
+        Case::AnthropicAwsWorkspaceId => {
             let default = load("", &[]).unwrap();
             assert_eq!(
                 revealed(default.environment.anthropic_aws_workspace_id.as_ref()),
@@ -120,7 +131,7 @@ fn claude_platform_inputs_config_cases(#[case] case: u8) {
                 None
             );
         }
-        1 => {
+        Case::AnthropicWorkspaceId => {
             let default = load("", &[]).unwrap();
             assert_eq!(
                 revealed(default.environment.anthropic_workspace_id.as_ref()),
@@ -143,7 +154,7 @@ fn claude_platform_inputs_config_cases(#[case] case: u8) {
                 None
             );
         }
-        2 => {
+        Case::AnthropicAwsBaseUrl => {
             let default = load("", &[]).unwrap();
             assert_eq!(default.environment.anthropic_aws_base_url, None);
             let set = load("", &[("ANTHROPIC_AWS_BASE_URL", "https://base.example")]).unwrap();
@@ -157,7 +168,7 @@ fn claude_platform_inputs_config_cases(#[case] case: u8) {
                 Some("")
             );
         }
-        3 => {
+        Case::AnthropicAwsApiBase => {
             let default = load("", &[]).unwrap();
             assert_eq!(default.environment.anthropic_aws_api_base, None);
             let set = load("", &[("ANTHROPIC_AWS_API_BASE", "https://api.example")]).unwrap();
@@ -171,7 +182,7 @@ fn claude_platform_inputs_config_cases(#[case] case: u8) {
                 Some("")
             );
         }
-        4 => {
+        Case::AnthropicAwsApiKey => {
             let default = load("", &[]).unwrap();
             assert_eq!(
                 revealed(default.environment.anthropic_aws_api_key.as_ref()),
@@ -189,7 +200,7 @@ fn claude_platform_inputs_config_cases(#[case] case: u8) {
                 Some("")
             );
         }
-        5 => {
+        Case::UnsupportedParams => {
             let key = "claude_platform_unsupported_params";
             let default = load("", &[]).unwrap();
             assert_eq!(default.litellm_settings.unsupported_params, None);
@@ -243,7 +254,7 @@ fn claude_platform_inputs_config_cases(#[case] case: u8) {
                 Some(UnsupportedParams::List(Vec::new()))
             );
         }
-        6 => {
+        Case::RejectsUnrelatedKey => {
             let error = load(&deployment("workspace_id_unrelated", "1"), &[]).unwrap_err();
             assert!(
                 matches!(&error, ConfigError::Unsupported { paths } if *paths == ["model_list.0.litellm_params.workspace_id_unrelated"]),
@@ -256,6 +267,5 @@ fn claude_platform_inputs_config_cases(#[case] case: u8) {
                 "{global_error}"
             );
         }
-        _ => panic!("unknown case {case}"),
     }
 }

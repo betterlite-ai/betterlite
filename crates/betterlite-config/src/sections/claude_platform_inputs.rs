@@ -24,6 +24,8 @@ pub enum PlatformValue {
 pub enum UnsupportedParams {
     List(Vec<PlatformValue>),
     Set(Vec<PlatformValue>),
+    // the Python adapter spells frozenset without the underscore
+    #[serde(rename = "frozenset")]
     FrozenSet(Vec<PlatformValue>),
     Tuple(Vec<PlatformValue>),
     Other(PlatformValue),

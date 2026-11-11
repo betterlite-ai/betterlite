@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use betterlite_config::sections::claude_platform_inputs::{PlatformValue, UnsupportedParams};
-use indexmap::IndexMap;
 
 use super::{DEFAULT_UNSUPPORTED, NON_REQUEST_PARAMS};
 use crate::model_routes::ParamMap;
@@ -135,25 +134,16 @@ fn rendered_item(value: &PlatformValue) -> String {
         PlatformValue::Boolean(false) => "False".to_owned(),
         PlatformValue::Number(number) => number.to_string(),
         PlatformValue::Text(text) => text.clone(),
-        PlatformValue::List(items) => rendered_list(items),
-        PlatformValue::Mapping(fields) => rendered_mapping(fields),
-    }
-}
-
-fn rendered_list(items: &[PlatformValue]) -> String {
-    match items {
-        [] => "[]".to_owned(),
-        values => {
-            let rendered: Vec<String> = values.iter().map(rendered_item).collect();
+        PlatformValue::List(items) => {
+            let rendered: Vec<String> = items.iter().map(rendered_item).collect();
             format!("[{}]", rendered.join(", "))
         }
+        PlatformValue::Mapping(fields) => {
+            let rendered: Vec<String> = fields
+                .iter()
+                .map(|(key, item)| format!("{key}: {}", rendered_item(item)))
+                .collect();
+            format!("{{{}}}", rendered.join(", "))
+        }
     }
-}
-
-fn rendered_mapping(fields: &IndexMap<String, PlatformValue>) -> String {
-    let rendered: Vec<String> = fields
-        .iter()
-        .map(|(key, value)| format!("{key}: {}", rendered_item(value)))
-        .collect();
-    format!("{{{}}}", rendered.join(", "))
 }

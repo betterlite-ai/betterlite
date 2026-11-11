@@ -1,5 +1,6 @@
 mod input;
 mod ops;
+mod signing;
 mod tests;
 
 use crate::helpers::{Helper, HelperResult};
