@@ -1,14 +1,14 @@
 id: B8748
 milestone: M8 platform
 title: LangSmith logger lifecycle, batching and catalog arm
-status: todo
+status: done
 depends_on: [B3911, B8741, B256, B173]
 file: tasks/B8748-langsmith-logger.yaml
 covers:
   - "litellm/integrations/langsmith.py"
 parent: B112
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1336
