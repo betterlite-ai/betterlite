@@ -2,20 +2,17 @@ use async_trait::async_trait;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::{Content, Message, convert_content_list_to_str};
 use betterlite_provider::ollama_chat::config::{
-    OllamaChatConfig, SUPPORTED_OPENAI_PARAMS, complete_url, map_openai_params,
+    SUPPORTED_OPENAI_PARAMS, OllamaChatConfig, complete_url, map_openai_params,
     validate_environment,
 };
 use betterlite_provider::ollama_chat::ids::RandomIds;
-use betterlite_provider::ollama_chat::reply::{
-    ChatChoice, OllamaChatResponse, ReplyInput, ToolCall, transform_response,
-};
+use betterlite_provider::ollama_chat::reply::{ChatChoice, OllamaChatResponse, ReplyInput, transform_response};
 use betterlite_provider::ollama_chat::request::{RequestInput, transform_request};
-use betterlite_provider::ollama_chat::stream::chunk::{
-    DeltaToolCall, OllamaStreamChunk, StreamChoice,
-};
+use betterlite_provider::ollama_chat::stream::chunk::OllamaStreamChunk;
 use betterlite_provider::ollama_chat::stream::{OllamaChatIterator, OllamaStreamStep};
 use betterlite_provider::ollama_chat::usage::TokenCounter;
 use secrecy::SecretString;
+use serde::Serialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -23,7 +20,6 @@ use super::script::{ParamCase, ReplyCase, RequestCase, ValidateCase, runtime};
 use crate::helpers::HelperResult;
 
 const NOW: i64 = 1_700_000_000;
-const USER_MESSAGE: &str = "hi";
 
 struct WordsCounter;
 
@@ -33,11 +29,9 @@ impl TokenCounter for WordsCounter {
         let words = messages
             .iter()
             .map(|message| convert_content_list_to_str(message).split_whitespace().count());
-        Some(
-            words.fold(0_u64, |total, count| {
-                total.saturating_add(u64::try_from(count).unwrap_or(u64::MAX))
-            }),
-        )
+        Some(words.fold(0_u64, |total, count| {
+            total.saturating_add(u64::try_from(count).unwrap_or(u64::MAX))
+        }))
     }
 
     async fn count_text(&self, text: &str) -> Option<u64> {
@@ -48,7 +42,7 @@ impl TokenCounter for WordsCounter {
 fn user_messages() -> Vec<Message> {
     vec![Message {
         role: String::from("user"),
-        content: Some(Content::Text(String::from(USER_MESSAGE))),
+        content: Some(Content::Text(String::from("hi"))),
         name: None,
         provider_specific_fields: Object::new(),
     }]
@@ -69,21 +63,33 @@ fn normalize_arguments(arguments: &str) -> String {
     )
 }
 
-fn tool_calls_value(calls: &[ToolCall]) -> Value {
-    Value::Array(
-        calls
-            .iter()
-            .map(|call| {
-                json!({
-                    "id": normalize_id(&call.id),
-                    "type": call.kind,
-                    "name": call.function.name,
-                    "arguments": normalize_arguments(&call.function.arguments),
-                })
-            })
-            .collect(),
-    )
+#[derive(Serialize)]
+struct CallValue<'call> {
+    id: Option<String>,
+    #[serde(rename = "type")]
+    kind: &'call str,
+    name: Option<&'call str>,
+    arguments: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<u32>,
 }
+
+fn calls_json<'call>(
+    calls: impl Iterator<Item = (Option<String>, &'call str, Option<&'call str>, String, Option<u32>)>,
+) -> Value {
+    let values: Vec<CallValue<'call>> = calls
+        .map(|(id, kind, name, arguments, index)| CallValue {
+            id,
+            kind,
+            name,
+            arguments,
+            index,
+        })
+        .collect();
+    serde_json::to_value(values).unwrap_or_default()
+}
+
+
 
 fn reply_value(response: &OllamaChatResponse) -> Value {
     response.choices.first().map_or_else(
@@ -100,13 +106,41 @@ fn reply_choice(response: &OllamaChatResponse, choice: &ChatChoice) -> Value {
         "role": choice.message.role,
         "content": choice.message.content,
         "reasoning_content": choice.message.reasoning_content,
-        "tool_calls": choice.message.tool_calls.as_deref().map(tool_calls_value),
+        "tool_calls": choice.message.tool_calls.as_deref().map(|calls| calls_json(
+            calls.iter().map(|call| (
+                Some(normalize_id(&call.id)),
+                call.kind.as_str(),
+                call.function.name.as_deref(),
+                normalize_arguments(&call.function.arguments),
+                None,
+            )),
+        )),
         "usage": [response.usage.prompt_tokens, response.usage.completion_tokens, response.usage.total_tokens],
     })
 }
 
 fn chunk_value(chunk: &OllamaStreamChunk) -> Value {
-    let choices: Vec<Value> = chunk.choices.iter().map(chunk_choice).collect();
+    let choices: Vec<Value> = chunk
+        .choices
+        .iter()
+        .map(|choice| {
+            json!({
+                "index": choice.index,
+                "finish_reason": choice.finish_reason,
+                "content": choice.delta.content,
+                "reasoning_content": choice.delta.reasoning_content,
+                "tool_calls": choice.delta.tool_calls.as_deref().map(|calls| calls_json(
+                    calls.iter().map(|call| (
+                        call.id.as_deref().map(normalize_id),
+                        call.kind.as_str(),
+                        call.function.name.as_deref(),
+                        normalize_arguments(&call.function.arguments),
+                        Some(call.index),
+                    )),
+                )),
+            })
+        })
+        .collect();
     let usage = chunk.usage.map(|usage| {
         json!([
             usage.prompt_tokens,
@@ -122,33 +156,6 @@ fn chunk_value(chunk: &OllamaStreamChunk) -> Value {
         "usage": usage,
         "choices": choices,
     })
-}
-
-fn chunk_choice(choice: &StreamChoice) -> Value {
-    json!({
-        "index": choice.index,
-        "finish_reason": choice.finish_reason,
-        "content": choice.delta.content,
-        "reasoning_content": choice.delta.reasoning_content,
-        "tool_calls": choice.delta.tool_calls.as_deref().map(delta_calls),
-    })
-}
-
-fn delta_calls(calls: &[DeltaToolCall]) -> Value {
-    Value::Array(
-        calls
-            .iter()
-            .map(|call| {
-                json!({
-                    "index": call.index,
-                    "id": call.id.as_deref().map(normalize_id),
-                    "arguments": normalize_arguments(&call.function.arguments),
-                    "type": call.kind,
-                    "name": call.function.name,
-                })
-            })
-            .collect(),
-    )
 }
 
 pub(super) fn params(
@@ -176,7 +183,7 @@ pub(super) fn params(
             json!(headers)
         })
         .collect();
-    let found_urls: Vec<String> = urls
+    let found: Vec<String> = urls
         .iter()
         .map(|api_base| complete_url(api_base.as_deref()))
         .collect();
@@ -185,7 +192,7 @@ pub(super) fn params(
         "config": config.get_config(),
         "mapped": mapped,
         "validated": validated,
-        "urls": found_urls,
+        "urls": found,
     })
 }
 
@@ -226,11 +233,12 @@ pub(super) fn replies(cases: &[ReplyCase]) -> HelperResult {
             messages: &messages,
             created: NOW,
         };
-        let value = match runtime.block_on(transform_response(&input, &counter, &ids)) {
-            Ok(response) => json!({"ok": true, "reply": reply_value(&response)}),
-            Err(error) => json!({"ok": false, "status": error.status()}),
-        };
-        found.push(value);
+        found.push(
+            match runtime.block_on(transform_response(&input, &counter, &ids)) {
+                Ok(response) => json!({"ok": true, "reply": reply_value(&response)}),
+                Err(error) => json!({"ok": false, "status": error.status()}),
+            },
+        );
     }
     Ok(json!({"replies": found}))
 }
@@ -240,12 +248,14 @@ pub(super) fn stream(lines: &[String]) -> Value {
     let ids = RandomIds;
     let chunks: Vec<Value> = lines
         .iter()
-        .map(|line| match iterator.next_chunk(line, NOW, &ids) {
-            Ok(OllamaStreamStep::Chunk(chunk)) => json!({"ok": true, "chunk": chunk_value(&chunk)}),
-            Ok(OllamaStreamStep::Skipped) => json!({"ok": true, "skipped": true}),
-            Ok(OllamaStreamStep::Done) => json!({"ok": true, "done": true}),
-            Err(error) => json!({"ok": false, "status": error.status()}),
-        })
+        .map(
+            |line| match iterator.next_chunk(line, NOW, &ids) {
+                Ok(OllamaStreamStep::Chunk(chunk)) => json!({"ok": true, "chunk": chunk_value(&chunk)}),
+                Ok(OllamaStreamStep::Skipped) => json!({"ok": true, "skipped": true}),
+                Ok(OllamaStreamStep::Done) => json!({"ok": true, "done": true}),
+                Err(error) => json!({"ok": false, "status": error.status()}),
+            },
+        )
         .collect();
     json!({"chunks": chunks})
 }

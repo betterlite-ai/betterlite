@@ -117,21 +117,17 @@ fn take_nullable(optional: &mut IndexMap<String, Json>, name: &str) -> Option<Js
 fn ollama_message(message: &Message, index: usize) -> Result<OllamaMessage, OllamaError> {
     Ok(OllamaMessage {
         role: message.role.clone(),
-        thinking: reasoning_text(message, index)?,
+        thinking: first_text(
+            &message.provider_specific_fields,
+            &["reasoning_content", "reasoning"],
+            index,
+        )?
+        .or_else(|| content_reasoning(message)),
         content: convert_content_list_to_str(message),
         images: extract_images_from_message(message),
         tool_calls: tool_calls_from_message(message, index)?,
         tool_call_id: tool_call_id(message, index)?,
     })
-}
-
-fn reasoning_text(message: &Message, index: usize) -> Result<Option<String>, OllamaError> {
-    let explicit = first_text(
-        &message.provider_specific_fields,
-        &["reasoning_content", "reasoning"],
-        index,
-    )?;
-    Ok(explicit.or_else(|| content_reasoning(message)))
 }
 
 fn tool_call_id(message: &Message, index: usize) -> Result<Option<String>, OllamaError> {
