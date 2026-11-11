@@ -1,0 +1,18 @@
+kind: helper
+name: dual-cache-get-hits-memory-first
+call:
+  b4293:
+    get_hits_memory_first:
+      clock: 1000.0
+      value: null
+      default_in_memory_ttl: null
+      entries: []
+      key_count: 0
+      memory:
+        - key: shared-key
+          value: from-memory
+      redis_get: from-redis
+      key: shared-key
+env: {}
+compare:
+  ignore: []

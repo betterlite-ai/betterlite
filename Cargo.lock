@@ -1300,6 +1300,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "rusqlite",
  "secrecy",
@@ -2045,7 +2046,9 @@ dependencies = [
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
+ "betterlite-context",
  "betterlite-env",
+ "betterlite-error",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2378,6 +2381,7 @@ dependencies = [
  "rustls-native-certs",
  "secrecy",
  "serde",
+ "serde_json",
  "sha2 0.11.1",
  "subtle",
  "tempfile",

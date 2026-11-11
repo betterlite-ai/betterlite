@@ -1,0 +1,35 @@
+task: B3991
+deviations:
+  - what: The S3 logger reads its parameters from the top-level callback_settings.s3 block, and the DynamoDB logger reads dynamodb_table_name from callback_settings.dynamodb, instead of litellm_settings.s3_callback_params and litellm_settings.dynamodb_table_name.
+    why: B189 routes every native logger's parameters through the top-level callback_settings block, and the global litellm_settings map is typed per section, so a candidate s3_callback_params block would fail the config load as an unsupported key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L182
+  - what: The team prefix gate enable_preview_features is read from callback_settings.s3, defaulting to false, because litellm_settings.enable_preview_features is not loaded yet.
+    why: The global key belongs to B024. Until it lands, an operator can still open the gate that LiteLLM's s3.py checks, and the gate stays closed by default exactly as litellm.enable_preview_features defaults to false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L265
+  - what: s3_api_version, s3_use_ssl, s3_verify, s3_config and every key the legacy S3 logger does not apply fail the logger build; LiteLLM ignores unknown s3_callback_params keys and hands these four to boto3.client.
+    why: betterlite's pooled HTTP client takes TLS and retry policy from proxy configuration, so it cannot honor a per-callback verify, plain-HTTP or api_version setting. Refusing them names the key instead of silently sending with different TLS or retry behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L185
+  - what: The S3 region comes from s3_region_name, then AWS_REGION_NAME or AWS_REGION, then us-west-2; boto3 resolves it from its own config chain (AWS_DEFAULT_REGION, the shared config file, IMDS).
+    why: betterlite reads the environment only through B002's lookup, and the pinned s3_v2 client has the same us-west-2 default, so a deployment without a region keeps working instead of failing at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L207
+  - what: S3 object keys, the download filename and the DynamoDB startTime and endTime use UTC calendar time formatted as RFC 3339; LiteLLM's start_time is a naive local datetime and str(datetime) carries no zone.
+    why: The callback event carries LiteLLM's startTime as epoch seconds, which has no local zone to recover. docs/compatibility.md fixes output timestamps to RFC 3339.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7952
+  - what: The DynamoDB item is projected from the standard logging payload, taking user from end_user, modelParameters from model_parameters and metadata from StandardLoggingMetadata, with nested values as standard JSON text instead of Python str() text.
+    why: The callback event carries the standard logging payload and no kwargs or response object. docs/compatibility.md excludes Python's repr and str text, so a nested dict becomes JSON text rather than a single-quoted Python dict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dynamodb.py#L51
+  - what: The DynamoDB usage value comes from the response usage or metadata.usage_object and becomes the string "null" when neither exists; LiteLLM indexes response_obj["usage"], raises KeyError inside the swallowing try block and writes no item at all.
+    why: A success event whose response carries no usage (or a failure event, which has no response) would lose its whole DynamoDB record. Writing the item with a null usage keeps the rest of the log instead of dropping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dynamodb.py#L66
+  - what: DynamoDB credentials come from AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN; boto3's default chain also reads shared profiles, container credentials and IMDS.
+    why: betterlite resolves AWS credentials from the injected environment lookup, the same way the SQS logger does. A deployment relying on an instance profile has no static keys and logs a swallowed credential error per event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dynamodb.py#L28
+  - what: The S3 upload goes through the shared S3 transport, which retries a 403, 500 or 503 up to three times with backoff and treats an object-specific rejection as final; boto3's put_object retries according to its own client configuration, which s3_config would set.
+    why: The transport already builds the exact content headers, SSE headers and SigV4 signature that the s3_v2 uploader uses, and s3_config cannot be honored by the pooled client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L281
+  - what: S3Logger and DynamoDbLogger swallow every delivery error and never propagate it; the S3 logger logs at error level and the DynamoDB logger at debug level, matching LiteLLM's verbose-only output.
+    why: Legacy callback behavior in LiteLLM swallows failures so the main request path is unaffected even when logging fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dynamodb.py#L85
+  - what: Oracle cases for the legacy S3 and DynamoDB loggers need helper operations s3_legacy_logging and dynamodb_legacy_logging registered in tools/oracle/src/helpers/logging.rs and tools/oracle/helpers/b3991.py, which this task's scope cannot reach, so no oracle case exists.
+    why: Helper operations must be listed in the helper group macro and the dispatch table by the architect before a worker can call them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L151

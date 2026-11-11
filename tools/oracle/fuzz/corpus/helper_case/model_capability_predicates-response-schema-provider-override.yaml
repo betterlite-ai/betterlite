@@ -1,0 +1,21 @@
+kind: helper
+name: model-capability-predicates-response-schema-provider-override
+call:
+  model_capability_predicates:
+    fixture:
+      model_cost:
+        deepseek/schema-true: {litellm_provider: deepseek, mode: chat, supports_response_schema: true}
+        deepseek/schema-false: {litellm_provider: deepseek, mode: chat, supports_response_schema: false}
+        deepseek/schema-silent: {litellm_provider: deepseek, mode: chat}
+    steps:
+      - {function: supports_response_schema, model: whatever, custom_llm_provider: predibase}
+      - {function: supports_response_schema, model: whatever, custom_llm_provider: fireworks_ai}
+      - {function: supports_response_schema, model: whatever, custom_llm_provider: lm_studio}
+      - {function: supports_response_schema, model: whatever, custom_llm_provider: nebius}
+      - {function: supports_response_schema, model: whatever, custom_llm_provider: databricks}
+      - {function: supports_response_schema, model: deepseek/schema-true, custom_llm_provider: deepseek}
+      - {function: supports_response_schema, model: deepseek/schema-false, custom_llm_provider: deepseek}
+      - {function: supports_response_schema, model: deepseek/schema-silent, custom_llm_provider: deepseek}
+      - {function: supports_response_schema, model: nothing-here}
+env: {}
+compare: {ignore: []}

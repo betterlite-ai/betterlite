@@ -1,0 +1,8 @@
+kind: helper
+name: token-limit-coercion
+call:
+  call_helpers:
+    function: token_limits
+    values: [128000, "128000", " 128000 ", "+5", "-5", 128000.5, -12.75, 0, "000123", null, true, false, "128,000", "", "128000.5", "1e3", [1], {a: 1}]
+env: {}
+compare: {ignore: []}

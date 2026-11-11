@@ -1,0 +1,86 @@
+kind: helper
+name: multimodal-forwarding
+call:
+  bedrock_services_agentcore_request:
+    scenario: multimodal_forwarding
+    runs:
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {forward_multimodal_content: ' TRUE '}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {forward_multimodal_content: 'false'}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {forward_multimodal_content: 2}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {forward_multimodal_content: 0}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {forward_multimodal_content: false}
+        litellm_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {forward_multimodal_content: null}
+        litellm_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: summarize}, {type: image_url, image_url: {url: 'data:image/png;base64,AAA'}}]}]
+        optional_params: {}
+        litellm_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: hello}]}]
+        optional_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: []}]
+        optional_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{text: hello}]}]
+        optional_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: transcribe}, {type: input_audio, input_audio: {data: U29tZUF1ZGlv, format: wav}}]}]
+        optional_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: [{type: text, text: old}, {type: image_url, image_url: {url: 'https://example.test/old.png'}}]}, {role: assistant, content: ok}, {role: user, content: follow-up}]
+        optional_params: {forward_multimodal_content: true}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: []
+        optional_params: {}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare: {ignore: []}
