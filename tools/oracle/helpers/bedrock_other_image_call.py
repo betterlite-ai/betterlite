@@ -1,10 +1,10 @@
 import asyncio
 import os
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import partial
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1593
 import httpx
@@ -13,11 +13,21 @@ from litellm.exceptions import Timeout
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.image_generation import image_handler
-from litellm.llms.bedrock.image_generation.image_handler import BedrockImageGeneration
+from litellm.llms.bedrock.image_generation.image_handler import BedrockImagePreparedRequest
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import ImageResponse
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
+
+Client = HTTPHandler | AsyncHTTPHandler | None
+Opts = dict[str, Json]
+Hdrs = dict[str, str] | None
+Text = str | None
+Generate = Callable[
+    [str, str, ImageResponse, Opts, Logging, float | None, bool, Text, Hdrs, Client, Text],
+    ImageResponse | Coroutine[None, None, ImageResponse],
+]
+Prepare = Callable[[str, Opts, Text, Hdrs, Logging, str, Text], BedrockImagePreparedRequest]
 
 
 class Input(TypedDict):
@@ -59,6 +69,11 @@ class Probe:
     created: int = 42
 
 
+class Images(TypedDict):
+    created: int
+    data: list[dict[str, Json]]
+
+
 class Args(TypedDict):
     complete_input_dict: dict[str, Json]
     api_base: NotRequired[str]
@@ -69,11 +84,6 @@ class LoggedCall:
     additional_args: Args
     input: Json = None
     original_response: Json = None
-
-
-class Images(TypedDict):
-    created: int
-    data: list[dict[str, Json]]
 
 
 PROBE = TypeAdapter(Probe)
@@ -107,7 +117,21 @@ class Fixture:
     logging: FakeLogging = field(default_factory=FakeLogging)
 
     def __post_init__(self) -> None:
-        install(self)
+        environment = self.probe.environment
+        os.environ.clear()
+        names = {
+            "AWS_CONFIG_FILE": os.devnull,
+            "AWS_SHARED_CREDENTIALS_FILE": os.devnull,
+            "AWS_REGION_NAME": environment.region_name,
+            "AWS_REGION": environment.region,
+            "AWS_DEFAULT_REGION": environment.session_region,
+            "AWS_BEDROCK_RUNTIME_ENDPOINT": environment.runtime_endpoint,
+            "AWS_BEARER_TOKEN_BEDROCK": self.probe.configured_bearer_token,
+        }
+        os.environ.update({name: value for name, value in names.items() if value is not None})
+        botocore.auth.get_current_datetime = partial(datetime.fromtimestamp, self.probe.now, tz=UTC)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1612
+        image_handler._get_httpx_client = self.sync_client  # type: ignore[attr-defined]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L112
+        image_handler.get_async_httpx_client = self.async_client  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L157
 
     @property
     def logger(self) -> Logging:
@@ -144,66 +168,48 @@ class Fixture:
         return AsyncHTTPHandler(transport=httpx.MockTransport(partial(self.respond, self.factory)))
 
 
-def install(fixture: Fixture) -> None:
-    probe = fixture.probe
-    environment = probe.environment
-    os.environ.clear()
-    os.environ["AWS_CONFIG_FILE"] = os.devnull
-    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = os.devnull
-    names = {
-        "AWS_REGION_NAME": environment.region_name,
-        "AWS_REGION": environment.region,
-        "AWS_DEFAULT_REGION": environment.session_region,
-        "AWS_BEDROCK_RUNTIME_ENDPOINT": environment.runtime_endpoint,
-        "AWS_BEARER_TOKEN_BEDROCK": probe.configured_bearer_token,
-    }
-    for name, value in names.items():
-        if value is not None:
-            os.environ[name] = value
-    botocore.auth.get_current_datetime = partial(datetime.fromtimestamp, probe.now, tz=UTC)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1612
-    image_handler._get_httpx_client = fixture.sync_client  # type: ignore[attr-defined]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L112
-    image_handler.get_async_httpx_client = fixture.async_client  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L157
-
-
 def generation(fixture: Fixture) -> ImageResponse:
     probe = fixture.probe
     transport = httpx.MockTransport(partial(fixture.respond, fixture.supplied))
-    clients: dict[str, HTTPHandler | AsyncHTTPHandler | None] = {
+    clients: dict[str, Client] = {
         "sync": HTTPHandler(client=httpx.Client(transport=transport)),
         "async": AsyncHTTPHandler(transport=transport),
         "none": None,
     }
-    pending: ImageResponse | Coroutine[None, None, ImageResponse] = (
-        BedrockImageGeneration().image_generation(  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L72
-            model=probe.model,
-            prompt=probe.prompt,
-            model_response=ImageResponse(created=probe.created),
-            optional_params=probe.optional_params,
-            logging_obj=fixture.logger,
-            timeout=None if probe.timeout_ms is None else probe.timeout_ms / 1000,
-            aimg_generation=probe.aimg_generation,
-            api_base=probe.api_base,
-            extra_headers=probe.extra_headers,
-            client=clients[probe.supplied],
-            api_key=probe.api_key,
-        )
+    generate = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L72
+        Generate, image_handler.BedrockImageGeneration().image_generation
+    )
+    pending = generate(
+        probe.model,
+        probe.prompt,
+        ImageResponse(created=probe.created),
+        probe.optional_params,
+        fixture.logger,
+        None if probe.timeout_ms is None else probe.timeout_ms / 1000,
+        probe.aimg_generation,
+        probe.api_base,
+        probe.extra_headers,
+        clients[probe.supplied],
+        probe.api_key,
     )
     if probe.aimg_generation:
         return asyncio.run(pending)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L90
     return pending  # type: ignore[return-value]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L90
 
 
+class Handler(image_handler.BedrockImageGeneration):
+    def prepare(self, p: Probe, logger: Logging) -> BedrockImagePreparedRequest:
+        prepare = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L205
+            Prepare, self._prepare_request
+        )
+        return prepare(
+            p.model, p.optional_params, p.api_base, p.extra_headers, logger, p.prompt, p.api_key
+        )
+
+
 def prepare_value(probe: Probe) -> dict[str, Json]:
     fixture = Fixture(probe)
-    prepared = BedrockImageGeneration()._prepare_request(  # noqa: SLF001  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L205
-        probe.model,
-        probe.optional_params,
-        probe.api_base,
-        probe.extra_headers,
-        fixture.logger,
-        probe.prompt,
-        probe.api_key,
-    )
+    prepared = Handler().prepare(probe, fixture.logger)
     pre_call = LOGGED.validate_python(fixture.logging[0][1])
     return {
         "endpoint_url": prepared.endpoint_url,
@@ -234,12 +240,11 @@ def call_value(probe: Probe) -> Json:
     images = IMAGES.validate_python(dumped)
     data: list[Json] = [{"b64_json": image["b64_json"]} for image in images["data"]]
     request = fixture.used[0]
-    posted_body = BODY.validate_json(request[1])
     return {
         "created": images["created"],
         "data": data,
         "posted_url": request[0],
-        "posted_body": posted_body,
+        "posted_body": BODY.validate_json(request[1]),
         "post_call": logged,
     }
 
