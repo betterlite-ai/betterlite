@@ -1,0 +1,12 @@
+kind: helper
+name: kms-owner-precedence
+call:
+  bedrock_services_s3_access:
+    operation: kms_owner_precedence
+    litellm_params: {s3_encryption_key_id: params-key, s3_bucket_owner: ""}
+    optional_params: {s3_encryption_key_id: request-key, s3_bucket_owner: request-owner}
+    environment:
+      AWS_S3_ENCRYPTION_KEY_ID: env-key
+      AWS_S3_BUCKET_OWNER: env-owner
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: model-metadata-resolution-unmapped-error-boundary
+call:
+  model_metadata_resolution:
+    scenario: unmapped_error_boundary
+    fixture:
+      model_cost:
+        vertex_ai/bad-model: {litellm_provider: 5, mode: chat}
+    queries:
+      - {model: nowhere-model, custom_llm_provider: groq}
+      - {model: vertex_ai/bad-model, custom_llm_provider: vertex_ai}
+      - {model: ada, custom_llm_provider: groq}
+env: {}
+compare: {ignore: []}
