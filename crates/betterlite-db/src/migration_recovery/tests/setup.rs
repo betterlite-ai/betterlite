@@ -16,7 +16,7 @@ use crate::migration_recovery::tests::database::{
     raised_database_error, relation_exists, stored_row, with_schema,
 };
 use crate::migration_recovery::tests::support::{
-    FakeJitter, RecordingPause, ScriptedSteps, capture_logs,
+    FakeJitter, RecordingPause, ScriptedSteps, broken_cause, capture_logs,
 };
 use crate::migration_recovery::{
     RecoveryError, SetupInputs, SetupRequest, connection_urls, ledger_namespace,
@@ -329,7 +329,7 @@ async fn callback_failure_propagates() {
     steps.deploying(DeployOutcome::SchemaNotBaselined);
     steps.baselining(Err(RecoveryError::ManualIntervention {
         message: "baseline broke".to_owned(),
-        source: None,
+        source: broken_cause(),
     }));
     let jitter = FakeJitter(0);
     let pause = RecordingPause::default();
@@ -344,7 +344,7 @@ async fn callback_failure_propagates() {
     });
     recovery.recovering(Err(RecoveryError::ManualIntervention {
         message: "recovery broke".to_owned(),
-        source: None,
+        source: broken_cause(),
     }));
     let recovery_error = run_passes(&recovery, settings(42, 77), &jitter, &pause)
         .await

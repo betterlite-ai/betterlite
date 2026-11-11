@@ -121,12 +121,11 @@ pub enum RecoveryError {
         #[source]
         source: StepCause,
     },
-    // baseline and recovery failures outside a step have no step cause to chain
     #[error("{message}")]
     ManualIntervention {
         message: String,
         #[source]
-        source: Option<StepCause>,
+        source: StepCause,
     },
     #[error("{message}")]
     AttemptsExhausted { message: String },

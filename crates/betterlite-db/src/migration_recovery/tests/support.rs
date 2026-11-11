@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{pending, ready};
 use std::io::{Result as IoResult, Write};
+use std::str::from_utf8;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -12,11 +13,17 @@ use tracing_subscriber::fmt::MakeWriter;
 use crate::migration_ledger::ledger_reads::FailedLookup;
 use crate::migration_ledger::lock::JitterSource;
 use crate::migration_recovery::RecoveryError;
+use crate::migration_recovery::StepCause;
 use crate::migration_recovery::outcome::{DeployOutcome, FailedIdentity};
 use crate::migration_recovery::policy::{RecoverySteps, RetryPause, StepFuture};
 
 pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(super) fn broken_cause() -> StepCause {
+    let bytes = vec![255_u8];
+    StepCause::Utf8(from_utf8(&bytes).expect_err("invalid UTF-8"))
 }
 
 pub(super) struct FakeJitter(pub(super) u64);

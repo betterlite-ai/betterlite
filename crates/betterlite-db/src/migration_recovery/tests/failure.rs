@@ -17,7 +17,9 @@ use crate::migration_recovery::outcome::{
 };
 use crate::migration_recovery::policy::{PassSettings, run_database_v2, run_passes};
 use crate::migration_recovery::tests::database::{raised_database_error, with_schema};
-use crate::migration_recovery::tests::support::{FakeJitter, RecordingPause, ScriptedSteps};
+use crate::migration_recovery::tests::support::{
+    FakeJitter, RecordingPause, ScriptedSteps, broken_cause,
+};
 
 const DEPLOY_TIMEOUT: Duration = Duration::from_secs(42);
 
@@ -442,7 +444,7 @@ async fn rollback_failure_propagates() {
     steps.history(&reported, found("deadlock detected", false));
     steps.rollback_fails(RecoveryError::ManualIntervention {
         message: "rollback broke".to_owned(),
-        source: None,
+        source: broken_cause(),
     });
     let jitter = FakeJitter(0);
     let pause = RecordingPause::default();

@@ -168,7 +168,7 @@ async fn next_step(
             let message = messages::manual_for_failure(&failure);
             Err(RecoveryError::ManualIntervention {
                 message,
-                source: Some(failure.into_cause()),
+                source: failure.into_cause(),
             })
         }
     }
@@ -283,6 +283,6 @@ async fn failed_step_budget(
     }
     Err(RecoveryError::ManualIntervention {
         message: messages::manual_for_step(&step),
-        source: Some(step.source.into_cause()),
+        source: step.source.into_cause(),
     })
 }
