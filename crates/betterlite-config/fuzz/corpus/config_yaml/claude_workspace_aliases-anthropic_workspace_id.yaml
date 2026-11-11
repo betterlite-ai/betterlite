@@ -1,0 +1,7 @@
+model_list:
+  - model_name: claude-platform
+    litellm_params:
+      model: bedrock/claude_platform/anthropic.claude-3
+      anthropic_workspace_id: deployment-workspace
+litellm_settings:
+  anthropic_workspace_id: module-workspace
