@@ -1,12 +1,13 @@
 use secrecy::SecretString;
 
+use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
 use crate::request_log_index_catalog::definitions::RequestLogIndex;
 use crate::request_log_indexes::ensure::ensure_request_log_indexes;
 
 use super::support::{
     API_KEY_INDEX, CALL_ID_INDEX, FakeDatabase, FakeFault, FixedJitter, PostgresTest,
-    RecordingPause, SPEND_LOGS, index_by_name, informed, install_logs, plain_table, run_ensure,
-    valid_index, warned,
+    RecordingPause, SPEND_LOGS, create_spend_logs, index_by_name, index_state_of, informed,
+    install_logs, plain_table, run_ensure, valid_index, warned,
 };
 
 #[tokio::test]
@@ -18,6 +19,28 @@ async fn ensure_request_log_indexes_all_in_place_on_empty_list() {
         &logs.contents(),
         "Request-log indexes are all in place"
     ));
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn held_coordinator_lock_leaves_the_index_unbuilt() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    let (holder, mut drivers) = test.another_client().await;
+    holder
+        .batch_execute(&format!("SELECT pg_advisory_lock({MIGRATION_LOCK_KEY})"))
+        .await
+        .unwrap();
+    assert!(
+        !ensure_request_log_indexes(&test.url, &test.schema, &[index_by_name(API_KEY_INDEX)]).await
+    );
+    assert!(index_state_of(&test.client, API_KEY_INDEX).await.is_none());
+    assert!(informed(
+        &logs.contents(),
+        "Another process holds the migration lock, leaving the request-log indexes to the next index build"
+    ));
+    drivers.shutdown().await;
     test.finish().await;
 }
 
