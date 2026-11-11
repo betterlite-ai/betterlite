@@ -1,6 +1,7 @@
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::controls::multipart::{
-    DEFAULT_MAX_RECURSE_DEPTH, FormValue, flatten_form_field_values, serialize_multipart_fields,
+    DEFAULT_MAX_RECURSE_DEPTH, FormField, FormValue, flatten_form_field_values,
+    serialize_multipart_fields,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -42,25 +43,31 @@ fn flatten(fields: &FlattenInput) -> crate::helpers::HelperResult {
     let sources: Vec<Option<&JsonValue>> = fields.sources.iter().map(Option::as_ref).collect();
     let flattened =
         flatten_form_field_values(&sources, DEFAULT_MAX_RECURSE_DEPTH).or_value_error()?;
-    let rendered: Vec<Value> = flattened
-        .iter()
-        .map(|field| {
-            let value = match &field.value {
-                FormValue::Single(text) => json!(text),
-                FormValue::Repeated(texts) => json!(texts),
-            };
-            json!([field.name, value])
-        })
-        .collect();
-    Ok(json!({"fields": rendered}))
+    let pairs = flattened.into_iter().map(render_form_field);
+    Ok(render_fields(pairs.collect()))
 }
 
 fn serialize_fields(fields: &SerializeInput) -> crate::helpers::HelperResult {
     let serialized =
         serialize_multipart_fields(&fields.data, DEFAULT_MAX_RECURSE_DEPTH).or_value_error()?;
-    let rendered: Vec<Value> = serialized
-        .iter()
-        .map(|field| json!([field.name, [Value::Null, field.value]]))
+    let pairs = serialized
+        .into_iter()
+        .map(|field| (field.name, json!([Value::Null, field.value])));
+    Ok(render_fields(pairs.collect()))
+}
+
+fn render_form_field(field: FormField) -> (String, Value) {
+    let value = match field.value {
+        FormValue::Single(text) => json!(text),
+        FormValue::Repeated(texts) => json!(texts),
+    };
+    (field.name, value)
+}
+
+fn render_fields(pairs: Vec<(String, Value)>) -> Value {
+    let rendered: Vec<Value> = pairs
+        .into_iter()
+        .map(|(name, value)| json!([name, value]))
         .collect();
-    Ok(json!({"fields": rendered}))
+    json!({"fields": rendered})
 }

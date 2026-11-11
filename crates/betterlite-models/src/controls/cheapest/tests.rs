@@ -14,16 +14,22 @@ struct FakeCatalog {
     entries: BTreeMap<&'static str, PriceRecord>,
 }
 
+impl FakeCatalog {
+    fn entry(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<&PriceRecord> {
+        if custom_llm_provider != Some(self.provider) {
+            return None;
+        }
+        self.entries.get(model)
+    }
+}
+
 impl PriceLookup for FakeCatalog {
     fn effective_model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        if custom_llm_provider != Some(self.provider) {
-            return None;
-        }
-        self.entries.get(model).cloned()
+        self.entry(model, custom_llm_provider).cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -35,7 +41,7 @@ impl PriceLookup for FakeCatalog {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        let record = self.effective_model_info(model, custom_llm_provider)?;
+        let record = self.entry(model, custom_llm_provider)?.clone();
         Some(PricedModel {
             record,
             tiered_pricing: Vec::new(),
