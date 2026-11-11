@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::str::Utf8Error;
 use std::time::Duration;
 
 use deadpool_postgres::{BuildError, PoolError};
@@ -118,16 +119,25 @@ pub enum RecoveryError {
     InsufficientPrivileges {
         message: String,
         #[source]
-        source: Option<PostgresError>,
+        source: StepCause,
     },
     #[error("{message}")]
     ManualIntervention {
         message: String,
         #[source]
-        source: Option<PostgresError>,
+        source: Option<StepCause>,
     },
     #[error("{message}")]
     AttemptsExhausted { message: String },
+}
+
+// The cause of a failed migration step: a database error or a catalog SQL that is not UTF-8
+#[derive(Debug, Error)]
+pub enum StepCause {
+    #[error("database error: {0}")]
+    Database(#[from] PostgresError),
+    #[error("migration SQL is not valid UTF-8: {0}")]
+    Utf8(#[from] Utf8Error),
 }
 
 // Mirrors extras/utils.py::str_to_bool: case-insensitive without trimming, and "on" reads false

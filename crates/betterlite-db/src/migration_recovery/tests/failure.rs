@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::str::{Utf8Error, from_utf8};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,16 +43,17 @@ fn found(logs: &str, recovered: bool) -> FailedLookup {
 }
 
 fn database_cause(error: &RecoveryError, message: &str) {
-    let cause = StdError::source(error).expect("the database error is the cause");
+    let cause = StdError::source(error).expect("the step cause");
+    let database = StdError::source(cause).expect("the database error is the cause");
     assert!(
-        cause
+        database
             .downcast_ref::<tokio_postgres::Error>()
             .expect("a Postgres error")
             .as_db_error()
             .expect("a database error")
             .message()
             .contains(message),
-        "{cause}"
+        "{database}"
     );
 }
 
@@ -336,6 +338,32 @@ async fn unknown_failure_manual_intervention() {
         database_cause(&error, "unexpected error");
     })
     .await;
+}
+
+#[tokio::test]
+async fn utf8_step_keeps_its_cause() {
+    let bytes = vec![255_u8];
+    let invalid = from_utf8(&bytes).expect_err("invalid UTF-8");
+    let steps = ScriptedSteps::default();
+    steps.deploying(DeployOutcome::FailedStep(FailedStep {
+        name: "20240101000000_a".to_owned(),
+        source: StepSource::Utf8(invalid),
+    }));
+    let jitter = FakeJitter(0);
+    let pause = RecordingPause::default();
+    let error = run_database_v2(
+        &steps,
+        MigrateAttemptBudget::default(),
+        DEPLOY_TIMEOUT,
+        &jitter,
+        &pause,
+    )
+    .await
+    .expect_err("a UTF-8 step failure stops startup");
+    assert!(matches!(error, RecoveryError::ManualIntervention { .. }));
+    let cause = StdError::source(&error).expect("the step cause");
+    let utf8 = StdError::source(cause).expect("the UTF-8 error is the cause");
+    assert!(utf8.is::<Utf8Error>());
 }
 
 #[tokio::test(start_paused = true)]

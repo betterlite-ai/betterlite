@@ -2,6 +2,8 @@ use std::str::Utf8Error;
 
 use tokio_postgres::Error as PostgresError;
 
+use super::StepCause;
+
 pub(super) const DEADLOCK_MARKER: &str = "deadlock detected";
 pub(super) const DEADLOCK_SQLSTATE: &str = "40P01";
 pub(super) const CANCELED_SQLSTATE: &str = "57014";
@@ -52,12 +54,11 @@ pub(super) enum StepSource {
 }
 
 impl StepSource {
-    // The database error enters the cause chain; a UTF-8-only failure has no Error to chain
     #[must_use]
-    pub(super) fn database_error(self) -> Option<PostgresError> {
+    pub(super) fn into_cause(self) -> StepCause {
         match self {
-            Self::Database(source) => Some(source),
-            Self::Utf8(_) => None,
+            Self::Database(source) => StepCause::Database(source),
+            Self::Utf8(source) => StepCause::Utf8(source),
         }
     }
 }
@@ -92,10 +93,12 @@ pub(super) enum DeployFailure {
 impl DeployFailure {
     // For the dual failures the primary error enters the cause chain; the message keeps both
     #[must_use]
-    pub(super) fn database_error(self) -> PostgresError {
+    pub(super) fn into_cause(self) -> StepCause {
         match self {
-            Self::Database(source) | Self::MigrationLog { source, .. } => source,
-            Self::InvalidSqlLog { ledger, .. } => ledger,
+            Self::Database(source) | Self::MigrationLog { source, .. } => {
+                StepCause::Database(source)
+            }
+            Self::InvalidSqlLog { source, .. } => StepCause::Utf8(source),
         }
     }
 }

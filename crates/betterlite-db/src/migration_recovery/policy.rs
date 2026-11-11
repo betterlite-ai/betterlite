@@ -168,7 +168,7 @@ async fn next_step(
             let message = messages::manual_for_failure(&failure);
             Err(RecoveryError::ManualIntervention {
                 message,
-                source: Some(failure.database_error()),
+                source: Some(failure.into_cause()),
             })
         }
     }
@@ -270,7 +270,7 @@ async fn failed_step_budget(
     if is_permission_error(sqlstate.as_deref(), &detail) {
         return Err(RecoveryError::InsufficientPrivileges {
             message: messages::insufficient_privileges(&step),
-            source: step.source.database_error(),
+            source: step.source.into_cause(),
         });
     }
     if is_deadlock(sqlstate.as_deref(), &detail) {
@@ -283,6 +283,6 @@ async fn failed_step_budget(
     }
     Err(RecoveryError::ManualIntervention {
         message: messages::manual_for_step(&step),
-        source: step.source.database_error(),
+        source: Some(step.source.into_cause()),
     })
 }
