@@ -1,0 +1,8 @@
+kind: helper
+name: error-type-hash-prefix
+call:
+  b3645:
+    function: error_type
+    body: '{"__type":"com.amazon.coral.service#NotFoundException"}'
+env: {}
+compare: {ignore: []}

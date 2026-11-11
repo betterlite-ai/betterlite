@@ -1,0 +1,25 @@
+name: config-includes-nested-valid
+config: |
+  include:
+    - nested/entry.yaml
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {}
+  body: null
+upstream: []
+config_files:
+  nested/entry.yaml: |
+    include:
+      - models.yaml
+  nested/models.yaml: |
+    model_list:
+      - model_name: corpus-model
+        litellm_params:
+          model: openai/gpt-4o
+          api_base: "{{upstream}}"
+          api_key: os.environ/CORPUS_KEY
+          max_retries: 0

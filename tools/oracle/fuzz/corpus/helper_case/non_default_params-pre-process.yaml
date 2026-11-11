@@ -1,0 +1,68 @@
+kind: helper
+name: non-default-params-pre-process-seed
+call:
+  b5362:
+    calls:
+      - function: pre_process
+        request:
+          passed_params: {temperature: 0.5, top_p: null, max_tokens: 20, custom_field: 1}
+          special_params: {}
+          custom_llm_provider: openai
+        remove_sensitive_keys: false
+        add_provider_specific_params: false
+      - function: pre_process
+        request:
+          passed_params: {temperature: 0.5, top_p: 0.9, seed: 3}
+          special_params: {}
+          custom_llm_provider: anthropic
+          additional_drop_params: [top_p]
+        remove_sensitive_keys: false
+        add_provider_specific_params: false
+      - function: pre_process
+        request:
+          passed_params: {temperature: 0.5, api_key: sk-1, extra_headers: {authorization: Bearer x}}
+          special_params: {api_key: sk-1}
+          custom_llm_provider: openai
+        remove_sensitive_keys: true
+        add_provider_specific_params: false
+      - function: pre_process
+        request:
+          passed_params: {temperature: 0.5, custom_field: 1, other_field: {a: 1}}
+          special_params: {}
+          custom_llm_provider: openai
+        remove_sensitive_keys: false
+        add_provider_specific_params: true
+      - function: pre_process
+        request:
+          passed_params: {temperature: 0.5, custom_field: 1}
+          special_params: {}
+          custom_llm_provider: anthropic
+        remove_sensitive_keys: false
+        add_provider_specific_params: true
+      - function: pre_process
+        request:
+          passed_params:
+            temperature: 0.5
+            tools:
+              - type: function
+                function:
+                  name: lookup
+                  parameters: {type: object, additionalProperties: false, properties: {a: {type: object, additionalProperties: false}}}
+                  strict: true
+          special_params: {}
+          custom_llm_provider: openai
+        remove_sensitive_keys: false
+        add_provider_specific_params: false
+      - function: pre_process
+        request:
+          passed_params: {temperature: 0.5, model: gpt-4o, custom_llm_provider: openai}
+          special_params: {}
+          custom_llm_provider: openai
+        remove_sensitive_keys: false
+        add_provider_specific_params: false
+      - function: remove_sensitive_keys
+        params: {api_key: sk-1, authorization: Bearer x, temperature: 0.5, nested: {api_key: sk-2}, AccessToken: t, client_secret: s, Credentials: c, user: u}
+      - function: remove_sensitive_keys
+        params: {}
+env: {}
+compare: {ignore: []}

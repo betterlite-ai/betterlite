@@ -1,0 +1,16 @@
+name: config-includes-traversal
+config: |
+  include:
+    - ../escape.yaml
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /health/liveliness
+  headers: {}
+  body: null
+upstream: []
+config_files:
+  ../escape.yaml: |
+    model_list: []
