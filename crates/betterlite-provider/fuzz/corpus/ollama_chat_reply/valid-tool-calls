@@ -1,0 +1,1 @@
+{"model":"llama3","message":{"role":"assistant","content":"x","tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]},"done":false}

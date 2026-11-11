@@ -97,7 +97,7 @@ deviations:
   why: The cleanup runs on the server's task tracker (rules.yaml async-hygiene), so there is no generator left to raise into; the steps after the failure are skipped as in LiteLLM.
 out_of_scope:
 - "The response.aclose() call in the cleanup: B8604 drops the upstream item stream when its state drops, which closes it."
-- "_withheld_provider_output and the budget reservation release on cancel (L269-L270 and the async_streaming_data_generator except branch): B7324 lists async_streaming_data_generator as built by no task, and this cleanup does not call them."
+- "_withheld_provider_output and the budget reservation release on cancel (L269-L270 and the async_streaming_data_generator except branch): B9720, which builds async_streaming_data_generator; this cleanup does not call them."
 - "The rest of common_processing_pre_call_logic (L1913-L2100): B004 owns it and is done, and B7324 records that no task builds the shared class; only the include_fallback_errors drop is built here."
 - "The rest of litellm/proxy/common_request_processing.py: B7324 builds the shared helpers and lists the owners of the remaining functions in its out_of_scope."
 - "_fire_deferred_stream_logging (B6370), stream_chunk_builder (B2227), dispatch_success_handlers (B250), invalidate_baseline_cache (B342) and _arelease_max_parallel_requests_on_disconnect (B2400): this task calls them through its ports."

@@ -27,6 +27,9 @@ description: 'Add typed ordinary, context-window and content-policy fallback pla
   Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B310 and B018 call this service.'
 scope:
   paths:
+  - "crates/betterlite-openai/src/chat/tests.rs"
+  - "crates/betterlite-config/src/types.rs"
+  - "crates/betterlite-config/src/raw.rs"
   - crates/betterlite-router/src/fallback_plans.rs
   - crates/betterlite-router/src/fallback_plans/**
   - crates/betterlite-server/src/routing/fallback_plans.rs

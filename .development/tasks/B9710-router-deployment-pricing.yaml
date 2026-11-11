@@ -1,0 +1,108 @@
+id: B9710
+title: Router deployment pricing in the cost map
+description: >-
+  When a deployment carries its own prices (`input_cost_per_token` and friends in `litellm_params`), LiteLLM's router writes them into the live cost map so spend for that deployment is billed at those prices. It also fills prices the user left out from the backend model's built-in entry, so a deployment that only sets token prices does not bill cache reads at 0. Nothing in betterlite does this yet: the router tasks that add deployments (B401's `_create_deployment`, B368's `add_deployment`, B303's client-side credential path) call these functions, and every task's out_of_scope credited them to B013, which only built the two cost key helpers. Build them here so those callers have something to call.
+
+
+  Put the code in `crates/betterlite-router/src/deployment_pricing.rs` and `deployment_pricing/**`, and move `betterlite-models` from the dev-dependencies to the dependencies of crates/betterlite-router/Cargo.toml. Work on JSON maps, the way B8350 does, so the module needs no deployment type from a task above it: a deployment is its `litellm_params` map and its `model_info` map, both `serde_json::Map<String, Value>`. The caller passes `model_info` the way `ModelInfo.model_dump(exclude_none=True)` gives it, so `id` is set and `db_model` and `member_auto_router` are present as false when the user did not set them. No static and no global: the cost map is B5365's `ModelRegistry`, passed in by `&mut`.
+
+
+  `PricingInputs` is a small struct the caller fills once: `ptu_cost_attribution: bool` (from `betterlite_config::ptu_pricing::load_ptu_cost_flag`, which reads `LITELLM_ENABLE_PTU_COST_ATTRIBUTION`, default false) and `is_strategy_router: fn(&str) -> bool`. The router crate cannot name B377's `classify_strategy_router_model`, since it lives in betterlite-server, so the caller passes a non-capturing closure that is true when that function returns a kind (a model that starts with `auto_router/`).
+
+
+  The four inherit steps fill a model info map in place and never overwrite a field that is already non-null. Each looks up the backend model with B2225's `get_model_info(backend_model, custom_llm_provider)`, and any lookup error means no change. `inherit_cache_pricing` (router.py L8799-L8826) copies the five cache fields `cache_creation_input_token_cost`, `cache_creation_input_token_cost_above_1hr`, `cache_creation_input_token_cost_above_200k_tokens`, `cache_read_input_token_cost` and `cache_read_input_token_cost_above_200k_tokens` from the lookup result, and returns at once when all five are set. `inherit_service_tier_pricing` (L8838-L8861) returns when PTU attribution is on and B1664's `ptu_terms` finds terms in the map, or when both `input_cost_per_token` and `output_cost_per_token` are null; otherwise it takes the raw cost map entry under the lookup's `key` and deep-copies every field whose name ends with `_balanced`, `_flex`, `_priority` or `_ultrafast` (LiteLLM's `SERVICE_TIER_COST_KEY_SUFFIXES`). `inherit_base_rates_for_off_peak` (L8863-L8907) runs only when `off_peak_pricing` is truthy and none of `input_cost_per_token`, `input_cost_per_second`, `cost_per_second` and `tiered_pricing` is set, and then deep-copies every non-null field of the raw backend entry. `inherit_tiered_output_rate` (L8909-L8940) runs only when `tiered_pricing` is a non-empty list, `output_cost_per_token` is null and at least one tier is not a map holding `output_cost_per_token`; it copies the lookup's `output_cost_per_token` when that is truthy, so a synthesized 0 never lands.
+
+
+  `deployment_cost_payload(params, model_info, registry, inputs)` is `_deployment_model_cost_payload` (L10031-L10066): start from a copy of `model_info`, copy every non-null custom pricing field from `params` (the names in B1664's `ptu_pricing::pricing_fields::CUSTOM_PRICING_FIELDS`, LiteLLM's `CustomPricingLiteLLMParams.model_fields`), then run off-peak, cache (only when `input_cost_per_token` is now set), service tier and tiered output, in that order. Off-peak, cache and tiered output look up `params.model`; service tier looks up B013's `cost_map_backend_model`, so a `base_model` decides its tiers. `custom_llm_provider` comes from `params.custom_llm_provider`.
+
+
+  `register_deployment_in_model_cost(registry, model_id, model_info, model, custom_llm_provider, inputs)` is L10083-L10155. For a strategy router alias, drop every custom pricing field first. When `model_id` is set, call `register_model` with `{model_id: model_info}`, `persist_across_reloads` false and `warning_display_name` set to `model`. Then take B013's `backend_cost_map_keys(model, custom_llm_provider)`, build the shared entry with B5650's `shared_backend_model_info`, and keep the mode the shared key already has when the deployment would turn `responses` into `chat` or would clear it (a deployment with no `mode` while the shared entry has one). Only when the deployment named a different mode, log the warning "Router: preserving existing mode=%s for shared backend key %s instead of the deployment-specified mode=%s (prevents alias registration from downgrading the shared backend mode)." Then call `register_model` once with every backend key mapped to the shared entry and `persist_across_reloads` false. `register_deployment_pricing(registry, params, model_info, inputs)` (L10068-L10081) is the payload followed by that registration.
+
+
+  `replay_deployment_pricing(registry, deployments, inputs)` is the body of `_replay_model_cost_registrations` (L10157-L10181) after its first step: for each deployment the router still serves, in list order, register its payload again. A deployment whose maps cannot be read (not an object, or `litellm_params.model` missing) logs "Router: could not rebuild cost-map entry for a deployment during a price data reload" at error and the loop goes on. The caller runs the deferred provider-unresolved creations before it (B401 keeps them) and clears the group info cache after it (B846), and hands the whole replay to B5365's `set_live_deployment_replay`, which is what LiteLLM's module-level `_replay_live_router_model_cost` (L700-L713) does with its weak set of live routers.
+
+
+  Tests go in `deployment_pricing/tests.rs` with names that start with `inherit_`, `payload_`, `register_` and `replay_`. The helper operation for this task takes `deployment` (`model_name`, `litellm_params`, `model_info` with an `id`) and an optional `shared_before` (an entry to place under the backend key first, to test the mode rule). The Python side copies `litellm.model_cost`, writes `shared_before` when given, calls `Router._register_deployment_pricing(Deployment(**deployment))`, reads the entries under the id and under every backend key, and restores the copy. The Rust side does the same with a registry built from the bundled cost map. Both answer `{"by_id": entry or null, "shared": {key: entry}}`. Run the oracle with `LITELLM_LOCAL_MODEL_COST_MAP=True` so both sides read the same map.
+scope:
+  paths:
+  - crates/betterlite-router/src/deployment_pricing.rs
+  - crates/betterlite-router/src/deployment_pricing/**
+  - crates/betterlite-router/Cargo.toml
+  - Cargo.lock
+  - tools/oracle/cases/helpers/router-deployment-pricing/**
+  - tools/oracle/fuzz/corpus/helper_case/router-deployment-pricing-*
+  - tools/oracle/helpers/b9710.py
+  - tools/oracle/helpers/b9710/**
+  - tools/oracle/src/helpers/router/b9710.rs
+  - tools/oracle/src/helpers/router/b9710/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L700-L713
+    why: The weak set of live routers and the replay hook it registers at import.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8799-L8826
+    why: Cache pricing inheritance and its five fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8838-L8940
+    why: Service tier, off-peak and tiered output inheritance, with their early returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8996-L9028
+    why: The same steps inline in _create_deployment (B401), in the same order as the payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10031-L10181
+    why: The payload, both registrations, the mode rule and the replay.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3856-L3874
+    why: The shared backend fields, which B5650 builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L70-L81
+    why: The service tier suffixes.
+  - url: https://docs.litellm.ai/docs/proxy/custom_pricing
+    why: How users set deployment prices.
+dod:
+  - text: Each inherit step fills only null fields, skips on a lookup error, and keeps its own early returns (all cache fields set, PTU terms with attribution on, no base price for off-peak, every tier with an output rate).
+    proof: [deployment-pricing-inherit, oracle]
+  - text: The payload folds custom pricing from `litellm_params` into the model info and runs the four steps in LiteLLM's order, with the service tier step on the base model.
+    proof: [deployment-pricing-payload, oracle]
+  - text: Registration writes the full entry under the id with the model as warning name, the shared entry under every backend key, strips custom pricing for a strategy router alias, and keeps a `responses` or existing mode.
+    proof: [deployment-pricing-register, oracle, helper-python]
+  - text: Replay registers every readable deployment again in order and logs and skips an unreadable one.
+    proof: [deployment-pricing-replay]
+  - text: New helper corpus seeds call `b9710` and replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: deployment-pricing-inherit
+    why: A user price is overwritten, or a step runs where LiteLLM returns early.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^deployment_pricing::tests::inherit_/)'
+  - id: deployment-pricing-payload
+    why: Custom prices are lost from the payload, or the steps run in another order.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^deployment_pricing::tests::payload_/)'
+  - id: deployment-pricing-register
+    why: A deployment's prices leak onto the shared key, an alias keeps a price, or the shared mode is downgraded.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^deployment_pricing::tests::register_/)'
+  - id: deployment-pricing-replay
+    why: A reload drops a live deployment's prices, or one bad row stops the rebuild.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^deployment_pricing::tests::replay_/)'
+  - id: helper-python
+    why: The b9710 adapter must exist and pass ruff and basedpyright.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b9710)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b9710 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b9710/pyrightconfig.json
+  - id: helper-case-corpus
+    why: b9710 needs fresh seeds that replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/router-deployment-pricing-*")" && grep -lE '^[[:space:]]+b9710:' tools/oracle/fuzz/corpus/helper_case/router-deployment-pricing-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/router-deployment-pricing
+deviations: []
+out_of_scope:
+  - "Calling these functions is the callers' job: B401 (`_create_deployment`, which runs the same steps inline at L8996-L9028), B368 (`add_deployment`), B303 (`_handle_clientside_credential`) and the router catalog that registers the replay with B5365."
+  - "`_cost_value_as_float` is B846's; `_cost_map_backend_model` and `_backend_cost_map_keys` are B013's, already in betterlite-models."
+  - "`register_model`, the cost map and the replay slot are B5365's; `get_model_info` is B2225's; `ptu_terms` and the custom pricing field list are B1664's; `shared_backend_model_info` is B5650's."
+  - "`_provider_unresolved_deployments` (the first step of the replay) belongs to B401, and `_invalidate_model_group_info_cache` to B846."
+pitfalls:
+  - "Cache pricing is inherited only when `input_cost_per_token` is set after the custom fields are folded in, so a deployment that sets only `output_cost_per_token` keeps cache reads unpriced."
+  - "Service tier inheritance looks up `model_info.base_model`, then `litellm_params.base_model`, then `litellm_params.model`; the other three steps always look up `litellm_params.model`."
+  - "Off-peak and service tier copy from the raw cost map entry under the lookup's `key`, not from the lookup result, because the lookup fills a missing flat rate with 0."
+  - "A tiered output rate of 0 from the lookup is not copied (`if backend_rate:`), since a tiered-only backend reports 0."
+  - "The mode rule keeps the shared mode only for `responses` to `chat` or for a missing deployment mode; `chat` to `responses` still applies, and the warning is logged only when the deployment named a mode."
+  - "The by-id entry keeps `id`, `db_model` and any custom key, while the shared entry keeps only cost map schema fields; never register the full map under the backend key."
+  - "A strategy router alias (`auto_router/...`) loses its custom prices on both keys, so an explicit 0 price there cannot make requests look free and skip budget checks."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

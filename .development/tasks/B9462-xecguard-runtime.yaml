@@ -1,0 +1,121 @@
+id: B9462
+title: XecGuard guardrail construction, policy scans and the logging-only scan
+description: >-
+  B3800 shipped XecGuard's settings record, history assembly, scan and grounding calls, block messages, scan result
+  redaction and the sync logging_hook driver in crates/betterlite-guardrails/src/xecguard_primitives. Its out_of_scope
+  hands the constructor, apply_guardrail and async_logging_hook to a task B3820 that was never created, so a
+  configured `guardrail: xecguard` has no class. Build `XecGuardGuard` in betterlite-guardrails, module
+  xecguard_runtime (xecguard_runtime.rs and xecguard_runtime/, with error.rs and tests.rs), implementing B5471's
+  `GuardrailContract`. It owns XecGuardGuardrail.__init__, apply_guardrail and async_logging_hook (xecguard.py
+  L85-L127 and L146-L273). B8218 builds the initializer arguments (`XecGuardArgs`), B8521 holds the spec and B8666
+  constructs and dispatches the value.
+
+
+  Config section xecguard_runtime (crates/betterlite-config/src/sections/xecguard_runtime.rs and its folder; the
+  skeleton adds the stub, the `pub mod` line and the sections! entry). LiteLLM reads three plain environment
+  variables here with os.environ, not get_secret, so the section reads them through `EnvironmentLookup`:
+  `api_key: Option<SecretString>` from XECGUARD_API_KEY, `api_base: Option<String>` from XECGUARD_API_BASE and
+  `block_on_error: Option<String>` from XECGUARD_BLOCK_ON_ERROR. An empty variable counts as unset, the section reads
+  no config key, and Debug never prints the key. Tests in sections/xecguard_runtime/tests.rs load a real config file
+  with an injected environment map.
+
+
+  Constructor `XecGuardGuard::new(args: &XecGuardArgs, settings: &xecguard_runtime::Settings, base: GuardrailBase,
+  client: reqwest::Client) -> Result<XecGuardGuard, XecGuardRuntimeError>`. The key is the argument, else
+  XECGUARD_API_KEY; without one, fail with "XecGuard API key is required. Set XECGUARD_API_KEY in the environment or
+  pass api_key in the guardrail config." The base is the argument, else XECGUARD_API_BASE, else
+  "https://api-xecguard.cycraft.ai", with trailing slashes cut. The model is the argument or "xecguard_v2".
+  block_on_error is the argument when set; otherwise the environment text (default "true") lowercased is true for
+  "true", "1" or "yes" and false for anything else. grounding_strictness is the argument or "BALANCED". The timeout is
+  the base timeout or B3800's DEFAULT_REQUEST_TIMEOUT. Build B3800's `RawXecGuardSettings` and convert it; pass
+  `policy_names` as none when the argument is absent or an empty list, because LiteLLM falls back to its three default
+  policies for both and B3800's conversion only does so for none. The supported hooks B8521 gives the base are
+  pre_call, during_call, post_call and logging_only.
+
+
+  apply_guardrail(inputs, request_data, input_type). Build the full history with B3800's build_full_history; empty
+  returns the inputs. The scan type is input for a request and response for a response. Call B3800's call_scan
+  without suppressing errors. When it answers none (an API failure with block_on_error false) return the inputs. A
+  scan whose decision is UNSAFE fails with `GuardrailFailure::HttpObject` status 400 and detail {"error":
+  scan_block_message(result), "guardrail_name": the guardrail name or "xecguard", "xecguard_response": the scan
+  result}. For a response that passed, read B3800's extract_grounding_documents from the request data; when it
+  returns documents, call call_grounding, and an UNSAFE answer fails the same way with grounding_block_message. An API
+  failure with block_on_error true becomes HttpObject 400 with detail {"error": "XecGuard API unreachable
+  (block_on_error=True): <error>", "guardrail_name": ...}; read B3800's error enum for where that text comes from. The
+  inputs come back unchanged on every pass, since XecGuard never rewrites content.
+
+
+  async_logging_hook(kwargs, result). It returns at once, unchanged, when kwargs.litellm_params.metadata
+  .standard_logging_guardrail_information is present and not empty. Otherwise it notes the start time. When B3800's
+  assistant_text_from_response finds assistant text in the result, it scans a shallow copy of kwargs with `response`
+  set to the result as a response; otherwise it scans the kwargs as a request with empty inputs. An empty history
+  returns. The scan suppresses errors, so a failed call returns quietly. On an answer it appends one guardrail
+  information entry to kwargs.standard_logging_object.guardrail_information (creating the list when the key is
+  absent or not a list): guardrail_name (name or "xecguard"), guardrail_mode logging_only, guardrail_response from
+  B3800's sanitize_scan_result, guardrail_status guardrail_intervened for UNSAFE and success otherwise, start_time and
+  end_time as epoch seconds, duration in seconds and masked_entity_count null. Every error inside, a missing
+  standard_logging_object included, is logged at debug "XecGuard logging_only swallowed exception: <error>" and kwargs
+  and result come back as they were; this hook never fails a request. Wire B3800's sync logging_hook to call it. Use the same
+  kwargs and result types B3806's Presidio logging hook takes, so one logging dispatcher can call both.
+
+
+  Tests in xecguard_runtime/tests.rs use the rstest function `xecguard_runtime_cases` with an axum server on
+  127.0.0.1 as the XecGuard endpoint: constructor precedence for every field, the missing key error, an empty policy
+  list sending the default policies, SAFE and UNSAFE scans for request and response, grounding skipped without
+  documents and blocking with them, block_on_error true and false on a 500, and the logging hook's skip when guardrail
+  information exists, its appended entry, its swallowed failure and the sync driver. The client sees apply_guardrail
+  through the chat route; B9464 adds those HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/xecguard_runtime.rs
+    - crates/betterlite-guardrails/src/xecguard_runtime/**
+    - crates/betterlite-config/src/sections/xecguard_runtime.rs
+    - crates/betterlite-config/src/sections/xecguard_runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L66-L127
+    why: The defaults, the default policies and the owned constructor with its environment fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L137-L194
+    why: The supported hooks and the owned apply_guardrail with the scan and grounding blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L196-L273
+    why: The owned async_logging_hook, its early return, the request or response choice and the swallowed errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L275-L379
+    why: B3800's sync driver, calls and the block_on_error error the runtime maps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/__init__.py#L11-L46
+    why: The initializer B8218 ports.
+dod:
+  - text: The xecguard_runtime section reads XECGUARD_API_KEY, XECGUARD_API_BASE and XECGUARD_BLOCK_ON_ERROR, treats empty as unset and never prints the key.
+    proof: [section-tests]
+  - text: XecGuardGuard::new resolves every setting with LiteLLM's precedence and defaults, sends the default policies for an empty list and fails without a key.
+    proof: [runtime-tests]
+  - text: apply_guardrail blocks UNSAFE scans and UNSAFE grounding with LiteLLM's 400 details, honors block_on_error and never rewrites inputs.
+    proof: [runtime-tests]
+  - text: async_logging_hook records one logging_only entry per scan, skips when guardrail information exists and swallows every failure.
+    proof: [runtime-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: section-tests
+      why: the xecguard_runtime section misses a variable, keeps an empty one or leaks the key
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::xecguard_runtime::/)'
+    - id: runtime-tests
+      why: the XecGuard class is missing, resolves a setting differently, blocks wrongly or lets the logging hook fail a request
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^xecguard_runtime::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Scan and grounding payloads, the POST helper, history assembly, message normalization, grounding documents, block messages, scan result redaction and the sync logging_hook (xecguard.py L59-L63 and L275-L579): B3800."
+  - "get_config_model: B6561's form tables. get_supported_event_hooks: B8521's supported hook list."
+  - "The initializer: B8218. The spec variant: B8521. Building this value with the pooled client: B8666."
+  - "Calling a held guardrail's logging hooks for logging_only mode from the logging pipeline has no owner yet; see the B108 report notes."
+  - "The booted-proxy cases: B9464."
+pitfalls:
+  - "An empty policy_names list means the three default policies in LiteLLM, but B3800's conversion only defaults on none, so the constructor has to turn an empty list into none."
+  - "XECGUARD_BLOCK_ON_ERROR accepts true, 1 and yes in any case; every other text, false or not, means false."
+  - "Grounding runs only for a response that passed the scan and only when the request metadata carries xecguard_grounding_documents."
+  - "The logging hook must never raise: a missing standard_logging_object is an error LiteLLM swallows at debug, not a request failure."
+  - "The API key is sent as a Bearer token; no error text, log line or Debug output may contain it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

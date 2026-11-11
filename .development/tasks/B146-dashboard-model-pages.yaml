@@ -1,0 +1,114 @@
+id: B146
+title: Drive the retained model, routing, hub, playground, chat and model insights pages against a real betterlite process
+description: >-
+  Finish B146 after its children. B9090 takes in every covered page unchanged, B9091 builds it
+  with the reviewed patches, B9092 brands it and B9093 serves it; nobody hand-ports a page. The
+  missing exact-request HTTP cases live in the six children, each with its owners named: B9690
+  model table, detail, credentials, health, price data and access-group budgets; B9691
+  add-model and auto-router forms plus 80-model-forms.patch; B9692 router settings, routing
+  groups, retries and aliases; B9693 AI Hub publishing and the public hub; B9694 playground,
+  compare, compliance, agent builder and transform request; B9695 the /ui/chat app plus
+  81-chat-keys.patch. B4920 and B4921 name this entry as parent for the model insights data
+  helpers and the playground upload checks. The audit traced each pinned decorator to its
+  owning task and searched the owners' planned cases and the on-disk corpus: every route these
+  pages call already has an owner, and no page request except the realtime subprotocol
+  handshake is on disk yet. This part therefore adds no HTTP case and no handler; oracle_cases
+  is empty on purpose.
+
+  The one page left here is Model Insights. It sends GET /model-insights?metric=<tokens|spend|requests>
+  and GET /model-insights/tasks?metric=<m> with no dates, so the server picks its default
+  window ending today (B8272 builds both, B8676 mounts them, B075 proves the ranking and window
+  rules over HTTP with fixed dates). A fixed-date database seed would fall out of that window
+  as time passes, so the browser checks the empty state on a fresh database, every metric tab
+  and the task metric select, each answered by the real server with no error banner, and B075
+  carries the populated proof.
+
+  Run it through B144's harness: bash tools/dashboard/browser-check.sh --test
+  dashboard_model_pages builds and installs the bundle, sets up the locked browser and runs
+  that one binary with --no-tests=fail. Reuse the process, database and browser lifecycle in
+  tools/dashboard-browser/tests/support through mod support; do not edit the script, the
+  support module, the package manifest, its lock or the generated upstream tree. Put the Rust
+  orchestration in tools/dashboard-browser/tests/dashboard_model_pages.rs and its directory and
+  the Playwright steps under tools/dashboard/browser/model-pages, under the harness's strict
+  TypeScript and lint checks. Every page, login, discovery and management response comes from
+  the real binary: no page.route fulfillment, MSW or seeded post-mutation rows. Provider
+  responses alone may come from a local mock that the test owns and stops, answering chat
+  (plain and SSE), Responses, embeddings and image generation with fixed bodies; use B144's
+  provider mock if its support module offers one, and add one under dashboard_model_pages/
+  only if it does not. A missing browser, Postgres or bundle fails the test.
+
+  model_pages_round_trip signs in through the real /v2/login page with B144's UI_USERNAME and
+  UI_PASSWORD, then: adds a model through the Add Model form pointed at the mock, once as a
+  Team-BYOK model for a seeded team with no premium claim; finds it in the table by search and
+  team filter; opens the detail, sets and clears a price, runs Test Connection, pauses and
+  resumes it; creates, reuses and deletes a credential; runs a health check; reloads and
+  schedules the price map with LITELLM_MODEL_COST_MAP_URL pointed at the mock; sets and clears
+  an access-group budget; creates, tests, edits and deletes a complexity auto-router; changes
+  the routing strategy, adds and removes a routing group, saves a retry policy and an alias,
+  and refreshes the browser to see them persist; publishes the model on the AI Hub, turns on
+  the public hub and opens /ui/model_hub_table in a fresh context without a session to see it;
+  in the playground streams a chat reply, sends two Responses turns, compares two models, runs
+  a compliance quick test that a seeded guardrail blocks, transforms a request, creates an
+  agent in the agent builder, chats with it and deletes it; opens Model Insights as above; and
+  finally deletes the model. model_pages_member_scope signs in as an internal_user prepared
+  the way B145 prepares role identities, checks the read-only model table, sends one forbidden
+  model PATCH from the same session and asserts the server's 403, then opens /ui/chat, sends
+  two Responses turns, rotates their own key with no premium claim, and finds both requests on
+  the chat Logs tab and in Usage. Repeat the playground chat and the model table at
+  SERVER_ROOT_PATH=/gateway, since the playground's SDK base URL is built from the discovered
+  proxy base. Realtime, audio and image edits stay with their HTTP cases.
+
+  Document the page-to-case map, the mock provider and the Model Insights window choice in
+  ui/dashboard/MODEL-PAGES.md. A backend mismatch a child finds is fixed by that route's owner,
+  not here. Budget about 160 harness lines, 480 browser steps and 80 documentation lines.
+scope:
+  paths:
+    - tools/dashboard/browser/model-pages/**
+    - tools/dashboard-browser/tests/dashboard_model_pages.rs
+    - tools/dashboard-browser/tests/dashboard_model_pages/**
+    - ui/dashboard/MODEL-PAGES.md
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/model-insights/_components/ModelInsightsView.tsx#L116-L163
+    why: Both insight reads send only metric, so the window is the server default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/page.tsx#L83-L160
+    why: The models page composition the browser walks through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/chat_completion.tsx#L55-L66
+    why: The playground client takes its base URL from the discovered proxy base, so a root path changes every inference URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/model_hub_table/page.tsx#L1-L20
+    why: The public hub table runs without a session.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/chat/layout.tsx#L15-L40
+    why: The chat app shell and the premiumUser prop it hands to KeysPanel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L426-L429
+    why: The price reload reads LITELLM_MODEL_COST_MAP_URL, so the browser run must point it at the mock.
+dod:
+  - text: The built dashboard adds, edits, tests, publishes and deletes a model, an auto-router and routing settings through real HTTP, and the edits survive a refresh.
+    proof: [model-pages-browser, bootstrap-regression]
+  - text: The playground, compare, compliance, agent builder, transform request, public hub and model insights pages work against the native process at root and /gateway.
+    proof: [model-pages-browser]
+  - text: An internal user keeps the server's denial on model writes and can chat, rotate their own key and see their logs and usage in /ui/chat without a paid claim.
+    proof: [model-pages-browser]
+checks:
+  optional: []
+  commands:
+    - id: model-pages-browser
+      why: The children's HTTP cases pass but the compiled pages cannot finish their flows against the native process.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_model_pages
+    - id: bootstrap-regression
+      why: Adding this test binary breaks B144's foundation run.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_browser
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B9090 retains every function under the covers, B9091 builds it and B144 owns the login, discovery and browser foundation.
+  - B9690-B9695 own the exact-request HTTP cases and the two page patches; B4920 and B4921 own the insights data helpers and the upload checks. No proxy handler is written here.
+  - B8272 and B8676 own the model insights routes and B075 their populated HTTP proof.
+  - Pass-through settings on the models page belong to B150's pass-through child, and TeamInfoView to B9731.
+pitfalls:
+  - The playground SDK calls have no /v1 prefix and follow the root path, so the /gateway run is the one that catches a mount missing under the prefix.
+  - The public hub's legacy list turns a failed request into an empty table, so the browser must assert the published model name, not just a rendered table.
+  - A price reload with the default cost map URL reaches GitHub; the test sets LITELLM_MODEL_COST_MAP_URL before the process starts.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
