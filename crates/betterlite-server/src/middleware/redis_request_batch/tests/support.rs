@@ -149,7 +149,7 @@ pub(crate) async fn text(response: Response) -> String {
     String::from_utf8(bytes.to_vec()).expect("a utf-8 body")
 }
 
-fn record(cache: &Arc<RedisCache>, declare: bool, seen: &SeenBatch) {
+pub(crate) fn record(cache: &Arc<RedisCache>, declare: bool, seen: &SeenBatch) {
     let Some(batch) = active_request_redis_batch(cache) else {
         return;
     };
@@ -223,52 +223,6 @@ impl Service<Request<Body>> for Inner {
         Box::pin(async move {
             record(&cache, declare, &seen);
             reply.answer()
-        })
-    }
-}
-
-pub(crate) struct Probe<S> {
-    cache: Arc<RedisCache>,
-    inner: S,
-    seen: SeenBatch,
-}
-
-impl<S> Probe<S> {
-    pub(crate) fn for_test(cache: Arc<RedisCache>, inner: S) -> (Self, SeenBatch) {
-        let seen = seen();
-        (
-            Self {
-                cache,
-                inner,
-                seen: Arc::clone(&seen),
-            },
-            seen,
-        )
-    }
-}
-
-impl<S> Service<Request<Body>> for Probe<S>
-where
-    S: Service<Request<Body>>,
-    S::Future: Send + 'static,
-    S::Response: Send + 'static,
-    S::Error: Send + 'static,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let cache = Arc::clone(&self.cache);
-        let seen = Arc::clone(&self.seen);
-        let serving = self.inner.call(req);
-        Box::pin(async move {
-            record(&cache, true, &seen);
-            serving.await
         })
     }
 }

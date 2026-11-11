@@ -7,14 +7,15 @@ use std::str;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::body::to_bytes;
+use axum::body::{Body, to_bytes};
+use axum::http::Request;
 use betterlite_redis::request_batch::scope::active_request_redis_batch;
 use tokio::time::timeout;
-use tower::{Layer as _, Service as _};
+use tower::{Layer as _, Service as _, service_fn};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use self::support::{Inner, InnerFailed, Probe, Reply, take, unreachable_cache};
+use self::support::{Inner, InnerFailed, Reply, record, seen, take, unreachable_cache};
 use super::RedisBatchLayer;
 
 #[tokio::test]
@@ -151,8 +152,19 @@ async fn flush_runs_when_the_response_head_returns_not_when_the_body_ends() {
 async fn nested_layers_share_the_outer_scope_batches() {
     let cache = unreachable_cache().await;
     let (handler, handler_seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, true);
-    let inner_layer = RedisBatchLayer.layer(handler);
-    let (probe, probe_seen) = Probe::for_test(Arc::clone(&cache), inner_layer);
+    let mut inner_layer = RedisBatchLayer.layer(handler);
+    let probe_seen = seen();
+    let probe_cache = Arc::clone(&cache);
+    let recorded = Arc::clone(&probe_seen);
+    let probe = service_fn(move |request: Request<Body>| {
+        let call_cache = Arc::clone(&probe_cache);
+        let observed = Arc::clone(&recorded);
+        let serving = inner_layer.call(request);
+        async move {
+            record(&call_cache, true, &observed);
+            serving.await
+        }
+    });
     let mut service = RedisBatchLayer.layer(probe);
     let response = service.call(support::request()).await.expect("a response");
     assert_eq!(response.status(), 200);
