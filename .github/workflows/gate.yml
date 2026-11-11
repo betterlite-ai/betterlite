@@ -132,8 +132,8 @@ jobs:
         /usr/local/cargo/bin/similarity-py
         /usr/local/cargo/.crates.toml
         /usr/local/cargo/.crates2.json
-      # names every version the two install steps pin, so a bump misses the cache and installs fresh
-      TOOLS_KEY: tools-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-shellcheck-0.11.0-shfmt-3.14.1-actionlint-1.7.12-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0-similarity-py-0.5.0
+      # names every version the two install steps pin, so a bump misses the cache and installs fresh; layout2 skips the cache saved without shellcheck and shfmt
+      TOOLS_KEY: tools-layout2-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-shellcheck-0.11.0-shfmt-3.14.1-actionlint-1.7.12-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0-similarity-py-0.5.0
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
     steps:
@@ -211,6 +211,11 @@ jobs:
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,shellcheck@0.11.0,shfmt@3.14.1,uv@0.11.14
+
+      # install-action puts shellcheck and shfmt in ~/.install-action/bin, outside the cached folder
+      - name: Move shellcheck and shfmt next to the other tools
+        if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
+        run: mv "$HOME/.install-action/bin/shellcheck" "$HOME/.install-action/bin/shfmt" /usr/local/cargo/bin/
 
       - name: Install the tools without prebuilt binaries
         if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
