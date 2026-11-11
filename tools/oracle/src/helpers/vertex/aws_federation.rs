@@ -34,33 +34,27 @@ impl Helper for Op {
 
 fn retained_fields(params: &AwsParams) -> Value {
     let mut retained = Map::new();
-    insert_secret_fields(&mut retained, params);
-    insert_text_fields(&mut retained, params);
+    let secrets = [
+        ("aws_access_key_id", params.access_key_id.as_ref()),
+        ("aws_secret_access_key", params.secret_access_key.as_ref()),
+        ("aws_session_token", params.session_token.as_ref()),
+        ("aws_web_identity_token", params.web_identity_token.as_ref()),
+    ];
+    for (name, secret) in secrets {
+        insert_secret(&mut retained, name, secret);
+    }
+    let texts = [
+        ("aws_region_name", params.region_name.as_deref()),
+        ("aws_session_name", params.session_name.as_deref()),
+        ("aws_profile_name", params.profile_name.as_deref()),
+        ("aws_role_name", params.role_name.as_deref()),
+        ("aws_sts_endpoint", params.sts_endpoint.as_deref()),
+        ("aws_external_id", params.external_id.as_deref()),
+    ];
+    for (name, text) in texts {
+        insert_text(&mut retained, name, text);
+    }
     Value::Object(retained)
-}
-
-fn insert_secret_fields(retained: &mut Map<String, Value>, params: &AwsParams) {
-    insert_secret(retained, "aws_access_key_id", params.access_key_id.as_ref());
-    insert_secret(
-        retained,
-        "aws_secret_access_key",
-        params.secret_access_key.as_ref(),
-    );
-    insert_secret(retained, "aws_session_token", params.session_token.as_ref());
-    insert_secret(
-        retained,
-        "aws_web_identity_token",
-        params.web_identity_token.as_ref(),
-    );
-}
-
-fn insert_text_fields(retained: &mut Map<String, Value>, params: &AwsParams) {
-    insert_text(retained, "aws_region_name", params.region_name.as_deref());
-    insert_text(retained, "aws_session_name", params.session_name.as_deref());
-    insert_text(retained, "aws_profile_name", params.profile_name.as_deref());
-    insert_text(retained, "aws_role_name", params.role_name.as_deref());
-    insert_text(retained, "aws_sts_endpoint", params.sts_endpoint.as_deref());
-    insert_text(retained, "aws_external_id", params.external_id.as_deref());
 }
 
 fn insert_secret(retained: &mut Map<String, Value>, name: &str, secret: Option<&SecretString>) {

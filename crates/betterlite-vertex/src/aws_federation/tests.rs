@@ -82,18 +82,10 @@ fn aws_params(region: Option<&str>) -> AwsParams {
 }
 
 fn explicit_aws_params() -> AwsParams {
-    AwsParams {
-        access_key_id: Some(SecretString::from("AKIA-EXPLICIT")),
-        secret_access_key: Some(SecretString::from("secret-explicit")),
-        session_token: None,
-        region_name: Some("us-east-1".to_owned()),
-        session_name: None,
-        profile_name: None,
-        role_name: None,
-        web_identity_token: None,
-        sts_endpoint: None,
-        external_id: None,
-    }
+    let mut params = aws_params(Some("us-east-1"));
+    params.access_key_id = Some(SecretString::from("AKIA-EXPLICIT"));
+    params.secret_access_key = Some(SecretString::from("secret-explicit"));
+    params
 }
 
 fn input(aws: AwsParams) -> FederationInput {
