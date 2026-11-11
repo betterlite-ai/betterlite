@@ -1,0 +1,12 @@
+kind: helper
+name: model-metadata-resolution-fill-missing-exact-entry
+call:
+  model_metadata_resolution:
+    scenario: fill_missing_exact_entry
+    fixture:
+      model_cost:
+        fixture/model: {litellm_provider: groq, mode: chat}
+    queries:
+      - {model: fixture/model, custom_llm_provider: groq}
+env: {}
+compare: {ignore: []}

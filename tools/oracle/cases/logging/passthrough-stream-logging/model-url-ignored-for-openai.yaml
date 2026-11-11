@@ -1,0 +1,11 @@
+kind: helper
+name: model-url-ignored-for-openai
+call:
+  b3608:
+    operation: extract_model
+    request_body: null
+    model_call_details_model: null
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models/gemini-1.5-pro:streamGenerateContent
+    endpoint_type: openai
+env: {}
+compare: {ignore: []}

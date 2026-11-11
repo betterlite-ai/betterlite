@@ -1,0 +1,33 @@
+kind: helper
+name: model-metadata-resolution-fill-missing-exact-entry
+call:
+  model_metadata_resolution:
+    scenario: fill_missing_exact_entry
+    fixture:
+      model_cost:
+        groq/model: {litellm_provider: groq, mode: chat, input_cost_per_token: 1}
+        groq/absent-mode: {litellm_provider: groq, input_cost_per_token: 1}
+        groq/responses: {litellm_provider: groq, mode: responses, input_cost_per_token: 1}
+        groq/completion: {litellm_provider: groq, mode: completion, input_cost_per_token: 1}
+        groq/null-mode: {litellm_provider: groq, mode: null, input_cost_per_token: 1}
+        groq/explicit: {litellm_provider: groq, mode: chat, max_tokens: null, supports_vision: false, rpm: 0, input_cost_per_token: 1}
+        other/model: {litellm_provider: other, mode: chat, input_cost_per_token: 2}
+        bare-model: {mode: chat, input_cost_per_token: 3}
+      fallback_generalizations:
+        - pattern: "^groq/"
+          fill_missing_for_providers: [groq]
+          model_info: {max_tokens: 100, supports_vision: true, input_cost_per_token: 99, mode: completion}
+        - pattern: "^other/"
+          fill_missing_for_providers: [groq]
+          model_info: {max_tokens: 5}
+    queries:
+      - {model: model, custom_llm_provider: groq}
+      - {model: absent-mode, custom_llm_provider: groq}
+      - {model: responses, custom_llm_provider: groq}
+      - {model: completion, custom_llm_provider: groq}
+      - {model: null-mode, custom_llm_provider: groq}
+      - {model: explicit, custom_llm_provider: groq}
+      - {model: other/model, custom_llm_provider: other}
+      - {model: bare-model, custom_llm_provider: groq}
+env: {}
+compare: {ignore: []}

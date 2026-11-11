@@ -1,0 +1,34 @@
+kind: helper
+name: message-utilities-response-streams
+call:
+  b5366:
+    calls:
+      - function: text_completion_stream
+        include_usage: false
+        chunks:
+          - {id: chatcmpl-1, created: 123, model: gpt-4o, choices: [{finish_reason: null, index: 0, delta: {content: hi}}]}
+          - {id: chatcmpl-1, created: 123, model: gpt-4o, choices: [{finish_reason: stop, index: 2, delta: {content: b, reasoning_content: think}}]}
+      - function: text_completion_stream
+        include_usage: true
+        chunks:
+          - {id: x, created: 1, model: m, choices: [{finish_reason: stop, index: 2, delta: {content: a}}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3, completion_tokens_details: null, prompt_tokens_details: null}}
+      - function: text_completion_stream
+        include_usage: false
+        chunks:
+          - {id: chatcmpl-1, created: 123, model: gpt-4o, choices: [{finish_reason: stop, delta: {}}]}
+      - function: model_response_iterator
+        convert_to_delta: false
+        response: {id: r1, created: 42, model: gpt-4o, object: chat.completion, system_fingerprint: null, choices: [{finish_reason: stop, index: 0, message: {content: hello, role: assistant, tool_calls: null, function_call: null}}]}
+      - function: model_response_iterator
+        convert_to_delta: true
+        response: {id: r1, created: 42, model: gpt-4o, object: chat.completion, system_fingerprint: null, choices: [{finish_reason: stop, index: 0, message: {content: hello, role: assistant, tool_calls: null, function_call: null}}]}
+      - function: model_response_list_iterator
+        delay_seconds: 0
+        responses:
+          - {id: r1, created: 42, model: gpt-4o, object: chat.completion, system_fingerprint: null, choices: [{finish_reason: stop, index: 0, message: {content: hello, role: assistant, tool_calls: null, function_call: null}}]}
+          - {id: r2, created: 43, model: gpt-4o, object: chat.completion, system_fingerprint: null, choices: [{finish_reason: stop, index: 0, message: {content: bye, role: assistant, tool_calls: null, function_call: null}}]}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/4/0/id, why: LiteLLM generates the stream chunk id from a fresh uuid}
+    - {pointer: /value/4/0/created, why: LiteLLM stamps the stream chunk with the wall clock}

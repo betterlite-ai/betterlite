@@ -35,7 +35,7 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
 tempfile = "3.27.0"
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "test-util", "time"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tracing-subscriber.workspace = true
 
