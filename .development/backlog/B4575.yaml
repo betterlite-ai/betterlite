@@ -1,7 +1,7 @@
 id: B4575
 milestone: M8 platform
 title: CLI session commands and temporary settings backup
-status: todo
+status: done
 depends_on: [B192, B4560, B4562, B4563, B4573, B4574, B4591, B4592]
 file: tasks/B4575-cli-session-and-backup.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/client/cli/commands/up.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1267
