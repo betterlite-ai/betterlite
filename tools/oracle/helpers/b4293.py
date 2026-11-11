@@ -159,7 +159,6 @@ def build_cache(commands: FakeCommands) -> RedisCache:
     return cache
 
 
-# every scenario scripts the call's redis_get as the next GET reply, as the Rust helper does
 def start(call: Fields, failure: str | None = None) -> tuple[DualCache, FakeCommands, RedisCache]:
     replies: dict[str, list[object]] = {"GET": [json.dumps(call.get("redis_get"))]}
     if failure is not None:
@@ -177,7 +176,6 @@ def start(call: Fields, failure: str | None = None) -> tuple[DualCache, FakeComm
     return dual, commands, cache
 
 
-# the ttl and a second read show what the first read left in memory
 async def observe(dual: DualCache, key: str, read: object) -> dict[str, object]:
     ttl = await dual.async_get_ttl(key)
     return {"read": read, "ttl": ttl, "second": dual.get_cache(key)}

@@ -25,7 +25,6 @@ use self::limited_size::LimitedSizeOrderedDict;
 use crate::backend::BackendError;
 use crate::backend::memory::MemoryCacheOps;
 
-// litellm.constants.DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE, which the variable of the same name overrides
 pub const MAX_REDIS_BATCH_CACHE_SIZE: usize = 1000;
 pub const BATCH_CACHE_SIZE_VARIABLE: &str = "DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE";
 // DualCache.__init__'s fallback when litellm.default_redis_batch_cache_expiry is unset
@@ -67,7 +66,6 @@ pub struct DualCacheSettings {
 }
 
 impl DualCacheSettings {
-    // LiteLLM reads the variable once into the constant that sizes both the access-time dict and the delete chunks
     pub fn from_environment<Lookup>(lookup: &Lookup) -> Self
     where
         Lookup: EnvironmentLookup,
