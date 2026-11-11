@@ -19,7 +19,8 @@ pub(crate) struct Input {
 struct Call {
     function: Function,
     text: Option<String>,
-    call_type: Option<CallTypeInput>,
+    #[serde(rename = "call_type")]
+    kind: Option<CallTypeInput>,
     data: Option<PromptDataInput>,
     response: Option<ResponseInput>,
 }
@@ -106,9 +107,7 @@ fn execute(call: &Call) -> Result<Value, Failure> {
 }
 
 fn formatted_prompt(call: &Call) -> Result<Value, Failure> {
-    let call_type = call
-        .call_type
-        .ok_or_else(|| failure("call_type is required"))?;
+    let kind = call.kind.ok_or_else(|| failure("call_type is required"))?;
     let data = call
         .data
         .as_ref()
@@ -119,7 +118,7 @@ fn formatted_prompt(call: &Call) -> Result<Value, Failure> {
             prompt: data.prompt.as_ref(),
             input: data.input.as_ref(),
         },
-        call_type.prompt_call_type(),
+        kind.prompt_call_type(),
     )
     .map_err(|error| failure(&error.to_string()))?;
     Ok(Value::from(prompt))
@@ -150,7 +149,7 @@ fn response_string(call: &Call) -> Result<Value, Failure> {
     Ok(Value::from(text))
 }
 
-fn choice_text(choice: &ChoiceInput) -> ChoiceText<'_> {
+const fn choice_text(choice: &ChoiceInput) -> ChoiceText<'_> {
     match choice {
         ChoiceInput::Message(content) => ChoiceText::Message {
             content: content.as_ref(),
