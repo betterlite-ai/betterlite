@@ -4,7 +4,7 @@ use betterlite_context::aws_partition::get_aws_partition;
 use futures_util::StreamExt as _;
 
 use crate::live::TranscribeJobLookup;
-use crate::live::exchange::{BodyStream, HttpAnswer, HttpMethod, HttpTransport, OutboundHttp};
+use crate::live::exchange::{BodyStream, HttpMethod, HttpTransport, OutboundHttp};
 use crate::live::signing::AwsSigner;
 use crate::polling::aws_error_type;
 use crate::records::{GetTranscriptionJobRequest, JobLookup, JobLookupError, JobLookupFuture};
@@ -36,21 +36,17 @@ where
         &self,
         request: &GetTranscriptionJobRequest,
     ) -> Result<(u16, Vec<u8>), JobLookupError> {
-        let Ok(body) = serde_json::to_string(request) else {
-            return Err(JobLookupError::Unavailable);
-        };
+        let body = serde_json::to_string(request).map_err(|_error| JobLookupError::Unavailable)?;
         let headers = [
             ("Content-Type".to_owned(), CONTENT_TYPE.to_owned()),
             ("X-Amz-Target".to_owned(), TARGET.to_owned()),
         ];
-        let Ok(signed) = self
+        let signed = self
             .signer
             .sign_json_post(&self.region, &self.endpoint, &body, &headers)
             .await
-        else {
-            return Err(JobLookupError::Unavailable);
-        };
-        let Ok(answer) = self
+            .map_err(|_error| JobLookupError::Unavailable)?;
+        let answer = self
             .http
             .send(OutboundHttp {
                 method: HttpMethod::Post,
@@ -60,15 +56,9 @@ where
                 deadline: LOOKUP_DEADLINE,
             })
             .await
-        else {
-            return Err(JobLookupError::Unavailable);
-        };
-        let HttpAnswer {
-            status,
-            body: chunks,
-            ..
-        } = answer;
-        let Some(payload) = read_body(chunks, MAX_LOOKUP_BODY_BYTES).await else {
+            .map_err(|_error| JobLookupError::Unavailable)?;
+        let status = answer.status;
+        let Some(payload) = read_body(answer.body, MAX_LOOKUP_BODY_BYTES).await else {
             return Err(JobLookupError::Unavailable);
         };
         Ok((status, payload))
