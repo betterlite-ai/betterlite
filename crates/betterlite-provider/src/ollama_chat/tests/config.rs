@@ -76,6 +76,10 @@ fn supported_params_are_litellms_list() {
     "{}"
 )]
 #[case::response_format_text(r#"{"response_format": {"type": "text"}}"#, "{}")]
+#[case::response_format_text_ignores_a_json_schema(
+    r#"{"response_format": {"type": "text", "json_schema": {"schema": {"type": "object"}}}}"#,
+    "{}"
+)]
 #[case::response_format_scalar(r#"{"response_format": "json"}"#, "{}")]
 #[case::reasoning_low(r#"{"reasoning_effort": "low"}"#, r#"{"think": true}"#)]
 #[case::reasoning_high(r#"{"reasoning_effort": "high"}"#, r#"{"think": true}"#)]

@@ -38,6 +38,7 @@ call:
       - {model: llama3, non_default: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}}
       - {model: llama3, non_default: {response_format: {type: json_schema}}}
       - {model: llama3, non_default: {response_format: {type: text}}}
+      - {model: llama3, non_default: {response_format: {type: text, json_schema: {schema: {type: object}}}}}
       - {model: llama3, non_default: {reasoning_effort: low}}
       - {model: llama3, non_default: {reasoning_effort: high}}
       - {model: llama3, non_default: {reasoning_effort: minimal}}
