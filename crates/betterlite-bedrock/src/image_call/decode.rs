@@ -27,7 +27,13 @@ pub fn decode_bedrock_image_reply(
     bytes: &[u8],
     family: Family,
 ) -> Result<ReplyRecord, ReplyDecodeError> {
-    match parse(bytes, family) {
+    let parsed = match family {
+        Family::Titan => serde_json::from_slice(bytes).map(ReplyRecord::Titan),
+        Family::Stability1 => serde_json::from_slice(bytes).map(ReplyRecord::Stability1),
+        Family::Stability3 => serde_json::from_slice(bytes).map(ReplyRecord::Stability3),
+        Family::Nova => serde_json::from_slice(bytes).map(ReplyRecord::Nova),
+    };
+    match parsed {
         Ok(record) => Ok(record),
         Err(source) => {
             // Python's response.json() answers None only for the null token, before any record constructor runs
@@ -38,14 +44,5 @@ pub fn decode_bedrock_image_reply(
             }
             Err(ReplyDecodeError::Json(source))
         }
-    }
-}
-
-fn parse(bytes: &[u8], family: Family) -> Result<ReplyRecord, serde_json::Error> {
-    match family {
-        Family::Titan => serde_json::from_slice(bytes).map(ReplyRecord::Titan),
-        Family::Stability1 => serde_json::from_slice(bytes).map(ReplyRecord::Stability1),
-        Family::Stability3 => serde_json::from_slice(bytes).map(ReplyRecord::Stability3),
-        Family::Nova => serde_json::from_slice(bytes).map(ReplyRecord::Nova),
     }
 }

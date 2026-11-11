@@ -20,20 +20,6 @@ use crate::bedrock_settings::{
 use crate::image_models::family::select_family;
 use crate::image_models::response::ModelResponse;
 
-enum Selected<'client, Client> {
-    Supplied(&'client Client),
-    Created(Client),
-}
-
-impl<Client> Selected<'_, Client> {
-    const fn client(&self) -> &Client {
-        match self {
-            Self::Supplied(client) => client,
-            Self::Created(client) => client,
-        }
-    }
-}
-
 // the transport is chosen only after signing, so both paths send one prepared request
 pub async fn dispatch_request<Factory>(
     call: &ImageCall<'_>,
@@ -44,13 +30,22 @@ pub async fn dispatch_request<Factory>(
 where
     Factory: ClientFactory + Sync,
 {
-    let selected = select_client(call, supplied, factory);
     let request = ImageRequest {
         url: prepared.endpoint_url.clone(),
         headers: prepared.signed.headers.clone(),
         body: prepared.signed.body.clone(),
     };
-    let reply = match selected.client().post(request).await {
+    let sent = match (call.aimg_generation, supplied) {
+        (true, Some(client)) if client.kind == ClientKind::Async => {
+            client.transport.post(request).await
+        }
+        (true, _) => factory.async_client(call.timeout).post(request).await,
+        (false, Some(client)) if client.kind == ClientKind::Sync => {
+            client.transport.post(request).await
+        }
+        (false, _) => factory.sync_client().post(request).await,
+    };
+    let reply = match sent {
         Ok(reply) => reply,
         Err(TransferError::Timeout) => return Err(timeout_error()?),
         Err(error) => return Err(ImageCallError::Transport(error)),
@@ -59,26 +54,6 @@ where
         return Err(provider_error(&prepared.endpoint_url, &reply)?);
     }
     Ok(reply)
-}
-
-fn select_client<'client, Factory>(
-    call: &ImageCall<'_>,
-    supplied: Option<SuppliedClient<'client, Factory::Client>>,
-    factory: &Factory,
-) -> Selected<'client, Factory::Client>
-where
-    Factory: ClientFactory,
-{
-    match (call.aimg_generation, supplied) {
-        (true, Some(client)) if client.kind == ClientKind::Async => {
-            Selected::Supplied(client.transport)
-        }
-        (true, _) => Selected::Created(factory.async_client(call.timeout)),
-        (false, Some(client)) if client.kind == ClientKind::Sync => {
-            Selected::Supplied(client.transport)
-        }
-        (false, _) => Selected::Created(factory.sync_client()),
-    }
 }
 
 pub fn transform_response(

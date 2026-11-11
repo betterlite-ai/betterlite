@@ -15,12 +15,12 @@ use thiserror::Error;
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod calls;
-mod fixture;
+mod fixtures;
 mod handlers;
 mod tests;
 
 use calls::{Probe, Probes, Supplied};
-use fixture::{Client, Factory, Source};
+use fixtures::{Client, Factory, Source};
 use handlers::{Shape, observe};
 
 pub(crate) struct Op;
@@ -71,22 +71,17 @@ impl Helper for Op {
             Input::ImageHttpError(probes) => (probes, Shape::Error),
             Input::ImageTransportSelection(probes) => (probes, Shape::Selection),
         };
-        each(probes, &shape).map_err(Box::<HelperError>::from)
+        let mut results = Vec::with_capacity(probes.probes.len());
+        for probe in &probes.probes {
+            results.push(observe(probe, &shape)?);
+        }
+        Ok::<Value, Failure>(Value::Array(results)).map_err(Box::<HelperError>::from)
     }
-}
-
-fn each(probes: &Probes, shape: &Shape) -> Result<Value, Failure> {
-    let mut results = Vec::with_capacity(probes.probes.len());
-    for probe in &probes.probes {
-        results.push(observe(probe, shape)?);
-    }
-    Ok(Value::Array(results))
 }
 
 pub(crate) struct Harness<'probe> {
     probe: &'probe Probe,
     params: Params,
-    extra_headers: Option<Vec<(String, String)>>,
     api_key: Option<SecretString>,
     bearer: Option<SecretString>,
     now: SystemTime,
@@ -104,20 +99,9 @@ impl<'probe> Harness<'probe> {
             return Err(Failure::MissingCredentials);
         }
         let params: Params = serde_json::from_value(Value::Object(probe.optional_params.clone()))?;
-        let extra_headers = probe.extra_headers.as_ref().map(|headers| {
-            headers
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone()))
-                .collect()
-        });
-        let supplied = match probe.supplied {
-            Supplied::None => None,
-            Supplied::Sync | Supplied::Async => Some(Client::new(&probe.reply)),
-        };
         Ok(Self {
             probe,
             params,
-            extra_headers,
             api_key: probe
                 .api_key
                 .as_ref()
@@ -131,7 +115,7 @@ impl<'probe> Harness<'probe> {
                 .ok_or(Failure::Shape)?,
             source: Source::new(probe),
             factory: Factory::new(&probe.reply),
-            supplied,
+            supplied: (probe.supplied != Supplied::None).then(|| Client::new(&probe.reply)),
         })
     }
 
@@ -141,7 +125,7 @@ impl<'probe> Harness<'probe> {
             prompt: &self.probe.prompt,
             optional_params: self.params.clone(),
             api_base: self.probe.api_base.as_deref(),
-            extra_headers: self.extra_headers.as_deref(),
+            extra_headers: self.probe.extra_headers.as_deref(),
             api_key: self.api_key.as_ref(),
             timeout: self.probe.timeout_ms.map(Duration::from_millis),
             aimg_generation: self.probe.aimg_generation,

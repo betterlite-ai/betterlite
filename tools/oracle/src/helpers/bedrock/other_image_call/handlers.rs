@@ -11,7 +11,7 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Map, Value, json};
 
-use super::fixture::{DiscardingSink, logging_state, prepost_env};
+use super::fixtures::{DiscardingSink, logging_state, prepost_env};
 use super::{Failure, Harness, Probe};
 
 pub(super) enum Shape {
@@ -48,7 +48,8 @@ fn run(probe: &Probe) -> Result<(Run, Outcome), Failure> {
             state: &mut state,
             env: &env,
         },
-        (probe.created, &mut prepared),
+        probe.created,
+        &mut prepared,
     );
     let (supplied_requests, factory_requests) = harness.seen();
     let run = Run {
@@ -65,7 +66,8 @@ fn run_stages(
     harness: &Harness<'_>,
     runtime: &tokio::runtime::Runtime,
     log: &mut LogContext<'_, '_>,
-    (created, snapshot): (i64, &mut Option<Value>),
+    created: i64,
+    snapshot: &mut Option<Value>,
 ) -> Result<ModelResponse, Failure> {
     let mut call = harness.call();
     let target = runtime.block_on(resolve_target(&mut call, &harness.source))?;
@@ -107,19 +109,10 @@ pub(super) fn observe(probe: &Probe, shape: &Shape) -> Result<Value, Failure> {
             let Some(Value::Object(mut fields)) = run.prepared else {
                 return Err(Failure::Shape);
             };
-            fields.remove("headers");
             fields.insert("posted_url".to_owned(), Value::from(url));
             Ok(Value::Object(fields))
         }
-        Shape::Dispatch => run.dispatch(&outcome?),
-        Shape::Result => {
-            let response = outcome?;
-            Ok(json!({
-                "created": response.created,
-                "data": images_json(&response),
-                "post_call": post_call_json(&run.state),
-            }))
-        }
+        Shape::Dispatch | Shape::Result => run.dispatch(&outcome?),
         Shape::Selection => {
             outcome?;
             Ok(run.selection())
@@ -138,7 +131,11 @@ impl Run {
         let request = self.posted().ok_or(Failure::Shape)?;
         Ok(json!({
             "created": response.created,
-            "data": images_json(response),
+            "data": response
+                .data
+                .iter()
+                .map(|image| json!({"b64_json": image.b64_json}))
+                .collect::<Vec<_>>(),
             "posted_url": request.url,
             "posted_body": serde_json::from_slice::<Value>(&request.body)?,
             "post_call": post_call_json(&self.state),
@@ -167,10 +164,12 @@ impl Run {
 fn prepare_json(prepared: &PreparedRequest, state: &LoggingState) -> Result<Value, Failure> {
     let details = serde_json::to_value(&state.model_call_details)?;
     let arguments = details.get("additional_args");
-    let mut signed = Map::new();
-    for (name, value) in &prepared.signed.headers {
-        signed.insert(name.clone(), Value::String(value.clone()));
-    }
+    let signed: Map<String, Value> = prepared
+        .signed
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+        .collect();
     Ok(json!({
         "endpoint_url": prepared.endpoint_url,
         "prepared_url": prepared.signed.url,
@@ -181,21 +180,8 @@ fn prepare_json(prepared: &PreparedRequest, state: &LoggingState) -> Result<Valu
             "input": details.get("input"),
             "api_base": arguments.and_then(|args| args.get("api_base")),
             "complete_input_dict": arguments.and_then(|args| args.get("complete_input_dict")),
-            "has_headers": arguments
-                .and_then(|args| args.get("headers"))
-                .is_some_and(|headers| !headers.is_null()),
         },
     }))
-}
-
-fn images_json(response: &ModelResponse) -> Value {
-    Value::Array(
-        response
-            .data
-            .iter()
-            .map(|image| json!({"b64_json": image.b64_json}))
-            .collect(),
-    )
 }
 
 fn post_call_json(state: &LoggingState) -> Option<Value> {

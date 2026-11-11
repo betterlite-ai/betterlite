@@ -134,18 +134,6 @@ def transport(probe: Probe, recorder: Recorder) -> httpx.MockTransport:
     return httpx.MockTransport(handle)
 
 
-def sync_handler(probe: Probe, recorder: Recorder) -> HTTPHandler:
-    return HTTPHandler(client=httpx.Client(transport=transport(probe, recorder)))
-
-
-def async_handler(probe: Probe, recorder: Recorder) -> AsyncHTTPHandler:
-    return AsyncHTTPHandler(transport=transport(probe, recorder))
-
-
-def frozen_clock(probe: Probe) -> datetime:
-    return datetime.fromtimestamp(probe.now, tz=UTC).replace(tzinfo=None)
-
-
 @contextmanager
 def harness(probe: Probe, fixture: Fixture) -> Generator[None, None, None]:
     secrets: dict[str, str | None] = {
@@ -171,12 +159,12 @@ def harness(probe: Probe, fixture: Fixture) -> Generator[None, None, None]:
 
     def sync_factory(*_args: object, **_kwargs: object) -> HTTPHandler:
         fixture.factory_calls.append(("sync", None))
-        return sync_handler(probe, fixture.factory)
+        return HTTPHandler(client=httpx.Client(transport=transport(probe, fixture.factory)))
 
     def async_factory(*_args: object, **_kwargs: object) -> AsyncHTTPHandler:
         timeout = probe.timeout_ms
         fixture.factory_calls.append(("async", timeout))
-        return async_handler(probe, fixture.factory)
+        return AsyncHTTPHandler(transport=transport(probe, fixture.factory))
 
     with (
         patch.dict(os.environ, {}, clear=True),
@@ -190,16 +178,16 @@ def harness(probe: Probe, fixture: Fixture) -> Generator[None, None, None]:
             "boto3.Session",
             lambda: SimpleNamespace(region_name=probe.environment.session_region),
         ),
-        patch.object(botocore.auth, "get_current_datetime", partial(frozen_clock, probe)),
+        patch.object(
+            botocore.auth,
+            "get_current_datetime",
+            lambda: datetime.fromtimestamp(probe.now, tz=UTC).replace(tzinfo=None),
+        ),
         patch.object(BedrockImageGeneration, "resolve_credentials", resolver),
         patch.object(image_handler, "_get_httpx_client", sync_factory),
         patch.object(image_handler, "get_async_httpx_client", async_factory),
     ):
         yield
-
-
-def optional_params(probe: Probe) -> dict[str, Json]:
-    return dict(probe.optional_params)
 
 
 def prepare_value(probe: Probe) -> Json:
@@ -208,7 +196,7 @@ def prepare_value(probe: Probe) -> Json:
     with harness(probe, fixture):
         prepared = BedrockImageGeneration()._prepare_request(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
             model=probe.model,
-            optional_params=optional_params(probe),
+            optional_params=dict(probe.optional_params),
             api_base=probe.api_base,
             extra_headers=probe.extra_headers,
             logging_obj=logging,
@@ -227,24 +215,25 @@ def prepare_value(probe: Probe) -> Json:
             "input": pre_call.get("input"),
             "api_base": arguments.get("api_base"),
             "complete_input_dict": arguments.get("complete_input_dict"),
-            "has_headers": arguments.get("headers") is not None,
         },
     }
 
 
 def generation(probe: Probe, fixture: Fixture) -> ImageResponse:
-    client: HTTPHandler | AsyncHTTPHandler | None = None
-    if probe.supplied == "sync":
-        client = sync_handler(probe, fixture.supplied)
-    elif probe.supplied == "async":
-        client = async_handler(probe, fixture.supplied)
+    client = (
+        HTTPHandler(client=httpx.Client(transport=transport(probe, fixture.supplied)))
+        if probe.supplied == "sync"
+        else AsyncHTTPHandler(transport=transport(probe, fixture.supplied))
+        if probe.supplied == "async"
+        else None
+    )
     logging = cast("Logging", fixture.logging)
     with harness(probe, fixture):
         pending = BedrockImageGeneration().image_generation(  # pyright: ignore[reportUnknownMemberType]
             model=probe.model,
             prompt=probe.prompt,
             model_response=ImageResponse(created=probe.created),
-            optional_params=optional_params(probe),
+            optional_params=dict(probe.optional_params),
             logging_obj=logging,
             timeout=None if probe.timeout_ms is None else probe.timeout_ms / 1000,
             aimg_generation=probe.aimg_generation,
@@ -289,7 +278,6 @@ def selection_value(probe: Probe) -> Json:
 
 def runtime_value(probe: Probe) -> Json:
     value = cast("dict[str, Json]", prepare_value(probe))
-    del value["headers"]
     fixture = Fixture()
     generation(probe, fixture)
     value["posted_url"] = fixture.used().requests[0][0]
@@ -311,45 +299,17 @@ def error_value(probe: Probe) -> Json:
     return {"ok": True, "status": None, "post_call": True}
 
 
-def failure_value(probe: Probe) -> Json:
-    fixture = Fixture()
-    result = generation(probe, fixture)
-    return {
-        "created": result.created,
-        "data": [{"b64_json": image.b64_json} for image in result.data or []],
-        "post_call": fixture.logging.post_call_value(),
-    }
-
-
-def probes(argument: Json) -> list[Probe]:
-    return Probes.model_validate(argument).probes
-
-
-HANDLERS: dict[str, Callable[[Json], Json]] = {
-    "image_family_dispatch": lambda argument: [
-        call_value(probe) for probe in probes(argument)
-    ],
-    "image_runtime_url": lambda argument: [
-        runtime_value(probe) for probe in probes(argument)
-    ],
-    "signed_json_body": lambda argument: [
-        prepare_value(probe) for probe in probes(argument)
-    ],
-    "extra_headers_outside_body": lambda argument: [
-        prepare_value(probe) for probe in probes(argument)
-    ],
-    "base64_image_result": lambda argument: [
-        failure_value(probe) for probe in probes(argument)
-    ],
-    "image_http_error": lambda argument: [
-        error_value(probe) for probe in probes(argument)
-    ],
-    "image_transport_selection": lambda argument: [
-        selection_value(probe) for probe in probes(argument)
-    ],
+HANDLERS: dict[str, Callable[[Probe], Json]] = {
+    "image_family_dispatch": call_value,
+    "image_runtime_url": runtime_value,
+    "signed_json_body": prepare_value,
+    "extra_headers_outside_body": prepare_value,
+    "base64_image_result": call_value,
+    "image_http_error": error_value,
+    "image_transport_selection": selection_value,
 }
 
 
 def run(input_value: dict[str, Json]) -> Json:
     name, argument = next(iter(input_value.items()))
-    return HANDLERS[name](argument)
+    return [HANDLERS[name](probe) for probe in Probes.model_validate(argument).probes]

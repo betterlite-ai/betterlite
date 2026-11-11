@@ -36,7 +36,7 @@ pub(crate) struct Environment {
     pub(crate) runtime_endpoint: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub(crate) struct Reply {
     pub(crate) status: u16,
@@ -45,24 +45,13 @@ pub(crate) struct Reply {
     pub(crate) failure: Option<Failure>,
 }
 
-impl Default for Reply {
-    fn default() -> Self {
-        Self {
-            status: 200,
-            headers: BTreeMap::new(),
-            body: "{}".to_owned(),
-            failure: None,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub(crate) struct Probe {
     pub(crate) model: String,
     pub(crate) prompt: String,
     pub(crate) optional_params: Map<String, Value>,
-    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
+    pub(crate) extra_headers: Option<Vec<(String, String)>>,
     pub(crate) api_base: Option<String>,
     pub(crate) api_key: Option<String>,
     pub(crate) configured_bearer_token: Option<String>,

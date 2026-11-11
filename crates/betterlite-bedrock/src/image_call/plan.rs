@@ -16,7 +16,7 @@ use serde_json::value::RawValue;
 
 use super::error::ImageCallError;
 use crate::aws_endpoints::model_id::bedrock_model_id;
-use crate::aws_endpoints::provider::{BedrockInvokeProvider, invoke_provider};
+use crate::aws_endpoints::provider::invoke_provider;
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
 use crate::aws_settings::sources::Credentials;
 use crate::aws_settings::{AUTHENTICATION_PARAMS, bedrock_bearer_token};
@@ -78,7 +78,13 @@ pub async fn resolve_target<Source>(
 where
     Source: CredentialSource + Sync,
 {
-    let mut raw = raw_options(&call.optional_params)?;
+    let mut raw = BTreeMap::new();
+    for (key, field) in &call.optional_params {
+        raw.insert(
+            key.clone(),
+            RawValue::from_string(serde_json::to_string(field)?)?,
+        );
+    }
     let bearer = bedrock_bearer_token(call.api_key, call.environment.bearer_token);
     let target = request_target(
         TargetRequest {
@@ -113,15 +119,7 @@ pub fn prepare_request(
         set_header(&mut headers, &name, value);
     }
     let signed = sign_payload(call, target, &endpoint_url, &data, &headers)?;
-    log_pre_call(
-        &PreCallRecord {
-            prompt: call.prompt,
-            api_base: &endpoint_url,
-            signed: &signed,
-            data: &data,
-        },
-        log,
-    )?;
+    log_pre_call(call.prompt, &endpoint_url, &signed, &data, log)?;
     Ok(PreparedRequest {
         endpoint_url,
         signed,
@@ -131,7 +129,14 @@ pub fn prepare_request(
 
 fn request_url(call: &mut ImageCall<'_>, target: &RequestTarget) -> Result<String, ImageCallError> {
     let provider = invoke_provider(call.model);
-    let model_id = take_model_id(&mut call.optional_params, provider, call.model)?;
+    let mut raw = BTreeMap::new();
+    if let Some(field) = call.optional_params.shift_remove("model_id") {
+        raw.insert(
+            "model_id".to_owned(),
+            RawValue::from_string(serde_json::to_string(&field)?)?,
+        );
+    }
+    let model_id = bedrock_model_id(&mut raw, provider, call.model)?;
     let endpoint = runtime_endpoint(RuntimeEndpointInput {
         api_base: call.api_base,
         configured_endpoint: target.endpoint.as_deref(),
@@ -165,32 +170,6 @@ fn sign_payload(
         supports_bearer_token: true,
         now: call.now,
     })?)
-}
-
-fn raw_options(params: &Params) -> Result<BTreeMap<String, Box<RawValue>>, ImageCallError> {
-    let mut raw = BTreeMap::new();
-    for (key, field) in params {
-        raw.insert(
-            key.clone(),
-            RawValue::from_string(serde_json::to_string(field)?)?,
-        );
-    }
-    Ok(raw)
-}
-
-fn take_model_id(
-    params: &mut Params,
-    provider: Option<BedrockInvokeProvider>,
-    model: &str,
-) -> Result<String, ImageCallError> {
-    let mut raw = BTreeMap::new();
-    if let Some(field) = params.shift_remove("model_id") {
-        raw.insert(
-            "model_id".to_owned(),
-            RawValue::from_string(serde_json::to_string(&field)?)?,
-        );
-    }
-    Ok(bedrock_model_id(&mut raw, provider, model)?)
 }
 
 fn build_body(call: &ImageCall<'_>) -> Result<Params, ImageCallError> {
@@ -240,31 +219,27 @@ fn guardrail_headers(params: &mut Params) -> Result<Vec<(String, String)>, Image
     Ok(headers)
 }
 
-struct PreCallRecord<'text> {
-    prompt: &'text str,
-    api_base: &'text str,
-    signed: &'text AwsSignedRequest,
-    data: &'text IndexMap<String, Json>,
-}
-
 // B249 records a masked copy of the headers, and an empty api_key never reaches a log
 fn log_pre_call(
-    record: &PreCallRecord<'_>,
+    prompt: &str,
+    api_base: &str,
+    signed: &AwsSignedRequest,
+    data: &IndexMap<String, Json>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<(), ImageCallError> {
     let mut headers = IndexMap::new();
-    for (name, value) in &record.signed.headers {
+    for (name, value) in &signed.headers {
         headers.insert(name.clone(), Json::Text(value.clone()));
     }
     pre_call(
         log.state,
         &PreCall {
-            input: Json::Text(record.prompt.to_owned()),
+            input: Json::Text(prompt.to_owned()),
             model: None,
             additional_args: AdditionalArgs {
-                api_base: Some(record.api_base.to_owned()),
+                api_base: Some(api_base.to_owned()),
                 headers: Some(headers),
-                complete_input_dict: Some(RawBody::Object(record.data.clone())),
+                complete_input_dict: Some(RawBody::Object(data.clone())),
                 request_str: None,
                 openai_sdk: None,
                 passthrough: IndexMap::new(),
