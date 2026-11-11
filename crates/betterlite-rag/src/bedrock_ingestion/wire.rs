@@ -137,7 +137,6 @@ pub struct S3DataSourceConfiguration {
 #[serde(rename_all = "camelCase")]
 pub struct CreateDataSourceRequest {
     pub client_token: String,
-    pub knowledge_base_id: String,
     pub name: String,
     pub data_source_configuration: NewDataSourceConfiguration,
 }

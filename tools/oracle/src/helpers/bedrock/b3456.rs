@@ -6,7 +6,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
-use self::harness::{Harness, answer, location_constraint, polls, request_params, take_sent};
+use self::harness::{
+    Harness, answer, data_source_params, location_constraint, polls, request_params, take_sent,
+};
 use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 
 mod harness;
@@ -27,7 +29,7 @@ pub(crate) enum Input {
     Bucket {
         cases: Vec<Bucket>,
     },
-    CreateKnowledgeBase(KnowledgeBase),
+    CreateKnowledgeBase(CreateKnowledgeBaseCase),
     CreateDataSource {
         vector: VectorStoreConfig,
         #[serde(default)]
@@ -52,7 +54,7 @@ pub(crate) struct Bucket {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct KnowledgeBase {
+pub(crate) struct CreateKnowledgeBaseCase {
     vector: VectorStoreConfig,
     #[serde(default)]
     environment: BTreeMap<String, String>,
@@ -108,7 +110,7 @@ fn bucket(runtime: &Runtime, cases: &[Bucket]) -> HelperResult {
     Ok(json!({"buckets": buckets}))
 }
 
-fn create_knowledge_base(runtime: &Runtime, case: &KnowledgeBase) -> HelperResult {
+fn create_knowledge_base(runtime: &Runtime, case: &CreateKnowledgeBaseCase) -> HelperResult {
     let id = &case.knowledge_base_id;
     let harness = Harness::build(
         &case.vector,
@@ -163,7 +165,7 @@ fn create_data_source(
     Ok(json!({
         "data_source_id": created,
         "created": state.created_resources.data_source,
-        "create_params": sent.first().map(request_params),
+        "create_params": sent.first().map(data_source_params),
     }))
 }
 

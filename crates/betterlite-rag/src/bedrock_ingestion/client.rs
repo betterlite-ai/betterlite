@@ -181,9 +181,9 @@ where
             "GetKnowledgeBase", "GET",
             knowledge_base_url(&clients.settings.aws_region_name, knowledge_base_id),
             Payload::Empty;
-        create_data_source(request: &CreateDataSourceRequest) -> CreateDataSourceResponse =>
+        create_data_source(knowledge_base_id: &str, request: &CreateDataSourceRequest) -> CreateDataSourceResponse =>
             "CreateDataSource", "PUT",
-            data_sources_url(&clients.settings.aws_region_name, &request.knowledge_base_id),
+            data_sources_url(&clients.settings.aws_region_name, knowledge_base_id),
             Payload::DataSource(request);
     }
 

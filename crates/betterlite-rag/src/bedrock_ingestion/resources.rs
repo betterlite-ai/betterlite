@@ -123,12 +123,13 @@ impl BedrockRagState {
             .ok_or(BedrockIngestionError::MissingS3Bucket)?;
         let request = data_source_request(
             &clients.settings.aws_region_name,
-            knowledge_base_id,
             kb_name,
             &bucket,
             &self.s3_prefix,
         );
-        let created = clients.create_data_source(&request).await?;
+        let created = clients
+            .create_data_source(&knowledge_base_id, &request)
+            .await?;
         let data_source_id = created.data_source.data_source_id;
         self.created_resources.data_source = Some(data_source_id.clone());
         Ok(data_source_id)
@@ -233,7 +234,6 @@ where
 
 fn data_source_request(
     region: &str,
-    knowledge_base_id: String,
     kb_name: &str,
     bucket: &str,
     prefix: &str,
@@ -241,7 +241,6 @@ fn data_source_request(
     let arn_prefix = get_aws_partition(Some(region)).arn_prefix;
     CreateDataSourceRequest {
         client_token: Uuid::new_v4().to_string(),
-        knowledge_base_id,
         name: format!("{kb_name}-s3-source"),
         data_source_configuration: NewDataSourceConfiguration {
             data_source_type: DataSourceType::S3,

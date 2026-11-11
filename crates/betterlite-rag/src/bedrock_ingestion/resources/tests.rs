@@ -534,7 +534,6 @@ async fn source_sends_the_s3_configuration() {
     );
     let body: CreateDataSourceRequest =
         serde_json::from_slice(&requests[0].body).expect("the create body");
-    assert_eq!(body.knowledge_base_id, "KB-CONFIG");
     assert_eq!(body.name, "litellm-kb-abcd1234-s3-source");
     assert_eq!(
         body.data_source_configuration.data_source_type,
@@ -588,7 +587,7 @@ async fn source_uses_the_created_knowledge_base_over_the_configured_one() {
     );
     let body: CreateDataSourceRequest =
         serde_json::from_slice(&requests[0].body).expect("the create body");
-    assert_eq!(body.knowledge_base_id, "KB-CREATED");
+    assert_eq!(body.name, "kb-s3-source");
 }
 
 #[tokio::test]

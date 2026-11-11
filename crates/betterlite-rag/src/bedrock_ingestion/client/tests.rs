@@ -107,7 +107,6 @@ fn knowledge_base_request() -> CreateKnowledgeBaseRequest {
 fn data_source_request() -> CreateDataSourceRequest {
     CreateDataSourceRequest {
         client_token: "token".to_owned(),
-        knowledge_base_id: "KB-NEW".to_owned(),
         name: "kb-s3-source".to_owned(),
         data_source_configuration: NewDataSourceConfiguration {
             data_source_type: DataSourceType::S3,
@@ -415,7 +414,7 @@ async fn client_create_data_source_sends_the_s3_body() {
         "{\"dataSource\":{\"dataSourceId\":\"DS-NEW\"}}",
     )]);
     let created = built
-        .create_data_source(&data_source_request())
+        .create_data_source("KB-NEW", &data_source_request())
         .await
         .expect("the create data source call succeeds");
     assert_eq!(created.data_source.data_source_id, "DS-NEW");

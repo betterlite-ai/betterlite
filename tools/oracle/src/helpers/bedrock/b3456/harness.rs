@@ -91,7 +91,7 @@ pub(super) fn take_sent(transport: &Transport) -> Vec<AwsSignedRequest> {
     }
 }
 
-pub(super) fn answer(body: String) -> AwsRagResponse {
+pub(super) const fn answer(body: String) -> AwsRagResponse {
     AwsRagResponse {
         status: 200,
         body: body.into_bytes(),
@@ -100,7 +100,7 @@ pub(super) fn answer(body: String) -> AwsRagResponse {
 
 fn fixed_now() -> SystemTime {
     UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_767_225_600))
+        .checked_add(Duration::from_hours(490_896))
         .unwrap_or(UNIX_EPOCH)
 }
 
@@ -139,6 +139,21 @@ pub(super) fn request_params(request: &AwsSignedRequest) -> Value {
     let mut value: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
     if let Value::Object(object) = &mut value {
         object.remove("clientToken");
+    }
+    value
+}
+
+// boto3 exposes the URI knowledgeBaseId as a named parameter, so the comparison needs it back
+pub(super) fn data_source_params(request: &AwsSignedRequest) -> Value {
+    let mut value = request_params(request);
+    let from_url = request
+        .url
+        .split("knowledgebases/")
+        .nth(1)
+        .and_then(|tail| tail.split('/').next())
+        .map(str::to_owned);
+    if let (Value::Object(object), Some(id)) = (&mut value, from_url) {
+        object.insert("knowledgeBaseId".to_owned(), Value::String(id));
     }
     value
 }
