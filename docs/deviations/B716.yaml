@@ -1,0 +1,12 @@
+task: B716
+deviations:
+  - what: >-
+      Baseline currency is verified with B701's native SchemaContract comparison instead of spawning
+      `prisma migrate diff --exit-code`. The current build's catalog is the single typed input the
+      caller supplies (a catalog read from an independently initialized database); a mismatch or an
+      absent catalog stops startup without reconciliation.
+    why: >-
+      Gateway code cannot spawn Prisma, and the packaged schema datamodel cannot be turned into a live
+      catalog without a database. Refusing an unverified or older schema is the recorded native plan,
+      so nothing is baselined on a schema this build cannot prove.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L113-L133

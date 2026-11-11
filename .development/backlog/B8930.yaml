@@ -1,0 +1,15 @@
+id: B8930
+milestone: M5 api families
+title: Optional usage cost in pass-through SSE frames
+status: todo
+depends_on: [B002, B031, B068, B192, B247, B579, B1717]
+file: tasks/B8930-passthrough-stream-cost.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+  - "litellm/__init__.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B9766
+milestone: M10 admin ui
+title: Cover memory editing and workflow timeline requests from the dashboard
+status: todo
+depends_on: [B860, B5076, B8541, B8770, B3159, B3160]
+file: tasks/B9766-dashboard-memory-workflow-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{memory,workflows}/**"
+parent: B149
+split_from: B149
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

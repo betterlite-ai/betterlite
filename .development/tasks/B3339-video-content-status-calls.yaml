@@ -130,7 +130,7 @@ out_of_scope:
   - "video_edit, avideo_edit, video_extension and avideo_extension (videos/main.py 1340-1611): B3342, the edit and extension calls."
   - "The HTTP handlers video_content_handler and async_video_content_handler (B3333) and video_status_handler and async_video_status_handler (B3337)."
   - "The @client lifecycle wrapper in litellm/utils.py around each call, owned by B012 and B157; this task only calls through it. The module-level llm_http_handler object in videos/main.py has no caller here: video_content and video_status use base_llm_http_handler from litellm.main."
-  - "Proxy routes /videos/{video_id} and /videos/{video_id}/content and their HTTP oracle cases: B3343."
+  - "Proxy routes /videos/{video_id} and /videos/{video_id}/content and their HTTP oracle cases: the status cases are B3343 and the content cases are B3344."
   - "The router factory wrappers around these functions (router.py 2126-2129): the router tasks."
 pitfalls:
   - "video_content has no mock_response branch and does not set call_type, while video_status has both; do not give them the same body."

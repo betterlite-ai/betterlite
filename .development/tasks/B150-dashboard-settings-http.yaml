@@ -1,0 +1,97 @@
+id: B150
+title: Complete settings-page HTTP acceptance with theme save and reset
+description: >-
+  Finish the missing HTTP request coverage for the retained settings pages, not a port of
+  their TypeScript. B9090 takes their globs from the pinned, hash-checked archive, B9091
+  builds it, B9092 brands the shell and B9093 serves the export. B144 owns bootstrap/login
+  and its browser harness. The route/body/consumer/owner audit is recorded in
+  .development/tasks/B150-route-audit.md. It found no implemented proxy route without an
+  owner and no on-disk HTTP case for the feature settings requests. Existing owner tasks
+  name lower-level future cases; B9770-B9776 fill the exact form-transaction gaps. The three
+  unavailable email-event requests receive stock not-found checks in B9772, not a service.
+
+  This final part adds the theme editor's authenticated save/read/reset lifecycle and runs
+  one representative accepted transaction from every split part. Theme's B1662 already
+  implements GET /get/ui_theme_settings and PATCH /update/ui_theme_settings. The retained
+  UIThemeSettings component calls fetch directly with getProxyBaseUrl and the configured
+  authentication header name, default Authorization, carrying Bearer <session key> even
+  on the public GET. There is no query on either route. The GET response supplies
+  values.logo_url,values.logo_url_dark and values.favicon_url. Save PATCHes all three keys,
+  converting empty text controls to null, and Reset PATCHes all three null. The page uses
+  PATCH success only, not an uploaded filename or an invented response data envelope.
+
+  Build B1630 transcripts on B860/B5076's separate fixture databases with
+  general_settings.store_model_in_db=true. Save three fixed public http(s) URLs, fetch
+  them with the page bearer, change only one visible URL while still submitting the full
+  three-key object, clear one input to null and finally reset all three. Include an initial
+  public environment fallback (UI_LOGO_PATH,UI_LOGO_PATH_DARK,LITELLM_FAVICON_URL) to observe
+  the source's clearing of the owned runtime values on reset. Default litellm_settings
+  ui_theme_config fields are null and those environment variables are absent. The route
+  stores strings; a test must not fetch the image URLs or demand upload behavior.
+
+  Add the form's invalid non-http URL submission and a save with storage disabled, followed
+  by the same GET so a rejected save cannot appear successful through a local UI state
+  assumption. Exercise missing authentication on PATCH, authenticated non-admin behavior
+  as B1662 actually implements it, and public versus bearer GET. The source PATCH adds no
+  proxy_admin guard, unlike /upload/logo, which the page never calls. Include a separate
+  transcript with general_settings.litellm_key_header_name=X-Oracle-Key, using the same complete
+  form body; do not send both the default and custom key as a shortcut.
+
+  Compare statuses, content-type, error type,param,code and all three displayed values.
+  Normalizations may cover only generated timestamps, never URLs or omitted/null fields.
+  Reuse the child paths listed below directly; do not copy their case bodies or register
+  their handlers again. Scope is only about 400 new theme-case lines; there is no native
+  parser, helper adapter, fixture extension or client build here. These HTTP checks prove
+  the APIs consumed by the pages. They do not claim browser navigation, paid-gate removal
+  or feature-page visual behavior; those limitations and the available B144 harness are
+  explicit in the audit rather than hidden behind a passing backend test.
+scope:
+  paths:
+    - tools/oracle/cases/ui/theme-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/ui-theme/UIThemeSettings.tsx#L29-L110
+    why: Direct authenticated fetch, all-three-field save and all-null reset bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1325-L1354
+    why: B1662's public read decorator and environment fallback projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1380-L1463
+    why: B1662's authenticated update decorator, URL validation and complete replacement.
+dod:
+  - text: The theme page's authenticated full save, partial visible edit and reset persist the three displayed values through the actual public/read and protected/write routes.
+    proof: [theme-page-cases, oracle]
+  - text: Invalid URLs, disabled storage, missing/default/custom credentials and the source's non-admin PATCH behavior match the booted proxy contract.
+    proof: [theme-page-cases, oracle]
+  - text: The final settings acceptance run includes each split page group's concrete transaction without duplicating case files or implementation ownership.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: theme-page-cases
+      why: Public bootstrap theme tests do not exercise this editor's authenticated transaction.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/theme-settings)"
+oracle_cases:
+  - tools/oracle/cases/ui/theme-settings/save-edit-clear-reset.yaml
+  - tools/oracle/cases/ui/theme-settings/environment-fallback-reset.yaml
+  - tools/oracle/cases/ui/theme-settings/invalid-url-and-storage-disabled.yaml
+  - tools/oracle/cases/ui/theme-settings/public-read-and-authenticated-write.yaml
+  - tools/oracle/cases/ui/theme-settings/custom-auth-header.yaml
+  - tools/oracle/cases/ui/identity-settings/provider-form-replacement.yaml
+  - tools/oracle/cases/ui/cache-settings/redis-save-edit-and-ping.yaml
+  - tools/oracle/cases/ui/logging-settings/spend-log-retention-and-clear.yaml
+  - tools/oracle/cases/ui/budget-tags/budget-modal-roundtrip-and-delete.yaml
+  - tools/oracle/cases/ui/passthrough-settings/create-edit-delete-generated-id.yaml
+  - tools/oracle/cases/ui/secret-settings/vault-modal-omission-and-clear-eligible-mit.yaml
+  - tools/oracle/cases/ui/tool-search-settings/test-panel-filter-headers.yaml
+deviations: []
+out_of_scope:
+  - B9090 imports every unchanged theme component/test; B9091/B9092/B9093 and B144 own build, shell branding, serving and browser foundation rather than these HTTP transactions.
+  - B1662 retains all theme functions and /upload/logo; B8387 owns image/favicon serving, which is already checked by B144's bootstrap cases.
+  - B9770 covers identity/UI settings, B9771 cache, B9772 logging/alerts, B9773 budgets/tags, B9774 pass-through, B9775 secret-manager settings and B9776 MCP/web-search settings.
+pitfalls:
+  - Sending only the changed theme field would miss the editor's complete three-key replacement.
+  - A public GET still carries the page's bearer; B144's unauthenticated bootstrap request is different coverage.
+  - The theme page does not call /upload/logo despite that route sharing the backend owner.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

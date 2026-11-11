@@ -2,8 +2,8 @@ id: B099
 milestone: M5 api families
 title: Decisions, sandboxes and SystemOne
 status: todo
-depends_on: [B3510, B3511, B3512, B3513, B3514, B3515, B3516, B3517, B3518, B3519, B014, B052, B184]
-file: null
+depends_on: [B8634, B3511, B3512, B524, B557]
+file: tasks/B099-decisions-http-parity.yaml
 covers:
   - "litellm/proxy/decisions_endpoints/**"
 parent: null

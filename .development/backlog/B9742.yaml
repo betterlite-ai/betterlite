@@ -1,0 +1,17 @@
+id: B9742
+milestone: M10 admin ui
+title: Usage, activity and export page HTTP contracts
+status: todo
+depends_on: [B9090, B9091, B9740, B9270, B9260, B5076, B8482, B8661, B8662, B815, B1604]
+file: tasks/B9742-dashboard-usage-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{usage,old-usage}/**"
+  - "ui/litellm-dashboard/src/components/{UsagePage,EntityUsageExport}/**"
+  - "ui/litellm-dashboard/src/components/{activity_metrics,per_user_usage,user_agent_activity,view_user_spend}.*"
+  - "ui/litellm-dashboard/src/components/{activity_metrics,per_user_usage,user_agent_activity}.test.*"
+parent: B147
+split_from: B147
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

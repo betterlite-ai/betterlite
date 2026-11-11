@@ -95,7 +95,7 @@ out_of_scope:
   - Access group expansion via MCPRequestHandler._get_mcp_servers_from_access_groups, owned by B4669.
   - MCP server registry management beyond registry lookups.
   - Configuration UI and settings exposure beyond the basic config model.
-  - CustomGuardrail base class implementation and callback dispatcher integration (B104 foundation).
+  - CustomGuardrail base class implementation and callback dispatcher integration (B5471 for the base class, B8666 for live class dispatch).
   - Tool name extraction from LiteLLM's lower tool_name_extraction module.
 pitfalls:
   - The end-user guardrail defaults to on (default_on=true) only when the raw guardrail dict does not explicitly set default_on to false; normalize the None case upfront to avoid confusion with Pydantic's false normalization.

@@ -9,11 +9,12 @@ description: >-
   exceeds 300 lines. B065 retains audit HTTP endpoints, not these shared functions.
 
   is_audit_logging_enabled uses its explicit non-null argument, otherwise litellm_settings.store_audit_logs
-  (default null), then LITELLM_STORE_AUDIT_LOGS, then the MIT default false. B002 resolves the
+  (default null), then LITELLM_STORE_AUDIT_LOGS, then enabled, the no-paid-tier default B065 records. B065 owns
+  enablement and delivery; this task supplies the record contracts and the policy function B065 calls. B002 resolves the
   configured secret/environment value before this service; match get_secret_bool's existing boolean
   or trimmed case-insensitive true/false conversion, with other strings yielding null. Do not add
   an import-time integer parser or invalid-value warning. Cases audit_explicit_false_wins,
-  audit_setting_over_env, audit_env_bool_and_unknown and audit_default_disabled use the production
+  audit_setting_over_env, audit_env_bool_and_unknown and audit_default_enabled use the production
   config loader and assert the consumed policy. The source premium fallback and persistence guard
   are removed only as recorded below; configuration still controls whether events are emitted.
 
@@ -38,7 +39,7 @@ description: >-
   B115's dedicated logger; other names call B188's registry factory with internal_usage_cache
   and llm_router null. reset_audit_log_callback_cache clears this cache on caller-requested reload.
   Cases audit_callback_cache_hit, audit_unresolved_not_cached, audit_s3_override_empty and
-  audit_cache_reset cover resolution. litellm_settings.audit_log_callbacks defaults []; B124
+  audit_cache_reset cover resolution. litellm_settings.audit_log_callbacks defaults []; B8872
   startup registration and its disabled-policy warning remain outside this task.
 
   Build callback payloads with ISO updated_at or empty string, table enum value/string and empty
@@ -137,7 +138,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/audit-events/mit-disabled-sink.yaml
 deviations:
   - what: Explicitly enabled audit logging dispatches callbacks and inserts rows without a license;
-      absent settings keep the MIT default disabled.
+      absent settings enable auditing, the default B065 records.
     why: README removes paid-tier checks; audit_enabled_without_license proves this outside equality cases.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L207-L245
 out_of_scope:

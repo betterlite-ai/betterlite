@@ -1,0 +1,127 @@
+id: B9750
+title: Seed guardrail measurements and discovered tools in the shared dashboard fixture
+description: >-
+  Add only the governance rows missing from the dashboard test fixture. B9740 now supplies
+  the independently hash-checked final schema and typed SpendLogs rows; B9260 supplies key
+  aliases. Reuse those extensions, not new DDL, migration execution or a second log decoder.
+  Every governance case sets database.seed.dashboard, even when its logs list is empty.
+  Implement tools/postgres-fixture/src/dashboard_governance.rs and its submodules using
+  the existing tokio-postgres, serde, secrecy and rust_decimal dependencies and B860's
+  independent-database lifecycle. No new crate, process launcher or SQL interpreter is needed.
+
+  The architect supplies the shared attachment before dispatch. FixtureSeed gets a
+  serde-defaulted dashboard_governance: Option<DashboardGovernanceSeed>; its validate
+  calls dashboard_governance::validate(governance, self) when the field is Some.
+  seed_sql::seed_database calls dashboard_governance::seed(client, governance, seed).await
+  after B9740's dashboard rows when the optional field is present. Both functions
+  return this module's DashboardGovernanceError; FixtureError gains a source-preserving
+  DashboardGovernance variant. Existing explicit
+  FixtureSeed literals set the field to None. The skeleton declares the module. Those
+  shared files are deliberately outside scope. None leaves existing fixtures unchanged;
+  Some(empty) inserts no measurement/tool rows. The existing database URL,
+  POSTGRES_TEST_URL selection, setup deadline and cleanup policy remain B860's.
+
+  B9740's schema includes GuardrailsTable, PolicyTable, PolicyAttachmentTable, ToolTable,
+  DailyGuardrailMetrics, DailyGuardrailUsageUnits, SpendLogGuardrailIndex, SpendLogToolIndex
+  and ObjectPermissionTable, including the current user/team/key columns. Assert these
+  prerequisites in the fixture integration tests but create none here. Guardrail, policy
+  and override configuration is written through real HTTP in the consuming tasks, not
+  preloaded to impersonate a successful mutation. Require dashboard: Some when governance
+  is Some, failing seed validation otherwise rather than discovering absent tables mid-test.
+
+  DashboardGovernanceSeed rejects unknown fields and contains default-empty metrics,
+  usage_units, guardrail_index, tool_index and tools lists. Metrics carries guardrail_id,date,
+  requests_evaluated,passed_count,blocked_count,flagged_count and nullable avg_score and
+  avg_latency_ms. UsageUnits carries guardrail_id,date,team_id,key_index,usage_unit,units,
+  nullable cost and untracked_units; absent key_index stores the schema's empty api_key.
+  Supply logs only through dashboard.logs, including metadata.guardrail_information with
+  guardrail_id/name/provider/mode/status/response, duration, confidence_score and risk_score,
+  and messages/response/proxy_server_request for the drawer. B9740 owns their bounds and inserts.
+  GuardrailIndex carries request_id,guardrail_id,nullable policy_id,start_time; ToolIndex
+  carries request_id,tool_name,start_time. Key aliases use finops.key_metadata, not another
+  field here. For Some(seed), populate UserTable.teams from the existing seed's
+  memberships, since submission visibility reads that array rather than TeamMembership.
+  Tool carries
+  tool_id,tool_name,origin,input_policy,output_policy,call_count,key_index,team_id,key_alias,
+  user_agent and last_used_at; omitted policies default untrusted, call_count zero and
+  optional owner fields null. Derive the stored key hash through FixtureSeed::key_hash
+  exactly once. Both gateways receive identical explicit timestamps and IDs; fill omitted
+  created/updated times with 2026-01-01T00:00:00Z. The two gateways never share a database.
+
+  Validate before provisioning: at most 128 rows in each list, strings at most 4096 bytes,
+  ids/dates at most 128 bytes. Reject negative request/pass/block/flag/unit/call counters.
+  Reject duplicate database identities, missing key_index/team references and index rows
+  naming a log absent from dashboard.logs. Guardrail ids may refer to config guardrails and policy_id is a
+  logical identifier, not a foreign key; do not impose a relationship the schema lacks.
+  Bind all values as SQL parameters. Decimal values, including scores/durations, cross into
+  pinned float columns through numeric text casts, without Rust floats. Setup errors retain
+  their cause and redact key material. A failed insert is a fixture failure and triggers
+  B860 cleanup; there is no silent upsert or production transaction guarantee.
+
+  Tests governance_schema_and_rows, governance_databases_are_independent,
+  governance_empty_and_absent and governance_seed_rejections inspect the real PostgreSQL
+  schema, inserted values and cleanup through PostgresFixture, without betterlite-db.
+  Exercise a priced and unpriced usage counter, a blocked log, finops key aliases, an unrelated key and a tool
+  with a slash in its name. Add tools/oracle/src/dashboard_governance_fixture.rs with tests
+  governance_case_seed_accepts and governance_case_seed_rejects decoding this field through
+  the existing case::decode_case(path, bytes) byte entry point. Its existing
+  http_case fuzz target already reaches FixtureSeed validation; add rejected regression
+  seeds under dashboard-governance-* and replay them, without another parser or helper.
+  This owns zero LiteLLM executable lines; roughly 300 typed seed/validation and 220
+  integration/decoder/corpus test lines fit one task.
+scope:
+  paths:
+    - tools/postgres-fixture/src/dashboard_governance.rs
+    - tools/postgres-fixture/src/dashboard_governance/**
+    - tools/oracle/src/dashboard_governance_fixture.rs
+    - tools/oracle/src/dashboard_governance_fixture/**
+    - tools/oracle/fuzz/corpus/http_case/dashboard-governance-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L180-L220
+    why: B9740 supplies the team projection and permission link used by scoped tool updates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L298-L357
+    why: User teams visibility and the shared object-permission row created by real tool requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L486-L552
+    why: B9740 supplies current key columns and B9260 owns key_alias insertion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L703-L746
+    why: B9740's existing SpendLogSeed supplies the indexed logs used by the drawer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1214-L1264
+    why: Guardrail configuration, daily metrics and billable unit table shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1285-L1305
+    why: Guardrail and tool log index identities and logical identifiers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1470-L1533
+    why: Versioned policies, attachment scopes and discovered tool records used by the pages.
+dod:
+  - text: Governance rows use B9740's pinned schema in independent databases and reject a seed without that schema selection.
+    proof: [governance-fixtures]
+  - text: Page rows preserve counters, null costs, ownership hashes and log metadata, and failed setup cleans its resources.
+    proof: [governance-fixtures]
+  - text: Real HTTP-case decoding accepts valid governance fixtures and rejects bounded malformed rows before provisioning.
+    proof: [fixture-decoding, fixture-corpus]
+checks:
+  optional: []
+  commands:
+    - id: governance-fixtures
+      why: The cases would run against an incomplete schema or share fixture writes.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/governance_schema_and_rows$/) + test(/governance_databases_are_independent$/) + test(/governance_empty_and_absent$/) + test(/governance_seed_rejections$/)' && cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
+    - id: fixture-decoding
+      why: The new seed is not reachable from the real HTTP case decoder.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/governance_case_seed_accepts$/) + test(/governance_case_seed_rejects$/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^case::/)'
+    - id: fixture-corpus
+      why: Invalid governance seeds have no committed byte-parser regressions.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/dashboard-governance-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B860 owns provisioning/cleanup, B9740 the final schema and log rows, and B9260 key aliases; the architect attaches this optional module after those row insertions.
+  - B706/B726 and the existing guardrail, policy and tool tasks own production schema/repositories; this fixture never imports them.
+  - B9751/B9752 and B148 supply booted-proxy comparisons; no FastAPI handler is called from a fixture or helper.
+pitfalls:
+  - PolicyAttachmentTable stores is_default while its HTTP record spells the field default.
+  - A usage row may identify a config guardrail by name, so validating it against only database guardrail IDs would reject a real page scenario.
+  - dashboard_governance without dashboard must fail validation; silently initializing a second schema would collide with B9740's independent history.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
