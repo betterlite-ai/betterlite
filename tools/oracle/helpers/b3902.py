@@ -296,7 +296,7 @@ def run(input_value: dict[str, Json]) -> Json:
         exporter = replace(built, handler=handler)
         result = cast(
             "object",
-            exporter.export(spans),  # pyright: ignore[reportUnknownMemberType]
+            exporter.export(spans),  # pyright: ignore[reportUnknownMemberType, reportArgumentType]
         )
     observation: dict[str, Json] = {
         "result": _result_text(result),

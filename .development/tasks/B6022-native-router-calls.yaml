@@ -30,7 +30,7 @@ references:
   - url: https://github.com/PyO3/pyo3-async-runtimes
     why: The `future_into_py` bridge, as B5659 uses it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L772-L1237
-    why: The constructor arguments that the settings text has to carry (read only; the constructor itself is B162's last part).
+    why: The constructor arguments that the settings text has to carry (read only; the constructor itself is B8356).
 dod:
   - text: A settings text builds a router, an unknown key is refused by name, and a malformed text never panics.
     proof: [router-settings]
@@ -83,7 +83,7 @@ deviations:
     why: A Python object cannot drive the Rust call; B165 handles hooks that config names.
 out_of_scope:
   - "B6020 and B6021 own the routing logic, B5659 owns `NativeSession`, `NativeChatStream` and `NativeError`, and B5078 owns the Python methods that call this bridge."
-  - "Building the settings text from `Router.__init__` arguments is B162's last part."
+  - "Building the settings text from `Router.__init__` arguments is B8356."
   - "Other call types than chat completion and anthropic_messages are plugged in by their families later."
 pitfalls:
   - "`unsafe_code = \"forbid\"` stays in Cargo.toml, so report a blocker if a PyO3 macro fails under it."

@@ -6,6 +6,7 @@ depends_on: [B8374, B051, B710, B712, B717, B1401, B4175, B4176, B4177, B8542]
 file: tasks/B8375-proxy-cli-root.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
+  - "litellm/proxy/proxy_cli.py"
 parent: B121
 split_from: B121
 resolution: null

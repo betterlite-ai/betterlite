@@ -1,0 +1,15 @@
+id: B9695
+milestone: M10 admin ui
+title: Standalone chat app requests and key rotation without the paid gate
+status: todo
+depends_on: [B9090, B9091, B860, B5076, B1644, B9740, B9270, B782, B895, B1732, B1729, B8662, B3097, B8482, B4720, B8625, B4727, B8626, B4723, B8700, B7971, B8702, B080, B060]
+file: tasks/B9695-dashboard-chat-app-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/chat/**"
+  - "ui/litellm-dashboard/src/components/chat/**"
+parent: B146
+split_from: B146
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
