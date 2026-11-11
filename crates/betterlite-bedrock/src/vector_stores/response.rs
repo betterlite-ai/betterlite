@@ -6,32 +6,12 @@ use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreResultContent, VectorStoreSearchResponse, VectorStoreSearchResult,
 };
 use indexmap::IndexMap;
-use thiserror::Error;
 
 use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput};
 use crate::vector_stores::error::{BedrockFailure, VectorStoreError};
 use crate::vector_stores::metadata::{file_id_from_metadata, filename_from_metadata, non_empty};
 
 const SEARCH_RESULTS_OBJECT: &str = "vector_store.search_results.page";
-
-#[derive(Debug, Error)]
-enum ReplyError {
-    #[error("the reply is not valid JSON")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the reply is not an object")]
-    NotObject,
-    #[error("retrievalResults is not an array")]
-    ResultsNotArray,
-    #[error("retrievalResults[{index}] is not an object")]
-    ResultNotObject { index: usize },
-    #[error("retrievalResults[{index}].content is not an object")]
-    ContentNotObject { index: usize },
-    #[error("retrievalResults[{index}].metadata is not an object")]
-    MetadataNotObject { index: usize },
-}
 
 pub fn decode_knowledge_base_reply(
     status: u16,
@@ -40,16 +20,16 @@ pub fn decode_knowledge_base_reply(
     search_query: &str,
 ) -> Result<VectorStoreSearchResponse, VectorStoreError> {
     let reply = Reply { status, headers };
-    let parsed = serde_json::from_slice::<Json>(body)
-        .map_err(|source| reply.error(&ReplyError::Json { source }))?;
+    let parsed =
+        serde_json::from_slice::<Json>(body).map_err(|source| reply.error(source.to_string()))?;
     let Json::Object(response) = parsed else {
-        return Err(reply.error(&ReplyError::NotObject));
+        return Err(reply.error("the reply is not an object".to_owned()));
     };
     let items: &[Json] = match response.get("retrievalResults") {
         None | Some(Json::Null) => &[],
         Some(Json::List(items)) => items.as_slice(),
         Some(other) if !non_empty(other) => &[],
-        Some(_) => return Err(reply.error(&ReplyError::ResultsNotArray)),
+        Some(_) => return Err(reply.error("retrievalResults is not an array".to_owned())),
     };
     let mut results = Vec::with_capacity(items.len());
     for (index, item) in items.iter().enumerate() {
@@ -71,7 +51,7 @@ fn search_result(
     item: &Json,
 ) -> Result<Option<VectorStoreSearchResult>, VectorStoreError> {
     let Json::Object(fields) = item else {
-        return Err(reply.error(&ReplyError::ResultNotObject { index }));
+        return Err(reply.error(format!("retrievalResults[{index}] is not an object")));
     };
     let Some(text) = content_text(reply, index, fields)? else {
         return Ok(None);
@@ -96,7 +76,9 @@ fn content_text<'item>(
         return Ok(None);
     }
     let Json::Object(content_fields) = content else {
-        return Err(reply.error(&ReplyError::ContentNotObject { index }));
+        return Err(reply.error(format!(
+            "retrievalResults[{index}].content is not an object"
+        )));
     };
     Ok(content_fields
         .get("text")
@@ -110,9 +92,9 @@ fn metadata_of<'item>(
 ) -> Result<Option<&'item IndexMap<String, Json>>, VectorStoreError> {
     match item.get("metadata") {
         Some(Json::Object(metadata)) => Ok(Some(metadata)),
-        Some(other) if non_empty(other) => {
-            Err(reply.error(&ReplyError::MetadataNotObject { index }))
-        }
+        Some(other) if non_empty(other) => Err(reply.error(format!(
+            "retrievalResults[{index}].metadata is not an object"
+        ))),
         None | Some(_) => Ok(None),
     }
 }
@@ -195,10 +177,10 @@ struct Reply<'headers> {
 }
 
 impl Reply<'_> {
-    fn error(&self, cause: &ReplyError) -> VectorStoreError {
+    fn error(&self, message: String) -> VectorStoreError {
         let input = ErrorInput {
             status_code: self.status,
-            message: cause.to_string(),
+            message,
             request: None,
             body: None,
             status_code_is_synthesized: false,
