@@ -16,13 +16,13 @@ description: >-
   GET /otel-spans groups spans by parent trace ID and uses 1,000,000 starting timestamp; absent exporter returns empty results.
   All handlers are live framework callbacks registered at startup through the debug router.
 
+  Nothing mounts this router in this task: B9551 mounts it and carries the HTTP oracle cases. Test the handlers here
+  by calling the router with tower's `oneshot`, with no oracle case.
+
 scope:
   paths:
     - crates/betterlite-server/src/debug_routes.rs
     - crates/betterlite-server/src/debug_routes/**
-    - tools/oracle/cases/debug/tasks/**
-    - tools/oracle/cases/debug/memory/**
-    - tools/oracle/cases/debug/spans/**
     - tools/oracle/helpers/b4174.py
     - tools/oracle/helpers/b4174/**
     - tools/oracle/src/helpers/server/b4174.rs
@@ -100,15 +100,7 @@ checks:
     - id: schema-tests
       why: Routes with include_in_schema=false are exposed in OpenAPI schema
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^debug_routes::schema::/) - test(/replays_the_/)'
-oracle_cases:
-  - tools/oracle/cases/debug/tasks/get-active-tasks.yaml
-  - tools/oracle/cases/debug/memory/memory-usage.yaml
-  - tools/oracle/cases/debug/memory/cache-counts.yaml
-  - tools/oracle/cases/debug/memory/cache-items.yaml
-  - tools/oracle/cases/debug/memory/summary.yaml
-  - tools/oracle/cases/debug/memory/details-defaults.yaml
-  - tools/oracle/cases/debug/memory/gc-configure.yaml
-  - tools/oracle/cases/debug/spans/get-otel-spans.yaml
+oracle_cases: []
 deviations:
   - what: "GET /debug/asyncio-tasks, /memory-usage (when enabled), /debug/memory/summary, /debug/memory/details, and POST /debug/memory/gc/configure return HTTP 501 with error.type=unsupported_runtime and error.code=unsupported_runtime."
     why: Native Rust runtime has no Python interpreter to query asyncio tasks, tracemalloc snapshots, GC generations, Python object counts or memory state. Return 501 instead of fabricating empty or fabricated responses.

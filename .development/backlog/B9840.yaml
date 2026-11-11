@@ -1,0 +1,14 @@
+id: B9840
+milestone: M5 api families
+title: Production result conversion and stream assembler for success logging
+status: todo
+depends_on: [B250, B252, B906, B1717, B3481, B254, B976, B580, B919, B1326, B3488]
+file: tasks/B9840-stream-log-assembly.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

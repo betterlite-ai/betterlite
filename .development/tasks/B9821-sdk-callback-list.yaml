@@ -1,0 +1,151 @@
+id: B9821
+title: Server SDK callback list and the interception callback names
+description: >-
+  In LiteLLM, `initialize_callbacks_on_proxy` (callback_utils.py L134-L416) turns three names of
+  litellm_settings.callbacks into CustomLogger objects and appends them to `litellm.callbacks`: compression_interception
+  (L153-L163), code_interpreter_interception (L165-L175) and websearch_interception (L360-L369). Every SDK call then finds
+  them there: the call wrapper's deployment hooks (B5367), the Messages pre-request hooks and web search short circuit
+  (B1118), and the agentic loops (B8294, B2415, B2419). betterlite has no such list. B8742's hooks.rs stops startup on
+  compression_interception with UnavailableAdapter, and the config load refuses the other two names outright (B8741's
+  deviation). This task builds the server-owned list, accepts the three names, and gives each one a builder slot that
+  B9822 (compression), B9823 (web search) and B9824 (code interpreter) fill. Until a builder is filled its name still
+  stops startup, naming the callback.
+
+
+  Code goes in crates/betterlite-server/src/state/sdk_callbacks.rs and state/sdk_callbacks/ (list.rs, names.rs, error.rs,
+  tests.rs, and one builder file per name: compression.rs, websearch.rs, code_interpreter.rs). The skeleton declares
+  `pub mod sdk_callbacks;` in state.rs and leaves sdk_callbacks.rs empty, since ServerState comes with B1100 and B8610.
+  Give ServerState the field `sdk_callbacks: sdk_callbacks::Slot` yourself, built with `Slot::default()` where the
+  other slots are built; touch nothing else in state.rs. Add `betterlite-sdk` and
+  `betterlite-context` (path dependencies) to crates/betterlite-server/Cargo.toml if they are not there yet. Every name
+  stays at 30 characters or fewer.
+
+
+  The entry (list.rs). LiteLLM's list holds whole objects and each caller picks the methods it needs. Rust callers each
+  declare their own seam, so an entry holds one view per seam, all pointing at the same object:
+  `SdkCallbackEntry { name: String, deployment: Option<Arc<dyn DeploymentHook>>, agentic: Option<Arc<dyn AgenticCallback>>,
+  pre_request: Option<Arc<dyn PreRequestHook>>, search: Option<Arc<dyn SearchShortCircuit>> }`. DeploymentHook is B5367's
+  trait in betterlite-sdk, AgenticCallback is B9820's in betterlite-context, and PreRequestHook and SearchShortCircuit are
+  B1118's in betterlite-core; read the merged traits and use their exact paths. `SdkCallbackList` holds the entries in
+  registration order, duplicates kept (LiteLLM's `litellm.callbacks.extend` keeps them), with `deployment_hooks()`,
+  `agentic_callbacks()`, `pre_request_hooks()` and `search_short_circuits()`, each returning the `Vec` of the views that are
+  present, in entry order, and `names()`. A view that is None is skipped, so a callback that has no deployment hook never
+  shows up in that list, the same as LiteLLM's override checks skip it.
+
+
+  The slot (sdk_callbacks.rs). `Slot` holds `std::sync::RwLock<Arc<SdkCallbackList>>`, Default an empty list.
+  `snapshot(&self) -> Arc<SdkCallbackList>` clones the Arc under a read lock and drops the lock at once, so no request
+  holds it across an await; every caller takes one snapshot per call. `replace(&self, name: &str, entry:
+  Option<SdkCallbackEntry>)` builds a new list without any entry of that name and with the new entry appended at the end,
+  then swaps it in: LiteLLM's database reload removes every WebSearchInterceptionLogger and adds the new one at the end
+  (proxy_server.py L8421-L8427), and B8383 calls this. `contains(&self, name: &str) -> bool` answers B8383's "registered"
+  check. A poisoned lock is an error, not a panic (`SdkCallbackError::Poisoned`).
+
+
+  Install. `install(&self, config: &Config, shared: &Shared) -> Result<(), RegistryError>` walks
+  `config.sections.callback_settings.callbacks` in list order. names.rs has `InterceptionName` with three variants
+  (Compression, Websearch, CodeInterpreter) and `from_name(&str) -> Option<InterceptionName>` over the literals
+  "compression_interception", "websearch_interception" and "code_interpreter_interception". A matching name calls its
+  builder through an exhaustive match: `compression::build`, `websearch::build` or `code_interpreter::build`, each
+  `pub fn build(inputs: &BuildInputs<'_>) -> Result<SdkCallbackEntry, RegistryError>` where `BuildInputs` holds
+  `config: &Config` (litellm_settings params and the top level callback_settings, LiteLLM's callback_specific_params) and
+  `shared: &Shared` (http client, router). Write the three builder bodies as `Err(RegistryError::UnavailableAdapter { name
+  })` with the callback name; B9822, B9823 and B9824 replace one body each and touch nothing else here. Any other name is
+  skipped: B8742's resolver and hooks own it. The built entries replace the list in one swap, so a failed install leaves
+  the old list. RegistryError is betterlite-logging's, the error B8742's startup path already stops on, so its message
+  "no callback adapter is installed for 'compression_interception'" names the callback.
+
+
+  Startup. In crates/betterlite-server/src/app/callbacks.rs add one line to `start(state)` (B8656's function; B8742 added
+  the init_callbacks line): `state.sdk_callbacks.install(&state.config, &state.shared)?`, right after B8742's
+  init_callbacks line and before the listener opens, since LiteLLM handles litellm_settings.callbacks in one pass at
+  config load. Touch nothing else in that file. In crates/betterlite-server/src/app/callbacks/hooks.rs remove
+  compression_interception from the names `configured()` sends to `hook_for` and remove its arm: the name now belongs to
+  this slot, and a ProxyCallback with no proxy hook would only run no-ops. Touch nothing else in hooks.rs.
+
+
+  Config. crates/betterlite-config/src/sections/callback_settings.rs refuses any name of litellm_settings.callbacks that
+  is not a CallbackName (`unavailable_paths`). Accept "websearch_interception" and "code_interpreter_interception" there,
+  and only in `callbacks`: LiteLLM's success_callback and failure_callback lists treat them as custom callback paths and
+  fail to import them, so they stay ConfigError::Unsupported in those two lists. Do not add them to CallbackName:
+  they are not in LiteLLM's custom logger literal (litellm/__init__.py L121-L177). compression_interception already is.
+
+
+  Tests. state/sdk_callbacks/tests.rs (`state::sdk_callbacks::tests`, names starting with `list_`, `slot_` or `install_`)
+  build entries from small test types that implement the four traits: views keep entry order and skip None, duplicates
+  stay, replace removes every entry of the name and appends the new one, replace with None removes them, a snapshot taken
+  before replace still sees the old list, contains follows replace; install with no interception name gives an empty
+  list, and install with each of the three names fails with UnavailableAdapter naming it and leaves the old list. A test
+  in crates/betterlite-server/src/app/callbacks/hooks/tests.rs (`app::callbacks::hooks::tests::sdk_`) checks that a config
+  with compression_interception in callbacks no longer fails `configured()`. Config tests in callback_settings/tests.rs
+  (`sections::callback_settings::tests::interception_`): both new names load in callbacks next to a known name, keep
+  their order in Settings.callbacks, and fail as unsupported in success_callback and failure_callback.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/sdk_callbacks.rs
+    - crates/betterlite-server/src/state/sdk_callbacks/**
+    - crates/betterlite-server/src/app/callbacks.rs
+    - crates/betterlite-server/src/app/callbacks/hooks.rs
+    - crates/betterlite-server/src/app/callbacks/hooks/**
+    - crates/betterlite-config/src/sections/callback_settings.rs
+    - crates/betterlite-config/src/sections/callback_settings/tests.rs
+    - docs/deviations/B8741.yaml
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L175
+    why: compression_interception and code_interpreter_interception are built before the known name check and appended in list order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L360-L369
+    why: websearch_interception is built in the proxy hook branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L397-L400
+    why: The built objects extend litellm.callbacks, duplicates kept.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6418-L6425
+    why: The callbacks key is handled at config load with litellm_settings and the top level callback_settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8409-L8430
+    why: The database reload removes every web search logger and appends the replacement, the operation replace serves.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L121-L177
+    why: compression_interception is a known logger name; the other two are not.
+dod:
+  - text: SdkCallbackList keeps registration order and duplicates, and each seam view lists only the entries that have it.
+    proof: [list-tests]
+  - text: replace removes every entry of a name and appends the new one, a snapshot taken before is unchanged, and contains follows it.
+    proof: [list-tests]
+  - text: install builds the three interception names through their builders in list order, skips every other name, and a builder that is not filled stops startup with UnavailableAdapter naming the callback.
+    proof: [list-tests]
+  - text: start installs the list after init_callbacks, and hooks.rs no longer handles compression_interception.
+    proof: [list-tests, hook-tests, start-wired]
+  - text: websearch_interception and code_interpreter_interception load in litellm_settings.callbacks and stay unsupported in success_callback and failure_callback.
+    proof: [config-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: list-tests
+      why: the list loses order or a view, replace or install misbehaves, or a name stops failing before its builder exists
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::sdk_callbacks::tests::/)'
+    - id: hook-tests
+      why: hooks.rs still sends compression_interception to hook_for, or its other hook names changed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::hooks::/)'
+    - id: start-wired
+      why: startup never installs the list
+      run: grep -Fq 'sdk_callbacks.install(' crates/betterlite-server/src/app/callbacks.rs
+    - id: config-tests
+      why: the interception names are refused in callbacks or accepted in the success and failure lists
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::callback_settings::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The three builder bodies and their HTTP cases: B9822 (compression_interception), B9823 (websearch_interception), B9824 (code_interpreter_interception)."
+  - "Handing the list to the gateway's chat, messages and responses calls: B9825. The database reload that calls replace: B8383."
+  - "The other initialize_callbacks_on_proxy names (presidio, lakera_prompt_injection, aporia_prompt_injection, detect_prompt_injection, batch_redis_requests, azure_content_safety): their guardrail and hook tasks, still ConfigError::Unsupported."
+  - "The traits the views hold: B5367 (DeploymentHook), B9820 (AgenticCallback), B1118 (PreRequestHook, SearchShortCircuit)."
+pitfalls:
+  - "Swap the whole list once install has built every entry; a partial list after a failed build would run some interceptions and not others."
+  - "Clone the Arc and release the read lock before any await; a request that holds the lock blocks B8383's reload."
+  - "Install runs after B8742's init_callbacks line, so B8742's resolver must already answer Ok(None) for all three interception names; a resolver that sends websearch_interception to the catalog fails startup as an unknown logger before this list is built."
+  - "The three builders read their params from config, never from the environment; B3543, B4116 and B4122 already parse those params from the loaded config."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
