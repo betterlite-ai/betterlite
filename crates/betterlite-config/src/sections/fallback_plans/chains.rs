@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::sections::settings::JsonValue;
 
-// one target of a fallback chain: a bare model group, or the group with the request parameters it overrides
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum FallbackTarget {
@@ -19,7 +18,7 @@ pub struct ParameterizedTarget {
     pub parameters: IndexMap<String, JsonValue>,
 }
 
-// one entry of a fallback chain: exactly one model group and its targets, or a bare target; a multi-key entry is a load error
+// LiteLLM reads the first key of a chain entry, and a bare entry is its own model group
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum FallbackChainEntry {
