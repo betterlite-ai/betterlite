@@ -11,7 +11,7 @@ use std::time::Duration;
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use betterlite_redis::request_batch::scope::active_request_redis_batch;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 use tower::{Layer as _, Service as _, service_fn};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
@@ -147,6 +147,24 @@ async fn flush_runs_when_the_response_head_returns_not_when_the_body_ends() {
     let body = to_bytes(response.into_body(), 1024);
     let stalled = timeout(Duration::from_millis(50), body).await;
     assert!(stalled.is_err(), "the response body is still streaming");
+}
+
+#[tokio::test]
+async fn flush_runs_when_the_call_is_dropped_before_the_response() {
+    let cache = unreachable_cache().await;
+    let (handler, seen) = Inner::for_test(Arc::clone(&cache), Reply::Stalled, true);
+    let mut service = RedisBatchLayer.layer(handler);
+    let stalled = timeout(Duration::from_millis(20), service.call(support::request())).await;
+    assert!(stalled.is_err(), "the inner service stayed pending");
+    let batch = take(&seen);
+    let flushed = timeout(Duration::from_secs(5), async {
+        while batch.flushes() == 0 {
+            sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await;
+    assert!(flushed.is_ok(), "the dropped call still flushes its batch");
+    assert_eq!(batch.flushes(), 1);
 }
 
 #[tokio::test]

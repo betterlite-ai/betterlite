@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::error::Error;
-use std::future::Future;
+use std::future::{Future, pending};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -157,16 +157,18 @@ pub(crate) enum Reply {
     Responded,
     Failed,
     Streaming,
+    Stalled,
 }
 
 impl Reply {
-    fn answer(self) -> Result<Response, InnerFailed> {
+    async fn answer(self) -> Result<Response, InnerFailed> {
         match self {
             Self::Responded => Ok(response()),
             Self::Failed => Err(InnerFailed),
             Self::Streaming => Ok(Response::new(Body::from_stream(stream::pending::<
                 Result<Bytes, Infallible>,
             >()))),
+            Self::Stalled => pending::<Result<Response, InnerFailed>>().await,
         }
     }
 }
@@ -217,7 +219,7 @@ impl Service<Request<Body>> for Inner {
         let seen = Arc::clone(&self.seen);
         Box::pin(async move {
             record(&cache, declare, &seen);
-            reply.answer()
+            reply.answer().await
         })
     }
 }
