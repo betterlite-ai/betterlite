@@ -152,8 +152,9 @@ fn total_cost(payload: &StandardLoggingPayload) -> Option<Json> {
     Some(number(cost))
 }
 
+// the subtraction keeps the payload's scale, and LiteLLM's float drops the trailing zeros it adds
 fn number(value: Decimal) -> Json {
-    match Number::from_str(&value.to_string()) {
+    match Number::from_str(&value.normalize().to_string()) {
         Ok(number) => Json::Number(number),
         Err(_error) => Json::Null,
     }
