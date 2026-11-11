@@ -33,20 +33,14 @@ pub(crate) struct Input {
     scenarios: Vec<Scenario>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 struct Scenario {
-    #[serde(default)]
     environment: BTreeMap<String, String>,
-    #[serde(default)]
     init: SentinelInit,
-    #[serde(default)]
     batch_size: Option<usize>,
-    #[serde(default)]
     max_queue_size: Option<usize>,
-    #[serde(default)]
     replies: Vec<Reply>,
-    #[serde(default)]
     actions: Vec<Action>,
 }
 
@@ -135,37 +129,26 @@ async fn drive(scenario: &Scenario, logs: &Logs) -> Value {
     }
     let transport = Arc::new(ScriptedTransport::new(&scenario.replies));
     let clock = Arc::new(ManualClock(Mutex::new(Duration::from_secs(START_SECONDS))));
-    let wire = Arc::clone(&transport);
-    let ticks = Arc::clone(&clock);
     let logger = AzureSentinelLogger::new(
         settings,
         SentinelDeps {
-            transport: wire,
-            clock: ticks,
+            transport: Arc::<ScriptedTransport>::clone(&transport),
+            clock: Arc::<ManualClock>::clone(&clock),
             stopped: CancellationToken::new(),
             tasks: None,
         },
     );
     transport.attach(&logger);
-    let results = run_actions(&scenario.actions, &logger, &clock).await;
-    report(&logger, &transport, &described, &results, logs)
-}
-
-async fn run_actions(
-    actions: &[Action],
-    logger: &AzureSentinelLogger,
-    clock: &ManualClock,
-) -> Vec<Value> {
-    let mut results = Vec::with_capacity(actions.len());
-    for action in actions {
-        let outcome = tokio::time::timeout(ACTION_DEADLINE, perform(action, logger, clock)).await;
+    let mut results = Vec::with_capacity(scenario.actions.len());
+    for action in &scenario.actions {
+        let outcome = tokio::time::timeout(ACTION_DEADLINE, perform(action, &logger, &clock)).await;
         results.push(match outcome {
             Ok(Ok(value)) => value,
             Ok(Err(error)) => json!({ "error": error.to_string() }),
             Err(_elapsed) => json!({ "cancelled": true }),
         });
     }
-    results
+    report(&logger, &transport, &described, &results, logs)
 }
 
 fn report(
@@ -218,8 +201,10 @@ async fn perform(
         } => {
             if *missing {
                 logger.async_log_model_event(None).await;
-            } else {
-                log_models(logger, ids, *failure, *pad).await?;
+            }
+            for id in ids {
+                let payload = records::model_payload(id, *failure, *pad)?;
+                logger.async_log_model_event(Some(&payload)).await;
             }
             Ok(Value::Null)
         }
@@ -250,17 +235,4 @@ fn advance(clock: &ManualClock, seconds: u64) {
     let mut now = clock.0.lock().unwrap_or_else(PoisonError::into_inner);
     let later = now.saturating_add(Duration::from_secs(seconds));
     *now = later;
-}
-
-async fn log_models(
-    logger: &AzureSentinelLogger,
-    ids: &[String],
-    failure: bool,
-    pad: usize,
-) -> Result<(), serde_json::Error> {
-    for id in ids {
-        let payload = records::model_payload(id, failure, pad)?;
-        logger.async_log_model_event(Some(&payload)).await;
-    }
-    Ok(())
 }

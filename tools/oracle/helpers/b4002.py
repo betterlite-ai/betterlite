@@ -4,6 +4,7 @@ import os
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from logging.handlers import BufferingHandler
 from typing import Literal, TypeAlias, TypedDict
 
 import httpx
@@ -12,7 +13,6 @@ from litellm.integrations.azure_sentinel.azure_sentinel import AzureSentinelLogg
 from litellm.llms.custom_httpx.http_handler import MaskedHTTPStatusError
 from litellm.types.utils import StandardAuditLogPayload
 from pydantic import TypeAdapter
-from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
@@ -81,19 +81,6 @@ class _Clock:
 
     def __call__(self) -> float:
         return self.now
-
-
-class _Capture(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.counts = {name: 0 for _, name in EVENTS}
-
-    @override
-    def emit(self, record: logging.LogRecord) -> None:
-        message = record.getMessage()
-        for fragment, name in EVENTS:
-            if fragment in message:
-                self.counts[name] += 1
 
 
 def _model_payload(identifier: str, *, failure: bool, pad: int | None) -> Object:
@@ -224,7 +211,7 @@ async def _perform(action: Action, logger: AzureSentinelLogger, clock: _Clock) -
             return None
 
 
-async def _run_logger(scenario: Scenario, clock: _Clock, capture: _Capture) -> Json:
+async def _run_logger(scenario: Scenario, clock: _Clock, capture: BufferingHandler) -> Json:
     try:
         logger = AzureSentinelLogger(**scenario.init)
     except ValueError as error:
@@ -253,7 +240,8 @@ async def _run_logger(scenario: Scenario, clock: _Clock, capture: _Capture) -> J
             results.append(await _perform(action, logger, clock))
         except asyncio.CancelledError:
             results.append({"cancelled": True})
-    logs: Object = dict(capture.counts)
+    messages = [record.getMessage() for record in capture.buffer]
+    logs: Object = {name: sum(part in text for text in messages) for part, name in EVENTS}
     model_queue: list[Json] = [record["id"] for record in logger.log_queue]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
     return {
         "initialized": True,
@@ -272,7 +260,7 @@ async def _run_logger(scenario: Scenario, clock: _Clock, capture: _Capture) -> J
 
 async def _run_scenario(scenario: Scenario) -> Json:
     clock = _Clock()
-    capture = _Capture()
+    capture = BufferingHandler(capacity=100_000)
     saved_environment = dict(os.environ)
     saved_time = time.time
     saved_level = verbose_logger.level
