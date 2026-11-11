@@ -437,6 +437,18 @@ fn potential_names_case() {
 
     let vertex = names(&fixture, "vertex-model", None);
     assert_eq!(vertex.custom_llm_provider.as_deref(), Some("vertex_ai"));
+
+    let routed = Fixture::new(
+        r#"{
+            "fallback_generalizations": {"rules": [
+                {"pattern": "^brand-new-", "model_info": {"litellm_provider": "anthropic"}}
+            ]}
+        }"#,
+    );
+    let brand_new = names(&routed, "brand-new-model-7", None);
+    assert_eq!(brand_new.custom_llm_provider.as_deref(), Some("anthropic"));
+    assert_eq!(brand_new.split_model, "brand-new-model-7");
+    assert_eq!(brand_new.provider_prefixed_model_name, "brand-new-model-7");
 }
 
 fn explicit_potential_names_case() {
