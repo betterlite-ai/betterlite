@@ -5,7 +5,7 @@ call:
     increment_propagates_redis_error:
       clock: 1000.0
       key: counter
-      value: 2
+      value: 2.0
 env: {}
 compare:
   ignore: []

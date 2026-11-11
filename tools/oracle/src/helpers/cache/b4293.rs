@@ -10,7 +10,9 @@ impl Helper for Op {
     type Input = input::Call;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        // the sync cache calls block their thread, so the fake Redis needs a worker of its own
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
             .enable_all()
             .build()
             .or_value_error()?;

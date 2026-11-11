@@ -48,6 +48,7 @@ pub(crate) fn settings_for_tests(default_in_memory_ttl: Option<f64>) -> DualCach
         default_redis_ttl: None,
         batch_cache_expiry: None,
         max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
     }
 }
 

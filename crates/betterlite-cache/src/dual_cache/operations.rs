@@ -11,8 +11,8 @@ use num_traits::ToPrimitive as _;
 use super::limited_size::LimitedSizeOrderedDict;
 use super::{
     CacheOptions, DEFAULT_BATCH_CACHE_EXPIRY, DEFAULT_MAX_SIZE_IN_MEMORY, Deferred, DualCache,
-    DualCacheError, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, MemoryMaxSize, increments,
-    lock_read, lock_write, logged, reads, value, writes,
+    DualCacheError, DualCacheSettings, MemoryMaxSize, increments, lock_read, lock_write, logged,
+    reads, value, writes,
 };
 use crate::backend::memory::MemoryCacheOps;
 use crate::types::pipeline::RedisPipelineIncrement;
@@ -33,6 +33,7 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
             redis_batch_cache_expiry: settings
                 .batch_cache_expiry
                 .unwrap_or(DEFAULT_BATCH_CACHE_EXPIRY),
+            redis_delete_chunk_size: settings.redis_delete_chunk_size,
             default_in_memory_ttl: RwLock::new(settings.default_in_memory_ttl),
             default_redis_ttl: RwLock::new(settings.default_redis_ttl),
         }
@@ -212,7 +213,7 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
             self.in_memory_cache.delete_cache(key)?;
         }
         if let Some(redis) = self.redis() {
-            for chunk in keys.chunks(MAX_REDIS_BATCH_CACHE_SIZE) {
+            for chunk in keys.chunks(self.redis_delete_chunk_size) {
                 redis.admin.delete_cache_keys(chunk).await?;
             }
         }

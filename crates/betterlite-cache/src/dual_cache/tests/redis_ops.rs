@@ -18,7 +18,7 @@ fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn attach_redis_cache_keeps_the_first_tier() {
     let server = FakeRedis::start().await;
     let first = connect_cache(server.addr).await;
@@ -34,7 +34,7 @@ async fn attach_redis_cache_keeps_the_first_tier() {
     assert_eq!(*lock_read(&cache.default_redis_ttl), Some(5.0_f64));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn get_cache_falls_back_to_redis_and_backfills_memory() {
     let server = FakeRedis::start().await;
     server.script("GET", vec![Reply::Bulk("from-redis".to_owned())]);
@@ -52,7 +52,7 @@ async fn get_cache_falls_back_to_redis_and_backfills_memory() {
     assert_eq!(server.commands("GET").len(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_get_cache_returns_none_when_the_batch_marked_the_key_missing() {
     let server = FakeRedis::start().await;
     server.script("GET", vec![Reply::Bulk("from-redis".to_owned())]);
@@ -72,7 +72,7 @@ async fn async_get_cache_returns_none_when_the_batch_marked_the_key_missing() {
     assert!(server.commands("GET").is_empty());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn set_cache_writes_the_resolved_ttl_to_redis() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -86,7 +86,7 @@ async fn set_cache_writes_the_resolved_ttl_to_redis() {
     assert_eq!(sets[0].args, vec!["SET", "key", "\"value\"", "EX", "30"]);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn set_cache_with_local_only_writes_memory_alone() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -99,7 +99,7 @@ async fn set_cache_with_local_only_writes_memory_alone() {
     assert_eq!(cache.get_cache("key", true), Some(text("value")));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_set_cache_pipeline_applies_one_ttl_to_every_entry() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -130,7 +130,7 @@ async fn async_set_cache_pipeline_applies_one_ttl_to_every_entry() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_set_cache_pipeline_swallows_a_redis_error() {
     let server = FakeRedis::start().await;
     server.script(
@@ -153,7 +153,7 @@ async fn async_set_cache_pipeline_swallows_a_redis_error() {
     assert_eq!(cache.get_cache("second", true), Some(text("two")));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_delete_cache_keys_chunks_the_redis_deletes() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -184,7 +184,7 @@ async fn async_delete_cache_keys_chunks_the_redis_deletes() {
     assert!(keys.iter().all(|key| cache.get_cache(key, true).is_none()));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn increment_cache_propagates_the_redis_error() {
     let server = FakeRedis::start().await;
     server.script("INCRBY", vec![Reply::Error("ERR boom")]);
@@ -205,7 +205,7 @@ async fn increment_cache_propagates_the_redis_error() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn increment_cache_rejects_a_fractional_increment_for_redis() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -225,7 +225,7 @@ async fn increment_cache_rejects_a_fractional_increment_for_redis() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_increment_cache_falls_back_on_the_redis_error() {
     let server = FakeRedis::start().await;
     server.script("INCRBYFLOAT", vec![Reply::Error("ERR boom")]);
@@ -242,7 +242,7 @@ async fn async_increment_cache_falls_back_on_the_redis_error() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_set_cache_pre_call_returns_the_batch_inside_a_request_scope() {
     let server = FakeRedis::start().await;
     let redis = connect_cache(server.addr).await;
@@ -266,7 +266,7 @@ async fn async_set_cache_pre_call_returns_the_batch_inside_a_request_scope() {
     assert_eq!(cache.get_cache("key", true), Some(text("value")));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_delete_cache_pre_call_defers_the_redis_delete() {
     let server = FakeRedis::start().await;
     let redis = connect_cache(server.addr).await;
@@ -291,7 +291,7 @@ async fn async_delete_cache_pre_call_defers_the_redis_delete() {
     assert_eq!(deletes[0].args, vec!["DEL", "key"]);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_increment_cache_post_call_queues_the_post_call_increment() {
     let server = FakeRedis::start().await;
     let redis = connect_cache(server.addr).await;
@@ -315,7 +315,7 @@ async fn async_increment_cache_post_call_queues_the_post_call_increment() {
     assert_eq!(increments[0].args.get(1).map(String::as_str), Some("key"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_set_cache_sadd_writes_memory_and_redis() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -340,7 +340,7 @@ async fn async_set_cache_sadd_writes_memory_and_redis() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn flush_and_delete_reach_the_redis_tier() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -355,7 +355,7 @@ async fn flush_and_delete_reach_the_redis_tier() {
     assert_eq!(server.commands("FLUSHALL").len(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_delete_cache_reaches_the_redis_tier() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
@@ -369,7 +369,7 @@ async fn async_delete_cache_reaches_the_redis_tier() {
     assert_eq!(cache.get_cache("key", true), None);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn async_get_ttl_falls_back_to_redis_on_a_memory_miss() {
     let server = FakeRedis::start().await;
     server.script("TTL", vec![Reply::Integer(42)]);
@@ -384,7 +384,7 @@ async fn async_get_ttl_falls_back_to_redis_on_a_memory_miss() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipeline_increment_post_call_queues_every_increment() {
     let server = FakeRedis::start().await;
     let redis = connect_cache(server.addr).await;

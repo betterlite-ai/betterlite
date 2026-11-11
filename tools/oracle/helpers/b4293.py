@@ -43,6 +43,7 @@ class Fields(TypedDict, total=False):
     default_in_memory_ttl: float | None
     entries: list[Entry]
     key_count: int
+    environment: dict[str, str]
 
 
 class FakeCommands:

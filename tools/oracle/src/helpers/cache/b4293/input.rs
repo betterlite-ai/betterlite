@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
@@ -19,6 +21,8 @@ pub(crate) struct Fields {
     pub(crate) entries: Vec<Entry>,
     #[serde(default)]
     pub(crate) key_count: usize,
+    #[serde(default)]
+    pub(crate) environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]

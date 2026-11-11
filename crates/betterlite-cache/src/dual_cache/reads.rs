@@ -19,7 +19,7 @@ where
     }
 }
 
-// LiteLLM's _backfill_kwargs: a Redis hit lands in memory with the configured memory ttl
+// LiteLLM's _backfill_kwargs: a Redis hit lands in memory with the configured memory ttl, a null is a miss
 pub(super) fn backfill<Memory>(
     cache: &DualCache<Memory>,
     key: &str,
@@ -28,10 +28,13 @@ pub(super) fn backfill<Memory>(
 where
     Memory: MemoryCacheOps,
 {
+    if hit == CachedValue::Null {
+        return None;
+    }
     let json = value::json_from_cached(hit);
-    let stored = value::cache_from_json(&json).ok()?;
     let ttl = *lock_read(&cache.default_in_memory_ttl);
-    let written = cache.in_memory_cache.set_cache(key, stored, ttl);
-    logged(written, "LiteLLM Cache: exception in get_cache")?;
+    let written = value::cache_from_json(&json)
+        .and_then(|stored| Ok(cache.in_memory_cache.set_cache(key, stored, ttl)?));
+    logged(written, "LiteLLM Cache: exception in get_cache");
     Some(json)
 }

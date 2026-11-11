@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -6,8 +7,9 @@ use serde_json::Number;
 use super::support::{ResizableMemory, local_memory};
 use crate::dual_cache::limited_size::LimitedSizeOrderedDict;
 use crate::dual_cache::{
-    CacheOptions, DEFAULT_BATCH_CACHE_EXPIRY, DEFAULT_MAX_SIZE_IN_MEMORY, DualCache,
-    DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, lock_read, lock_write,
+    BATCH_CACHE_SIZE_VARIABLE, CacheOptions, DEFAULT_BATCH_CACHE_EXPIRY,
+    DEFAULT_MAX_SIZE_IN_MEMORY, DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE,
+    lock_read, lock_write,
 };
 use crate::types::pipeline::RedisPipelineIncrement;
 
@@ -32,6 +34,7 @@ fn settings(default_in_memory_ttl: Option<f64>) -> DualCacheSettings {
         default_redis_ttl: None,
         batch_cache_expiry: None,
         max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
     }
 }
 
@@ -79,14 +82,10 @@ fn constructor_resolves_the_defaults() {
         DEFAULT_BATCH_CACHE_EXPIRY.to_bits()
     );
     assert_eq!(
-        cache
-            .last_redis_batch_access_time
-            .lock()
-            .unwrap()
-            .entries
-            .len(),
+        cache.last_redis_batch_access_time.lock().unwrap().max_size,
         MAX_REDIS_BATCH_CACHE_SIZE
     );
+    assert_eq!(cache.redis_delete_chunk_size, MAX_REDIS_BATCH_CACHE_SIZE);
     assert_eq!(*lock_read(&cache.default_in_memory_ttl), None);
     assert_eq!(*lock_read(&cache.default_redis_ttl), None);
 }
@@ -101,20 +100,46 @@ fn constructor_keeps_every_explicit_setting() {
             default_redis_ttl: Some(7.0_f64),
             batch_cache_expiry: Some(0.5_f64),
             max_redis_batch_cache_size: 3,
+            redis_delete_chunk_size: 4,
         },
     );
     assert_eq!(cache.redis_batch_cache_expiry.to_bits(), 0.5_f64.to_bits());
     assert_eq!(
-        cache
-            .last_redis_batch_access_time
-            .lock()
-            .unwrap()
-            .entries
-            .len(),
-        0
+        cache.last_redis_batch_access_time.lock().unwrap().max_size,
+        3
     );
+    assert_eq!(cache.redis_delete_chunk_size, 4);
     assert_eq!(*lock_read(&cache.default_in_memory_ttl), Some(5.0_f64));
     assert_eq!(*lock_read(&cache.default_redis_ttl), Some(7.0_f64));
+}
+
+fn sizes_for(value: Option<&str>) -> (usize, usize) {
+    let environment: BTreeMap<String, String> = value
+        .map(|text| (BATCH_CACHE_SIZE_VARIABLE.to_owned(), text.to_owned()))
+        .into_iter()
+        .collect();
+    let resolved = DualCacheSettings::from_environment(&environment);
+    (
+        resolved.max_redis_batch_cache_size,
+        resolved.redis_delete_chunk_size,
+    )
+}
+
+#[test]
+fn settings_from_environment_read_the_batch_size_variable() {
+    assert_eq!(sizes_for(Some("500")), (500, 500));
+    assert_eq!(sizes_for(Some(" 7 ")), (7, 7));
+    assert_eq!(sizes_for(Some("1")), (1, 1));
+}
+
+#[test]
+fn settings_from_environment_keep_the_default_for_an_unset_empty_or_unusable_value() {
+    let default = (MAX_REDIS_BATCH_CACHE_SIZE, MAX_REDIS_BATCH_CACHE_SIZE);
+    assert_eq!(sizes_for(None), default);
+    assert_eq!(sizes_for(Some("")), default);
+    assert_eq!(sizes_for(Some("many")), default);
+    assert_eq!(sizes_for(Some("0")), default);
+    assert_eq!(sizes_for(Some("-3")), default);
 }
 
 #[test]

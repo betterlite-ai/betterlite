@@ -2,9 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
-use betterlite_cache::dual_cache::{
-    CacheOptions, DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE,
-};
+use betterlite_cache::dual_cache::{CacheOptions, DualCache, DualCacheSettings};
 use betterlite_models::decisions::Json;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::request_batch::scope::{
@@ -40,9 +38,7 @@ impl Scenario {
         let memory = LocalMemoryOps::new(1024, Arc::new(move || clock)).or_value_error()?;
         let settings = DualCacheSettings {
             default_in_memory_ttl: call.default_in_memory_ttl,
-            default_redis_ttl: None,
-            batch_cache_expiry: None,
-            max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+            ..DualCacheSettings::from_environment(&call.environment)
         };
         let cache = DualCache::new(Arc::new(memory), Some(Arc::clone(&redis)), settings);
         Ok(Self {

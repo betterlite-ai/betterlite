@@ -11,6 +11,8 @@ mod tests;
 use std::fmt::Display;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use betterlite_config::env_integer::get_env_int_in_range;
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::error::RedisCacheError;
@@ -23,8 +25,9 @@ use self::limited_size::LimitedSizeOrderedDict;
 use crate::backend::BackendError;
 use crate::backend::memory::MemoryCacheOps;
 
-// litellm.constants.DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE
+// litellm.constants.DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE, which the variable of the same name overrides
 pub const MAX_REDIS_BATCH_CACHE_SIZE: usize = 1000;
+pub const BATCH_CACHE_SIZE_VARIABLE: &str = "DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE";
 // DualCache.__init__'s fallback when litellm.default_redis_batch_cache_expiry is unset
 pub const DEFAULT_BATCH_CACHE_EXPIRY: f64 = 10.0;
 // litellm.caching.in_memory_cache.DEFAULT_MAX_SIZE_IN_MEMORY
@@ -60,6 +63,32 @@ pub struct DualCacheSettings {
     pub default_redis_ttl: Option<f64>,
     pub batch_cache_expiry: Option<f64>,
     pub max_redis_batch_cache_size: usize,
+    pub redis_delete_chunk_size: usize,
+}
+
+impl DualCacheSettings {
+    // LiteLLM reads the variable once into the constant that sizes both the access-time dict and the delete chunks
+    pub fn from_environment<Lookup>(lookup: &Lookup) -> Self
+    where
+        Lookup: EnvironmentLookup,
+    {
+        let default = i64::try_from(MAX_REDIS_BATCH_CACHE_SIZE).unwrap_or(i64::MAX);
+        let parsed = get_env_int_in_range(
+            BATCH_CACHE_SIZE_VARIABLE,
+            lookup.lookup(BATCH_CACHE_SIZE_VARIABLE).as_deref(),
+            default,
+            1,
+            i64::MAX,
+        );
+        let size = usize::try_from(parsed).unwrap_or(MAX_REDIS_BATCH_CACHE_SIZE);
+        Self {
+            default_in_memory_ttl: None,
+            default_redis_ttl: None,
+            batch_cache_expiry: None,
+            max_redis_batch_cache_size: size,
+            redis_delete_chunk_size: size,
+        }
+    }
 }
 
 impl Default for DualCacheSettings {
@@ -69,6 +98,7 @@ impl Default for DualCacheSettings {
             default_redis_ttl: None,
             batch_cache_expiry: None,
             max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+            redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
         }
     }
 }
@@ -90,6 +120,7 @@ pub struct DualCache<Memory: MemoryCacheOps> {
     pub redis_cache: RwLock<Option<Arc<RedisCache>>>,
     pub last_redis_batch_access_time: Mutex<LimitedSizeOrderedDict<f64>>,
     pub redis_batch_cache_expiry: f64,
+    pub redis_delete_chunk_size: usize,
     pub default_in_memory_ttl: RwLock<Option<f64>>,
     pub default_redis_ttl: RwLock<Option<f64>>,
 }
