@@ -73,18 +73,29 @@ repos:
         entry: zizmor --offline
         language: system
         files: ^\.github/(workflows/[^/]+|actions/[^/]+/action)\.ya?ml$
-      - id: ruff-helpers
-        name: ruff on the oracle Python helpers
-        entry: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers
+      # a file in python-legacy.txt gets only the checks it had before mypy and the Python rules, until a cleanup task fixes it
+      - id: ruff
+        name: ruff
+        entry: bash .development/hooks/python.sh ruff
         language: system
-        files: ^tools/oracle/helpers/.*\.py$
-        pass_filenames: false
+        types: [python]
+      - id: python-rules
+        name: Python rules, upstream links on suppressions, file size
+        entry: bash .development/hooks/python.sh rules
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy strict
+        entry: bash .development/hooks/python.sh mypy
+        language: system
+        types: [python]
+        require_serial: true
       - id: basedpyright-helpers
-        name: basedpyright on the oracle Python helpers
-        entry: uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+        name: basedpyright on the legacy oracle helpers
+        entry: bash .development/hooks/python.sh pyright
         language: system
         files: ^tools/oracle/helpers/.*\.py$
-        pass_filenames: false
+        require_serial: true
       - id: clippy
         name: cargo clippy
         entry: cargo clippy --workspace --all-targets --locked -- -D warnings

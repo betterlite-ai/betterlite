@@ -1,0 +1,18 @@
+id: no-isinstance
+language: python
+severity: error
+message: a runtime type check means the value had no real type; validate input once at the edge with pydantic's TypeAdapter into a TypedDict or model, match a real union with class patterns, and catch an exception by its class in its own except clause
+rule:
+  any:
+    - kind: call
+      has:
+        field: function
+        kind: identifier
+        regex: ^(isinstance|issubclass)$
+    - kind: comparison_operator
+      has:
+        kind: call
+        has:
+          field: function
+          kind: identifier
+          regex: ^type$

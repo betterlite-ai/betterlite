@@ -129,11 +129,22 @@ base:
         if [ -z "$packages" ]; then echo "no package owns the corpus in $dirs"; exit 1; fi
         cargo nextest run --locked --no-tests=warn $packages -E 'test(/replays_the_/)'
     - id: hooks
-      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright is left to CI, since it was most of this check's time and failed once in 185 runs
+      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt, ruff, mypy and the Python rules) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright is left to CI, since it was most of this check's time and failed once in 185 runs
       run: |-
-        config=(.pre-commit-config.yaml sgconfig.yml .ast-grep rust-toolchain.toml .development/checks.yaml typos.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/ruff.toml tools/oracle/litellm/pyproject.toml tools/oracle/litellm/uv.lock)
+        config=(.pre-commit-config.yaml sgconfig.yml .ast-grep .development/hooks rust-toolchain.toml .development/checks.yaml typos.toml ruff.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/litellm/pyproject.toml tools/oracle/litellm/uv.lock)
         if [ "$GITHUB_ACTIONS" != true ]; then export SKIP=basedpyright-helpers; fi
         if git diff --quiet "$GATE_BASE" HEAD -- "${config[@]}"; then prek run --from-ref "$GATE_BASE" --to-ref HEAD; else prek run --all-files; fi
+    - id: python-legacy
+      why: python-legacy.txt, the Python files that still wait for mypy and the Python rules, only shrinks and names files that exist, and a file that leaves it passes the checks it waited for
+      run: |-
+        if ! git cat-file -e "$GATE_BASE:python-legacy.txt" 2>/dev/null; then echo "the base has no legacy list yet"; exit 0; fi
+        changes=$(git diff -U0 "$GATE_BASE" HEAD -- python-legacy.txt)
+        if grep -q '^+[^+]' <<< "$changes"; then grep '^+[^+]' <<< "$changes"; echo "a file joined python-legacy.txt; fix the file instead" >&2; exit 1; fi
+        missing=$(while read -r file; do [ -e "$file" ] || echo "$file"; done < python-legacy.txt)
+        if [ -n "$missing" ]; then echo "$missing"; echo "python-legacy.txt names files that don't exist; take them off" >&2; exit 1; fi
+        mapfile -t left < <(grep '^-[^-]' <<< "$changes" | cut -c2- | while read -r file; do [ -e "$file" ] && echo "$file"; done)
+        if [ ${#left[@]} -eq 0 ]; then echo "no file left the list"; exit 0; fi
+        bash .development/hooks/python.sh ruff "${left[@]}" && bash .development/hooks/python.sh rules "${left[@]}" && bash .development/hooks/python.sh mypy "${left[@]}"
     - id: similarity
       why: no two functions are near copies of each other, on this machine in the crates the change edits and in CI across crates and tools
       run: |-

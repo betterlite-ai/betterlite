@@ -1,0 +1,18 @@
+id: no-docstrings
+language: python
+severity: error
+message: the repository keeps no docstrings; a name and its types say what a function does, and a constraint the code can't show gets one comment line
+rule:
+  kind: expression_statement
+  nthChild: 1
+  has:
+    kind: string
+    nthChild: 1
+  inside:
+    any:
+      - kind: module
+      - kind: block
+        inside:
+          any:
+            - kind: function_definition
+            - kind: class_definition
