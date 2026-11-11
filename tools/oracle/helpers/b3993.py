@@ -1,10 +1,10 @@
 import asyncio
-import importlib
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from functools import partial
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
+import botocore.auth  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L33
 import httpx
 from litellm.integrations.adaptive_concurrency import AdaptiveConcurrencyLimiter, PutSample
 from litellm.integrations.s3_v2 import S3Logger
@@ -123,8 +123,7 @@ def frozen_datetime(epoch: int) -> datetime:
 
 
 def freeze_auth_clock(epoch: int) -> None:
-    auth = importlib.import_module("botocore.auth")
-    auth.get_current_datetime = partial(frozen_datetime, epoch)  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/integration/providers/test_s3_wire.py#L44
+    botocore.auth.get_current_datetime = partial(frozen_datetime, epoch)  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L33
 
 
 def build_logger(
