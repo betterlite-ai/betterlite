@@ -1,0 +1,16 @@
+id: no-match-wildcard
+language: python
+severity: error
+message: a match on classes names every class of the union, so mypy proves it exhaustive; a case _ arm turns it back into an isinstance check
+rule:
+  kind: match_statement
+  all:
+    - has:
+        stopBy: end
+        kind: class_pattern
+    - has:
+        stopBy: end
+        kind: case_clause
+        has:
+          kind: case_pattern
+          regex: ^_$

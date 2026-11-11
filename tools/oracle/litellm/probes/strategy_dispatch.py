@@ -13,7 +13,7 @@ from pydantic import Field
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
-from probes.single_candidate import Deployment  # noqa: TC001 - pydantic builds the model from it at import
+from probes.single_candidate import Deployment
 
 if TYPE_CHECKING:
     from litellm.types.litellm_params import RoutingStrategyName
