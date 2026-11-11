@@ -149,11 +149,19 @@ pub(super) fn project_entry(
     model: &str,
     provider: Option<&str>,
 ) -> Result<Box<RawValue>, StaticFailure> {
-    project(
-        &matched.key,
-        model,
-        provider.unwrap_or_default(),
-        &matched.entry,
-    )
-    .map_err(StaticFailure::from)
+    let Some(requested) = provider else {
+        // B2218's project takes a text fallback; LiteLLM keeps null when no provider was requested
+        let entry = without_provider(matched)?;
+        return project(&matched.key, model, "", &entry).map_err(StaticFailure::from);
+    };
+    project(&matched.key, model, requested, &matched.entry).map_err(StaticFailure::from)
+}
+
+fn without_provider(matched: &MatchedEntry) -> Result<Box<RawValue>, StaticFailure> {
+    let mut fields: BTreeMap<String, Box<RawValue>> = serde_json::from_str(matched.entry.get())?;
+    if !fields.contains_key(PROVIDER_KEY) {
+        let null = RawValue::from_string(String::from("null"))?;
+        fields.insert(PROVIDER_KEY.to_owned(), null);
+    }
+    to_raw_value(&fields).map_err(StaticFailure::from)
 }

@@ -19,6 +19,7 @@ call:
       - {model: claude-future, custom_llm_provider: anthropic}
       - {model: mystery-model-2024-01-01}
       - {model: empty-rule, custom_llm_provider: acme}
+      - {model: empty-rule}
       - {model: blocked-prefix, custom_llm_provider: anthropic}
 env: {}
 compare: {ignore: []}

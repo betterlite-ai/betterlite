@@ -195,6 +195,21 @@ fn request<'request>(
     }
 }
 
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[error("no Hugging Face config transport is configured")]
+struct NoConfig;
+
+impl ModelInfoClient for NoConfig {
+    type Error = Self;
+
+    fn get(
+        &self,
+        _request: &ModelInfoRequest,
+    ) -> impl Future<Output = Result<FetchResponse, Self::Error>> + Send {
+        ready(Err(Self))
+    }
+}
+
 async fn resolve<Source>(
     fixture: &Fixture,
     model: &str,
@@ -205,7 +220,10 @@ where
     Source: DynamicMetadataSource,
 {
     let environment = Environment::new(fixture);
-    let hf = HfConfigClient::unreachable();
+    let hf = HfConfigClient {
+        client: NoConfig,
+        base_url: String::new(),
+    };
     let mut keys = ModelCostKeys::default();
     let answer = get_model_info_helper(
         &request(model, provider),
@@ -541,6 +559,15 @@ async fn ordered_exact_lookup_case() {
     candidate_order_case(&fixture).await;
     provider_match_case(&fixture).await;
     exact_before_generalization_case().await;
+    providerless_entry_case().await;
+}
+
+async fn providerless_entry_case() {
+    let fixture = Fixture::new(r#"{"bare-entry": {"mode": "chat"}}"#);
+    let bare = resolve(&fixture, "bare-entry", None, &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(raw_field(&bare, "litellm_provider"), "null");
 }
 
 fn ordered_fixture() -> Fixture {
@@ -737,6 +764,11 @@ async fn generalization_rules_case(fixture: &Fixture) {
         .unwrap();
     assert_eq!(string_field(&empty, "litellm_provider"), "acme");
     assert_eq!(raw_field(&empty, "max_tokens"), "null");
+
+    let providerless = resolve(fixture, "empty-rule", None, &NeverDynamic)
+        .await
+        .unwrap();
+    assert_eq!(raw_field(&providerless, "litellm_provider"), "null");
 }
 
 async fn generalization_blocked_case(fixture: &Fixture) {
@@ -921,6 +953,7 @@ fn decode_rejects_wrong_shaped_configs() {
             .is_some()
     );
     assert!(decode_hf_model_config(b"[]").err().is_some());
+    assert!(decode_hf_model_config(b"[4096]").err().is_some());
     assert!(decode_hf_model_config(b"").err().is_some());
 }
 

@@ -19,7 +19,7 @@ use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
-use fixture::{FixtureContext, NORMALIZERS};
+use fixture::{FixtureContext, FixtureError, NORMALIZERS};
 use input::{Input, Query, Scenario};
 use transport::{ScriptedDynamic, ScriptedHf};
 
@@ -29,7 +29,7 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let context = FixtureContext::load(&input.fixture).map_err(failure)?;
+        let context = FixtureContext::load(&input.fixture).map_err(|error| failure(&error))?;
         let observations = input
             .queries
             .iter()
@@ -39,14 +39,14 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn failure(message: String) -> Box<HelperError> {
+fn failure(error: &FixtureError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "FixtureError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message,
+        message: error.to_string(),
     })
 }
 
@@ -82,7 +82,7 @@ fn observe_metadata(context: &FixtureContext, query: &Query) -> Result<Value, Bo
         api_base: query.api_base.as_deref(),
         api_key: api_key.as_ref(),
     };
-    let generalizations = context.generalizations().map_err(failure)?;
+    let generalizations = context.generalizations().map_err(|error| failure(&error))?;
     let resolution = context.resolution();
     let environment = MetadataEnvironment {
         model_cost: &context.map.entries,
@@ -111,9 +111,13 @@ fn observation(
     hf: &ScriptedHf,
 ) -> Value {
     answer.map_or_else(
-        |_| {
+        |error| {
             json!({
-                "raised": true,
+                "raised": match &error {
+                    ModelMetadataError::NotMapped { .. } => "not_mapped",
+                    ModelMetadataError::Failed { .. } => "failed",
+                },
+                "message": error.to_string(),
                 "dynamic_calls": dynamic.calls(),
                 "hf_requests": hf.requests(),
             })
@@ -135,7 +139,7 @@ where
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| failure(error.to_string()))?;
+        .map_err(|source| failure(&FixtureError::Runtime { source }))?;
     Ok(runtime.block_on(future))
 }
 

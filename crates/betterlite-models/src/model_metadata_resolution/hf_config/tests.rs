@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::join;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
-use tokio::time::{advance, pause, sleep};
+use tokio::time::{advance, sleep};
 use url::Url;
 
 use rstest::rstest;
@@ -206,6 +206,7 @@ async fn response_failures_become_none() {
         fetch_from_server(200, r#"{"max_position_embeddings": "4096"}"#).await,
         None
     );
+    assert_eq!(fetch_from_server(200, "[4096]").await, None);
 }
 
 async fn transport_failures_and_oversized_bodies_become_none() {
@@ -229,27 +230,14 @@ async fn transport_failures_and_oversized_bodies_become_none() {
     assert_eq!(fetch_from_static(&oversized).await, None);
 }
 
-async fn pinned_timeout_applies() {
-    // The local server needs the real clock, so this section freezes it here.
-    pause();
-    let slow = StaticClient {
-        status: 200,
-        body: br#"{"max_position_embeddings": 1}"#.to_vec(),
-        delay: Some(Duration::from_secs(30)),
-    };
-    let (timed_out, ()) = join!(fetch_from_static(&slow), async {
-        advance(Duration::from_secs(11)).await;
-    });
-    assert_eq!(timed_out, None);
-}
-
 #[tokio::test]
 async fn fetch_follows_litellm() {
     successful_fetch_records_the_pinned_url_and_timeout().await;
     response_failures_become_none().await;
     transport_failures_and_oversized_bodies_become_none().await;
-    pinned_timeout_applies().await;
 }
+
+mod fetch_follows_litellm;
 
 #[rstest]
 fn replays_the_hf_model_config_corpus() {

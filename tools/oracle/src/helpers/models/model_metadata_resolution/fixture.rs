@@ -1,11 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
 
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
-use betterlite_models::catalog::{ModelCatalog, UnknownFields};
+use betterlite_models::catalog::{CatalogError, ModelCatalog, UnknownFields};
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
+use betterlite_models::error::ModelsError;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::model_metadata_resolution::names::{ModelCostMap, NameNormalizers};
+use betterlite_models::model_metadata_resolution::names::{
+    ModelCostMap, ModelCostMapError, NameNormalizers,
+};
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
@@ -19,6 +23,35 @@ pub(crate) const NORMALIZERS: NameNormalizers = NameNormalizers {
     mantle_region_split: split_region_prefix,
 };
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FixtureError {
+    #[error("model cost map: {source}")]
+    ModelCost {
+        #[source]
+        source: ModelCostMapError,
+    },
+    #[error("model cost map JSON: {source}")]
+    Json {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("model catalog: {source}")]
+    Catalog {
+        #[source]
+        source: CatalogError,
+    },
+    #[error("generalization rules: {source}")]
+    Generalizations {
+        #[source]
+        source: ModelsError,
+    },
+    #[error("oracle runtime: {source}")]
+    Runtime {
+        #[source]
+        source: io::Error,
+    },
+}
+
 pub(crate) struct FixtureContext {
     pub(crate) map: ModelCostMap,
     pub(crate) catalog: ModelCatalog,
@@ -29,10 +62,11 @@ pub(crate) struct FixtureContext {
 }
 
 impl FixtureContext {
-    pub(crate) fn load(fixture: &Fixture) -> Result<Self, String> {
+    pub(crate) fn load(fixture: &Fixture) -> Result<Self, FixtureError> {
         let entries = serde_json::to_vec(&fixture.model_cost)
-            .map_err(|error| format!("model cost map: {error}"))?;
-        let map = ModelCostMap::parse(&entries).map_err(|error| error.to_string())?;
+            .map_err(|source| FixtureError::Json { source })?;
+        let map =
+            ModelCostMap::parse(&entries).map_err(|source| FixtureError::ModelCost { source })?;
         let catalog = typed_catalog(fixture)?;
         Ok(Self {
             map,
@@ -56,21 +90,21 @@ impl FixtureContext {
         }
     }
 
-    pub(crate) fn generalizations(&self) -> Result<CatalogGeneralizations, String> {
+    pub(crate) fn generalizations(&self) -> Result<CatalogGeneralizations, FixtureError> {
         let (installed, warnings) = CatalogGeneralizations::install(self.rules.clone());
-        if warnings.is_empty() {
+        let Some(first) = warnings.into_iter().next() else {
             return Ok(installed);
-        }
-        Err(format!("generalization warnings: {warnings:?}"))
+        };
+        Err(FixtureError::Generalizations { source: first })
     }
 }
 
 // The typed catalog is what B174's inference reads; entries it rejects stay only in the cost map.
-fn typed_catalog(fixture: &Fixture) -> Result<ModelCatalog, String> {
+fn typed_catalog(fixture: &Fixture) -> Result<ModelCatalog, FixtureError> {
     let mut typed: BTreeMap<String, Box<RawValue>> = BTreeMap::new();
     for (key, entry) in &fixture.model_cost {
         let single = BTreeMap::from([(key.clone(), entry.clone())]);
-        let bytes = serde_json::to_vec(&single).map_err(|error| error.to_string())?;
+        let bytes = serde_json::to_vec(&single).map_err(|source| FixtureError::Json { source })?;
         if ModelCatalog::parse(&bytes, UnknownFields::Warn).is_ok() {
             typed.insert(key.clone(), entry.clone());
         }
@@ -78,9 +112,10 @@ fn typed_catalog(fixture: &Fixture) -> Result<ModelCatalog, String> {
     if let Some(rules) = &fixture.fallback_generalizations {
         typed.insert(
             "fallback_generalizations".to_owned(),
-            to_raw_value(rules).map_err(|error| error.to_string())?,
+            to_raw_value(rules).map_err(|source| FixtureError::Json { source })?,
         );
     }
-    let bytes = serde_json::to_vec(&typed).map_err(|error| error.to_string())?;
-    ModelCatalog::parse(&bytes, UnknownFields::Warn).map_err(|error| error.to_string())
+    let bytes = serde_json::to_vec(&typed).map_err(|source| FixtureError::Json { source })?;
+    ModelCatalog::parse(&bytes, UnknownFields::Warn)
+        .map_err(|source| FixtureError::Catalog { source })
 }

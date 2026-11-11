@@ -1,11 +1,10 @@
-use std::future::{Future, ready};
+use std::collections::BTreeMap;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::value::{RawValue, to_raw_value};
 use tokio::time::timeout;
 
-use crate::fetch_policy::response::FetchResponse;
 use crate::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
 
 // litellm.constants.HF_CONFIG_FETCH_TIMEOUT_SECONDS, shortened for the name-length rule
@@ -14,23 +13,31 @@ pub const HF_CONFIG_TIMEOUT_SECONDS: f64 = 10.0;
 pub const HF_CONFIG_BODY_LIMIT: usize = 0x0100_0000;
 pub const HF_CONFIG_BASE_URL: &str = "https://huggingface.co";
 const CONFIG_PATH: &str = "raw/main/config.json";
+const MAX_POSITION_EMBEDDINGS: &str = "max_position_embeddings";
 
 #[derive(Debug, thiserror::Error)]
 pub enum HfConfigError {
-    #[error("the Hugging Face config has no integer max_position_embeddings")]
+    #[error("the Hugging Face config is not a JSON object")]
     Json(#[from] serde_json::Error),
+    #[error("max_position_embeddings is not an integer")]
+    MaxPositionEmbeddings {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct HfConfigDocument {
-    #[serde(default)]
-    max_position_embeddings: Option<i64>,
-}
-
+// A map first, because serde would fill a derived struct from a top-level JSON array by position.
 pub fn decode_hf_model_config(bytes: &[u8]) -> Result<Option<i64>, HfConfigError> {
-    match serde_json::from_slice::<HfConfigDocument>(bytes) {
-        Ok(document) => Ok(document.max_position_embeddings),
-        Err(source) => Err(HfConfigError::Json(source)),
+    let mut document: BTreeMap<String, Box<RawValue>> = match serde_json::from_slice(bytes) {
+        Ok(document) => document,
+        Err(source) => return Err(HfConfigError::Json(source)),
+    };
+    match document.remove(MAX_POSITION_EMBEDDINGS) {
+        None => Ok(None),
+        Some(value) if value.get() == "null" => Ok(None),
+        Some(value) => serde_json::from_str(value.get())
+            .map(Some)
+            .map_err(|source| HfConfigError::MaxPositionEmbeddings { source }),
     }
 }
 
@@ -110,34 +117,6 @@ impl<Client: ModelInfoClient> HfConfigClient<Client> {
             return None;
         }
         decode_hf_model_config(&response.body).ok().flatten()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct UnreachableConfigTransport;
-
-#[derive(Clone, Copy, Debug, thiserror::Error)]
-#[error("no Hugging Face config transport is configured")]
-pub struct UnreachableConfig;
-
-impl ModelInfoClient for UnreachableConfigTransport {
-    type Error = UnreachableConfig;
-
-    fn get(
-        &self,
-        _request: &ModelInfoRequest,
-    ) -> impl Future<Output = Result<FetchResponse, UnreachableConfig>> + Send {
-        ready(Err(UnreachableConfig))
-    }
-}
-
-impl HfConfigClient<UnreachableConfigTransport> {
-    #[must_use]
-    pub fn unreachable() -> Self {
-        Self {
-            client: UnreachableConfigTransport,
-            base_url: HF_CONFIG_BASE_URL.to_owned(),
-        }
     }
 }
 

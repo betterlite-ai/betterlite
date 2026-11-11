@@ -8,6 +8,7 @@ from unittest import mock
 import httpx
 import litellm
 import litellm.utils as litellm_utils
+from litellm.exceptions import ModelNotMappedError
 from litellm.litellm_core_utils import fallback_generalizations as engine
 from litellm.llms.lemonade.chat.transformation import LemonadeChatConfig
 from litellm.llms.ollama.common_utils import OllamaModelInfo
@@ -191,8 +192,10 @@ def metadata_observation(query: Query, model: str, provider: str | None) -> Json
                     )
                 )
             }
-        except Exception:  # noqa: BLE001 - every source exception is the raised outcome under test
-            answer = {"raised": True}
+        except ModelNotMappedError as error:
+            answer = {"raised": "not_mapped", "message": str(error)}
+        except Exception as error:  # noqa: BLE001 - every other source exception is the raised outcome under test
+            answer = {"raised": "failed", "message": str(error)}
     answer["dynamic_calls"] = calls
     answer["hf_requests"] = requests
     return answer
