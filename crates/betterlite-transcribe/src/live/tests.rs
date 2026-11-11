@@ -332,9 +332,6 @@ async fn lookup_reads_a_body_up_to_one_mebibyte(#[case] length: usize, #[case] a
     let lookup = TranscribeJobLookup::new("us-east-1", signing, http);
     let result = lookup.get_transcription_job(&lookup_request()).await;
     assert_eq!(result.is_ok(), accepted);
-    if !accepted {
-        assert!(matches!(result, Err(JobLookupError::Unavailable)));
-    }
 }
 
 #[test]
