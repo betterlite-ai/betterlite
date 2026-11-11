@@ -32,6 +32,14 @@ impl ToolTokenCounter for UnwiredCounter {
 }
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let logger = concrete_logger(inputs)?;
+    let callback: Arc<dyn CallbackLogger> = logger;
+    Ok(callback)
+}
+
+fn concrete_logger(
+    inputs: &CatalogInputs,
+) -> Result<Arc<DatadogLlmObsLogger<UnwiredCounter>>, CatalogError> {
     let global_turn_off = inputs
         .config
         .sections

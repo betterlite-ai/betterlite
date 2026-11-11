@@ -7,10 +7,17 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use super::build;
+use super::{build, concrete_logger};
+use crate::callback_logger::CallbackLogger as _;
+use crate::callback_logger::event::LoggerEvent;
+use crate::datadog_llm_obs::records::DdMessage;
+use crate::exporter_options::redaction::REDACTED_TEXT;
+use crate::fields::payload::StandardLoggingPayload;
 use crate::registry::catalog::{CatalogError, CatalogInputs, LoggerCatalog};
 
 fn inputs(source: &str, environment: BTreeMap<String, String>) -> CatalogInputs {
@@ -97,4 +104,88 @@ async fn callback_logger_is_cached_by_the_catalog() {
         .expect("the callback name is known")
         .expect("the logger is cached");
     assert!(Arc::ptr_eq(&first, &second));
+}
+
+const REDACTION_PAYLOAD: &str = r#"{
+    "id": "chatcmpl-1",
+    "trace_id": "trace-1",
+    "session_id": "session-1",
+    "call_type": "completion",
+    "response_cost": 0.5,
+    "status": "success",
+    "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"},
+    "total_tokens": 5,
+    "prompt_tokens": 2,
+    "completion_tokens": 3,
+    "startTime": 1704067200.0,
+    "endTime": 1704067201.5,
+    "completionStartTime": 1704067200.5,
+    "response_time": 1.5,
+    "model_map_information": {},
+    "model": "gpt-4o",
+    "api_base": "https://api.openai.com",
+    "saved_cache_cost": 0.0,
+    "request_tags": [],
+    "model_parameters": {"tools": [{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}}]},
+    "hidden_params": {},
+    "messages": [{"role": "user", "content": "hi"}],
+    "response": {"choices": [{"message": {"role": "assistant", "content": "hello"}}]},
+    "metadata": {}
+}"#;
+
+fn redaction_event() -> Arc<LoggerEvent> {
+    let payload: StandardLoggingPayload =
+        serde_json::from_str(REDACTION_PAYLOAD).expect("the fixture is a standard logging payload");
+    Arc::new(LoggerEvent {
+        payload: Arc::new(payload),
+        dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        stream: false,
+        guardrail_snapshot: None,
+    })
+}
+
+fn agent_inputs(source: &str) -> CatalogInputs {
+    inputs(
+        source,
+        BTreeMap::from([("LITELLM_DD_AGENT_HOST".to_owned(), "agent.local".to_owned())]),
+    )
+}
+
+#[tokio::test]
+async fn callback_logger_redacts_when_the_global_flag_is_set() {
+    let logger = concrete_logger(&agent_inputs(
+        "litellm_settings:\n  turn_off_message_logging: true\n",
+    ))
+    .expect("the logger builds");
+    logger
+        .async_log_success_event(redaction_event())
+        .await
+        .expect("the event is accepted");
+    let queued = logger.queue.pending();
+    assert_eq!(queued.len(), 1);
+    let meta = queued[0].meta.clone().expect("the span carries meta");
+    assert!(meta.tool_definitions.is_empty());
+    let input = meta.input.expect("the input is present");
+    let DdMessage::Message(message) = &input.messages[0] else {
+        panic!("the redacted message stays a message record");
+    };
+    assert_eq!(message.content, Json::Text(REDACTED_TEXT.to_owned()));
+}
+
+#[tokio::test]
+async fn callback_logger_keeps_messages_when_the_global_flag_is_unset() {
+    let logger = concrete_logger(&agent_inputs("")).expect("the logger builds");
+    logger
+        .async_log_success_event(redaction_event())
+        .await
+        .expect("the event is accepted");
+    let queued = logger.queue.pending();
+    assert_eq!(queued.len(), 1);
+    let meta = queued[0].meta.clone().expect("the span carries meta");
+    assert_eq!(meta.tool_definitions.len(), 1);
+    let input = meta.input.expect("the input is present");
+    let DdMessage::Message(message) = &input.messages[0] else {
+        panic!("the input message projects to a message record");
+    };
+    assert_eq!(message.content, Json::Text("hi".to_owned()));
 }

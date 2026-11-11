@@ -163,10 +163,8 @@ async def _perform(logger: DataDogLLMObsLogger, action: Action) -> None:
         "standard_logging_object": action["payload"],
         "litellm_params": {"metadata": {} if metadata is None else metadata},
     }
-    start_time = action["start_time"]
-    end_time = action["end_time"]
-    start = datetime.fromtimestamp(start_time, tz=UTC)
-    end = datetime.fromtimestamp(end_time, tz=UTC)
+    start = datetime.fromtimestamp(action["start_time"], tz=UTC)
+    end = datetime.fromtimestamp(action["end_time"], tz=UTC)
     if step == "success":
         await logger.async_log_success_event(kwargs, None, start, end)  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L531
     else:
