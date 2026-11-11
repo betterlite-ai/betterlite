@@ -13,7 +13,7 @@ use crate::backend::memory::MemoryCacheOps;
 use crate::types::pipeline::RedisPipelineIncrement;
 
 // LiteLLM's _log_deferred_increment_failure: a cancelled increment is not a failure worth a log line
-fn log_deferred_increment_failure(settled: &Settled<f64>) -> Option<SettledFollowUp> {
+pub(super) fn log_deferred_increment_failure(settled: &Settled<f64>) -> Option<SettledFollowUp> {
     if let Err(error) = settled
         && !matches!(error.as_ref(), BatchError::Cancelled)
     {
