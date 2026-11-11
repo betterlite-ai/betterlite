@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic-cache-callbacks-prompt-management-gate
+call:
+  b4126:
+    operation: prompt_management_gate
+    probes:
+      - prompt_id: null
+      - prompt_id: greeting
+      - prompt_id: ""
+        dynamic_callback_params: {user_id: user-1}
+      - prompt_id: greeting
+        prompt_spec:
+          prompt_id: greeting
+          litellm_params: {prompt_integration: custom}
+          prompt_info: {prompt_type: config}
+        dynamic_callback_params: {}
+      - prompt_id: null
+        prompt_spec:
+          prompt_id: other
+          litellm_params: {prompt_integration: gitlab, prompt_id: other}
+          prompt_info: {prompt_type: db, environment: production}
+env: {}
+compare: {ignore: []}

@@ -58,7 +58,7 @@ roles:
         timeout_minutes: 90
       - runner: deepseek-worker
         model: deepseek-v4-pro[1m]
-        effort: max
+        effort: high
         attempts: 1
         timeout_minutes: 120
       - runner: codex-worker
