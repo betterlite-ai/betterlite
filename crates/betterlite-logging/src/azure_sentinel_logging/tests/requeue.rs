@@ -20,6 +20,18 @@ async fn survivors_go_back_ahead_of_the_arrivals() {
 }
 
 #[tokio::test]
+async fn arrivals_during_a_delivered_send_wait_without_a_retry_flag() {
+    let rig = rig(vec![Reply::token(), Reply::status(204)], 2, 50_000);
+    arrive_during_the_next_send(&rig, &rig.logger.model.queue, &["e3"], |id| {
+        model_payload(id, false)
+    });
+    log_models(&rig, &["e1", "e2"]).await;
+    assert_eq!(rig.transport.batch_ids(), [["e1", "e2"]]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e3"]);
+    assert!(!rig.logger.model.awaiting_retry.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
 async fn nothing_is_dropped_while_the_queue_fits() {
     let (_guard, logs) = capture_logs();
     let rig = rig(vec![Reply::token(), Reply::status(500)], 2, 4);

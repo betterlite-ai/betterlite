@@ -102,7 +102,8 @@ impl SentinelBatch<'_> {
             .and_then(|token| authorization_headers(token.expose_secret()));
         match prepared {
             Ok(headers) => Ok(headers),
-            Err(SentinelError::TokenStatus { status, detail }) if status >= 400 => {
+            // httpx raises its status error for every status outside 2xx; a 2xx other than 200 is a plain failure
+            Err(SentinelError::TokenStatus { status, detail }) if !(200..300).contains(&status) => {
                 let kept = undelivered_after_http_error(
                     batch,
                     status,

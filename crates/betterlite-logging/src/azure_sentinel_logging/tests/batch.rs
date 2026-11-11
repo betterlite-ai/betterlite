@@ -234,6 +234,24 @@ async fn a_refused_token_keeps_the_batch_only_when_a_retry_can_help(
     assert_eq!(awaiting(&rig), kept);
 }
 
+#[rstest]
+#[case::created(201, "Azure Sentinel Error getting OAuth token")]
+#[case::partial(299, "Azure Sentinel Error getting OAuth token")]
+#[case::redirect(302, "a status a retry can clear")]
+#[case::informational(199, "a status a retry can clear")]
+#[tokio::test]
+async fn a_token_status_outside_2xx_is_an_http_error_and_any_other_is_a_token_error(
+    #[case] status: u16,
+    #[case] logged: &str,
+) {
+    let (_guard, logs) = capture_logs();
+    let rig = rig(vec![Reply::status(status)], 2, 50_000);
+    log_models(&rig, &["e1", "e2"]).await;
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e1", "e2"]);
+    assert!(awaiting(&rig));
+    assert_eq!(logs.count_containing(logged), 1);
+}
+
 #[tokio::test]
 async fn an_unreachable_token_endpoint_keeps_the_batch() {
     let (_guard, logs) = capture_logs();
