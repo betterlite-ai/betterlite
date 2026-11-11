@@ -36,7 +36,7 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 const JPEG_QUALITY: u8 = 75;
 // a 1 MiB prompt cap can still carry a header that declares huge dimensions, so the decode is bounded
 const MAX_IMAGE_SIDE: u32 = 8192;
-const MAX_IMAGE_ALLOC: u64 = 64 * 1024 * 1024;
+const MAX_IMAGE_ALLOC: u64 = 67_108_864;
 const LENIENT: GeneralPurpose = GeneralPurpose::new(
     &BASE64_ALPHABET,
     GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
