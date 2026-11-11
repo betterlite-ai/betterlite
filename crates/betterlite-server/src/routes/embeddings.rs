@@ -147,16 +147,14 @@ fn internal_failure(
     deployment: Option<&ChatDeployment>,
     redactor: &Redactor,
 ) -> Response {
-    let body = ErrorBody {
-        error: ErrorObject {
-            message: redactor.redact_internal_details(&error.to_string()),
-            error_type: String::from("internal_server_error"),
-            param: None,
-            code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
-        },
+    let internal = ProviderFailure {
+        status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+        error_type: String::from("internal_server_error"),
+        param: None,
     };
+    let message = redactor.redact_internal_details(&error.to_string());
     let headers = failure_headers(None, None, call_id, deployment);
-    (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(body)).into_response()
+    respond(internal, message, headers)
 }
 
 fn failure(
@@ -181,6 +179,13 @@ fn failure(
         | EmbeddingError::Endpoint { .. }
         | EmbeddingError::Mock { .. } => error.to_string(),
     };
+    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
+    respond(failure, message, response_headers)
+}
+
+fn respond(failure: ProviderFailure, message: String, headers: HeaderMap) -> Response {
+    let status_code =
+        StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let body = ErrorBody {
         error: ErrorObject {
             message,
@@ -189,10 +194,7 @@ fn failure(
             code: failure.status.to_string(),
         },
     };
-    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
-    let status_code =
-        StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    (status_code, response_headers, Json(body)).into_response()
+    (status_code, headers, Json(body)).into_response()
 }
 
 fn embedding_failure(error: &EmbeddingError, redactor: &Redactor) -> ProviderFailure {
