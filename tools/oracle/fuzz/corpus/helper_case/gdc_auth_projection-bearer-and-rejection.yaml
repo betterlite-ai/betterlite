@@ -1,0 +1,16 @@
+kind: helper
+name: gdc-auth-projection-bearer-and-rejection-seed
+call:
+  gdc_auth_projection:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {vertex_project: project-a}
+        keys:
+          - {api_key: sk-plain-token}
+          - {api_key: '{"type":"service_account"}'}
+        validations:
+          - {api_key: sk-plain-token, base: "https://gateway.example", deployment: 0}
+          - {api_key: '{"type":"external_account"}', base: "https://gateway.example", deployment: 0}
+env: {}
+compare: {ignore: []}

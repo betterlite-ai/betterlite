@@ -85,15 +85,15 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L603-L843
     why: Service hooks, identity seeding, phase spans, guardrail/error emission
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L846-L871
-    why: select_global_otel_v2_logger helper (out of scope, owned by B110)
+    why: select_global_otel_v2_logger helper (out of scope, owned by B8910)
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L911-L922
-    why: _excluded_db_systems helper for service exclusions (out of scope, owned by B110)
+    why: _excluded_db_systems helper for service exclusions (out of scope, owned by B8910)
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L935-L967
     why: Module-level _registered_v2_logger, emit_guardrail_span, seed_request_identity
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L993-L1000
     why: Module-level phase_span context manager
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L1003-L1027
-    why: build_otel_v2_logger, _logger_class factory (out of scope, owned by B110)
+    why: build_otel_v2_logger, _logger_class factory (out of scope, owned by B8910)
 dod:
   - text: The V2 callback constructs with explicit tracer/meter/logger providers, registers itself once in proxy callbacks, and exposes tracer_provider read-only.
     proof: [v2-callback-init-tests, v2-callback-proxy-registration-tests]
@@ -160,14 +160,14 @@ deviations:
     why: Identity seeding is a best-effort span-labeling side effect; attachment failures must not reject the request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L704-L734
 out_of_scope:
-  - "litellm/integrations/otel/logger.py:846-871 (select_global_otel_v2_logger): canonical logger selection, owned by B110."
-  - "litellm/integrations/otel/logger.py:874-908 (publish_global_otel_v2_provider): provider publication and fanout setup, owned by B110."
-  - "litellm/integrations/otel/logger.py:911-922 (_excluded_db_systems): service exclusion list, owned by B110."
-  - "litellm/integrations/otel/logger.py:925-932 (_v2_configs): multi-logger configuration aggregation, owned by B110."
-  - "litellm/integrations/otel/logger.py:970-990 (fan_out_provider): fallback provider access, owned by B110."
-  - "litellm/integrations/otel/logger.py:1003-1026 (build_otel_v2_logger, _logger_class): logger factory composition, owned by B110."
+  - "litellm/integrations/otel/logger.py:846-871 (select_global_otel_v2_logger): canonical logger selection, owned by B8910."
+  - "litellm/integrations/otel/logger.py:874-908 (publish_global_otel_v2_provider): provider publication and fanout setup, owned by B8910."
+  - "litellm/integrations/otel/logger.py:911-922 (_excluded_db_systems): service exclusion list, owned by B8910."
+  - "litellm/integrations/otel/logger.py:925-932 (_v2_configs): multi-logger configuration aggregation, owned by B8910."
+  - "litellm/integrations/otel/logger.py:970-990 (fan_out_provider): fallback provider access, owned by B8910. No callback method here calls it at the pin."
+  - "litellm/integrations/otel/logger.py:1003-1026 (build_otel_v2_logger, _logger_class): logger factory composition, owned by B8910."
   - B3852 owns the complete TenantTracerCache; this task constructs and holds it.
-  - B3849 owns attach_tenant_fan_out; this task calls it through fan_out_provider (B110).
+  - B3849 owns attach_tenant_fan_out; B8910 calls it when it publishes the provider.
   - B3868 owns build_tracer_provider; this task calls it in __init__.
   - B3869 owns create_genai_metrics and GenAIMetricRecorder; this task uses them as dependencies.
   - B3848 owns get_tracer, get_meter, get_event_logger, GenAIEventRecorder and metric/logger provider resolution; this task uses them.
@@ -176,7 +176,7 @@ out_of_scope:
   - B3843 owns ServiceSpanData, GuardrailSpanData and SpanError construction; this task calls them.
   - B3846 owns resolve_mappers; this task passes the result to SpanEmitter.
   - B253 owns StandardLoggingPayloadSetup.get_error_information; this task calls it through _span_error_from_exception.
-  - G1 (Langfuse leaf, gap) owns LangfuseOpenTelemetryV2 and LangfuseContentOpenTelemetryV2 constructors; B110 dispatches to them.
+  - G1 (Langfuse leaf, gap) owns LangfuseOpenTelemetryV2 and LangfuseContentOpenTelemetryV2 constructors; B8910's factory dispatches to them.
 pitfalls:
   - The open_llm_calls map evicts the oldest entry on overflow, not the newest; a long-running proxy never calls close on an evicted provider.
   - Request identity seeding stamps the server span only if it is recordable; a rejected auth request that never opens a root span leaves identity unstamped.

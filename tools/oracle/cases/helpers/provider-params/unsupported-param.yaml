@@ -1,0 +1,41 @@
+kind: helper
+name: provider-params-unsupported-param
+call:
+  provider_params:
+    steps:
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: unknown-model
+          config: unknown_model
+          capabilities: []
+        parameters:
+          user: abc
+          temperature: 0.5
+        policy: {}
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-5-search-api
+          config: gpt5
+          capabilities: [catalog_model, tool_choice]
+        parameters:
+          n: 1
+        policy: {}
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          reasoning_effort: low
+          thinking: {type: enabled, budget_tokens: 2048}
+          metadata: {trace: x}
+          temperature: 0.5
+        policy: {}
+env: {}
+compare: {ignore: []}

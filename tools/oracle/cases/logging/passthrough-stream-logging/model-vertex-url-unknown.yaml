@@ -1,0 +1,11 @@
+kind: helper
+name: model-vertex-url-unknown
+call:
+  b3608:
+    operation: extract_model
+    request_body: null
+    model_call_details_model: null
+    url_route: https://example.com/v1/generateContent
+    endpoint_type: vertex-ai
+env: {}
+compare: {ignore: []}

@@ -34,8 +34,9 @@ description: >-
   BaseCache. Each async read, write and pipeline method forwards to the cache's own method with the same key, value
   and kwargs. B4382 and B8296 build no sync operations (their deviations say why), so a sync method of the trait
   returns an error that names the operation and the cache type and never blocks on the async one. Expose
-  `fn redis_semantic(&self) -> Option<&RedisSemanticCache>` so B8540's readiness report can call
-  `RedisSemanticCache::index_info` on the server's response cache.
+  `async fn index_info(&self) -> Option<Result<Json, String>>`: the Redis variant calls B4382's `index_info`, the Valkey
+  variant calls B8296's (ValkeySemanticCache inherits RedisSemanticCache in LiteLLM, so the readiness isinstance check
+  at _health_endpoints.py L1713-L1721 includes it), Qdrant returns None, and an error is its Display text. B8540's readiness report calls it on the server's response cache.
 
 
   build.rs. `SemanticDeps` has public fields: `router: Arc<RouterHandle>`, `factory: Arc<LiveClientFactory>` (B5220, the one the

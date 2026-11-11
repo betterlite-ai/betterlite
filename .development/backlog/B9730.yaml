@@ -1,0 +1,16 @@
+id: B9730
+milestone: M10 admin ui
+title: Exercise retained key pages with their actual management requests
+status: todo
+depends_on: [B9090, B9091, B860, B5076, B1644, B055, B775, B777, B778, B780, B782, B783, B895, B791, B806]
+file: tasks/B9730-dashboard-key-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/api-keys/**"
+  - "ui/litellm-dashboard/src/components/{VirtualKeysPage,DeletedKeysPage}/**"
+  - "ui/litellm-dashboard/src/components/key_team_helpers/**"
+parent: B145
+split_from: B145
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

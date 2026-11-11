@@ -1,0 +1,128 @@
+id: B9231
+title: Volcengine Responses creation, streaming and lifecycle HTTP parity
+description: >-
+  Exercise B8176's Volcengine Responses configuration after B8312 selects it and the
+  existing Responses routes invoke it. Its current four helper fixtures cover options,
+  URLs, credentials and chunk patching, but no planned HTTP case proves those pieces
+  work together. Add a compact suite under providers/volcengine-responses using the
+  oracle's existing HTTP steps and response captures. This is verification work only,
+  with no new source algorithm or route. Budget about 700 changed fixture lines; every
+  method of VolcEngineResponsesAPIConfig remains B8176's implementation responsibility.
+
+  Configure a public alias for volcengine/deepseek-v3-2-251201, a stable deployment
+  model_info.id, a test master key and zero router retries. Set VOLCENGINE_API_BASE
+  and ARK_API_BASE to different paths below {{upstream}} in env, with distinguishable
+  ARK_API_KEY and VOLCENGINE_API_KEY test values. Missing optional settings are unset;
+  the normal base fallback is https://ark.cn-beijing.volces.com. The key order is
+  explicit, litellm.api_key, ARK_API_KEY, VOLCENGINE_API_KEY; the base order is explicit,
+  litellm.api_base, VOLCENGINE_API_BASE, ARK_API_BASE, default. Cases use the existing
+  regional_host_keys loader, not a second loader in the test harness. Pin request call
+  ids and reply created_at values, and set upstream response ids explicitly.
+
+  create-filter sends instructions, thinking, caching, metadata and extra_body with
+  one supported and one unsupported field. Verify the final native JSON retains the
+  supported controls, drops top-level metadata and drops the unsupported extra_body
+  member. Do not assert that arbitrary nested metadata is stripped: the source applies
+  the allowlist to extra_body separately. env-base-order omits deployment api_base,
+  verifies VOLCENGINE_API_BASE wins over ARK_API_BASE and that ARK_API_KEY wins over
+  VOLCENGINE_API_KEY, then a separate configured-base fixture uses a complete
+  /api/v3/responses endpoint to prove no suffix is duplicated. missing-key supplies
+  neither deployment/global key nor either environment key and compares the actual
+  source error before network I/O. upstream-error receives a provider 403 and retains
+  the proxy's status and error.type/param/code, ignoring only error.message prose.
+
+  sparse-stream is a real POST with stream=true, answered with response.created,
+  response.output_text.delta and response.completed SSE events. Give each event valid
+  enum/discriminator values, omit response.output and integer sequence_number where
+  the event model requires them, and include a nested record with a missing list.
+  Compare the completed event objects, including [] and 0 inserted by the provider
+  patcher, without faking a stream from a non-streaming response. B8636 supplies the
+  production generator already; this task does not install one. Ignore only generated
+  response/deployment identifiers when they actually vary, never the patched fields.
+
+  v1-lifecycle, bare-lifecycle and openai-lifecycle each create a response, capture the
+  proxy's returned id and reuse it for GET, input_items, cancel and DELETE, with the
+  mock returning the corresponding native records in order. Use the ordinary HTTP
+  steps.captures syntax and query-encoded capture substitution in paths. Keep each
+  flow within one config/env group and queue all its upstream answers. The three route
+  roots are /v1/responses, /responses and /openai/v1/responses. Creation is POST to
+  the root; retrieval is GET /{response_id}; deletion is DELETE /{response_id}; input
+  listing is GET /{response_id}/input_items; cancellation is POST /{response_id}/cancel.
+  Test all three aliases of every method. The input listing defaults to limit=20 and
+  order=desc. In one flow pass after, before, include, limit=2 and order=asc in the GET
+  body; include becomes a comma-joined upstream query value. A different flow puts
+  limit/order only in the URL query and checks the source route still uses defaults.
+  Do not invent persistence, polling state or a native WebSocket operation.
+
+  Every case compares the captured provider method/path/body and selected
+  authorization/content-type headers as well as the downstream JSON or SSE payload,
+  status, content-type and stable x-litellm-* headers. Use the accepted untagged HTTP
+  YAML representation; the runner treats kind as a helper/websocket discriminator.
+  B043 runs this directory again as part of its final regional regression proof.
+scope:
+  paths:
+    - tools/oracle/cases/providers/volcengine-responses/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/responses/transformation.py#L47-L204
+    why: Existing parameter whitelist, credential/base precedence and request construction under test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/responses/transformation.py#L206-L264
+    why: Streaming repair and non-streaming response conversion reached through the public route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/responses/transformation.py#L269-L414
+    why: Get/delete/input-items/cancel URL and reply policies, including listing defaults and native streaming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/responses/transformation.py#L417-L547
+    why: Required-field repair and false native-WebSocket capability remain implemented by B8176.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L216
+    why: Three authenticated POST creation aliases, starting at their decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L677-L705
+    why: Existing GET aliases used after capturing the response id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L793-L821
+    why: DELETE decorators for each lifecycle flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L902-L970
+    why: Input-item route aliases and body forwarding; arbitrary URL query controls are not copied here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1201-L1224
+    why: Cancellation's three POST decorators; no additional mount belongs to this task.
+dod:
+  - text: Volcengine creation filters the outgoing request and resolves configured versus environment endpoints and keys as the pinned implementation does.
+    proof: [volcengine-http-fixtures, oracle]
+  - text: A native sparse event stream survives the production Responses route with provider-filled integers and lists preserved in the comparison.
+    proof: [volcengine-http-fixtures, oracle]
+  - text: Each route prefix supports create, retrieve, list inputs, cancel and delete using the id returned by that proxy, including body-versus-query listing controls.
+    proof: [volcengine-http-fixtures, oracle]
+  - text: Missing credentials and upstream rejection keep the source status, error type, param and code.
+    proof: [volcengine-http-fixtures, oracle]
+checks:
+  optional: []
+  commands:
+    - id: volcengine-http-fixtures
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/volcengine-responses)"
+        && for case in create-filter env-base-order configured-base missing-key upstream-error sparse-stream
+        v1-lifecycle bare-lifecycle openai-lifecycle; do
+        test -f "tools/oracle/cases/providers/volcengine-responses/$case.yaml" || exit 1; done
+      why: A missing lifecycle flow or request-policy fixture must fail even before parity execution.
+oracle_cases:
+  - tools/oracle/cases/providers/volcengine-responses/create-filter.yaml
+  - tools/oracle/cases/providers/volcengine-responses/env-base-order.yaml
+  - tools/oracle/cases/providers/volcengine-responses/configured-base.yaml
+  - tools/oracle/cases/providers/volcengine-responses/missing-key.yaml
+  - tools/oracle/cases/providers/volcengine-responses/upstream-error.yaml
+  - tools/oracle/cases/providers/volcengine-responses/sparse-stream.yaml
+  - tools/oracle/cases/providers/volcengine-responses/v1-lifecycle.yaml
+  - tools/oracle/cases/providers/volcengine-responses/bare-lifecycle.yaml
+  - tools/oracle/cases/providers/volcengine-responses/openai-lifecycle.yaml
+deviations: []
+out_of_scope:
+  - B8176 owns every function in volcengine/responses/transformation.py, including its protocol declarations and private reflection helpers; B8175 owns the shared Volcengine error and base/header functions.
+  - B8312 constructs the selected configuration; B5360 selects its tag. This task adds no alternative selector or key resolver.
+  - B080 and B938 own all cited endpoint functions and their decorators; B8610/B1100 compose existing route factories and B8636 connects the production stream generator.
+  - B506-B509 supply inherited OpenAI Responses transforms. Polling, compact, input_tokens and WebSocket routes are their existing API-family owners' work and do not add a Volcengine override here.
+pitfalls:
+  - A provider response id is wrapped by the proxy; reuse the captured client id instead of assuming resp_regional can be sent straight to every lifecycle route.
+  - VOLCENGINE_API_BASE precedes ARK_API_BASE, but ARK_API_KEY precedes VOLCENGINE_API_KEY.
+  - Input listing reads pagination from the GET body; putting limit=2 only in the URL must not turn the default upstream limit into 2.
+  - Missing enum discriminators are not repaired into valid values; sparse fixtures omit fields the source can actually default.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

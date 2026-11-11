@@ -27,7 +27,7 @@ description: >-
   Arc<ResponseCacheReinit>` and `cache_settings: Arc<CacheSettingsManager>` (B8612's CacheRuntime, B8502's manager).
   `cache_writes: Arc<CacheWriteTracker>` (B4304). `secrets: Arc<SecretLookup>` (B8500 values from B8612's builder, with
   the manager B8590 installed). `guardrails: SharedGuardrails`, a struct in shared.rs with `runtime:
-  Arc<GuardrailRuntime<PostgresGuardrailRows>>` (B3683, wrapping B3682's handler; without a database the rows value answers a database error, as LiteLLM with prisma None does), `router_list: Arc<Vec<RouterGuardrail>>` (the list start_from_config returned, for B8399's GuardrailBalancer) and `classes: Arc<GuardrailClasses<PostgresGuardrailRows>>` (B8666's pub module guardrail_dispatch, the one value B8613 built over the same runtime; B8790 fills its embedder slot at start and the policy routes reuse it). `plugins:
+  Arc<GuardrailRuntime<PostgresGuardrailRows>>` (B3683, wrapping B3682's handler; without a database the rows value answers a database error, as LiteLLM with prisma None does), `router_list: Arc<Vec<RouterGuardrail>>` (the list start_from_config returned, for B8399's GuardrailBalancer) and `classes: Arc<GuardrailClasses<PostgresGuardrailRows>>` (B8666's pub module guardrail_dispatch, the one value B8613 built over the same runtime; B8790 fills its embedder slot at start and the policy routes reuse it). `policies: Arc<PolicyRuntime>` (B9320, the one value B8613 built and carried through Started and StartupOutputs). `plugins:
   Arc<PluginRegistry>` (B8230). `agents: Arc<SharedAgents>` (B8612: B4776's registry and the one B8231 read-through,
   built here with SharedAgents::new over the registry B8613 made, `db` and `proxy_config`). `jwt_signer:
   Arc<JwtSignerSlot>` (B8254). `general_settings: Arc<ProxySettingsStore>` (B8612, built here over `db`,
@@ -35,6 +35,9 @@ description: >-
   `router_views: Arc<RouterViews>` (B8611; router_views is built here over the same handle). `mcp_registry:
   Arc<McpRegistry>`, `vector_stores: Arc<VectorStores>` and `pass_through: Arc<PassThroughState>` (B8614; the
   pass-through credential router, Vertex token state and route table that startup, B8384 and B8640 share).
+  `pass_through_logging: std::sync::OnceLock<Arc<PassThroughRuntime>>` (B8931), created empty here: B8640 fills it once
+  when it builds PassThroughState. Shared also carries B012's existing logging-worker handle, which B012 exposes as a
+  reusable handle while keeping its shutdown ownership, so B8931 starts no second worker.
   `proxy_config: Arc<ProxyConfigState>` (B8380). `mcp_area: std::sync::OnceLock<Arc<crate::app::mcp::state::McpState>>`,
   created empty here: app::mcp's mount, mount_public and start need the same McpState, and B8620 fills the cell on first
   use (the skeleton stubs `pub struct McpState` in app/mcp/state.rs, so this field compiles before B8620).
@@ -52,7 +55,7 @@ description: >-
   lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn
   AutoRouterCatalog>` (B379's trait, backed by the same DeploymentSync) for B8676. `gateway_requests:
   Arc<GatewayRequestAccumulator>` (B3102, betterlite-db): the one accumulator B8680's billable sink records into, the
-  B8372's periodic flush job drains and B8613's stop drains last. `prometheus_registry: Arc<CollectorRegistry>` (B3875,
+  B8372's periodic flush job drains and B8613's stop drains last. `vantage_loggers: Arc<VantageLoggers>` (B3067): the one live store of concrete Vantage exporters that B8613 made. B8372 populates and schedules from it, B3077's delete route edits it and B073's export routes read it. B8749's no-op BaseLogger named vantage cannot serve as the exporter. `prometheus_registry: Arc<CollectorRegistry>` (B3875,
   betterlite-logging, which this task adds to betterlite-server's dependencies): the one registry B8613 made at startup; B8655 registers its collectors into it and B3886's
   metrics_router renders it. `spend_producer: Arc<std::sync::OnceLock<P>>`, where P is the drainable producer
   value B069's `spend::startup::start` returns (read its merged signature): B8613 makes the slot empty and keeps a
