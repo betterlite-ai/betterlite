@@ -7,11 +7,10 @@ use betterlite_models::decisions::Json;
 
 use super::CallSetupError;
 use crate::call_setup::RequestMap;
-use crate::call_setup::callbacks::CallbackLists;
-use crate::call_setup::callbacks::CustomLoggers;
-use crate::call_setup::callbacks::custom_logger::CallbackEvent;
-use crate::call_setup::callbacks::custom_logger::add_known_logger_callback;
-use crate::call_setup::callbacks::custom_logger::is_same_registered_logger;
+use crate::call_setup::callbacks::{
+    CallbackEvent, CallbackList, CallbackLists, CustomLoggers, add_known_logger_callback,
+    is_same_registered_logger,
+};
 
 #[derive(Debug)]
 pub(super) struct DynamicInputs {
@@ -36,78 +35,58 @@ impl DynamicInputs {
 pub(super) fn take_dynamic_callbacks(
     request: &mut RequestMap,
 ) -> Result<DynamicInputs, CallSetupError> {
-    let callbacks = match request.shift_remove("callbacks") {
-        None | Some(Json::Null) => None,
-        Some(Json::List(values)) => Some(string_list(values, "callbacks")?),
-        Some(_) => {
-            return Err(CallSetupError::FieldType {
-                field: "callbacks",
-                expected: "a list of strings",
-            });
-        }
-    };
+    let callbacks = take_list(request, "callbacks")?;
     let (success, async_success) = take_success_callback(request)?;
-    let failure = take_failure_callback(request)?;
     Ok(DynamicInputs {
         callbacks,
         success,
         async_success,
-        failure,
+        failure: take_list(request, "failure_callback")?,
     })
+}
+
+fn take_list(
+    request: &mut RequestMap,
+    field: &'static str,
+) -> Result<Option<Vec<String>>, CallSetupError> {
+    let Some(value) = request.shift_remove(field) else {
+        return Ok(None);
+    };
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    string_list(value, field).map(Some)
 }
 
 type SuccessSplit = (Option<Vec<String>>, Option<Vec<String>>);
 
 fn take_success_callback(request: &mut RequestMap) -> Result<SuccessSplit, CallSetupError> {
-    let listed = match request.get("success_callback").cloned() {
-        None | Some(Json::Null) => return Ok((None, None)),
-        Some(Json::List(values)) => values,
-        Some(_) => {
-            return Err(CallSetupError::FieldType {
-                field: "success_callback",
-                expected: "a list of strings",
-            });
-        }
+    let Some(listed) = take_list(request, "success_callback")? else {
+        return Ok((None, None));
     };
-    request.shift_remove("success_callback");
-    let mut sync = Vec::new();
+    let mut synchronous = Vec::new();
     let mut asynchronous = Vec::new();
-    for value in listed {
-        let Json::Text(name) = value else {
-            return Err(CallSetupError::FieldType {
-                field: "success_callback",
-                expected: "a list of strings",
-            });
-        };
+    for name in listed {
         if matches!(name.as_str(), "dynamodb" | "s3") {
             asynchronous.push(name);
         } else {
-            sync.push(name);
+            synchronous.push(name);
         }
     }
     let async_names = (!asynchronous.is_empty()).then_some(asynchronous);
-    Ok((Some(sync), async_names))
+    Ok((Some(synchronous), async_names))
 }
 
-fn take_failure_callback(request: &mut RequestMap) -> Result<Option<Vec<String>>, CallSetupError> {
-    let listed = match request.get("failure_callback").cloned() {
-        None | Some(Json::Null) => return Ok(None),
-        Some(Json::List(values)) => values,
-        Some(_) => {
-            return Err(CallSetupError::FieldType {
-                field: "failure_callback",
-                expected: "a list of strings",
-            });
-        }
+fn string_list(value: Json, field: &'static str) -> Result<Vec<String>, CallSetupError> {
+    let Json::List(values) = value else {
+        return Err(CallSetupError::FieldType {
+            field,
+            expected: "a list of strings",
+        });
     };
-    request.shift_remove("failure_callback");
-    Ok(Some(string_list(listed, "failure_callback")?))
-}
-
-fn string_list(values: Vec<Json>, field: &'static str) -> Result<Vec<String>, CallSetupError> {
     let mut names = Vec::with_capacity(values.len());
-    for value in values {
-        let Json::Text(name) = value else {
+    for item in values {
+        let Json::Text(name) = item else {
             return Err(CallSetupError::FieldType {
                 field,
                 expected: "a list of strings",
@@ -127,11 +106,15 @@ pub(super) fn register_request_callbacks(
         let Some(entry) = resolve_request_callback(callback, loggers, lists) else {
             continue;
         };
-        lists.add_input(&entry);
-        lists.add_success(&entry);
-        lists.add_failure(&entry);
-        lists.add_async_success(&entry);
-        lists.add_async_failure(&entry);
+        for list in [
+            CallbackList::Input,
+            CallbackList::Success,
+            CallbackList::Failure,
+            CallbackList::AsyncSuccess,
+            CallbackList::AsyncFailure,
+        ] {
+            lists.add(list, &entry);
+        }
     }
 }
 
@@ -159,37 +142,47 @@ fn resolve_request_callback(
 
 // LiteLLM removes each resolved name from the list it is scanning, so only the last pass touches every name
 pub(super) fn resolve_global_callbacks(lists: &mut CallbackLists, loggers: &CustomLoggers<'_>) {
-    for (event, originals) in [
-        (CallbackEvent::Success, mem::take(&mut lists.success)),
-        (CallbackEvent::Failure, mem::take(&mut lists.failure)),
-    ] {
-        let mut known = Vec::new();
-        for entry in originals {
-            match &entry {
-                DynamicCallback::Name(name)
-                    if event == CallbackEvent::Success
-                        && matches!(name.as_str(), "dynamodb" | "openmeter") =>
-                {
-                    lists.add_async_success(&entry);
-                }
-                DynamicCallback::Name(name) if (loggers.known)(name) => {
-                    known.push(name.clone());
-                    push_event_list(event, lists, entry);
-                }
-                DynamicCallback::Name(_) | DynamicCallback::Logger(_) => {
-                    push_event_list(event, lists, entry);
-                }
-            }
-        }
-        for name in known {
-            add_known_logger_callback(&name, event, loggers, lists);
-        }
-    }
+    resolve_event(
+        CallbackEvent::Success,
+        mem::take(&mut lists.success),
+        lists,
+        loggers,
+    );
+    resolve_event(
+        CallbackEvent::Failure,
+        mem::take(&mut lists.failure),
+        lists,
+        loggers,
+    );
 }
 
-fn push_event_list(event: CallbackEvent, lists: &mut CallbackLists, entry: DynamicCallback) {
-    match event {
-        CallbackEvent::Success => lists.success.push(entry),
-        CallbackEvent::Failure => lists.failure.push(entry),
+fn resolve_event(
+    event: CallbackEvent,
+    entries: Vec<DynamicCallback>,
+    lists: &mut CallbackLists,
+    loggers: &CustomLoggers<'_>,
+) {
+    let target = match event {
+        CallbackEvent::Success => CallbackList::Success,
+        CallbackEvent::Failure => CallbackList::Failure,
+    };
+    let mut known = Vec::new();
+    for entry in entries {
+        match &entry {
+            DynamicCallback::Name(name)
+                if event == CallbackEvent::Success
+                    && matches!(name.as_str(), "dynamodb" | "openmeter") =>
+            {
+                lists.add(CallbackList::AsyncSuccess, &entry);
+            }
+            DynamicCallback::Name(name) if (loggers.known)(name) => {
+                known.push(name.clone());
+                lists.add(target, &entry);
+            }
+            DynamicCallback::Name(_) | DynamicCallback::Logger(_) => lists.add(target, &entry),
+        }
+    }
+    for name in known {
+        add_known_logger_callback(&name, event, loggers, lists);
     }
 }

@@ -1,4 +1,3 @@
-pub mod breadcrumb;
 pub mod environment;
 pub mod messages;
 mod registration;
@@ -6,44 +5,32 @@ mod registration;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_core::rules::RuleError;
-use betterlite_core::rules::RuleEvaluator;
+use betterlite_core::rules::{RuleError, RuleEvaluator};
 use betterlite_logging::dynamic_callbacks::error::DynamicCallbackError;
 use betterlite_logging::dynamic_callbacks::params::standard_callback_params as callback_params;
 use betterlite_logging::logging_privacy::PrivacyContext;
 use betterlite_logging::logging_privacy::callbacks::TrustedCallbacks;
 use betterlite_logging::logging_privacy::request::PrivacyRequest;
-use betterlite_logging::logging_state::LoggingInit;
-use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::logging_state::LoggingStateError;
-use betterlite_logging::logging_state::correlation::CorrelationContext;
-use betterlite_logging::logging_state::correlation::CorrelationSettings;
-use betterlite_logging::logging_state::correlation::CorrelationSetup;
-use betterlite_logging::logging_state::types::CallbackPolicy;
-use betterlite_logging::logging_state::types::Messages;
-use betterlite_logging::logging_state::types::RequestLoggingFlags;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::types::{CallbackPolicy, Messages, RequestLoggingFlags};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateError};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use chrono::DateTime;
-use chrono::FixedOffset;
+use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use self::breadcrumb::BreadcrumbSink;
 use self::environment::apply_environment;
-use self::registration::DynamicInputs;
-use self::registration::register_request_callbacks;
-use self::registration::resolve_global_callbacks;
-use self::registration::take_dynamic_callbacks;
-use super::callbacks::CallbackLists;
-use super::callbacks::CustomLoggers;
-use super::callbacks::get_dynamic_callbacks;
-use super::guardrails::GuardrailError;
-use super::guardrails::get_applied_guardrails;
+use self::registration::{
+    DynamicInputs, register_request_callbacks, resolve_global_callbacks, take_dynamic_callbacks,
+};
+use super::callbacks::{CallbackLists, CustomLoggers, get_dynamic_callbacks};
+use super::guardrails::{GuardrailError, get_applied_guardrails};
 use super::hooks::DeploymentHook;
-use super::providers::ProviderRegistry;
-use super::providers::custom_llm_setup;
+use super::providers::{ProviderRegistry, custom_llm_setup};
 use super::request_flags::is_streaming_request;
 use crate::call_setup::RequestMap;
 
@@ -69,6 +56,10 @@ pub enum CallSetupError {
         #[from]
         source: serde_json::Error,
     },
+}
+
+pub trait BreadcrumbSink: Send + Sync {
+    fn add_breadcrumb(&self, category: &str, message: &str, level: &str);
 }
 
 pub struct TraceSource<'call> {
@@ -115,17 +106,16 @@ where
     let all_callbacks = get_dynamic_callbacks(deps.callbacks, dynamic.callbacks.as_deref());
     register_request_callbacks(&all_callbacks, &deps.loggers, &mut *deps.lists);
     resolve_global_callbacks(&mut *deps.lists, &deps.loggers);
-    breadcrumb::add_call_breadcrumb(&request, deps.breadcrumbs, deps.turn_off_message_logging)?;
+    add_call_breadcrumb(&request, deps.breadcrumbs, deps.turn_off_message_logging)?;
     let model =
         optional_text(&request, "model")?.ok_or(CallSetupError::MissingField { field: "model" })?;
     let messages = messages::message_source(original_function, &mut request, &model, rules)?;
-    let stream = is_streaming_request(&request, original_function);
     let input = LoggingInput {
         model,
         call_type: original_function.to_owned(),
         start_time,
         messages,
-        stream,
+        stream: is_streaming_request(&request, original_function),
         dynamic,
         applied_guardrails,
         function_id,
@@ -259,4 +249,27 @@ fn privacy_request(request: &RequestMap) -> Result<PrivacyRequest, CallSetupErro
     let encoded = serde_json::to_vec(request)?;
     let privacy = serde_json::from_slice(&encoded)?;
     Ok(privacy)
+}
+
+fn add_call_breadcrumb(
+    request: &RequestMap,
+    sink: Option<&dyn BreadcrumbSink>,
+    turn_off_message_logging: bool,
+) -> Result<(), CallSetupError> {
+    let Some(recorder) = sink else {
+        return Ok(());
+    };
+    let mut details = request.clone();
+    if turn_off_message_logging {
+        for field in ["messages", "input", "prompt"] {
+            details.shift_remove(field);
+        }
+    }
+    let encoded = serde_json::to_string(&Json::Object(details))?;
+    recorder.add_breadcrumb(
+        "litellm.llm_call",
+        &format!("Keyword Args: {encoded}"),
+        "info",
+    );
+    Ok(())
 }

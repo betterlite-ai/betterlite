@@ -2,8 +2,7 @@ use std::fmt;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::call_setup::RequestMap;
@@ -55,10 +54,9 @@ pub fn load_credentials_from_list(
         }
     };
     let Some(credential) = credentials.find_credential(&name) else {
-        let warning = CredentialWarning {
+        return Ok(Some(CredentialWarning {
             credential_name: name,
-        };
-        return Ok(Some(warning));
+        }));
     };
     for (key, value) in &credential.credential_values {
         if !request.contains_key(key) {

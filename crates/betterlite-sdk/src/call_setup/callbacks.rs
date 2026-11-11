@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger;
@@ -5,10 +6,6 @@ use betterlite_logging::callback_logger::resolver::LoggerResolver;
 use betterlite_logging::dynamic_callbacks::DynamicCallback;
 
 use super::hooks::DeploymentHook;
-
-pub mod custom_logger;
-
-use custom_logger::is_same_registered_logger;
 
 // LiteLLM keeps these five lists as module globals; betterlite passes the caller's copy through every call
 #[derive(Debug, Default)]
@@ -26,49 +23,102 @@ pub struct CustomLoggers<'call> {
     pub resolver: &'call dyn LoggerResolver,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallbackEvent {
+    Success,
+    Failure,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallbackList {
+    Input,
+    Success,
+    AsyncSuccess,
+    Failure,
+    AsyncFailure,
+}
+
 impl CallbackLists {
-    pub fn add_input(&mut self, callback: &DynamicCallback) {
-        if !self.input.contains(callback) {
-            self.input.push(callback.clone());
-        }
-    }
-
-    // The manager routes dynamodb and openmeter to the async list even when the caller named them for success
-    pub fn add_success(&mut self, callback: &DynamicCallback) {
-        if let DynamicCallback::Name(name) = callback
-            && matches!(name.as_str(), "dynamodb" | "openmeter")
+    pub fn add(&mut self, list: CallbackList, callback: &DynamicCallback) {
+        // The manager routes dynamodb and openmeter to the async list even when the caller named them for success
+        if list == CallbackList::Success
+            && matches!(callback, DynamicCallback::Name(name) if matches!(name.as_str(), "dynamodb" | "openmeter"))
         {
-            self.add_async_success(callback);
-            return;
+            return self.add(CallbackList::AsyncSuccess, callback);
         }
-        if !registered(&self.success, callback) {
-            self.success.push(callback.clone());
-        }
-    }
-
-    pub fn add_failure(&mut self, callback: &DynamicCallback) {
-        if !registered(&self.failure, callback) {
-            self.failure.push(callback.clone());
-        }
-    }
-
-    pub fn add_async_success(&mut self, callback: &DynamicCallback) {
-        if !registered(&self.async_success, callback) {
-            self.async_success.push(callback.clone());
-        }
-    }
-
-    pub fn add_async_failure(&mut self, callback: &DynamicCallback) {
-        if !registered(&self.async_failure, callback) {
-            self.async_failure.push(callback.clone());
+        let target = match list {
+            CallbackList::Input => &mut self.input,
+            CallbackList::Success => &mut self.success,
+            CallbackList::AsyncSuccess => &mut self.async_success,
+            CallbackList::Failure => &mut self.failure,
+            CallbackList::AsyncFailure => &mut self.async_failure,
+        };
+        if !target.iter().any(|existing| {
+            existing == callback
+                || (list != CallbackList::Input && is_same_registered_logger(existing, callback))
+        }) {
+            target.push(callback.clone());
         }
     }
 }
 
-fn registered(callbacks: &[DynamicCallback], callback: &DynamicCallback) -> bool {
-    callbacks
-        .iter()
-        .any(|existing| existing == callback || is_same_registered_logger(existing, callback))
+// LiteLLM compares the exact class and the callback name; betterlite's loggers carry only the name
+#[must_use]
+pub fn is_same_registered_logger(existing: &DynamicCallback, candidate: &DynamicCallback) -> bool {
+    match (existing, candidate) {
+        (DynamicCallback::Logger(left), DynamicCallback::Logger(right)) => {
+            left.callback_name() == right.callback_name()
+        }
+        (DynamicCallback::Name(_), _) | (_, DynamicCallback::Name(_)) => false,
+    }
+}
+
+pub fn add_known_logger_callback(
+    callback: &str,
+    event: CallbackEvent,
+    loggers: &CustomLoggers<'_>,
+    lists: &mut CallbackLists,
+) {
+    if !(loggers.known)(callback) {
+        tracing::debug!(callback, "the callback is not a known custom logger");
+        return;
+    }
+    let Ok(Some(logger)) = loggers.resolver.resolve(callback, &BTreeMap::new()) else {
+        return;
+    };
+    let entry = DynamicCallback::Logger(logger);
+    let mut existing = match event {
+        CallbackEvent::Success => lists.success.iter().chain(&lists.async_success),
+        CallbackEvent::Failure => lists.failure.iter().chain(&lists.async_failure),
+    };
+    if existing.any(|found| is_same_registered_logger(found, &entry)) {
+        return;
+    }
+    match event {
+        CallbackEvent::Success => {
+            lists.add(CallbackList::Success, &entry);
+            lists.add(CallbackList::AsyncSuccess, &entry);
+            remove_name(&mut lists.success, callback);
+            remove_name(&mut lists.async_success, callback);
+        }
+        CallbackEvent::Failure => {
+            lists.add(CallbackList::Failure, &entry);
+            lists.add(CallbackList::AsyncFailure, &entry);
+            remove_name(&mut lists.failure, callback);
+            remove_name(&mut lists.async_failure, callback);
+        }
+    }
+}
+
+fn remove_name(list: &mut Vec<DynamicCallback>, name: &str) {
+    let mut removed = false;
+    list.retain(|entry| {
+        if !removed && matches!(entry, DynamicCallback::Name(candidate) if candidate == name) {
+            removed = true;
+            return false;
+        }
+        true
+    });
 }
 
 #[must_use]

@@ -24,23 +24,30 @@ pub fn get_request_guardrails(request: &RequestMap) -> Result<Vec<String>, Guard
     else {
         return Ok(Vec::new());
     };
-    match requester.get("guardrails") {
-        None | Some(Json::Null) => Ok(Vec::new()),
-        Some(Json::List(values)) => values
-            .iter()
-            .map(|value| match value {
-                Json::Text(name) => Ok(name.clone()),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    Err(GuardrailError::FieldType {
-                        field: "metadata.requester_metadata.guardrails",
-                    })
-                }
-            })
-            .collect(),
-        Some(_) => Err(GuardrailError::FieldType {
-            field: "metadata.requester_metadata.guardrails",
-        }),
-    }
+    let Some(value) = requester.get("guardrails") else {
+        return Ok(Vec::new());
+    };
+    let Json::List(values) = value else {
+        return match value {
+            Json::Null => Ok(Vec::new()),
+            Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+                Err(GuardrailError::FieldType {
+                    field: "metadata.requester_metadata.guardrails",
+                })
+            }
+        };
+    };
+    values
+        .iter()
+        .map(|entry| match entry {
+            Json::Text(name) => Ok(name.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                Err(GuardrailError::FieldType {
+                    field: "metadata.requester_metadata.guardrails",
+                })
+            }
+        })
+        .collect()
 }
 
 pub fn get_applied_guardrails(

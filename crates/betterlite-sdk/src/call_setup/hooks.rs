@@ -6,8 +6,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_models::decisions::Json;
 use serde::Deserialize as _;
-use serde::de::value::Error as ValueError;
-use serde::de::value::StrDeserializer;
+use serde::de::value::{Error as ValueError, StrDeserializer};
 use thiserror::Error;
 
 use super::correlation::CallOutcome;

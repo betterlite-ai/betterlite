@@ -6,10 +6,10 @@ use rstest::rstest;
 use super::support::moment;
 use super::support::request;
 use super::support::value;
-use crate::call_setup::text::debug::debug_text;
-use crate::call_setup::text::logging_id::get_logging_id;
-use crate::call_setup::text::ocr::OcrFile;
-use crate::call_setup::text::ocr::ocr_document_summary;
+use crate::call_setup::text::OcrFile;
+use crate::call_setup::text::debug_text;
+use crate::call_setup::text::get_logging_id;
+use crate::call_setup::text::ocr_document_summary;
 
 #[test]
 fn ocr_summary_defaults_a_non_mapping_document() {

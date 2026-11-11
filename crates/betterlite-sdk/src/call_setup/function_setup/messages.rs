@@ -1,53 +1,36 @@
-use betterlite_core::message_utilities::thought_signatures::is_gemini_model;
-use betterlite_core::message_utilities::thought_signatures::strip_signatures_from_messages;
-use betterlite_core::rules::RuleEvaluator;
-use betterlite_core::rules::RulePhase;
-use betterlite_core::rules::evaluate;
+use betterlite_core::message_utilities::thought_signatures::{
+    is_gemini_model, strip_signatures_from_messages,
+};
+use betterlite_core::rules::{RuleEvaluator, RulePhase, evaluate};
 use betterlite_logging::logging_state::types::Messages;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use sha2::Digest as _;
-use sha2::Sha256;
+use sha2::{Digest as _, Sha256};
 
 use super::CallSetupError;
 use crate::call_setup::RequestMap;
-use crate::call_setup::text::ocr::ocr_document_summary;
+use crate::call_setup::text::ocr_document_summary;
 
 const DEFAULT_MESSAGE_VALUE: &str = "default-message-value";
 const THOUGHT_SIGNATURE_SEPARATOR: &str = "__thought__";
 
-// The call types LiteLLM logs with an empty message list instead of a default text
-const NON_INFERENCE_CALL_TYPES: [&str; 30] = [
+// LiteLLM's sync names here each have an async twin under an "a" prefix, and every twin logs an empty list
+const NON_INFERENCE_CALLS: [&str; 15] = [
     "get_responses",
-    "aget_responses",
     "delete_responses",
-    "adelete_responses",
     "cancel_responses",
-    "acancel_responses",
     "list_input_items",
-    "alist_input_items",
     "vector_store_create",
-    "avector_store_create",
     "vector_store_retrieve",
-    "avector_store_retrieve",
     "vector_store_list",
-    "avector_store_list",
     "vector_store_update",
-    "avector_store_update",
     "vector_store_delete",
-    "avector_store_delete",
     "vector_store_file_create",
-    "avector_store_file_create",
     "vector_store_file_list",
-    "avector_store_file_list",
     "vector_store_file_retrieve",
-    "avector_store_file_retrieve",
     "vector_store_file_content",
-    "avector_store_file_content",
     "vector_store_file_update",
-    "avector_store_file_update",
     "vector_store_file_delete",
-    "avector_store_file_delete",
 ];
 
 pub(super) fn message_source<Evaluator>(
@@ -83,11 +66,15 @@ where
         | "agenerate_content"
         | "generate_content_stream"
         | "agenerate_content_stream" => Ok(Some(Messages::Text(DEFAULT_MESSAGE_VALUE.to_owned()))),
-        other if NON_INFERENCE_CALL_TYPES.contains(&other) => {
-            Ok(Some(Messages::Values(Vec::new())))
-        }
+        other if is_non_inference(other) => Ok(Some(Messages::Values(Vec::new()))),
         _ => Ok(Some(Messages::Text(DEFAULT_MESSAGE_VALUE.to_owned()))),
     }
+}
+
+fn is_non_inference(call_type: &str) -> bool {
+    NON_INFERENCE_CALLS
+        .iter()
+        .any(|name| call_type == *name || call_type.strip_prefix('a') == Some(*name))
 }
 
 fn chat_messages<Evaluator>(
@@ -138,18 +125,16 @@ fn search_messages(request: &RequestMap) -> Result<Option<Messages>, CallSetupEr
 }
 
 fn joined_parts(parts: &[Json]) -> Result<Option<Messages>, CallSetupError> {
-    let texts = parts
-        .iter()
-        .map(|part| match part {
-            Json::Text(text) => Ok(text.as_str()),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                Err(CallSetupError::FieldType {
-                    field: "query",
-                    expected: "a list of strings",
-                })
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut texts = Vec::with_capacity(parts.len());
+    for part in parts {
+        let Json::Text(text) = part else {
+            return Err(CallSetupError::FieldType {
+                field: "query",
+                expected: "a list of strings",
+            });
+        };
+        texts.push(text.as_str());
+    }
     Ok(Some(Messages::Text(texts.join("\n"))))
 }
 

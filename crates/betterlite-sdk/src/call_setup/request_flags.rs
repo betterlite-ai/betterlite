@@ -16,20 +16,19 @@ const ASYNC_FLAGS: [&str; 11] = [
     "aresponses",
 ];
 
-const STREAMING_CALL_TYPES: [&str; 2] = ["generate_content_stream", "agenerate_content_stream"];
-
 #[must_use]
 pub fn is_async_request(request: &RequestMap, is_pass_through: bool) -> bool {
-    if is_pass_through {
-        return true;
-    }
-    ASYNC_FLAGS
-        .iter()
-        .any(|flag| matches!(request.get(*flag), Some(Json::Bool(true))))
+    is_pass_through
+        || ASYNC_FLAGS
+            .iter()
+            .any(|flag| matches!(request.get(*flag), Some(Json::Bool(true))))
 }
 
 #[must_use]
 pub fn is_streaming_request(request: &RequestMap, call_type: &str) -> bool {
     matches!(request.get("stream"), Some(Json::Bool(true)))
-        || STREAMING_CALL_TYPES.contains(&call_type)
+        || matches!(
+            call_type,
+            "generate_content_stream" | "agenerate_content_stream"
+        )
 }

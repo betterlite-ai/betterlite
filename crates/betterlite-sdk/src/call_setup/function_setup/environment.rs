@@ -1,6 +1,5 @@
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::logging_state::updates::CallUpdate;
-use betterlite_logging::logging_state::updates::update_environment_variables;
+use betterlite_logging::logging_state::updates::{CallUpdate, update_environment_variables};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -17,12 +16,6 @@ pub(super) fn apply_environment(
         optional_params: IndexMap::new(),
         additional_params: stream_options(request),
     };
-    let params = call_litellm_params(request);
-    update_environment_variables(state, &params, update)?;
-    Ok(())
-}
-
-fn call_litellm_params(request: &RequestMap) -> IndexMap<String, Json> {
     let mut params = IndexMap::new();
     params.insert(String::from("api_base"), Json::Text(String::new()));
     if let Some(metadata) = request.get("metadata") {
@@ -40,7 +33,8 @@ fn call_litellm_params(request: &RequestMap) -> IndexMap<String, Json> {
             );
         }
     }
-    params
+    update_environment_variables(state, &params, update)?;
+    Ok(())
 }
 
 fn stream_options(request: &RequestMap) -> IndexMap<String, Json> {

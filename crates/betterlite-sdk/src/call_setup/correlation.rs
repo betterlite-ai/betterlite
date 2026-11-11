@@ -1,6 +1,7 @@
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::logging_state::correlation::CorrelationContext;
-use betterlite_logging::logging_state::correlation::restore_correlation_context as restore_context;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, restore_correlation_context,
+};
 use betterlite_models::decisions::Json;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +44,6 @@ pub trait CorrelationRestore {
 
 impl CorrelationRestore for LoggingState {
     fn restore_correlation_context(&self, context: &mut CorrelationContext) {
-        restore_context(self, context);
+        restore_correlation_context(self, context);
     }
 }
