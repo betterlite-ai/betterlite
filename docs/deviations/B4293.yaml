@@ -1,0 +1,17 @@
+task: B4293
+deviations:
+  - what: The batch access times sit in a std Mutex around LimitedSizeOrderedDict, where LiteLLM uses a threading.Lock next to its OrderedDict. Eviction order and writer exclusion are the same.
+    why: Rust needs a lock type that owns the data it guards.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L102-L103
+  - what: DualCache takes an already built memory tier and an optional Redis tier instead of constructor options that it builds the tiers from. attach_redis_cache still wires Redis later and keeps what was set.
+    why: Rust passes the owned tiers in, and B4299 builds the backends from configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L87-L100
+  - what: The async operations are native Rust futures, so the deferred increment failure hook runs when the Redis batch settles and not on an asyncio future callback.
+    why: Rust has no asyncio event loop; the hook still sees the settled result, including a cancelled one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L609-L643
+  - what: The memory tier stores integers as i64, so set_cache of an integer between i64::MAX and u64::MAX is refused and logged in both tiers, and on a Redis hit with such an integer the value is returned and the memory backfill is logged and skipped.
+    why: The memory tier's value type has no integer wider than i64, and a Redis hit must not turn into a miss because of it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L217
+  - what: A DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE of 0, a negative number or text that is not an integer keeps the default of 1000.
+    why: LiteLLM raises ValueError on import for text and slices with a zero step for 0, which no working setup relies on, and a negative step performs no deletes at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L499-L501
