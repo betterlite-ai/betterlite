@@ -1,0 +1,24 @@
+kind: helper
+name: provider-controls-multipart-form-lists
+call:
+  multipart_fields:
+    operation: flatten
+    sources:
+      - tags:
+          - one
+          - two
+          - three
+        mixed:
+          - 1
+          - null
+          - ""
+        nested:
+          options:
+            deep: true
+          counts:
+            - 1
+            - 2
+        empty: {}
+        nothing: null
+env: {}
+compare: {ignore: []}
