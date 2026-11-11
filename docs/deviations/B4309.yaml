@@ -15,8 +15,9 @@ deviations:
       reports deletion failures uniformly as 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L141-L162
   - what: >-
-      /cache/redis/info answers 503 for an uninitialized cache and for a non-Redis backend, even though
-      the checks raise HTTPException(500); the blanket handler rewrites all exceptions to 503.
+      /cache/redis/info answers 503 for an uninitialized cache and for a non-Redis backend; the
+      uninitialized check raises HTTPException(503) and the backend-type check raises HTTPException(500),
+      and the blanket handler rewrites every exception to 503.
     why: >-
       Betterlite keeps LiteLLM's blanket rewrite and reports every redis-info failure with 503.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L188-L213
