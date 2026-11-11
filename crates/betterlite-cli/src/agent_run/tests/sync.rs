@@ -377,6 +377,29 @@ fn codex_model_sync_args_uses_the_home_catalog_when_codex_home_is_unset() {
     assert!(home.join(".codex").join("litellm-models.json").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn codex_model_sync_args_skips_a_home_that_is_not_utf8() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+    let directory = temp_dir();
+    let home = directory.path().join(OsStr::from_bytes(b"home-\xff"));
+    let mut fixture = SyncFixture::new(
+        ScriptedHttp::new(vec![ScriptedHttp::body(
+            200,
+            &models_body(r#"[{"id":"gpt-4o","mode":"chat"}]"#),
+        )]),
+        ScriptedDebug::new(vec![ScriptedDebug::printed(&stock_catalog(&[]))]),
+        ScriptedFiles::working(),
+    );
+    fixture.case.base_env = EnvVars::new();
+    fixture.home = Some(home);
+    let reason = expect_skipped(fixture.run(Some("You are Codex.")).unwrap());
+    assert!(reason.starts_with("the Codex model catalog path "));
+    assert!(reason.ends_with(" is not valid UTF-8"));
+    assert_eq!(fixture.debug.calls().len(), 1);
+}
+
 #[test]
 fn agent_model_sync_env_returns_opencode_config_content() {
     let fixture = SyncFixture::new(
