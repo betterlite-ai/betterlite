@@ -148,6 +148,21 @@ fn agent_commands_forward_unknown_options_to_the_agent() {
 }
 
 #[test]
+fn agent_commands_forward_skip_verify_once_a_forwarded_argument_starts() {
+    let commands = agent_commands();
+    let matches = commands[0]
+        .clone()
+        .try_get_matches_from(["claude", "run", "--skip-verify"])
+        .expect("parses the agent command");
+    let args = parse_agent_args(&matches);
+    assert!(!args.skip_verify);
+    assert_eq!(
+        args.forwarded,
+        vec![String::from("run"), String::from("--skip-verify")]
+    );
+}
+
+#[test]
 fn launch_resolves_the_key_prints_the_notice_and_runs_the_agent() {
     let mut world = support::world(Vec::new());
     world.context.api_key = Some(support::secret("sk-explicit"));
