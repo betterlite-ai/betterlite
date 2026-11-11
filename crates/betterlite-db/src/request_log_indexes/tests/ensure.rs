@@ -1,0 +1,130 @@
+use crate::request_log_index_catalog::definitions::RequestLogIndex;
+
+use super::support::{
+    API_KEY_INDEX, CALL_ID_INDEX, FakeDatabase, FakeFault, FixedJitter, RecordingPause, SPEND_LOGS,
+    index_by_name, informed, install_logs, plain_table, run_ensure, valid_index, warned,
+};
+
+#[tokio::test]
+async fn empty_index_list_succeeds() {
+    let (logs, _guard) = install_logs();
+    let fake = FakeDatabase::default();
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    assert!(run_ensure(&fake, &[], &jitter, &pause).await.unwrap());
+    assert!(informed(
+        &logs.contents(),
+        "Request-log indexes are all in place"
+    ));
+    assert!(fake.state().table_kinds_asked.is_empty());
+}
+
+fn configure_collision(fake: &FakeDatabase) {
+    fake.configure(|state| {
+        state.table_kind_sequence.push_back(Ok(Some(plain_table())));
+        state.table_kind_sequence.push_back(Ok(None));
+        state.index_states.insert(
+            API_KEY_INDEX.to_owned(),
+            Ok(Some(valid_index("LiteLLM_ErrorLogs"))),
+        );
+    });
+}
+
+#[tokio::test]
+async fn false_first_index_still_attempts_second() {
+    let (logs, _guard) = install_logs();
+    let fake = FakeDatabase::default().working();
+    configure_collision(&fake);
+    let indexes = [index_by_name(API_KEY_INDEX), index_by_name(CALL_ID_INDEX)];
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    assert!(!run_ensure(&fake, &indexes, &jitter, &pause).await.unwrap());
+    assert_collision_logs(&logs.contents());
+    assert_eq!(fake.state().table_kinds_asked, [SPEND_LOGS, SPEND_LOGS]);
+}
+
+fn assert_collision_logs(logs: &str) {
+    assert!(warned(
+        logs,
+        "Index LiteLLM_SpendLogs_api_key_startTime_idx already exists on LiteLLM_ErrorLogs rather than LiteLLM_SpendLogs, leaving it alone"
+    ));
+    assert!(informed(
+        logs,
+        "Table LiteLLM_SpendLogs does not exist yet, skipping index LiteLLM_SpendLogs_litellm_call_id_idx"
+    ));
+    assert!(warned(
+        logs,
+        "Some request-log indexes are not in place yet, leaving them for the next index build"
+    ));
+}
+
+#[tokio::test]
+async fn database_error_stops_remaining_indexes() {
+    let (logs, _guard) = install_logs();
+    let fake = FakeDatabase::default();
+    fake.configure(|state| {
+        state.table_kind_sequence.push_back(Ok(None));
+        state
+            .table_kind_sequence
+            .push_back(Err(FakeFault::Database));
+    });
+    let third = RequestLogIndex {
+        table: "LiteLLM_Third",
+        name: "LiteLLM_Third_idx",
+        definition: "(\"id\")",
+    };
+    let indexes = [
+        index_by_name(API_KEY_INDEX),
+        index_by_name(CALL_ID_INDEX),
+        third,
+    ];
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    assert!(!run_ensure(&fake, &indexes, &jitter, &pause).await.unwrap());
+    assert_eq!(fake.state().table_kinds_asked, [SPEND_LOGS, SPEND_LOGS]);
+    assert!(warned(
+        &logs.contents(),
+        "Could not build the request-log indexes, leaving them for the next index build"
+    ));
+}
+
+#[tokio::test]
+async fn non_database_error_propagates() {
+    let (logs, _guard) = install_logs();
+    let fake = FakeDatabase::default();
+    fake.configure(|state| {
+        state
+            .table_kind_sequence
+            .push_back(Err(FakeFault::NotDatabase));
+    });
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    let error = run_ensure(&fake, &[index_by_name(API_KEY_INDEX)], &jitter, &pause)
+        .await
+        .unwrap_err();
+    assert_eq!(error.fault, FakeFault::NotDatabase);
+    assert!(!warned(
+        &logs.contents(),
+        "Could not build the request-log indexes"
+    ));
+}
+
+#[tokio::test]
+async fn missing_table_is_successful_skip() {
+    let (logs, _guard) = install_logs();
+    let fake = FakeDatabase::default();
+    fake.configure(|state| state.table_kind_sequence.push_back(Ok(None)));
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    assert!(
+        run_ensure(&fake, &[index_by_name(API_KEY_INDEX)], &jitter, &pause)
+            .await
+            .unwrap()
+    );
+    let captured = logs.contents();
+    assert!(informed(
+        &captured,
+        "Table LiteLLM_SpendLogs does not exist yet, skipping index LiteLLM_SpendLogs_api_key_startTime_idx"
+    ));
+    assert!(informed(&captured, "Request-log indexes are all in place"));
+}

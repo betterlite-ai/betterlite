@@ -1,0 +1,520 @@
+use std::time::Duration;
+
+use crate::request_log_indexes::leaf::report_second_copies;
+use crate::request_log_indexes::locks::HANDOVER;
+
+use super::support::{
+    API_KEY_INDEX, CALL_ID_INDEX, FakeDatabase, FixedJitter, PostgresTest, RecordingDatabase,
+    RecordingPause, SPEND_LOGS, create_spend_logs, duplicate_api_key_rows, index_builder,
+    index_by_name, index_columns, index_dependencies, index_oid, index_state_of, informed,
+    install_logs, invalid_index, leave_invalid_index, oid_in_schema, other_schema, plain_table,
+    relation_kind, run_leaf, valid_index, warned,
+};
+
+async fn assert_leaf_repair_state(
+    test: &PostgresTest,
+    invalid_oid: u32,
+    copy_oid: u32,
+    adoption_oid: u32,
+) {
+    assert!(index_state_of(&test.client, API_KEY_INDEX).await.unwrap().1);
+    assert!(index_state_of(&test.client, CALL_ID_INDEX).await.unwrap().1);
+    assert_ne!(
+        index_oid(&test.client, API_KEY_INDEX).await.unwrap(),
+        invalid_oid
+    );
+    assert_eq!(
+        index_oid(&test.client, "api_key_copy").await.unwrap(),
+        copy_oid
+    );
+    assert_eq!(
+        index_oid(&test.client, CALL_ID_INDEX).await.unwrap(),
+        adoption_oid
+    );
+}
+
+fn assert_repair_statements(recorder: &RecordingDatabase, schema: &str) {
+    assert_eq!(
+        recorder.statements(),
+        [
+            format!("DROP INDEX CONCURRENTLY \"{schema}\".\"{API_KEY_INDEX}\""),
+            format!(
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{API_KEY_INDEX}\" ON \"{schema}\".\"{SPEND_LOGS}\" (\"api_key\", \"startTime\")"
+            ),
+            format!("ALTER INDEX \"{schema}\".\"call_id_copy\" RENAME TO \"{CALL_ID_INDEX}\""),
+        ]
+    );
+}
+
+fn assert_repair_logs(logs: &str) {
+    assert!(informed(
+        logs,
+        "Dropping the invalid index LiteLLM_SpendLogs_api_key_startTime_idx left by an interrupted build on LiteLLM_SpendLogs"
+    ));
+    assert!(informed(
+        logs,
+        "Building index LiteLLM_SpendLogs_api_key_startTime_idx on LiteLLM_SpendLogs concurrently"
+    ));
+    assert!(informed(
+        logs,
+        "Renaming the equivalent index call_id_copy on LiteLLM_SpendLogs to LiteLLM_SpendLogs_litellm_call_id_idx instead of building a second one"
+    ));
+}
+
+async fn create_repair_fixture(test: &PostgresTest) -> (u32, u32, u32) {
+    create_spend_logs(test).await;
+    duplicate_api_key_rows(&test.client, SPEND_LOGS).await;
+    leave_invalid_index(
+        &test.client,
+        API_KEY_INDEX,
+        SPEND_LOGS,
+        "\"api_key\", \"startTime\"",
+    )
+    .await;
+    let setup = format!(
+        "CREATE INDEX api_key_copy ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\"); CREATE INDEX call_id_copy ON \"{SPEND_LOGS}\" (litellm_call_id);"
+    );
+    test.client.batch_execute(&setup).await.unwrap();
+    let invalid_oid = index_oid(&test.client, API_KEY_INDEX).await.unwrap();
+    let copy_oid = index_oid(&test.client, "api_key_copy").await.unwrap();
+    let adoption_oid = index_oid(&test.client, "call_id_copy").await.unwrap();
+    (invalid_oid, copy_oid, adoption_oid)
+}
+
+#[tokio::test]
+async fn postgres_leaf_repair_and_adoption() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    let (invalid_oid, copy_oid, adoption_oid) = create_repair_fixture(&test).await;
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            CALL_ID_INDEX,
+            index_by_name(CALL_ID_INDEX)
+        )
+        .await
+    );
+    assert_leaf_repair_state(&test, invalid_oid, copy_oid, adoption_oid).await;
+    assert_repair_statements(&recorder, &test.schema);
+    assert_repair_logs(&logs.contents());
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn valid_expected_definition_not_rechecked() {
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    test.client
+        .batch_execute(&format!(
+            "CREATE INDEX \"{API_KEY_INDEX}\" ON \"{SPEND_LOGS}\" (litellm_call_id)"
+        ))
+        .await
+        .unwrap();
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert!(recorder.statements().is_empty());
+    assert_eq!(
+        index_columns(&test.client, API_KEY_INDEX).await,
+        ["litellm_call_id"]
+    );
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn same_relname_other_namespace_accepted() {
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    let other = other_schema(&test.schema);
+    test.client
+        .batch_execute(&format!(
+            "CREATE SCHEMA \"{other}\"; CREATE TABLE \"{other}\".\"{SPEND_LOGS}\" (api_key text, \"startTime\" timestamptz, litellm_call_id text); CREATE INDEX \"{API_KEY_INDEX}\" ON \"{other}\".\"{SPEND_LOGS}\" (\"api_key\", \"startTime\");"
+        ))
+        .await
+        .unwrap();
+    let other_oid = oid_in_schema(&test.client, &other, API_KEY_INDEX)
+        .await
+        .unwrap();
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert!(index_state_of(&test.client, API_KEY_INDEX).await.unwrap().1);
+    assert_eq!(
+        oid_in_schema(&test.client, &other, API_KEY_INDEX)
+            .await
+            .unwrap(),
+        other_oid
+    );
+    test.client
+        .batch_execute(&format!("DROP SCHEMA \"{other}\" CASCADE"))
+        .await
+        .unwrap();
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn wrong_table_collision_untouched() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    test.client
+        .batch_execute(&format!(
+            "CREATE TABLE LiteLLM_ErrorLogs (request_id text); CREATE INDEX \"{CALL_ID_INDEX}\" ON LiteLLM_ErrorLogs (request_id);"
+        ))
+        .await
+        .unwrap();
+    let collision_oid = index_oid(&test.client, CALL_ID_INDEX).await.unwrap();
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        !run_leaf(
+            &builder,
+            SPEND_LOGS,
+            CALL_ID_INDEX,
+            index_by_name(CALL_ID_INDEX)
+        )
+        .await
+    );
+    assert_eq!(
+        index_oid(&test.client, CALL_ID_INDEX).await.unwrap(),
+        collision_oid
+    );
+    assert!(recorder.statements().is_empty());
+    assert!(pause.delays().is_empty());
+    assert!(warned(
+        &logs.contents(),
+        "Index LiteLLM_SpendLogs_litellm_call_id_idx already exists on LiteLLM_ErrorLogs rather than LiteLLM_SpendLogs, leaving it alone"
+    ));
+    test.finish().await;
+}
+
+async fn create_invalid_leaf_fixture(test: &PostgresTest) -> (u32, u32) {
+    create_spend_logs(test).await;
+    duplicate_api_key_rows(&test.client, SPEND_LOGS).await;
+    leave_invalid_index(
+        &test.client,
+        API_KEY_INDEX,
+        SPEND_LOGS,
+        "\"api_key\", \"startTime\"",
+    )
+    .await;
+    test.client
+        .batch_execute(&format!(
+            "CREATE INDEX api_key_copy ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\")"
+        ))
+        .await
+        .unwrap();
+    let invalid_oid = index_oid(&test.client, API_KEY_INDEX).await.unwrap();
+    let copy_oid = index_oid(&test.client, "api_key_copy").await.unwrap();
+    (invalid_oid, copy_oid)
+}
+
+#[tokio::test]
+async fn invalid_leaf_drops_before_create_without_adoption() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    let (invalid_oid, copy_oid) = create_invalid_leaf_fixture(&test).await;
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert_rebuild_without_adoption(&recorder, &test, invalid_oid, copy_oid).await;
+    assert_eq!(pause.delays(), [HANDOVER]);
+    assert!(warned(
+        &logs.contents(),
+        &format!(
+            "Index api_key_copy on {SPEND_LOGS} is a second copy of {API_KEY_INDEX} and only costs writes and disk; remove it with: DROP INDEX CONCURRENTLY \"{}\".\"api_key_copy\"",
+            test.schema
+        )
+    ));
+    test.finish().await;
+}
+
+async fn assert_rebuild_without_adoption(
+    recorder: &RecordingDatabase,
+    test: &PostgresTest,
+    invalid_oid: u32,
+    copy_oid: u32,
+) {
+    let schema = &test.schema;
+    assert_eq!(
+        recorder.statements(),
+        [
+            format!("DROP INDEX CONCURRENTLY \"{schema}\".\"{API_KEY_INDEX}\""),
+            format!(
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS \"{API_KEY_INDEX}\" ON \"{schema}\".\"{SPEND_LOGS}\" (\"api_key\", \"startTime\")"
+            ),
+        ]
+    );
+    assert_ne!(
+        index_oid(&test.client, API_KEY_INDEX).await.unwrap(),
+        invalid_oid
+    );
+    assert_eq!(
+        index_oid(&test.client, "api_key_copy").await.unwrap(),
+        copy_oid
+    );
+}
+
+#[tokio::test]
+async fn nonindex_name_collision() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    test.client
+        .batch_execute(&format!("CREATE TABLE \"{API_KEY_INDEX}\" (x int)"))
+        .await
+        .unwrap();
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        !run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert_eq!(relation_kind(&test.client, API_KEY_INDEX).await, "r");
+    assert!(informed(
+        &logs.contents(),
+        "Building index LiteLLM_SpendLogs_api_key_startTime_idx on LiteLLM_SpendLogs concurrently"
+    ));
+    test.finish().await;
+}
+
+#[tokio::test]
+async fn stale_read_rechecked_under_lock() {
+    let fake = FakeDatabase::default().working();
+    fake.configure(|state| {
+        state
+            .tables
+            .insert(SPEND_LOGS.to_owned(), Ok(Some(plain_table())));
+        state
+            .index_state_sequence
+            .push_back(Ok(Some(invalid_index(SPEND_LOGS))));
+        state
+            .index_state_sequence
+            .push_back(Ok(Some(valid_index(SPEND_LOGS))));
+    });
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&fake, "public", &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert!(fake.state().statements.is_empty());
+    assert_eq!(pause.delays(), [HANDOVER]);
+    assert_eq!(
+        fake.state().index_states_asked,
+        [API_KEY_INDEX, API_KEY_INDEX]
+    );
+}
+
+async fn run_valid_leaf() -> (Vec<Duration>, usize) {
+    let fake = FakeDatabase::default().working();
+    fake.configure(|state| {
+        state
+            .tables
+            .insert(SPEND_LOGS.to_owned(), Ok(Some(plain_table())));
+        state
+            .index_state_sequence
+            .push_back(Ok(Some(valid_index(SPEND_LOGS))));
+    });
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&fake, "public", &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    (pause.delays(), fake.state().statements.len())
+}
+
+async fn run_rebuilt_leaf() -> (Vec<Duration>, usize) {
+    let fake = FakeDatabase::default().working();
+    fake.configure(|state| {
+        state
+            .tables
+            .insert(SPEND_LOGS.to_owned(), Ok(Some(plain_table())));
+        state
+            .index_state_sequence
+            .push_back(Ok(Some(invalid_index(SPEND_LOGS))));
+        state
+            .index_state_sequence
+            .push_back(Ok(Some(invalid_index(SPEND_LOGS))));
+        state
+            .index_state_sequence
+            .push_back(Ok(Some(valid_index(SPEND_LOGS))));
+    });
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::new(&fake);
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&fake, "public", &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    (pause.delays(), fake.state().statements.len())
+}
+
+#[tokio::test]
+async fn leaf_handover_only_after_locked_success() {
+    let (valid_delays, valid_statements) = run_valid_leaf().await;
+    assert!(valid_delays.is_empty());
+    assert_eq!(valid_statements, 0);
+    let (rebuilt_delays, rebuilt_statements) = run_rebuilt_leaf().await;
+    assert_eq!(rebuilt_delays, [Duration::from_secs(2)]);
+    assert_eq!(rebuilt_statements, 2);
+}
+
+#[tokio::test]
+async fn duplicate_warnings_leave_all_copies() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    create_spend_logs(&test).await;
+    test.client
+        .batch_execute(&format!(
+            "CREATE INDEX \"{API_KEY_INDEX}\" ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\"); CREATE INDEX copy_a ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\"); CREATE INDEX copy_b ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\");"
+        ))
+        .await
+        .unwrap();
+    let copy_a = index_oid(&test.client, "copy_a").await.unwrap();
+    let copy_b = index_oid(&test.client, "copy_b").await.unwrap();
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    assert!(
+        run_leaf(
+            &builder,
+            SPEND_LOGS,
+            API_KEY_INDEX,
+            index_by_name(API_KEY_INDEX)
+        )
+        .await
+    );
+    assert!(recorder.statements().is_empty());
+    assert_eq!(index_oid(&test.client, "copy_a").await.unwrap(), copy_a);
+    assert_eq!(index_oid(&test.client, "copy_b").await.unwrap(), copy_b);
+    assert_second_copy_warnings(&logs.contents(), &test.schema);
+    test.finish().await;
+}
+
+fn assert_second_copy_warnings(logs: &str, schema: &str) {
+    for copy in ["copy_a", "copy_b"] {
+        assert!(warned(
+            logs,
+            &format!(
+                "Index {copy} on {SPEND_LOGS} is a second copy of {API_KEY_INDEX} and only costs writes and disk; remove it with: DROP INDEX CONCURRENTLY \"{schema}\".\"{copy}\""
+            )
+        ));
+    }
+}
+
+#[tokio::test]
+async fn parent_report_uses_plain_drop() {
+    let (logs, _guard) = install_logs();
+    let test = PostgresTest::new().await;
+    test.client
+        .batch_execute(&format!(
+            "CREATE TABLE \"{SPEND_LOGS}\" (api_key text, \"startTime\" timestamptz, litellm_call_id text) PARTITION BY RANGE (\"startTime\"); CREATE TABLE parent_leaf PARTITION OF \"{SPEND_LOGS}\" FOR VALUES FROM ('2026-01-01') TO ('2026-02-01'); CREATE INDEX copied_parent ON ONLY \"{SPEND_LOGS}\" (\"api_key\", \"startTime\");"
+        ))
+        .await
+        .unwrap();
+    let recorder = RecordingDatabase::new(test.service().await);
+    let jitter = FixedJitter::new(0);
+    let pause = RecordingPause::standalone();
+    let dependencies = index_dependencies(&jitter, &pause);
+    let builder = index_builder(&recorder, &test.schema, &dependencies);
+    report_second_copies(
+        &builder,
+        SPEND_LOGS,
+        API_KEY_INDEX,
+        index_by_name(API_KEY_INDEX),
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(warned(
+        &logs.contents(),
+        &format!(
+            "Index copied_parent on {SPEND_LOGS} is a second copy of {API_KEY_INDEX} and only costs writes and disk; remove it with: DROP INDEX \"{}\".\"copied_parent\"",
+            test.schema
+        )
+    ));
+    test.finish().await;
+}
