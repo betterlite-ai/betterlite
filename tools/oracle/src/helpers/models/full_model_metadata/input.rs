@@ -2,6 +2,8 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 
+use betterlite_config::sections::full_model_metadata::DEFAULT_MAX_LRU_CACHE_SIZE;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -14,10 +16,14 @@ pub(crate) struct Input {
 pub(crate) struct FixtureInput {
     #[serde(default)]
     pub(crate) model_cost: IndexMap<String, Value>,
-    #[serde(default)]
-    pub(crate) cache_maxsize: Option<i64>,
+    #[serde(default = "default_cache_maxsize")]
+    pub(crate) cache_maxsize: i64,
     #[serde(default)]
     pub(crate) dynamic: Option<Value>,
+}
+
+const fn default_cache_maxsize() -> i64 {
+    DEFAULT_MAX_LRU_CACHE_SIZE
 }
 
 #[derive(Deserialize)]
