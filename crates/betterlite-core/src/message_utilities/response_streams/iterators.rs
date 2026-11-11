@@ -1,5 +1,5 @@
 use std::future::Future as _;
-use std::pin::{Pin, pin};
+use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::thread::park_timeout;
 use std::time::Duration;
@@ -7,7 +7,7 @@ use std::time::Duration;
 use betterlite_models::decisions::Json;
 use futures_util::Stream;
 use indexmap::IndexMap;
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Sleep, sleep};
 
 use super::StreamError;
 use crate::message_utilities::json;
@@ -100,7 +100,7 @@ pub struct ModelResponseListIterator {
     responses: Vec<Json>,
     index: usize,
     delay: Option<Duration>,
-    next_at: Option<Instant>,
+    sleeping: Option<Pin<Box<Sleep>>>,
 }
 
 impl ModelResponseListIterator {
@@ -117,7 +117,7 @@ impl ModelResponseListIterator {
             responses,
             index: 0,
             delay,
-            next_at: None,
+            sleeping: None,
         })
     }
 
@@ -125,15 +125,11 @@ impl ModelResponseListIterator {
         let Some(delay) = self.delay else {
             return Poll::Ready(());
         };
-        let Some(deadline) = self.next_at.or_else(|| Instant::now().checked_add(delay)) else {
-            return Poll::Ready(());
-        };
-        self.next_at = Some(deadline);
-        let mut sleep = pin!(sleep_until(deadline));
-        if sleep.as_mut().poll(cx).is_pending() {
+        let timer = self.sleeping.get_or_insert_with(|| Box::pin(sleep(delay)));
+        if timer.as_mut().poll(cx).is_pending() {
             return Poll::Pending;
         }
-        self.next_at = None;
+        self.sleeping = None;
         Poll::Ready(())
     }
 

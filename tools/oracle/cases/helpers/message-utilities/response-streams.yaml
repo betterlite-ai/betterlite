@@ -11,7 +11,11 @@ call:
       - function: text_completion_stream
         include_usage: true
         chunks:
-          - {id: x, created: 1, model: m, choices: [{finish_reason: stop, index: 2, delta: {content: a}}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+          - {id: x, created: 1, model: m, choices: [{finish_reason: stop, index: 2, delta: {content: a}}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3, completion_tokens_details: null, prompt_tokens_details: null}}
+      - function: text_completion_stream
+        include_usage: false
+        chunks:
+          - {id: chatcmpl-1, created: 123, model: gpt-4o, choices: [{finish_reason: stop, delta: {}}]}
       - function: model_response_iterator
         convert_to_delta: false
         response: {id: r1, created: 42, model: gpt-4o, object: chat.completion, system_fingerprint: null, choices: [{finish_reason: stop, index: 0, message: {content: hello, role: assistant, tool_calls: null, function_call: null}}]}
@@ -26,5 +30,5 @@ call:
 env: {}
 compare:
   ignore:
-    - {pointer: /value/3/0/id, why: LiteLLM generates the stream chunk id from a fresh uuid}
-    - {pointer: /value/3/0/created, why: LiteLLM stamps the stream chunk with the wall clock}
+    - {pointer: /value/4/0/id, why: LiteLLM generates the stream chunk id from a fresh uuid}
+    - {pointer: /value/4/0/created, why: LiteLLM stamps the stream chunk with the wall clock}

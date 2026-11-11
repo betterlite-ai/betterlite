@@ -45,6 +45,8 @@ const LONG_MESSAGE: &str = r#"[{"role": "user", "content": "alpha beta gamma del
 
 const SHORTENED_40: &str = r#"[{"role": "user", "content": "alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon a.. alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon "}]"#;
 
+const TRIMMED_40: &str = r#"[{"role": "user", "content": "alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta..a gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon "}]"#;
+
 fn request<'request>(
     messages: &'request [Json],
     model: &'request str,
@@ -234,7 +236,7 @@ async fn trim_shortens_a_message_to_fit_the_limit() {
     let outcome = trimmer
         .trim_messages(&request(&messages, "gpt-4o", Some(40)))
         .await;
-    assert_eq!(outcome.messages, support::values(SHORTENED_40));
+    assert_eq!(outcome.messages, support::values(TRIMMED_40));
 }
 
 #[tokio::test]
@@ -284,17 +286,37 @@ async fn trim_keeps_the_caller_messages_untouched() {
     assert_eq!(messages, support::values(LONG_MESSAGE));
 }
 
+#[rstest]
+#[case::max_input_tokens_scaled_by_the_ratio(
+    "gpt-4o",
+    0.000_3_f64,
+    r#"[{"role": "system", "content": "You are a helpful assistant."}, {"role": "assistant", "content": "The capital of France is Paris."}, {"role": "user", "content": "And of Germany?"}]"#
+)]
+#[case::max_input_tokens_that_leave_room("gpt-4o", DEFAULT_TRIM_RATIO, CONVERSATION)]
+#[case::max_tokens_without_max_input_tokens(
+    "together-ai-8.1b-21b",
+    0.03_f64,
+    r#"[{"role": "system", "content": "You are a helpful assistant."}, {"role": "assistant", "content": "...."}, {"role": "user", "content": "And of Germany?"}]"#
+)]
+#[case::max_input_tokens_without_max_tokens_raises_in_litellm(
+    "minimax/MiniMax-M2",
+    0.000_1_f64,
+    CONVERSATION
+)]
 #[tokio::test]
-async fn trim_derives_the_limit_from_the_catalog_and_the_ratio() {
+async fn trim_derives_the_limit_from_the_catalog_and_the_ratio(
+    #[case] model: &str,
+    #[case] trim_ratio: f64,
+    #[case] expected: &str,
+) {
     let counter = support::counter();
     let catalog = support::catalog();
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(CONVERSATION);
-    // gpt-4o allows 128000 input tokens, so 0.75 of it keeps every message
-    let outcome = trimmer
-        .trim_messages(&request(&messages, "gpt-4o", None))
-        .await;
-    assert_eq!(outcome.messages, support::values(CONVERSATION));
+    let mut options = request(&messages, model, None);
+    options.trim_ratio = trim_ratio;
+    let outcome = trimmer.trim_messages(&options).await;
+    assert_eq!(outcome.messages, support::values(expected));
 }
 
 #[tokio::test]
@@ -429,6 +451,6 @@ async fn shorten_removes_characters_from_the_middle() {
         .unwrap();
     assert_eq!(
         outcome,
-        support::value(r#"{"role": "user", "content": "alpha bet.. epsilon "}"#)
+        support::value(r#"{"role": "user", "content": "alpha beta gamma ..ma delta epsilon "}"#)
     );
 }

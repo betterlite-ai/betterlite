@@ -101,21 +101,17 @@ async fn prompt_cache_requires_messages_or_tools() {
     let counter = support::counter();
     let catalog = support::catalog();
     let settings = PromptCacheSettings::default();
-    assert!(
-        !is_prompt_caching_valid_prompt(
-            &cache_request("gpt-4o", None),
-            settings,
-            &counter,
-            &catalog
-        )
-        .await
-    );
+    // a zero minimum is met by any count, so only the missing messages and tools make this false
+    let mut nothing = cache_request("gpt-4o", None);
+    nothing.min_token_count = Some(0);
+    assert!(!is_prompt_caching_valid_prompt(&nothing, settings, &counter, &catalog).await);
     let tools = support::values(
         r#"[{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}]"#,
     );
     let mut with_tools = cache_request("gpt-4o", None);
     with_tools.tools = Some(&tools);
-    assert!(!is_prompt_caching_valid_prompt(&with_tools, settings, &counter, &catalog).await);
+    with_tools.min_token_count = Some(1);
+    assert!(is_prompt_caching_valid_prompt(&with_tools, settings, &counter, &catalog).await);
 }
 
 #[tokio::test]
@@ -137,35 +133,39 @@ async fn prompt_cache_compares_the_count_with_the_minimum() {
     );
 }
 
+// the catalog minimum is 4096 for openrouter/anthropic/claude-opus-4.5 and 1024 for the bare names
+#[rstest]
+#[case::no_provider("anthropic/claude-opus-4.5", None, true)]
+#[case::provider_prefix_is_added("anthropic/claude-opus-4.5", Some("openrouter"), false)]
+#[case::model_that_starts_with_the_provider_name(
+    "databricks-claude-opus-4-5",
+    Some("databricks"),
+    true
+)]
 #[tokio::test]
-async fn prompt_cache_prefixes_the_model_with_the_provider() {
+async fn prompt_cache_prefixes_the_model_with_the_provider(
+    #[case] model: &str,
+    #[case] provider: Option<&str>,
+    #[case] expected: bool,
+) {
     let counter = support::counter();
     let catalog = support::catalog();
-    let messages = support::values(
-        r#"[{"role": "user", "content": "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}\u{4e16}\u{754c}"}]"#,
-    );
-    let mut unprefixed = cache_request("gpt-4o", Some(&messages));
-    unprefixed.min_token_count = Some(10);
-    assert!(
-        !is_prompt_caching_valid_prompt(
-            &unprefixed,
-            PromptCacheSettings::default(),
-            &counter,
-            &catalog
-        )
-        .await
-    );
-    let mut prefixed = cache_request("gpt-4o", Some(&messages));
-    prefixed.custom_llm_provider = Some("openai");
-    prefixed.min_token_count = Some(10);
-    assert!(
+    let words = "word ".repeat(1100);
+    let messages = support::values(&format!(
+        r#"[{{"role": "user", "content": "{}"}}]"#,
+        words.trim_end()
+    ));
+    let mut request = cache_request(model, Some(&messages));
+    request.custom_llm_provider = provider;
+    assert_eq!(
         is_prompt_caching_valid_prompt(
-            &prefixed,
+            &request,
             PromptCacheSettings::default(),
             &counter,
             &catalog
         )
-        .await
+        .await,
+        expected
     );
 }
 

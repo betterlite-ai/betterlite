@@ -88,6 +88,28 @@ async fn text_completion_stream_usage_follows_the_option(
 }
 
 #[tokio::test]
+async fn text_completion_stream_defaults_an_absent_delta_content_index_and_finish_reason() {
+    let finish = support::value(
+        r#"{"id": "chatcmpl-1", "created": 123, "model": "gpt-4o", "choices": [{"finish_reason": "stop", "delta": {}}]}"#,
+    );
+    let bare = support::value(r#"{"id": "chatcmpl-1", "choices": [{"delta": {}}]}"#);
+    let wrapper = TextCompletionStreamWrapper {
+        chunks: vec![finish, bare].into_iter(),
+        stream_options: None,
+    };
+    let converted: Vec<Json> = wrapper.collect::<Result<_, StreamError>>().unwrap();
+    assert_eq!(
+        converted,
+        support::values(
+            r#"[
+    {"id": "chatcmpl-1", "object": "text_completion", "created": 123, "model": "gpt-4o", "choices": [{"finish_reason": "stop", "index": 0, "text": null, "logprobs": null, "reasoning_content": null}], "usage": {"completion_tokens": 0, "prompt_tokens": 0, "total_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null}},
+    {"id": "chatcmpl-1", "object": "text_completion", "created": null, "model": null, "choices": [{"finish_reason": null, "index": 0, "text": null, "logprobs": null, "reasoning_content": null}], "usage": {"completion_tokens": 0, "prompt_tokens": 0, "total_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null}}
+]"#
+        )
+    );
+}
+
+#[tokio::test]
 async fn text_completion_stream_rejects_a_chunk_without_choices() {
     let wrapper = TextCompletionStreamWrapper {
         chunks: once(support::value(r#"{"id": "x"}"#)),

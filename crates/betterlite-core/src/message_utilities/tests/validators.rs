@@ -276,13 +276,24 @@ async fn stop_sequences_truncate_to_four(
 }
 
 #[rstest]
-#[case::enabled(r#"{"type": "enabled", "budget_tokens": 7}"#)]
-#[case::camel(r#"{"budgetTokens": 5, "type": "enabled"}"#)]
-#[case::both(r#"{"budgetTokens": 5, "budget_tokens": 7}"#)]
+#[case::enabled(
+    r#"{"type": "enabled", "budget_tokens": 7}"#,
+    r#"{"type": "enabled", "budget_tokens": 7}"#
+)]
+#[case::camel(
+    r#"{"budgetTokens": 5, "type": "enabled"}"#,
+    r#"{"type": "enabled", "budget_tokens": 5}"#
+)]
+#[case::both(
+    r#"{"budgetTokens": 5, "budget_tokens": 7}"#,
+    r#"{"budget_tokens": 7}"#
+)]
 #[tokio::test]
-async fn thinking_param_normalizes_and_keeps_dicts(#[case] input: &str) {
-    let thinking = support::value(input);
-    assert_eq!(fix_thinking_param(&thinking, MEDIUM_BUDGET), Some(thinking));
+async fn thinking_param_normalizes_and_keeps_dicts(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(
+        fix_thinking_param(&support::value(input), MEDIUM_BUDGET),
+        Some(support::value(expected))
+    );
 }
 
 #[rstest]

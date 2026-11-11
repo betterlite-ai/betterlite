@@ -99,10 +99,8 @@ fn text_choice(chunk: &Json) -> Result<Json, StreamError> {
         .get("delta")
         .and_then(json::object)
         .ok_or(StreamError::NoDelta)?;
-    let text = delta
-        .get("content")
-        .cloned()
-        .ok_or(StreamError::MissingField { field: "content" })?;
+    // ModelResponseStream gives an absent delta content, index and finish_reason None, 0 and None
+    let text = delta.get("content").cloned().unwrap_or(Json::Null);
     let reasoning = delta
         .get("reasoning_content")
         .cloned()
@@ -110,13 +108,8 @@ fn text_choice(chunk: &Json) -> Result<Json, StreamError> {
     let index = choice
         .get("index")
         .cloned()
-        .ok_or(StreamError::MissingField { field: "index" })?;
-    let finish_reason = choice
-        .get("finish_reason")
-        .cloned()
-        .ok_or(StreamError::MissingField {
-            field: "finish_reason",
-        })?;
+        .unwrap_or_else(|| Json::Number(serde_json::Number::from(0_u8)));
+    let finish_reason = choice.get("finish_reason").cloned().unwrap_or(Json::Null);
     let mut text_choice = IndexMap::new();
     text_choice.insert(String::from("finish_reason"), finish_reason);
     text_choice.insert(String::from("index"), index);

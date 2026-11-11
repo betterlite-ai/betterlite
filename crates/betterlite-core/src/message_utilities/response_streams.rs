@@ -15,8 +15,6 @@ pub enum StreamError {
     NoDelta,
     #[error("the response choice has no message")]
     NoMessage,
-    #[error("the stream chunk choice has no {field}")]
-    MissingField { field: &'static str },
     #[error("a delay of {seconds} seconds cannot be a duration")]
     Delay { seconds: f64 },
 }

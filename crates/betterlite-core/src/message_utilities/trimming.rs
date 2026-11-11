@@ -158,12 +158,10 @@ impl Trimmer<'_> {
         let Some(entry) = catalog_lookup::exact(self.catalog, request.model) else {
             return Ok(None);
         };
-        let model_limit = entry
-            .fields
-            .metadata
-            .max_input_tokens
-            .or(entry.fields.metadata.max_tokens)
-            .ok_or(TrimError::UnknownLimit)?;
+        // LiteLLM reads max_tokens as the default of .get("max_input_tokens"), so a missing max_tokens raises there
+        let metadata = &entry.fields.metadata;
+        let fallback = metadata.max_tokens.ok_or(TrimError::UnknownLimit)?;
+        let model_limit = metadata.max_input_tokens.unwrap_or(fallback);
         let limit = cast::<u64, f64>(model_limit).ok_or(TrimError::LimitOverflow)?;
         Ok(Some(
             cast::<f64, i64>(limit.mul_add(request.trim_ratio, 0.0_f64))

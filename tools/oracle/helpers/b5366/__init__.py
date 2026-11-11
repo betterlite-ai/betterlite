@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 import litellm
 from litellm import utils
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import ModelResponse, ModelResponseStream
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -125,7 +125,7 @@ class Utils(Protocol):
 class StreamWrapper(Protocol):
     def __init__(
         self,
-        completion_stream: Iterator[Json],
+        completion_stream: Iterator[ResponseModel],
         model: str,
         stream_options: Json = None,
         custom_llm_provider: str | None = None,
@@ -161,6 +161,7 @@ WRAPPER = cast("type[StreamWrapper]", utils.TextCompletionStreamWrapper)
 ITERATOR = cast("type[ResponseIterator]", utils.ModelResponseIterator)
 LIST_ITERATOR = cast("type[ResponseListIterator]", utils.ModelResponseListIterator)
 MODEL_RESPONSE = cast("type[ResponseModel]", ModelResponse)
+STREAM_CHUNK = cast("type[ResponseModel]", ModelResponseStream)
 
 
 def text(value: Json) -> str:
@@ -366,7 +367,8 @@ def is_prompt_caching_valid_prompt(call: Object) -> Json:
 def text_completion_stream(call: Object) -> Json:
     include_usage = call.get("include_usage")
     options: Json = None if include_usage is None else {"include_usage": include_usage is True}
-    stream = WRAPPER(iter(list_of(call_field(call, "chunks"))), "", options)
+    chunks = [STREAM_CHUNK(**object_of(item)) for item in list_of(call_field(call, "chunks"))]
+    stream = WRAPPER(iter(chunks), "", options)
     return [chunk.model_dump() for chunk in stream]
 
 

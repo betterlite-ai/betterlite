@@ -59,5 +59,29 @@ call:
         max_tokens: 40
         messages:
           - {role: user, content: alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon }
+      - function: trim_messages
+        model: gpt-4o
+        trim_ratio: 0.0003
+        messages:
+          - {role: system, content: You are a helpful assistant.}
+          - {role: user, content: What is the capital of France?}
+          - {role: assistant, content: The capital of France is Paris.}
+          - {role: user, content: And of Germany?}
+      - function: trim_messages
+        model: together-ai-8.1b-21b
+        trim_ratio: 0.03
+        messages:
+          - {role: system, content: You are a helpful assistant.}
+          - {role: user, content: What is the capital of France?}
+          - {role: assistant, content: The capital of France is Paris.}
+          - {role: user, content: And of Germany?}
+      - function: trim_messages
+        model: minimax/MiniMax-M2
+        trim_ratio: 0.0001
+        messages:
+          - {role: system, content: You are a helpful assistant.}
+          - {role: user, content: What is the capital of France?}
+          - {role: assistant, content: The capital of France is Paris.}
+          - {role: user, content: And of Germany?}
 env: {}
 compare: {ignore: []}
