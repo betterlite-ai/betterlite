@@ -152,6 +152,7 @@ fn timestamps_and_null_fields() {
     timestamp_fallbacks();
     timestamp_fractions();
     timestamp_formats();
+    timestamp_edge_forms();
 }
 
 fn running_timestamps() {
@@ -268,6 +269,40 @@ fn timestamp_formats() {
         decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00+05:30"}"#)
             .expect("the offset time decodes");
     assert_eq!(offset.created_at, 1_705_294_800);
+}
+
+fn timestamp_edge_forms() {
+    let leap = decode(
+        r#"{"jobArn":"a","status":"InProgress","submitTime":"2024-06-30T23:59:60Z","jobExpirationTime":"2024-06-30T23:59:60Z"}"#,
+    )
+    .expect("the leap second decodes");
+    assert_eq!(leap.created_at, NOW);
+    assert_eq!(leap.expires_at, None);
+    let lower = decode(
+        r#"{"jobArn":"a","status":"InProgress","submitTime":"2024-01-15T10:30:00z","jobExpirationTime":"2024-01-15T10:30:00z"}"#,
+    )
+    .expect("the lowercase zone decodes");
+    assert_eq!(lower.created_at, NOW);
+    assert_eq!(lower.expires_at, None);
+    let spaced = decode(
+        r#"{"jobArn":"a","status":"InProgress","submitTime":"2024-01-15T 10:30:00","jobExpirationTime":"2024-01-15T 10:30:00"}"#,
+    )
+    .expect("the spaced time decodes");
+    assert_eq!(spaced.created_at, NOW);
+    assert_eq!(spaced.expires_at, None);
+    let minute = decode(
+        r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30Z","jobExpirationTime":"2024-01-15T10:30+05:30"}"#,
+    )
+    .expect("the minute offsets decode");
+    assert_eq!(minute.created_at, 1_705_314_600);
+    assert_eq!(minute.expires_at, Some(1_705_294_800));
+    let hour = decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10"}"#)
+        .expect("the hour-only time decodes");
+    assert_eq!(hour.created_at, 1_705_312_800);
+    let naive_minute =
+        decode(r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30"}"#)
+            .expect("the naive minute decodes");
+    assert_eq!(naive_minute.created_at, 1_705_314_600);
 }
 
 fn record_counts() {

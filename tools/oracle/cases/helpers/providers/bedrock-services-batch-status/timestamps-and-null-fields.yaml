@@ -22,6 +22,12 @@ call:
       - '{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00+05:30"}'
       - '{"jobArn":"a","status":"InProgress","submitTime":null,"lastModifiedTime":null,"jobExpirationTime":null}'
       - '{"jobArn":"a","status":"Submitted","submitTime":1705314600,"jobExpirationTime":1705314600}'
+      - '{"jobArn":"a","status":"InProgress","submitTime":"2024-06-30T23:59:60Z","jobExpirationTime":"2024-06-30T23:59:60Z"}'
+      - '{"jobArn":"a","status":"InProgress","submitTime":"2024-01-15T10:30:00z","jobExpirationTime":"2024-01-15T10:30:00z"}'
+      - '{"jobArn":"a","status":"InProgress","submitTime":"2024-01-15T 10:30:00","jobExpirationTime":"2024-01-15T 10:30:00"}'
+      - '{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30Z","jobExpirationTime":"2024-01-15T10:30+05:30"}'
+      - '{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10"}'
+      - '{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30"}'
 env:
   TZ: UTC
 compare: {ignore: []}
