@@ -59,12 +59,8 @@ case ${mode} in
     [[ ${#strict[@]} -eq 0 ]] || exec "${oracle[@]}" mypy --config-file tools/oracle/litellm/pyproject.toml "${strict[@]}"
     ;;
   pyright)
-    # task checks run basedpyright over the whole helpers folder, and mypy misses its private-usage errors, so every helper passes it here
-    files=("${legacy[@]}")
-    for file in "${strict[@]}"; do
-      [[ ${file} == tools/oracle/helpers/* ]] && files+=("${file}")
-    done
-    [[ ${#files[@]} -eq 0 ]] || exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json "${files[@]}"
+    # 1031 task checks run basedpyright over the whole helpers folder, so a helper change has to pass that same run, importers included
+    exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json
     ;;
   similarity)
     tracked=$(git ls-files -- '*.py' ':!:**/fixtures/**') || exit 1
