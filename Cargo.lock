@@ -2534,13 +2534,18 @@ name = "betterlite-rag"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-types",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
+ "betterlite-redact",
  "betterlite-redis",
+ "betterlite-secret-managers",
  "hex",
  "percent-encoding",
  "redis",

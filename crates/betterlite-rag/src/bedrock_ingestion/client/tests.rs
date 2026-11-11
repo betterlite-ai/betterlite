@@ -1,7 +1,35 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::io;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant, SystemTime};
+
+use aws_smithy_async::rt::sleep::{SharedAsyncSleep, TokioSleep};
+use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
+use aws_smithy_runtime_api::client::http::{
+    HttpConnector, HttpConnectorFuture, SharedHttpConnector, http_client_fn,
+};
+use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
+use aws_smithy_runtime_api::client::result::ConnectorError;
+use aws_types::os_shim_internal::Fs;
+use betterlite_bedrock::aws_endpoints::sts::StsClientKwargs;
+use betterlite_bedrock::aws_settings::credential_cache::CredentialCache;
+use betterlite_bedrock::aws_settings::sources::NativeSources;
+use betterlite_bedrock::credentials::AwsCredentialResolver;
+use betterlite_config::tls::Verification;
+use betterlite_context::local_ttl_cache::LocalTtlCache;
+use betterlite_context::local_ttl_cache::dual::{CacheEvent, Diagnostics, DualLocalCache};
+use betterlite_redact::secret::Redactor;
+use betterlite_secret_managers::secret_lookup::SecretLookup;
+use betterlite_secret_managers::secret_lookup::ports::{
+    AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
+    OidcTokenCache,
+};
 use secrecy::{ExposeSecret, SecretString};
 
+use crate::bedrock_ingestion::client::clock::{Clock as _, SystemClock};
+use crate::bedrock_ingestion::client::credentials::RagCredentialResolver as _;
 use crate::bedrock_ingestion::client::endpoints::{
     bedrock_agent_endpoint, create_bucket_body, s3_bucket_host,
 };
@@ -10,8 +38,8 @@ use crate::bedrock_ingestion::client::{
 };
 use crate::bedrock_ingestion::error::BedrockIngestionError;
 use crate::bedrock_ingestion::tests::support::{
-    FakeTransport, FakeTransportError, RecordedRequest, StaticResolver, TEST_KEY, clients,
-    json_response, settings, status_response,
+    FakeTransport, FakeTransportError, NOW_SECONDS, RecordedRequest, StaticResolver, TEST_KEY,
+    clients, fixed_now, json_response, settings, status_response,
 };
 use crate::bedrock_ingestion::wire::{
     AossConfiguration, AossFieldMapping, CreateDataSourceRequest, CreateKnowledgeBaseRequest,
@@ -509,4 +537,121 @@ fn client_aws_settings_carry_the_resolved_region() {
     let parsed = settings(r#"{"vector_store_id": "KB123", "aws_region_name": "cn-north-1"}"#);
     let built = aws_settings(&parsed);
     assert_eq!(built.region_name.as_deref(), Some("cn-north-1"));
+}
+
+#[test]
+fn client_system_clock_tracks_the_wall_clock() {
+    let wall = SystemTime::now();
+    let reported = SystemClock.now();
+    let drift = match reported.duration_since(wall) {
+        Ok(ahead) => ahead,
+        Err(_behind) => wall.duration_since(reported).unwrap_or_default(),
+    };
+    assert!(drift < Duration::from_secs(1));
+}
+
+struct Ports;
+
+impl OidcHttp for Ports {
+    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
+        Err(OidcHttpError::Request {
+            message: "the rag fixture has no OIDC transport".to_owned(),
+        })
+    }
+}
+
+impl AzureOidcTokens for Ports {
+    fn token(&self, _scope: &str) -> Result<Option<SecretString>, AzureOidcError> {
+        Ok(None)
+    }
+}
+
+impl OidcClock for Ports {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn unix_seconds(&self) -> i64 {
+        0
+    }
+}
+
+#[derive(Debug)]
+struct NoNetwork;
+
+impl HttpConnector for NoNetwork {
+    fn call(&self, _request: HttpRequest) -> HttpConnectorFuture {
+        HttpConnectorFuture::ready(Err(ConnectorError::other(
+            Box::new(io::Error::other("the rag fixture has no network")),
+            None,
+        )))
+    }
+}
+
+fn rag_cache(events: Arc<Mutex<Vec<String>>>) -> CredentialCache {
+    let memory = LocalTtlCache::with_clock(
+        Some(1000),
+        None,
+        None,
+        1024,
+        Arc::new(|| f64::from(u32::try_from(NOW_SECONDS).unwrap())),
+    )
+    .unwrap();
+    CredentialCache::new(DualLocalCache {
+        memory: Arc::new(Mutex::new(memory)),
+        default_in_memory_ttl: None,
+        diagnostics: Diagnostics {
+            redactor: Arc::new(Redactor::new(16).unwrap()),
+            emit: Arc::new(move |event: CacheEvent| {
+                events
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(event.message);
+            }),
+        },
+    })
+    .unwrap()
+}
+
+#[tokio::test]
+async fn client_b594_resolver_forwards_static_keys() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = rag_cache(Arc::clone(&events));
+    let native = NativeSources {
+        environment: BTreeMap::new(),
+        filesystem: Fs::from_slice(&[]),
+        client: http_client_fn(|_settings, _runtime| SharedHttpConnector::new(NoNetwork)),
+        clock: SharedTimeSource::new(StaticTimeSource::new(fixed_now())),
+        sleep: SharedAsyncSleep::new(TokioSleep::new()),
+        timeout: Duration::from_secs(5),
+    };
+    let secrets = SecretLookup {
+        manager: None,
+        oidc_http: Arc::new(Ports),
+        azure_tokens: Arc::new(Ports),
+        clock: Arc::new(Ports),
+        oidc_cache: OidcTokenCache::default(),
+    };
+    let sts = StsClientKwargs {
+        verify: Verification::Enabled,
+        endpoint_url: None,
+        region_name: None,
+    };
+    let resolver = AwsCredentialResolver {
+        cache: &cache,
+        native: &native,
+        secrets: &secrets,
+        sts: &sts,
+        max_policy_size: 75,
+    };
+    let parsed = settings(
+        r#"{"vector_store_id": "KB123", "aws_access_key_id": "AKID", "aws_secret_access_key": "SECRET"}"#,
+    );
+    let credentials = resolver
+        .credentials(&aws_settings(&parsed), "us-west-2")
+        .await
+        .expect("the static keys resolve without a network");
+    assert_eq!(credentials.access_key_id.expose_secret(), "AKID");
+    assert_eq!(credentials.secret_access_key.expose_secret(), "SECRET");
+    assert!(credentials.session_token.is_none());
 }
