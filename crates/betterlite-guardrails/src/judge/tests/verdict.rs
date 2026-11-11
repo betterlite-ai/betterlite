@@ -1,12 +1,15 @@
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
+use crate::content_filter::risk_scoring::GuardrailStatus;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::judge::apply::{OnFailure, RequestData};
+use crate::judge::error::JudgeError;
 use crate::judge::verdict::{EvalInformation, EvaluationInformation};
 
 use super::support::{
-    Outcome, RecordingCompletion, guardrail_with, reply_with_score, request_data, texts,
+    Outcome, RecordingCompletion, guardrail_with, only_record, reply_with_score, request_data,
+    texts,
 };
 
 fn information(score: f64) -> EvaluationInformation {
@@ -26,6 +29,10 @@ enum Case {
     ClampHigh,
     ClampLow,
     TextScore,
+    TextScoreBlocks,
+    PaddedTextScore,
+    NotANumberText,
+    NanText,
     NullScore,
     BooleanScore,
     PassedAtThreshold,
@@ -41,6 +48,10 @@ enum Case {
 #[case::clamp_high(Case::ClampHigh)]
 #[case::clamp_low(Case::ClampLow)]
 #[case::text_score(Case::TextScore)]
+#[case::text_score_blocks(Case::TextScoreBlocks)]
+#[case::padded_text_score(Case::PaddedTextScore)]
+#[case::not_a_number_text(Case::NotANumberText)]
+#[case::nan_text(Case::NanText)]
 #[case::null_score(Case::NullScore)]
 #[case::boolean_score(Case::BooleanScore)]
 #[case::passed_at_threshold(Case::PassedAtThreshold)]
@@ -114,9 +125,80 @@ async fn judge_verdict_tests_behavior(#[case] case: Case) {
                 GuardrailInputType::Response,
             )
             .await
-            .expect("a text score fails open");
+            .expect("a quoted score of 90 passes");
+            assert_eq!(returned.texts, Some(vec!["response".to_owned()]));
+            let information = single(&data);
+            assert_eq!(information.overall_score.to_bits(), 90.0_f64.to_bits());
+            assert!(information.passed);
+        }
+        Case::TextScoreBlocks => {
+            let mut data = request_data(Vec::new());
+            let error = guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(
+                r#"{"overall_score": "20"}"#.to_owned(),
+            ))))
+            .apply_guardrail(
+                texts(&["response"]),
+                &mut data,
+                GuardrailInputType::Response,
+            )
+            .await
+            .expect_err("a quoted score of 20 is below the threshold");
+            assert!(matches!(error, JudgeError::Blocked { .. }));
+            assert_eq!(single(&data).overall_score.to_bits(), 20.0_f64.to_bits());
+        }
+        Case::PaddedTextScore => {
+            let mut guardrail = guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(
+                r#"{"overall_score": " 70.5\n"}"#.to_owned(),
+            ))));
+            guardrail.on_failure = OnFailure::Log;
+            let mut data = request_data(Vec::new());
+            guardrail
+                .apply_guardrail(
+                    texts(&["response"]),
+                    &mut data,
+                    GuardrailInputType::Response,
+                )
+                .await
+                .expect("log mode does not block");
+            assert_eq!(single(&data).overall_score.to_bits(), 70.5_f64.to_bits());
+        }
+        Case::NotANumberText => {
+            let mut data = request_data(Vec::new());
+            let returned = guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(
+                r#"{"overall_score": "abc"}"#.to_owned(),
+            ))))
+            .apply_guardrail(
+                texts(&["response"]),
+                &mut data,
+                GuardrailInputType::Response,
+            )
+            .await
+            .expect("a non-numeric score fails open");
             assert_eq!(returned.texts, Some(vec!["response".to_owned()]));
             assert_eq!(data.metadata.eval_information, None);
+            let record = only_record(&data);
+            assert_eq!(record.guardrail_status, GuardrailStatus::Success);
+            let Json::Object(response) = &record.guardrail_response else {
+                panic!("the record keeps the judge reply");
+            };
+            assert_eq!(
+                response.get("overall_score"),
+                Some(&Json::Text("abc".to_owned()))
+            );
+        }
+        Case::NanText => {
+            let mut data = request_data(Vec::new());
+            guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(
+                r#"{"overall_score": "nan"}"#.to_owned(),
+            ))))
+            .apply_guardrail(
+                texts(&["response"]),
+                &mut data,
+                GuardrailInputType::Response,
+            )
+            .await
+            .expect("Python's min and max turn nan into 100");
+            assert_eq!(single(&data).overall_score.to_bits(), 100.0_f64.to_bits());
         }
         Case::NullScore => {
             let mut data = request_data(Vec::new());

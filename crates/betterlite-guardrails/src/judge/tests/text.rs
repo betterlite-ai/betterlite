@@ -9,7 +9,7 @@ use super::support::{image_part, message, multipart, text_part, texts, texts_and
 enum Case {
     ResponseJoinsTexts,
     RequestUsesLatestUserTurn,
-    RequestJoinsConsecutiveUserTurns,
+    RequestJoinsUserTurns,
     RequestFallsBackToTexts,
     RequestJoinsMultipartTurn,
     RequestWithoutTexts,
@@ -19,10 +19,7 @@ enum Case {
 #[rstest]
 #[case::response_joins_texts(Case::ResponseJoinsTexts, "first\nsecond")]
 #[case::request_latest_user_turn(Case::RequestUsesLatestUserTurn, "now explain how to file taxes")]
-#[case::request_joins_consecutive_user_turns(
-    Case::RequestJoinsConsecutiveUserTurns,
-    "first question\nsecond question"
-)]
+#[case::request_joins_user_turns(Case::RequestJoinsUserTurns, "first question\nsecond question")]
 #[case::request_falls_back_to_texts(
     Case::RequestFallsBackToTexts,
     "look up the weather\nsunny, 24C"
@@ -51,7 +48,7 @@ fn judge_text_tests_behavior(#[case] case: Case, #[case] expected: &str) {
             ),
             GuardrailInputType::Request,
         ),
-        Case::RequestJoinsConsecutiveUserTurns => (
+        Case::RequestJoinsUserTurns => (
             texts_and_messages(
                 &["first question", "second question"],
                 vec![

@@ -23,11 +23,18 @@ pub enum EvalInformation {
 
 #[must_use]
 pub fn overall_score(verdict: &JudgeVerdict) -> Option<f64> {
-    match verdict.get("overall_score") {
-        None => Some(100.0_f64),
-        Some(Json::Number(number)) => number.as_f64().map(|score| score.clamp(0.0_f64, 100.0_f64)),
-        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => None,
+    let score = match verdict.get("overall_score") {
+        None => return Some(100.0_f64),
+        Some(Json::Number(number)) => number.as_f64()?,
+        // LiteLLM runs float() on the value, so a judge that quotes its score is still scored.
+        Some(Json::Text(text)) => text.trim().parse::<f64>().ok()?,
+        Some(Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_)) => return None,
+    };
+    // Python's min(100.0, nan) is 100.0, so "nan" scores as a pass.
+    if score.is_nan() {
+        return Some(100.0_f64);
     }
+    Some(score.clamp(0.0_f64, 100.0_f64))
 }
 
 #[must_use]
