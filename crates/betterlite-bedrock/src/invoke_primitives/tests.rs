@@ -15,11 +15,12 @@ use std::future::ready;
 use std::io::ErrorKind;
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
-use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_models::decisions::Json;
 use betterlite_prompts::error::FactoryError;
 use betterlite_prompts::factory::PromptFactory;
@@ -183,11 +184,19 @@ async fn invoke_primitives_never_downloads_templates() {
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    // a mutant that skips the local check makes one request; a short read timeout fails fast instead of hanging
+    let limits = TransportLimits {
+        connect_timeout: Duration::from_secs(1),
+        read_timeout: Duration::from_secs(1),
+        ..TransportLimits::DEFAULT
+    };
+    let client =
+        ProxiedClient::build(base_builder().http1_only(), &Arc::new(policy), limits).unwrap();
     let prompts = PromptFactory {
         cache: Mutex::new(BTreeMap::new()),
         hub: Hub::Http(HubClient {
             base_url: format!("http://127.0.0.1:{port}"),
-            client: ProxiedClient::outbound(&Arc::new(policy)).unwrap(),
+            client,
         }),
     };
     // llama2 without chat and llama3 or llama4 with instruct all need the local template

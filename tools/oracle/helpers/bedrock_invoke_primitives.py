@@ -1,140 +1,271 @@
 import copy
 import os
 from base64 import b64encode
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from functools import partial
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, TypeAlias, cast
-from unittest.mock import patch
+from typing import TypeAlias, cast
 
+import boto3
 import botocore.auth
 import litellm
 from botocore.credentials import Credentials
-from litellm.constants import BEDROCK_INVOKE_PROVIDERS_LITERAL, known_tokenizer_config
+from litellm.constants import BEDROCK_INVOKE_PROVIDERS_LITERAL as PROVIDERS_LITERAL
+from litellm.constants import known_tokenizer_config
 from litellm.litellm_core_utils.prompt_templates import huggingface_template_handler
 from litellm.llms.bedrock import base_aws_llm
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.chat.invoke_transformations import base_invoke_transformation
 from litellm.llms.bedrock.common_utils import BedrockError
+from litellm.types.llms.bedrock import AwsAuthParams
+from litellm.types.llms.openai import AllMessageValues
+from pydantic import BaseModel, Field, JsonValue
 
-if TYPE_CHECKING:
-    from litellm.types.llms.openai import AllMessageValues
-
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-Params: TypeAlias = dict[str, Json]
-Provider: TypeAlias = BEDROCK_INVOKE_PROVIDERS_LITERAL | None
+Json: TypeAlias = JsonValue
+Params: TypeAlias = dict[str, JsonValue]
+Provider: TypeAlias = PROVIDERS_LITERAL | None
 InvokeConfig = base_invoke_transformation.AmazonInvokeConfig
 
 BUILTINS = copy.deepcopy(known_tokenizer_config)
 
 
-def object_of(value: Json, name: str) -> dict[str, Json]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
+class BaseOptions(BaseModel):
+    non_default: dict[str, Json] = Field(default_factory=dict)
+    optional: dict[str, Json] = Field(default_factory=dict)
+    config: dict[str, Json] = Field(default_factory=dict)
 
 
-def list_of(value: Json, name: str) -> list[Json]:
-    if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
-    return value
+class ProviderSelection(BaseModel):
+    models: list[str]
 
 
-def string_of(value: Json, name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
+class UrlCase(BaseModel):
+    model: str
+    api_base: str | None = None
+    stream: bool | None = None
+    optional_params: dict[str, Json] = Field(default_factory=dict)
+    environment: dict[str, str] = Field(default_factory=dict)
 
 
-def int_of(value: Json, name: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"{name} must be an integer")
-    return value
+class InvokeUrl(BaseModel):
+    cases: list[UrlCase]
 
 
-def optional_string(fields: dict[str, Json], name: str) -> str | None:
-    value = fields.get(name)
-    return value if isinstance(value, str) else None
+class GuardrailCases(BaseModel):
+    values: list[Json]
 
 
-def optional_bool(fields: dict[str, Json], name: str) -> bool | None:
-    value = fields.get(name)
-    return value if isinstance(value, bool) else None
+class MetadataMergeCase(BaseModel):
+    headers: dict[str, str] = Field(default_factory=dict)
+    optional_params: dict[str, Json] = Field(default_factory=dict)
+    identity: dict[str, str] = Field(default_factory=dict)
+    spend_logs_metadata: dict[str, str] = Field(default_factory=dict)
+    policy_fields: list[str] = Field(default_factory=list)
 
 
-def strings_of(value: Json, name: str) -> dict[str, str]:
-    return {
-        key: string_of(entry, f"{name}.{key}")
-        for key, entry in object_of(value, name).items()
-    }
+class ErrorCase(BaseModel):
+    message: str
+    status_code: int
+    headers: dict[str, str] = Field(default_factory=dict)
 
 
-def nullable_strings_of(value: Json, name: str) -> dict[str, str | None]:
-    return {
-        key: entry if isinstance(entry, str) else None
-        for key, entry in object_of(value, name).items()
-    }
+class MetadataMerge(BaseModel):
+    merges: list[MetadataMergeCase]
+    error: ErrorCase
 
 
-def base_options(params: Json) -> Json:
-    fields = object_of(params, "base_options")
+class Keys(BaseModel):
+    access_key_id: str
+    secret_access_key: str
+    session_token: str | None = None
+
+
+class SigningCase(BaseModel):
+    credentials: Keys
+    api_base: str
+    now: int
+    headers: dict[str, str | None] = Field(default_factory=dict)
+    optional_params: dict[str, Json] = Field(default_factory=dict)
+    request_data: dict[str, Json] = Field(default_factory=dict)
+    model: str | None = None
+    stream: bool | None = None
+    fake_stream: bool | None = None
+    configured_bearer_token: str | None = None
+    api_key: str | None = None
+
+
+class PromptCase(BaseModel):
+    model: str
+    messages: list[dict[str, Json]]
+    provider: str | None = None
+    custom_prompt_dict: dict[str, dict[str, Json]] = Field(default_factory=dict)
+
+
+class PromptCases(BaseModel):
+    cases: list[PromptCase]
+
+
+class LlamaTemplate(BaseModel):
+    local_assets: bool = False
+    cases: list[PromptCase]
+
+
+class DefaultSecret:
+    def __call__(self, _name: str, default: str | None = None) -> str | None:
+        return default
+
+
+class BedrockBearer:
+    def __init__(self, token: str | None) -> None:
+        self.token = token
+
+    def __call__(self, name: str) -> str | None:
+        return self.token if name == "AWS_BEARER_TOKEN_BEDROCK" else None
+
+
+class Resolver:
+    def __init__(self, credentials: Credentials) -> None:
+        self.credentials = credentials
+
+    def __call__(self, _auth_params: AwsAuthParams, _region: str | None) -> Credentials:
+        return self.credentials
+
+
+class FrozenClock:
+    def __init__(self, frozen: datetime) -> None:
+        self.frozen = frozen
+
+    def __call__(self) -> datetime:
+        return self.frozen
+
+
+class SessionStub:
+    def __init__(self) -> None:
+        self.region_name: str | None = None
+
+
+def unreachable_template(hf_model_name: str) -> dict[str, Json]:
+    del hf_model_name
+    return {"status": "failure"}
+
+
+@contextmanager
+def cleared_environment(environment: dict[str, str]) -> Generator[None]:
+    original = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(environment)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(original)
+
+
+@contextmanager
+def stubbed_session() -> Generator[None]:
+    original = boto3.Session
+    boto3.Session = SessionStub
+    try:
+        yield
+    finally:
+        boto3.Session = original
+
+
+@contextmanager
+def frozen_clock(epoch: int) -> Generator[None]:
+    frozen = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
+    original = botocore.auth.get_current_datetime
+    botocore.auth.get_current_datetime = FrozenClock(frozen)
+    try:
+        yield
+    finally:
+        botocore.auth.get_current_datetime = original
+
+
+@contextmanager
+def owned_fields(fields: list[str]) -> Generator[None]:
+    original = litellm.bedrock_request_metadata_fields
+    litellm.bedrock_request_metadata_fields = fields
+    try:
+        yield
+    finally:
+        litellm.bedrock_request_metadata_fields = original
+
+
+@contextmanager
+def signing_harness(bearer: str | None, resolver: Resolver) -> Generator[None]:
+    original_secret = base_aws_llm.get_secret
+    original_secret_str = base_aws_llm.get_secret_str
+    original_session = boto3.Session
+    original_resolve = BaseAWSLLM.resolve_credentials
+    base_aws_llm.get_secret = DefaultSecret()
+    base_aws_llm.get_secret_str = BedrockBearer(bearer)
+    boto3.Session = SessionStub
+    BaseAWSLLM.resolve_credentials = resolver  # pyright: ignore[reportAttributeAccessIssue]
+    try:
+        with cleared_environment({}):
+            yield
+    finally:
+        base_aws_llm.get_secret = original_secret
+        base_aws_llm.get_secret_str = original_secret_str
+        boto3.Session = original_session
+        BaseAWSLLM.resolve_credentials = original_resolve
+
+
+@contextmanager
+def unreachable_templates() -> Generator[None]:
+    original_config = huggingface_template_handler._get_tokenizer_config  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    original_file = huggingface_template_handler._get_chat_template_file  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    huggingface_template_handler._get_tokenizer_config = unreachable_template  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    huggingface_template_handler._get_chat_template_file = unreachable_template  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    try:
+        yield
+    finally:
+        huggingface_template_handler._get_tokenizer_config = original_config  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        huggingface_template_handler._get_chat_template_file = original_file  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+
+
+def base_options(case: BaseOptions) -> Json:
     config = InvokeConfig()
     mapped = cast(
-        "Params",
+        Params,
         config.map_openai_params(  # pyright: ignore[reportUnknownMemberType]
-            object_of(fields.get("non_default", {}), "non_default"),
-            dict(object_of(fields.get("optional", {}), "optional")),
-            "",
-            drop_params=False,
+            dict(case.non_default), dict(case.optional), "", drop_params=False
         ),
     )
     config._apply_config_to_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-        object_of(fields.get("config", {}), "config"), mapped
+        dict(case.config), mapped
     )
     return cast(Json, {"supported": config.get_supported_openai_params(""), "mapped": mapped})
 
 
-def provider_selection(params: Json) -> Json:
-    fields = object_of(params, "provider_family_selection")
+def provider_selection(case: ProviderSelection) -> Json:
     return {
         "providers": [
-            InvokeConfig.get_bedrock_invoke_provider(string_of(model, "model"))
-            for model in list_of(fields["models"], "models")
+            InvokeConfig.get_bedrock_invoke_provider(model) for model in case.models
         ]
     }
 
 
-def invoke_url(params: Json) -> Json:
-    fields = object_of(params, "invoke_model_url")
+def invoke_url(case: InvokeUrl) -> Json:
     config = InvokeConfig()
-    results = [
-        url_case(config, object_of(value, "case"))
-        for value in list_of(fields["cases"], "cases")
-    ]
+    results = [url_case(config, value) for value in case.cases]
     return {"results": results}
 
 
-def url_case(config: InvokeConfig, case: dict[str, Json]) -> Json:
-    model = string_of(case["model"], "model")
-    optional = dict(object_of(case.get("optional_params", {}), "optional_params"))
-    environment = strings_of(case.get("environment", {}), "environment")
-    api_base = optional_string(case, "api_base")
-    with (
-        patch.dict(os.environ, environment, clear=True),
-        patch("boto3.Session", lambda: SimpleNamespace(region_name=None)),
-    ):
+def url_case(config: InvokeConfig, case: UrlCase) -> Json:
+    optional = dict(case.optional_params)
+    with cleared_environment(dict(case.environment)), stubbed_session():
         try:
-            provider = config.get_bedrock_invoke_provider(model)
+            provider = config.get_bedrock_invoke_provider(case.model)
             model_id = BaseAWSLLM.get_bedrock_model_id(  # pyright: ignore[reportUnknownMemberType]
-                dict(optional), provider, model
+                dict(optional), provider, case.model
             )
             endpoint = config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]
-                api_base, None, model, optional, {}, optional_bool(case, "stream")
+                case.api_base, None, case.model, optional, {}, case.stream
             )
             region = config._get_aws_region_name(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-                optional_params=optional, model=model
+                optional_params=optional, model=case.model
             )
         except (TypeError, ValueError):
             return {"error": True}
@@ -146,10 +277,9 @@ def url_case(config: InvokeConfig, case: dict[str, Json]) -> Json:
     }
 
 
-def guardrail_cases(params: Json) -> Json:
-    fields = object_of(params, "guardrail_headers")
+def guardrail_cases(case: GuardrailCases) -> Json:
     results: list[Json] = []
-    for value in list_of(fields["values"], "values"):
+    for value in case.values:
         try:
             derived = base_invoke_transformation._bedrock_invoke_guardrail_headers(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
                 value
@@ -161,42 +291,36 @@ def guardrail_cases(params: Json) -> Json:
     return {"results": results}
 
 
-def metadata_merge(params: Json) -> Json:
-    fields = object_of(params, "guardrail_metadata_merge")
+def metadata_merge(case: MetadataMerge) -> Json:
     config = InvokeConfig()
-    merges = [
-        merge_case(config, object_of(value, "case"))
-        for value in list_of(fields["merges"], "merges")
-    ]
-    error = object_of(fields["error"], "error")
+    merges = [merge_case(config, value) for value in case.merges]
     projected = config.get_error_class(  # pyright: ignore[reportUnknownMemberType]
-        string_of(error["message"], "message"),
-        int_of(error["status_code"], "status_code"),
-        strings_of(error.get("headers", {}), "headers"),
+        case.error.message,
+        case.error.status_code,
+        dict(case.error.headers),
     )
     projected_headers = cast("dict[str, str] | None", projected.headers)
-    return {
-        "merges": merges,
-        "error": {
-            "status": projected.status_code,
-            "message": projected.message,
-            "headers": dict(projected_headers or {}),
+    headers = {} if projected_headers is None else dict(projected_headers)
+    return cast(
+        Json,
+        {
+            "merges": merges,
+            "error": {
+                "status": projected.status_code,
+                "message": projected.message,
+                "headers": headers,
+            },
         },
-    }
+    )
 
 
-def merge_case(config: InvokeConfig, case: dict[str, Json]) -> Json:
-    headers = strings_of(case.get("headers", {}), "headers")
-    optional = dict(object_of(case.get("optional_params", {}), "optional_params"))
-    bucket: Params = dict(strings_of(case.get("identity", {}), "identity"))
-    spend = strings_of(case.get("spend_logs_metadata", {}), "spend_logs_metadata")
-    if spend:
-        bucket["spend_logs_metadata"] = dict(spend)
-    policy_fields = [
-        string_of(field, "policy_field")
-        for field in list_of(case.get("policy_fields", []), "policy_fields")
-    ]
-    with patch.object(litellm, "bedrock_request_metadata_fields", policy_fields):
+def merge_case(config: InvokeConfig, case: MetadataMergeCase) -> Json:
+    headers = dict(case.headers)
+    optional = dict(case.optional_params)
+    bucket: Params = dict(case.identity)
+    if case.spend_logs_metadata:
+        bucket["spend_logs_metadata"] = dict(case.spend_logs_metadata)
+    with owned_fields(list(case.policy_fields)):
         try:
             merged = cast(
                 "dict[str, str]",
@@ -209,117 +333,58 @@ def merge_case(config: InvokeConfig, case: dict[str, Json]) -> Json:
     return {"headers": dict(merged)}
 
 
-class Resolver:
-    def __init__(self, credentials: Credentials) -> None:
-        self.credentials = credentials
-
-    def __call__(self, _auth_params: object, _region: object) -> Credentials:
-        return self.credentials
-
-
-def secret_lookup(_name: str, default: str | None = None) -> str | None:
-    return default
-
-
-def bearer_lookup(name: str, token: str | None) -> str | None:
-    return token if name == "AWS_BEARER_TOKEN_BEDROCK" else None
-
-
-@contextmanager
-def clock(epoch: int) -> Generator[None]:
-    frozen = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
-    with patch.object(botocore.auth, "get_current_datetime", lambda: frozen):
-        yield
-
-
-@contextmanager
-def harness(bearer: str | None, resolver: Resolver) -> Generator[None]:
-    with (
-        patch.dict(os.environ, {}, clear=True),
-        patch.object(base_aws_llm, "get_secret", secret_lookup),
-        patch.object(base_aws_llm, "get_secret_str", partial(bearer_lookup, token=bearer)),
-        patch("boto3.Session", lambda: SimpleNamespace(region_name=None)),
-        patch.object(BaseAWSLLM, "resolve_credentials", resolver),
-    ):
-        yield
-
-
-def credentials_of(value: Json) -> Credentials:
-    fields = object_of(value, "credentials")
-    return Credentials(
-        access_key=string_of(fields["access_key_id"], "access_key_id"),
-        secret_key=string_of(fields["secret_access_key"], "secret_access_key"),
-        token=optional_string(fields, "session_token"),
+def signing_case(case: SigningCase) -> Json:
+    credentials = Credentials(
+        access_key=case.credentials.access_key_id,
+        secret_key=case.credentials.secret_access_key,
+        token=case.credentials.session_token,
     )
-
-
-def signing_case(params: Json) -> Json:
-    fields = object_of(params, "signing_forwarding")
-    api_base = string_of(fields["api_base"], "api_base")
-    headers = nullable_strings_of(fields.get("headers", {}), "headers")
-    optional = object_of(fields.get("optional_params", {}), "optional_params")
-    request_data = object_of(fields.get("request_data", {}), "request_data")
     config = InvokeConfig()
-    bearer = optional_string(fields, "configured_bearer_token")
-    context = harness(bearer, Resolver(credentials_of(fields["credentials"])))
-    with context, clock(int_of(fields["now"], "now")):
+    with signing_harness(case.configured_bearer_token, Resolver(credentials)), frozen_clock(
+        case.now
+    ):
         signed = config.sign_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-            headers=headers,
-            optional_params=optional,
-            request_data=request_data,
-            api_base=api_base,
-            api_key=optional_string(fields, "api_key"),
-            model=optional_string(fields, "model"),
-            stream=optional_bool(fields, "stream"),
-            fake_stream=optional_bool(fields, "fake_stream"),
+            headers=dict(case.headers),
+            optional_params=dict(case.optional_params),
+            request_data=dict(case.request_data),
+            api_base=case.api_base,
+            api_key=case.api_key,
+            model=case.model,
+            stream=case.stream,
+            fake_stream=case.fake_stream,
         )
     signed_headers, body = cast("tuple[dict[str, str], bytes | None]", signed)
+    body_bytes = b"" if body is None else body
     return cast(
         Json,
         {
             "method": "POST",
-            "url": api_base,
+            "url": case.api_base,
             "headers": signed_headers,
-            "body": b64encode(body or b"").decode(),
+            "body": b64encode(body_bytes).decode(),
         },
     )
 
 
-def _unreachable(hf_model_name: str) -> dict[str, Json]:
-    del hf_model_name
-    return {"status": "failure"}
-
-
-def prompts(params: Json, *, local_assets: bool) -> Json:
-    fields = object_of(params, "prompt_cases")
+def prompts(cases: list[PromptCase], *, local_assets: bool) -> Json:
     config = InvokeConfig()
     results = [
-        prompt_case(config, object_of(value, "case"), local_assets=local_assets)
-        for value in list_of(fields["cases"], "cases")
+        prompt_case(config, case, local_assets=local_assets) for case in cases
     ]
     return {"results": results}
 
 
-def prompt_case(
-    config: InvokeConfig, case: dict[str, Json], *, local_assets: bool
-) -> Json:
-    model = string_of(case["model"], "model")
-    messages = list_of(case["messages"], "messages")
-    provider = case.get("provider")
-    custom = object_of(case.get("custom_prompt_dict", {}), "custom_prompt_dict")
+def prompt_case(config: InvokeConfig, case: PromptCase, *, local_assets: bool) -> Json:
     known_tokenizer_config.clear()
     if local_assets:
         known_tokenizer_config.update(copy.deepcopy(BUILTINS))
-    with (
-        patch.object(huggingface_template_handler, "_get_tokenizer_config", _unreachable),
-        patch.object(huggingface_template_handler, "_get_chat_template_file", _unreachable),
-    ):
+    with unreachable_templates():
         try:
             rendered = config.convert_messages_to_prompt(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-                model,
-                cast("list[AllMessageValues]", messages),
-                cast(Provider, provider if isinstance(provider, str) else None),
-                custom,
+                case.model,
+                cast(list[AllMessageValues], case.messages),
+                cast(Provider, case.provider),
+                dict(case.custom_prompt_dict),
             )
         except Exception as error:  # noqa: BLE001 - the failure text is compared as a value
             return {"message": str(error)}
@@ -329,20 +394,23 @@ def prompt_case(
 
 def run(input_value: dict[str, Json]) -> Json:
     step, params = next(iter(input_value.items()))
-    handlers: dict[str, Callable[[Json], Json]] = {
-        "base_options": base_options,
-        "provider_family_selection": provider_selection,
-        "invoke_model_url": invoke_url,
-        "guardrail_headers": guardrail_cases,
-        "guardrail_metadata_merge": metadata_merge,
-        "signing_forwarding": signing_case,
-    }
-    handler = handlers.get(step)
-    if handler is not None:
-        return handler(params)
-    if step == "prompt_template_selection":
-        return prompts(params, local_assets=True)
-    if step == "llama_local_template":
-        fields = object_of(params, "llama_local_template")
-        return prompts(params, local_assets=fields.get("local_assets") is True)
-    raise ValueError(f"unsupported step {step}")
+    if step == "base_options":
+        result = base_options(BaseOptions.model_validate(params))
+    elif step == "provider_family_selection":
+        result = provider_selection(ProviderSelection.model_validate(params))
+    elif step == "invoke_model_url":
+        result = invoke_url(InvokeUrl.model_validate(params))
+    elif step == "guardrail_headers":
+        result = guardrail_cases(GuardrailCases.model_validate(params))
+    elif step == "guardrail_metadata_merge":
+        result = metadata_merge(MetadataMerge.model_validate(params))
+    elif step == "signing_forwarding":
+        result = signing_case(SigningCase.model_validate(params))
+    elif step == "prompt_template_selection":
+        result = prompts(PromptCases.model_validate(params).cases, local_assets=True)
+    elif step == "llama_local_template":
+        case = LlamaTemplate.model_validate(params)
+        result = prompts(case.cases, local_assets=case.local_assets)
+    else:
+        raise ValueError(f"unsupported step {step}")
+    return result
