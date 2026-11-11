@@ -14,7 +14,8 @@ call:
             {"content":{"text":null},"score":1},
             {"score":1},
             {"content":{"text":"third"},"metadata":{"x-amz-bedrock-kb-source-uri":"https://example.com/two.pdf"}},
-            {"content":{"text":"fourth"},"score":2}
+            {"content":{"text":"fourth"},"score":2},
+            {"content":{"text":"fifth"},"metadata":null}
           ]}
       - status: 200
         body: '{"retrievalResults":null,"nextToken":"n"}'

@@ -30,14 +30,10 @@ pub fn filename_from_metadata(metadata: &IndexMap<String, Json>) -> Json {
     let Some(parts) = split_uri(uri) else {
         return Json::Text(uri.clone());
     };
-    let candidate = if parts.path.is_empty() || parts.path == "/" {
-        parts.netloc.as_str()
-    } else {
-        parts
-            .path
-            .rsplit_once('/')
-            .map_or(parts.path.as_str(), |(_, last)| last)
-    };
+    let candidate = parts
+        .path
+        .rsplit_once('/')
+        .map_or(parts.path.as_str(), |(_, last)| last);
     let filename = if candidate.is_empty() || candidate == "/" {
         parts.netloc.as_str()
     } else {

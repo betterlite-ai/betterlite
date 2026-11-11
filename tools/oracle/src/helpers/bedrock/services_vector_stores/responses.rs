@@ -1,4 +1,4 @@
-use betterlite_bedrock::vector_stores::config::WRITE_ENDPOINTS;
+use betterlite_bedrock::vector_stores::config::capabilities;
 use betterlite_bedrock::vector_stores::create::{CreateStep, transform_create_vector_store};
 use betterlite_bedrock::vector_stores::error::VectorStoreError;
 use betterlite_bedrock::vector_stores::filters::map_openai_params;
@@ -9,7 +9,7 @@ use betterlite_bedrock::vector_stores::response::decode_knowledge_base_reply;
 use betterlite_models::decisions::Json;
 use serde_json::{Value, json};
 
-use super::operations::{endpoint_pairs, message_failure};
+use super::operations::message_failure;
 use super::{Input, RequestScenario, ResponseScenario};
 use crate::helpers::HelperError;
 
@@ -54,7 +54,7 @@ pub(super) fn unsupported_create() -> Value {
     json!({
         "request": {"failed": transform_create_vector_store(CreateStep::Request).is_err()},
         "response": {"failed": transform_create_vector_store(CreateStep::Response).is_err()},
-        "write": endpoint_pairs(&WRITE_ENDPOINTS),
+        "write": capabilities().endpoints.write,
     })
 }
 

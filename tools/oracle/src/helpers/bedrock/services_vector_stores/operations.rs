@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_bedrock::vector_stores::config::{
-    READ_ENDPOINTS, SUPPORTED_OPENAI_PARAMS, WRITE_ENDPOINTS, auth_credentials,
-    validate_environment,
-};
+use betterlite_bedrock::vector_stores::config::{capabilities, validate_environment};
 use betterlite_bedrock::vector_stores::endpoint::{CompleteUrl, complete_url};
 use betterlite_bedrock::vector_stores::filters::{
     map_and_or_filters, map_operator_filter, map_operator_to_aws,
@@ -71,26 +68,17 @@ fn nested_and_or_filters(input: &Input) -> Value {
 fn knowledge_base_retrieve_url(input: &Input) -> HelperResult {
     let urls = input.urls.iter().map(url_outcome).collect::<Vec<_>>();
     let signed = input.sign.as_ref().map_or(Ok(Value::Null), sign_outcome)?;
+    let capabilities = capabilities();
     Ok(json!({
-        "endpoints": {
-            "read": endpoint_pairs(&READ_ENDPOINTS),
-            "write": endpoint_pairs(&WRITE_ENDPOINTS),
-        },
-        "credentials": auth_credentials(),
-        "supported": SUPPORTED_OPENAI_PARAMS,
+        "endpoints": capabilities.endpoints,
+        "credentials": capabilities.credentials,
+        "supported": capabilities.supported_params,
         "headers": validate_environment(
             input.headers.iter().cloned().collect::<BTreeMap<_, _>>(),
         ),
         "urls": urls,
         "signed": signed,
     }))
-}
-
-pub(super) fn endpoint_pairs(endpoints: &[(&str, &str)]) -> Vec<(String, String)> {
-    endpoints
-        .iter()
-        .map(|(method, path)| ((*method).to_owned(), (*path).to_owned()))
-        .collect()
 }
 
 fn url_outcome(scenario: &UrlScenario) -> Value {

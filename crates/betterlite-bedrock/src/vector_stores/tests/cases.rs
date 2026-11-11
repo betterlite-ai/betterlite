@@ -14,10 +14,7 @@ use crate::bedrock_settings::ErrorHeaders;
 use crate::credentials::error::CredentialError;
 use crate::signing::request::AwsSignedRequest;
 use crate::signing::target::RegionInputs;
-use crate::vector_stores::config::{
-    READ_ENDPOINTS, SUPPORTED_OPENAI_PARAMS, WRITE_ENDPOINTS, auth_credentials,
-    validate_environment,
-};
+use crate::vector_stores::config::{capabilities, validate_environment};
 use crate::vector_stores::create::{CreateStep, transform_create_vector_store};
 use crate::vector_stores::endpoint::{CompleteUrl, complete_url, retrieve_url};
 use crate::vector_stores::error::VectorStoreError;
@@ -32,7 +29,7 @@ use crate::vector_stores::request::{
 use crate::vector_stores::response::decode_knowledge_base_reply;
 use crate::vector_stores::signing::{SignRequest, sign_request};
 use crate::vector_stores::tests::support::{
-    json, now, object, optional, optional_params, runtime, sign,
+    capture, json, now, object, optional, optional_params, runtime, sign,
 };
 
 #[rstest]
@@ -166,16 +163,23 @@ fn complete_url_for(
 }
 
 fn knowledge_base_retrieve_url() {
+    let capabilities = capabilities();
     assert_eq!(
-        SUPPORTED_OPENAI_PARAMS,
+        capabilities.supported_params,
         ["filters", "max_num_results", "ranking_options"]
     );
     assert_eq!(
-        READ_ENDPOINTS,
-        [("POST", "/knowledgebases/{knowledge_base_id}/retrieve")]
+        capabilities.endpoints.read,
+        Some(vec![(
+            "POST".to_owned(),
+            "/knowledgebases/{knowledge_base_id}/retrieve".to_owned(),
+        )])
     );
-    assert!(WRITE_ENDPOINTS.is_empty());
-    assert_eq!(serde_json::to_string(&auth_credentials()).unwrap(), "{}");
+    assert_eq!(capabilities.endpoints.write, Some(Vec::new()));
+    assert_eq!(
+        serde_json::to_string(&capabilities.credentials).unwrap(),
+        "{}"
+    );
     assert_endpoint_urls();
     assert_environment_headers();
     assert_retrieve_paths();
@@ -470,6 +474,14 @@ fn metadata_fallbacks() {
         filename_from_metadata(&object("{}")),
         json(r#""bedrock-kb-document-unknown""#)
     );
+    assert_eq!(
+        file_id_from_metadata(&object(r#"{"x-amz-bedrock-kb-source-uri":0}"#)),
+        json(r#""bedrock-kb-unknown""#)
+    );
+    assert_eq!(
+        filename_from_metadata(&object(r#"{"x-amz-bedrock-kb-source-uri":"a b://host/"}"#)),
+        json(r#""""#)
+    );
 }
 
 fn decode(body: &str, status: u16) -> Result<Json, VectorStoreError> {
@@ -485,14 +497,16 @@ fn attributes_and_scores() {
       {"content":{"text":null},"score":1},
       {"score":1},
       {"content":{"text":"third"},"metadata":{"x-amz-bedrock-kb-source-uri":"https://example.com/two.pdf"}},
-      {"content":{"text":"fourth"},"score":2}
+      {"content":{"text":"fourth"},"score":2},
+      {"content":{"text":"fifth"},"metadata":null}
     ]}"#;
     let expected = json(
         r#"{"object":"vector_store.search_results.page","search_query":"question","data":[
           {"score":0.5,"content":[{"text":"first","type":"text"}],"file_id":"s3://bucket/one.txt","filename":"one.txt","attributes":{"x-amz-bedrock-kb-source-uri":"s3://bucket/one.txt","x-amz-bedrock-kb-chunk-id":"c1","custom":"a"}},
           {"score":null,"content":[{"text":"","type":"text"}],"file_id":"bedrock-kb-unknown","filename":"bedrock-kb-document-unknown","attributes":{}},
           {"score":null,"content":[{"text":"third","type":"text"}],"file_id":"https://example.com/two.pdf","filename":"two.pdf","attributes":{"x-amz-bedrock-kb-source-uri":"https://example.com/two.pdf"}},
-          {"score":2,"content":[{"text":"fourth","type":"text"}],"file_id":"bedrock-kb-unknown","filename":"bedrock-kb-document-unknown","attributes":{}}
+          {"score":2,"content":[{"text":"fourth","type":"text"}],"file_id":"bedrock-kb-unknown","filename":"bedrock-kb-document-unknown","attributes":{}},
+          {"score":null,"content":[{"text":"fifth","type":"text"}],"file_id":"bedrock-kb-unknown","filename":"bedrock-kb-document-unknown","attributes":{}}
         ]}"#,
     );
     assert_eq!(decode(body, 200).unwrap(), expected);
@@ -507,7 +521,7 @@ fn unsupported_create() {
         transform_create_vector_store(CreateStep::Response),
         Err(VectorStoreError::CreateNotSupported)
     ));
-    assert!(WRITE_ENDPOINTS.is_empty());
+    assert_eq!(capabilities().endpoints.write, Some(Vec::new()));
 }
 
 fn option_mapping() {
@@ -721,6 +735,66 @@ fn configuration_errors() {
         call.body.get("retrievalConfiguration"),
         Some(&json(r#""raw""#))
     );
+}
+
+#[test]
+fn override_diagnostics_name_the_source() {
+    let (captured, _guard) = capture();
+    search(
+        &SearchQuery::Text("q".to_owned()),
+        &optional(None, Some(2)),
+        Some(&object(
+            r#"{"retrievalConfiguration":{"vectorSearchConfiguration":{"numberOfResults":5}}}"#,
+        )),
+    )
+    .unwrap();
+    search(
+        &SearchQuery::Text("q".to_owned()),
+        &optional(Some(json(r#"{"equals":{"key":"k","value":"new"}}"#)), None),
+        Some(&object(
+            r#"{"retrievalConfiguration":{"vectorSearchConfiguration":{"filter":{"equals":{"key":"k","value":"old"}}}}}"#,
+        )),
+    )
+    .unwrap();
+    let text = captured.text();
+    assert!(
+        text.contains(
+            "Overriding extra_body retrievalConfiguration.vectorSearchConfiguration.numberOfResults (5) with max_num_results=2"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "Overriding extra_body retrievalConfiguration.vectorSearchConfiguration.filter with filters from vector_store_search_optional_params"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn override_diagnostics_need_a_different_prior_value() {
+    assert_no_override_log(
+        r#"{"retrievalConfiguration":{"vectorSearchConfiguration":{"numberOfResults":2,"filter":{"equals":{"key":"k","value":"same"}}}}}"#,
+        Some(json(r#"{"equals":{"key":"k","value":"same"}}"#)),
+        Some(2),
+    );
+    assert_no_override_log(
+        r#"{"retrievalConfiguration":{"vectorSearchConfiguration":{"numberOfResults":null,"filter":null}}}"#,
+        Some(json(r#"{"equals":{"key":"k","value":"new"}}"#)),
+        Some(2),
+    );
+}
+
+fn assert_no_override_log(extra_body: &str, filters: Option<Json>, max: Option<i64>) {
+    let (captured, _guard) = capture();
+    search(
+        &SearchQuery::Text("q".to_owned()),
+        &optional(filters, max),
+        Some(&object(extra_body)),
+    )
+    .unwrap();
+    let text = captured.text();
+    assert!(!text.contains("Overriding extra_body"), "{text}");
 }
 
 fn knowledge_base_response_error() {
