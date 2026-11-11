@@ -104,12 +104,13 @@ pub(super) fn signed_headers(pairs: Vec<(String, String)>) -> Result<HeaderMap, 
 }
 
 pub(super) fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
-    let mut pairs = Vec::new();
-    for (name, value) in headers {
-        pairs.push((
-            name.to_string(),
-            value.to_str().unwrap_or_default().to_owned(),
-        ));
-    }
-    pairs
+    headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.to_string(),
+                value.to_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
 }
