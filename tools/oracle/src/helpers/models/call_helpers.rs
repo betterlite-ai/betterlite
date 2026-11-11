@@ -1,9 +1,12 @@
+mod input;
+mod run;
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("call_helpers")
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        run::run(input)
     }
 }
