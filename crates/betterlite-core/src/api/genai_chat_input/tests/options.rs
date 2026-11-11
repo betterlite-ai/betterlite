@@ -3,7 +3,7 @@ use rstest::rstest;
 use serde_json::json;
 
 use super::prelude::{translate, translate_with};
-use crate::api::genai_chat_input::GenerateLiteLLMParams;
+use crate::api::genai_chat_input::input::GenerateLiteLLMParams;
 
 #[test]
 fn generation_config_maps_to_the_completion_options() {

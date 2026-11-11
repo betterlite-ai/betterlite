@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use rstest::rstest;
 
 use super::prelude::translate_request;
-use crate::api::genai_chat_input::GenerateContentRequest;
+use crate::api::genai_chat_input::input::GenerateContentRequest;
 use crate::schema::SchemaLimits;
 
 #[rstest]

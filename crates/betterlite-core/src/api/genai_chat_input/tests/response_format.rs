@@ -3,7 +3,8 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 use super::prelude::{limits_with_nodes, translate, translate_result, translate_with};
-use crate::api::genai_chat_input::{GenAiInputError, GenerateLiteLLMParams};
+use crate::api::genai_chat_input::GenAiInputError;
+use crate::api::genai_chat_input::input::GenerateLiteLLMParams;
 
 fn body(config: &Value) -> Value {
     json!({"model": "m", "contents": [], "generationConfig": config})
