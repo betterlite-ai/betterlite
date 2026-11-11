@@ -1,0 +1,19 @@
+kind: helper
+name: sap-chat-supported-params-by-model
+call:
+  b5845:
+    operation: supported_params
+    calls:
+      - {model: anthropic--claude-3.5-sonnet}
+      - {model: amazon.titan-text-lite-v1}
+      - {model: cohere.command-r-plus}
+      - {model: alephalpha-luminous-base}
+      - {model: gpt-4}
+      - {model: gpt-4o}
+      - {model: gpt-4-turbo}
+      - {model: gemini-1.5-pro}
+      - {model: GPT-4}
+      - {model: text-embedding-3-large, family: embedding}
+      - {model: text-embedding-ada-002, family: embedding}
+env: {}
+compare: {ignore: []}
