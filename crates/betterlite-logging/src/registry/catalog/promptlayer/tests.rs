@@ -424,7 +424,7 @@ fn an_invalid_start_time_is_reported() {
     let capture = Capture::answering(SUCCESS);
     let adapter = adapter(capture, settings(Some("pl-key")));
     let broken = event_from(
-        &PAYLOAD.replace("1704067200.0", "1000000000000000000000000000000"),
+        &PAYLOAD.replace("1704067200.0", "100000000000000000000"),
         false,
     );
     let error = adapter

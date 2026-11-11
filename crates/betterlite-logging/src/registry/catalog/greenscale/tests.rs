@@ -331,7 +331,7 @@ fn an_invalid_start_time_is_reported() {
         }),
         tracker: TaskTracker::new(),
     };
-    let broken = event_from(&PAYLOAD.replace("1704067200.0", "1000000000000000000000000000000"));
+    let broken = event_from(&PAYLOAD.replace("1704067200.0", "100000000000000000000"));
     let error = adapter
         .log_success_event(&broken)
         .expect_err("the event is rejected");

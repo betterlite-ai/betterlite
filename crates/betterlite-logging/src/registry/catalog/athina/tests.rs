@@ -423,7 +423,7 @@ fn an_invalid_start_time_is_reported() {
         tracker: TaskTracker::new(),
     };
     let broken = event_from(
-        &PAYLOAD.replace("1704067200.0", "1000000000000000000000000000000"),
+        &PAYLOAD.replace("1704067200.0", "100000000000000000000"),
         false,
     );
     let error = adapter

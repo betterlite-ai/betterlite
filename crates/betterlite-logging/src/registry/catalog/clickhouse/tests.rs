@@ -469,13 +469,12 @@ async fn an_insert_posts_gzip_json_each_row() {
     let (base, served) = serve_many(1, 200).await;
     let storage = http_storage(&base);
     let rows = vec![row("first"), row("second")];
-    storage
-        .insert_rows(SPEND_LOGS_TABLE, &rows)
-        .await
-        .expect("the insert is accepted");
-    let received = timeout(Duration::from_secs(10), served)
-        .await
-        .expect("the insert request arrived");
+    let (outcome, arrived) = tokio::join!(
+        storage.insert_rows(SPEND_LOGS_TABLE, &rows),
+        timeout(Duration::from_secs(10), served)
+    );
+    outcome.expect("the insert is accepted");
+    let received = arrived.expect("the insert request arrived");
     assert_insert_request(&received[0], &rows);
 }
 
@@ -485,13 +484,13 @@ async fn an_insert_of_a_few_megabytes_is_sent() {
     let storage = http_storage(&base);
     let mut large = row("large");
     large.response = "a".repeat(2 * 1024 * 1024);
-    storage
-        .insert_rows(SPEND_LOGS_TABLE, &[large])
-        .await
-        .expect("the insert is accepted");
-    let received = timeout(Duration::from_secs(10), served)
-        .await
-        .expect("the insert request arrived");
+    let rows = [large];
+    let (outcome, arrived) = tokio::join!(
+        storage.insert_rows(SPEND_LOGS_TABLE, &rows),
+        timeout(Duration::from_secs(10), served)
+    );
+    outcome.expect("the insert is accepted");
+    let received = arrived.expect("the insert request arrived");
     assert_eq!(received.len(), 1);
 }
 
@@ -538,21 +537,17 @@ async fn a_retried_insert_keeps_its_deduplication_token() {
     let (base, served) = serve_many(3, 200).await;
     let storage = http_storage(&base);
     let rows = vec![row("first")];
-    storage
-        .insert_rows(SPEND_LOGS_TABLE, &rows)
-        .await
-        .expect("the insert is accepted");
-    storage
-        .insert_rows(SPEND_LOGS_TABLE, &rows)
-        .await
-        .expect("the retry is accepted");
-    storage
-        .insert_rows(SPEND_LOGS_TABLE, &[row("other")])
-        .await
-        .expect("the insert is accepted");
-    let received = timeout(Duration::from_secs(10), served)
-        .await
-        .expect("the insert requests arrived");
+    let other = [row("other")];
+    let (outcome, arrived) = tokio::join!(
+        async {
+            storage.insert_rows(SPEND_LOGS_TABLE, &rows).await?;
+            storage.insert_rows(SPEND_LOGS_TABLE, &rows).await?;
+            storage.insert_rows(SPEND_LOGS_TABLE, &other).await
+        },
+        timeout(Duration::from_secs(10), served)
+    );
+    outcome.expect("the inserts are accepted");
+    let received = arrived.expect("the insert requests arrived");
     let tokens: Vec<String> = received
         .iter()
         .map(|request| {
@@ -573,13 +568,13 @@ async fn an_insert_replaces_the_url_insert_parameters() {
     let storage = http_storage(&format!(
         "{base}/?query=stale&async_insert=0&database=other"
     ));
-    storage
-        .insert_rows(SPEND_LOGS_TABLE, &[row("first")])
-        .await
-        .expect("the insert is accepted");
-    let received = timeout(Duration::from_secs(10), served)
-        .await
-        .expect("the insert request arrived");
+    let rows = [row("first")];
+    let (outcome, arrived) = tokio::join!(
+        storage.insert_rows(SPEND_LOGS_TABLE, &rows),
+        timeout(Duration::from_secs(10), served)
+    );
+    outcome.expect("the insert is accepted");
+    let received = arrived.expect("the insert request arrived");
     let query = request_query(&received[0]);
     assert_eq!(
         query.get("query").map(String::as_str),
@@ -593,11 +588,16 @@ async fn an_insert_replaces_the_url_insert_parameters() {
 async fn an_insert_answered_with_an_error_status_is_reported() {
     let (base, served) = serve_many(1, 500).await;
     let storage = http_storage(&base);
-    let outcome = storage.insert_rows(SPEND_LOGS_TABLE, &[row("first")]).await;
-    assert!(outcome.is_err());
-    let _received = timeout(Duration::from_secs(10), served)
-        .await
-        .expect("the insert request arrived");
+    let rows = [row("first")];
+    let (outcome, arrived) = tokio::join!(
+        storage.insert_rows(SPEND_LOGS_TABLE, &rows),
+        timeout(Duration::from_secs(10), served)
+    );
+    assert!(matches!(
+        outcome,
+        Err(ClickHouseStorageError::InsertFailed(500))
+    ));
+    arrived.expect("the insert request arrived");
 }
 
 #[tokio::test]
@@ -621,13 +621,12 @@ async fn a_zero_retention_schema_is_rejected() {
 async fn schema_setup_posts_the_database_table_and_ttl() {
     let (base, served) = serve_many(3, 200).await;
     let storage = http_storage(&base);
-    storage
-        .ensure_schema(7, 30)
-        .await
-        .expect("the schema is accepted");
-    let received = timeout(Duration::from_secs(10), served)
-        .await
-        .expect("the schema statements arrived");
+    let (outcome, arrived) = tokio::join!(
+        storage.ensure_schema(7, 30),
+        timeout(Duration::from_secs(10), served)
+    );
+    outcome.expect("the schema is accepted");
+    let received = arrived.expect("the schema statements arrived");
     let statements: Vec<String> = received
         .iter()
         .map(|request| String::from_utf8(request.body.clone()).expect("a UTF-8 statement"))
