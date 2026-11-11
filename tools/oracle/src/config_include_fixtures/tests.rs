@@ -9,7 +9,7 @@ use rstest::rstest;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{MAX_BODY_BYTES, MAX_COMPONENTS, MAX_DESTINATION_BYTES, MAX_FILES, write_tree};
+use super::write_tree;
 use crate::OracleError;
 use crate::case::{Case, decode_case};
 
@@ -95,11 +95,11 @@ fn sized_body(size: usize) -> BTreeMap<String, String> {
 }
 
 fn bodies_at_total_limit() -> BTreeMap<String, String> {
-    files_of(&vec![body_with_size(MAX_BODY_BYTES); BODIES_AT_TOTAL_LIMIT])
+    files_of(&vec![body_with_size(64 * 1024); BODIES_AT_TOTAL_LIMIT])
 }
 
 fn bodies_past_total_limit() -> BTreeMap<String, String> {
-    let mut bodies = vec![body_with_size(MAX_BODY_BYTES); BODIES_AT_TOTAL_LIMIT];
+    let mut bodies = vec![body_with_size(64 * 1024); BODIES_AT_TOTAL_LIMIT];
     bodies.push("a".to_owned());
     files_of(&bodies)
 }
@@ -116,16 +116,16 @@ fn destination_with_components(count: usize) -> BTreeMap<String, String> {
 }
 
 #[rstest]
-#[case::sixteen_files(repeated_bodies(MAX_FILES), true)]
-#[case::seventeen_files(repeated_bodies(MAX_FILES + 1), false)]
-#[case::body_at_limit(sized_body(MAX_BODY_BYTES), true)]
-#[case::body_past_limit(sized_body(MAX_BODY_BYTES + 1), false)]
+#[case::sixteen_files(repeated_bodies(16), true)]
+#[case::seventeen_files(repeated_bodies(17), false)]
+#[case::body_at_limit(sized_body(64 * 1024), true)]
+#[case::body_past_limit(sized_body(64 * 1024 + 1), false)]
 #[case::total_at_limit(bodies_at_total_limit(), true)]
 #[case::total_past_limit(bodies_past_total_limit(), false)]
-#[case::destination_at_limit(destination_of_size(MAX_DESTINATION_BYTES), true)]
-#[case::destination_past_limit(destination_of_size(MAX_DESTINATION_BYTES + 1), false)]
-#[case::eight_components(destination_with_components(MAX_COMPONENTS), true)]
-#[case::nine_components(destination_with_components(MAX_COMPONENTS + 1), false)]
+#[case::destination_at_limit(destination_of_size(512), true)]
+#[case::destination_past_limit(destination_of_size(513), false)]
+#[case::eight_components(destination_with_components(8), true)]
+#[case::nine_components(destination_with_components(9), false)]
 fn enforces_fixture_limits(#[case] files: BTreeMap<String, String>, #[case] accepted: bool) {
     let outcome = decode(files);
     if accepted {
@@ -203,14 +203,6 @@ fn preserves_yaml_and_mock_url() {
     );
     assert_eq!(read("fragments/empty.yaml"), "");
     assert_eq!(read("fragments/list.yaml"), "- one\n- two\n");
-}
-
-#[test]
-fn defaults_to_no_config_files() {
-    let text = "name: legacy\nconfig: |\n  general_settings:\n    master_key: oracle-master\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\n";
-    let case =
-        decode_case(Path::new("<legacy>"), text.as_bytes()).expect("the legacy case decodes");
-    assert!(case.config_files.is_empty());
 }
 
 fn replay_valid_seed(path: &Path) -> usize {

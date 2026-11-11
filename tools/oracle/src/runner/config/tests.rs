@@ -128,6 +128,29 @@ fn stops_on_write_failure() {
 }
 
 #[test]
+fn defaults_to_no_config_files() {
+    let text = "name: legacy\nconfig: |\n  general_settings:\n    master_key: oracle-master\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\n";
+    let case =
+        decode_case(Path::new("<legacy>"), text.as_bytes()).expect("the legacy case decodes");
+    assert!(case.config_files.is_empty());
+    let root = tempfile::tempdir().unwrap();
+    let (group_dir, first, second) =
+        prepare_gateway_configs(root.path(), &case, &no_fixtures(), "http://127.0.0.1:9").unwrap();
+    assert_eq!(first, group_dir.join("config.yaml"));
+    assert_eq!(second, first);
+}
+
+#[test]
+fn injects_the_database_url_per_root() {
+    let case = included_case(BTreeMap::new());
+    let first = super::database_document(&case.config, "postgresql://first").unwrap();
+    let second = super::database_document(&case.config, "postgresql://second").unwrap();
+    assert!(first.contains("postgresql://first"));
+    assert!(second.contains("postgresql://second"));
+    assert!(!first.contains("postgresql://second"));
+}
+
+#[test]
 fn groups_by_include_contents() {
     let config = "general_settings:\n  master_key: oracle-master\n";
     let first = case(
