@@ -45,7 +45,7 @@ description: >-
   `async_pre_call_hook` after auth and before the provider call on the routes that already run the other
   pre-call hooks. B8399 registers this gate as the parallel_request_limiter proxy hook in init_callbacks, so proxy_logging's pre-call hook runs it on those routes. A limiter error becomes the HTTP
   answer of B3030: 429 with LiteLLM's body, and 503 with `{"detail":{"error":...}}` when fail-closed
-  enforcement is on and the cache cannot be read. The gate also has a public accessor `main_limiter(&self) -> &RateLimitPreCallHook`, the replacement for `get_proxy_hook("parallel_request_limiter")` that B3124 needs for `request_capacity`. betterlite has only this limiter, so the accessor always answers. Add the HTTP oracle cases listed below. Each one has a
+  enforcement is on and the cache cannot be read. The gate also has a public accessor `main_limiter(&self) -> Option<&RateLimitPreCallHook>`, the replacement for `get_proxy_hook("parallel_request_limiter")` that B3124 needs for `request_capacity`. It answers None when B8399 selected the legacy limiter, so there is no v3 limiter to hand over (cache_aware_routing.py L290-L292). Add the HTTP oracle cases listed below. Each one has a
   config, one request and a mock upstream, and compares status, body and headers with LiteLLM.
 
   Native tests live under `pre_call_hook::tests` and are grouped as `descriptors_`, `hook_` and
@@ -80,7 +80,7 @@ references:
     why: The batch limiter hand-off at the top of the hook.
 
 dod:
-  - text: The server gate has a public accessor main_limiter that returns the main limiter whose request_capacity B3124 calls.
+  - text: The server gate has a public accessor main_limiter that returns the selected v3 limiter, or None when the legacy limiter is selected, and B3124 calls request_capacity on it.
     proof: [server-gate-tests]
   - text: The descriptor list is built in the LiteLLM order and a non-text rpm_limit_type, tpm_limit_type or model counts as absent.
     proof: [descriptor-tests]

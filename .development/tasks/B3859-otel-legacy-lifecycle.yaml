@@ -179,6 +179,7 @@ out_of_scope:
   - _to_ns and _get_span_name (timestamp/name helpers belong to B3854)
   - _capture_in_span (capture-mode query belongs to B3854)
   - _resolve_capture_mode (capture mode resolution belongs to B3854)
+  - set_response_status_code_attribute (response-status setter belongs to B8910)
   - _get_headers_dictionary and _get_tracer_with_dynamic_config/_get_tracer_with_dynamic_headers (dynamic provider construction belongs to B3855)
   - Tracer/Span types and span lifecycle (OTel SDK types from opentelemetry library)
   - clock and UUID interfaces (context interface belongs to B198)

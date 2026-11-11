@@ -224,7 +224,7 @@ deviations:
   - what: The SERVER span name and http.route use the request path, not the route template, for routes outside the sixteen passthrough prefixes.
     why: axum resolves the matched route inside the router, after an outer layer has to name the span.
   - what: The admin UI is read from the ui folder next to the betterlite executable or LITELLM_UI_PATH, not from a folder inside the Python package.
-    why: betterlite ships no packaged UI build; with no valid folder nothing is mounted, as LiteLLM does when its folder is missing.
+    why: The packaged UI is B9091's export copied to ui beside the executable by B5071's images and B5073's non-root image, and B9093 selects the folder; a source build without it has no valid folder, then nothing is mounted, as LiteLLM does when its folder is missing.
   - what: A panic is the only failure the outer 500 handler catches; a route error that is not a ProxyFailure keeps the response its route built.
     why: Rust handlers return responses instead of raising, so only a panic reaches the outermost layer unhandled.
 out_of_scope:

@@ -1,0 +1,14 @@
+id: B8970
+milestone: M9 agents and mcp
+title: MCP managed OpenAPI dispatch and separator diagnostic
+status: todo
+depends_on: [B4680, B4683, B8190, B6590, B6594, B4716]
+file: tasks/B8970-mcp-managed-openapi.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

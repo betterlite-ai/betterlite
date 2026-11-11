@@ -1,0 +1,204 @@
+id: B075
+title: Verify database model insights and prompt-caching request history over HTTP
+description: >-
+  Finish the insights umbrella with the database-backed HTTP cases its parts left behind.
+  Every function in the four original covered files already has an owner: B8272 implements
+  the model-insights handlers and response records; B1734 supplies ModelInsightTask,
+  load_model_insight_tasks and the twenty-entry catalog. B8676 mounts both handlers and
+  tests authentication, missing database and an invalid metric. B3125's request-history
+  cases likewise stop before rows can be read. Exercise successful grouped reads, task
+  classification, access checks and cache-history paging through those existing mounts.
+  B066 includes B3125's router; this task adds no route, mount, repository or production type.
+
+  Build tools/oracle/src/model_insights_http.rs and model_insights_http/, using B9280's
+  insights_http::ProxyPair for process startup, ordinary HTTP comparison, artifacts and
+  teardown. Test functions live in model_insights_http/tests.rs with domain submodules
+  model_insights, task_insights, cache_history and access. The skeleton declares
+  model_insights_http in the oracle crate before dispatch. Keep fixture support behind
+  cfg(test), using the existing tokio-postgres dev dependency, and put fallible setup errors
+  in a local ModelInsightsHttpError enum that retains their sources. Use B860's PostgresFixture to
+  provision a distinct database for each peer, POSTGRES_TEST_URL when supplied or its
+  existing testcontainers path otherwise. A missing database is a failing setup, never a
+  skipped test. B5076 supplies the pinned Prisma client generation. Set database_url and
+  disable_prisma_schema_update=true in each peer's ordinary config; use the existing
+  fixture key seeding for separate proxy_admin_viewer and internal_user identities, plus
+  master key oracle-master. Keep all fixture setup before either gateway starts.
+
+  Store static DDL and dataset SQL in tools/oracle/fixtures/model-insights/. The baseline
+  fixture lacks LiteLLM_DailyModelUsage: create it in each case database with the exact
+  schema.prisma columns, five-column primary key, date/model_group indexes and timestamp
+  precision. Supply updated_at explicitly when seeding. Reuse the existing LiteLLM_SpendLogs
+  table and add only a pinned column the selected query actually needs if the old baseline
+  lacks it. Apply this SQL through the fixture connection using existing tokio-postgres;
+  do not modify baseline.sql, sql.rs, FixtureSeed or any shared oracle registry. This is a
+  private test fixture, not a product migration. Use Decimal in Rust and decimal SQL
+  literals/casts for spend, never floating-point arithmetic or product repositories to
+  manufacture expected rows. Close both gateways and SQL connections before dropping the
+  fixtures. Complete cleanup even when the second gateway failed to start.
+
+  Seed two dates, 2026-01-10 and 2026-01-11, with at least twelve distinct
+  (model_group, model, custom_llm_provider) tuples. Include two tuples sharing model_group
+  but differing in provider/model, a deployment with several task_type values, known
+  classification/code_generation tasks and an unknown task_type custom-work. Use distinct
+  totals for each ranking metric so an unspecified PostgreSQL group order is not mistaken
+  for a specified tie-breaker. Add a large out-of-window row. Tests must assert the fixture
+  table's column types and primary key independently before using it. Both peers start
+  from the same explicit rows, and a sentinel update made in one database is absent from
+  the other; then restore that fixture row before the HTTP comparison.
+
+  top_models_http uses named rstest cases requests, spend and tokens for
+  GET /model-insights?start_date=2026-01-10&end_date=2026-01-11&metric=.... Compare the
+  full response, including only ten top_models, daily rows restricted by the complete
+  deployment triple, and daily_totals including the two excluded deployments. Assert the
+  ranking and totals against independent fixture arithmetic as well as the reference.
+  daily arrays can be canonicalized only within one date by the deployment triple because
+  SQL orders by date alone; top_models order is significant. empty_window_http returns
+  three empty collections for a range with no rows. default_metric_http omits metric and
+  agrees with tokens. window_boundaries_http proves end_date-only yields a 364-day
+  subtraction, a same-day window is accepted, a 364-day difference is accepted, and an
+  invalid date, reversed range or 365-day difference returns 400. With both dates malformed,
+  end_date is parsed first. Do not globally ignore date or aggregate fields.
+
+  task_shares_http calls GET /model-insights/tasks for each metric. Check label/category
+  from the catalog, unknown custom-work retained as task_type with Uncategorized/General,
+  value, percentage share and leader/model_group plus provider. The task metric default is
+  spend, different from /model-insights. zero_total_http uses one zero-valued deployment
+  row for a single known task to prove share=0 without division failure or an unspecified
+  leader tie. Reuse the same bounded comparison rules on both peers, and assert the set
+  of all returned task identities independently.
+
+  cache_history_http seeds LiteLLM_SpendLogs with stable request ids and UTC timestamps,
+  including three rows at the same startTime and records at both query endpoints. Include
+  usage_object entries with direct cache_read_input_tokens, nested cached_tokens, direct
+  cache_creation_input_tokens, nested cache_write_tokens and nested cache_creation_tokens;
+  give a direct count zero with a positive nested fallback. All counts use declared numeric
+  types. Include empty and model-id-matching litellm_gateway_injected_cache string markers,
+  a mismatched marker, a response-cache hit whose cache_hit is 'TrUe', a null cache_hit,
+  a row with no caching and an out-of-range row. Metadata usage/cost objects are real JSON
+  objects, not JSON strings. Model/provider/model_id and complete usage match a configured
+  anthropic/claude-sonnet-4-20250514 deployment with fixed explicit tariffs. Include one
+  injected row with unavailable usage so net_savings is null and one complete usage row
+  with a nonzero savings result; compare those results rather than ignoring savings.
+
+  Call GET /cost_optimization/prompt_caching/requests with filter omitted, then all,
+  injected and hits. Check the exact returned id sets, gateway_injected, read/creation
+  counts, spend and net_savings. With page_size=2, follow each peer's own next_cursor until
+  has_more is false, comparing each page and collecting request ids with no repeats or
+  omissions. next_cursor must come from the last returned row, not the lookahead row.
+  A cursor inside the equal-time group must advance by request_id descending. Test the
+  default page_size=50, final next_cursor=null, a completely empty result, naive dates
+  interpreted as UTC and explicit offsets denoting the same interval. These queries use
+  bound values in production; inject no raw SQL into a public request.
+
+  access_order_http checks all three GET paths with master, proxy_admin_viewer and
+  internal_user credentials. The viewer can read complete results and the internal user
+  cannot read deployment-wide data. Valid auth must reach each handler, not stop at an
+  unknown token. For history, an unpaired cursor yields 400 before database availability,
+  a reversed interval yields 400 with a database, and a non-admin with an unpaired cursor
+  yields 403 before the cursor error. For insights, invalid metric is the framework's
+  422 and non-admin role rejection precedes date parsing. Compare actual status,
+  content-type and WWW-Authenticate where present. HTTPException detail responses retain
+  their envelope; only textual /detail may be ignored with a wording reason. Auth errors
+  compare error type, param and code and ignore only /error/message. No route in this
+  task has a /v1, /openai/v1 or provider-prefixed alias.
+
+  Add three ordinary kind: http cases in tools/oracle/cases/http/model-insight-parity/:
+  tasks-invalid-metric.yaml sends GET /model-insights/tasks?metric=latency with master
+  auth and no database, expecting 422; history-non-admin.yaml uses a seeded internal
+  user and a valid date interval, expecting 403; history-role-before-cursor.yaml uses
+  that role and only cursor_request_id, expecting the same 403 before cursor validation.
+  The latter two need only the existing principal seed schema, because no insight query
+  executes. Give the cases distinct config master keys to avoid accidental fixture reuse
+  by config grouping. The normal oracle check runs these files. The seeded aggregation
+  and paging tests are separate live HTTP oracle checks using ProxyPair, never helpers
+  that call FastAPI handlers or fake Prisma globals. Preserve the two process transcripts
+  and the seed SQL as failure evidence.
+
+  This is zero new LiteLLM implementation logic; the original files contain 265 nonblank,
+  noncomment Python lines plus the 22-line catalog, all assigned below. B9280 carries the
+  separate native-provider transport and cache-observation HTTP work. Keep this part near
+  200 lines of fixture/driver code and 500 lines of cases and tests, with no new decoder,
+  dependency or product configuration section.
+scope:
+  paths:
+    - tools/oracle/src/model_insights_http.rs
+    - tools/oracle/src/model_insights_http/**
+    - tools/oracle/fixtures/model-insights/**
+    - tools/oracle/cases/http/model-insight-parity/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_insights_endpoints.py#L29-L177
+    why: Group shapes, ranking, task shares and auth/database/window ordering exercised over HTTP; implementation stays B8272.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_insights_endpoints.py#L180-L254
+    why: Both route decorators, their different metric defaults, daily totals and selected-deployment filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/model_insights.py#L5-L56
+    why: Response contract composed by B8272 with B1734's shared catalog record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/model_insights_tasks.py#L8-L14
+    why: B1734's immutable catalog loader used by the task-summary route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/model_insights_tasks.json#L1-L22
+    why: Recognized labels/categories versus the unknown-task fallback in the HTTP dataset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_caching_requests.py#L34-L125
+    why: Filter SQL, token fallbacks, UTC conversion and savings composition, owned by B3125.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_caching_requests.py#L128-L184
+    why: Listing decorator, role/cursor/database/date check order and lookahead pagination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L595-L628
+    why: B1694's savings result is observed through the history endpoint, including unavailable usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1320-L1338
+    why: Independent test-only DailyModelUsage DDL with BigInt counters and a five-column identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260928000000_add_daily_model_usage/migration.sql#L1-L19
+    why: Physical table defaults, TIMESTAMP(3) precision and index names for the private fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L703-L745
+    why: Spend-log fields and indexes the private fixture seeds without using product writes.
+dod:
+  - text: Independent pinned-schema databases feed booted model-insight routes, proving each ranking metric, ten-model filtering, all-model totals, empty results and date-window boundaries.
+    proof: [model-http]
+  - text: Task insights retain catalog labels, unknown task identity, metric-specific values, shares and leaders, with a zero-total result and spend as the default.
+    proof: [task-http]
+  - text: The real caching-request SQL and row conversion produce the three filter sets, token fallbacks, savings and lossless equal-time cursor pagination.
+    proof: [history-http]
+  - text: Authenticated role and validation precedence match the pin, including viewer reads and internal-user rejection before history cursor validation.
+    proof: [access-http, new-http-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: model-http
+      why: Row grouping, top-ten selection, totals or date defaults can diverge behind passing fake-repository tests.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::(top_models_http|empty_window_http|default_metric_http|window_boundaries_http)(::|$)/)'
+    - id: task-http
+      why: Catalog composition, task leaders and percentage shares have no database-backed HTTP evidence.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::(task_shares_http|zero_total_http)(::|$)/)'
+    - id: history-http
+      why: Native fake rows do not exercise real JSONB filter expressions, savings composition or keyset paging.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::cache_history_http(::|$)/)'
+    - id: access-http
+      why: A working route can still use the wrong authenticated role or validation order.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::access_order_http(::|$)/)'
+    - id: new-http-cases
+      why: The task-specific metric and role-precedence cases must exist as new runnable HTTP cases.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/model-insight-parity)" &&
+        test -f tools/oracle/cases/http/model-insight-parity/tasks-invalid-metric.yaml &&
+        test -f tools/oracle/cases/http/model-insight-parity/history-non-admin.yaml &&
+        test -f tools/oracle/cases/http/model-insight-parity/history-role-before-cursor.yaml
+oracle_cases:
+  - tools/oracle/cases/http/model-insight-parity/tasks-invalid-metric.yaml
+  - tools/oracle/cases/http/model-insight-parity/history-non-admin.yaml
+  - tools/oracle/cases/http/model-insight-parity/history-role-before-cursor.yaml
+deviations: []
+out_of_scope:
+  - B8272 owns _Sums, _GroupedModel, _GroupedDaily, _GroupedDate, _GroupedTask, _parse_date, _metric, _rank_value, _top_model_rows, _deployment_filter, _daily_metric, _daily_total, _summarize_tasks, _resolve_window, get_model_insights and get_model_insight_tasks, including constants and adapters in model_insights_endpoints.py.
+  - B8272 owns ModelInsightsMetric, ModelInsightMetric, ModelInsightDailyMetric, ModelInsightDailyTotal, ModelInsightTaskSummary, ModelInsightsResponse and ModelInsightTasksResponse; B1734 owns ModelInsightTask. Add types/model_insights.py to B8272's covers as the planner report requests; this task must not create duplicate response records.
+  - B1734 owns load_model_insight_tasks, its immutable JSON catalog and all model-usage rollup writes; B7954 owns the Python model-insights facade. No callable remainder exists in these files.
+  - B3125 owns every function in prompt_caching_requests.py, including the nested current_router and token SQL builders, and both cache endpoint registrations. B1693/B1694 own extraction and savings algorithms; only their HTTP composition is exercised here.
+  - B8676 mounts model-insights routes, B066 composes prompt-cache routes, and B8610 supplies the shared state and area aggregator. B9280 proves counting, observation callbacks and cache-aware routing through the existing Messages route.
+  - B860 owns Postgres provisioning and principal seeds; B5076 owns Prisma bootstrap; B709 owns product schema and migrations. Private fixture SQL must never become a second application migrator.
+pitfalls:
+  - daily_totals includes models outside top_models and therefore cannot be reconstructed by summing the filtered daily array.
+  - Task summaries use spend by default while the model ranking uses tokens by default.
+  - PostgreSQL group_by does not order tied deployments; fixture rankings must be distinct and only unspecified daily ordering may be canonicalized.
+  - A page boundary inside one timestamp depends on request_id as well as startTime, so time-only cursor tests miss lost rows.
+  - The missing-database check precedes the history date-order check; a no-database reversed-range case does not prove the 400 branch.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

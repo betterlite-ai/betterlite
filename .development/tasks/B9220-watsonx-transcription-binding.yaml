@@ -1,0 +1,103 @@
+id: B9220
+title: Bind the Watsonx transcription config to native execution
+description: >-
+  B5360's select_transcription_config returns AudioTranscriptionConfigTag::IBMWatsonX for
+  ProviderId::Watsonx, but deliberately constructs no provider. B5842 builds watsonx_audio in
+  betterlite-openai and tests its transformations in isolation. Supply the concrete operation
+  between those two leaves and B2453's native HTTP executor in
+  crates/betterlite-provider/src/watsonx_transcription.rs and its folder. This is the construction
+  half of utils.py L9053-L9058, not another selector or another audio transform.
+
+  Export WatsonxTranscription using B1122's provider-layer request/result contract. Implement
+  its native transcription execution over B5842's audio config, B5970's WatsonxAuth and
+  B2453's transcription_http entry. Take the auth service, B173 pooled client and logger through
+  typed dependency fields; the upper caller supplies B8331's already-resolved environment and
+  production IAM transport. Do not import betterlite-core, read process environment, create an
+  HTTP client or own another token cache. B1082 will consume this operation from its existing
+  provider selection arm after the architect adds that direct dependency. This leaf depends on
+  neither B1082 nor the audio route, so the call graph remains one-way.
+
+  Forward the resolved model, audio file, key, api_base, optional_params, litellm_params, timeout,
+  execution mode, compatible client and shared session to the existing executor. Native audio
+  begins with headers {}, as main.py L8160-L8183 does; configuration validation supplies auth and
+  removes Content-Type before multipart encoding. Do not insert get_watsonx_credentials here:
+  that resolver's mandatory API key belongs to the embedding/rerank call sites, while audio
+  accepts an explicit token or WATSONX_TOKEN without a key. Use B5842's supported options,
+  request body and response decoder unchanged, preserving its error class and each wrapped
+  source in a module-local error enum if the operation needs an additional error boundary.
+
+  Configuration inputs are existing values, not a new section. Token precedence is the
+  optional token then WATSONX_TOKEN; the alternative ZenApiKey path uses zen_api_key then
+  WATSONX_ZENAPIKEY; otherwise B5970 performs IAM. The base is explicit, WATSONX_API_BASE,
+  WATSONX_URL, WX_URL, WML_URL, with unset defaults and no invented public endpoint. The
+  inherited version value is WATSONX_DEFAULT_API_VERSION=2024-03-13 unless optional api_version
+  overrides it. Supply those values through the auth/config objects rather than duplicating
+  the fallback chains. The audio form sends model, project_id from project_id or watsonx_project
+  ahead of space_id, and language, prompt, response_format, temperature and timestamp_granularities
+  when present. It does not consult project environment defaults and permits both ids to be
+  absent. B1001/B5842 own file preparation; B2453 owns the one HTTP send and its error conversion.
+
+  Write tests beside watsonx_transcription in tests.rs, with support fixtures under tests/.
+  Use a local bounded recording HTTP server and the production B2453 executor and B5842 config.
+  The rstest function watsonx_transcription_binding has named cases token_without_key,
+  project_before_space, legacy_project_name, space_only, no_project, explicit_version,
+  response_extra_fields, provider_bad_request, response_body_limit and request_deadline. Each
+  observes the outgoing request or the
+  typed failure, not merely a successful constructor. token_without_key injects a token through
+  WatsonxEnvironment, supplies no API key and makes its IAM transport fail if called; the audio
+  request must succeed. Verify multipart media type and bytes, Accept application/json and
+  Bearer auth, /ml/v1/audio/transcriptions with the version-only query, and model rather than
+  model_id. For the response case, return text and valid usage with model, duration and segments;
+  model is discarded and the other fields survive. A provider 400 keeps its status and source
+  without causing an extra request. Test request limits and timeout propagation by passing
+  small existing limits and a delayed local response, without inventing new limits here.
+
+  This task has no HTTP route yet and introduces no pure function needing a helper adapter.
+  B042 supplies the booted-proxy oracle cases after B083/B1082 consume this operation; do not
+  invoke a FastAPI handler through a helper. There is no new decoder, so reuse the existing
+  provider and multipart fuzz boundaries. The owned factory branch has five nonblank executable
+  lines, and the generic dispatch is context owned by B1082. Plan about 110 operation/error
+  lines and 290 tests and local-server fixture lines, without copying the auth or transport.
+scope:
+  paths:
+    - crates/betterlite-provider/src/watsonx_transcription.rs
+    - crates/betterlite-provider/src/watsonx_transcription/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9053-L9058
+    why: Own concrete Watsonx config construction for the tag whose selection B5360 already implements.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8160-L8183
+    why: B1082 owns this generic caller and will inject the new operation with these arguments and empty headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/audio_transcription/transformation.py#L29-L205
+    why: B5842's complete leaf behavior to consume, including multipart header removal and response model filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L225-L280
+    why: B5970's supplied auth/base implementation allows a token without get_watsonx_credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1544-L1610
+    why: B2453 validates headers, resolves the URL and creates the request using the selected config.
+dod:
+  - text: The concrete Watsonx operation executes the leaf config through the pooled native transcription executor, preserving all request arguments and allowing token authentication without an API key.
+    proof: [binding-tests]
+  - text: Recorded multipart requests retain the file and option/id/version behavior, response fields retain the audio projection, and errors preserve status and cause without a second request.
+    proof: [binding-tests]
+  - text: Existing request limits and deadlines reach the executor without adding another decoder, environment lookup, client or credential cache.
+    proof: [binding-tests]
+checks:
+  optional: []
+  commands:
+    - id: binding-tests
+      why: The prepared operation still has no real config/executor binding or changes an argument at that boundary.
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::watsonx_transcription_binding(::|$)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B5360 owns select_transcription_config and every other media/resource selector; this task only constructs the config represented by its IBMWatsonX tag."
+  - "All other utils.py functions retain the detailed callable owners in B157's Function ownership inventory and its B5360-B5364 refinements, including B2230 chat selection and B5362 option mapping."
+  - "B5842 owns every method and the response decoder of IBMWatsonXAudioTranscriptionConfig; B5970 owns validate_environment, IAM tokens, base URL and version helpers."
+  - "B1122 owns the transcription contract, B2453 owns preparation and sync/async transport, B1082 owns transcription/atranscription and duration metadata, and B173 owns the shared HTTP client and limits."
+  - "B8331 supplies live Watsonx environment and IAM transport inputs; B083 retains both transcription routes and B042 supplies their provider-specific HTTP oracle cases."
+pitfalls:
+  - "Calling get_watsonx_credentials before validate_environment rejects token-only audio even though the pinned generic transcription path never calls that credential resolver."
+  - "Retaining Content-Type application/json after Watsonx auth prevents the HTTP client from constructing its multipart boundary."
+  - "The transcription reply removes model but keeps duration and segments, so delegating to a generic chat or embedding response converter is incorrect."
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

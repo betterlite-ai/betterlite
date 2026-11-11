@@ -1,0 +1,119 @@
+id: B9323
+title: Compare policy enforcement and background retrieval at the HTTP boundary
+description: >-
+  Add the missing inference evidence for policy helpers after B9320 connects their shared runtime. B1108 already
+  selects policies, B3247 executes pipelines, B8399/B8802 assemble real hooks, and B8805 supplies B3269's retrieval
+  adapter. B8803 installs the production step into chat and B8804 into Responses and retrieval; wait for those
+  callers rather than only their port factory. Put ten ordinary HTTP cases under
+  policies/inference-http, roughly 700-800 lines, with named OpenAI deployments, stable model_info.id, inert
+  api_key and api_base {{upstream}}. Set general_settings.master_key oracle-master and router retries zero for
+  deliberate failures. There is no database in this suite.
+
+  Configure generic_guardrail_api guards at the scripted mock, with mode pre_call or post_call and default_on
+  false. A scanner pass returns action NONE; a block returns action BLOCKED and blocked_reason; replacement
+  content is in texts. Policies and policy_attachments are normal top-level config, with every pipeline step's
+  guard also in guardrails.add. Never send _guardrail_pipelines, precomputed callback results or private registry
+  metadata. Each transcript owns its entire starting config and compares the sequence of scanner/provider calls.
+
+  dynamic-policy-and-strip.yaml attaches one policy only to a second model. A first request to another model
+  selects it using request policies, calls its scanner and emits x-litellm-applied-policies without forwarding
+  policies to the provider. A second request uses the attached model and repeats the policy name in its explicit
+  list; it still applies once. inherited-remove.yaml attaches a child inheriting a parent's single guard and
+  removing it; the provider runs with no scanner call. pre-call-short-circuit.yaml gives a two-step pipeline a
+  first passing step with on_pass allow and proves only that step runs before inference. pre-call-block.yaml
+  makes the first step block and proves no provider request occurs.
+
+  pipeline-error-actions.yaml registers no guards, but declares a policy add name whose callback is missing.
+  Compare the default on_error, which follows on_fail block, with explicit on_error next, which reaches the
+  provider. Use two policy definitions in the same config and select each explicitly. post-call-chain.yaml uses
+  a two-step post_call pipeline whose first scanner returns replacement texts, on_pass next and pass_data false;
+  the second scanner sees the replacement and the client receives the final text. This flag gates pre-call
+  propagation, not post-call replacement chaining. An extra standalone invocation of a pipeline-managed guard
+  must fail upstream capture comparison.
+
+  Distribute POST /v1/chat/completions, /chat/completions, /engines/{model}/chat/completions and
+  /openai/deployments/{model}/chat/completions across the six inference cases. auth-before-policy.yaml sends no
+  credentials to GET /policy/info/child, POST /policy/test and POST /policy/templates/enrich/stream; expect the
+  shared 401 and no scanner/model traffic. Management paths have no versioned aliases. Check attribution headers
+  x-litellm-applied-policies, x-litellm-applied-guardrails and x-litellm-policy-sources when present and their
+  absence when filtered out. Preserve actual error shapes, including handlers that use detail instead of error.
+
+  retrieval-post-call.yaml submits background true to POST /v1/responses. The mock first returns queued with a
+  stable provider id; capture the encoded gateway id, then GET /v1/responses/{response_id} with a completed mock
+  reply. A model-attached post_call pipeline must defer scanning and its attribution on the queued response, then
+  scan and rewrite the completed retrieval once. retrieval-filtered.yaml makes the policy condition fail and
+  observes no scanner call. retrieval-pre-call-excluded.yaml permits its configured pre_call scan on creation
+  but proves that retrieval never reconstructs that pipeline as post_call. Spread /responses and
+  /openai/v1/responses, and their /{response_id} GET aliases, across those last two cases. Use provider ids,
+  not the litellm_poll_* Redis path. Requests contain no body-only dynamic policy override in the retrieval cases,
+  since retrieval cannot reproduce that submission context.
+
+  Run these as booted betterlite-versus-LiteLLM cases, with kind absent. Keep response status, content-type,
+  stable JSON, provenance headers and provider method/path/auth/body compared. Captured ids are local to each
+  gateway; ignore their individual output leaves and measured timestamps/durations only. Human error messages
+  may be normalized at their exact leaves, while type, param, code and pipeline outcomes remain checked. Native
+  helper tests retain malformed attached metadata, alias warnings and deduplication that would require injecting
+  private request state. B8993 separately covers native streaming rewrites. This task adds no parser or fuzz code.
+scope:
+  paths:
+    - tools/oracle/cases/policies/inference-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11958
+    why: The four chat decorators used by these policy requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3234-L3475
+    why: Request selection, attribution and removal of policies before provider forwarding, owned by B1108.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L309-L426
+    why: Pipeline terminal actions and the post-call replacement chain reused from B3247.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L215
+    why: All three Responses creation decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L677-L790
+    why: Provider response retrieval decorators, three aliases and shared processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/response_retrieval.py#L39-L152
+    why: Deployment context, post-call filtering and reconstruction from the shared registries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L680-L751
+    why: Attribution is withdrawn while background post-call pipelines are deferred.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3476-L3494
+    why: Pending Responses skip execution until completion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L491-L604
+    why: Authenticated info and test paths used in the negative case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L870-L898
+    why: Authentication precedes enrichment stream startup.
+dod:
+  - text: Request policies and attachments apply once, remove inherited guards correctly and never leak the selection field to the provider.
+    proof: [inference-transcripts, oracle]
+  - text: Passing, blocking, missing-callback and replacement-chain pipelines have the pinned observable call order and client outcome.
+    proof: [inference-transcripts, oracle]
+  - text: Queued Responses defer scanning, completed retrieval reconstructs matching post-call pipelines only, and aliases/auth/header behavior remains visible.
+    proof: [inference-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: inference-transcripts
+      why: helper parity alone cannot show that production hooks invoke the policy engine
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/policies/inference-http)"
+oracle_cases:
+  - tools/oracle/cases/policies/inference-http/dynamic-policy-and-strip.yaml
+  - tools/oracle/cases/policies/inference-http/inherited-remove.yaml
+  - tools/oracle/cases/policies/inference-http/pre-call-short-circuit.yaml
+  - tools/oracle/cases/policies/inference-http/pre-call-block.yaml
+  - tools/oracle/cases/policies/inference-http/pipeline-error-actions.yaml
+  - tools/oracle/cases/policies/inference-http/post-call-chain.yaml
+  - tools/oracle/cases/policies/inference-http/auth-before-policy.yaml
+  - tools/oracle/cases/policies/inference-http/retrieval-post-call.yaml
+  - tools/oracle/cases/policies/inference-http/retrieval-filtered.yaml
+  - tools/oracle/cases/policies/inference-http/retrieval-pre-call-excluded.yaml
+deviations: []
+out_of_scope:
+  - B1108 owns policy selection, B3247 execution, B8399 hooks, B8802/B8805 production adapters and B3269 retrieval reconstruction.
+  - B9320 supplies shared state and typed config; B9321 mounts the management routes called by the auth transcript.
+  - B8803/B8804 install the production pre-call step into the existing routes; B8636/B080 own Responses composition/handlers and B8993 native streaming rewrites.
+  - B9322 proves config matching through inspection and B079 database-version changes; no implementation is re-owned here.
+pitfalls:
+  - Body-selected policies cannot govern a later GET that has no submission body; use a model attachment for retrieval parity.
+  - The queued response must not claim post-call policy execution before the scanner has run.
+  - pass_data false still propagates a post-call replacement to the next pipeline step.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

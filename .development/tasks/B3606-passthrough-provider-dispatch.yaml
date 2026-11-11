@@ -48,7 +48,7 @@ description: >-
 
   Input shaping per branch, which the adapters must keep exactly. Anthropic, Cohere, OpenAi, Cursor and Typesafe get the
   response body as an object, or an empty object when it is absent or a list. Gemini gets the raw response body bytes and the response headers from
-  the upstream response view, not a parsed object: the adapter builds `GeminiPassthroughLogger::new(cost)`, then calls the sync
+  the upstream response view, not a parsed object: the adapter takes the `GeminiPassthroughLogger` that `ProviderLogHandlers::production(...)` receives already constructed (B8931 builds it once), never one per call, and calls the sync
   `gemini_passthrough_handler(&self, input: GeminiPassthroughInput<'_>) -> Result<HandlerOutcome, GeminiPassthroughError>` (fields logging_obj, url_route,
   response_headers: &http::HeaderMap, response_body: &[u8], request_body, start_time, end_time, kwargs) and maps the HandlerOutcome into a
   ProviderLogOutcome. The module path is betterlite_server::pass_through_logging::gemini_passthrough_logging, in the same crate as this task. It gets no result string and no cache_hit. Tinyfish gets the object or None. AzureSpeech gets the body as

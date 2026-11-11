@@ -1,0 +1,202 @@
+id: B093
+title: Video runtime composition and HTTP parity
+description: >-
+  Finish the Videos API by supplying the live collaborators that its four route groups leave injected.
+  B3343, B3344, B3345 and B6360 already register all nine operations and their aliases, build the core
+  dispatch entries and test individual handlers. B6460 implements VideoRouterCalls through RouterVideo,
+  B8631 puts video_executors into RouterGeneric, and B8694 implements VideoRouteView as RouteViews.
+  No task connects those production values to the video route constructors. Do that here and prove
+  the router, uploads, provider selection and result IDs compose through the booted proxy. B8804 has
+  already installed the production PreCall step; retain that value and do not run a second pre-call.
+
+  Add app::inference::video_runtime in betterlite-server, with VideoRuntime and its own VideoRuntimeError.
+  Build the runtime from ServerState in each of the four existing routes(state) constructors, once per
+  route group rather than per request. Obtain B8631's RouterCalls through router_calls(state), wrap its
+  generic handle with B6460's RouterVideo and give the entries that VideoRouterCalls implementation.
+  Reuse B8694's RouteViews over shared.router and shared.router_views for VideoRouteView; do not copy its
+  catalog predicates. Supply the existing route model-resolver port from B844's
+  resolve_model_name_from_model_id against the current shared router. When the shared state has no
+  router, pass absent router/view/resolver collaborators, leaving B6460's Direct/NotFound decision intact.
+  Do not manufacture an empty router or hold a stale catalog snapshot across a model reload.
+
+  Retain the route groups' direct B3338-B3342 call objects, common request processor, configured HTTP
+  client, logging state and timeout settings. Share the server's existing handles rather than building
+  a new transport, credentials source, router, logging instance or executor registry. Connect the
+  runtime through the injected fields the merged route constructors expose; changes to video_create.rs,
+  video_content_remix.rs, video_character.rs and video_edit.rs are limited to this construction.
+  Constructor failures follow those builders' existing error path and keep their cause; never silently
+  substitute a fake/direct executor after construction fails. The server's normal route composition
+  remains the caller, so this task adds no mount, route, operation enum variant or registry entry.
+
+  The path inventory is POST and GET /v1/videos and /videos; GET /v1/videos/{video_id} and
+  /videos/{video_id}; GET /v1/videos/{video_id}/content and /videos/{video_id}/content; POST
+  /v1/videos/{video_id}/remix and /videos/{video_id}/remix; POST /v1/videos/characters and
+  /videos/characters; GET /v1/videos/characters/{character_id} and /videos/characters/{character_id};
+  POST /v1/videos/edits and /videos/edits; POST /v1/videos/extensions and /videos/extensions.
+  There are no /openai/v1, provider-prefixed or DELETE video aliases at this pin. Preserve the static
+  path precedence deviations already recorded by B3345 and B6360; do not reopen them in this task.
+
+  Add HTTP cases under tools/oracle/cases/api/video-runtime, using the existing http and http_scenario
+  formats, multipart capture and bounded response-ID captures. Every case uses the normal server boot,
+  real dispatch and provider transforms; only upstream HTTP is scripted. Configure master_key
+  oracle-master, router_settings.num_retries 0, named model_list deployments with explicit mock api_base
+  and api_key, and fixed model_info.id values. The OpenAI deployment is cinema -> openai/sora-2;
+  the Studio deployment is studio -> gemini/veo-3.1-generate-preview. No new config key or environment
+  reader is introduced: inherited request timeouts, upload limits and provider credentials stay with
+  their existing owners. Only default-model-list sets general_settings.completion_model=cinema (absent
+  by default); the other cases leave it unset. For direct Studio calls use GEMINI_API_BASE and
+  GEMINI_API_KEY through the existing config environment. All configured bases and the scripted
+  generated-video URI point to the local mock. OpenAI's video URL builder does not read OPENAI_API_BASE.
+
+  openai-job-flow creates a job through cinema with a multipart input_reference, captures its encoded
+  id, and uses that id for status, content and remix, exercising both prefixes across the steps. Check
+  that the router preserves the filename and bytes across VideoUpload's base64 representation, that
+  model-id lookup selects cinema's configured base and key, and that the upstream sees the original
+  video id. Compare the raw content bytes, video/mp4 and Content-Disposition containing the full public
+  id; content still loses the common processor's x-litellm-* response headers. default-model-list uses
+  the production pre-call's completion_model setting to select cinema, keeping limit, after and order
+  nested under query_params and therefore absent upstream. No model is supplied in the GET itself.
+  character-job-flow creates with name, video and target_model_names=cinema, then retrieves the returned
+  encoded character id; the same startup router supplies credentials on both requests. edit-extension
+  sends a named upload for edit and an encoded video reference with seconds="5" for extension, covering
+  the remaining dispatch kinds without replacing B6360's input parsing tests.
+
+  alias-and-deployment uses model_group_alias and a configured deployment id to show that the live view
+  reaches B6460's router branches, rather than a fake view that recognizes only model_name. Compare
+  the selected provider request. unknown-generation uses an unknown nonempty model and observes the
+  model-not-found envelope with zero upstream requests. router-error-no-direct-fallback sends remix
+  through a resolved model and scripts one non-retriable provider 400; it must produce one upstream
+  request and the mapped error, never retry through the direct SDK path. missing-key checks every
+  listed method/path without Authorization, including valid multipart character input, and observes
+  the auth envelope and zero provider calls from the fully composed application.
+
+  studio-job-flow is the HTTP handoff from B035 and the helper-only B1363/B1364 leaves. Through the same
+  video routes, create with seconds="8" and size="1280x720" reaches
+  /v1beta/models/veo-3.1-generate-preview:predictLongRunning as JSON with instances and parameters
+  durationSeconds=8, aspectRatio=16:9 and resolution=720p, authenticated by x-goog-api-key. A multipart
+  input_reference becomes the image bytesBase64Encoded field, not OpenAI multipart upstream. The mock
+  returns name=operations/scene1; capture the creation id for subsequent status and content requests.
+  Status returns done=true and must produce completed with the provider's status-id encoding, which
+  omits the creation model. Content uses the original creation id, first GETs the operation, then GETs
+  generatedSamples[0].video.uri and returns those bytes. studio-pending-content returns done=false from
+  that lookup and makes no artifact request. studio-unsupported-list uses an explicit gemini provider
+  hint without a model and compares the unsupported-operation envelope with zero provider calls.
+  B3332 already selects B1363/B1364's concrete contract: use that path, not a dependency on the B035
+  umbrella or a second Studio binding. These cases cover the missing effectful HTTP observation; the
+  provider methods themselves remain with their leaves.
+
+  Compare status, error.type, error.param, error.code, content-type, content-disposition, stable
+  x-litellm-* headers and captured upstream methods, paths, bodies and credential headers. Ignore only
+  /error/message on error envelopes, with the betterlite-owned-wording reason, and individually justified
+  generated times or call ids. Do not ignore encoded ids, model selection or the whole header map.
+  Native tests in video_runtime/tests.rs use the real application assembly and test runtime_assembly,
+  all_video_entries, shared_view_reload and router_failure. Check each of the nine kinds independently,
+  absent router state, constructor error propagation and that the reused view observes a catalog update.
+  Add no byte decoder or fuzz target: the module only assembles already typed ports. Plan about 200
+  assembly lines, 220 native test lines and 360 HTTP fixture lines. No unassigned LiteLLM function
+  remains; the owned remainder is composition and HTTP observation, below the 750-line logic split limit.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/video_runtime.rs
+    - crates/betterlite-server/src/app/inference/video_runtime/**
+    - crates/betterlite-server/src/routes/video_create.rs
+    - crates/betterlite-server/src/routes/video_content_remix.rs
+    - crates/betterlite-server/src/routes/video_character.rs
+    - crates/betterlite-server/src/routes/video_edit.rs
+    - tools/oracle/cases/api/video-runtime/**
+    - tools/oracle/fixtures/video-runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L33-L305
+    why: Creation, list and status decorators and their shared router/processor inputs; B3343 retains the handler bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L308-L514
+    why: Content and remix aliases, model-id resolution and byte response observed through the composed B3344 routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L516-L722
+    why: B3345's character paths hand model selection and response-id metadata across the route/runtime boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L725-L923
+    why: B6360's edit and extension paths consume the same router, preserving upload versus reference inputs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L616-L706
+    why: Supporting B6460 routing contract, including modelless direct calls and the unawaited router call inside try.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2099-L2141
+    why: B6460's nine async video wrappers, whose executors B8631 assembles and this task supplies to the existing routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6835-L6918
+    why: Supporting wrapper contract consumes custom_llm_provider and client before the generic dispatch injects deployment values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11528-L11583
+    why: B844's model-id resolver is the production implementation behind the route's injected resolver port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L63
+    why: B1102's completion model precedence lets the list fixture use a configured local deployment without a request model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2073-L2098
+    why: B8801 calls the shared completion resolver for video routes before applying aliases; retain B8804's production step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L74-L105
+    why: Supporting OpenAI key/base contract; no environment base override exists in this video URL builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L195-L297
+    why: B1363's key header and JSON request projection, observed here through the public generation route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L299-L486
+    why: B1364's create/status IDs and two-request content fetch supply the Studio composition oracle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L513-L538
+    why: The direct Studio list operation fails before upstream I/O, testing the unsupported-provider-operation boundary.
+dod:
+  - text: All four route constructors supply the production video router and shared view, retain the installed pre-call step, and expose all nine kinds without another mount or executor registry.
+    proof: [assembly-tests, route-regressions, oracle]
+  - text: Encoded video and character IDs resolve through the shared catalog to the configured deployment, and named uploads survive the generic executor boundary unchanged.
+    proof: [entry-tests, oracle]
+  - text: The reused view sees catalog updates; aliases and deployment IDs select the live router, while absent router state and unknown models keep B6460's existing decisions.
+    proof: [view-tests, oracle]
+  - text: A router failure keeps its mapped envelope without a direct SDK retry, and unauthenticated requests never reach any video provider.
+    proof: [failure-tests, oracle]
+  - text: Studio generation, polling and status-then-artifact download run through the public routes; pending content and unsupported list stop before artifact/provider access respectively.
+    proof: [entry-tests, oracle]
+  - text: Newly added booted-proxy cases prove the composed behavior without a helper adapter or simulated handler result.
+    proof: [new-http-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: assembly-tests
+      why: A route constructor still lacks its runtime ports or duplicates production pre-call work.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::video_runtime::tests::runtime_assembly($|::)/)'
+    - id: entry-tests
+      why: A video kind still takes a stand-in path or drops uploads, IDs or the Studio contract across dispatch.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::video_runtime::tests::all_video_entries($|::)/)'
+    - id: view-tests
+      why: A fresh catalog view is replaced by a stale snapshot or absent router state is manufactured into an empty router.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::video_runtime::tests::shared_view_reload($|::)/)'
+    - id: failure-tests
+      why: Runtime construction or router call failures are swallowed or retried as direct calls.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::video_runtime::tests::router_failure($|::)/)'
+    - id: route-regressions
+      why: Changing the four constructors must preserve their existing handler, alias and pre-call tests as well as the new assembly assertion.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::video_runtime::tests::runtime_assembly($|::)/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_(routes|content_remix_routes|character_routes|edit_extension_routes)::/) | test(/^app::inference::route_pre_call::tests::/)'
+    - id: new-http-cases
+      why: The branch must add actual HTTP cases in the new folder, not only native tests or helper comparisons.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/video-runtime)" && test -f tools/oracle/cases/api/video-runtime/openai-job-flow.yaml && test -f tools/oracle/cases/api/video-runtime/studio-job-flow.yaml
+oracle_cases:
+  - tools/oracle/cases/api/video-runtime/openai-job-flow.yaml
+  - tools/oracle/cases/api/video-runtime/default-model-list.yaml
+  - tools/oracle/cases/api/video-runtime/character-job-flow.yaml
+  - tools/oracle/cases/api/video-runtime/edit-extension.yaml
+  - tools/oracle/cases/api/video-runtime/alias-and-deployment.yaml
+  - tools/oracle/cases/api/video-runtime/unknown-generation.yaml
+  - tools/oracle/cases/api/video-runtime/router-error-no-direct-fallback.yaml
+  - tools/oracle/cases/api/video-runtime/missing-key.yaml
+  - tools/oracle/cases/api/video-runtime/studio-job-flow.yaml
+  - tools/oracle/cases/api/video-runtime/studio-pending-content.yaml
+  - tools/oracle/cases/api/video-runtime/studio-unsupported-list.yaml
+deviations: []
+out_of_scope:
+  - "endpoints.py video_generation, video_list and video_status (L33-L305): B3343; video_content and video_remix (L308-L514): B3344; video_create_character and video_get_character (L516-L722): B3345; video_edit and video_extension (L725-L923): B6360. These tasks retain every handler body, decorator/alias and core dispatch entry."
+  - "litellm/videos/__init__.py contains only imports and __all__; B7883 owns Python package exports and the skeleton owns Rust module declarations. proxy/video_endpoints/__init__.py contains only a docstring and is covered by B3343."
+  - "Video records and all four video_endpoints/utils.py helpers: B3330. Video and character encoders and original-ID readers: B672; auth resource hints: B2324/B746."
+  - "B3331/B3332 retain the provider contract and selector; B3333-B3337 retain transports; B3338-B3342 retain SDK calls. B525/B526, B547, B1361-B1364 and the other provider leaves retain their transforms, parsers and credentials policy."
+  - "B6460 retains plan_video_route, RouterVideo and video_executors; B8631 constructs RouterGeneric's executor list; B8694 retains RouteViews; B844 retains model-id resolution. Only their construction into the video route dependencies is owned here."
+  - "B1100/B8610 retain route aggregation and shared state, B8804 retains production pre-call installation, and B004/B8801/B8802 retain request processing. Area mounts B8626/B8701/B8728 concern MCP and add no video route."
+  - "The delete transport and synchronous Router.video_* wrappers have no caller at the pin, as audited by B3331/B3336/B6460; no DELETE route or test is added."
+pitfalls:
+  - The catalog model recovered from a creation id can differ from the model metadata in a later status response, so preserve the creation id when testing deployment-backed content retrieval.
+  - RouterVideo removes custom_llm_provider before deployment selection; an explicit OpenAI route hint must not force a selected Gemini deployment back to OpenAI.
+  - Calling router_calls for every request rebuilds the execution bundle and hides stale-view errors; assemble handles in routes(state) and read current catalog data through the shared view.
+  - Studio content makes its operation lookup before the artifact request, so a one-response mock can accidentally test an error instead of the download path.
+  - The four route files already receive B8804's production pre-call step; constructing a new standalone step here bypasses hooks after otherwise successful wiring.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

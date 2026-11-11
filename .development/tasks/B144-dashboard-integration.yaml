@@ -1,0 +1,220 @@
+id: B144
+title: Prove the retained betterlite dashboard builds, boots and signs in against the proxy
+description: >-
+  Complete the admin-dashboard foundation from B9090-B9093, without implementing any of the
+  B145-B150 feature pages. The product is the pinned MIT Next.js application plus small
+  reviewed patches, built by npm ci in the pinned builder and served from the executable's
+  sibling ui directory by the existing public static mounts. Do not vendor the generated
+  sources, embed a second UI in Rust, add a Next server or register existing routes again.
+  Build and install a fresh branded sidecar before the native browser checks; a previous task's
+  local target directory is never a dependency artifact that CI can assume exists.
+
+  Preserve the browser bootstrap contract. AuthProvider first awaits getUiConfig, which GETs
+  /litellm/.well-known/litellm-ui-config; B3211/B8670 also expose /.well-known/litellm-ui-config.
+  SERVER_ROOT_PATH replacement in the export changes the first path when needed. The response's
+  server_root_path and proxy_base_url update the networking singleton before authLoading clears.
+  A production build with no explicit NEXT_PUBLIC_BASE_URL uses the current origin and appends
+  the scalar root once; PROXY_BASE_URL is supplied through discovery, not compiled into the
+  bundle. A stored validated http(s) litellm_worker_url takes precedence for worker calls.
+  Development defaults to http://localhost:4000 unless NEXT_PUBLIC_USE_REWRITES=true; keep
+  that retained behavior but do not pretend the static production proxy implements Next rewrites.
+
+  Normal sign-in sends JSON username/password to POST /v2/login with credentials=include and
+  follows redirect_url after storing the returned token. The token cookie holds a JWT whose
+  key claim, not the whole JWT, is sent in authenticated Bearer requests under auth_header_name,
+  default Authorization. Retain expiry checks, cookie-path cleanup, return-URL validation,
+  password_reset_required navigation and custom-header behavior. Worker sign-in uses /v3/login
+  and /v3/login/exchange and stores only the exchanged token; retain those functions but their
+  control-plane backend tests stay with B899/B2300. Sign-out POSTs /session/logout before
+  clearing token cookies, return URL and the two worker localStorage keys, then follows
+  PROXY_LOGOUT_URL or the existing empty-string fallback. Never replace these server checks
+  with client-side authentication or put admin credentials in generated JavaScript.
+
+  Document the exact startup API handoff in ui/dashboard/INTEGRATION.md. The shell subsequently
+  fetches /get/ui_theme_settings, /get_image and /get_favicon; signed-in shared hooks request
+  /sso/get/ui_settings, /get/ui_settings, /health/readiness/details, /api/plugins,
+  /get/user_banner, /get/latest_release_info and /team/list for sidebar role decisions.
+  The retained organization hook calls /organization/list when its premiumUser guard permits
+  it; B145 must replace that subscription-only guard when it adapts organization workflows.
+  The default key page also starts /v2/team/list and /key/list through
+  its retained hooks; B145 owns those page workflows. Smoke-test a return URL to /ui/api-reference
+  instead, so this foundation does not demand B145's work or mock that page into success.
+
+  Keep settings with their backend owners and defaults: UI_USERNAME=admin; absent UI_PASSWORD
+  falls back to the master key; general_settings.master_key/LITELLM_MASTER_KEY must be set and
+  ordinary successful login requires a database. LITELLM_UI_SESSION_DURATION=24h and
+  litellm_settings.max_ui_session_budget=1.0 remain B788's. general_settings
+  disable_env_credential_login and disable_password_login_when_sso_enabled default false.
+  DISABLE_ADMIN_UI and AUTO_REDIRECT_UI_LOGIN_TO_SSO default false; the latter is ORed with
+  general_settings.auto_redirect_ui_login_to_sso and requires configured SSO. The credentials
+  hint uses LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT, general_settings.hide_default_credentials_hint
+  (both false by default), and nonempty UI_PASSWORD via B799. SERVER_ROOT_PATH="",
+  SERVER_ROOT_PATHS=[] and PROXY_BASE_URL absent remain B4200/B7323's settings. Theme comes from
+  litellm_settings.ui_theme_config.logo_url/logo_url_dark/favicon_url, all null, then public
+  http(s) UI_LOGO_PATH/UI_LOGO_PATH_DARK/LITELLM_FAVICON_URL fallbacks, absent by default. Local
+  image paths stay server-side through B8387. LITELLM_UI_PATH, LITELLM_ASSETS_PATH and
+  LITELLM_NON_ROOT use B9093's defaults. None of these keys is renamed to betterlite.
+  B1627/B8770 return PROXY_LOGOUT_URL and LITELLM_UI_API_DOC_BASE_URL, both absent by default;
+  the latter changes displayed API examples, not the management-request origin. Their
+  DEFAULT_TEAM_DISABLED flag comes from general_settings.default_team_disabled=false or
+  PROXY_DEFAULT_TEAM_DISABLED=true. SSO access controls remain B1624's general_settings
+  ui_access_mode, absent by default in that flow; never treat it as a subscription gate.
+
+  Add 30-browser-paths.patch and its checked preimage/postimage record for the concrete root-path
+  bugs in the retained login shell: LoginPage's already-authenticated and code-exchange redirects
+  hardcode /ui, and layout's favicon hardcodes /get_favicon. Use uiHref/getProxyBaseUrl after
+  discovery for these navigations and favicon updates; a build-prefix-addressed bundled icon
+  can be the initial icon until discovery resolves the configured /get_favicon URL. Preserve
+  return-URL same-origin checks and never apply a global string replacement to API names or
+  operator data. Keep the patch limited to this shell; feature-page path fixes belong to their
+  page owners. Production component tests in ui/dashboard/tests/session include real retained
+  AuthProvider, getUiConfig, loginCall, useAuthorized and useLogout, with upstream tests for
+  cookieUtils, returnUrlUtils and resolveApiBase rerun after the patch through that test
+  directory's upstream-tests.json selection.
+
+  Add a separate tools/dashboard/browser package with an exactly pinned Playwright dev
+  dependency and its own lock, leaving the upstream npm lock untouched. Its TypeScript checks
+  use the upstream eslint/prettier conventions and strict type checking. The Rust integration
+  test dashboard_browser_boots lives in tools/dashboard-browser/tests/dashboard_browser.rs, the
+  betterlite-dashboard-browser package. That package is an empty skeleton on main; add only
+  test-only dependencies to it and no betterlite crate, since browser-check.sh passes the built
+  binary's path in BETTERLITE_DASHBOARD_BIN. The determinator rule in
+  .development/gate/src/affected/rules.toml marks this package only when ui/dashboard,
+  tools/dashboard, packaging/ui or the UI-serving files change, and .config/nextest.toml's
+  default filter leaves it out of ordinary nextest runs. The test uses the
+  existing betterlite-postgres-fixture library to create/seed one isolated database, starts the
+  actual built betterlite process with the installed bundle and runs headless Chromium against
+  it. Test default root and /gateway, discovery-before-login, failed and successful sign-in,
+  a refresh with the real cookie, authenticated API-reference navigation, a client-side page
+  transition with RSC requests, custom auth header, logout/revocation, disabled UI, and the
+  text wordmark with no logo configured plus the custom logo/favicon redirects. Assert rendered betterlite title and
+  visible form, no missing first-party JS/CSS/font/flight resources, no hydration failure and
+  no unexpected cross-origin management request. Provider calls may use the existing mock;
+  discovery, login, cookie/session and static responses must come from the real binary.
+  Keep database/browser/process lifetimes bounded and kill process groups on test-owner exit.
+
+  browser-check.sh builds the Rust binary and B9091 bundle, installs it into the test's temporary
+  binary layout, installs the separately locked browser tool and its Chromium into
+  PLAYWRIGHT_BROWSERS_PATH (default target/dashboard/browsers, reused when the locked version is
+  already there), runs strict tsc, eslint and prettier over the whole tools/dashboard/browser
+  package so later page specs are checked too, and runs every test in the package with cargo
+  nextest run -p betterlite-dashboard-browser --ignore-default-filter --no-tests=fail.
+  --test <binary> runs one test binary instead, and an unknown name fails. Put the shared
+  lifecycle in tools/dashboard-browser/tests/support/mod.rs: a FixtureSeed and proxy config
+  in, the base URL out, with owned process and database cleanup. dashboard_browser_boots uses
+  it, and the B145, B147 and B148 page tests reuse it through mod support without editing it. It must fail on absent tests, missing
+  browser prerequisites or an unreachable configured Postgres server, never silently skip.
+  HTTP oracle cases independently use the booted native and pinned Python proxies, B860's
+  separate database fixtures and real public routes: both discovery aliases, scalar root/base
+  URL, disabled/SSO/hint flags, public theme settings and URL image/favicon redirects, v2 login
+  success plus follow-up authenticated request and logout, bad credentials and database absence.
+  They need no prebuilt UI, so the gate can run oracle before the browser build check. Assert
+  status, content-type, Location and Set-Cookie attributes; compare error type/param/code and
+  ignore only message wording and generated token/key values under the existing fixture policy.
+  B9093's separate HTTP corpus proves the static HTML/asset status and redirect behavior.
+  CI runs the browser test only when the dashboard changed, and caches every heavy input. In
+  .github/workflows/gate.yml's tests-1 part, add a run step that calls cargo gate affected with
+  GATE_ALL_TESTS unset (the real change set, on a push to main too) and outputs whether it names
+  betterlite-dashboard-browser or --workspace. Only then run: docker/setup-buildx-action;
+  crazy-max/ghaction-github-runtime, so BuildKit can reach the type=gha cache;
+  actions/setup-node with node-version-file tools/dashboard/browser/.nvmrc, cache npm and
+  cache-dependency-path tools/dashboard/browser/package-lock.json; a restore of
+  target/dashboard/browsers keyed on runner.os and that lock's hash; a restore of
+  target/dashboard/dist keyed on the output of bash tools/dashboard/build.sh key; then bash
+  tools/dashboard/browser-check.sh with DASHBOARD_BUILDKIT_CACHE read-write on main and read
+  elsewhere. Save both caches only on main, like the existing tool cache. Follow the file's own
+  patterns: actions pinned by full SHA with a version comment, values through env, no secrets.
+  Every pull request that touches no dashboard input skips all of it.
+  Allow about 130 shell-patch lines, 200 harness lines, 60 workflow lines and 350 focused
+  browser/component/oracle lines, around 740 authored lines; the retained thousands of networking/hook lines are not ported.
+scope:
+  paths:
+    - ui/dashboard/patches/30-browser-paths.patch
+    - ui/dashboard/patches/30-browser-paths.json
+    - ui/dashboard/tests/session/**
+    - ui/dashboard/INTEGRATION.md
+    - tools/dashboard/browser/**
+    - tools/dashboard/browser-check.sh
+    - tools/dashboard-browser/Cargo.toml
+    - tools/dashboard-browser/tests/**
+    - Cargo.lock
+    - .github/workflows/gate.yml
+    - tools/oracle/cases/ui/bootstrap/**
+    - tools/oracle/fuzz/corpus/http_case/dashboard-bootstrap-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L151-L213
+    why: Production/development API base selection, stored worker precedence and root composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L478-L529
+    why: Custom authentication header, shared client registration and the first discovery request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7064-L7127
+    why: Credentialed v2 login, worker exchange and storage of the returned token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/contexts/AuthContext.tsx#L52-L136
+    why: Config resolves before authentication state and JWT key/header/expiry claims drive the client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/login/LoginPage.tsx#L78-L175
+    why: Return URLs, hardcoded root redirects, SSO auto-navigation and the successful login handoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/useLogout.ts#L1-L39
+    why: Session revocation precedes cookie/local-storage cleanup and the configured logout navigation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py#L16-L46
+    why: Dependency-owned public aliases and exact discovery flags exercised over HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17006-L17066
+    why: Dependency-owned v2 login route, JSON response, cookie and redirect_url contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17555-L17701
+    why: Dependency-owned public logo/favicon URLs, local-path confidentiality and 307 redirects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1325-L1354
+    why: Public theme read applies stored values then public environment fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_utils.py#L134-L160
+    why: UI_USERNAME/UI_PASSWORD defaults and environment-login guard owned by B788.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2669-L2698
+    why: Dependency-owned settings route supplies logout, API-example base, default-team and SSO fields without moving the management API origin.
+  - url: https://playwright.dev/docs/intro
+    why: Exercise a compiled static application in a real browser without replacing it with component mocks.
+dod:
+  - text: A fresh branded bundle runs from the actual betterlite binary and renders a working login and API-reference shell at root and /gateway.
+    proof: [browser-integration, session-components, oracle]
+  - text: Discovery/base URL, custom authentication header, real cookie sign-in, refresh and logout use the retained client protocol and production backend.
+    proof: [browser-integration, session-components, bootstrap-cases, oracle]
+  - text: Disabled UI, public theme overrides, logo/favicon redirects and credential failures retain the pinned HTTP contract and documented defaults.
+    proof: [browser-integration, bootstrap-cases, oracle]
+  - text: The two shell root-path repairs preserve return-URL validation and leave page API contracts and compatibility identifiers intact.
+    proof: [session-components, browser-integration]
+checks:
+  optional: []
+  commands:
+    - id: session-components
+      why: Bootstrap ordering, cookie semantics or the shared client regress while the bundle still compiles.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/session
+    - id: browser-integration
+      why: The exported dashboard fails to hydrate, authenticate or navigate against the real proxy.
+      run: bash tools/dashboard/browser-check.sh
+    - id: bootstrap-cases
+      why: Dashboard API contracts have no new booted-proxy cases or HTTP parser regression seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/bootstrap)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/dashboard-bootstrap-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/ui/bootstrap/public-discovery-aliases.yaml
+  - tools/oracle/cases/ui/bootstrap/scalar-root-and-proxy-base.yaml
+  - tools/oracle/cases/ui/bootstrap/disabled-ui-and-sso-hint-flags.yaml
+  - tools/oracle/cases/ui/bootstrap/public-theme-environment-overrides.yaml
+  - tools/oracle/cases/ui/bootstrap/logo-and-favicon-url-redirects.yaml
+  - tools/oracle/cases/ui/bootstrap/v2-login-cookie-authenticated-read-and-logout.yaml
+  - tools/oracle/cases/ui/bootstrap/custom-header-session.yaml
+  - tools/oracle/cases/ui/bootstrap/invalid-credentials.yaml
+  - tools/oracle/cases/ui/bootstrap/login-without-database.yaml
+deviations:
+  - what: The retained login shell's hardcoded /ui redirects and default favicon URL are resolved from discovery after SERVER_ROOT_PATH is known.
+    why: A working prefixed deployment must not send a successful login or its icon request to the origin root; return-URL authorization remains unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/login/LoginPage.tsx#L89-L126
+out_of_scope:
+  - B9090 retains unchanged shared functions; B9091 builds/installs the sidecar; B9092 owns product presentation; B9093 owns static HTTP compatibility and asset settings.
+  - B145-B150 own all feature-page behavior and remaining page-specific branding; no API mocks or new implementation of those pages are introduced here.
+  - B788/B899 own password authentication and login routes, B789 session revocation, B3211/B8670 discovery, B1660/B1662 UI settings/theme and B8387/B8671 images/onboarding.
+  - B8770 owns the SSO settings mount and SSO provider flows; B1655 owns release metadata, B8540 health details, B8675 plugin routes, B066 the user-banner routes and B813/B1212 the sidebar's team/organization reads.
+  - Control-plane registry admission and worker-side code exchange remain B4470/B899/B2300; retained client functions do not enable enterprise-only server code.
+pitfalls:
+  - A successful normal /v2/login needs the database even when UI_USERNAME and UI_PASSWORD match; a fabricated browser JWT would miss that dependency.
+  - Compare only stable cookie attributes and claims, not two independently generated session keys or JWT signatures.
+  - The first discovered API base must be established before clearing authLoading or prefixed login redirects can race to the wrong origin path.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

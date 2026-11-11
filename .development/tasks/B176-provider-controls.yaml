@@ -53,6 +53,8 @@ scope:
   - "tools/oracle/fuzz/corpus/helper_case/provider_controls-*"
   lint_tables: false
 references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L246-L264
+  why: ControlOptions.stream_chunk_size validation, metadata only.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L96-L120
   why: Validated control options and storage.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L134-L270

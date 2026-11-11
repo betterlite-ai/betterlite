@@ -146,7 +146,7 @@ out_of_scope:
   - "filter_out_litellm_params itself belongs to B5362; this task applies B2228's is_litellm_owned_kwarg."
   - "The three request paths, HTTP send and response conversion in video_generation_handler belong to B3333."
   - "ProviderConfigManager.get_provider_video_config belongs to B3332, and each provider's map_openai_params to its provider task."
-  - "litellm/videos/__init__.py re-exports are not code to port; module wiring belongs to B093."
+  - "litellm/videos/__init__.py re-exports are not code to port; the Python module exports are B7883 and the Rust module declarations belong to the skeleton."
 pitfalls:
   - A loose keyword and a named argument with the same name both land in the options and the loose one wins, because cleaned_kwargs is spread after base_params.
   - extra_body entries are copied flat into the options after the other merges, so they beat named and loose values; the mapped result then also takes extra_body again and drops the extra_body key.

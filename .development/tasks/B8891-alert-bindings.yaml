@@ -1,0 +1,128 @@
+id: B8891
+title: Alert logger and legacy email production bindings
+description: >-
+  Connect the finished alert producers to the logger event contract and the real legacy email
+  transport. B8656 supplies SlackAlertingEvents and the outage/spend ports, but those events have
+  no CallbackLogger adapter. B4023 deliberately accepts an EmailSender and an InvitationCreator
+  so logging never depends on the server. Build the remaining adapters in
+  crates/betterlite-server/src/alerting/bindings.rs and bindings/, with callback.rs, email.rs and
+  tests.rs. Do not move a producer here or add a route or timer.
+
+  Provide install(state: &Arc<ServerState>) -> Result<(), AlertBindingError>. B8742's existing
+  app::callbacks::start calls it before init_callbacks and before the listener opens. It gets
+  B8890's runtime from shared.proxy_logging, attaches the legacy email implementation once, and
+  gives ProxyLogging two Arc<dyn CallbackLogger> values through its install_alert_loggers port.
+  ProxyLogging, not this adapter, owns the registration predicate: a metrics/outage logger when
+  slack or ms_teams is configured and daily_reports, outage_alerts or region_outage_alerts is
+  selected, plus a success-only latency logger for slack or ms_teams. Installation must apply
+  that predicate to settings already loaded before installation, and later update_values must
+  reuse the same two handles. Do not register either name through LoggerCatalog or add a second
+  success callback on reload. Weak references to Shared/ProxyLogging break the cycle between the
+  registry's logger, the server state and the runtime; an event takes a temporary strong handle.
+  Their callback_name values are SlackAlerting and response_taking_too_long_callback, preserving
+  LiteLLM's class and bound-method identifiers. Neither is named slack: that would redirect the
+  health service probe into its generic mock-completion branch before it tests the webhook.
+
+  AlertMetricsLogger implements only the asynchronous success and failure methods of B8740's
+  CallbackLogger. Project LoggerEvent.payload into the typed input B8656's SlackAlertingEvents
+  accepts: model_id (empty when absent), start/end seconds, completion token count and response
+  kind, error class and status. B8656 still decides daily_reports and APIError gating. Retain the
+  distinction between a provider APIError and a proxy exception with a numeric code; do not
+  turn every 500 into an outage. Only complete success events update deployment metrics; the
+  inherited stream methods stay empty. Do not divide the latency a second time after B4028.
+  AlertLatencyLogger implements asynchronous success only and calls B4027's
+  response_taking_too_long_callback with model, api_base, times, messages, deployment latencies,
+  key/team aliases and alerting metadata from the typed payload. Carry the existing message
+  privacy flags through; do not recover the unredacted request from a global or serialize it
+  into a second kwargs map. Both wrappers read current runtime settings at event time, and
+  retain the owning producer's nonblocking error policy.
+
+  SmtpEmailSender implements B4023's EmailSender by awaiting the already merged
+  betterlite_logging::smtp_send::send_email with config.sections.smtp_transport. Its receiver,
+  subject and HTML are passed unchanged. A missing sender/receiver/subject/body/host error is
+  returned; SMTP connection and delivery errors have already been logged and swallowed by
+  B8400, so never reinterpret that Ok as false. Use the same sender for B4022's budget email
+  boundary. The transport owns SMTP_HOST, SMTP_PORT (587), SMTP_USERNAME, SMTP_PASSWORD,
+  SMTP_SENDER_EMAIL, SMTP_USE_SSL (False), SMTP_TLS (True) and SMTP_TIMEOUT (30); this task
+  introduces no settings or transport library.
+
+  LegacyEmailDelivery implements B8890's LegacyEmailPort over B4022 and B4023. It reads the live
+  alerting destinations, takes the injected environment reader and database handle, and passes
+  B797's InvitationCreator implementation into B4023. Without a database, pass None so B4023
+  keeps its base-url fallback. Do not recreate the invitation query or seven-day expiry logic.
+  Do not hold an Arc cycle back to the runtime: use a Weak runtime handle for settings snapshots.
+  B4022/B4023 continue to read SMTP_SENDER_LOGO, EMAIL_LOGO_URL, EMAIL_SUPPORT_CONTACT and
+  PROXY_BASE_URL through their environment port, with their documented branding and
+  http://0.0.0.0:4000 fallback. The README's no-paid-tier decision permits native email branding;
+  there is no enterprise logger and no license check in this binding. No rotated-key email is
+  added: B898's open-source rotation path sends none.
+
+  Tests exercise the concrete adapter types with a real CallbackRegistry and the real B8890
+  runtime, replacing only external network/database access. Verify a completed success reaches
+  B8656 once, a stream chunk reaches neither alert method, a provider failure reaches B8656
+  while a proxy-only failure does not count toward outage, and a success reaches B4027 with
+  redacted messages and current settings after reload. For mail, run B4023 through SmtpEmailSender
+  against a local SMTP fixture using B8400's existing test-fixture style; assert envelope and
+  decoded MIME HTML, missing-sender failure, swallowed SMTP rejection, and no token in logs or
+  Debug. A fake InvitationCreator proves the production trait binding without needing a remote
+  database. Startup attachment is idempotent for the same runtime and dropping the server
+  releases the adapters. These are composition tests, not new pure helpers; B116 adds the HTTP
+  oracle coverage after B8742 calls install. Check the two callback identifiers as part of the
+  real-registry test so service discovery cannot silently change the health probe's branch.
+scope:
+  paths:
+    - crates/betterlite-server/src/alerting/bindings.rs
+    - crates/betterlite-server/src/alerting/bindings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1685-L1749
+    why: Bind the two asynchronous event methods to the logger contract; B4028, B4026 and B8656 retain their behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L263-L307
+    why: B4027's success callback receives timings, privacy settings and alert metadata from the logger event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1236-L1428
+    why: Compose the legacy key/invitation and budget email dependencies; the rendering, lookup and result policies stay with B4022/B4023.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1320-L1342
+    why: B8399 owns these registration rules; installing the concrete loggers must preserve them for startup and later updates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7012-L7116
+    why: B8400 owns the reused SMTP transport, its validation ordering and swallowed send errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L176-L202
+    why: Existing health introspection obtains the callback identifier from its class or function when no registered alias exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1635-L1645
+    why: The fallback preserves SlackAlerting and response_taking_too_long_callback as distinct callback names.
+dod:
+  - text: The installed loggers deliver asynchronous complete success and failure events to B8656 and slow-response inputs to B4027, with current settings and unchanged privacy controls.
+    proof: [binding-tests]
+  - text: Registration through ProxyLogging uses one pair of handles across installation and reload, leaves stream methods empty and introduces no strong ownership cycle.
+    proof: [binding-tests]
+  - text: Legacy email uses the actual SMTP sender and B797 invitation port, preserving missing-configuration errors, swallowed transport errors and the no-database fallback.
+    proof: [binding-tests]
+  - text: Mail secrets reach only the configured SMTP destination and never adapter diagnostics.
+    proof: [binding-tests]
+checks:
+  optional: []
+  commands:
+    - id: binding-tests
+      why: an event adapter, startup attachment or SMTP binding is missing or changes the producer's result
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::bindings::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "In slack_alerting.py, constructor/update_values (L92-L131 and L139-L171) are B8890; the field schemas and _all_possible_alert_types are B4020."
+  - "The same file's flush admission (L133-L137), webhook/Teams transport (L1193-L1222 and L1579-L1595), batch/digest routines (L1597-L1683) are B4021, and send_alert (L1430-L1577) belongs to B4024."
+  - "The premium customization predicate at L1224-L1234 and budget email at L1367-L1428 remain B4022; invitation-link and key-email functions at L1236-L1365 remain B4023."
+  - "Budget/failed-tracking/customer-spend functions at L493-L733 stay in B4025; outage conversion and detection at L173-L192 and L735-L1038 stay in B4026; latency/hanging entry points at L206-L307 and L481-L491 stay in B4027."
+  - "Daily metrics, reports and scheduling at L309-L479, L1685-L1718 and L1751-L1824 are B4028; B8656 retains event orchestration at L1685-L1749 and the outage/spend adapters, while B8372 owns spend-job registration."
+  - "Spend report methods at L1826-L2023 are B4029; model/deprecation/fallback/management functions at L1040-L1191 and L2025-L2092 are B4030, including the injected replacement for _proxy_llm_router at L80-L83."
+  - "The unused methods at L194-L198, L1097-L1098 and L2094-L2109 have no caller at the pin."
+  - "B8399 owns install_alert_loggers and registration on update_values; B8742 owns the single call to install from app::callbacks::start; B8540 owns health route adapters, and B8675 owns the admin mounts."
+  - "Key-created scheduling is B898 and user-invitation scheduling is B797; management event projection is B1228 with B4030 delivery, and customer_spend_alert itself is B4025, called by B069."
+pitfalls:
+  - "An SMTP transport rejection returns Ok from B8400, so B4023 still returns true while a missing SMTP_SENDER_EMAIL returns false."
+  - "A CallbackSink::Logger does nothing through registry.deliver; B250/B251 dispatch through registry.loggers, which is the path these adapters must implement."
+  - "Holding Shared strongly inside a logger stored by Shared.proxy_logging would keep the entire server alive after shutdown."
+  - "The slow-response callback is a separate success registration even when daily_reports and outage alerts are disabled."
+  - "The enterprise-only BaseEmailLogger is unrelated to legacy SMTP sends, so its absence must not disable a configured legacy email destination."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

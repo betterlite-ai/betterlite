@@ -1,0 +1,151 @@
+id: B9732
+title: Cover user administration forms and bulk workflows over HTTP
+description: >-
+  Add the missing booted-proxy cases for the retained users page, user_info_view, BulkEditUsers,
+  DefaultUserSettingsForm, CreateUserButton and bulk_create_users_button. B9090 supplies their
+  source and B9091 runs component tests. Do not rebuild their forms or the backend handlers.
+  Component tests must call the retained networking functions/typed fetchClient and inspect
+  emitted requests, so a corrected test fixture cannot conceal an incorrectly serialized form.
+  Use B9730's already patched shared ModelMaxBudgetEditor, including a premiumUser=false
+  single-user edit; this task adds no competing patch to that helper.
+
+  view_users/userListCall sends GET /user/list with page=1,page_size=25,sort_by=created_at,
+  sort_order=desc initially. Filters add user_ids=<comma-joined ids>,user_email,role,team,sso_user_ids,
+  organization_ids=<comma-joined ids> and search, omitting empty values. B796 owns the route.
+  The shared infinite picker sends page=1,page_size=50 and optional user_email without sorting;
+  useUserEmailLookup sends sorted distinct user_ids with page=1,page_size=<id count capped at 100>;
+  useUserLookup sends one user_ids value,page=1,page_size=1. Cover these key/team-page lookup
+  shapes here as well, without another list implementation or a second case in those tasks.
+  The page reads users[],total,total_pages,page,page_size; rows use user_id,user_email,user_alias,
+  user_role,models,spend,max_budget,budget_duration,metadata,key_count,sso_user_id and
+  created_at/updated_at. GET /user/available_roles (B790) supplies a
+  map of role to ui_label/description. GET /v2/user/info?user_id=<id> (B791) returns the user
+  directly; detail consumes its budget/model/object_permission fields and teams, not v1's
+  user_info/keys envelope. User search dialogs send GET /user/filter/ui with search or user_email
+  or user_id and optional team_id (B1203); consume user_id/user_email/user_alias in the returned
+  bare array. GET /team/list, /v2/team/list and /team/info are B813/B812 reads covered by B9731;
+  the detail's team join/remove actions use B808/B1207 and refetch the user after success.
+
+  Both individual creation and CSV upload call POST /user/new (B056). networking.tsx sends
+  {user_id:null,...formValues,auto_create_key:false}; a provided form user_id overrides null.
+  The form includes user_email,user_alias,user_role,models,max_budget,budget_duration,teams as
+  selected ids or membership records, organizations when selected,send_invite_email and parsed
+  metadata. CSV is repeated single-user creation, not POST /management/v1/users/bulk. The page
+  reads response.user_id (also tolerates response.data.user_id) and key, then POSTs
+  /invitation/new (B8599 handler, B8670 mount, B797 persistence) with {user_id} where an invite
+  is requested or a reset link is generated. OnboardingModal reads id,user_id,has_user_setup_sso and
+  builds the invitation link from that result and the proxy base. Do not make the oracle send
+  a password to /user/new: the pinned form invites the user to set one. SMTP delivery is not
+  part of these tests; use send_invite_email=false and request the invitation explicitly.
+
+  user_info_view POST /user/update (B792) sends user_id plus edited fields and user_role when
+  supplied; fields include nullable max_budget,budget_duration,tpm_limit,rpm_limit,models,
+  metadata,object_permission and model_max_budget with budget_limit/time_period entries.
+  The bulk editor deliberately omits model_max_budget. The success response's data/user_id is consumed and info
+  is reloaded. POST /user/delete (B797) sends {user_ids:[id]} and refreshes rows. BulkEditUsers
+  POST /user/bulk_update (B795) sends {users:[{user_id,...patch}]} for selected users or
+  {all_users:true,user_updates:patch}. It reads results[].user_id,user_email,success,error,
+  updated_user and total_requested,successful_updates,failed_updates; preserve mixed results.
+  Its team assignment uses POST /team/bulk_member_add (B810), {team_id,members:[{user_id,role}]}
+  or {team_id,all_users:true}, plus max_budget_in_team only when provided. Read results,
+  successful_additions,failed_additions and total_requested as the retained dialog does.
+
+  Defaults use GET /get/internal_user_settings and PATCH /update/internal_user_settings (B1657).
+  The form reads values.user_role,max_budget,budget_duration,models,teams; role labels come
+  from /user/available_roles, not field_schema. buildBody sends those five fields directly:
+  empty role/number/duration/models/teams
+  become null, and populated teams is [{team_id,max_budget_in_team:number|null,user_role:user|admin}].
+  A patch is not wrapped in default_internal_user_params. Test a save followed by a fresh GET and
+  a user creation with teams omitted versus explicitly empty, using the existing settings storage
+  switch STORE_MODEL_IN_DB=true for saves, default false otherwise. GET /sso/get/ui_settings
+  supplies PROXY_BASE_URL and sso_configured to invitation presentation; B9735 covers its request.
+
+  Use B860 isolated Postgres with fixed seed users/keys/teams and B5076's actual Prisma-backed
+  gateway startup. The ordinary admin is a seeded virtual key, not a fabricated JWT. Each case
+  uses Authorization unless exercising the discovered custom header, JSON bodies, real HTTP
+  steps and process-local captures for new invitation ids. Compare all stable fields, status,
+  content type and error type/param/code. Retain individual generated-id/time ignores only.
+  Keep an unrelated user and an admin viewer in the read/write-denial matrix. No new byte parser
+  is introduced: CSV parsing stays in the retained PapaParse component and existing HTTP/body
+  decoders stay with their owners. Use B1644 eligibility only in the labelled organization/team-admin
+  enrollment case; ordinary user creation does not need the no-seat-cap branch to succeed.
+
+  No HTTP case currently exists for these paths. The owner files list future user-new,
+  user-list query-defaults, v2-projection-defaults, mixed-counts-and-order and signup-default
+  cases, but none on disk establishes the exact forms above. B5076's planned
+  admin-key-creates-user also has no email/team/defaults form. The invitation route owner has
+  no cases; B8670's planned invitation cases stop at missing auth/database. The added sequence
+  cases below close that gap without moving route ownership. Plan about 520 YAML/fixture lines
+  and 180 component assertions. If an owner has added an identical page request by dispatch,
+  reference that case instead of duplicating its single-request coverage.
+scope:
+  paths:
+    - ui/dashboard/tests/users/**
+    - tools/oracle/cases/ui/users/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L949-L1138
+    why: Creation forces auto_create_key=false, list query serialization and lightweight user info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3023-L3088
+    why: Single-user update and the two different bulk-update body shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/CreateUserButton.tsx#L195-L232
+    why: Creation response identity and follow-up invitation request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/bulk_create_users_button.tsx#L350-L425
+    why: CSV upload issues separate user and invitation requests and reports partial success.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/users/_components/default-user-settings/mapper.ts#L44-L80
+    why: Explicit null and nested membership serialization of the actual defaults form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L475-L707
+    why: B056 creation and B790 available-role decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1067-L1170
+    why: B791's direct v2 identity projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1666-L2064
+    why: B792 and B795 own update routes and per-row bulk failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2218-L2604
+    why: B796 lists and B797 deletion are already assigned.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2757-L2860
+    why: B1203's UI search request and scoped projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17707-L17775
+    why: B8599's invitation handler and B8670's mount, despite their missing covers metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L852-L872
+    why: B1657's typed user-defaults read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1075-L1102
+    why: The matching PATCH consumes defaults without another wrapper.
+dod:
+  - text: User lists/detail, single creation and CSV creation send the retained client contracts and display the returned identities and invitations.
+    proof: [user-cases, oracle, user-components]
+  - text: Bulk updates, team assignment and null-valued defaults preserve partial outcomes, enrollment semantics and read-only permissions.
+    proof: [oracle, user-components]
+checks:
+  optional: []
+  commands:
+    - id: user-cases
+      why: Backend unit tests exist but none of the user forms is exercised through HTTP.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/users)"
+    - id: user-components
+      why: CSV or form serialization drifts from the requests the proxy cases send.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/users
+oracle_cases:
+  - tools/oracle/cases/ui/users/table-filters-sort-and-pagination.yaml
+  - tools/oracle/cases/ui/users/infinite-picker-and-id-lookups.yaml
+  - tools/oracle/cases/ui/users/roles-search-and-v2-detail.yaml
+  - tools/oracle/cases/ui/users/create-and-invitation-link.yaml
+  - tools/oracle/cases/ui/users/csv-sequential-partial-success.yaml
+  - tools/oracle/cases/ui/users/edit-and-delete-readback.yaml
+  - tools/oracle/cases/ui/users/bulk-selected-versus-all.yaml
+  - tools/oracle/cases/ui/users/bulk-team-membership.yaml
+  - tools/oracle/cases/ui/users/defaults-null-and-object-teams.yaml
+  - tools/oracle/cases/ui/users/viewer-and-unrelated-user-denials.yaml
+  - tools/oracle/cases/ui/users/org-and-team-admin-enrollment-eligible-mit.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every function under the user-page covers, including schemas/mappers and CSV handling; this task verifies them without porting them.
+  - All endpoint implementation stays with B056/B790/B791/B792/B795/B796/B797/B1203/B1657/B810/B8599/B8670; organization enrollment stays B826/B828.
+  - B9731 tests team detail/join/delete requests, B9735 tests shared resource selectors and B145 supplies real-browser interaction.
+pitfalls:
+  - CSV creation intentionally makes several /user/new calls and may partially succeed.
+  - The user detail uses /v2/user/info and must not wait for a nonexistent user_info wrapper.
+  - A null teams default and an explicit empty teams array do not mean the same enrollment behavior.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

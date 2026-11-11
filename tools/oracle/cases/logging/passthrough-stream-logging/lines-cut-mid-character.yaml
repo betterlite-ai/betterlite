@@ -1,0 +1,9 @@
+kind: helper
+name: lines-cut-mid-character
+call:
+  b3608:
+    operation: lines
+    chunks:
+      - [100, 97, 116, 97, 58, 32, 49, 10, 240, 159]
+env: {}
+compare: {ignore: []}

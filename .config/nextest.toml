@@ -1,4 +1,6 @@
 [profile.default]
+# the dashboard browser test needs Node, Chromium and a built bundle, so only tools/dashboard/browser-check.sh runs it
+default-filter = "not package(betterlite-dashboard-browser)"
 # a hung test fails after 10 minutes instead of holding a CI job until its 120-minute limit
 slow-timeout = { period = "60s", terminate-after = 10 }
 

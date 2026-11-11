@@ -1,0 +1,13 @@
+id: B9210
+milestone: M3 providers
+title: Hosted platform chat, embedding, completion, rerank and transcription HTTP parity
+status: todo
+depends_on: [B8310, B014, B006, B044, B202, B2238, B083, B085, B8636]
+file: tasks/B9210-hosted-platform-http.yaml
+covers: []
+parent: B041
+split_from: B041
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

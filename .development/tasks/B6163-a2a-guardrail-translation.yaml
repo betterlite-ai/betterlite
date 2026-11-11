@@ -112,7 +112,7 @@ out_of_scope:
   - "`extract_text_from_a2a_response`; B2210 owns it."
   - The JSON-RPC error chunk helpers; B3679 owns them.
   - Registering the call types and the hooks; B3680 owns them.
-  - HTTP oracle cases for A2A guardrails; B3680 adds them.
+  - HTTP oracle cases for A2A guardrails; B8992 adds them.
 
 pitfalls:
   - The stream path concatenates with no separator, unlike B3672's Responses scan.
