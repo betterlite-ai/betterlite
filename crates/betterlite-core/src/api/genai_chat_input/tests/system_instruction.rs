@@ -17,6 +17,17 @@ fn the_first_system_part_becomes_the_system_message() {
 }
 
 #[test]
+fn a_null_system_parts_list_drops_the_instruction() {
+    let request = translate(json!({
+        "model": "m",
+        "systemInstruction": {"parts": null},
+        "contents": [{"parts": [{"text": "hi"}]}],
+    }));
+    assert_eq!(request.messages.len(), 1);
+    assert_eq!(request.messages[0].role, Role::User);
+}
+
+#[test]
 fn a_system_instruction_without_parts_is_dropped() {
     let request = translate(json!({
         "model": "m",

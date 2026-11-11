@@ -48,7 +48,10 @@ pub fn translate_generate_content(
         .as_ref()
         .or(request.system_instruction_snake.as_ref());
     let response_format = supported_response_format(request, litellm_params, context)?;
-    let tools = tools_to_openai(&request.tools, &context.limits)?;
+    let tools = tools_to_openai(
+        request.tools.as_deref().unwrap_or_default(),
+        &context.limits,
+    )?;
     let completion = completion_request(request, system, tools, response_format)?;
     Ok((completion, litellm_params.cloned()))
 }

@@ -78,6 +78,20 @@ fn bare_string_parts_translate_as_text() {
 }
 
 #[test]
+fn a_null_parts_list_is_an_empty_list() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [
+            {"parts": null},
+            {"role": "model", "parts": null},
+        ],
+    }));
+    assert_eq!(request.messages.len(), 1);
+    assert_eq!(request.messages[0].role, Role::Assistant);
+    assert_eq!(request.messages[0].content, None);
+}
+
+#[test]
 fn multipart_user_content_keeps_every_part() {
     let request = translate(json!({
         "model": "m",

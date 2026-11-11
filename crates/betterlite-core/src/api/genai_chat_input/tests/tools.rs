@@ -162,6 +162,22 @@ fn an_empty_tools_list_does_not_add_a_tools_field() {
 }
 
 #[test]
+fn a_null_tools_list_does_not_add_a_tools_field() {
+    let request = translate(json!({"model": "m", "contents": [], "tools": null}));
+    assert_eq!(request.tools, None);
+}
+
+#[test]
+fn null_function_declarations_do_not_add_a_tool() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [],
+        "tools": [{"functionDeclarations": null}],
+    }));
+    assert_eq!(request.tools, None);
+}
+
+#[test]
 fn tool_parameters_past_the_limits_fail_the_translation() {
     let limits = limits_with_nodes(3);
     let error = translate_result(

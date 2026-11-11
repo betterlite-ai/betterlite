@@ -15,7 +15,8 @@ pub(super) fn messages(
 ) -> Result<Vec<ChatMessage>, GenAiInputError> {
     let mut messages = Vec::new();
     let system_text = system
-        .and_then(|instruction| instruction.parts.first())
+        .and_then(|instruction| instruction.parts.as_deref())
+        .and_then(|parts| parts.first())
         .and_then(|part| part.text.as_deref());
     if let Some(text) = system_text {
         messages.push(ChatMessage {
@@ -48,7 +49,7 @@ fn user_messages(
 ) -> Result<(), GenAiInputError> {
     let mut parts = Vec::new();
     let mut tool_messages = Vec::new();
-    for part in &content.parts {
+    for part in content.parts.as_deref().unwrap_or_default() {
         match part {
             Part::Text(text) => parts.push(text_part(text)),
             Part::Fields(fields) => user_fields(fields, &mut parts, &mut tool_messages)?,
@@ -143,7 +144,7 @@ fn encode_json(value: Option<&Value>) -> Result<String, GenAiInputError> {
 fn model_message(content: &Content) -> Result<ChatMessage, GenAiInputError> {
     let mut text = String::new();
     let mut tool_calls = Vec::new();
-    for part in &content.parts {
+    for part in content.parts.as_deref().unwrap_or_default() {
         match part {
             Part::Text(part_text) => text.push_str(part_text),
             Part::Fields(fields) => model_fields(fields, &mut text, &mut tool_calls)?,

@@ -26,7 +26,7 @@ pub(super) fn tools_to_openai(
 ) -> Result<Vec<Tool>, GenAiInputError> {
     let mut openai_tools = Vec::new();
     for tool in tools {
-        for declaration in &tool.function_declarations {
+        for declaration in tool.function_declarations.as_deref().unwrap_or_default() {
             let given = declaration
                 .parameters_json_schema
                 .as_ref()

@@ -28,7 +28,7 @@ fn generation_config_maps_to_the_completion_options() {
         Some(0.9_f64)
     );
     assert_eq!(request.stop, Some(Stop::Many(vec![String::from("END")])));
-    assert_eq!(request.passthrough.get("topK"), None);
+    assert!(request.passthrough.is_empty());
 }
 
 #[test]

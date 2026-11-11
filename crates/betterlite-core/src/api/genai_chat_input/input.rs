@@ -13,7 +13,7 @@ pub enum Contents {
 pub struct Content {
     pub role: Option<String>,
     #[serde(default)]
-    pub parts: Vec<Part>,
+    pub parts: Option<Vec<Part>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -50,7 +50,7 @@ pub struct Call {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GenAiTool {
     #[serde(rename = "functionDeclarations", default)]
-    pub function_declarations: Vec<FunctionDeclaration>,
+    pub function_declarations: Option<Vec<FunctionDeclaration>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -76,7 +76,7 @@ pub struct FunctionCallingConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SystemInstruction {
     #[serde(default)]
-    pub parts: Vec<SystemPart>,
+    pub parts: Option<Vec<SystemPart>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,7 +122,7 @@ pub struct GenerateContentRequest {
     #[serde(rename = "system_instruction")]
     pub system_instruction_snake: Option<SystemInstruction>,
     #[serde(default)]
-    pub tools: Vec<GenAiTool>,
+    pub tools: Option<Vec<GenAiTool>>,
     #[serde(rename = "toolConfig")]
     pub tool_config: Option<ToolConfig>,
     #[serde(rename = "tool_config")]
