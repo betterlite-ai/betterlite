@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use betterlite_context::bedrock_model::regions::AmazonBedrockGlobalConfig;
-use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::lookup::info::ModelQuery;
-use betterlite_models::lookup::resolve::{BedrockNames, find_info};
+use betterlite_models::lookup::resolve::find_info;
+use betterlite_tokenizer::model_capabilities::BEDROCK_NAMES;
 use betterlite_tokenizer::reservation::RequestBody;
 
 use super::clock::{IoClock, ROUTING_ARGS_TTL_SECONDS, minute_label};
@@ -18,12 +17,6 @@ use super::reservation::{IoReservation, stash_reservation};
 pub const DEFAULT_MAX_TOKENS: i64 = 4096;
 
 const MAX_TOKEN_FIELDS: [&str; 3] = ["max_tokens", "max_completion_tokens", "max_output_tokens"];
-
-const BEDROCK_NAMES: BedrockNames = BedrockNames {
-    base_model: get_bedrock_base_model,
-    strip_routing_prefix: strip_bedrock_routing_prefix,
-    strip_mantle_region,
-};
 
 pub struct IoTokenReservations {
     pub counter: Arc<dyn IoCounter>,
@@ -167,16 +160,6 @@ fn model_output_cap(catalog: &ModelCatalog, model: &str) -> Option<i64> {
             i64::try_from(cap).ok()
         }
         Ok(None) | Err(_) => None,
-    }
-}
-
-// a leading Bedrock region segment goes, any other model stays; the same adapter B013 passes to find_info
-fn strip_mantle_region(model: &str) -> String {
-    match model.split_once('/') {
-        Some((head, tail)) if AmazonBedrockGlobalConfig.get_all_regions().contains(&head) => {
-            tail.to_owned()
-        }
-        _ => model.to_owned(),
     }
 }
 
