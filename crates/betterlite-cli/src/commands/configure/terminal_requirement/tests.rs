@@ -6,8 +6,8 @@ use crate::agent_setup_profiles::Target;
 use crate::commands::configure::args::{ConnectionFlags, ReconfigureArgs, ReconfigureTarget};
 use crate::commands::configure::error::ConfigureCommandError;
 use crate::commands::configure::test_support::{
-    FakeEnvironment, Harness, MockProxy, claude_configure, context, group_configure,
-    group_connection, listing, save_profile,
+    FakeEnvironment, Harness, MockProxy, context, group_configure, group_connection, listing,
+    save_profile, target_configure,
 };
 
 const CONFIGURE_MESSAGE: &str = "`lite configure` asks questions, so it needs a terminal. Non-interactively, run `lite configure claude --api-key <key> --model <model>` or `lite configure codex --api-key <key> --model <model>`";
@@ -54,7 +54,12 @@ async fn configure_with_flags_runs_without_a_terminal() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-new"))
+        .configure(target_configure(
+            Target::Claude,
+            &proxy.base_url,
+            "sk-new",
+            "claude-1",
+        ))
         .await
         .unwrap();
     assert!(harness.prompter.calls.is_empty());

@@ -11,13 +11,13 @@ use crate::agent_setup_profiles::{
 };
 use crate::commands::configure::args::{UnconfigureArgs, UnconfigureTarget};
 use crate::commands::configure::test_support::{
-    FakeEnvironment, Harness, MockProxy, TestCli, TestCommand, claude_configure, context, listing,
-    save_profile,
+    FakeEnvironment, Harness, MockProxy, TestCli, TestCommand, context, listing, save_profile,
+    target_configure,
 };
 
-fn profile_path(environment: &FakeEnvironment) -> PathBuf {
-    let settings = settings_path_for(Target::Claude, environment).unwrap();
-    setup_profile_path(Target::Claude, &settings, environment).unwrap()
+fn profile_path(target: Target, environment: &FakeEnvironment) -> PathBuf {
+    let settings = settings_path_for(target, environment).unwrap();
+    setup_profile_path(target, &settings, environment).unwrap()
 }
 
 #[tokio::test]
@@ -37,7 +37,7 @@ async fn forget_flag_deletes_the_saved_profile() {
         command: Some(UnconfigureTarget::Claude { forget: false }),
     };
     harness.unconfigure(args).await.unwrap();
-    assert!(!profile_path(&harness.environment).exists());
+    assert!(!profile_path(Target::Claude, &harness.environment).exists());
     assert!(
         harness
             .stdout_text()
@@ -62,7 +62,7 @@ async fn unconfigure_without_forget_retains_the_saved_profile() {
         command: Some(UnconfigureTarget::Claude { forget: false }),
     };
     harness.unconfigure(args).await.unwrap();
-    assert!(profile_path(&harness.environment).exists());
+    assert!(profile_path(Target::Claude, &harness.environment).exists());
     assert!(
         harness
             .stdout_text()
@@ -87,7 +87,7 @@ async fn parent_forget_reaches_the_subcommand() {
         command: Some(UnconfigureTarget::Claude { forget: false }),
     };
     harness.unconfigure(args).await.unwrap();
-    assert!(!profile_path(&harness.environment).exists());
+    assert!(!profile_path(Target::Claude, &harness.environment).exists());
 }
 
 #[test]
@@ -142,23 +142,48 @@ async fn forget_after_configure_removes_the_profile_and_the_receipt() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test"))
+        .configure(target_configure(
+            Target::Claude,
+            &proxy.base_url,
+            "sk-test",
+            "claude-1",
+        ))
         .await
         .unwrap();
     let settings_path = settings_path_for(Target::Claude, &harness.environment).unwrap();
     let state_path =
         receipt_path_for(Target::Claude, &settings_path, &harness.environment).unwrap();
-    assert!(profile_path(&harness.environment).exists());
+    assert!(profile_path(Target::Claude, &harness.environment).exists());
     let args = UnconfigureArgs {
         forget: true,
         command: None,
     };
     harness.unconfigure(args).await.unwrap();
-    assert!(!profile_path(&harness.environment).exists());
+    assert!(!profile_path(Target::Claude, &harness.environment).exists());
     assert!(!state_path.exists());
     assert!(
         harness
             .stdout_text()
             .contains("Forgot saved claude setup, including its saved key.")
     );
+}
+
+#[tokio::test]
+async fn parent_forget_reaches_the_codex_subcommand() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    save_profile(
+        Target::Codex,
+        &environment,
+        "http://proxy.test",
+        Some("codex-1"),
+    )
+    .await;
+    let mut harness = Harness::new(environment, context("http://proxy.test", None));
+    let args = UnconfigureArgs {
+        forget: true,
+        command: Some(UnconfigureTarget::Codex { forget: false }),
+    };
+    harness.unconfigure(args).await.unwrap();
+    assert!(!profile_path(Target::Codex, &harness.environment).exists());
 }

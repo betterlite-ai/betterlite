@@ -7,8 +7,8 @@ use tempfile::TempDir;
 
 use crate::agent_setup_profiles::{Target, receipt_path_for, settings_path_for};
 use crate::commands::configure::test_support::{
-    FakeEnvironment, Harness, MockProxy, claude_configure, claude_env, claude_settings, context,
-    listing, unconfigure_claude, write_claude_settings,
+    FakeEnvironment, Harness, MockProxy, claude_env, claude_settings, context, listing,
+    target_configure, unconfigure_claude, write_claude_settings,
 };
 
 fn set_base_url(environment: &FakeEnvironment, url: &str) {
@@ -38,7 +38,12 @@ async fn withheld_credentials_report_their_captured_endpoint() {
     .unwrap();
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test"))
+        .configure(target_configure(
+            Target::Claude,
+            &proxy.base_url,
+            "sk-test",
+            "claude-1",
+        ))
         .await
         .unwrap();
     set_base_url(&harness.environment, "http://elsewhere.test");
@@ -74,7 +79,12 @@ async fn withheld_credentials_name_the_default_endpoint_when_none_was_captured()
     .unwrap();
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test"))
+        .configure(target_configure(
+            Target::Claude,
+            &proxy.base_url,
+            "sk-test",
+            "claude-1",
+        ))
         .await
         .unwrap();
     set_base_url(&harness.environment, "http://elsewhere.test");
@@ -90,7 +100,12 @@ async fn unconfigure_without_a_mismatch_drops_the_receipt() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test"))
+        .configure(target_configure(
+            Target::Claude,
+            &proxy.base_url,
+            "sk-test",
+            "claude-1",
+        ))
         .await
         .unwrap();
     let settings_path = settings_path_for(Target::Claude, &harness.environment).unwrap();

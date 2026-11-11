@@ -35,7 +35,6 @@ use crate::commands::configure::{AgentSetupCommand, SetupPorts, run};
 
 pub(crate) const SAFE_CODEX: &str = "codex-cli 0.129.0";
 pub(crate) const SAVED_KEY: &str = "sk-saved";
-pub(crate) const STARTING_MODEL: &str = "claude-1";
 
 #[derive(clap::Parser)]
 pub(crate) struct TestCli {
@@ -101,18 +100,27 @@ pub(crate) fn group_configure() -> ConfigureArgs {
     }
 }
 
-pub(crate) fn claude_configure(base_url: &str, api_key: &str) -> ConfigureArgs {
-    let arguments = [
+pub(crate) fn target_configure(
+    target: Target,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+) -> ConfigureArgs {
+    let name = match target {
+        Target::Claude => "claude",
+        Target::Codex => "codex",
+    };
+    let parsed = TestCli::try_parse_from([
         "configure",
-        "claude",
+        name,
         "--api-key",
         api_key,
         "--gateway-url",
         base_url,
         "--model",
-        STARTING_MODEL,
-    ];
-    let parsed = TestCli::try_parse_from(arguments).unwrap();
+        model,
+    ])
+    .unwrap();
     let TestCommand::Configure(args) = parsed.command else {
         panic!("expected the configure command");
     };

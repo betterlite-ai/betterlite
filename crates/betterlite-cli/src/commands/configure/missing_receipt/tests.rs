@@ -7,10 +7,10 @@ use betterlite_config::sections::settings::JsonValue;
 use tempfile::TempDir;
 
 use crate::agent_setup_profiles::{Target, receipt_path_for, settings_path_for};
-use crate::commands::configure::args::UnconfigureArgs;
+use crate::commands::configure::args::{UnconfigureArgs, UnconfigureTarget};
 use crate::commands::configure::test_support::{
-    FakeEnvironment, Harness, MockProxy, claude_configure, claude_env, claude_settings, context,
-    listing, unconfigure_claude, write_claude_settings,
+    FakeEnvironment, Harness, MockProxy, claude_env, claude_settings, context, listing,
+    target_configure, unconfigure_claude, write_claude_settings,
 };
 
 #[tokio::test]
@@ -83,7 +83,12 @@ async fn unconfigure_reports_settings_modified_since_configure() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test"))
+        .configure(target_configure(
+            Target::Claude,
+            &proxy.base_url,
+            "sk-test",
+            "claude-1",
+        ))
         .await
         .unwrap();
     let mut settings = claude_settings(&harness.environment);
@@ -117,7 +122,12 @@ async fn unconfigure_reports_when_nothing_is_left_to_restore() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test"))
+        .configure(target_configure(
+            Target::Claude,
+            &proxy.base_url,
+            "sk-test",
+            "claude-1",
+        ))
         .await
         .unwrap();
     let mut settings = BTreeMap::new();
@@ -138,5 +148,69 @@ async fn unconfigure_reports_when_nothing_is_left_to_restore() {
     assert_eq!(
         kept.get("theme"),
         Some(&JsonValue::String("dark".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn unconfigure_codex_removes_a_settings_file_it_created() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![listing(&[("codex-1", None)])]).await;
+    let mut harness = Harness::new(environment, context(&proxy.base_url, None));
+    harness
+        .configure(target_configure(
+            Target::Codex,
+            &proxy.base_url,
+            "sk-test",
+            "codex-1",
+        ))
+        .await
+        .unwrap();
+    let settings_path = settings_path_for(Target::Codex, &harness.environment).unwrap();
+    let state_path = receipt_path_for(Target::Codex, &settings_path, &harness.environment).unwrap();
+    let args = UnconfigureArgs {
+        forget: false,
+        command: Some(UnconfigureTarget::Codex { forget: false }),
+    };
+    harness.unconfigure(args).await.unwrap();
+    let stdout = harness.stdout_text();
+    assert!(stdout.contains(&format!(
+        "Removed {}; it held only settings created by `lite configure codex`.",
+        settings_path.display()
+    )));
+    assert!(!settings_path.exists());
+    assert!(!state_path.exists());
+}
+
+#[tokio::test]
+async fn unconfigure_codex_reports_settings_modified_since_configure() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![listing(&[("codex-1", None)])]).await;
+    let mut harness = Harness::new(environment, context(&proxy.base_url, None));
+    harness
+        .configure(target_configure(
+            Target::Codex,
+            &proxy.base_url,
+            "sk-test",
+            "codex-1",
+        ))
+        .await
+        .unwrap();
+    let settings_path = settings_path_for(Target::Codex, &harness.environment).unwrap();
+    let text = fs::read_to_string(&settings_path).unwrap();
+    fs::write(&settings_path, text.replace("codex-1", "other")).unwrap();
+    let args = UnconfigureArgs {
+        forget: false,
+        command: Some(UnconfigureTarget::Codex { forget: false }),
+    };
+    harness.unconfigure(args).await.unwrap();
+    let stdout = harness.stdout_text();
+    assert!(stdout.contains(&format!("Restored in {}: ", settings_path.display())));
+    assert!(stdout.contains("Left as you changed them since: model."));
+    assert!(
+        fs::read_to_string(&settings_path)
+            .unwrap()
+            .contains("other")
     );
 }
