@@ -12,6 +12,8 @@ pub mod replica_identity;
 mod report;
 mod tests;
 
+use std::error::Error as StdError;
+
 use crate::database_tls::options::ConnectionOptionsError;
 use crate::migration_ledger::lock::JitterSource;
 use crate::request_log_index_catalog::catalog::RequestLogIndexCatalogError;
@@ -38,16 +40,25 @@ pub enum RequestLogIndexError {
     },
     #[error("timed out opening the request-log index database connection")]
     ConnectTimeout,
-    #[error("the request-log index statement failed: {source}")]
+    #[error("the request-log index statement failed: {}", deepest_cause(.source))]
     Statement {
         #[from]
         source: tokio_postgres::Error,
     },
-    #[error("the request-log index catalog query failed: {source}")]
+    #[error("the request-log index catalog query failed: {}", deepest_cause(.source))]
     Catalog {
         #[from]
         source: RequestLogIndexCatalogError,
     },
+}
+
+// tokio-postgres prints "db error" for a server error, so walk to the DbError that carries the message
+fn deepest_cause(error: &(dyn StdError + 'static)) -> String {
+    let mut cause = error;
+    while let Some(deeper) = cause.source() {
+        cause = deeper;
+    }
+    cause.to_string()
 }
 
 impl DatabaseFailure for RequestLogIndexError {
