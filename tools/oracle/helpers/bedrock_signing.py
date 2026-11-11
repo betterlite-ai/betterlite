@@ -1,8 +1,8 @@
 import asyncio
-import base64
 import contextvars
 import os
 import threading
+from base64 import b64decode, b64encode
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -24,15 +24,102 @@ from litellm.llms.bedrock.base_aws_llm import (
     sign_request_off_loop_if_aws,
 )
 from litellm.llms.bedrock.common_utils import CommonBatchFilesUtils
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 if TYPE_CHECKING:
     from litellm.types.llms.bedrock import BedrockCreateBatchRequest
 Json: TypeAlias = JsonValue
-Params: TypeAlias = dict[str, Json]
 ServiceName: TypeAlias = Literal[
     "bedrock", "sagemaker", "bedrock-agentcore", "s3vectors", "aws-external-anthropic"
 ]
+
+
+class Fixture(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Keys(Fixture):
+    access_key_id: str
+    secret_access_key: str
+    session_token: str | None = None
+
+    def to_boto(self) -> Credentials:
+        return Credentials(
+            access_key=self.access_key_id,
+            secret_key=self.secret_access_key,
+            token=self.session_token,
+        )
+
+
+class TextData(Fixture):
+    text: str
+
+
+class Base64Data(Fixture):
+    base64: str
+
+
+class RequestHeaders(Fixture):
+    credentials: Keys | None = None
+    region: str
+    extra_headers: dict[str, str]
+    endpoint: str
+    data: TextData | Base64Data
+    headers: dict[str, str | None]
+    api_key: str | None = None
+    configured_bearer_token: str | None = None
+    supports_bearer_token: bool = True
+    now: int
+
+
+class ServiceRequest(Fixture):
+    credentials: Keys
+    service_name: ServiceName
+    headers: dict[str, str | None]
+    optional_params: dict[str, Json]
+    request_data: dict[str, Json]
+    api_base: str
+    model: str | None = None
+    api_key: str | None = None
+    configured_bearer_token: str | None = None
+    now: int
+
+
+class JsonPost(Fixture):
+    credentials: Keys
+    service_name: str
+    region: str | None = None
+    url: str
+    body: str
+    headers: dict[str, str]
+    now: int
+
+
+class RequestTarget(Fixture):
+    credentials: Keys
+    optional_params: dict[str, Json]
+    model: str | None = None
+    bearer_token: str | None = None
+
+
+class BatchRequest(Fixture):
+    credentials: Keys
+    service_name: str
+    data: str | dict[str, Json]
+    endpoint_url: str
+    optional_params: dict[str, Json]
+    method: str | None = None
+    now: int
+
+
+class OffLoop(Fixture):
+    context: str
+    value: str
+    failure: str
+
+
+class Calls(Fixture):
+    calls: list[Json]
 
 
 def fixed_clock(epoch: int) -> Callable[[], datetime]:
@@ -69,108 +156,16 @@ class AwsConfig(SignsRequestsWithAWS):
     pass
 
 
-def object_value(value: Json, name: str) -> dict[str, Json]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
-
-
-def string_value(value: Json, name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
-
-
-def list_value(value: Json, name: str) -> list[Json]:
-    if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
-    return value
-
-
-def optional_string(value: Json, name: str) -> str | None:
-    if value is None:
-        return None
-    return string_value(value, name)
-
-
-def one(value: Json, name: str) -> tuple[str, Json]:
-    if not isinstance(value, dict) or len(value) != 1:
-        raise ValueError(f"{name} must have exactly one member")
-    return next(iter(value.items()))
-
-
-def now_of(case: Params) -> int:
-    value = case.get("now")
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError("now must be an integer")
-    return value
-
-
-def headers_of(value: Json) -> dict[str, str | None]:
-    raw = object_value(value, "headers")
-    return {name: optional_string(entry, name) for name, entry in raw.items()}
-
-
-def resolved_headers_of(value: Json) -> dict[str, str]:
-    raw = object_value(value, "headers")
-    return {name: string_value(entry, name) for name, entry in raw.items()}
-
-
-def optional_params_of(value: Json) -> dict[str, Json]:
-    return object_value(value, "optional_params")
-
-
-def credentials_of(value: Json) -> Credentials:
-    params = object_value(value, "credentials")
-    return Credentials(
-        access_key=string_value(params.get("access_key_id"), "access_key_id"),
-        secret_key=string_value(params.get("secret_access_key"), "secret_access_key"),
-        token=optional_string(params.get("session_token"), "session_token"),
-    )
-
-
-def optional_credentials(value: Json) -> Credentials | None:
-    return None if value is None else credentials_of(value)
-
-
-def body_of(value: Json) -> str | bytes:
-    kind, payload = one(value, "data")
-    if kind == "text":
-        return string_value(payload, "data.text")
-    if kind == "base64":
-        return base64.b64decode(string_value(payload, "data.base64"), validate=True)
-    raise ValueError(f"unknown data kind: {kind}")
-
-
-def batch_data_of(value: Json) -> str | dict[str, Json]:
-    if isinstance(value, str):
-        return value
-    return object_value(value, "data")
-
-
-def headers_json(headers: Mapping[str, object]) -> dict[str, Json]:
-    return {name: entry for name, entry in headers.items() if isinstance(entry, str)}
-
-
-def body_json(payload: object) -> str:
-    if isinstance(payload, str):
-        return base64.b64encode(payload.encode()).decode()
-    if isinstance(payload, bytes):
-        return base64.b64encode(payload).decode()
-    return ""
-
-
 def signed_json(method: str, url: str, headers: Mapping[str, object], body: object) -> Json:
-    return cast(
-        Json,
-        {
-            "ok": True,
-            "method": method,
-            "url": url,
-            "headers": headers_json(headers),
-            "body": body_json(body),
-        },
-    )
+    if isinstance(body, str):
+        body = body.encode()
+    return {
+        "ok": True,
+        "method": method,
+        "url": url,
+        "headers": {name: entry for name, entry in headers.items() if isinstance(entry, str)},
+        "body": b64encode(body).decode() if isinstance(body, bytes) else "",
+    }
 
 
 @contextmanager
@@ -198,173 +193,139 @@ def harness(
                 yield
 
 
-def request_headers(case: Params) -> Json:
-    supports = case.get("supports_bearer_token", True)
-    if not isinstance(supports, bool):
-        raise ValueError("supports_bearer_token must be a boolean")
-    configured = optional_string(case.get("configured_bearer_token"), "configured_bearer_token")
-    with harness(configured, None), clock(now_of(case)):
+def request_headers(payload: Json) -> Json:
+    case = RequestHeaders.model_validate(payload)
+    data = (
+        case.data.text
+        if isinstance(case.data, TextData)
+        else b64decode(case.data.base64, validate=True)
+    )
+    with harness(case.configured_bearer_token, None), clock(case.now):
         get_headers = BaseAWSLLM().get_request_headers  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
         prepped = get_headers(
-            credentials=optional_credentials(case.get("credentials")),
-            aws_region_name=string_value(case.get("region"), "region"),
-            extra_headers=resolved_headers_of(case.get("extra_headers")),
-            endpoint_url=string_value(case.get("endpoint"), "endpoint"),
-            data=body_of(case.get("data")),
-            headers=headers_of(case.get("headers")),
-            api_key=optional_string(case.get("api_key"), "api_key"),
-            supports_bearer_token=supports,
+            credentials=case.credentials.to_boto() if case.credentials else None,
+            aws_region_name=case.region,
+            extra_headers=case.extra_headers,
+            endpoint_url=case.endpoint,
+            data=data,
+            headers=case.headers,
+            api_key=case.api_key,
+            supports_bearer_token=case.supports_bearer_token,
         )
     return signed_json("POST", prepped.url, prepped.headers, prepped.body)  # pyright: ignore[reportUnknownArgumentType]
 
 
-def service_request(case: Params) -> Json:
-    resolver = Resolver(credentials_of(case.get("credentials")))
-    configured = optional_string(case.get("configured_bearer_token"), "configured_bearer_token")
-    with harness(configured, resolver), clock(now_of(case)):
+def service_request(payload: Json) -> Json:
+    case = ServiceRequest.model_validate(payload)
+    resolver = Resolver(case.credentials.to_boto())
+    with harness(case.configured_bearer_token, resolver), clock(case.now):
         headers, body = BaseAWSLLM()._sign_request(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-            service_name=cast(ServiceName, string_value(case.get("service_name"), "service_name")),
-            headers=headers_of(case.get("headers")),
-            optional_params=optional_params_of(case.get("optional_params")),
-            request_data=object_value(case.get("request_data"), "request_data"),
-            api_base=string_value(case.get("api_base"), "api_base"),
-            model=optional_string(case.get("model"), "model"),
-            api_key=optional_string(case.get("api_key"), "api_key"),
+            service_name=case.service_name,
+            headers=case.headers,
+            optional_params=case.optional_params,
+            request_data=case.request_data,
+            api_base=case.api_base,
+            model=case.model,
+            api_key=case.api_key,
         )
-    return signed_json("POST", string_value(case.get("api_base"), "api_base"), headers, body)  # pyright: ignore[reportUnknownArgumentType]
+    return signed_json("POST", case.api_base, headers, body)  # pyright: ignore[reportUnknownArgumentType]
 
 
-def json_post(case: Params) -> Json:
-    credentials = credentials_of(case.get("credentials"))
-    with clock(now_of(case)):
+def json_post(payload: Json) -> Json:
+    case = JsonPost.model_validate(payload)
+    credentials = case.credentials.to_boto()
+    with clock(case.now):
         prepped = sign_aws_json_post(
             get_credentials=lambda: credentials,
-            service_name=string_value(case.get("service_name"), "service_name"),
-            aws_region_name=optional_string(case.get("region"), "region"),
-            url=string_value(case.get("url"), "url"),
-            body=string_value(case.get("body"), "body"),
-            headers=resolved_headers_of(case.get("headers")),
+            service_name=case.service_name,
+            aws_region_name=case.region,
+            url=case.url,
+            body=case.body,
+            headers=case.headers,
         )
     return signed_json("POST", prepped.url, prepped.headers, prepped.body)  # pyright: ignore[reportUnknownArgumentType]
 
 
-def request_target(case: Params) -> Json:
-    resolver = Resolver(credentials_of(case.get("credentials")))
+def request_target(payload: Json) -> Json:
+    case = RequestTarget.model_validate(payload)
+    resolver = Resolver(case.credentials.to_boto())
+    params = dict(case.optional_params)
     with harness(None, resolver):
-        params = dict(optional_params_of(case.get("optional_params")))
         target = BaseAWSLLM()._get_boto_credentials_from_optional_params(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-            params,
-            optional_string(case.get("model"), "model"),
-            bearer_token=optional_string(case.get("bearer_token"), "bearer_token"),
+            params, case.model, bearer_token=case.bearer_token
         )
-    credentials: Json = (
-        None
-        if isinstance(target, BearerRequestTarget)
-        else cast(
-            Json,
-            [
-                target.credentials.access_key,
-                target.credentials.secret_key,
-                target.credentials.token,
-            ],
-        )
-    )  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-    return cast(
-        Json,
-        {
-            "ok": True,
-            "region": target.aws_region_name,
-            "endpoint": target.aws_bedrock_runtime_endpoint,
-            "credentials": credentials,
-            "remaining": cast(Json, params),
-            "resolved": resolver.calls,
-        },
-    )
+    held = None if isinstance(target, BearerRequestTarget) else target.credentials  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    return {
+        "ok": True,
+        "region": target.aws_region_name,
+        "endpoint": target.aws_bedrock_runtime_endpoint,
+        "credentials": None if held is None else [held.access_key, held.secret_key, held.token],  # pyright: ignore[reportUnknownMemberType]
+        "remaining": params,
+        "resolved": resolver.calls,
+    }
 
 
-def batch_request(case: Params) -> Json:
-    resolver = Resolver(credentials_of(case.get("credentials")))
-    method = optional_string(case.get("method"), "method")
-    data = cast(
-        "str | dict[str, object] | BedrockCreateBatchRequest", batch_data_of(case.get("data"))
-    )
-    endpoint_url = string_value(case.get("endpoint_url"), "endpoint_url")
-    with harness(None, resolver), clock(now_of(case)):
+def batch_request(payload: Json) -> Json:
+    case = BatchRequest.model_validate(payload)
+    method = "POST" if case.method is None else case.method
+    data = cast("str | dict[str, object] | BedrockCreateBatchRequest", case.data)
+    with harness(None, Resolver(case.credentials.to_boto())), clock(case.now):
         sign = CommonBatchFilesUtils().sign_aws_request  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
         signed: tuple[Mapping[str, object], object] = sign(  # pyright: ignore[reportUnknownVariableType]
-            service_name=string_value(case.get("service_name"), "service_name"),
+            service_name=case.service_name,
             data=data,
-            endpoint_url=endpoint_url,
-            optional_params=optional_params_of(case.get("optional_params")),
-            method=method if method is not None else "POST",
+            endpoint_url=case.endpoint_url,
+            optional_params=case.optional_params,
+            method=method,
         )
-    return signed_json(
-        method.upper() if method is not None else "POST", endpoint_url, signed[0], signed[1]
-    )
+    return signed_json(method.upper(), case.endpoint_url, signed[0], signed[1])
 
 
-def value_json(kind: str, observed: Mapping[str, object]) -> Json:
-    return cast(
-        Json,
-        {
-            "kind": kind,
-            "failed": False,
-            "value": observed["value"],
-            "context": observed["context"],
-            "context_preserved": observed["context_preserved"],
-            "off_caller_thread": observed["off_caller_thread"],
-        },
-    )
-
-
-async def off_loop_steps(context: str, value: str, failure: str) -> list[Json]:
+async def off_loop_steps(case: OffLoop) -> list[Json]:
     marker: contextvars.ContextVar[str] = contextvars.ContextVar(
         "bedrock_signing_context", default=""
     )
-    marker.set(context)
+    marker.set(case.context)
     loop_thread = threading.get_ident()
 
-    def observe() -> dict[str, object]:
+    def observe() -> dict[str, Json]:
         return {
-            "value": value,
+            "value": case.value,
             "context": marker.get(),
-            "context_preserved": marker.get() == context,
+            "context_preserved": marker.get() == case.context,
             "off_caller_thread": threading.get_ident() != loop_thread,
         }
 
-    def failing() -> dict[str, object]:
-        raise RuntimeError(failure)
+    def failing() -> dict[str, Json]:
+        raise RuntimeError(case.failure)
 
-    run = await run_aws_signing(observe)
-    inline = await sign_request_off_loop_if_aws(NonAwsConfig(), observe)
-    offloaded = await sign_request_off_loop_if_aws(AwsConfig(), observe)
-    failure_step: Json
+    steps: list[Json] = [
+        {"kind": "run", "failed": False, **await run_aws_signing(observe)},
+        {
+            "kind": "inline",
+            "failed": False,
+            **await sign_request_off_loop_if_aws(NonAwsConfig(), observe),
+        },
+        {
+            "kind": "offloaded",
+            "failed": False,
+            **await sign_request_off_loop_if_aws(AwsConfig(), observe),
+        },
+    ]
     try:
         await run_aws_signing(failing)
     except RuntimeError as error:
-        failure_step = cast(Json, {"kind": "failure", "failed": True, "value": str(error)})
+        steps.append({"kind": "failure", "failed": True, "value": str(error)})
     else:
-        failure_step = cast(Json, {"kind": "failure", "failed": False})
-    return [
-        value_json("run", run),
-        value_json("inline", inline),
-        value_json("offloaded", offloaded),
-        failure_step,
-    ]
+        steps.append({"kind": "failure", "failed": False})
+    return steps
 
 
-def off_loop(case: Params) -> Json:
-    steps = asyncio.run(
-        off_loop_steps(
-            string_value(case.get("context"), "context"),
-            string_value(case.get("value"), "value"),
-            string_value(case.get("failure"), "failure"),
-        )
-    )
-    return cast(Json, {"ok": True, "steps": steps})
+def off_loop(payload: Json) -> Json:
+    return {"ok": True, "steps": asyncio.run(off_loop_steps(OffLoop.model_validate(payload)))}
 
 
-HANDLERS: dict[str, Callable[[Params], Json]] = {
+HANDLERS: dict[str, Callable[[Json], Json]] = {
     "request_headers": request_headers,
     "service_request": service_request,
     "json_post": json_post,
@@ -375,17 +336,18 @@ HANDLERS: dict[str, Callable[[Params], Json]] = {
 
 
 def run_call(call: Json) -> Json:
-    kind, payload = one(call, "call")
+    if not isinstance(call, dict) or len(call) != 1:
+        raise ValueError("call must have exactly one member")
+    kind, payload = next(iter(call.items()))
     handler = HANDLERS.get(kind)
     if handler is None:
         raise ValueError(f"unknown call: {kind}")
     try:
-        return handler(object_value(payload, kind))
+        return handler(payload)
     except Exception:  # noqa: BLE001 - a step reports every fixture failure
-        return cast(Json, {"ok": False, "status": None})
+        return {"ok": False, "status": None}
 
 
-def run(input_value: Params) -> Json:
-    calls = list_value(input_value.get("calls"), "calls")
+def run(input_value: dict[str, Json]) -> Json:
     _ = litellm
-    return cast(Json, {"steps": [run_call(call) for call in calls]})
+    return {"steps": [run_call(call) for call in Calls.model_validate(input_value).calls]}
