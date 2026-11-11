@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::chat::{FunctionCall, ToolCall, choice_finish_reason};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -45,6 +46,9 @@ pub struct AiohttpChatResponse {
     pub model: Option<String>,
     pub choices: Vec<AiohttpChoice>,
     pub system_fingerprint: Option<String>,
+    // LiteLLM copies no usage from the upstream, so the zero one it starts with stays
+    #[serde(default, skip_deserializing)]
+    pub usage: ChatUsage,
 }
 
 // finish_reason and role arrive optional and leave filled in, the way LiteLLM's Choices and Message build them

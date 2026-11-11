@@ -235,8 +235,18 @@ fn parallel_prepares_do_not_share_state() {
         .expect("runtime");
     let (first, second) = runtime.block_on(async {
         tokio::join!(
-            async { chat_prepared(r#"{"model":"client-a","messages":[]}"#, false) },
-            async { chat_prepared(r#"{"model":"client-b","messages":[]}"#, false) },
+            async {
+                chat_prepared(
+                    r#"{"model":"client-a","messages":[{"role":"user","content":"a"}]}"#,
+                    false,
+                )
+            },
+            async {
+                chat_prepared(
+                    r#"{"model":"client-b","messages":[{"role":"user","content":"b"}]}"#,
+                    false,
+                )
+            },
         )
     });
     let PreparedRequest::Chat(first_chat) = &first else {

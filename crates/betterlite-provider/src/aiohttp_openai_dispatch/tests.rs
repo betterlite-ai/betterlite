@@ -118,7 +118,7 @@ fn response_copies_only_the_projected_fields() {
     let written: JsonValue =
         serde_json::from_slice(&serde_json::to_vec(&*completion).unwrap()).unwrap();
     let wanted: JsonValue = serde_json::from_str(
-        r#"{"id":"c1","object":"chat.completion","created":7,"model":"g","system_fingerprint":"fp","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#,
+        r#"{"id":"c1","object":"chat.completion","created":7,"model":"g","system_fingerprint":"fp","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}"#,
     )
     .unwrap();
     assert_eq!(written, wanted);
@@ -294,7 +294,7 @@ fn an_absent_base_reaches_the_bare_openai_host() {
 #[case::absent_base(an_absent_base_reaches_the_bare_openai_host)]
 #[case::bare_base(bare_base_gets_the_chat_path)]
 #[case::bearer_without_fallback(bearer_never_falls_back_to_the_environment)]
-#[case::projection_drops_usage(response_copies_only_the_projected_fields)]
+#[case::projection_zeroes_usage(response_copies_only_the_projected_fields)]
 #[case::defaults_and_null_extras(missing_finish_reason_is_stop_and_choice_nulls_are_dropped)]
 #[case::provider_error(provider_error_status_is_a_provider_error)]
 #[case::stream_variant(stream_request_keeps_the_stream_variant)]

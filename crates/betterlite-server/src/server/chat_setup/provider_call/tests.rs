@@ -106,10 +106,10 @@ async fn call(
 }
 
 #[rstest]
-#[case::openai_keeps_usage_and_environment_organization("openai/up", PLAIN, 200, Some((true, true)))]
-#[case::aiohttp_drops_usage_and_environment_organization("aiohttp_openai/up", PLAIN, 200, Some((false, false)))]
+#[case::openai_keeps_usage_and_environment_organization("openai/up", PLAIN, 200, Some((3, true)))]
+#[case::aiohttp_zeroes_usage_and_environment_organization("aiohttp_openai/up", PLAIN, 200, Some((0, false)))]
 #[case::unavailable_adapter_fails_before_http("azure/up", PLAIN, 501, None)]
-#[case::a_valid_chunk_size_reaches_the_provider("openai/up", r#"{"model":"g","messages":[],"stream_chunk_size":4}"#, 200, Some((true, true)))]
+#[case::a_valid_chunk_size_reaches_the_provider("openai/up", r#"{"model":"g","messages":[],"stream_chunk_size":4}"#, 200, Some((3, true)))]
 #[case::a_zero_chunk_size_fails_before_http(
     "openai/up",
     r#"{"model":"g","messages":[],"stream_chunk_size":0}"#,
@@ -121,18 +121,18 @@ async fn provider_framework_tests_behavior(
     #[case] model: &str,
     #[case] sent_body: &'static str,
     #[case] status: u16,
-    #[case] reached: Option<(bool, bool)>,
+    #[case] reached: Option<(u64, bool)>,
 ) {
     let (answered, body, sent, forwarded) = call(model, sent_body, OWN_KEY, (200, ANSWER)).await;
     assert_eq!(answered, status);
-    let Some((has_usage, sends_organization)) = reached else {
+    let Some((total_tokens, sends_organization)) = reached else {
         assert_eq!(sent, "");
         return;
     };
     let reply: Reply = serde_json::from_slice(&body).unwrap();
     assert_eq!(
         reply.usage.map(|usage| usage.total_tokens),
-        has_usage.then_some(3)
+        Some(total_tokens)
     );
     assert_eq!(forwarded.as_deref(), Some("up-1"));
     assert!(sent.contains("authorization: bearer own-key"));
