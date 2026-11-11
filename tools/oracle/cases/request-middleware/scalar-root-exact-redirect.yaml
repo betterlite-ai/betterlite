@@ -1,0 +1,17 @@
+name: request-middleware-scalar-root-exact-redirect
+config: |
+  model_list:
+    - model_name: scalar-root-model
+      litellm_params: {model: openai/gpt-scalar-root-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+env: {SERVER_ROOT_PATH: /proxy}
+request:
+  method: GET
+  path: /proxy?x=1
+  headers: {authorization: Bearer oracle-master}
+  body: {}
+upstream: []
+compare:
+  headers: [x-frame-options, content-security-policy, x-content-type-options]
+  headers_present: [location]
+  upstream_headers: []
+  ignore: []

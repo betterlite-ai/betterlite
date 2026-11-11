@@ -1,0 +1,17 @@
+name: request-middleware-scalar-root-sibling-segment
+config: |
+  model_list:
+    - model_name: scalar-root-model
+      litellm_params: {model: openai/gpt-scalar-root-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+env: {SERVER_ROOT_PATH: /proxy}
+request:
+  method: GET
+  path: /proxyx/v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: {}
+upstream: []
+compare:
+  headers: [content-type, x-frame-options, content-security-policy, x-content-type-options]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

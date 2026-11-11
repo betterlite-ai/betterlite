@@ -1,0 +1,11 @@
+kind: helper
+name: request-middleware-gzip-small-body
+call:
+  b122:
+    function: gzip
+    accept_encoding: gzip
+    status: 200
+    body_size: 499
+    body_byte: 97
+env: {}
+compare: {ignore: []}

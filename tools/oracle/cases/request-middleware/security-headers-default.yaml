@@ -1,0 +1,9 @@
+kind: helper
+name: request-middleware-security-headers-default
+call:
+  b122:
+    function: security_headers
+    enable_hsts: false
+    status: 200
+env: {}
+compare: {ignore: []}

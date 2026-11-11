@@ -1,0 +1,10 @@
+kind: helper
+name: request-middleware-security-headers-hsts
+call:
+  b122:
+    function: security_headers
+    enable_hsts: true
+    status: 200
+    headers: {x-frame-options: SAMEORIGIN}
+env: {}
+compare: {ignore: []}
