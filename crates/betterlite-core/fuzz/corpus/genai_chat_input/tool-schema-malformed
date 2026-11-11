@@ -1,0 +1,1 @@
+{"model":"m","contents":[],"tools":[{"functionDeclarations":[{"name":"a","parameters":"schema"},{"name":"b","parameters":[{"type":"object"}]},{"parametersJsonSchema":null,"parameters":{"type":"object"}},{"name":null,"description":null},{"parameters":null}],"functionDeclarationsExtra":true},{"functionDeclarations":[]},{"functionDeclarations":null}]}
