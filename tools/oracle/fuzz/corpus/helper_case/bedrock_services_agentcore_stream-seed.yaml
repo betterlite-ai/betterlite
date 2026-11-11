@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-services-agentcore-stream-seed
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids: [00000000-0000-4000-8000-000000000001, 00000000-0000-4000-8000-000000000002]
+    scenarios:
+      - reads: ['data: {"event":{"contentBlockDelta":{"delta":{"text":"hi"}}}}']
+        status: 200
+        headers: [[content-type, text/event-stream]]
+        api_base: https://bedrock-agentcore.example/runtime
+        request_headers: [[accept, 'application/json, text/event-stream']]
+        data: {prompt: hi}
+        messages: [{role: user, content: hi}]
+        supplied: sync
+env: {}
+compare: {ignore: []}

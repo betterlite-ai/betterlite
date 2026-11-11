@@ -13,6 +13,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "basedpyright==1.40.2",
+  "mypy==2.4.1",
   "pytest==9.1.1",
   "ruff==0.17.1",
 ]
@@ -42,6 +43,7 @@ ignore = [
   "D", # the repository keeps no docstrings
   "EM", # ProbeError takes a failure kind and its message directly
   "INP001", # probes is a namespace package run with python -m from this folder
+  "TC", # imports stay at the top, since the no-typing-escapes rule bans if TYPE_CHECKING blocks
   "TRY003", # same reason as EM
 ]
 
@@ -50,3 +52,29 @@ ignore = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+disallow_any_explicit = true
+disallow_any_expr = true
+disallow_any_decorated = true
+disallow_any_unimported = true
+warn_unreachable = true
+local_partial_types = true
+enable_error_code = [
+  "deprecated",
+  "exhaustive-match",
+  "explicit-override",
+  "ignore-without-code",
+  "mutable-override",
+  "narrowed-type-not-subtype",
+  "possibly-undefined",
+  "redundant-expr",
+  "redundant-self",
+  "truthy-bool",
+  "truthy-iterable",
+  "unimported-reveal",
+  "unused-awaitable",
+]
+follow_imports = "silent"
