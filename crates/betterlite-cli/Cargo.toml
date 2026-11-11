@@ -14,6 +14,7 @@ async-trait = "0.1.92"
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-secrets = { path = "../betterlite-secrets" }
@@ -21,6 +22,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 hex.workspace = true
 httparse = "1.10.1"
 indexmap = "2.14.2"
+inquire = { version = "0.9.4", default-features = false, features = ["console", "fuzzy"] }
 keyring-core = { version = "1.0.1", optional = true }
 num-traits = "0.2.19"
 regex.workspace = true
@@ -53,6 +55,8 @@ secret-service-store = { package = "dbus-secret-service-keyring-store", version 
 windows-native-keyring-store = { version = "1.1.0", optional = true }
 
 [dev-dependencies]
+axum = { workspace = true }
+mutants = "0.0.4"
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tokio = { workspace = true }
