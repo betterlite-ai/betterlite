@@ -257,6 +257,14 @@ async fn azure_empty_image_models_become_dall_e_2(
     r#"{"prompt_tokens":null,"completion_tokens":null,"cache_read_input_tokens":null}"#,
     (0, 0, 0, 0)
 )]
+#[case::output_only_cache_stays_raw(
+    r#"{"output_tokens":6,"cache_read_input_tokens":3}"#,
+    (0, 0, 0, 3)
+)]
+#[case::prompt_with_interactions_keys_stays_raw(
+    r#"{"prompt_tokens":5,"total_input_tokens":10,"cache_read_input_tokens":4}"#,
+    (5, 0, 0, 4)
+)]
 #[tokio::test]
 async fn mapping_usage_counts_like_the_source(
     #[case] document: &str,
@@ -294,15 +302,23 @@ async fn responses_usage_is_converted_before_counting() {
     assert_eq!(counts(&prepared.attempts[0]), (4, 6, 0, 2));
 }
 
+#[rstest]
+#[case::full_record(
+    r#"{"total_input_tokens":10,"total_output_tokens":5,"total_cached_tokens":2}"#,
+    (10, 5, 0, 2)
+)]
+#[case::input_only(r#"{"total_input_tokens":10}"#, (10, 0, 0, 0))]
 #[tokio::test]
-async fn interactions_usage_is_converted_before_counting() {
-    let record =
-        map(r#"{"total_input_tokens":10,"total_output_tokens":5,"total_cached_tokens":2}"#);
+async fn interactions_usage_is_converted_before_counting(
+    #[case] document: &str,
+    #[case] expected: (i64, i64, i64, i64),
+) {
+    let record = map(document);
     let view = mapping_view(ResponseKind::Chat, &record);
     let input = base_input(Some(&view));
     let prepared = prepare_attempts(&input).await;
 
-    assert_eq!(counts(&prepared.attempts[0]), (10, 5, 0, 2));
+    assert_eq!(counts(&prepared.attempts[0]), expected);
 }
 
 #[tokio::test]
@@ -532,6 +548,25 @@ async fn an_empty_provider_is_dropped_for_typed_responses_only() {
         hidden_params: Some(&empty),
     });
     let mut input = base_input(Some(&typed));
+    input.custom_llm_provider = Some("");
+    let prepared = prepare_attempts(&input).await;
+
+    assert_eq!(prepared.attempts[0].custom_llm_provider, None);
+}
+
+#[tokio::test]
+async fn a_realtime_response_drops_its_empty_provider() {
+    let record = RealtimeBilling {
+        results: Vec::new(),
+        usage: SumUsage::default(),
+        service_tier: None,
+    };
+    let usage = chat_usage(1, 1, None);
+    let view = ResponseView::Realtime {
+        record: &record,
+        usage: &usage,
+    };
+    let mut input = base_input(Some(&view));
     input.custom_llm_provider = Some("");
     let prepared = prepare_attempts(&input).await;
 
