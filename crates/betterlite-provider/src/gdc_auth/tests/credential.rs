@@ -141,3 +141,27 @@ fn a_fixture_credential_keeps_the_descriptor() {
     };
     assert_eq!(token.expose_secret(), "fixture-token");
 }
+
+fn certificate_pem_of_length(length: usize) -> String {
+    let header = "-----BEGIN CERTIFICATE-----\n";
+    let footer = "-----END CERTIFICATE-----\n";
+    let fixed = header
+        .len()
+        .saturating_add(footer.len())
+        .saturating_add(16_000);
+    let padding = length.saturating_sub(fixed);
+    let body = "A".repeat(16_000);
+    let blank_lines = "\n".repeat(padding);
+    format!("{header}{body}{blank_lines}{footer}")
+}
+
+#[test]
+fn the_pem_size_limit_keeps_the_boundary_and_refuses_one_byte_more() {
+    let at_limit = certificate_pem_of_length(0x4000);
+    assert_eq!(at_limit.len(), 0x4000);
+    let at_limit_error = GdchServiceAccount::load(descriptor("project-a", &at_limit)).unwrap_err();
+    assert!(matches!(at_limit_error, CredentialError::NotEc));
+    let over_limit = certificate_pem_of_length(0x4001);
+    let over_error = GdchServiceAccount::load(descriptor("project-a", &over_limit)).unwrap_err();
+    assert!(matches!(over_error, CredentialError::Pem));
+}
