@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use secrecy::SecretString;
 
 use crate::s3_transport::download::EMPTY_SHA256;
-use crate::s3_transport::signing::{Credentials, RequestToSign, sign_request};
+use crate::s3_transport::signing::{Clock, Credentials, RequestToSign, SystemClock, sign_request};
 
 const BODY_SHA256: &str = "2fd9a709a1c8f1321c0ebd69beb117fa7b3f4f6978ef268b1389fca6d20b5b35";
 const PUT_URL: &str = "http://127.0.0.1:9000/logs/2026-01-02/id.json";
@@ -53,6 +53,15 @@ fn header<'headers>(headers: &'headers [(String, String)], name: &str) -> Option
         .iter()
         .find(|(header_name, _)| header_name == name)
         .map(|(_, value)| value.as_str())
+}
+
+#[test]
+fn the_system_clock_reads_the_current_time() {
+    let before = SystemTime::now()
+        .checked_sub(Duration::from_secs(1))
+        .expect("the clock fits");
+    let now = SystemClock.now();
+    assert!(now >= before);
 }
 
 #[test]
