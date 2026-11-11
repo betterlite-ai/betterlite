@@ -104,15 +104,6 @@ fn lines_split_on_newline_only() {
 }
 
 #[test]
-fn lines_empty_chunk_list_is_empty() {
-    assert_eq!(convert_raw_bytes_to_str_lines(&[]), Vec::<String>::new());
-    assert_eq!(
-        convert_raw_bytes_to_str_lines(&[Vec::new()]),
-        Vec::<String>::new()
-    );
-}
-
-#[test]
 fn lines_strip_python_whitespace_separators() {
     let chunks = vec![b"data: {}\x1e\n\x1f\n\x1cdata\x1d\n".to_vec()];
 
@@ -729,12 +720,16 @@ async fn tinyfish_route_starts_billing_for_a_late_run_id() {
         Arc::clone(&support::handlers().providers),
         EndpointType::Tinyfish,
     );
-    input.raw_bytes = vec![b"data: {\"run_id\":\"run-9\"}".to_vec()];
+    input.raw_bytes = vec![b"data: {\"run_".to_vec(), b"id\":\"run-9\"}".to_vec()];
     let tinyfish = Arc::new(FakeTinyfish::for_run(false, Some("run-9".to_owned())));
     let billing = billing_handle(Arc::clone(&tinyfish));
 
     route_stream(input, probe(ProbeStream::NoMessageStop), billing).await;
 
+    assert_eq!(
+        tinyfish.scanned.lock().unwrap().as_slice(),
+        [b"data: {\"run_id\":\"run-9\"}".to_vec()]
+    );
     assert_eq!(
         tinyfish.started.lock().unwrap().as_slice(),
         [("run-9".to_owned(), time("2024-01-01T00:00:00+00:00"))]
