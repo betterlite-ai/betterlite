@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::io::{Result as IoResult, Write};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
@@ -9,10 +10,14 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::registry::catalog::{CatalogError, CatalogInputs};
+use crate::sqs_logging::tests::support::{event, payload};
 
-use super::{build, build_logger};
+use super::build;
 
 fn inputs(source: &str) -> CatalogInputs {
     let config = ConfigLoader {
@@ -33,6 +38,48 @@ fn inputs(source: &str) -> CatalogInputs {
         tracker: TaskTracker::new(),
         shutdown: CancellationToken::new(),
     }
+}
+
+#[derive(Clone, Default)]
+struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+impl Buffer {
+    fn contents(&self) -> String {
+        let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        String::from_utf8(bytes.clone()).expect("the log is UTF-8")
+    }
+}
+
+impl Write for Buffer {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for Buffer {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn subscribe(buffer: &Buffer) -> DefaultGuard {
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::WARN)
+        .with_writer(buffer.clone())
+        .finish();
+    set_default(subscriber)
 }
 
 #[tokio::test]
@@ -76,11 +123,23 @@ async fn callback_logger_refuses_an_invalid_region() {
 #[tokio::test]
 async fn callback_logger_reads_the_team_prefix_settings() {
     let inputs = inputs(
-        "callback_settings:\n  s3:\n    s3_bucket_name: logs\n    s3_use_team_prefix: true\n    enable_preview_features: true\n",
+        "callback_settings:\n  s3:\n    s3_bucket_name: logs\n    s3_region_name: us-east-1\n    s3_use_team_prefix: true\n    enable_preview_features: true\n",
     );
-    let logger = build_logger(&inputs).expect("the logger builds");
-    assert!(logger.uploads.settings.use_team_prefix);
-    assert!(logger.uploads.settings.preview_features);
-    assert_eq!(logger.uploads.settings.bucket_name.as_deref(), Some("logs"));
-    assert!(logger.uploads.transport.is_some());
+    let logger = build(&inputs).expect("the logger builds");
+    let buffer = Buffer::default();
+    let guard = subscribe(&buffer);
+    let mut standard = payload();
+    standard.metadata.user_api_key_team_alias = Some("team".to_owned());
+    logger
+        .async_log_success_event(event(standard))
+        .await
+        .expect("the event is accepted");
+    drop(guard);
+    assert!(
+        buffer
+            .contents()
+            .contains("team/2009-02-13/time-23-31-30-000000_sqs-health-check.json"),
+        "{}",
+        buffer.contents()
+    );
 }

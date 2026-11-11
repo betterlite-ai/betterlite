@@ -37,7 +37,11 @@ impl<C: DynamoClient> DynamoDbLogger<C> {
             }
         };
         if let Err(error) = self.client.put_item(&self.settings.table_name, &item).await {
-            tracing::debug!("DynamoDB Layer Error - {error}");
+            tracing::debug!(
+                table = %self.settings.table_name,
+                region = %self.settings.region_name,
+                "DynamoDB Layer Error - {error}"
+            );
         }
     }
 }

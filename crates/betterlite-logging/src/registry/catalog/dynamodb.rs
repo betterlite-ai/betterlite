@@ -15,14 +15,6 @@ use crate::sqs_logging::credentials::{CredentialParams, EnvironmentCredentials};
 mod tests;
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-    let logger = build_logger(inputs)?;
-    let erased: Arc<dyn CallbackLogger> = logger;
-    Ok(erased)
-}
-
-fn build_logger(
-    inputs: &CatalogInputs,
-) -> Result<Arc<DynamoDbLogger<HttpDynamoClient<PooledDelivery>>>, CatalogError> {
     let name = CallbackName::Dynamodb.as_str();
     let params = inputs
         .callback_settings
