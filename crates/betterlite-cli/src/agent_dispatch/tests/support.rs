@@ -235,6 +235,13 @@ impl MemoryFiles {
             .clone()
     }
 
+    fn remember(&self, record: &CliTokenRecord) {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .record = Some(record.clone());
+    }
+
     fn refused() -> TokenRecordError {
         TokenRecordError::Stage {
             source: PrivateJsonError::Stage(
@@ -290,10 +297,7 @@ impl CredentialFiles for MemoryFiles {
         if self.refuse {
             return Err(Self::refused());
         }
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .record = Some(record.clone());
+        self.remember(record);
         Ok(())
     }
 
@@ -301,10 +305,7 @@ impl CredentialFiles for MemoryFiles {
         if self.refuse {
             return false;
         }
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .record = Some(record.clone());
+        self.remember(record);
         true
     }
 
@@ -625,18 +626,51 @@ fn fixtures(
     }
 }
 
-pub(crate) fn resolve(
+enum Action<'action> {
+    Resolve,
+    Launch {
+        binary: &'action str,
+        args: AgentCommandArgs,
+    },
+}
+
+struct Outcome {
+    key: Option<SecretString>,
+    exit_code: i32,
+}
+
+fn capture(
     world: &mut AgentWorld,
-) -> (Result<SecretString, AgentDispatchError>, String) {
+    action: Action<'_>,
+) -> (Result<Outcome, AgentDispatchError>, String) {
     let browser = |_url: &str| {};
     let mut stdout: Vec<u8> = Vec::new();
     let result = {
         let mut ports = world.bind(&browser, &mut stdout);
-        resolve_api_key(&mut ports)
+        match action {
+            Action::Resolve => resolve_api_key(&mut ports).map(|key| Outcome {
+                key: Some(key),
+                exit_code: 0,
+            }),
+            Action::Launch { binary, args } => {
+                run_agent_command(binary, args, &mut ports).map(|exit_code| Outcome {
+                    key: None,
+                    exit_code,
+                })
+            }
+        }
     };
+    let text = String::from_utf8(stdout).expect("the captured output is UTF-8");
+    (result, text)
+}
+
+pub(crate) fn resolve(
+    world: &mut AgentWorld,
+) -> (Result<SecretString, AgentDispatchError>, String) {
+    let (result, text) = capture(world, Action::Resolve);
     (
-        result,
-        String::from_utf8(stdout).expect("the captured output is UTF-8"),
+        result.map(|outcome| outcome.key.expect("resolve returns a key")),
+        text,
     )
 }
 
@@ -645,14 +679,6 @@ pub(crate) fn launch(
     binary: &str,
     args: AgentCommandArgs,
 ) -> (Result<i32, AgentDispatchError>, String) {
-    let browser = |_url: &str| {};
-    let mut stdout: Vec<u8> = Vec::new();
-    let result = {
-        let mut ports = world.bind(&browser, &mut stdout);
-        run_agent_command(binary, args, &mut ports)
-    };
-    (
-        result,
-        String::from_utf8(stdout).expect("the captured output is UTF-8"),
-    )
+    let (result, text) = capture(world, Action::Launch { binary, args });
+    (result.map(|outcome| outcome.exit_code), text)
 }
