@@ -10,6 +10,7 @@ use crate::full_model_metadata::error::{FullMetadataError, ModelRecordError};
 use crate::full_model_metadata::parameters::ProviderParameterSource;
 use crate::full_model_metadata::record::ModelInfo;
 use crate::identity::provider_id::ProviderId;
+use crate::model_metadata_resolution::error::ModelMetadataError;
 use crate::params::CallType;
 use crate::params::capabilities::{
     CapabilityQuery, ModelProjection, OpenAiCapability, OpenAiConfigTag, ParameterCapabilities,
@@ -32,6 +33,7 @@ pub(super) async fn test_full_query_order_case() {
     test_dynamic_answer_case(&harness).await;
     test_absent_parameter_case(&harness).await;
     test_duplicate_parameter_case(&harness).await;
+    test_unmapped_model_case(&harness).await;
 }
 
 fn openai_source<'source>(
@@ -122,6 +124,35 @@ async fn test_failing_parameter_case(harness: &Harness<'_>) {
     );
     assert_eq!(state.caches.full.cache_info().misses, 1);
     assert_eq!(state.caches.full.cache_info().currsize, 0);
+}
+
+// the helper's not-mapped error passes through unchanged and is never cached
+async fn test_unmapped_model_case(harness: &Harness<'_>) {
+    let parameters = ScriptedParameters::new(vec![
+        ParameterAnswer::Answer(None),
+        ParameterAnswer::Answer(None),
+    ]);
+    let mut state = State::new(8, ScriptedDynamic::default());
+    for (calls, misses) in [(1_usize, 1_u64), (2, 2)] {
+        let failure = full_call(
+            harness,
+            &mut state,
+            &parameters,
+            &request("unmapped-model", Some("openai"), None, None),
+        )
+        .await
+        .expect_err("the model is not in the catalog");
+        assert!(matches!(
+            failure,
+            FullMetadataError::Metadata(ModelMetadataError::NotMapped { .. })
+        ));
+        assert!(state.dynamic.calls().is_empty());
+        assert_eq!(parameters.calls().len(), calls);
+        let info = state.caches.full.cache_info();
+        assert_eq!(info.misses, misses);
+        assert_eq!(info.hits, 0);
+        assert_eq!(info.currsize, 0);
+    }
 }
 
 async fn test_dynamic_answer_case(harness: &Harness<'_>) {

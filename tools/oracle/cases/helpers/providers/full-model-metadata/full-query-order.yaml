@@ -27,5 +27,13 @@ call:
         custom_llm_provider: ollama
         api_base: "http://failure-host:11434"
         parameters: {kind: error}
+      - op: call
+        model: unmapped-model
+        custom_llm_provider: openai
+        parameters: {kind: absent}
+      - op: call
+        model: unmapped-model
+        custom_llm_provider: openai
+        parameters: {kind: absent}
 env: {}
 compare: {ignore: []}
