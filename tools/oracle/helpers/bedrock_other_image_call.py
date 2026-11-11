@@ -1,11 +1,10 @@
 import asyncio
-import json
 import os
-from collections.abc import Coroutine, Mapping
+from collections.abc import Coroutine
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import partial
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1593
 import httpx
@@ -60,21 +59,16 @@ class Probe:
     created: int = 42
 
 
-class Args(TypedDict, total=False):
-    api_base: str
+class Args(TypedDict):
     complete_input_dict: dict[str, Json]
+    api_base: NotRequired[str]
 
 
 @dataclass
 class LoggedCall:
+    additional_args: Args
     input: Json = None
     original_response: Json = None
-    additional_args: Args = field(default_factory=Args)
-
-
-class Prepped(Protocol):
-    url: str
-    headers: Mapping[str, str]
 
 
 class Images(TypedDict):
@@ -83,6 +77,8 @@ class Images(TypedDict):
 
 
 PROBE = TypeAdapter(Probe)
+DATA = TypeAdapter(dict[str, Json])
+BODY = TypeAdapter(Json)
 LOGGED = TypeAdapter(LoggedCall)
 TIMEOUT = TypeAdapter(float | None)
 IMAGES = TypeAdapter(Images)
@@ -109,6 +105,9 @@ class Fixture:
     factory: list[tuple[str, str]] = field(default_factory=list)
     factory_calls: list[tuple[str, int | None]] = field(default_factory=list)
     logging: FakeLogging = field(default_factory=FakeLogging)
+
+    def __post_init__(self) -> None:
+        install(self)
 
     @property
     def logger(self) -> Logging:
@@ -174,9 +173,8 @@ def generation(fixture: Fixture) -> ImageResponse:
         "async": AsyncHTTPHandler(transport=transport),
         "none": None,
     }
-    install(fixture)
     pending: ImageResponse | Coroutine[None, None, ImageResponse] = (
-        BedrockImageGeneration().image_generation(
+        BedrockImageGeneration().image_generation(  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L72
             model=probe.model,
             prompt=probe.prompt,
             model_response=ImageResponse(created=probe.created),
@@ -197,28 +195,25 @@ def generation(fixture: Fixture) -> ImageResponse:
 
 def prepare_value(probe: Probe) -> dict[str, Json]:
     fixture = Fixture(probe)
-    install(fixture)
-    prepared = BedrockImageGeneration()._prepare_request(  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L205
-        model=probe.model,
-        optional_params=probe.optional_params,
-        api_base=probe.api_base,
-        extra_headers=probe.extra_headers,
-        logging_obj=fixture.logger,
-        prompt=probe.prompt,
-        api_key=probe.api_key,
+    prepared = BedrockImageGeneration()._prepare_request(  # noqa: SLF001  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L205
+        probe.model,
+        probe.optional_params,
+        probe.api_base,
+        probe.extra_headers,
+        fixture.logger,
+        probe.prompt,
+        probe.api_key,
     )
     pre_call = LOGGED.validate_python(fixture.logging[0][1])
-    prepped: Prepped = prepared.prepped
-    data: dict[str, Json] = prepared.data
     return {
         "endpoint_url": prepared.endpoint_url,
-        "prepared_url": prepped.url,
-        "headers": dict(prepped.headers),
+        "prepared_url": prepared.prepped.url,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L267
+        "headers": dict(prepared.prepped.headers),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L267
         "body": prepared.body.decode("utf-8"),
-        "data": data,
+        "data": DATA.validate_python(prepared.data),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L49
         "pre_call": {
             "input": pre_call.input,
-            "api_base": pre_call.additional_args["api_base"],
+            "api_base": pre_call.additional_args.get("api_base"),
             "complete_input_dict": pre_call.additional_args["complete_input_dict"],
         },
     }
@@ -239,7 +234,7 @@ def call_value(probe: Probe) -> Json:
     images = IMAGES.validate_python(dumped)
     data: list[Json] = [{"b64_json": image["b64_json"]} for image in images["data"]]
     request = fixture.used[0]
-    posted_body: Json = json.loads(request[1])
+    posted_body = BODY.validate_json(request[1])
     return {
         "created": images["created"],
         "data": data,
@@ -252,13 +247,15 @@ def call_value(probe: Probe) -> Json:
 def selection_value(probe: Probe) -> Json:
     fixture = Fixture(probe)
     generation(fixture)
-    factory, timeout = fixture.factory_calls[-1] if fixture.factory_calls else ("none", None)
+    calls = fixture.factory_calls
+    factory, timeout = calls[-1] if calls else ("none", None)
+    url = fixture.used[0][0]
     return {
         "factory": factory,
         "timeout_ms": timeout,
         "supplied_requests": len(fixture.supplied),
         "factory_requests": len(fixture.factory),
-        "posted_url": fixture.used[0][0],
+        "posted_url": url,
     }
 
 
