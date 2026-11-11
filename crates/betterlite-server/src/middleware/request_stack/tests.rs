@@ -1,17 +1,26 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header};
 use axum::routing::{get, post};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::request_root_paths::Settings as RootSettings;
 use betterlite_config::sections::request_size_limit::Settings as SizeSettings;
 use betterlite_config::sections::security_headers::Settings as HeadersSettings;
 use betterlite_redis::request_batch::scope::ACTIVE_REQUEST_BATCHES;
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use rstest::rstest;
 use tower::ServiceExt as _;
 
 use crate::middleware::request_root_paths::RootPaths;
+use crate::server::application;
+use crate::server::chat_setup::chat_executor;
 
 use super::wrap;
 
@@ -183,4 +192,51 @@ async fn a_request_without_a_root_marker_reaches_the_router() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, b"ok");
     assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY");
+}
+
+fn server_application(source: &str, environment: &[(&str, &str)]) -> Router {
+    let lookup = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    let config = ConfigLoader {
+        lookup: lookup.clone(),
+    }
+    .load(source)
+    .unwrap();
+    let executor = chat_executor(&config, &lookup, StdRng::seed_from_u64(1)).unwrap();
+    application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap()
+}
+
+#[tokio::test]
+async fn the_server_wires_the_size_limit_from_config() {
+    let app = server_application("general_settings:\n  max_request_size_mb: 1\n", &[]);
+    let request = Request::post("/v1/chat/completions")
+        .header(header::CONTENT_LENGTH, "2097152")
+        .body(Body::from(vec![b'a'; 2 * MIB]))
+        .unwrap();
+    let (status, headers, body) = send(app, request).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(
+        headers.get(header::CONTENT_TYPE).map(HeaderValue::as_bytes),
+        Some(&b"application/json"[..])
+    );
+    assert_eq!(
+        body,
+        br#"{"error":"Request size is too large. Max size is 1 MB"}"#
+    );
+}
+
+#[tokio::test]
+async fn the_server_wires_the_security_headers_from_config() {
+    let app = server_application("{}", &[("LITELLM_ENABLE_HSTS", "true")]);
+    let request = Request::get("/health/liveliness")
+        .body(Body::empty())
+        .unwrap();
+    let (status, headers, _body) = send(app, request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers[header::STRICT_TRANSPORT_SECURITY],
+        "max-age=31536000; includeSubDomains"
+    );
 }
