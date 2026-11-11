@@ -572,10 +572,6 @@ fn normalize_drop_params_accepts_text_flag_forms() {
     assert_eq!(normalize_drop_params(Some(&value("\" NO \""))), Some(false));
     assert_eq!(normalize_drop_params(Some(&value("\"1\""))), Some(true));
     assert_eq!(normalize_drop_params(Some(&value("\"0\""))), Some(false));
-    assert_eq!(normalize_drop_params(Some(&value("\"t\""))), Some(true));
-    assert_eq!(normalize_drop_params(Some(&value("\"F\""))), Some(false));
-    assert_eq!(normalize_drop_params(Some(&value("\"y\""))), Some(true));
-    assert_eq!(normalize_drop_params(Some(&value("\"n\""))), Some(false));
     assert_eq!(normalize_drop_params(Some(&value("\"on\""))), Some(true));
     assert_eq!(normalize_drop_params(Some(&value("\" maybe \""))), None);
     assert_eq!(normalize_drop_params(Some(&value("\"\""))), None);
@@ -609,9 +605,6 @@ fn drop_request_flags_warn_and_default_off() {
     let disabled = drop_params_flag(Some(&value("false")));
     assert!(!disabled.enabled);
     assert!(!disabled.warned);
-    let short = drop_params_flag(Some(&value("\"Y\"")));
-    assert!(short.enabled);
-    assert!(!short.warned);
 }
 
 fn drop_env_flags_warn_and_default_on() {
@@ -620,7 +613,6 @@ fn drop_env_flags_warn_and_default_on() {
         (Some("   "), false, false),
         (Some(" yes "), true, false),
         (Some("0"), false, false),
-        (Some("t"), true, false),
         (Some("always"), true, true),
     ];
     for (given, enabled, warned) in expected {

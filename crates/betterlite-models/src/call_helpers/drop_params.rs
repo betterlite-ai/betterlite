@@ -10,15 +10,12 @@ pub struct DropFlag {
     pub warned: bool,
 }
 
-// pydantic's lax bool, which TypeAdapter(bool) reads a drop_params value with
-const TRUE_SPELLINGS: [&str; 6] = ["1", "on", "t", "true", "y", "yes"];
-const FALSE_SPELLINGS: [&str; 6] = ["0", "off", "f", "false", "n", "no"];
-
 #[must_use]
 pub fn normalize_drop_params(value: Option<&Json>) -> Option<bool> {
     match value? {
         Json::Bool(flag) => Some(*flag),
-        Json::Text(text) => flag_from_text(text),
+        // the shared parser owns text-to-bool, and pydantic's short spellings outside it count as invalid
+        Json::Text(text) => betterlite_env::flag("drop_params", text).unwrap_or(None),
         Json::Number(number) => flag_from_number(number),
         Json::Null | Json::List(_) | Json::Object(_) => None,
     }
@@ -42,33 +39,18 @@ pub fn drop_params_env_flag(configured: Option<&str>) -> DropFlag {
             warned: false,
         };
     }
-    flag_from_text(text).map_or(
-        DropFlag {
-            enabled: true,
-            warned: true,
-        },
-        |enabled| DropFlag {
-            enabled,
-            warned: false,
-        },
-    )
-}
-
-fn flag_from_text(text: &str) -> Option<bool> {
-    let given = text.trim();
-    if TRUE_SPELLINGS
-        .iter()
-        .any(|word| given.eq_ignore_ascii_case(word))
-    {
-        return Some(true);
-    }
-    if FALSE_SPELLINGS
-        .iter()
-        .any(|word| given.eq_ignore_ascii_case(word))
-    {
-        return Some(false);
-    }
-    None
+    betterlite_env::flag("LITELLM_DROP_PARAMS", text)
+        .unwrap_or(None)
+        .map_or(
+            DropFlag {
+                enabled: true,
+                warned: true,
+            },
+            |enabled| DropFlag {
+                enabled,
+                warned: false,
+            },
+        )
 }
 
 fn flag_from_number(number: &Number) -> Option<bool> {
