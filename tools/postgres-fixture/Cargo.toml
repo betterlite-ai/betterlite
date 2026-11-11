@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+chrono.workspace = true
 hex.workspace = true
 rust_decimal = { workspace = true, features = ["db-tokio-postgres"] }
 rustls.workspace = true
