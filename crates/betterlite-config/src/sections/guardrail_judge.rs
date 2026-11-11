@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, resolve_number, resolve_string};
+use crate::resolve::{parse_float, resolve_number};
 
 const GUARDRAIL_KIND: &str = "llm_as_a_judge";
 
@@ -180,14 +180,6 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let judge_model = match parameters.judge_model {
-            Some(model) => Some(resolve_string(
-                model,
-                &format!("{prefix}.judge_model"),
-                lookup,
-            )?),
-            None => None,
-        };
         let overall_threshold = resolve_number(
             parameters.overall_threshold,
             &format!("{prefix}.overall_threshold"),
@@ -197,7 +189,7 @@ impl Entry {
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             params: JudgeParams {
-                judge_model,
+                judge_model: parameters.judge_model,
                 criteria: parameters.criteria,
                 overall_threshold,
                 on_failure: parameters.on_failure,
