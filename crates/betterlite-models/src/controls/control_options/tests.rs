@@ -26,6 +26,11 @@ fn text(value: &str) -> JsonValue {
     JsonValue::Text(value.to_owned())
 }
 
+// Nineteen ASCII digits that still parse below the digit limit's value bound, so the length check is the only rejection.
+fn padded_nineteen_digits() -> JsonValue {
+    JsonValue::Text(format!("{}1", "0".repeat(18)))
+}
+
 #[rstest]
 #[case::absent(None, Ok(None))]
 #[case::explicit_null(Some(JsonValue::Null), Ok(None))]
@@ -41,6 +46,7 @@ fn text(value: &str) -> JsonValue {
 #[case::padded_decimal_string(Some(text("000000000000000001")), Ok(Some(1)))]
 #[case::eighteen_digit_string(Some(text("999999999999999999")), Ok(Some(999_999_999_999_999_999)))]
 #[case::nineteen_digit_string(Some(text("1111111111111111111")), Err(()))]
+#[case::padded_nineteen_digit_string(Some(padded_nineteen_digits()), Err(()))]
 #[case::zero_string(Some(text("0")), Err(()))]
 #[case::empty_string(Some(text("")), Err(()))]
 #[case::leading_space(Some(text(" 5")), Err(()))]
