@@ -65,36 +65,17 @@ fn oversized_case() -> String {
     case_with(&format!("    daily_usage:\n{rows}\n"))
 }
 
-fn expected_user_row() -> DailyUsageRow {
+fn fixture_row(table: DailyUsageTable) -> DailyUsageRow {
     DailyUsageRow {
-        table: DailyUsageTable::User,
-        id: "shared-row".to_owned(),
+        table,
+        id: "row".to_owned(),
         entity_id: Some("alice".to_owned()),
         date: "2025-01-01".to_owned(),
         key_index: 0,
-        model: Some("openai/gpt-5".to_owned()),
-        custom_llm_provider: Some("openai".to_owned()),
-        model_group: Some("default".to_owned()),
-        spend: Decimal::new(125, 2),
-        prompt_tokens: 100,
-        completion_tokens: 50,
-        api_requests: 2,
-        successful_requests: 1,
-        failed_requests: 1,
-    }
-}
-
-fn expected_team_row() -> DailyUsageRow {
-    DailyUsageRow {
-        table: DailyUsageTable::Team,
-        id: "shared-row".to_owned(),
-        entity_id: Some("team-red".to_owned()),
-        date: "2025-02-02".to_owned(),
-        key_index: 1,
         model: None,
         custom_llm_provider: None,
         model_group: None,
-        spend: Decimal::new(-5, 1),
+        spend: Decimal::ZERO,
         prompt_tokens: 0,
         completion_tokens: 0,
         api_requests: 0,
@@ -103,27 +84,35 @@ fn expected_team_row() -> DailyUsageRow {
     }
 }
 
-fn expected_tag_row() -> DailyUsageRow {
-    DailyUsageRow {
-        table: DailyUsageTable::Tag,
-        id: "shared-row".to_owned(),
-        entity_id: Some("tag-blue".to_owned()),
-        date: "2025-03-03".to_owned(),
-        key_index: 0,
-        model: Some("openai/gpt-5".to_owned()),
-        custom_llm_provider: Some("openai".to_owned()),
-        model_group: None,
-        spend: Decimal::ZERO,
-        prompt_tokens: 7,
-        completion_tokens: 3,
-        api_requests: 0,
-        successful_requests: 0,
-        failed_requests: 0,
-    }
-}
-
 fn expected_rows() -> Vec<DailyUsageRow> {
-    vec![expected_user_row(), expected_team_row(), expected_tag_row()]
+    let mut user = fixture_row(DailyUsageTable::User);
+    user.id = "shared-row".to_owned();
+    user.model = Some("openai/gpt-5".to_owned());
+    user.custom_llm_provider = Some("openai".to_owned());
+    user.model_group = Some("default".to_owned());
+    user.spend = Decimal::new(125, 2);
+    user.prompt_tokens = 100;
+    user.completion_tokens = 50;
+    user.api_requests = 2;
+    user.successful_requests = 1;
+    user.failed_requests = 1;
+
+    let mut team = fixture_row(DailyUsageTable::Team);
+    team.id = "shared-row".to_owned();
+    team.entity_id = Some("team-red".to_owned());
+    team.date = "2025-02-02".to_owned();
+    team.key_index = 1;
+    team.spend = Decimal::new(-5, 1);
+
+    let mut tag = fixture_row(DailyUsageTable::Tag);
+    tag.id = "shared-row".to_owned();
+    tag.entity_id = Some("tag-blue".to_owned());
+    tag.date = "2025-03-03".to_owned();
+    tag.model = Some("openai/gpt-5".to_owned());
+    tag.custom_llm_provider = Some("openai".to_owned());
+    tag.prompt_tokens = 7;
+    tag.completion_tokens = 3;
+    vec![user, team, tag]
 }
 
 fn matches_kind(error: &DailyUsageError, kind: DailyUsageKind) -> bool {

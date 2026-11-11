@@ -8,7 +8,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
-use tokio_postgres::{Client, NoTls, Row};
+use tokio_postgres::{Client, NoTls};
 
 use crate::connection::{PostgresFixture, RandomDatabaseName};
 use crate::daily_usage::{self, DailyUsageError, DailyUsageRow, DailyUsageTable};
@@ -300,36 +300,46 @@ async fn disconnect(client: Client, mut driver: JoinSet<()>) {
     driver.join_next().await.unwrap().unwrap();
 }
 
-fn seed_with_daily_usage(rows: Option<Vec<DailyUsageRow>>) -> FixtureSeed {
+fn usage_seed_with(rows: Vec<DailyUsageRow>) -> FixtureSeed {
     FixtureSeed {
-        users: Vec::new(),
-        keys: Vec::new(),
-        teams: Vec::new(),
+        users: vec![
+            UserRow {
+                user_id: "alice".to_owned(),
+                user_email: None,
+            },
+            UserRow {
+                user_id: "bob".to_owned(),
+                user_email: None,
+            },
+        ],
+        keys: vec![
+            KeyRow {
+                token: SecretString::from("sk-alice-token"),
+                user_id: "alice".to_owned(),
+                team_id: None,
+                role: None,
+            },
+            KeyRow {
+                token: SecretString::from("sk-bob-token"),
+                user_id: "bob".to_owned(),
+                team_id: None,
+                role: None,
+            },
+        ],
+        teams: vec![TeamRow {
+            team_id: "team-red".to_owned(),
+            team_alias: None,
+        }],
         memberships: Vec::new(),
         budgets: Vec::new(),
         jwt_mappings: Vec::new(),
-        daily_usage: rows,
+        daily_usage: Some(rows),
         finops: None,
         discovery_skills: None,
         search_tools: None,
         dashboard: None,
         dashboard_governance: None,
     }
-}
-
-fn usage_seed_with(rows: Vec<DailyUsageRow>) -> FixtureSeed {
-    let mut seed = seed_with_daily_usage(Some(rows));
-    seed.users.push(UserRow {
-        user_id: "alice".to_owned(),
-        user_email: None,
-    });
-    seed.keys.push(KeyRow {
-        token: SecretString::from("sk-token"),
-        user_id: "alice".to_owned(),
-        team_id: None,
-        role: None,
-    });
-    seed
 }
 
 fn valid_row() -> DailyUsageRow {
@@ -351,94 +361,43 @@ fn valid_row() -> DailyUsageRow {
     }
 }
 
-fn user_usage_row() -> DailyUsageRow {
-    DailyUsageRow {
-        table: DailyUsageTable::User,
-        id: "shared-row".to_owned(),
-        entity_id: Some("alice".to_owned()),
-        date: "2025-01-01".to_owned(),
-        key_index: 0,
-        model: Some("openai/gpt-5".to_owned()),
-        custom_llm_provider: Some("openai".to_owned()),
-        model_group: Some("default".to_owned()),
-        spend: Decimal::new(125, 2),
-        prompt_tokens: 100,
-        completion_tokens: 50,
-        api_requests: 2,
-        successful_requests: 1,
-        failed_requests: 1,
-    }
-}
-
-fn team_usage_row() -> DailyUsageRow {
-    DailyUsageRow {
-        table: DailyUsageTable::Team,
-        id: "shared-row".to_owned(),
-        entity_id: Some("team-red".to_owned()),
-        date: "2025-02-02".to_owned(),
-        key_index: 1,
-        model: None,
-        custom_llm_provider: None,
-        model_group: None,
-        spend: Decimal::new(-50, 2),
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        api_requests: 0,
-        successful_requests: 0,
-        failed_requests: 0,
-    }
-}
-
-fn tag_usage_row() -> DailyUsageRow {
-    DailyUsageRow {
-        table: DailyUsageTable::Tag,
-        id: "shared-row".to_owned(),
-        entity_id: Some("tag-blue".to_owned()),
-        date: "2025-03-03".to_owned(),
-        key_index: 0,
-        model: Some("openai/gpt-5".to_owned()),
-        custom_llm_provider: Some("openai".to_owned()),
-        model_group: None,
-        spend: Decimal::ZERO,
-        prompt_tokens: 7,
-        completion_tokens: 3,
-        api_requests: 1,
-        successful_requests: 1,
-        failed_requests: 0,
-    }
-}
-
 fn usage_rows() -> Vec<DailyUsageRow> {
-    vec![user_usage_row(), team_usage_row(), tag_usage_row()]
+    let mut user = valid_row();
+    user.id = "shared-row".to_owned();
+    user.model = Some("openai/gpt-5".to_owned());
+    user.custom_llm_provider = Some("openai".to_owned());
+    user.model_group = Some("default".to_owned());
+    user.spend = Decimal::new(125, 2);
+    user.prompt_tokens = 100;
+    user.completion_tokens = 50;
+    user.api_requests = 2;
+    user.successful_requests = 1;
+    user.failed_requests = 1;
+
+    let mut team = valid_row();
+    team.table = DailyUsageTable::Team;
+    team.id = "shared-row".to_owned();
+    team.entity_id = Some("team-red".to_owned());
+    team.date = "2025-02-02".to_owned();
+    team.key_index = 1;
+    team.spend = Decimal::new(-50, 2);
+
+    let mut tag = valid_row();
+    tag.table = DailyUsageTable::Tag;
+    tag.id = "shared-row".to_owned();
+    tag.entity_id = Some("tag-blue".to_owned());
+    tag.date = "2025-03-03".to_owned();
+    tag.model = Some("openai/gpt-5".to_owned());
+    tag.custom_llm_provider = Some("openai".to_owned());
+    tag.prompt_tokens = 7;
+    tag.completion_tokens = 3;
+    tag.api_requests = 1;
+    tag.successful_requests = 1;
+    vec![user, team, tag]
 }
 
 fn usage_seed() -> FixtureSeed {
-    let mut seed = seed_with_daily_usage(Some(usage_rows()));
-    seed.users.push(UserRow {
-        user_id: "alice".to_owned(),
-        user_email: None,
-    });
-    seed.users.push(UserRow {
-        user_id: "bob".to_owned(),
-        user_email: None,
-    });
-    seed.teams.push(TeamRow {
-        team_id: "team-red".to_owned(),
-        team_alias: None,
-    });
-    seed.keys.push(KeyRow {
-        token: SecretString::from("sk-alice-token"),
-        user_id: "alice".to_owned(),
-        team_id: None,
-        role: None,
-    });
-    seed.keys.push(KeyRow {
-        token: SecretString::from("sk-bob-token"),
-        user_id: "bob".to_owned(),
-        team_id: None,
-        role: None,
-    });
-    seed
+    usage_seed_with(usage_rows())
 }
 
 async fn assert_table_schema(client: &Client, table: &str, expected: &[ColumnExpectation]) {
@@ -505,23 +464,29 @@ async fn assert_table_indexes(client: &Client, table: &str, expected: &[IndexExp
     }
 }
 
-async fn assert_table_absent(client: &Client, table: &str) {
-    let statement = "SELECT count(*) FROM information_schema.tables \
-        WHERE table_schema = current_schema() AND table_name = $1";
-    let count: i64 = client.query_one(statement, &[&table]).await.unwrap().get(0);
-    assert_eq!(
-        count, 0,
-        "{table} must stay absent without a daily_usage seed"
-    );
+enum TableState {
+    Absent,
+    Empty,
 }
 
-async fn assert_table_empty(client: &Client, table: &str) {
-    let count: i64 = client
-        .query_one(&format!("SELECT count(*) FROM \"{table}\""), &[])
-        .await
-        .unwrap()
-        .get(0);
-    assert_eq!(count, 0, "{table} must install empty");
+async fn assert_table_state(client: &Client, table: &str, state: TableState) {
+    let statement = "SELECT count(*) FROM information_schema.tables \
+        WHERE table_schema = current_schema() AND table_name = $1";
+    let tables: i64 = client.query_one(statement, &[&table]).await.unwrap().get(0);
+    match state {
+        TableState::Absent => assert_eq!(
+            tables, 0,
+            "{table} must stay absent without a daily_usage seed"
+        ),
+        TableState::Empty => {
+            let rows: i64 = client
+                .query_one(&format!("SELECT count(*) FROM \"{table}\""), &[])
+                .await
+                .unwrap()
+                .get(0);
+            assert_eq!((tables, rows), (1, 0), "{table} must install empty");
+        }
+    }
 }
 
 #[tokio::test]
@@ -530,7 +495,7 @@ async fn usage_schema_matches_pin() {
         return;
     }
     let (_server, admin_url) = postgres_server().await;
-    let fixture = provision(&admin_url, &seed_with_daily_usage(Some(Vec::new()))).await;
+    let fixture = provision(&admin_url, &usage_seed_with(Vec::new())).await;
     let (client, driver) = connect(&fixture.options.url).await;
     assert_table_schema(&client, "LiteLLM_DailyUserSpend", USER_COLUMNS).await;
     assert_table_schema(&client, "LiteLLM_DailyTeamSpend", TEAM_COLUMNS).await;
@@ -538,128 +503,84 @@ async fn usage_schema_matches_pin() {
     assert_table_indexes(&client, "LiteLLM_DailyUserSpend", USER_INDEXES).await;
     assert_table_indexes(&client, "LiteLLM_DailyTeamSpend", TEAM_INDEXES).await;
     assert_table_indexes(&client, "LiteLLM_DailyTagSpend", TAG_INDEXES).await;
-    assert_table_empty(&client, "LiteLLM_DailyUserSpend").await;
-    assert_table_empty(&client, "LiteLLM_DailyTeamSpend").await;
-    assert_table_empty(&client, "LiteLLM_DailyTagSpend").await;
+    assert_table_state(&client, "LiteLLM_DailyUserSpend", TableState::Empty).await;
+    assert_table_state(&client, "LiteLLM_DailyTeamSpend", TableState::Empty).await;
+    assert_table_state(&client, "LiteLLM_DailyTagSpend", TableState::Empty).await;
     disconnect(client, driver).await;
     fixture.close_async().await.unwrap();
 
     let baseline = provision(&admin_url, &FixtureSeed::default()).await;
     let (baseline_client, baseline_driver) = connect(&baseline.options.url).await;
-    assert_table_absent(&baseline_client, "LiteLLM_DailyUserSpend").await;
-    assert_table_absent(&baseline_client, "LiteLLM_DailyTeamSpend").await;
-    assert_table_absent(&baseline_client, "LiteLLM_DailyTagSpend").await;
+    assert_table_state(
+        &baseline_client,
+        "LiteLLM_DailyUserSpend",
+        TableState::Absent,
+    )
+    .await;
+    assert_table_state(
+        &baseline_client,
+        "LiteLLM_DailyTeamSpend",
+        TableState::Absent,
+    )
+    .await;
+    assert_table_state(
+        &baseline_client,
+        "LiteLLM_DailyTagSpend",
+        TableState::Absent,
+    )
+    .await;
     disconnect(baseline_client, baseline_driver).await;
     baseline.close_async().await.unwrap();
 }
 
-async fn assert_user_stored(client: &Client) {
-    let statement = "SELECT \"id\", \"user_id\", \"date\", \"api_key\", \"model\", \"model_group\", \
-        \"custom_llm_provider\", \"spend\"::text AS \"spend\", \"prompt_tokens\", \
-        \"completion_tokens\", \"api_requests\", \"successful_requests\", \"failed_requests\", \
-        \"mcp_namespaced_tool_name\", \"endpoint\", \
-        \"created_at\" = '2026-01-01T00:00:00'::timestamp(3) AS created_fixed, \
-        \"updated_at\" = '2026-01-01T00:00:00'::timestamp(3) AS updated_fixed \
-        FROM \"LiteLLM_DailyUserSpend\"";
-    let row = client.query_one(statement, &[]).await.unwrap();
-    assert_user_identity(&row);
-    assert_user_counters(&row);
+async fn stored_row(client: &Client, statement: &str) -> String {
+    client.query_one(statement, &[]).await.unwrap().get(0)
 }
 
-fn assert_user_identity(row: &Row) {
-    assert_eq!(row.get::<_, String>("id"), "shared-row");
-    assert_eq!(
-        row.get::<_, Option<String>>("user_id"),
-        Some("alice".to_owned())
-    );
-    assert_eq!(row.get::<_, String>("date"), "2025-01-01");
-    assert_eq!(
-        row.get::<_, String>("api_key"),
+const USER_ROW_SQL: &str = "SELECT concat_ws('|', \"id\", coalesce(\"user_id\", '<null>'), \"date\", \
+    \"api_key\", coalesce(\"model\", '<null>'), coalesce(\"model_group\", '<null>'), \
+    coalesce(\"custom_llm_provider\", '<null>'), \"spend\"::text, \"prompt_tokens\"::text, \
+    \"completion_tokens\"::text, \"api_requests\"::text, \"successful_requests\"::text, \
+    \"failed_requests\"::text, coalesce(\"mcp_namespaced_tool_name\", '<null>'), \
+    coalesce(\"endpoint\", '<null>'), \
+    (\"created_at\" = '2026-01-01T00:00:00'::timestamp(3))::text, \
+    (\"updated_at\" = '2026-01-01T00:00:00'::timestamp(3))::text) \
+    FROM \"LiteLLM_DailyUserSpend\"";
+
+const TEAM_ROW_SQL: &str = "SELECT concat_ws('|', \"id\", coalesce(\"team_id\", '<null>'), \"date\", \
+    \"api_key\", coalesce(\"model\", '<null>'), coalesce(\"model_group\", '<null>'), \
+    coalesce(\"custom_llm_provider\", '<null>'), \"spend\"::text, \"prompt_tokens\"::text, \
+    \"completion_tokens\"::text, \"api_requests\"::text, \"successful_requests\"::text, \
+    \"failed_requests\"::text, \"ptu_flat_cost\"::text, \
+    (\"created_at\" = '2026-01-01T00:00:00'::timestamp(3))::text) \
+    FROM \"LiteLLM_DailyTeamSpend\"";
+
+const TAG_ROW_SQL: &str = "SELECT concat_ws('|', \"id\", coalesce(\"tag\", '<null>'), \
+    coalesce(\"request_id\", '<null>'), \"date\", \"api_key\", \"spend\"::text, \
+    \"prompt_tokens\"::text, \"completion_tokens\"::text, \"api_requests\"::text, \
+    \"successful_requests\"::text, \"failed_requests\"::text, \
+    (\"updated_at\" = '2026-01-01T00:00:00'::timestamp(3))::text) \
+    FROM \"LiteLLM_DailyTagSpend\"";
+
+fn expected_user_row() -> String {
+    format!(
+        "shared-row|alice|2025-01-01|{}|openai/gpt-5|default|openai|1.25|100|50|2|1|1|<null>|<null>|true|true",
         FixtureSeed::key_hash("sk-alice-token")
-    );
-    assert_ne!(row.get::<_, String>("api_key"), "sk-alice-token");
-    assert_eq!(
-        row.get::<_, Option<String>>("model"),
-        Some("openai/gpt-5".to_owned())
-    );
-    assert_eq!(
-        row.get::<_, Option<String>>("model_group"),
-        Some("default".to_owned())
-    );
-    assert_eq!(
-        row.get::<_, Option<String>>("custom_llm_provider"),
-        Some("openai".to_owned())
-    );
-    assert_eq!(
-        row.get::<_, Option<String>>("mcp_namespaced_tool_name"),
-        None
-    );
-    assert_eq!(row.get::<_, Option<String>>("endpoint"), None);
-    assert!(row.get::<_, bool>("created_fixed"));
-    assert!(row.get::<_, bool>("updated_fixed"));
+    )
 }
 
-fn assert_user_counters(row: &Row) {
-    assert_eq!(row.get::<_, String>("spend"), "1.25");
-    assert_eq!(row.get::<_, i64>("prompt_tokens"), 100);
-    assert_eq!(row.get::<_, i64>("completion_tokens"), 50);
-    assert_eq!(row.get::<_, i64>("api_requests"), 2);
-    assert_eq!(row.get::<_, i64>("successful_requests"), 1);
-    assert_eq!(row.get::<_, i64>("failed_requests"), 1);
-}
-
-async fn assert_team_stored(client: &Client) {
-    let statement = "SELECT \"team_id\", \"date\", \"api_key\", \"model\", \"custom_llm_provider\", \
-        \"spend\"::text AS \"spend\", \"prompt_tokens\", \"completion_tokens\", \"api_requests\", \
-        \"successful_requests\", \"failed_requests\", \"ptu_flat_cost\"::text AS \"ptu_flat_cost\", \
-        \"created_at\" = '2026-01-01T00:00:00'::timestamp(3) AS created_fixed \
-        FROM \"LiteLLM_DailyTeamSpend\"";
-    let row = client.query_one(statement, &[]).await.unwrap();
-    assert_eq!(
-        row.get::<_, Option<String>>("team_id"),
-        Some("team-red".to_owned())
-    );
-    assert_eq!(row.get::<_, String>("date"), "2025-02-02");
-    assert_eq!(
-        row.get::<_, String>("api_key"),
+fn expected_team_row() -> String {
+    format!(
+        "shared-row|team-red|2025-02-02|{}|<null>|<null>|<null>|-0.5|0|0|0|0|0|0|true",
         FixtureSeed::key_hash("sk-bob-token")
-    );
-    assert_eq!(row.get::<_, Option<String>>("model"), None);
-    assert_eq!(row.get::<_, Option<String>>("custom_llm_provider"), None);
-    assert_eq!(row.get::<_, String>("spend"), "-0.5");
-    assert_eq!(row.get::<_, i64>("prompt_tokens"), 0);
-    assert_eq!(row.get::<_, i64>("completion_tokens"), 0);
-    assert_eq!(row.get::<_, i64>("api_requests"), 0);
-    assert_eq!(row.get::<_, i64>("successful_requests"), 0);
-    assert_eq!(row.get::<_, i64>("failed_requests"), 0);
-    assert_eq!(row.get::<_, String>("ptu_flat_cost"), "0");
-    assert!(row.get::<_, bool>("created_fixed"));
+    )
 }
 
-async fn assert_tag_stored(client: &Client) {
-    let statement = "SELECT \"tag\", \"request_id\", \"date\", \"api_key\", \"spend\"::text AS \"spend\", \
-        \"prompt_tokens\", \"completion_tokens\", \"api_requests\", \"successful_requests\", \
-        \"failed_requests\", \
-        \"updated_at\" = '2026-01-01T00:00:00'::timestamp(3) AS updated_fixed \
-        FROM \"LiteLLM_DailyTagSpend\"";
-    let row = client.query_one(statement, &[]).await.unwrap();
-    assert_eq!(
-        row.get::<_, Option<String>>("tag"),
-        Some("tag-blue".to_owned())
-    );
-    assert_eq!(row.get::<_, Option<String>>("request_id"), None);
-    assert_eq!(row.get::<_, String>("date"), "2025-03-03");
-    assert_eq!(
-        row.get::<_, String>("api_key"),
+fn expected_tag_row() -> String {
+    format!(
+        "shared-row|tag-blue|<null>|2025-03-03|{}|0|7|3|1|1|0|true",
         FixtureSeed::key_hash("sk-alice-token")
-    );
-    assert_eq!(row.get::<_, String>("spend"), "0");
-    assert_eq!(row.get::<_, i64>("prompt_tokens"), 7);
-    assert_eq!(row.get::<_, i64>("completion_tokens"), 3);
-    assert_eq!(row.get::<_, i64>("api_requests"), 1);
-    assert_eq!(row.get::<_, i64>("successful_requests"), 1);
-    assert_eq!(row.get::<_, i64>("failed_requests"), 0);
-    assert!(row.get::<_, bool>("updated_fixed"));
+    )
 }
 
 #[tokio::test]
@@ -670,9 +591,16 @@ async fn usage_seeds_three_tables() {
     let (_server, admin_url) = postgres_server().await;
     let fixture = provision(&admin_url, &usage_seed()).await;
     let (client, driver) = connect(&fixture.options.url).await;
-    assert_user_stored(&client).await;
-    assert_team_stored(&client).await;
-    assert_tag_stored(&client).await;
+    let user = stored_row(&client, USER_ROW_SQL).await;
+    assert_eq!(user, expected_user_row());
+    assert!(
+        !user.contains("sk-alice-token"),
+        "the raw key must not be stored"
+    );
+    let team = stored_row(&client, TEAM_ROW_SQL).await;
+    assert_eq!(team, expected_team_row());
+    let tag = stored_row(&client, TAG_ROW_SQL).await;
+    assert_eq!(tag, expected_tag_row());
     disconnect(client, driver).await;
     fixture.close_async().await.unwrap();
 }
@@ -738,8 +666,8 @@ fn assert_usage_error(error: FixtureError, expected: &ExpectedError) {
     assert!(matched, "unexpected daily usage error {source:?}");
 }
 
-fn oversized_rows() -> Vec<DailyUsageRow> {
-    (0_usize..=256)
+fn unique_rows(count: usize) -> Vec<DailyUsageRow> {
+    (0..count)
         .map(|index| {
             let mut row = valid_row();
             row.id = format!("row-{index}");
@@ -748,22 +676,19 @@ fn oversized_rows() -> Vec<DailyUsageRow> {
         .collect()
 }
 
+fn oversized_rows() -> Vec<DailyUsageRow> {
+    unique_rows(257)
+}
+
 fn boundary_rows() -> Vec<DailyUsageRow> {
-    let mut rows = (0_usize..256)
-        .map(|index| {
-            let mut row = valid_row();
-            row.id = format!("row-{index}");
-            row
-        })
-        .collect::<Vec<_>>();
-    if let Some(first) = rows.first_mut() {
-        first.id = "i".repeat(64);
-        first.date = "d".repeat(64);
-        first.entity_id = Some("e".repeat(4096));
-        first.model = Some("m".repeat(4096));
-        first.model_group = Some("g".repeat(4096));
-        first.custom_llm_provider = Some("p".repeat(4096));
-    }
+    let mut rows = unique_rows(256);
+    let first = rows.first_mut().expect("boundary rows are not empty");
+    first.id = "i".repeat(64);
+    first.date = "d".repeat(64);
+    first.entity_id = Some("e".repeat(4096));
+    first.model = Some("m".repeat(4096));
+    first.model_group = Some("g".repeat(4096));
+    first.custom_llm_provider = Some("p".repeat(4096));
     rows
 }
 
@@ -851,7 +776,7 @@ fn negative_spend_rows() -> Vec<DailyUsageRow> {
 
 #[rstest]
 #[case::too_many_rows(oversized_rows(), ExpectedError::TooManyRows)]
-#[case::unknown_key(rows_with_key_index(1), ExpectedError::UnknownKey)]
+#[case::unknown_key(rows_with_key_index(2), ExpectedError::UnknownKey)]
 #[case::duplicate_row(duplicate_rows(), ExpectedError::DuplicateRow)]
 #[case::long_id(rows_with_id(65), ExpectedError::TextTooLong("id"))]
 #[case::long_date(rows_with_date(65), ExpectedError::TextTooLong("date"))]
@@ -907,7 +832,7 @@ async fn seed_revalidates_direct_callers() {
     let rows = vec![valid_row(), bad];
     let error = daily_usage::seed(&client, &rows, &keys).await.unwrap_err();
     assert!(matches!(error, DailyUsageError::NegativeCounter { .. }));
-    assert_table_empty(&client, "LiteLLM_DailyUserSpend").await;
+    assert_table_state(&client, "LiteLLM_DailyUserSpend", TableState::Empty).await;
     disconnect(client, driver).await;
     fixture.close_async().await.unwrap();
 }

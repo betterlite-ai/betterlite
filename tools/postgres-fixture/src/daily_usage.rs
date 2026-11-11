@@ -178,38 +178,48 @@ pub async fn seed(
 ) -> Result<(), DailyUsageError> {
     validate(rows, keys)?;
     for (row_index, row) in rows.iter().enumerate() {
-        let key = keys.get(row.key_index).ok_or(DailyUsageError::UnknownKey {
-            row: row_index,
-            key_index: row.key_index,
-            keys: keys.len(),
-        })?;
-        let api_key = FixtureSeed::key_hash(key.token.expose_secret());
-        let statement = match row.table {
-            DailyUsageTable::User => USER_INSERT,
-            DailyUsageTable::Team => TEAM_INSERT,
-            DailyUsageTable::Tag => TAG_INSERT,
-        };
-        let params: &[&(dyn ToSql + Sync)] = &[
-            &row.id,
-            &row.entity_id,
-            &row.date,
-            &api_key,
-            &row.model,
-            &row.model_group,
-            &row.custom_llm_provider,
-            &row.spend,
-            &row.prompt_tokens,
-            &row.completion_tokens,
-            &row.api_requests,
-            &row.successful_requests,
-            &row.failed_requests,
-            &CREATED_AT,
-            &CREATED_AT,
-        ];
-        client
-            .execute(statement, params)
-            .await
-            .map_err(DailyUsageError::Database)?;
+        insert_row(client, row, row_index, keys).await?;
     }
+    Ok(())
+}
+
+async fn insert_row(
+    client: &Client,
+    row: &DailyUsageRow,
+    row_index: usize,
+    keys: &[KeyRow],
+) -> Result<(), DailyUsageError> {
+    let key = keys.get(row.key_index).ok_or(DailyUsageError::UnknownKey {
+        row: row_index,
+        key_index: row.key_index,
+        keys: keys.len(),
+    })?;
+    let api_key = FixtureSeed::key_hash(key.token.expose_secret());
+    let statement = match row.table {
+        DailyUsageTable::User => USER_INSERT,
+        DailyUsageTable::Team => TEAM_INSERT,
+        DailyUsageTable::Tag => TAG_INSERT,
+    };
+    let params: &[&(dyn ToSql + Sync)] = &[
+        &row.id,
+        &row.entity_id,
+        &row.date,
+        &api_key,
+        &row.model,
+        &row.model_group,
+        &row.custom_llm_provider,
+        &row.spend,
+        &row.prompt_tokens,
+        &row.completion_tokens,
+        &row.api_requests,
+        &row.successful_requests,
+        &row.failed_requests,
+        &CREATED_AT,
+        &CREATED_AT,
+    ];
+    client
+        .execute(statement, params)
+        .await
+        .map_err(DailyUsageError::Database)?;
     Ok(())
 }
