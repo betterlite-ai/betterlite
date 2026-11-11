@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::commands::tables::print_http_error;
 use crate::commands::{Client, Payload, Request};
 
-use super::{AUTHENTICATION_FAILED, TeamsError, report_failure};
+use super::{TeamsError, report_failure};
 
 const UPDATE_PATH: &str = "/key/update";
 
@@ -46,9 +46,6 @@ pub(super) fn update_key(
         Ok(response) => response,
         Err(source) => return Err(report_failure(stderr, &source)),
     };
-    if response.status == 401 {
-        return Err(report_failure(stderr, &AUTHENTICATION_FAILED));
-    }
     if response.status >= 400 {
         print_http_error(response.status, &response.body, stdout, stderr);
         return Err(TeamsError::Aborted);

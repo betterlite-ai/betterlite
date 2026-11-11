@@ -586,19 +586,14 @@ fn assign_key_error_prints_the_authentication_line_on_a_401() {
     let echoed = Mutex::new(Vec::new());
 
     let (result, stdout, stderr) = run(
-        TeamsCommand::AssignKey(AssignKey {
-            team_id: Some(String::from("t1")),
-        }),
+        TeamsCommand::AssignKey(AssignKey { team_id: None }),
         &server,
         &mut input,
         &echoed,
     );
 
     assert!(matches!(result, Err(TeamsError::Aborted)));
-    assert!(
-        stdout.contains("Assigning your key to team: t1"),
-        "{stdout}"
-    );
+    assert!(stdout.is_empty(), "{stdout}");
     assert_eq!(
         stderr,
         "Error: Authentication failed. Check your API key.\n"
