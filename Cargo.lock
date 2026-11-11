@@ -1908,8 +1908,12 @@ name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -1931,6 +1935,7 @@ dependencies = [
  "jiff",
  "lettre",
  "mail-builder",
+ "md-5",
  "minijinja",
  "minijinja-contrib",
  "nix",
