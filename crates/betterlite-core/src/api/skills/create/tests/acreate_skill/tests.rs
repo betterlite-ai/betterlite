@@ -12,13 +12,12 @@ async fn acreate_skill_concurrent_calls_keep_their_own_metadata() {
     let fixture = Fixture::new();
     let first_metadata = object(&[("requester", text("first"))]);
     let second_metadata = object(&[("requester", text("second"))]);
+    let first_kwargs_metadata = metadata_with(first_metadata.clone());
+    let second_kwargs_metadata = metadata_with(second_metadata.clone());
     let mut first_values = kwargs();
-    first_values.insert("metadata".to_owned(), metadata_with(first_metadata.clone()));
+    first_values.insert("metadata".to_owned(), first_kwargs_metadata.clone());
     let mut second_values = kwargs();
-    second_values.insert(
-        "metadata".to_owned(),
-        metadata_with(second_metadata.clone()),
-    );
+    second_values.insert("metadata".to_owned(), second_kwargs_metadata.clone());
     let first_call = call_with(hosted_params(), None, None, None, &first_values);
     let second_call = call_with(hosted_params(), None, None, None, &second_values);
     let service = fixture.service();
@@ -33,11 +32,11 @@ async fn acreate_skill_concurrent_calls_keep_their_own_metadata() {
     second.expect("the second hosted create succeeds");
     assert_eq!(
         first_state.litellm_params.get("metadata"),
-        Some(&first_metadata)
+        Some(&first_kwargs_metadata)
     );
     assert_eq!(
         second_state.litellm_params.get("metadata"),
-        Some(&second_metadata)
+        Some(&second_kwargs_metadata)
     );
     let calls = fixture.hosted.calls.lock().expect("the fake");
     assert_eq!(calls.len(), 2);
