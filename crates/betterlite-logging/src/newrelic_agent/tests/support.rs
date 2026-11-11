@@ -496,10 +496,7 @@ impl<'writer> MakeWriter<'writer> for LogBuffer {
     }
 }
 
-pub(super) fn capture_logs<T, F>(action: F) -> (T, String)
-where
-    F: FnOnce() -> T,
-{
+pub(super) fn capture_subscriber() -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
@@ -508,6 +505,14 @@ where
         .with_writer(buffer.clone())
         .finish();
     let guard: DefaultGuard = set_default(subscriber);
+    (buffer, guard)
+}
+
+pub(super) fn capture_logs<T, F>(action: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let (buffer, guard) = capture_subscriber();
     let result = action();
     drop(guard);
     (result, buffer.text())

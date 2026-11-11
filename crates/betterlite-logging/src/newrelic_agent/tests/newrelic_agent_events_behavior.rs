@@ -2,8 +2,8 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::support::{
-    Fixture, call_kwargs, capture_logs, default_fixture, event, event_with_dynamic,
-    fallback_kwargs, fallback_response, json, number_value, object, payload,
+    Fixture, call_kwargs, capture_logs, capture_subscriber, default_fixture, event,
+    event_with_dynamic, fallback_kwargs, fallback_response, json, number_value, object, payload,
 };
 use uuid::Uuid;
 
@@ -269,6 +269,23 @@ fn a_failed_summary_still_records_the_message_events() {
     );
     assert_eq!(fixture.counter.calls(), vec!["newrelic"]);
     assert!(logs.contains("Failed to record New Relic summary event"));
+}
+
+#[tokio::test]
+async fn a_malformed_messages_list_counts_a_failure_on_both_success_handlers() {
+    let fixture = default_fixture();
+    let logger = fixture.build();
+    let mut standard = payload();
+    standard.messages = Some(json(r#"["hello"]"#));
+    let (buffer, _guard) = capture_subscriber();
+    logger.log_success_event(&event(standard.clone())).unwrap();
+    logger
+        .async_log_success_event(event(standard))
+        .await
+        .unwrap();
+    assert_eq!(fixture.counter.calls(), vec!["newrelic", "newrelic"]);
+    assert!(fixture.application.events().is_empty());
+    assert!(buffer.text().contains("Error in New Relic success event"));
 }
 
 #[test]
