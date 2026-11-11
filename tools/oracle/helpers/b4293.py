@@ -4,6 +4,7 @@ from collections.abc import Callable, Coroutine, Sequence
 from datetime import timedelta
 from types import TracebackType
 from typing import Self, TypedDict, cast
+from unittest.mock import AsyncMock, MagicMock
 
 from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
@@ -148,20 +149,6 @@ class FakeAsyncRedis:
         return FakePipeline(self.commands)
 
 
-class NoopServiceLogger:
-    def service_success_hook(self, **_: object) -> None:
-        return None
-
-    def service_failure_hook(self, **_: object) -> None:
-        return None
-
-    async def async_service_success_hook(self, **_: object) -> None:
-        return None
-
-    async def async_service_failure_hook(self, **_: object) -> None:
-        return None
-
-
 def build_cache(commands: FakeCommands) -> RedisCache:
     cache = object.__new__(RedisCache)
     async_client = FakeAsyncRedis(commands)
@@ -171,7 +158,10 @@ def build_cache(commands: FakeCommands) -> RedisCache:
     object.__setattr__(cache, "redis_version", "Unknown")
     breaker = RedisCircuitBreaker(failure_threshold=1, recovery_timeout=60)
     object.__setattr__(cache, "_circuit_breaker", breaker)
-    object.__setattr__(cache, "service_logger_obj", NoopServiceLogger())
+    logger = MagicMock()
+    logger.async_service_success_hook = AsyncMock()
+    logger.async_service_failure_hook = AsyncMock()
+    object.__setattr__(cache, "service_logger_obj", logger)
     object.__setattr__(cache, "redis_client", FakeSyncRedis(commands))
     object.__setattr__(cache, "init_async_client", lambda: async_client)
     return cache
