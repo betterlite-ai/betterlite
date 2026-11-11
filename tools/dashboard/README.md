@@ -13,7 +13,7 @@ Options:
 
 - `--source-repo <checkout>` uses an existing read-only checkout that contains the pinned commit. Its commit object, dashboard tree and archive pass exactly the same verification as a fetched one, and its working tree is never read. `--source-repo ../litellm` prepares without network access when that checkout sits beside the task worktree.
 - `--pin <file>` reads another pin file, `--cache <dir>` and `--out <dir>` move the cache and the published tree, and `--patches <dir>` reads patches from another folder.
-- `--timeout-ms <ms>` bounds each Git call; the defaults are 60 seconds for local reads, 120 seconds for the archive and 10 minutes for the fetch.
+- `--timeout-ms <ms>` bounds each Git call; the defaults are 60 seconds for most local calls, 120 seconds for the archive and cache verification, and 10 minutes for the fetch.
 
 ## Pin and cache
 
@@ -43,7 +43,7 @@ Patches are checked into `ui/dashboard/patches` and applied in filename order. E
       ]
     }
 
-`preimage` is `null` for a file the patch creates and `postimage` is `null` for one it deletes. The record must list exactly the paths named by the patch's `diff --git` headers, and every path must be inside the selected export. Preimages are checked against the current tree before the patch runs, postimages after it, so a later patch sees the output of an earlier one. Rename and copy patches are not part of the contract.
+`preimage` is `null` for a file the patch creates and `postimage` is `null` for one it deletes. The record must list exactly the paths named by the patch's `diff --git` headers, every path must be inside the selected export, and no path may name a protected file. Preimages are checked against the current tree before the patch runs, postimages after it, so a later patch sees the output of an earlier one. Rename and copy patches are not part of the contract.
 
 Each patch runs `git apply --check --binary` before `git apply --binary`. A failed hunk, a wrong hash, an unlisted path or a missing record stops the run. Every preparation starts from the pristine verified export and applies the patches again; an old prepared tree is never patched in place.
 
