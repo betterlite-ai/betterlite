@@ -1,7 +1,7 @@
 mod deferred;
 mod increments;
 mod lifecycle;
-pub(crate) mod limited_size;
+pub mod limited_size;
 mod operations;
 pub(crate) mod reads;
 pub(crate) mod value;
@@ -10,6 +10,7 @@ pub(crate) mod writes;
 #[path = "dual_cache/tests.rs"]
 mod tests;
 
+use std::fmt::Display;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use betterlite_redis::redis_cache::RedisCache;
@@ -42,10 +43,11 @@ pub enum DualCacheError {
         #[from]
         source: RedisCountersError,
     },
-    #[error("the Redis increment pipeline failed")]
-    RedisIncrementPipeline { source: RedisCacheError },
     #[error("the Redis ttl read failed")]
-    RedisTtl { source: RedisCacheError },
+    RedisTtl {
+        #[from]
+        source: RedisCacheError,
+    },
     #[error("the Redis set add failed")]
     RedisSetAdd {
         #[from]
@@ -58,14 +60,8 @@ pub enum DualCacheError {
     },
     #[error("the increment of {value} is not a whole number Redis can add")]
     FractionalIncrement { value: f64 },
-    #[error("the ttl of {seconds} seconds is not a whole number Redis can use")]
-    TtlOutOfRange { seconds: f64 },
     #[error("the Redis count of {value} has no finite float form")]
     CountOutOfRange { value: i64 },
-    #[error("an integer of {value} does not fit the in-memory tier")]
-    IntegerOutOfRange { value: u64 },
-    #[error("the cached number {value} is not finite")]
-    NonFiniteNumber { value: f64 },
     #[error("this cache value has no JSON representation")]
     UnrepresentableValue,
     #[error("the value under {key} is not a set of strings")]
@@ -104,12 +100,12 @@ pub trait MemoryMaxSize {
 }
 
 pub struct DualCache<Memory: MemoryCacheOps> {
-    pub(crate) in_memory_cache: Arc<Memory>,
-    pub(crate) redis_cache: RwLock<Option<Arc<RedisCache>>>,
-    pub(crate) last_redis_batch_access_time: Mutex<LimitedSizeOrderedDict<f64>>,
-    pub(crate) redis_batch_cache_expiry: f64,
-    pub(crate) default_in_memory_ttl: RwLock<Option<f64>>,
-    pub(crate) default_redis_ttl: RwLock<Option<f64>>,
+    pub in_memory_cache: Arc<Memory>,
+    pub redis_cache: RwLock<Option<Arc<RedisCache>>>,
+    pub last_redis_batch_access_time: Mutex<LimitedSizeOrderedDict<f64>>,
+    pub redis_batch_cache_expiry: f64,
+    pub default_in_memory_ttl: RwLock<Option<f64>>,
+    pub default_redis_ttl: RwLock<Option<f64>>,
 }
 
 pub(crate) fn lock_read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
@@ -123,5 +119,19 @@ pub(crate) fn lock_write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
     match lock.write() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+// LiteLLM logs a cache tier failure and carries on with no value, as every dual-cache read does
+pub(crate) fn logged<T, Failure>(result: Result<T, Failure>, message: &str) -> Option<T>
+where
+    Failure: Display,
+{
+    match result {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::error!(%error, "{message}");
+            None
+        }
     }
 }

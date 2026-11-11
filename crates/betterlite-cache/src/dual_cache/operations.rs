@@ -23,6 +23,9 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         redis_cache: Option<Arc<RedisCache>>,
         settings: DualCacheSettings,
     ) -> Self {
+        let expiry = settings
+            .batch_cache_expiry
+            .unwrap_or(DEFAULT_BATCH_CACHE_EXPIRY);
         Self {
             in_memory_cache,
             redis_cache: RwLock::new(redis_cache),
@@ -30,9 +33,7 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
                 entries: IndexMap::new(),
                 max_size: settings.max_redis_batch_cache_size,
             }),
-            redis_batch_cache_expiry: settings
-                .batch_cache_expiry
-                .unwrap_or(DEFAULT_BATCH_CACHE_EXPIRY),
+            redis_batch_cache_expiry: expiry,
             default_in_memory_ttl: RwLock::new(settings.default_in_memory_ttl),
             default_redis_ttl: RwLock::new(settings.default_redis_ttl),
         }
@@ -63,7 +64,14 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         let Some(tier) = redis else {
             return;
         };
-        lifecycle::attach_redis(self, tier, redis_ttl);
+        let mut held = lock_write(&self.redis_cache);
+        if held.is_none() {
+            *held = Some(tier);
+            drop(held);
+            if let Some(ttl) = redis_ttl {
+                *lock_write(&self.default_redis_ttl) = Some(ttl);
+            }
+        }
     }
 
     pub(crate) fn redis(&self) -> Option<Arc<RedisCache>> {
@@ -74,45 +82,41 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
     }
 
     pub fn get_cache(&self, key: &str, local_only: bool) -> Option<Json> {
-        if local_only {
-            return reads::local_get(self, key, "LiteLLM Cache: exception in get_cache");
+        let memory = &*self.in_memory_cache;
+        let ttl = *lock_read(&self.default_in_memory_ttl);
+        match reads::memory_hit(memory, key) {
+            Some(hit) => Some(hit),
+            None if local_only => None,
+            None => reads::redis_read(&self.redis()?, memory, ttl, key),
         }
-        reads::get(self, key)
     }
 
     pub async fn async_get_cache(&self, key: &str, local_only: bool) -> Option<Json> {
-        if local_only {
-            return reads::local_get(self, key, "LiteLLM Cache: exception in async_get_cache");
+        let memory = &*self.in_memory_cache;
+        let hit = reads::memory_hit(memory, key);
+        if hit.is_some() || local_only {
+            return hit;
         }
-        reads::async_get(self, key).await
+        let ttl = *lock_read(&self.default_in_memory_ttl);
+        reads::async_redis_read(&self.redis()?, memory, ttl, key).await
     }
 
     pub fn set_cache(&self, key: &str, value: &Json, options: CacheOptions) {
-        let resolved = options
-            .ttl
-            .or_else(|| *lock_read(&self.default_in_memory_ttl));
-        if let Err(error) = writes::memory_set(self, key, value, resolved) {
-            tracing::debug!(%error, "LiteLLM Cache: exception in set_cache");
-            return;
+        let default = *lock_read(&self.default_in_memory_ttl);
+        let ttl = options.ttl.or(default);
+        let memory = &*self.in_memory_cache;
+        if writes::memory_set(memory, key, value, ttl).is_ok() && !options.local_only {
+            writes::redis_set(self.redis().as_ref(), key, value, ttl);
         }
-        if options.local_only {
-            return;
-        }
-        writes::redis_set(self, key, value, resolved);
     }
 
     pub async fn async_set_cache(&self, key: &str, value: &Json, options: CacheOptions) {
-        let resolved = options
-            .ttl
-            .or_else(|| *lock_read(&self.default_in_memory_ttl));
-        if let Err(error) = writes::memory_set(self, key, value, resolved) {
-            tracing::error!(%error, "LiteLLM Cache: exception in async add_cache");
-            return;
+        let default = *lock_read(&self.default_in_memory_ttl);
+        let ttl = options.ttl.or(default);
+        let memory = &*self.in_memory_cache;
+        if writes::memory_set(memory, key, value, ttl).is_ok() && !options.local_only {
+            writes::async_redis_set(self.redis().as_ref(), key, value, ttl).await;
         }
-        if options.local_only {
-            return;
-        }
-        writes::async_redis_set(self, key, value, resolved).await;
     }
 
     pub async fn async_set_cache_pipeline(
@@ -120,17 +124,13 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         entries: &[(String, Json)],
         options: CacheOptions,
     ) {
-        let resolved = options
-            .ttl
-            .or_else(|| *lock_read(&self.default_in_memory_ttl));
-        if let Err(error) = writes::memory_set_pipeline(self, entries, resolved) {
-            tracing::error!(%error, "LiteLLM Cache: exception in async add_cache");
+        let default = *lock_read(&self.default_in_memory_ttl);
+        let ttl = options.ttl.or(default);
+        let memory = &*self.in_memory_cache;
+        if writes::memory_set_pipeline(memory, entries, ttl).is_err() || options.local_only {
             return;
         }
-        if options.local_only {
-            return;
-        }
-        writes::async_redis_set_pipeline(self, entries, resolved).await;
+        writes::async_redis_set_pipeline(self.redis().as_ref(), entries, ttl).await;
     }
 
     pub fn increment_cache(
@@ -139,11 +139,11 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         value: f64,
         options: CacheOptions,
     ) -> Result<f64, DualCacheError> {
-        let memory = increments::memory_increment(self, key, value, options.ttl)?;
+        let memory = increments::memory_increment(&*self.in_memory_cache, key, value, options.ttl)?;
         if options.local_only {
             return Ok(memory);
         }
-        increments::redis_increment(self, key, value, options.ttl, memory)
+        increments::redis_increment(self.redis().as_ref(), key, value, options.ttl, memory)
     }
 
     pub async fn async_increment_cache(
@@ -152,32 +152,37 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         value: f64,
         options: CacheOptions,
     ) -> Option<f64> {
-        let memory = match increments::memory_increment(self, key, value, options.ttl) {
-            Ok(incremented) => Some(incremented),
+        let memory = &*self.in_memory_cache;
+        let incremented = match increments::memory_increment(memory, key, value, options.ttl) {
+            Ok(incremented) => incremented,
             Err(error) => {
                 tracing::warn!(%error, "in-memory increment failed");
-                None
+                return None;
             }
         };
         if options.local_only {
-            return memory;
+            return Some(incremented);
         }
-        let increment = increments::RedisIncrement {
-            key,
-            value,
-            ttl: options.ttl,
-            memory,
-            refresh_ttl: options.refresh_ttl,
-        };
-        increments::async_redis_increment(self, increment).await
+        increments::async_redis_increment(
+            self.redis().as_ref(),
+            increments::RedisIncrement {
+                key,
+                value,
+                ttl: options.ttl,
+                memory: Some(incremented),
+                refresh_ttl: options.refresh_ttl,
+            },
+        )
+        .await
     }
 
     pub async fn async_increment_cache_pipeline(
         &self,
-        increments: &[RedisPipelineIncrement],
+        operations: &[RedisPipelineIncrement],
         local_only: bool,
     ) -> Option<Vec<f64>> {
-        let memory = match increments::memory_increment_pipeline(self, increments) {
+        let memory = &*self.in_memory_cache;
+        let results = match increments::memory_increment_pipeline(memory, operations) {
             Ok(results) => Some(results),
             Err(error) => {
                 tracing::warn!(%error, "in-memory increment failed");
@@ -185,29 +190,29 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
             }
         };
         if local_only {
-            return memory;
+            return results;
         }
-        increments::async_redis_increment_pipeline(self, increments, memory).await
+        increments::async_redis_increment_pipeline(self.redis().as_ref(), operations, results).await
     }
 
     pub async fn increment_cache_post_call(&self, key: &str, value: f64, ttl: Option<i64>) {
-        let increments = [RedisPipelineIncrement {
+        let operations = [RedisPipelineIncrement {
             key: key.to_owned(),
             increment_value: value,
             ttl,
         }];
-        self.pipeline_increment_post_call(&increments).await;
+        self.pipeline_increment_post_call(&operations).await;
     }
 
-    pub async fn pipeline_increment_post_call(&self, increments: &[RedisPipelineIncrement]) {
+    pub async fn pipeline_increment_post_call(&self, operations: &[RedisPipelineIncrement]) {
         let active = self
             .redis()
             .and_then(|redis| active_post_call_redis_batch(&redis));
         if let Some(batch) = active {
-            increments::queue_post_call_increments(self, &batch, increments);
+            increments::queue_post_call_increments(&*self.in_memory_cache, &batch, operations);
             return;
         }
-        let _pipeline = self.async_increment_cache_pipeline(increments, false).await;
+        let _results = self.async_increment_cache_pipeline(operations, false).await;
     }
 
     pub fn set_cache_pre_call(
@@ -222,7 +227,8 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         let Some(batch) = active else {
             return Ok(None);
         };
-        deferred::set_on_batch(self, &batch, key, value, ttl)
+        let effective = ttl.or_else(|| *lock_read(&self.default_in_memory_ttl));
+        deferred::set_on_batch(&*self.in_memory_cache, &batch, key, value, effective)
     }
 
     pub fn delete_cache_pre_call(
@@ -235,7 +241,7 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         let Some(batch) = active else {
             return Ok(None);
         };
-        deferred::delete_on_batch(self, &batch, key)
+        deferred::delete_on_batch(&*self.in_memory_cache, &batch, key)
     }
 
     pub async fn async_set_cache_sadd(
@@ -244,32 +250,32 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         values: &[String],
         options: CacheOptions,
     ) -> Result<(), DualCacheError> {
-        writes::add_to_memory_set(self, key, values, options.ttl)?;
+        writes::add_to_memory_set(&*self.in_memory_cache, key, values, options.ttl)?;
         if options.local_only {
             return Ok(());
         }
-        lifecycle::redis_set_add(self, key, values, options.ttl).await
+        lifecycle::redis_set_add(self.redis().as_ref(), key, values, options.ttl).await
     }
 
     pub fn flush_cache(&self) -> Result<(), DualCacheError> {
         self.in_memory_cache
             .flush_cache()
-            .map_err(|source| DualCacheError::Memory { source })?;
-        lifecycle::redis_flush(self)
+            .map_err(DualCacheError::from)?;
+        lifecycle::redis_flush(self.redis().as_ref())
     }
 
     pub fn delete_cache(&self, key: &str) -> Result<(), DualCacheError> {
         self.in_memory_cache
             .delete_cache(key)
-            .map_err(|source| DualCacheError::Memory { source })?;
-        lifecycle::redis_delete(self, key)
+            .map_err(DualCacheError::from)?;
+        lifecycle::redis_delete(self.redis().as_ref(), key)
     }
 
     pub async fn async_delete_cache(&self, key: &str) -> Result<(), DualCacheError> {
         self.in_memory_cache
             .delete_cache(key)
-            .map_err(|source| DualCacheError::Memory { source })?;
-        lifecycle::async_redis_delete(self, key).await
+            .map_err(DualCacheError::from)?;
+        lifecycle::async_redis_delete(self.redis().as_ref(), key).await
     }
 
     pub async fn async_delete_cache_keys(&self, keys: &[String]) -> Result<(), DualCacheError> {
@@ -279,19 +285,19 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         for key in keys {
             self.in_memory_cache
                 .delete_cache(key)
-                .map_err(|source| DualCacheError::Memory { source })?;
+                .map_err(DualCacheError::from)?;
         }
-        lifecycle::redis_delete_keys(self, keys).await
+        lifecycle::redis_delete_keys(self.redis().as_ref(), keys).await
     }
 
     pub async fn async_get_ttl(&self, key: &str) -> Result<Option<f64>, DualCacheError> {
         let entries = self
             .in_memory_cache
             .ttl_entries()
-            .map_err(|source| DualCacheError::Memory { source })?;
+            .map_err(DualCacheError::from)?;
         if let Some((_name, expiry)) = entries.into_iter().find(|(name, _expiry)| name == key) {
             return Ok(Some(expiry));
         }
-        lifecycle::redis_ttl(self, key).await
+        lifecycle::redis_ttl(self.redis().as_ref(), key).await
     }
 }

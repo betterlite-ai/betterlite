@@ -1,0 +1,11 @@
+task: B4293
+deviations:
+  - what: The batch access times sit in a std Mutex around LimitedSizeOrderedDict, where LiteLLM uses a threading.Lock next to its OrderedDict. Eviction order and writer exclusion are the same.
+    why: Rust needs a lock type that owns the data it guards.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L102-L103
+  - what: DualCache takes an already built memory tier and an optional Redis tier instead of constructor options that it builds the tiers from. attach_redis_cache still wires Redis later and keeps what was set.
+    why: Rust passes the owned tiers in, and B4299 builds the backends from configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L87-L100
+  - what: The async operations are native Rust futures, so the deferred increment failure hook runs when the Redis batch settles and not on an asyncio future callback.
+    why: Rust has no asyncio event loop; the hook still sees the settled result, including a cancelled one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L609-L643

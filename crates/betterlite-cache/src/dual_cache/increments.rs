@@ -4,97 +4,64 @@ use betterlite_redis::batch::RedisBatch;
 use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::batch::result::{Settled, SettledFollowUp};
 use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
+use betterlite_redis::redis_cache::RedisCache;
 use num_traits::ToPrimitive as _;
 
-use super::{DualCache, DualCacheError};
+use super::DualCacheError;
 use crate::backend::{CacheResult, memory::MemoryCacheOps};
 use crate::types::pipeline::RedisPipelineIncrement;
 
-pub(crate) fn whole_increment(value: f64) -> Result<i64, DualCacheError> {
-    let whole = value
-        .to_i64()
-        .ok_or(DualCacheError::FractionalIncrement { value })?;
-    (whole.to_f64() == Some(value))
-        .then_some(whole)
-        .ok_or(DualCacheError::FractionalIncrement { value })
-}
-
-pub(crate) fn whole_seconds(ttl: Option<f64>) -> Result<Option<i64>, DualCacheError> {
-    ttl.map_or_else(
-        || Ok(None),
-        |seconds| {
-            seconds
-                .trunc()
-                .to_i64()
-                .map(Some)
-                .ok_or(DualCacheError::TtlOutOfRange { seconds })
-        },
-    )
-}
-
-pub(crate) fn memory_increment<Memory>(
-    cache: &DualCache<Memory>,
+pub(crate) fn memory_increment(
+    memory: &dyn MemoryCacheOps,
     key: &str,
     value: f64,
     ttl: Option<f64>,
-) -> Result<f64, DualCacheError>
-where
-    Memory: MemoryCacheOps,
-{
-    cache
-        .in_memory_cache
+) -> Result<f64, DualCacheError> {
+    memory
         .increment_cache(key, value, ttl)
         .map_err(|source| DualCacheError::Memory { source })
 }
 
 // the memory pipeline forwards no ttl: LiteLLM's InMemoryCache.async_increment_pipeline ignores it
-pub(crate) fn memory_increment_pipeline<Memory>(
-    cache: &DualCache<Memory>,
-    increments: &[RedisPipelineIncrement],
-) -> CacheResult<Vec<f64>>
-where
-    Memory: MemoryCacheOps,
-{
-    let mut results = Vec::with_capacity(increments.len());
-    for increment in increments {
-        results.push(cache.in_memory_cache.increment_cache(
-            &increment.key,
-            increment.increment_value,
-            None,
-        )?);
-    }
-    Ok(results)
+pub(crate) fn memory_increment_pipeline(
+    memory: &dyn MemoryCacheOps,
+    operations: &[RedisPipelineIncrement],
+) -> CacheResult<Vec<f64>> {
+    operations
+        .iter()
+        .map(|operation| memory.increment_cache(&operation.key, operation.increment_value, None))
+        .collect()
 }
 
-pub(crate) fn redis_increments(increments: &[RedisPipelineIncrement]) -> Vec<IncrementOperation> {
-    increments
+pub(crate) fn redis_increments(operations: &[RedisPipelineIncrement]) -> Vec<IncrementOperation> {
+    operations
         .iter()
-        .map(|increment| IncrementOperation {
-            key: increment.key.clone(),
-            increment_value: increment.increment_value,
-            ttl: increment.ttl,
+        .map(|operation| IncrementOperation {
+            key: operation.key.clone(),
+            increment_value: operation.increment_value,
+            ttl: operation.ttl,
         })
         .collect()
 }
 
-pub(crate) fn redis_increment<Memory>(
-    cache: &DualCache<Memory>,
+pub(crate) fn redis_increment(
+    redis: Option<&Arc<RedisCache>>,
     key: &str,
     value: f64,
     ttl: Option<f64>,
     memory: f64,
-) -> Result<f64, DualCacheError>
-where
-    Memory: MemoryCacheOps,
-{
-    let Some(redis) = cache.redis() else {
+) -> Result<f64, DualCacheError> {
+    let Some(tier) = redis else {
         return Ok(memory);
     };
-    let whole = whole_increment(value)?;
-    let counted = redis
+    let whole = value
+        .to_i64()
+        .filter(|whole| whole.to_f64() == Some(value))
+        .ok_or(DualCacheError::FractionalIncrement { value })?;
+    let counted = tier
         .counters
         .increment_cache(key, whole, ttl)
-        .map_err(|source| DualCacheError::RedisIncrement { source })?;
+        .map_err(DualCacheError::from)?;
     counted
         .to_f64()
         .ok_or(DualCacheError::CountOutOfRange { value: counted })
@@ -108,30 +75,25 @@ pub(crate) struct RedisIncrement<'key> {
     pub(crate) refresh_ttl: bool,
 }
 
-pub(crate) async fn async_redis_increment<Memory>(
-    cache: &DualCache<Memory>,
+pub(crate) async fn async_redis_increment(
+    redis: Option<&Arc<RedisCache>>,
     increment: RedisIncrement<'_>,
-) -> Option<f64>
-where
-    Memory: MemoryCacheOps,
-{
-    let Some(redis) = cache.redis() else {
+) -> Option<f64> {
+    let Some(tier) = redis else {
         return increment.memory;
     };
-    let redis_ttl = match whole_seconds(increment.ttl) {
-        Ok(seconds) => seconds,
-        Err(error) => {
-            tracing::warn!(%error, "Redis async_increment_cache failed, falling back to in-memory result");
-            return increment.memory;
+    let ttl = match increment.ttl {
+        None => None,
+        Some(seconds) => {
+            let Some(whole) = seconds.trunc().to_i64() else {
+                tracing::warn!("the ttl is outside the whole seconds Redis can hold");
+                return increment.memory;
+            };
+            Some(whole)
         }
     };
-    match redis
-        .async_increment(
-            increment.key,
-            increment.value,
-            redis_ttl,
-            increment.refresh_ttl,
-        )
+    match tier
+        .async_increment(increment.key, increment.value, ttl, increment.refresh_ttl)
         .await
     {
         Ok(incremented) => Some(incremented),
@@ -142,19 +104,16 @@ where
     }
 }
 
-pub(crate) async fn async_redis_increment_pipeline<Memory>(
-    cache: &DualCache<Memory>,
-    increments: &[RedisPipelineIncrement],
+pub(crate) async fn async_redis_increment_pipeline(
+    redis: Option<&Arc<RedisCache>>,
+    operations: &[RedisPipelineIncrement],
     memory: Option<Vec<f64>>,
-) -> Option<Vec<f64>>
-where
-    Memory: MemoryCacheOps,
-{
-    let Some(redis) = cache.redis() else {
+) -> Option<Vec<f64>> {
+    let Some(tier) = redis else {
         return memory;
     };
-    let operations = redis_increments(increments);
-    match redis.async_increment_pipeline(&operations).await {
+    let increment_operations = redis_increments(operations);
+    match tier.async_increment_pipeline(&increment_operations).await {
         Ok(results) => results,
         Err(error) => {
             tracing::warn!(%error, "Redis async_increment_cache_pipeline failed, falling back to in-memory result");
@@ -174,18 +133,17 @@ pub(crate) fn log_deferred_increment_failure(settled: &Settled<f64>) -> Option<S
     }
 }
 
-pub(crate) fn queue_post_call_increments<Memory>(
-    cache: &DualCache<Memory>,
+pub(crate) fn queue_post_call_increments(
+    memory: &dyn MemoryCacheOps,
     batch: &Arc<RedisBatch>,
-    increments: &[RedisPipelineIncrement],
-) where
-    Memory: MemoryCacheOps,
-{
-    if let Err(error) = memory_increment_pipeline(cache, increments) {
+    operations: &[RedisPipelineIncrement],
+) {
+    if let Err(error) = memory_increment_pipeline(memory, operations) {
         tracing::warn!(%error, "in-memory increment failed");
     }
-    for increment in increments {
-        let settled = batch.increment(&increment.key, increment.increment_value, increment.ttl);
-        settled.on_settled(Arc::new(log_deferred_increment_failure));
+    for operation in operations {
+        batch
+            .increment(&operation.key, operation.increment_value, operation.ttl)
+            .on_settled(Arc::new(log_deferred_increment_failure));
     }
 }
