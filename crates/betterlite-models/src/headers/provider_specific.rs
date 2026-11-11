@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderSpecificHeader {
     #[serde(default)]
     pub custom_llm_provider: String,

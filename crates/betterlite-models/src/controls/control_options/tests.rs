@@ -69,9 +69,10 @@ fn provider_controls_tests_behavior(
     }
     let error = parse_control_options(given.as_ref())
         .expect_err("an invalid control option must be rejected");
-    assert_eq!(error.param, "stream_chunk_size");
-    assert!(error.message.contains("stream_chunk_size"));
-    assert!(error.message.contains("18 digits"));
+    assert_eq!(error.param(), "stream_chunk_size");
+    let message = error.to_string();
+    assert!(message.contains("stream_chunk_size"));
+    assert!(message.contains("18 digits"));
 }
 
 #[test]
@@ -84,19 +85,11 @@ fn constructor_accepts_only_the_valid_range() {
     );
     assert_eq!(
         ControlOptions::new(Some(0)),
-        Err(InvalidControlOption {
-            param: "stream_chunk_size",
-            message: "invalid stream_chunk_size: expected a positive integer of at most 18 digits"
-                .to_owned(),
-        })
+        Err(InvalidControlOption::StreamChunkSize)
     );
     assert_eq!(
         ControlOptions::new(Some(1_000_000_000_000_000_000)),
-        Err(InvalidControlOption {
-            param: "stream_chunk_size",
-            message: "invalid stream_chunk_size: expected a positive integer of at most 18 digits"
-                .to_owned(),
-        })
+        Err(InvalidControlOption::StreamChunkSize)
     );
     assert_eq!(
         ControlOptions::new(Some(999_999_999_999_999_999)),

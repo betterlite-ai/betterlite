@@ -4,8 +4,6 @@ pub const MAX_CONTROL_INT_DIGITS: usize = 18;
 pub const CONTROL_OPTIONS_KEY: &str = "_litellm_control";
 const STREAM_CHUNK_SIZE_PARAM: &str = "stream_chunk_size";
 const STREAM_CHUNK_SIZE_LIMIT: u64 = 1_000_000_000_000_000_000;
-const INVALID_CONTROL_MESSAGE: &str =
-    "invalid stream_chunk_size: expected a positive integer of at most 18 digits";
 
 // Only a validated value exists: there is no Deserialize impl, so request JSON can never construct one.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -13,24 +11,30 @@ pub struct ControlOptions {
     pub stream_chunk_size: Option<u64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InvalidControlOption {
-    pub param: &'static str,
-    pub message: String,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum InvalidControlOption {
+    #[error("invalid stream_chunk_size: expected a positive integer of at most 18 digits")]
+    StreamChunkSize,
+}
+
+impl InvalidControlOption {
+    #[must_use]
+    pub const fn param(&self) -> &'static str {
+        match self {
+            Self::StreamChunkSize => STREAM_CHUNK_SIZE_PARAM,
+        }
+    }
 }
 
 impl ControlOptions {
-    pub fn new(stream_chunk_size: Option<u64>) -> Result<Self, InvalidControlOption> {
+    pub const fn new(stream_chunk_size: Option<u64>) -> Result<Self, InvalidControlOption> {
         let Some(size) = stream_chunk_size else {
             return Ok(Self {
                 stream_chunk_size: None,
             });
         };
         if size == 0 || size >= STREAM_CHUNK_SIZE_LIMIT {
-            return Err(InvalidControlOption {
-                param: STREAM_CHUNK_SIZE_PARAM,
-                message: INVALID_CONTROL_MESSAGE.to_owned(),
-            });
+            return Err(InvalidControlOption::StreamChunkSize);
         }
         Ok(Self {
             stream_chunk_size: Some(size),
@@ -48,24 +52,17 @@ pub fn parse_control_options(
     match value {
         JsonValue::Null => ControlOptions::new(None),
         JsonValue::Number(number) => {
-            let size = number.as_u64().ok_or_else(|| InvalidControlOption {
-                param: STREAM_CHUNK_SIZE_PARAM,
-                message: INVALID_CONTROL_MESSAGE.to_owned(),
-            })?;
+            let size = number
+                .as_u64()
+                .ok_or(InvalidControlOption::StreamChunkSize)?;
             ControlOptions::new(Some(size))
         }
         JsonValue::Text(text) => {
-            let size = decimal_integer(text).ok_or_else(|| InvalidControlOption {
-                param: STREAM_CHUNK_SIZE_PARAM,
-                message: INVALID_CONTROL_MESSAGE.to_owned(),
-            })?;
+            let size = decimal_integer(text).ok_or(InvalidControlOption::StreamChunkSize)?;
             ControlOptions::new(Some(size))
         }
         JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(InvalidControlOption {
-                param: STREAM_CHUNK_SIZE_PARAM,
-                message: INVALID_CONTROL_MESSAGE.to_owned(),
-            })
+            Err(InvalidControlOption::StreamChunkSize)
         }
     }
 }

@@ -38,7 +38,7 @@ impl crate::helpers::Helper for Op {
             Input::Add(fields) => {
                 let headers = add_provider_affinity_header(&fields.headers, &fields.params)
                     .or_value_error()?;
-                Ok(json!({"headers": headers}))
+                Ok(json!(headers))
             }
             Input::StableSession(fields) => {
                 Ok(json!({"session_id": get_stable_session_id(&fields.params)}))

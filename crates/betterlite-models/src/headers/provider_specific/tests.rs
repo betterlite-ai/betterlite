@@ -39,6 +39,11 @@ fn provider_controls_tests_behavior(
     #[case] provider: Option<&str>,
     #[case] expected: &[(&str, &str)],
 ) {
+    let error = serde_json::from_str::<ProviderSpecificHeader>(
+        r#"{"custom_llm_provider":"openai","extra_header":{"a":"1"}}"#,
+    )
+    .expect_err("an unknown entry key is rejected");
+    assert!(error.to_string().contains("extra_header"));
     let scoped = provider_specific_headers(Some(entries), provider);
     let rendered: Vec<(&str, &str)> = scoped
         .iter()

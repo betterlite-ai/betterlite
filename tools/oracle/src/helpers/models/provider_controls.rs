@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::controls::call_params::{
     CallParams, RequestCall, TRUSTED_CREDENTIALS_KEY, TrustedCall, TrustedCredentials, call_params,
 };
-use betterlite_models::controls::control_options::{
-    ControlOptions, InvalidControlOption, parse_control_options,
-};
+use betterlite_models::controls::control_options::{ControlOptions, parse_control_options};
 use betterlite_models::controls::extra_body::check_extra_body;
 use betterlite_models::controls::json_value::JsonValue;
 use secrecy::SecretString;
@@ -77,7 +75,7 @@ fn parse(fields: &ParseInput) -> serde_json::Value {
             "valid": true,
             "stream_chunk_size": options.stream_chunk_size,
         }),
-        Err(InvalidControlOption { param, .. }) => json!({"valid": false, "param": param}),
+        Err(error) => json!({"valid": false, "param": error.param()}),
     }
 }
 
