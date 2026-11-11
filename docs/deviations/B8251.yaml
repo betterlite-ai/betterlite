@@ -1,0 +1,5 @@
+task: B8251
+deviations:
+  - what: Each handler uses its own typed cache instead of LiteLLM's one cache keyed by service name.
+    why: A typed cache needs no enum of logger kinds and each logger type keeps its own stop effect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L52-L75
