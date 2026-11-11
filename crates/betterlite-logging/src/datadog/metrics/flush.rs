@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::time::timeout;
+use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
 
 use crate::batch::logger::FlushReport;
@@ -22,24 +22,15 @@ pub async fn flush_queue(logger: &DatadogMetricsLogger) -> FlushReport {
 
 pub(crate) async fn periodic_flush(logger: Arc<DatadogMetricsLogger>, tasks: TaskTracker) {
     loop {
-        // a timeout is the normal wake-up; stopping the logger ends the loop through the token
-        let woken = timeout(
-            logger.settings.batch.flush_interval,
-            logger.stopped.cancelled(),
-        )
-        .await;
-        if woken.is_ok() || tasks.is_closed() {
+        sleep(logger.settings.batch.flush_interval).await;
+        // a closed tracker is the server shutting down, so the last tick delivers the queue
+        let _report = flush_queue(&logger).await;
+        if tasks.is_closed() {
             return;
         }
         tracing::debug!(
             flush_interval = ?logger.settings.batch.flush_interval,
             "CustomLogger periodic flush"
         );
-        let _report = flush_queue(&logger).await;
     }
-}
-
-pub async fn stop(logger: &DatadogMetricsLogger) {
-    logger.stopped.cancel();
-    let _report = flush_queue(logger).await;
 }

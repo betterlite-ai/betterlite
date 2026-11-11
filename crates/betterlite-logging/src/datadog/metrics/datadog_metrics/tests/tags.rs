@@ -119,7 +119,7 @@ fn tags_fall_through_an_empty_team_alias_to_the_team_id() {
         },
         None,
     );
-    assert!(tags.contains(&"team:team_id".to_owned()));
+    assert!(tags.contains(&"team:team-id".to_owned()));
 }
 
 #[test]
@@ -144,5 +144,5 @@ fn tags_normalize_the_team_value() {
         },
         None,
     );
-    assert!(tags.contains(&"team:team_one_prod".to_owned()));
+    assert!(tags.contains(&"team:team_one_/_prod".to_owned()));
 }

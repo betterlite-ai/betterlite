@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
-use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::batch::logger::BatchQueue;
@@ -34,7 +33,6 @@ pub struct DatadogMetricsLogger {
     pub queue: BatchQueue<DatadogMetricSeries>,
     pub transport: Arc<dyn Transport>,
     pub clock: Arc<dyn Clock>,
-    pub stopped: CancellationToken,
 }
 
 impl DatadogMetricsLogger {
@@ -49,7 +47,6 @@ impl DatadogMetricsLogger {
             settings,
             transport: deps.transport,
             clock: deps.clock,
-            stopped: CancellationToken::new(),
         });
         match deps.tasks {
             Some(tasks) => {
@@ -84,6 +81,16 @@ impl DatadogMetricsLogger {
             let _report = flush_queue(self).await;
         }
     }
+
+    async fn record_event(&self, event: &LoggerEvent, status_code: String) {
+        let source = MetricSource {
+            environment: &self.settings.environment,
+            payload: event.payload.as_ref(),
+            timing: RequestTiming::from_payload(event.payload.as_ref()),
+            status_code,
+        };
+        self.record(&source).await;
+    }
 }
 
 #[async_trait]
@@ -93,24 +100,14 @@ impl CallbackLogger for DatadogMetricsLogger {
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let source = MetricSource {
-            environment: &self.settings.environment,
-            payload: event.payload.as_ref(),
-            timing: RequestTiming::from_payload(event.payload.as_ref()),
-            status_code: SUCCESS_STATUS_CODE.to_owned(),
-        };
-        self.record(&source).await;
+        self.record_event(&event, SUCCESS_STATUS_CODE.to_owned())
+            .await;
         Ok(())
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let source = MetricSource {
-            environment: &self.settings.environment,
-            payload: event.payload.as_ref(),
-            timing: RequestTiming::from_payload(event.payload.as_ref()),
-            status_code: failure_status_code(event.payload.as_ref()),
-        };
-        self.record(&source).await;
+        self.record_event(&event, failure_status_code(event.payload.as_ref()))
+            .await;
         Ok(())
     }
 }

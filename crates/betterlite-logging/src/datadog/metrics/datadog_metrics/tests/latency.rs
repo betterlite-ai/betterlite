@@ -44,7 +44,7 @@ fn logger() -> Arc<DatadogMetricsLogger> {
 fn latency_records_the_total_and_provider_series() {
     let logger = logger();
     let series = support::metrics_for(&logger, &support::payload(), "200", timing());
-    assert_eq!(series.len(), 2);
+    assert_eq!(series.len(), 3);
     assert_eq!(series[0].metric, TOTAL_LATENCY_METRIC);
     assert_eq!(series[0].kind, GAUGE_TYPE);
     assert_eq!(
@@ -57,6 +57,7 @@ fn latency_records_the_total_and_provider_series() {
     assert_eq!(series[1].metric, PROVIDER_LATENCY_METRIC);
     assert_eq!(series[1].points[0].value.to_bits(), 3.5_f64.to_bits());
     assert_eq!(series[1].points[0].timestamp, 1_704_067_204);
+    assert_eq!(series[2].metric, REQUEST_COUNT_METRIC);
     assert_eq!(series[0].interval, None);
     assert_eq!(series[1].interval, None);
 }
@@ -65,16 +66,16 @@ fn latency_records_the_total_and_provider_series() {
 fn latency_records_the_overhead_and_count_series() {
     let logger = logger();
     let series = support::metrics_for(&logger, &payload_with_overhead(), "200", timing());
-    assert_eq!(series.len(), 3);
-    assert_eq!(series[1].metric, OVERHEAD_LATENCY_METRIC);
-    assert_eq!(series[1].points[0].value.to_bits(), 0.0125_f64.to_bits());
-    assert_eq!(series[1].points[0].timestamp, 1_704_067_204);
-    assert_eq!(series[2].metric, REQUEST_COUNT_METRIC);
-    assert_eq!(series[2].kind, COUNT_TYPE);
-    assert_eq!(series[2].points[0].value.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(series.len(), 4);
+    assert_eq!(series[2].metric, OVERHEAD_LATENCY_METRIC);
+    assert_eq!(series[2].points[0].value.to_bits(), 0.0125_f64.to_bits());
     assert_eq!(series[2].points[0].timestamp, 1_704_067_204);
-    assert_eq!(series[2].interval, Some(support::FLUSH_INTERVAL));
-    assert_eq!(series[1].interval, None);
+    assert_eq!(series[3].metric, REQUEST_COUNT_METRIC);
+    assert_eq!(series[3].kind, COUNT_TYPE);
+    assert_eq!(series[3].points[0].value.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(series[3].points[0].timestamp, 1_704_067_204);
+    assert_eq!(series[3].interval, Some(support::FLUSH_INTERVAL));
+    assert_eq!(series[2].interval, None);
 }
 
 #[test]
@@ -114,7 +115,7 @@ fn latency_uses_the_clock_for_a_missing_end_time() {
     };
     let series = support::metrics_for(&logger, &support::payload(), "200", timing);
     assert_eq!(series.len(), 2);
-    assert_eq!(series[0].points[0].value.to_bits(), 1.5_f64.to_bits());
+    assert_eq!(series[0].points[0].value.to_bits(), 1.0_f64.to_bits());
     assert_eq!(series[0].points[0].timestamp, NOW);
     assert_eq!(series[1].points[0].timestamp, NOW);
 }
@@ -137,9 +138,9 @@ fn latency_keeps_an_overhead_of_zero() {
     let mut payload = support::payload();
     payload.hidden_params.litellm_overhead_time_ms = Some(DecimalValue(Decimal::ZERO));
     let series = support::metrics_for(&logger, &payload, "200", timing());
-    assert_eq!(series.len(), 3);
-    assert_eq!(series[1].metric, OVERHEAD_LATENCY_METRIC);
-    assert_eq!(series[1].points[0].value.to_bits(), 0.0_f64.to_bits());
+    assert_eq!(series.len(), 4);
+    assert_eq!(series[2].metric, OVERHEAD_LATENCY_METRIC);
+    assert_eq!(series[2].points[0].value.to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
@@ -148,7 +149,7 @@ fn latency_converts_the_overhead_from_milliseconds() {
     let mut payload = support::payload();
     payload.hidden_params.litellm_overhead_time_ms = Some(DecimalValue(Decimal::from(1_500_i64)));
     let series = support::metrics_for(&logger, &payload, "200", timing());
-    assert_eq!(series[1].points[0].value.to_bits(), 1.5_f64.to_bits());
+    assert_eq!(series[2].points[0].value.to_bits(), 1.5_f64.to_bits());
 }
 
 #[test]

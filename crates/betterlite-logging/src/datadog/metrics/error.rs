@@ -10,7 +10,7 @@ use crate::datadog_logging::transport::TransportFailure;
 
 #[derive(Debug, Error)]
 pub enum MetricsError {
-    #[error("the Datadog metrics environment could not be read")]
+    #[error(transparent)]
     Environment(#[from] EnvError),
     #[error("the request end time {seconds} does not fit a unix timestamp")]
     Timestamp { seconds: Decimal },
