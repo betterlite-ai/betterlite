@@ -6,6 +6,7 @@ use super::fixtures::FixtureGuard;
 use crate::OracleError;
 use crate::artifacts;
 use crate::case::Case;
+use crate::config_include_fixtures;
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +34,9 @@ pub(super) fn prepare_gateway_configs(
     fixtures: &FixtureGuard,
     upstream: &str,
 ) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
+    if !first_case.config_files.is_empty() {
+        return prepare_include_trees(root, first_case, fixtures, upstream);
+    }
     if let Some((first, second)) = &fixtures.databases {
         let first_url = first.options.url.expose_secret();
         let second_url = second.options.url.expose_secret();
@@ -46,37 +50,98 @@ pub(super) fn prepare_gateway_configs(
     }
 }
 
+fn prepare_include_trees(
+    root: &Path,
+    case: &Case,
+    fixtures: &FixtureGuard,
+    upstream: &str,
+) -> Result<(PathBuf, PathBuf, PathBuf), OracleError> {
+    let (group_dir, base_config) = artifacts::prepare(root, case, upstream)?;
+    let root_text = fs::read_to_string(&base_config).map_err(|source| OracleError::Filesystem {
+        path: base_config.clone(),
+        source,
+    })?;
+    let database_urls = fixtures.databases.as_ref().map(|(first, second)| {
+        (
+            first.options.url.expose_secret(),
+            second.options.url.expose_secret(),
+        )
+    });
+    let first_config = write_include_tree(
+        &group_dir.join("litellm"),
+        &root_text,
+        database_urls.map(|urls| urls.0),
+        &case.config_files,
+        upstream,
+    )?;
+    let second_config = write_include_tree(
+        &group_dir.join("betterlite"),
+        &root_text,
+        database_urls.map(|urls| urls.1),
+        &case.config_files,
+        upstream,
+    )?;
+    Ok((group_dir, first_config, second_config))
+}
+
+fn write_include_tree(
+    directory: &Path,
+    root_text: &str,
+    database_url: Option<&str>,
+    config_files: &BTreeMap<String, String>,
+    upstream: &str,
+) -> Result<PathBuf, OracleError> {
+    fs::create_dir_all(directory).map_err(|source| OracleError::Filesystem {
+        path: directory.to_owned(),
+        source,
+    })?;
+    let path = directory.join("config.yaml");
+    let text = match database_url {
+        Some(url) => database_document(root_text, url)?,
+        None => root_text.to_owned(),
+    };
+    fs::write(&path, text).map_err(|source| OracleError::Filesystem {
+        path: path.clone(),
+        source,
+    })?;
+    config_include_fixtures::write_tree(directory, config_files, upstream)?;
+    Ok(path)
+}
+
 fn with_database(
     base_path: &Path,
     database_url: &str,
     filename: &str,
 ) -> Result<PathBuf, OracleError> {
-    let source = fs::read_to_string(base_path).map_err(|source| OracleError::Filesystem {
+    let text = fs::read_to_string(base_path).map_err(|source| OracleError::Filesystem {
         path: base_path.to_owned(),
         source,
     })?;
-    let mut config_document: ConfigDocument = serde_saphyr::from_str(&source)
+    let rendered = database_document(&text, database_url)?;
+    let path = base_path.with_file_name(filename);
+    fs::write(&path, rendered).map_err(|source| OracleError::Filesystem {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(path)
+}
+
+fn database_document(text: &str, database_url: &str) -> Result<String, OracleError> {
+    let mut document: ConfigDocument = serde_saphyr::from_str(text)
         .map_err(|parse_error| OracleError::GeneratedConfig(Box::new(parse_error)))?;
-    if config_document.general_settings.database_url.is_some() {
+    if document.general_settings.database_url.is_some() {
         return Err(OracleError::DatabaseUrlConflict);
     }
-    if config_document
+    if document
         .general_settings
         .disable_prisma_schema_update
         .is_some()
     {
         return Err(OracleError::DisableSchemaUpdateConflict);
     }
-    config_document.general_settings.database_url = Some(database_url.to_owned());
-    config_document
-        .general_settings
-        .disable_prisma_schema_update = Some(true);
-    let rendered_config =
-        serde_saphyr::to_string(&config_document).map_err(OracleError::GeneratedConfigSerialize)?;
-    let path = base_path.with_file_name(filename);
-    fs::write(&path, rendered_config).map_err(|write_error| OracleError::Filesystem {
-        path: path.clone(),
-        source: write_error,
-    })?;
-    Ok(path)
+    document.general_settings.database_url = Some(database_url.to_owned());
+    document.general_settings.disable_prisma_schema_update = Some(true);
+    serde_saphyr::to_string(&document).map_err(OracleError::GeneratedConfigSerialize)
 }
+
+mod tests;
