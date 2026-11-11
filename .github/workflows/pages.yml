@@ -63,11 +63,10 @@ jobs:
       - name: Fetch every gate run
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_ROW: '.workflow_runs[] | (.pull_requests[0].number // ((.head_branch // "") | capture("pr-(?<n>[0-9]+)-") | .n | tonumber) // null) as $n | [.event, .conclusion, $n, (if $n or .event == "push" then null else .head_branch end), (.created_at | fromdateiso8601), ((.run_started_at // .created_at) | fromdateiso8601), (.updated_at | fromdateiso8601), .run_attempt] | @csv'
         run: |
           echo event,conclusion,pr,branch,created,started,updated,attempt > _site/runs.csv
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/gate.yml/runs?per_page=100" \
-            --jq '.workflow_runs[] | (.pull_requests[0].number // ((.head_branch // "") | capture("pr-(?<n>[0-9]+)-") | .n | tonumber) // null) as $n | [.event, .conclusion, $n, (if $n or .event == "push" then null else .head_branch end), (.created_at | fromdateiso8601), ((.run_started_at // .created_at) | fromdateiso8601), (.updated_at | fromdateiso8601), .run_attempt] | @csv' \
-            >> _site/runs.csv
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/gate.yml/runs?per_page=100" --jq "$RUN_ROW" >> _site/runs.csv
           wc -l _site/runs.csv
 
       - name: Upload the page
