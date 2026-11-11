@@ -69,6 +69,19 @@ async fn the_handle_ping_reports_false_without_a_redis_backend() {
 }
 
 #[tokio::test]
+async fn the_handle_reports_a_test_write_that_cannot_be_prepared() {
+    let mut cache = local_cache();
+    cache.redis_flush_size = Some(usize::MAX);
+    let handle = CacheHandle {
+        cache: Arc::new(cache),
+    };
+    handle
+        .add_test_key()
+        .await
+        .expect_err("the flush size does not fit the cache envelope");
+}
+
+#[tokio::test]
 async fn the_handle_reports_a_redis_cache_and_its_failures() {
     let handle = CacheHandle {
         cache: Arc::new(unreachable_redis_cache().await),

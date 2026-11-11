@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use std::error::Error as _;
+use std::fs;
 use std::sync::Arc;
+
+use tracing::subscriber::set_default;
 
 use betterlite_cache::backend::CacheBackend as _;
 use betterlite_cache::cache_key::value::KeyValue;
@@ -70,6 +73,20 @@ fn the_logger_only_reports_errors() {
 #[test]
 fn the_console_prints_nothing() {
     assert!(!SilentConsole.print(&Payload::Null));
+}
+
+#[test]
+fn the_logger_writes_the_error_payload() {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let _guard = set_default(subscriber);
+    assert!(ErrorLogger.error(&Payload::String("boom".to_owned())));
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(written.contains("boom"));
 }
 
 #[test]
