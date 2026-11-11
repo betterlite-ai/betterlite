@@ -16,11 +16,9 @@ from litellm.caching.redis_cache import RedisCache
 from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+Pending: TypeAlias = Awaitable[Json] | None
 
-DEADLINE_SECONDS = 1.0
-OK = b"+OK\r\n"
 NIL = b"$-1\r\n"
-# the command whose first reply fails, per scenario
 FAILURES = {
     "increment_propagates_redis_error": "INCRBY",
     "async_increment_fallback_on_redis_error": "INCRBYFLOAT",
@@ -32,7 +30,6 @@ def bulk(text: str) -> bytes:
     return b"$%d\r\n%s\r\n" % (len(data), data)
 
 
-# what the fake Redis answers once a command has no scripted reply left
 FALLBACKS = {
     "PING": b"+PONG\r\n",
     "INFO": bulk("redis_version:7.2.0\r\n"),
@@ -66,16 +63,14 @@ class TypedCache(Protocol):
     async def async_get_cache(self, key: str) -> Json: ...
     async def async_get_ttl(self, key: str) -> int | None: ...
     async def async_increment_cache(self, key: str, value: Json) -> Json: ...
-    async def async_set_cache_pre_call(
-        self, key: str, value: Json, ttl: float | None
-    ) -> Awaitable[Json] | None: ...
+    async def async_set_cache_pre_call(self, key: str, value: Json, ttl: None) -> Pending: ...
     async def async_set_cache_pipeline(self, cache_list: list[tuple[str, Json]]) -> None: ...
     async def async_delete_cache_keys(self, keys: list[str]) -> None: ...
 
 
 class Script:
-    def __init__(self, replies: defaultdict[str, deque[bytes]]) -> None:
-        self.replies = replies
+    def __init__(self) -> None:
+        self.replies: defaultdict[str, deque[bytes]] = defaultdict(deque)
         self.received: list[list[str]] = []
         self.lock = threading.Lock()
 
@@ -89,16 +84,12 @@ class Script:
         if name == "MGET":
             return b"*%d\r\n%s" % (len(args) - 1, NIL * (len(args) - 1))
         fallback = FALLBACKS.get(name)
-        return OK if fallback is None else fallback
+        return b"+OK\r\n" if fallback is None else fallback
 
     def expiries(self) -> list[Json]:
         with self.lock:
             sets = [args for args in self.received if args[0].upper() == "SET"]
         return [{"key": s[1], "ex": s[s.index("EX") + 1] if "EX" in s else ""} for s in sets]
-
-    def delete_lengths(self) -> list[Json]:
-        with self.lock:
-            return [len(args) - 1 for args in self.received if args[0].upper() == "DEL"]
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -146,7 +137,7 @@ async def read(call: Fields, harness: Harness) -> dict[str, Json]:
 
 
 async def batch_read(call: Fields, harness: Harness) -> dict[str, Json]:
-    with request_redis_batch_scope(post_call_deadline=DEADLINE_SECONDS):
+    with request_redis_batch_scope(post_call_deadline=1.0):
         batch = active_request_redis_batch(harness.redis)
         if batch is None:
             raise RuntimeError("the request scope has no Redis batch")
@@ -177,7 +168,7 @@ async def pre_call(call: Fields, harness: Harness) -> dict[str, Json]:
     key, value = call["key"], call["value"]
     outside = await harness.dual.async_set_cache_pre_call(key, value, None)
     in_scope = False
-    with request_redis_batch_scope(post_call_deadline=DEADLINE_SECONDS):
+    with request_redis_batch_scope(post_call_deadline=1.0):
         queued = await harness.dual.async_set_cache_pre_call(key, value, None)
         if queued is not None:
             in_scope = True
@@ -202,7 +193,9 @@ async def delete_keys(call: Fields, harness: Harness) -> dict[str, Json]:
     remaining = 0
     for key in keys:
         remaining += harness.dual.get_cache(key, local_only=True) is not None
-    return {"chunks": harness.script.delete_lengths(), "remaining": remaining}
+    received = harness.script.received
+    chunks: list[Json] = [len(args) - 1 for args in received if args[0].upper() == "DEL"]
+    return {"chunks": chunks, "remaining": remaining}
 
 
 SCENARIOS: dict[str, Scenario] = {
@@ -235,11 +228,10 @@ async def execute(name: str, call: Fields, port: int, script: Script) -> dict[st
 
 def run(input_value: dict[str, Fields]) -> dict[str, Json]:
     ((name, call),) = input_value.items()
-    replies: defaultdict[str, deque[bytes]] = defaultdict(deque)
-    replies["GET"].append(bulk(json.dumps(call["redis_get"])))
+    script = Script()
+    script.replies["GET"].append(bulk(json.dumps(call["redis_get"])))
     if name in FAILURES:
-        replies[FAILURES[name]].append(b"-ERR boom\r\n")
-    script = Script(replies)
+        script.replies[FAILURES[name]].append(b"-ERR boom\r\n")
     with socketserver.ThreadingTCPServer(("127.0.0.1", 0), partial(Handler, script)) as server:
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()

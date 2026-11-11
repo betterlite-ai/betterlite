@@ -23,7 +23,6 @@ use crate::helpers::{HelperError, OrHelperError as _};
 
 const DEFAULT_TTL: i64 = 60;
 
-// redis-py raises ResponseError for an error frame, and so does the rust client
 pub(crate) const FAILURE: &[u8] = b"-ERR boom\r\n";
 
 #[derive(Default)]
@@ -75,7 +74,6 @@ impl FakeRedis {
     }
 }
 
-// the SET frames carry their expiry as the argument after EX
 pub(crate) fn set_expiries(server: &FakeRedis) -> Vec<serde_json::Value> {
     server
         .received("SET")
