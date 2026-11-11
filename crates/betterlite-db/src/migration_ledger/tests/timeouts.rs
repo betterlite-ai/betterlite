@@ -19,6 +19,18 @@ fn timeout_huge_value_never_expires() {
     );
 }
 
+#[rstest]
+#[case::zero("0")]
+#[case::negative("-4")]
+#[case::infinite("inf")]
+#[case::nan("NaN")]
+fn unusable_timeouts_fall_back_to_the_default(#[case] text: &str) {
+    assert_eq!(
+        timeout_from_env("PROBE", Some(text), DEFAULT_LOCK_TIMEOUT),
+        DEFAULT_LOCK_TIMEOUT
+    );
+}
+
 #[test]
 fn timeout_defaults_apply() {
     assert_eq!(
