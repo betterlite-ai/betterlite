@@ -53,70 +53,33 @@ pub struct EnvironmentCredentials {
     pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
 }
 
-fn text_or_environment(
-    explicit: Option<&String>,
-    environment: &dyn EnvironmentLookup,
-    name: &str,
-) -> Option<String> {
-    if explicit.is_some() {
-        explicit.cloned()
-    } else {
-        environment.lookup(name)
-    }
-}
-
-fn secret_or_environment(
-    explicit: Option<&SecretString>,
-    environment: &dyn EnvironmentLookup,
-    name: &str,
-) -> Option<SecretString> {
-    if explicit.is_some() {
-        explicit.cloned()
-    } else {
-        environment.lookup(name).map(SecretString::from)
-    }
-}
-
 fn effective(params: &CredentialParams, environment: &dyn EnvironmentLookup) -> CredentialParams {
-    CredentialParams {
-        access_key_id: secret_or_environment(
-            params.access_key_id.as_ref(),
-            environment,
-            ACCESS_KEY_VARIABLE,
-        ),
-        secret_access_key: secret_or_environment(
-            params.secret_access_key.as_ref(),
-            environment,
-            SECRET_ACCESS_KEY_VARIABLE,
-        ),
-        session_token: secret_or_environment(
-            params.session_token.as_ref(),
-            environment,
-            SESSION_TOKEN_VARIABLE,
-        ),
-        region_name: text_or_environment(params.region_name.as_ref(), environment, REGION_VARIABLE),
-        session_name: text_or_environment(
-            params.session_name.as_ref(),
-            environment,
-            SESSION_NAME_VARIABLE,
-        ),
-        profile_name: text_or_environment(
-            params.profile_name.as_ref(),
-            environment,
-            PROFILE_NAME_VARIABLE,
-        ),
-        role_name: text_or_environment(params.role_name.as_ref(), environment, ROLE_NAME_VARIABLE),
-        web_identity_token: secret_or_environment(
-            params.web_identity_token.as_ref(),
-            environment,
+    let mut resolved = params.clone();
+    for (slot, name) in [
+        (&mut resolved.access_key_id, ACCESS_KEY_VARIABLE),
+        (&mut resolved.secret_access_key, SECRET_ACCESS_KEY_VARIABLE),
+        (&mut resolved.session_token, SESSION_TOKEN_VARIABLE),
+        (
+            &mut resolved.web_identity_token,
             WEB_IDENTITY_TOKEN_VARIABLE,
         ),
-        sts_endpoint: text_or_environment(
-            params.sts_endpoint.as_ref(),
-            environment,
-            STS_ENDPOINT_VARIABLE,
-        ),
+    ] {
+        if slot.is_none() {
+            *slot = environment.lookup(name).map(SecretString::from);
+        }
     }
+    for (slot, name) in [
+        (&mut resolved.region_name, REGION_VARIABLE),
+        (&mut resolved.session_name, SESSION_NAME_VARIABLE),
+        (&mut resolved.profile_name, PROFILE_NAME_VARIABLE),
+        (&mut resolved.role_name, ROLE_NAME_VARIABLE),
+        (&mut resolved.sts_endpoint, STS_ENDPOINT_VARIABLE),
+    ] {
+        if slot.is_none() {
+            *slot = environment.lookup(name);
+        }
+    }
+    resolved
 }
 
 fn validate_params(params: &CredentialParams) -> Result<(), CredentialError> {

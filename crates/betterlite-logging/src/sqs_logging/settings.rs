@@ -188,40 +188,32 @@ fn read_connection(
 
 fn read_credentials(
     values: &mut Values<'_>,
-    overrides: &mut Overrides,
+    overrides: &Overrides,
     region: Option<String>,
 ) -> Result<CredentialParams, SettingsError> {
-    Ok(CredentialParams {
-        access_key_id: values
-            .text("sqs_aws_access_key_id")?
-            .map(SecretString::from)
-            .or_else(|| overrides.credentials.access_key_id.take()),
-        secret_access_key: values
-            .text("sqs_aws_secret_access_key")?
-            .map(SecretString::from)
-            .or_else(|| overrides.credentials.secret_access_key.take()),
-        session_token: values
-            .text("sqs_aws_session_token")?
-            .map(SecretString::from)
-            .or_else(|| overrides.credentials.session_token.take()),
-        region_name: region,
-        session_name: values
-            .text("sqs_aws_session_name")?
-            .or_else(|| overrides.credentials.session_name.take()),
-        profile_name: values
-            .text("sqs_aws_profile_name")?
-            .or_else(|| overrides.credentials.profile_name.take()),
-        role_name: values
-            .text("sqs_aws_role_name")?
-            .or_else(|| overrides.credentials.role_name.take()),
-        web_identity_token: values
-            .text("sqs_aws_web_identity_token")?
-            .map(SecretString::from)
-            .or_else(|| overrides.credentials.web_identity_token.take()),
-        sts_endpoint: values
-            .text("sqs_aws_sts_endpoint")?
-            .or_else(|| overrides.credentials.sts_endpoint.take()),
-    })
+    let mut params = overrides.credentials.clone();
+    for (name, slot) in [
+        ("sqs_aws_access_key_id", &mut params.access_key_id),
+        ("sqs_aws_secret_access_key", &mut params.secret_access_key),
+        ("sqs_aws_session_token", &mut params.session_token),
+        ("sqs_aws_web_identity_token", &mut params.web_identity_token),
+    ] {
+        if let Some(value) = values.text(name)? {
+            *slot = Some(SecretString::from(value));
+        }
+    }
+    for (name, slot) in [
+        ("sqs_aws_session_name", &mut params.session_name),
+        ("sqs_aws_profile_name", &mut params.profile_name),
+        ("sqs_aws_role_name", &mut params.role_name),
+        ("sqs_aws_sts_endpoint", &mut params.sts_endpoint),
+    ] {
+        if let Some(value) = values.text(name)? {
+            *slot = Some(value);
+        }
+    }
+    params.region_name = region;
+    Ok(params)
 }
 
 fn read_encryption(
@@ -274,7 +266,7 @@ impl Settings {
     ) -> Result<Self, SettingsError> {
         let mut values = Values::new(params, environment);
         let connection = read_connection(&mut values, &mut overrides)?;
-        let credentials = read_credentials(&mut values, &mut overrides, connection.region.clone())?;
+        let credentials = read_credentials(&mut values, &overrides, connection.region.clone())?;
         let encryption = read_encryption(&mut values, overrides.encryption.take())?;
         let strip_base64_files = values
             .flag("sqs_strip_base64_files")?
