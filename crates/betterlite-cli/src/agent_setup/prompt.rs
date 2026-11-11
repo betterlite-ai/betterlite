@@ -1,6 +1,7 @@
 use inquire::list_option::ListOption;
 use inquire::validator::{ErrorMessage, Validation};
 use inquire::{MultiSelect, Password, Select, Text};
+use secrecy::SecretString;
 
 use super::error::AgentSetupError;
 use crate::agent_setup_profiles::Target;
@@ -24,7 +25,7 @@ pub trait Prompter: Send {
 
     fn prompt_url(&mut self, message: &str, default: &str) -> Result<String, AgentSetupError>;
 
-    fn prompt_secret(&mut self, message: &str) -> Result<String, AgentSetupError>;
+    fn prompt_secret(&mut self, message: &str) -> Result<SecretString, AgentSetupError>;
 }
 
 pub struct InquirePrompter;
@@ -83,8 +84,8 @@ impl Prompter for InquirePrompter {
     }
 
     #[cfg_attr(test, mutants::skip)]
-    fn prompt_secret(&mut self, message: &str) -> Result<String, AgentSetupError> {
+    fn prompt_secret(&mut self, message: &str) -> Result<SecretString, AgentSetupError> {
         let entered = Password::new(message).without_confirmation().prompt()?;
-        Ok(entered)
+        Ok(SecretString::from(entered))
     }
 }

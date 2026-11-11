@@ -1,5 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use soft_canonicalize::soft_canonicalize;
 
 use super::error::AgentSetupError;
@@ -43,13 +43,58 @@ pub struct PreparedSetup {
     pub listing: Vec<ListedModel>,
 }
 
+enum CodexStart {
+    Ready(String),
+    Pick,
+}
+
+enum TargetChoice {
+    Claude,
+    Codex(CodexStart),
+}
+
+enum ChosenModel {
+    Claude(Option<String>),
+    Codex(String),
+}
+
 pub async fn prepare(request: &mut Preparation<'_>) -> Result<PreparedSetup, AgentSetupError> {
     let default = default_model(request);
-    if request.target == Target::Codex && default.is_none() && !request.mode.interactive {
-        return Err(AgentSetupError::Usage(CODEX_MODEL_REQUIRED.to_owned()));
-    }
-    let (base_url, credential) = connect(request)?;
-    listed_setup(request, base_url, credential, default).await
+    let choice = target_choice(request, default.clone())?;
+    let connected = connect_and_list(request, default.as_deref()).await?;
+    let chosen = choose_model(
+        request,
+        &connected.listing,
+        default,
+        connected.repair_model,
+        choice,
+    )?;
+    let model = match chosen {
+        ChosenModel::Claude(unpinned) => {
+            let validated =
+                validated_model(unpinned.as_deref(), &connected.listing, &connected.base_url)?;
+            source_name(&connected.listing, validated)
+        }
+        ChosenModel::Codex(model_name) => {
+            validated_model(Some(&model_name), &connected.listing, &connected.base_url)?;
+            Some(model_name)
+        }
+    };
+    let settings_path = resolved_settings_path(request.target, request.environment)?;
+    let saved = SavedSetup::new(
+        request.target,
+        settings_path,
+        connected.base_url,
+        connected.credential.token,
+        model,
+    )
+    .map_err(|source| AgentSetupError::InvalidSetup {
+        source: Box::new(source),
+    })?;
+    Ok(PreparedSetup {
+        saved,
+        listing: connected.listing,
+    })
 }
 
 fn default_model(request: &Preparation<'_>) -> Option<String> {
@@ -62,6 +107,67 @@ fn default_model(request: &Preparation<'_>) -> Option<String> {
     request.saved.as_ref()?.model.clone()
 }
 
+fn target_choice(
+    request: &Preparation<'_>,
+    default: Option<String>,
+) -> Result<TargetChoice, AgentSetupError> {
+    match request.target {
+        Target::Claude => Ok(TargetChoice::Claude),
+        Target::Codex => Ok(TargetChoice::Codex(codex_start(request, default)?)),
+    }
+}
+
+fn codex_start(
+    request: &Preparation<'_>,
+    default: Option<String>,
+) -> Result<CodexStart, AgentSetupError> {
+    if request.mode.interactive {
+        return Ok(CodexStart::Pick);
+    }
+    default.map_or_else(
+        || Err(AgentSetupError::Usage(CODEX_MODEL_REQUIRED.to_owned())),
+        |model| Ok(CodexStart::Ready(model)),
+    )
+}
+
+fn choose_model(
+    request: &mut Preparation<'_>,
+    listing: &[ListedModel],
+    default: Option<String>,
+    repair_model: bool,
+    choice: TargetChoice,
+) -> Result<ChosenModel, AgentSetupError> {
+    match choice {
+        TargetChoice::Claude => {
+            let chosen = if request.mode.interactive || repair_model {
+                let names: Vec<String> = listing
+                    .iter()
+                    .map(|listed| {
+                        listed
+                            .source_model
+                            .clone()
+                            .unwrap_or_else(|| listed.id.clone())
+                    })
+                    .collect();
+                pick_claude_model(request.prompter, &names, default.as_deref())?
+            } else {
+                default
+            };
+            Ok(ChosenModel::Claude(chosen))
+        }
+        TargetChoice::Codex(start) => {
+            let chosen = match start {
+                CodexStart::Ready(model) if !repair_model => model,
+                CodexStart::Ready(_) | CodexStart::Pick => {
+                    let ids: Vec<String> = listing.iter().map(|listed| listed.id.clone()).collect();
+                    pick_codex_model(request.prompter, &ids, default.as_deref())?
+                }
+            };
+            Ok(ChosenModel::Codex(chosen))
+        }
+    }
+}
+
 fn connect(request: &mut Preparation<'_>) -> Result<(String, StaticToken), AgentSetupError> {
     if !request.mode.edit_connection {
         return connection(request);
@@ -72,12 +178,18 @@ fn connect(request: &mut Preparation<'_>) -> Result<(String, StaticToken), Agent
     Ok((base_url, credential))
 }
 
-async fn listed_setup(
-    request: &mut Preparation<'_>,
+struct Connected {
     base_url: String,
     credential: StaticToken,
-    default: Option<String>,
-) -> Result<PreparedSetup, AgentSetupError> {
+    listing: Vec<ListedModel>,
+    repair_model: bool,
+}
+
+async fn connect_and_list(
+    request: &mut Preparation<'_>,
+    default: Option<&str>,
+) -> Result<Connected, AgentSetupError> {
+    let (base_url, credential) = connect(request)?;
     let repair = request.saved.is_some() && !request.mode.interactive && request.stdin_is_terminal;
     let mut listing_request = ListingRequest {
         context: request.context,
@@ -89,27 +201,14 @@ async fn listed_setup(
         prompter: &mut *request.prompter,
     };
     let (active, listing) = connection_listing(&mut listing_request).await?;
-    let repair_model = repair
-        && default
-            .as_deref()
-            .is_some_and(|model| starting_model(model, &listing).is_none());
-    let chosen = choose_model(request, &listing, default, repair_model)?;
-    let validated = validated_model(chosen.as_deref(), &listing, &base_url)?;
-    let model = match request.target {
-        Target::Claude => source_name(&listing, validated),
-        Target::Codex => Some(chosen.ok_or_else(|| {
-            AgentSetupError::Usage(
-                "First-time Codex setup needs --model. Run `lite configure` for the model picker"
-                    .to_owned(),
-            )
-        })?),
-    };
-    let settings_path = resolved_settings_path(request.target, request.environment)?;
-    let saved = SavedSetup::new(request.target, settings_path, base_url, active.token, model)
-        .map_err(|source| AgentSetupError::InvalidSetup {
-            source: Box::new(source),
-        })?;
-    Ok(PreparedSetup { saved, listing })
+    let repair_model =
+        repair && default.is_some_and(|model| starting_model(model, &listing).is_none());
+    Ok(Connected {
+        base_url,
+        credential: active,
+        listing,
+        repair_model,
+    })
 }
 
 fn source_name(listing: &[ListedModel], validated: Option<&str>) -> Option<String> {
@@ -120,35 +219,6 @@ fn source_name(listing: &[ListedModel], validated: Option<&str>) -> Option<Strin
             .clone()
             .unwrap_or_else(|| listed.id.clone())
     })
-}
-
-fn choose_model(
-    request: &mut Preparation<'_>,
-    listing: &[ListedModel],
-    default: Option<String>,
-    repair_model: bool,
-) -> Result<Option<String>, AgentSetupError> {
-    if !(request.mode.interactive || repair_model) {
-        return Ok(default);
-    }
-    if request.target == Target::Claude {
-        let names: Vec<String> = listing
-            .iter()
-            .map(|listed| {
-                listed
-                    .source_model
-                    .clone()
-                    .unwrap_or_else(|| listed.id.clone())
-            })
-            .collect();
-        return pick_claude_model(request.prompter, &names, default.as_deref());
-    }
-    let ids: Vec<String> = listing.iter().map(|listed| listed.id.clone()).collect();
-    Ok(Some(pick_codex_model(
-        request.prompter,
-        &ids,
-        default.as_deref(),
-    )?))
 }
 
 fn offered_url(request: &Preparation<'_>) -> String {
@@ -216,15 +286,15 @@ fn prompt_key(
     };
     if let Some(key) = kept {
         let entered = request.prompter.prompt_secret(KEEP_CURRENT_KEY)?;
-        if entered.is_empty() {
+        if entered.expose_secret().is_empty() {
             return Ok(Some(key));
         }
-        return Ok(Some(SecretString::from(entered)));
+        return Ok(Some(entered));
     }
     loop {
         let entered = request.prompter.prompt_secret(NEW_KEY)?;
-        if !entered.is_empty() {
-            return Ok(Some(SecretString::from(entered)));
+        if !entered.expose_secret().is_empty() {
+            return Ok(Some(entered));
         }
     }
 }
@@ -235,7 +305,7 @@ fn url_usage_error(source: ConfigError) -> AgentSetupError {
         other @ (ConfigError::KeyNotSet(_)
         | ConfigError::NoHome
         | ConfigError::Runtime { .. }
-        | ConfigError::Save(_)) => AgentSetupError::Usage(other.to_string()),
+        | ConfigError::Save(_)) => AgentSetupError::Config(Box::new(other)),
     }
 }
 

@@ -345,12 +345,12 @@ impl Prompter for ScriptedPrompter {
         }
     }
 
-    fn prompt_secret(&mut self, message: &str) -> Result<String, AgentSetupError> {
+    fn prompt_secret(&mut self, message: &str) -> Result<SecretString, AgentSetupError> {
         let call = Call::Secret {
             message: message.to_owned(),
         };
         match self.answer(call)? {
-            Reply::Secret(value) => Ok(value),
+            Reply::Secret(value) => Ok(SecretString::from(value)),
             _unused @ (Reply::Targets(_) | Reply::Model(_) | Reply::Url(_)) => {
                 Err(AgentSetupError::ListingTaskStopped)
             }

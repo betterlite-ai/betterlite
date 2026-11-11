@@ -9,8 +9,8 @@ deviations:
       path takes its values from options and the saved setup, and those stay LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L224-L259
   - what: >-
-      A /v1/models body larger than 16 MiB is refused as an unreachable listing, where LiteLLM reads whatever
-      size the proxy sends.
+      A /v1/models body larger than 16 MiB gets its own error naming the base URL and asking to check that it
+      is a LiteLLM proxy, where LiteLLM reads whatever size the proxy sends.
     why: >-
       The listing is untrusted proxy output and rule bounded-inputs gives every inbound body a cap; a proxy
       that lists more model ids than fit in 16 MiB is not something a working setup has today, and the error

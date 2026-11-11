@@ -9,6 +9,7 @@ use crate::agent_setup_profiles::error::AgentSetupProfilesError;
 use crate::claude_settings::error::ClaudeSettingsError;
 use crate::claude_settings::receipts::error::ReceiptsError;
 use crate::codex_settings::error::CodexSettingsError;
+use crate::config::error::ConfigError;
 use crate::pi::PiSyncError;
 
 #[derive(Debug, Error)]
@@ -79,6 +80,8 @@ pub enum AgentSetupError {
     CodexSettings(Box<CodexSettingsError>),
     #[error(transparent)]
     Claude(Box<ReceiptsError>),
+    #[error(transparent)]
+    Config(Box<ConfigError>),
     #[error("the model listing task did not finish: {0}")]
     ListingTask(#[source] JoinError),
     #[error("the model listing task stopped without an answer")]

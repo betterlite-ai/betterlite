@@ -18,7 +18,7 @@ use crate::agent_setup_profiles::Target;
 use crate::claude_settings::choices::StaticToken;
 use crate::cli_context::CliContext;
 use crate::pi::listing::fetch_model_listing;
-use crate::pi::{ListedModel, ListingFailure, PiSyncError, ProxyGet, ProxyResponse};
+use crate::pi::{ListedModel, PiSyncError, ProxyGet, ProxyResponse};
 
 pub const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
 pub const ANTHROPIC_VERSION_VALUE: &str = "2023-06-01";
@@ -138,25 +138,36 @@ pub async fn fetch_listing(
 }
 
 fn listing_error(base_url: &str, target: Target, reason: PiSyncError) -> AgentSetupError {
-    match reason.kind() {
-        Some(ListingFailure::Rejected) => AgentSetupError::ListingRejected {
-            status: reason.status().unwrap_or_default(),
-            reason,
+    match reason {
+        failure @ PiSyncError::ListingStatus {
+            status: status @ (401 | 403),
+        } => AgentSetupError::ListingRejected {
+            status,
+            reason: failure,
         },
-        Some(ListingFailure::Unreachable) => AgentSetupError::ListingUnreachable {
+        failure @ PiSyncError::Unreachable { .. } => AgentSetupError::ListingUnreachable {
             base_url: base_url.to_owned(),
-            reason,
+            reason: failure,
         },
-        Some(ListingFailure::Empty) => AgentSetupError::ListingEmpty {
-            agent: match target {
-                Target::Claude => "Claude Code",
-                Target::Codex => "Codex",
-            },
-            reason,
-        },
-        _ => AgentSetupError::ListingFailed {
+        failure @ (PiSyncError::NoModels | PiSyncError::NothingToRun) => {
+            AgentSetupError::ListingEmpty {
+                agent: match target {
+                    Target::Claude => "Claude Code",
+                    Target::Codex => "Codex",
+                },
+                reason: failure,
+            }
+        }
+        failure @ (PiSyncError::ListingStatus { .. }
+        | PiSyncError::ListingJson { .. }
+        | PiSyncError::ListingInvalid { .. }
+        | PiSyncError::ReadModels { .. }
+        | PiSyncError::ParseModels { .. }
+        | PiSyncError::Encode { .. }
+        | PiSyncError::WriteModels { .. }
+        | PiSyncError::NoHome) => AgentSetupError::ListingFailed {
             base_url: base_url.to_owned(),
-            reason,
+            reason: failure,
         },
     }
 }
@@ -189,8 +200,8 @@ pub async fn connection_listing(
             }
             let replacement = loop {
                 let entered = request.prompter.prompt_secret("Replacement virtual key")?;
-                if !entered.is_empty() {
-                    break SecretString::from(entered);
+                if !entered.expose_secret().is_empty() {
+                    break entered;
                 }
             };
             let refreshed = resolve_credential(request.context, Some(&replacement))?;
