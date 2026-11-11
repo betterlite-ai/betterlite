@@ -342,10 +342,38 @@ async fn client_list_data_sources_uses_post_with_an_empty_body() {
         requests[0].url,
         format!("{AGENT}/knowledgebases/KB123/datasources/")
     );
-    assert_eq!(requests[0].body, b"{}");
+    assert!(requests[0].body.is_empty());
+    assert_eq!(header(&requests[0], "Content-Type"), None);
+    assert_eq!(header(&requests[0], "Content-Length"), Some("0"));
+    let authorization = header(&requests[0], "Authorization").expect("the request is signed");
+    assert!(
+        authorization
+            .contains("Credential=AKIDRAGEXAMPLE/20260101T000000Z/us-west-2/bedrock/aws4_request"),
+        "{authorization}"
+    );
+}
+
+#[tokio::test]
+async fn client_agent_operations_sign_the_partition_region() {
+    let transport = FakeTransport::new(vec![json_response(
+        "{\"knowledgeBase\":{\"status\":\"ACTIVE\"}}",
+    )]);
+    let resolver = StaticResolver::new(None);
+    let parsed = settings(r#"{"vector_store_id": "KB123", "aws_region_name": "cn-north-1"}"#);
+    let built = clients(parsed, &resolver, transport.clone());
+    built
+        .get_knowledge_base("KB123")
+        .await
+        .expect("the get call succeeds");
+    let requests = transport.requests();
     assert_eq!(
-        header(&requests[0], "Content-Type"),
-        Some("application/json")
+        requests[0].url,
+        "https://bedrock-agent.cn-north-1.amazonaws.com.cn/knowledgebases/KB123"
+    );
+    let authorization = header(&requests[0], "Authorization").expect("the request is signed");
+    assert!(
+        authorization.contains("/cn-north-1/bedrock/aws4_request"),
+        "{authorization}"
     );
 }
 

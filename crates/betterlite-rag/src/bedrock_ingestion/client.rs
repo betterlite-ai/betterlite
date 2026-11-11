@@ -71,7 +71,6 @@ pub struct SignedRequest<'request> {
 
 enum Payload<'request> {
     Empty,
-    Raw(&'request [u8]),
     KnowledgeBase(&'request CreateKnowledgeBaseRequest),
     DataSource(&'request CreateDataSourceRequest),
 }
@@ -168,7 +167,7 @@ where
         list_data_sources(knowledge_base_id: &str) -> ListDataSourcesResponse =>
             "ListDataSources", "POST",
             data_sources_url(&clients.settings.aws_region_name, knowledge_base_id),
-            Payload::Raw(b"{}");
+            Payload::Empty;
         get_data_source(knowledge_base_id: &str, data_source_id: &str) -> GetDataSourceResponse =>
             "GetDataSource", "GET",
             data_source_url(&clients.settings.aws_region_name, knowledge_base_id, data_source_id),
@@ -199,7 +198,6 @@ where
     {
         let body = match payload {
             Payload::Empty => Vec::new(),
-            Payload::Raw(bytes) => bytes.to_vec(),
             Payload::KnowledgeBase(request) => serde_json::to_vec(request)
                 .map_err(|source| BedrockIngestionError::Serialize { operation, source })?,
             Payload::DataSource(request) => serde_json::to_vec(request)

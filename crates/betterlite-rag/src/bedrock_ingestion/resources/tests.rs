@@ -376,7 +376,16 @@ async fn kb_create_request_matches_litellm() {
 
 #[tokio::test]
 async fn kb_client_token_is_a_fresh_v4_uuid() {
-    let (built, transport, mut state) = kb_setup("{}", &["ACTIVE", "ACTIVE"]);
+    let active = r#"{"knowledgeBase":{"status":"ACTIVE"}}"#;
+    let (built, transport, mut state) = setup(
+        "{}",
+        vec![
+            json_response(KB_CREATE),
+            json_response(active),
+            json_response(KB_CREATE),
+            json_response(active),
+        ],
+    );
     state
         .create_knowledge_base(&built, "kb", "arn:role", "arn:collection")
         .await
