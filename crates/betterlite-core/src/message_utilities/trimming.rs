@@ -1,3 +1,5 @@
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_env::EnvError;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::Counter;
@@ -36,6 +38,32 @@ pub enum TrimError {
     LimitOverflow,
     #[error("the message was not shortened within {attempts} attempts")]
     NotShortened { attempts: usize },
+    #[error("a trimming default could not be read from the environment")]
+    Environment(#[from] EnvError),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrimDefaults {
+    pub trim_ratio: f64,
+    pub max_attempts: usize,
+}
+
+impl TrimDefaults {
+    pub fn load(lookup: &dyn EnvironmentLookup) -> Result<Self, TrimError> {
+        let present = |name: &str| lookup.lookup(name).unwrap_or_default();
+        Ok(Self {
+            trim_ratio: betterlite_env::number(
+                "DEFAULT_TRIM_RATIO",
+                &present("DEFAULT_TRIM_RATIO"),
+            )?
+            .unwrap_or(DEFAULT_TRIM_RATIO),
+            max_attempts: betterlite_env::number(
+                "MAX_TOKEN_TRIMMING_ATTEMPTS",
+                &present("MAX_TOKEN_TRIMMING_ATTEMPTS"),
+            )?
+            .unwrap_or(DEFAULT_MAX_TRIM_ATTEMPTS),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]

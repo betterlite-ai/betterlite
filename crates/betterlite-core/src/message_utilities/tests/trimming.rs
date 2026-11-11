@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::slice::from_ref;
 
 use betterlite_models::decisions::Json;
@@ -6,7 +7,8 @@ use rstest::rstest;
 use super::support;
 use crate::message_utilities::trimming::shorten::shorten_message_to_fit_limit;
 use crate::message_utilities::trimming::{
-    DEFAULT_TRIM_RATIO, TrimError, TrimRequest, TrimmedMessages,
+    DEFAULT_MAX_TRIM_ATTEMPTS, DEFAULT_TRIM_RATIO, TrimDefaults, TrimError, TrimRequest,
+    TrimmedMessages,
     steps::{
         TokenBudget, attempt_message_addition, can_add_message, process_messages,
         process_system_message,
@@ -453,4 +455,43 @@ async fn shorten_removes_characters_from_the_middle() {
         outcome,
         support::value(r#"{"role": "user", "content": "alpha beta gamma ..ma delta epsilon "}"#)
     );
+}
+
+fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[rstest]
+#[case::unset(&[], DEFAULT_TRIM_RATIO, DEFAULT_MAX_TRIM_ATTEMPTS)]
+#[case::empty(&[("DEFAULT_TRIM_RATIO", ""), ("MAX_TOKEN_TRIMMING_ATTEMPTS", " ")], DEFAULT_TRIM_RATIO, DEFAULT_MAX_TRIM_ATTEMPTS)]
+#[case::ratio_only(&[("DEFAULT_TRIM_RATIO", "0.5")], 0.5_f64, DEFAULT_MAX_TRIM_ATTEMPTS)]
+#[case::attempts_only(&[("MAX_TOKEN_TRIMMING_ATTEMPTS", "3")], DEFAULT_TRIM_RATIO, 3_usize)]
+#[case::both(&[("DEFAULT_TRIM_RATIO", " 0.25 "), ("MAX_TOKEN_TRIMMING_ATTEMPTS", "0")], 0.25_f64, 0_usize)]
+fn trim_defaults_read_the_trimming_variables(
+    #[case] pairs: &[(&str, &str)],
+    #[case] trim_ratio: f64,
+    #[case] max_attempts: usize,
+) {
+    let loaded = TrimDefaults::load(&environment(pairs)).unwrap();
+    assert_eq!(
+        loaded,
+        TrimDefaults {
+            trim_ratio,
+            max_attempts
+        }
+    );
+}
+
+#[rstest]
+#[case::ratio("DEFAULT_TRIM_RATIO", "three quarters")]
+#[case::attempts("MAX_TOKEN_TRIMMING_ATTEMPTS", "10.5")]
+fn trim_defaults_name_the_variable_they_cannot_read(#[case] name: &str, #[case] value: &str) {
+    let error = TrimDefaults::load(&environment(&[(name, value)])).unwrap_err();
+    let TrimError::Environment(source) = error else {
+        panic!("expected an environment error");
+    };
+    assert!(source.to_string().contains(name));
 }

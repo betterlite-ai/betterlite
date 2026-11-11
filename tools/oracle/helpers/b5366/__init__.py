@@ -209,6 +209,8 @@ def call_field(call: Object, name: str) -> Json:
 
 
 def run(input_value: dict[str, Json]) -> Json:
+    # an unmapped model name makes get_llm_provider print to stdout, where the answer goes
+    litellm.suppress_debug_info = True
     calls = input_value.get("calls")
     if not isinstance(calls, list):
         raise ValueError("calls must be a list")
@@ -335,6 +337,7 @@ def validate_tool_choice(call: Object) -> Json:
 
 
 def validate_optional_params(call: Object) -> Json:
+    litellm.disable_stop_sequence_limit = call.get("disable_stop_sequence_limit") is True
     return U.validate_openai_optional_params(call.get("stop"))
 
 
