@@ -108,7 +108,7 @@ fn double_hash(token: &str) -> String {
 
 async fn daily(case: &SpendBackfillCase) -> BackfillOutcome {
     let session = case.store.session().await.expect("a pooled session");
-    run_plan(&session, daily_plan())
+    run_plan(&**session, daily_plan())
         .await
         .expect("the daily backfill")
 }
@@ -167,7 +167,7 @@ async fn run_operation(
     operation: Operation,
 ) -> Result<BackfillOutcome, BackfillError> {
     let session = case.store.session().await.expect("a pooled session");
-    run_plan(&session, operation.plan()).await
+    run_plan(&**session, operation.plan()).await
 }
 
 async fn operation_outcome(case: &SpendBackfillCase, operation: Operation) -> BackfillOutcome {

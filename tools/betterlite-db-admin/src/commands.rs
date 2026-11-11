@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use betterlite_db::migration_deploy::DeployError;
-use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::migration_ledger::connection::ConnectionError;
 use betterlite_db::spend_backfills::BackfillError;
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
@@ -77,19 +77,33 @@ impl Operation {
                         .map_or("true", String::as_str),
                 )),
             }),
-            // the executable builds the offline service from the parsed operation; this slot only routes it
-            Self::DatabaseViews
-            | Self::DailyToolSpend { .. }
-            | Self::KeyTotalSpend
-            | Self::KeyTotalSpendFromLogs => DbAdminCommand::DatabaseViews,
+            Self::DatabaseViews => DbAdminCommand::DatabaseViews,
+            Self::DailyToolSpend { cutover } => {
+                DbAdminCommand::DailyToolSpend(DailyToolSpendOptions { cutover })
+            }
+            Self::KeyTotalSpend => DbAdminCommand::KeyTotalSpend,
+            Self::KeyTotalSpendFromLogs => DbAdminCommand::KeyTotalSpendFromLogs,
         }
     }
+}
+
+// the registry keys a service by operation, so the parsed cutover is not part of the lookup
+pub const DAILY_TOOL_SPEND_KEY: Operation = Operation::DailyToolSpend {
+    cutover: DateTime::<Utc>::UNIX_EPOCH,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DailyToolSpendOptions {
+    pub cutover: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DbAdminCommand {
     Migrate(MigrationOptions),
     DatabaseViews,
+    DailyToolSpend(DailyToolSpendOptions),
+    KeyTotalSpend,
+    KeyTotalSpendFromLogs,
 }
 
 impl DbAdminCommand {
@@ -98,10 +112,15 @@ impl DbAdminCommand {
         match self {
             Self::Migrate(_) => Operation::Migrate,
             Self::DatabaseViews => Operation::DatabaseViews,
+            Self::DailyToolSpend(_) => DAILY_TOOL_SPEND_KEY,
+            Self::KeyTotalSpend => Operation::KeyTotalSpend,
+            Self::KeyTotalSpendFromLogs => Operation::KeyTotalSpendFromLogs,
         }
     }
 }
 
+// padding keeps the larger daily options variant within three times this variant's size
+#[repr(align(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MigrationOptions {
     pub use_migrate: bool,
@@ -148,20 +167,10 @@ impl From<BackfillError> for DbAdminError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpendBackfillError {
-    #[error("the database URL is not a PostgreSQL connection string: {source}")]
-    Url {
+    #[error("the backfill database connection could not be opened: {source}")]
+    Connection {
         #[source]
-        source: tokio_postgres::Error,
-    },
-    #[error("the database pool could not be built: {source}")]
-    Pool {
-        #[source]
-        source: deadpool_postgres::BuildError,
-    },
-    #[error("the backfill could not acquire a database connection: {source}")]
-    Session {
-        #[source]
-        source: DbError,
+        source: ConnectionError,
     },
     #[error("{source}")]
     Backfill {

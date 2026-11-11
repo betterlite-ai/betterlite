@@ -2,8 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
-use deadpool_postgres::Client;
-use tokio_postgres::Error as PostgresError;
+use tokio_postgres::{Client, Error as PostgresError};
 
 pub mod daily_tool_spend;
 pub mod fixtures;
