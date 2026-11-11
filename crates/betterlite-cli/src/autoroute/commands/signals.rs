@@ -12,9 +12,6 @@ use std::thread::{Builder, JoinHandle};
 
 use super::error::CommandsError;
 
-pub const SIGNAL_THREAD_NAME: &str = "betterlite-autoroute-signals";
-pub const SIGNAL_POLL_INTERVAL: Duration = Duration::from_millis(50);
-
 pub trait StopGuard {
     fn wait(&self);
 }
@@ -27,19 +24,11 @@ pub struct StopSignal {
     pub(crate) requested: AtomicBool,
 }
 
-impl Default for StopSignal {
-    fn default() -> Self {
-        Self {
-            requested: AtomicBool::new(false),
-        }
-    }
-}
-
 impl StopSignal {
     // The flag is the only thing a signal path touches; the foreground wait polls it briefly
     pub fn wait(&self) {
         while !self.requested.load(Ordering::SeqCst) {
-            park_timeout(SIGNAL_POLL_INTERVAL);
+            park_timeout(Duration::from_millis(50));
         }
     }
 }
@@ -53,11 +42,12 @@ impl StopSignals for OsSignals {
         let mut signals =
             Signals::new([SIGINT, SIGTERM]).map_err(|source| CommandsError::Signals { source })?;
         let handle = signals.handle();
-        let stop = Arc::new(StopSignal::default());
+        let stop = Arc::new(StopSignal {
+            requested: AtomicBool::new(false),
+        });
         let thread_stop = Arc::clone(&stop);
         // The iterator thread only sets the flag; allocation and file work stay in the main thread
         let thread = Builder::new()
-            .name(SIGNAL_THREAD_NAME.to_owned())
             .spawn(move || {
                 for _signal in signals.forever() {
                     thread_stop.requested.store(true, Ordering::SeqCst);

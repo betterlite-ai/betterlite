@@ -26,6 +26,7 @@ use crate::autoroute::process::launcher::{
     ExitCode, LaunchRequest, LaunchedProcess, ProcessLauncher,
 };
 use crate::autoroute::process::liveliness::LivelinessProbe;
+use crate::autoroute::process::log_tail::{LogTail, TailWorker};
 use crate::autoroute::process::pid_record::{PidRecord, read_pid_record};
 use crate::autoroute::process::port::PortProbe;
 use crate::autoroute::process::runtime::GatewayRuntime;
@@ -86,6 +87,31 @@ impl PortProbe for FakePortProbe {
         self.available
     }
 }
+
+#[derive(Default)]
+pub(crate) struct RecordingTail {
+    pub starts: Mutex<Vec<PathBuf>>,
+}
+
+impl RecordingTail {
+    pub(crate) fn started(&self) -> Vec<PathBuf> {
+        self.starts.lock().unwrap().clone()
+    }
+}
+
+impl LogTail for RecordingTail {
+    fn start(&self, log_path: &Path) -> Result<Box<dyn TailWorker>, ProcessError> {
+        if let Ok(mut starts) = self.starts.lock() {
+            starts.push(log_path.to_owned());
+        }
+        let worker: Box<dyn TailWorker> = Box::new(QuietTailWorker);
+        Ok(worker)
+    }
+}
+
+struct QuietTailWorker;
+
+impl TailWorker for QuietTailWorker {}
 
 pub(crate) struct FakeLiveliness {
     pub statuses: Mutex<Vec<bool>>,
@@ -404,6 +430,7 @@ pub(crate) struct Fixture {
     pub launcher: FakeLauncher,
     pub port_probe: FakePortProbe,
     pub liveliness: FakeLiveliness,
+    pub tail: RecordingTail,
     pub stop_signals: SnapshotStopSignals,
     pub signals: FakeSignals,
     pub clock: FakeClock,
@@ -444,6 +471,7 @@ pub(crate) fn default_fixture() -> Fixture {
         launcher: FakeLauncher::default(),
         port_probe: FakePortProbe::default(),
         liveliness: FakeLiveliness::default(),
+        tail: RecordingTail::default(),
         stop_signals,
         signals: FakeSignals::default(),
         clock: FakeClock::default(),
@@ -471,6 +499,7 @@ impl Fixture {
             liveliness: &self.liveliness,
             signals: &self.stop_signals,
             signal_port: &self.signals,
+            tail: &self.tail,
             clock: &self.clock,
             files: &self.files,
             entropy: &mut self.entropy,

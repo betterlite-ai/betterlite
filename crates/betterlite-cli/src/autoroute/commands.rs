@@ -21,15 +21,11 @@ use self::signals::StopSignals;
 use crate::autoroute::process::control::{Clock, SignalPort};
 use crate::autoroute::process::launcher::ProcessLauncher;
 use crate::autoroute::process::liveliness::LivelinessProbe;
+use crate::autoroute::process::log_tail::LogTail;
 use crate::autoroute::process::port::PortProbe;
 use crate::autoroute::process::runtime::GatewayRuntime;
 use crate::autoroute::wizard::{ModelDiscoveryClient, Prompter};
 use crate::cli_context::CliContext;
-
-pub const UP_RETIRED: &str = "up";
-pub const UP_CURRENT: &str = "start";
-pub const DOWN_RETIRED: &str = "down";
-pub const DOWN_CURRENT: &str = "stop";
 
 pub struct AutoroutePorts<'ports> {
     pub context: &'ports CliContext,
@@ -43,6 +39,7 @@ pub struct AutoroutePorts<'ports> {
     pub liveliness: &'ports dyn LivelinessProbe,
     pub signals: &'ports dyn StopSignals,
     pub signal_port: &'ports dyn SignalPort,
+    pub tail: &'ports dyn LogTail,
     pub clock: &'ports dyn Clock,
     pub files: &'ports PrivateFiles,
     pub entropy: &'ports mut dyn Entropy,
@@ -57,21 +54,13 @@ pub fn run(command: AutorouteCommand, ports: &mut AutoroutePorts<'_>) -> Result<
         AutorouteCommand::Start(args) => start::start(ports, args.port),
         AutorouteCommand::Stop => stop::stop(ports),
         AutorouteCommand::Up(args) => {
-            writeln!(
-                ports.stderr,
-                "{}",
-                deprecation_notice(UP_RETIRED, UP_CURRENT)
-            )
-            .map_err(|source| CommandsError::Output { source })?;
+            writeln!(ports.stderr, "{}", deprecation_notice("up", "start"))
+                .map_err(|source| CommandsError::Output { source })?;
             start::start(ports, args.port)
         }
         AutorouteCommand::Down => {
-            writeln!(
-                ports.stderr,
-                "{}",
-                deprecation_notice(DOWN_RETIRED, DOWN_CURRENT)
-            )
-            .map_err(|source| CommandsError::Output { source })?;
+            writeln!(ports.stderr, "{}", deprecation_notice("down", "stop"))
+                .map_err(|source| CommandsError::Output { source })?;
             stop::stop(ports)
         }
     }

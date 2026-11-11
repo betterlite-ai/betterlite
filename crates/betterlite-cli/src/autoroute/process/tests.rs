@@ -6,6 +6,7 @@ use std::cell::Cell;
 use std::fmt::Write as _;
 use std::fs;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process as std_process;
 use std::sync::Mutex;
@@ -25,7 +26,7 @@ use super::control::{
 };
 use super::error::ProcessError;
 use super::launcher::{
-    ExitCode, LaunchRequest, ProcessLauncher as _, SetprivLauncher, gateway_command,
+    ExitCode, GatewayLauncher, LaunchRequest, ProcessLauncher as _, gateway_command,
 };
 use super::liveliness::poll_liveliness;
 use super::log_tail::stream_log;
@@ -35,6 +36,7 @@ use super::runtime::{
     GATEWAY_EXECUTABLE, GATEWAY_INSTALL_STEP, GatewayRuntime as _, InstalledGateway,
     gateway_runtime_available,
 };
+use crate::agent_run::resolver::PathResolver;
 
 #[test]
 fn gateway_runtime_available_returns_an_executable_that_runs() {
@@ -87,7 +89,7 @@ fn port_probe_reports_false_when_a_listening_socket_holds_the_port() {
     assert!(!LoopbackPortProbe.is_available(port));
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn launcher_wraps_the_gateway_in_setpriv_with_the_death_signal() {
     let executable = PathBuf::from("/opt/betterlite");
@@ -124,7 +126,7 @@ fn gateway_dies_with_owner_when_its_handle_drops() {
     let log_path = directory.path().join("proxy.log");
     let executable = PathBuf::from("sleep");
     let arguments = ["60".to_owned()];
-    let launcher = SetprivLauncher;
+    let launcher = GatewayLauncher;
     let process = launcher
         .launch(&LaunchRequest {
             executable: &executable,
@@ -144,7 +146,7 @@ fn pid_record_round_trips_through_json() {
     let directory = tempfile::TempDir::new().unwrap();
     let path = directory.path().join("proxy.pid.json");
     let record = PidRecord {
-        pid: 4242,
+        pid: NonZeroU32::new(4242).unwrap(),
         port: 5483,
         config_path: PathBuf::from("/home/tester/.litellm/autorouter/config.yaml"),
         log_path: PathBuf::from("/home/tester/.litellm/autorouter/proxy.log"),
@@ -172,7 +174,7 @@ fn pid_record_read_ignores_unknown_keys() {
     )
     .unwrap();
     let record = read_pid_record(&path).unwrap().unwrap();
-    assert_eq!(record.pid, 7);
+    assert_eq!(record.pid.get(), 7);
 }
 
 #[rstest]
@@ -471,7 +473,10 @@ fn executable_script(directory: &Path, body: &str) -> PathBuf {
 #[cfg(unix)]
 fn gateway_on_path(directory: &Path) -> InstalledGateway {
     InstalledGateway {
-        search_path: Some(directory.as_os_str().to_owned()),
+        resolver: PathResolver {
+            search_path: directory.as_os_str().to_owned(),
+            current_dir: PathBuf::from("."),
+        },
     }
 }
 
@@ -495,7 +500,7 @@ fn installed_gateway_finds_nothing_on_a_path_without_it() {
 fn installed_gateway_runs_an_executable_that_answers_version() {
     let directory = tempfile::TempDir::new().unwrap();
     let executable = executable_script(directory.path(), "#!/bin/sh\nexit 0\n");
-    assert!(InstalledGateway::default().runs(&executable));
+    assert!(gateway_on_path(directory.path()).runs(&executable));
 }
 
 #[cfg(unix)]
@@ -503,5 +508,5 @@ fn installed_gateway_runs_an_executable_that_answers_version() {
 fn installed_gateway_rejects_an_executable_that_fails_version() {
     let directory = tempfile::TempDir::new().unwrap();
     let executable = executable_script(directory.path(), "#!/bin/sh\nexit 1\n");
-    assert!(!InstalledGateway::default().runs(&executable));
+    assert!(!gateway_on_path(directory.path()).runs(&executable));
 }

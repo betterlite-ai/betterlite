@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
+use std::num::NonZeroU32;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
@@ -26,6 +27,7 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::private_json::files::{FileAccess, LocalFiles, PrivateFiles};
 use clap::{Args as _, Command, FromArgMatches as _};
 use indexmap::IndexMap;
+use rstest::rstest;
 use tempfile::TempDir;
 
 use self::support::{
@@ -57,7 +59,7 @@ const PORT: u16 = 5483;
 
 fn record(pid: u32) -> PidRecord {
     PidRecord {
-        pid,
+        pid: NonZeroU32::new(pid).unwrap(),
         port: PORT,
         config_path: PathBuf::from("/home/tester/.litellm/autorouter/config.yaml"),
         log_path: PathBuf::from("/home/tester/.litellm/autorouter/proxy.log"),
@@ -214,6 +216,20 @@ fn master_key_provisioning_rejects_a_corrupt_config() {
     assert!(fixture.launcher.requests.lock().unwrap().is_empty());
 }
 
+#[rstest]
+#[case::empty("")]
+#[case::null("~\n")]
+#[case::comment_only("# nothing here\n")]
+fn master_key_provisioning_rejects_an_empty_config(#[case] content: &str) {
+    let mut fixture = default_fixture();
+    fixture.write_config(content);
+    let error = fixture.start(PORT).unwrap_err();
+    let text = error.to_string();
+    assert!(text.contains("is empty or corrupt"), "{text}");
+    assert!(text.contains("lite autoroute configure"), "{text}");
+    assert!(fixture.launcher.requests.lock().unwrap().is_empty());
+}
+
 #[test]
 fn start_writes_the_pid_record_and_restores_settings_after_the_wait() {
     let mut fixture = default_fixture();
@@ -222,7 +238,7 @@ fn start_writes_the_pid_record_and_restores_settings_after_the_wait() {
     fs::write(&settings, r#"{"model":"old"}"#).unwrap();
     fixture.start(PORT).unwrap();
     let snapshot = fixture.snapshot();
-    assert_eq!(snapshot.record.unwrap().pid, LAUNCHED_PID);
+    assert_eq!(snapshot.record.unwrap().pid.get(), LAUNCHED_PID);
     let settings_document = snapshot.settings.as_ref().unwrap();
     assert_eq!(
         settings_document["env"]["ANTHROPIC_BASE_URL"].as_str(),
@@ -237,12 +253,8 @@ fn start_writes_the_pid_record_and_restores_settings_after_the_wait() {
         settings_document["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"].as_str(),
         Some("autorouter")
     );
-    assert!(
-        settings_document["statusLine"]["command"]
-            .as_str()
-            .is_some_and(|command| command.contains("statusline"))
-    );
     assert!(snapshot.backup.is_some());
+    assert_eq!(fixture.tail.started().len(), 1);
     assert_eq!(fixture.signals.sent(), [(LAUNCHED_PID, TermSignal::Term)]);
     assert_eq!(model_field(&settings).as_deref(), Some("old"));
     assert!(!fixture.backup_path().exists());
@@ -658,7 +670,9 @@ fn master_key_provisioning_keeps_other_general_settings_keys() {
 
 #[test]
 fn stop_signal_wait_blocks_until_requested() {
-    let signal = Arc::new(StopSignal::default());
+    let signal = Arc::new(StopSignal {
+        requested: AtomicBool::new(false),
+    });
     let waiter = {
         let waiter_signal = Arc::clone(&signal);
         Builder::new()

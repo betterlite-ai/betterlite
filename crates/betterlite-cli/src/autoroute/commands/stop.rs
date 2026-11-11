@@ -25,9 +25,9 @@ pub fn stop(ports: &mut AutoroutePorts<'_>) -> Result<(), CommandsError> {
         Err(other) => return Err(CommandsError::Process(other)),
     };
     if let Some(leftover) = record
-        && ports.signal_port.is_running(leftover.pid)
+        && ports.signal_port.is_running(leftover.pid.get())
     {
-        terminate(leftover.pid, ports.signal_port, ports.clock);
+        terminate(leftover.pid.get(), ports.signal_port, ports.clock);
         writeln!(
             ports.stdout,
             "Stopped leftover ephemeral proxy (pid {}).",

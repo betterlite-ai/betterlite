@@ -1,4 +1,5 @@
 use std::fs;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -14,7 +15,7 @@ use crate::autoroute::paths::{config_path, log_path, pid_record_path};
 use crate::autoroute::process::control::terminate;
 use crate::autoroute::process::launcher::{LaunchRequest, LaunchedProcess};
 use crate::autoroute::process::liveliness::poll_liveliness;
-use crate::autoroute::process::log_tail::{LogTailer, spawn_log_tail};
+use crate::autoroute::process::log_tail::TailWorker;
 use crate::autoroute::process::pid_record::{
     PidRecord, clear_pid_record, read_pid_record, write_pid_record,
 };
@@ -27,7 +28,6 @@ use crate::claude_settings::statusline_install::install_statusline_script;
 use crate::settings_backup::record::BackupRecord;
 use crate::settings_backup::write::write_backup;
 
-// LiteLLM's launcher rebinds this exact port to a random one when it is busy
 pub const RESERVED_PORT: u16 = 4000;
 
 struct StartPaths {
@@ -39,7 +39,7 @@ struct StartPaths {
 }
 
 struct Launched {
-    pid: u32,
+    pid: NonZeroU32,
     base_url: String,
     _process: Box<dyn LaunchedProcess>,
 }
@@ -50,7 +50,7 @@ pub fn start(ports: &mut AutoroutePorts<'_>, port: u16) -> Result<(), CommandsEr
     let master_key = ensure_master_key(&paths.config, ports.entropy)?;
     let launched = launch(ports, &paths, port, &executable)?;
     if let Err(error) = patch_settings(ports, &paths, &launched.base_url, &master_key) {
-        abort(launched.pid, ports, &paths.pid_record);
+        abort(launched.pid.get(), ports, &paths.pid_record);
         return Err(error);
     }
     writeln!(
@@ -64,7 +64,7 @@ pub fn start(ports: &mut AutoroutePorts<'_>, port: u16) -> Result<(), CommandsEr
         "Claude Code sessions started now will route through it. Press Ctrl-C to stop and restore."
     )
     .map_err(|source| CommandsError::Output { source })?;
-    foreground(ports, &paths, launched.pid, port)
+    foreground(ports, &paths, launched.pid.get(), port)
 }
 
 fn start_paths(home: &Path) -> StartPaths {
@@ -88,9 +88,11 @@ fn preflight(
     }
     let executable = gateway_runtime_available(ports.gateway)?;
     if let Some(record) = read_pid_record(&paths.pid_record)?
-        && ports.signal_port.is_running(record.pid)
+        && ports.signal_port.is_running(record.pid.get())
     {
-        return Err(CommandsError::AlreadyRunning { pid: record.pid });
+        return Err(CommandsError::AlreadyRunning {
+            pid: record.pid.get(),
+        });
     }
     if paths.backup.exists() {
         return Err(CommandsError::BackupExists {
@@ -119,7 +121,7 @@ fn launch(
         arguments: &arguments,
         log_path: &paths.log,
     })?;
-    let pid = process.pid();
+    let pid = NonZeroU32::new(process.pid()).ok_or(CommandsError::MissingPid)?;
     let record = PidRecord {
         pid,
         port,
@@ -127,7 +129,7 @@ fn launch(
         log_path: paths.log.clone(),
     };
     if let Err(error) = write_pid_record(&paths.pid_record, &record) {
-        abort(pid, ports, &paths.pid_record);
+        abort(pid.get(), ports, &paths.pid_record);
         return Err(CommandsError::Process(error));
     }
     if let Err(error) = poll_liveliness(
@@ -137,7 +139,7 @@ fn launch(
         ports.liveliness,
         ports.clock,
     ) {
-        abort(pid, ports, &paths.pid_record);
+        abort(pid.get(), ports, &paths.pid_record);
         return Err(CommandsError::Process(error));
     }
     Ok(Launched {
@@ -147,7 +149,7 @@ fn launch(
     })
 }
 
-// The proxy is the gateway executable: the config, port and loopback host LiteLLM passes through
+// The proxy is the gateway executable, with the config, port and loopback host LiteLLM passes
 fn gateway_arguments(config: &Path, port: u16) -> Result<Vec<String>, CommandsError> {
     let config_text = config.to_str().ok_or_else(|| CommandsError::NonUtf8Path {
         path: config.to_owned(),
@@ -211,9 +213,8 @@ fn foreground(
 ) -> Result<(), CommandsError> {
     let teardown = AtomicBool::new(false);
     let started = ports.signals.watch().and_then(|guard| {
-        spawn_log_tail(&paths.log)
-            .map(|tail| (guard, tail))
-            .map_err(CommandsError::Process)
+        let tail = ports.tail.start(&paths.log)?;
+        Ok((guard, tail))
     });
     let (guard, tail) = match started {
         Ok(ready) => ready,
@@ -235,7 +236,7 @@ fn teardown_request<'request>(
     paths: &'request StartPaths,
     pid: u32,
     port: u16,
-    tail: Option<LogTailer>,
+    tail: Option<Box<dyn TailWorker>>,
 ) -> TeardownRequest<'request> {
     TeardownRequest {
         settings: &paths.settings,

@@ -1,7 +1,13 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process as std_process;
 use std::process::Stdio;
+
+#[cfg(all(unix, not(target_os = "linux")))]
+use std::os::unix::process::CommandExt as _;
+
+#[cfg(all(unix, not(target_os = "linux")))]
+use rustix::process::{Pid, Signal, kill_process_group};
 
 use super::error::ProcessError;
 
@@ -27,9 +33,9 @@ pub trait ProcessLauncher {
     -> Result<Box<dyn LaunchedProcess>, ProcessError>;
 }
 
-pub struct SetprivLauncher;
+pub struct GatewayLauncher;
 
-impl ProcessLauncher for SetprivLauncher {
+impl ProcessLauncher for GatewayLauncher {
     fn launch(
         &self,
         request: &LaunchRequest<'_>,
@@ -50,23 +56,30 @@ impl ProcessLauncher for SetprivLauncher {
         })?;
         let mut command = gateway_command(request);
         command.stdout(Stdio::from(log)).stderr(Stdio::from(errors));
-        let child = command.spawn().map_err(|source| ProcessError::Launch {
-            executable: request.executable.to_owned(),
-            source,
-        })?;
+        let program = PathBuf::from(command.get_program());
+        let child = command
+            .spawn()
+            .map_err(|source| ProcessError::Launch { program, source })?;
         Ok(Box::new(ChildProcess { child }))
     }
 }
 
 #[must_use]
 pub fn gateway_command(request: &LaunchRequest<'_>) -> std_process::Command {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     let mut command = {
         // setpriv execs the gateway in place, so the death signal reaches the gateway itself
         let mut command = std_process::Command::new("setpriv");
         command
             .args(["--pdeathsig", "KILL", "--"])
             .arg(request.executable);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "linux")))]
+    let mut command = {
+        let mut command = std_process::Command::new(request.executable);
+        // setpriv is a util-linux tool, so other Unix systems lead their own process group instead
+        let _grouped = command.process_group(0);
         command
     };
     #[cfg(not(unix))]
@@ -98,6 +111,13 @@ impl LaunchedProcess for ChildProcess {
 impl Drop for ChildProcess {
     fn drop(&mut self) {
         // The handle owns the child, so dropping it must not leave a gateway nobody can stop
+        #[cfg(all(unix, not(target_os = "linux")))]
+        {
+            let leader = i32::try_from(self.child.id()).ok().and_then(Pid::from_raw);
+            if let Some(leader) = leader {
+                let _ignored = kill_process_group(leader, Signal::KILL);
+            }
+        }
         let _killed = self.child.kill();
         let _reaped = self.child.wait();
     }

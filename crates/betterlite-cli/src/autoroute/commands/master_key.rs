@@ -16,8 +16,6 @@ use crate::autoroute::config::document::{
 use crate::settings_backup::secure::secure_create;
 
 pub const MASTER_KEY_BYTES: usize = 32;
-pub const MASTER_KEY_FIELD: &str = "master_key";
-pub const GENERAL_SETTINGS_FIELD: &str = "general_settings";
 
 // The generated config carries keys this task does not model, so it stays an ordered passthrough
 pub type GeneratedConfig = IndexMap<String, JsonValue>;
@@ -31,11 +29,17 @@ pub fn ensure_master_key(
         path: config_path.to_owned(),
         source,
     })?;
-    let document: GeneratedConfig =
+    let parsed: Option<GeneratedConfig> =
         serde_saphyr::from_str(&text).map_err(|source| CommandsError::CorruptConfig {
             path: config_path.to_owned(),
             source: Box::new(source),
         })?;
+    // LiteLLM's TypeAdapter(dict) rejects the null document safe_load reads from an empty file
+    let Some(document) = parsed else {
+        return Err(CommandsError::EmptyConfig {
+            path: config_path.to_owned(),
+        });
+    };
     if let Some(persisted) = persisted_master_key(&document) {
         return Ok(persisted);
     }
@@ -52,10 +56,10 @@ fn mint_master_key(entropy: &mut dyn Entropy) -> Result<SecretString, CommandsEr
 
 #[must_use]
 fn persisted_master_key(document: &GeneratedConfig) -> Option<SecretString> {
-    let JsonValue::Object(settings) = document.get(GENERAL_SETTINGS_FIELD)? else {
+    let JsonValue::Object(settings) = document.get("general_settings")? else {
         return None;
     };
-    let stored = settings.get(MASTER_KEY_FIELD)?.as_str()?;
+    let stored = settings.get("master_key")?.as_str()?;
     let typed = GeneratedConfigDocument {
         model_list: Vec::new(),
         general_settings: Some(GeneralSettings {
@@ -71,11 +75,11 @@ fn write_master_key(
     master_key: &SecretString,
 ) -> Result<(), CommandsError> {
     let mut updated = document.clone();
-    let settings = match updated.get(GENERAL_SETTINGS_FIELD) {
+    let settings = match updated.get("general_settings") {
         Some(JsonValue::Object(existing)) => {
             let mut merged = existing.clone();
             merged.insert(
-                MASTER_KEY_FIELD.to_owned(),
+                "master_key".to_owned(),
                 JsonValue::String(master_key.expose_secret().to_owned()),
             );
             JsonValue::Object(merged)
@@ -88,7 +92,7 @@ fn write_master_key(
             source,
         })?,
     };
-    updated.insert(GENERAL_SETTINGS_FIELD.to_owned(), settings);
+    updated.insert("general_settings".to_owned(), settings);
     let yaml =
         serde_saphyr::to_string(&updated).map_err(|source| CommandsError::SerializeConfig {
             path: config_path.to_owned(),

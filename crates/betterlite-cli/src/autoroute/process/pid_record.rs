@@ -1,5 +1,5 @@
 use std::fs;
-use std::io;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,8 @@ use super::error::ProcessError;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct PidRecord {
-    pub pid: u32,
+    // NonZeroU32 makes serde reject pid 0, which kill(2) reads as the caller's process group
+    pub pid: NonZeroU32,
     pub port: u16,
     pub config_path: PathBuf,
     pub log_path: PathBuf,
@@ -27,13 +28,6 @@ pub fn read_pid_record(path: &Path) -> Result<Option<PidRecord>, ProcessError> {
             path: path.to_owned(),
             source,
         })?;
-    // kill(0) signals the caller's own process group, so pid 0 can never name the proxy
-    if record.pid == 0 {
-        return Err(ProcessError::CorruptPidRecord {
-            path: path.to_owned(),
-            source: serde_json::Error::io(io::Error::other("pid 0 names no process")),
-        });
-    }
     Ok(Some(record))
 }
 

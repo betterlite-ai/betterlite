@@ -27,6 +27,8 @@ pub enum CommandsError {
         "Port {port} on 127.0.0.1 is already in use. If a previous `lite autoroute start` is still running or crashed, run `lite autoroute stop`; otherwise pick a different port with --port."
     )]
     PortInUse { port: u16 },
+    #[error("the started gateway reported no process id")]
+    MissingPid,
     #[error("cannot read {path}: {source}")]
     ReadConfig {
         path: PathBuf,
@@ -39,6 +41,8 @@ pub enum CommandsError {
         #[source]
         source: Box<serde_saphyr::Error>,
     },
+    #[error("{path} is empty or corrupt. Run `lite autoroute configure` again to regenerate it.")]
+    EmptyConfig { path: PathBuf },
     #[error("cannot encode the generated config {path}: {source}")]
     EncodeConfig {
         path: PathBuf,

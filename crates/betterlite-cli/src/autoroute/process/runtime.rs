@@ -1,9 +1,9 @@
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process as std_process;
 use std::process::Stdio;
 
 use super::error::ProcessError;
+use crate::agent_run::resolver::{BinaryResolver as _, PathResolver};
 
 pub const GATEWAY_EXECUTABLE: &str = "betterlite";
 pub const GATEWAY_INSTALL_STEP: &str = "cargo install --locked --path crates/betterlite";
@@ -15,17 +15,13 @@ pub trait GatewayRuntime {
     fn runs(&self, executable: &Path) -> bool;
 }
 
-#[derive(Default)]
 pub struct InstalledGateway {
-    pub search_path: Option<OsString>,
+    pub resolver: PathResolver,
 }
 
 impl GatewayRuntime for InstalledGateway {
     fn find(&self) -> Option<PathBuf> {
-        self.search_path.as_ref().map_or_else(
-            || which::which(GATEWAY_EXECUTABLE).ok(),
-            |path| which::which_in(GATEWAY_EXECUTABLE, Some(path), ".").ok(),
-        )
+        self.resolver.resolve(GATEWAY_EXECUTABLE).map(PathBuf::from)
     }
 
     fn runs(&self, executable: &Path) -> bool {

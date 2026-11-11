@@ -11,19 +11,36 @@ use super::error::ProcessError;
 
 pub const LOG_WAIT_INTERVAL: Duration = Duration::from_millis(100);
 pub const LOG_POLL_INTERVAL: Duration = Duration::from_millis(200);
-pub const LOG_THREAD_NAME: &str = "betterlite-autoroute-log";
+
+// The teardown drops the worker; a real one stops and joins its thread there
+pub trait TailWorker {}
+
+pub trait LogTail {
+    fn start(&self, log_path: &Path) -> Result<Box<dyn TailWorker>, ProcessError>;
+}
+
+pub struct StdoutLogTail;
+
+impl LogTail for StdoutLogTail {
+    fn start(&self, log_path: &Path) -> Result<Box<dyn TailWorker>, ProcessError> {
+        let tailer = spawn_log_tail(log_path)?;
+        let worker: Box<dyn TailWorker> = Box::new(tailer);
+        Ok(worker)
+    }
+}
 
 pub struct LogTailer {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
+impl TailWorker for LogTailer {}
+
 pub fn spawn_log_tail(log_path: &Path) -> Result<LogTailer, ProcessError> {
     let stop = Arc::new(AtomicBool::new(false));
     let thread_stop = Arc::clone(&stop);
     let path = log_path.to_owned();
     let thread = Builder::new()
-        .name(LOG_THREAD_NAME.to_owned())
         .spawn(move || {
             let mut out = stdout();
             stream_log(&path, &thread_stop, &RealClock, &mut out);

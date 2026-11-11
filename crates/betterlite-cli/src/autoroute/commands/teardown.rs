@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use betterlite_logging::private_json::files::PrivateFiles;
 
 use crate::autoroute::process::control::{Clock, SignalPort, terminate};
-use crate::autoroute::process::log_tail::LogTailer;
+use crate::autoroute::process::log_tail::TailWorker;
 use crate::autoroute::process::pid_record::clear_pid_record;
 use crate::settings_backup::restore::restore_claude_settings;
 
@@ -18,7 +18,7 @@ pub struct TeardownRequest<'request> {
     pub signal_port: &'request dyn SignalPort,
     pub clock: &'request dyn Clock,
     pub files: &'request PrivateFiles,
-    pub tail: Option<LogTailer>,
+    pub tail: Option<Box<dyn TailWorker>>,
     pub stdout: &'request mut dyn Write,
     pub stderr: &'request mut dyn Write,
 }
@@ -34,13 +34,9 @@ pub fn run_teardown(mut request: TeardownRequest<'_>, done: &AtomicBool) -> bool
     let _cleared = clear_pid_record(request.pid_record);
     match restore_claude_settings(request.settings, request.backup, request.files) {
         Ok(_restored) => {
-            let _stopped = writeln!(
+            let _done = write!(
                 request.stdout,
-                "\nStopped ephemeral proxy and restored Claude Code settings."
-            );
-            let _warning = writeln!(
-                request.stdout,
-                "Restart any Claude Code session still open from this session, or another local account could bind the now-free port {} and receive its requests. Do not use `lite autoroute start` on a shared or multi-tenant host.",
+                "\nStopped ephemeral proxy and restored Claude Code settings.\nRestart any Claude Code session still open from this session, or another local account could bind the now-free port {} and receive its requests. Do not use `lite autoroute start` on a shared or multi-tenant host.",
                 request.port
             );
         }

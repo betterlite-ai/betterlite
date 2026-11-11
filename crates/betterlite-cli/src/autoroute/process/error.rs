@@ -5,13 +5,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
-    #[error(
-        "the native betterlite gateway executable was not found on PATH; install it with `{install_step}`"
-    )]
+    #[error("the gateway executable was not found on PATH; install it with `{install_step}`")]
     GatewayMissing { install_step: &'static str },
-    #[error(
-        "the gateway executable {path} does not run `--version`; reinstall it with `{install_step}`"
-    )]
+    #[error("{path} does not run `--version`; install it with `{install_step}`")]
     GatewayNotRunnable {
         path: PathBuf,
         install_step: &'static str,
@@ -52,9 +48,9 @@ pub enum ProcessError {
         #[source]
         source: io::Error,
     },
-    #[error("cannot start {executable}: {source}")]
+    #[error("cannot start {program}: {source}")]
     Launch {
-        executable: PathBuf,
+        program: PathBuf,
         #[source]
         source: io::Error,
     },
