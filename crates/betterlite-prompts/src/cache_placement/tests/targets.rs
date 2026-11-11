@@ -1,8 +1,9 @@
 use rstest::rstest;
 
+use crate::arguments::json::Object;
 use crate::cache_placement::targets::resolve_target_indices;
 use crate::cache_placement::tests::support::{capture_warnings, messages, point as single_point};
-use crate::message_content::Message;
+use crate::message_content::{Content, Message};
 
 const CONVERSATION: &str = r#"[
     {"role": "user", "content": "one"},
@@ -12,6 +13,17 @@ const CONVERSATION: &str = r#"[
 
 fn messages_of() -> Vec<Message> {
     messages(CONVERSATION)
+}
+
+fn twelve_users() -> Vec<Message> {
+    (0..12_usize)
+        .map(|index| Message {
+            role: "user".to_owned(),
+            content: Some(Content::Text(index.to_string())),
+            name: None,
+            provider_specific_fields: Object::new(),
+        })
+        .collect()
 }
 
 #[rstest]
@@ -37,9 +49,26 @@ fn an_integer_index_targets_one_message(#[case] index: i64, #[case] expected: Ve
 #[case::whitespace(" 1 ", vec![1])]
 #[case::plus_sign("+2", vec![2])]
 #[case::out_of_bounds("3", vec![])]
+#[case::underscore_pair("1_0", vec![])]
+#[case::huge("99999999999999999999", vec![])]
 fn a_text_index_is_read_as_an_integer(#[case] index: &str, #[case] expected: Vec<usize>) {
     let point = single_point(&format!(r#"{{"index": "{index}"}}"#));
     assert_eq!(resolve_target_indices(&point, &messages_of()), expected);
+}
+
+#[rstest]
+#[case::underscore_pair("1_0", vec![10])]
+#[case::negative_underscore_pair("-1_0", vec![2])]
+#[case::plus_underscore_pair("+1_0", vec![10])]
+#[case::huge_positive("99999999999999999999", vec![])]
+#[case::huge_negative("-99999999999999999999", vec![])]
+#[case::double_underscore("1__0", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+#[case::leading_underscore("_1", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+#[case::trailing_underscore("1_", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+#[case::not_a_number("first", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+fn a_text_index_is_read_like_python_int(#[case] index: &str, #[case] expected: Vec<usize>) {
+    let point = single_point(&format!(r#"{{"index": "{index}", "role": "user"}}"#));
+    assert_eq!(resolve_target_indices(&point, &twelve_users()), expected);
 }
 
 #[rstest]
