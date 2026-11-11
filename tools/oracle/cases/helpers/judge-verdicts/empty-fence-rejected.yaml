@@ -1,0 +1,10 @@
+kind: helper
+name: judge-verdict-empty-fence-rejected
+call:
+  b4080:
+    check: parse
+    raw: |
+      ```json
+      ```
+env: {}
+compare: {ignore: []}

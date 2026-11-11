@@ -1,0 +1,12 @@
+kind: helper
+name: clear-keychain-unreachable-keeps-note
+call:
+  b4592:
+    operation: clear
+    file: '{"base_url":"https://gateway.example","key":"sk-legacy","user_id":"u-1","refresh_token":"rt-legacy","timestamp":1000.0}'
+    vault:
+      refuse: [unavailable]
+      failure: unreachable
+    failures: {}
+env: {}
+compare: {ignore: []}

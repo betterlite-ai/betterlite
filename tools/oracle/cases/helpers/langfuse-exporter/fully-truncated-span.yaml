@@ -1,0 +1,18 @@
+kind: helper
+name: langfuse-exporter-fully-truncated-span
+call:
+  b3902:
+    public_key: pk-lf-b3902
+    secret_key: sk-lf-b3902
+    base_url: https://cloud.langfuse.com
+    spans:
+      - name: generation
+        attributes:
+          - [langfuse.observation.input, "aaaaaaaa"]
+          - [langfuse.observation.output, "bbbb"]
+    replies:
+      - status: 413
+      - status: 413
+      - status: 413
+env: {}
+compare: {ignore: []}

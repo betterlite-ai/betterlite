@@ -1,0 +1,29 @@
+kind: helper
+name: judge-target-team-scoped
+call:
+  b4080:
+    check: target
+    router:
+      served:
+        - model: team-judge
+          team_id: team-a
+          models: ["openai/gpt-4o"]
+        - model: public-judge
+          models: ["openai/gpt-4o-mini"]
+    queries:
+      - model: team-judge
+        team_id: team-a
+      - model: team-judge
+      - model: team-judge
+        team_id: team-b
+      - model: public-judge
+        team_id: team-b
+    dispatch:
+      model: team-judge
+      team_id: team-a
+      messages:
+        - role: user
+          content: which reply is better?
+      params: {}
+env: {}
+compare: {ignore: []}
