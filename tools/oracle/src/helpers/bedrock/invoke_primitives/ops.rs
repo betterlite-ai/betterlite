@@ -160,7 +160,10 @@ fn load(environment: &BTreeMap<String, String>) -> Result<Config, Box<HelperErro
 }
 
 fn guardrail_cases(values: &[Box<RawValue>]) -> Value {
-    let results: Vec<Value> = values.iter().map(|raw| guardrail_result(raw)).collect();
+    let mut results = Vec::with_capacity(values.len());
+    for raw in values {
+        results.push(guardrail_result(raw));
+    }
     json!({"results": results})
 }
 
