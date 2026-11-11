@@ -94,6 +94,20 @@ fn parameterized_targets_keep_their_overrides() {
     assert_eq!(target.parameters.keys().collect::<Vec<_>>(), ["messages"]);
 }
 
+#[test]
+fn router_settings_parameterized_targets_load() {
+    let source = "router_settings:\n  fallbacks: [{gpt-4: [{model: claude, messages: []}]}]\n";
+    let loaded = settings(source, &[]).unwrap();
+    let FallbackChainEntry::Group(chain) = &loaded.fallbacks[0] else {
+        panic!("the entry is not a group");
+    };
+    let FallbackTarget::Parameters(target) = &chain["gpt-4"][0] else {
+        panic!("the target is not parameterized");
+    };
+    assert_eq!(target.model, "claude");
+    assert_eq!(target.parameters.keys().collect::<Vec<_>>(), ["messages"]);
+}
+
 #[rstest]
 #[case::bare_string(
     "litellm_settings:\n  fallbacks: [claude]\n",
