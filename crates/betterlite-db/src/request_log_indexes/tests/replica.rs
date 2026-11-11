@@ -2,8 +2,11 @@ use std::time::Duration;
 
 use deadpool_postgres::GenericClient as _;
 use secrecy::SecretString;
+use tokio::time::{Instant, sleep};
 
-use crate::request_log_indexes::replica_identity::{apply_on, apply_replica_identity_full};
+use crate::request_log_indexes::replica_identity::{
+    apply_on, apply_replica_identity_full, remaining,
+};
 
 use super::support::{
     FakeDatabase, FakeFault, PostgresTest, errored, informed, install_logs, replica_identity,
@@ -181,13 +184,34 @@ async fn replica_identity_connect_times_out() {
     ));
     assert!(errored(
         &captured,
-        "Could not run the REPLICA IDENTITY FULL statement. Logical replication consumers may reject updates to these tables."
+        "Timed out setting REPLICA IDENTITY FULL on LiteLLM tables"
     ));
     assert!(!informed(
         &captured,
         "REPLICA IDENTITY FULL applied to LiteLLM tables"
     ));
     sockets.shutdown().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn replica_connect_time_counts_against_the_command_budget() {
+    let (logs, _guard) = install_logs();
+    let fake = FakeDatabase::default();
+    fake.configure(|state| {
+        state
+            .statement_faults
+            .push(("DO $$".to_owned(), FakeFault::Pending));
+    });
+    let started = Instant::now();
+    sleep(Duration::from_millis(60)).await;
+    let left = remaining(Duration::from_millis(100), started);
+    assert_eq!(left, Duration::from_millis(40));
+    assert!(!apply_on(&fake, left).await);
+    assert_eq!(started.elapsed(), Duration::from_millis(100));
+    assert!(errored(
+        &logs.contents(),
+        "Timed out setting REPLICA IDENTITY FULL on LiteLLM tables"
+    ));
 }
 
 #[tokio::test]

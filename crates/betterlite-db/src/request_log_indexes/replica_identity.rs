@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use secrecy::SecretString;
-use tokio::time::timeout;
+use tokio::time::{Instant, timeout};
 
+use super::RequestLogIndexError;
 use super::connect;
-use super::database::IndexDatabase;
+use super::database::{DatabaseFailure, IndexDatabase};
 
 pub(crate) const REPLICA_IDENTITY_FULL_SQL: &str = r"
 DO $$
@@ -33,20 +34,29 @@ $$;
 
 const APPLY_MESSAGE: &str = "Applying REPLICA IDENTITY FULL to LiteLLM tables";
 
+// One command budget covers the connection and the DO, like the Prisma subprocess timeout
 pub async fn apply_replica_identity_full(
     database_url: &SecretString,
     command_timeout: Duration,
 ) -> bool {
-    match connect::connect(database_url, command_timeout).await {
-        Ok(database) => apply_on(&database, command_timeout).await,
-        Err(error) => {
+    let started = Instant::now();
+    match timeout(command_timeout, connect::open(database_url)).await {
+        Ok(Ok(database)) => apply_on(&database, remaining(command_timeout, started)).await,
+        Ok(Err(error)) => {
             tracing::info!("{APPLY_MESSAGE}");
-            tracing::error!(
-                "Could not run the REPLICA IDENTITY FULL statement. Logical replication consumers may reject updates to these tables. Error: {error}"
-            );
-            false
+            report::<RequestLogIndexError>(Err(ReplicaFailure::Connection(error)))
+        }
+        Err(_elapsed) => {
+            tracing::info!("{APPLY_MESSAGE}");
+            report::<RequestLogIndexError>(Err(ReplicaFailure::TimedOut))
         }
     }
+}
+
+pub(crate) fn remaining(command_timeout: Duration, started: Instant) -> Duration {
+    command_timeout
+        .checked_sub(started.elapsed())
+        .unwrap_or(Duration::ZERO)
 }
 
 pub(crate) async fn apply_on<D>(database: &D, command_timeout: Duration) -> bool
@@ -54,21 +64,53 @@ where
     D: IndexDatabase,
 {
     tracing::info!("{APPLY_MESSAGE}");
-    let executed = timeout(command_timeout, database.execute(REPLICA_IDENTITY_FULL_SQL)).await;
-    match executed {
-        Err(_) => {
+    report(bounded_execute(database, command_timeout).await)
+}
+
+async fn bounded_execute<D>(
+    database: &D,
+    command_timeout: Duration,
+) -> Result<(), ReplicaFailure<D::Error>>
+where
+    D: IndexDatabase,
+{
+    match timeout(command_timeout, database.execute(REPLICA_IDENTITY_FULL_SQL)).await {
+        Err(_elapsed) => Err(ReplicaFailure::TimedOut),
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(ReplicaFailure::Statement(error)),
+    }
+}
+
+enum ReplicaFailure<E> {
+    TimedOut,
+    Connection(RequestLogIndexError),
+    Statement(E),
+}
+
+fn report<E>(outcome: Result<(), ReplicaFailure<E>>) -> bool
+where
+    E: DatabaseFailure,
+{
+    match outcome {
+        Ok(()) => {
+            tracing::info!("REPLICA IDENTITY FULL applied to LiteLLM tables");
+            true
+        }
+        Err(ReplicaFailure::TimedOut) => {
             tracing::error!("Timed out setting REPLICA IDENTITY FULL on LiteLLM tables");
             false
         }
-        Ok(Err(error)) => {
+        Err(ReplicaFailure::Connection(error)) => {
+            tracing::error!(
+                "Could not run the REPLICA IDENTITY FULL statement. Logical replication consumers may reject updates to these tables. Error: {error}"
+            );
+            false
+        }
+        Err(ReplicaFailure::Statement(error)) => {
             tracing::error!(
                 "Failed to set REPLICA IDENTITY FULL. Logical replication consumers may reject updates to these tables. Grant table ownership to the migration user, or apply `ALTER TABLE ... REPLICA IDENTITY FULL` by hand. Error: {error}"
             );
             false
-        }
-        Ok(Ok(())) => {
-            tracing::info!("REPLICA IDENTITY FULL applied to LiteLLM tables");
-            true
         }
     }
 }

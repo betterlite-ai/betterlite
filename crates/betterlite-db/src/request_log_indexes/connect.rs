@@ -29,18 +29,27 @@ pub(crate) async fn connect(
     database_url: &SecretString,
     budget: Duration,
 ) -> Result<PostgresDatabase, RequestLogIndexError> {
+    match timeout(budget, open(database_url)).await {
+        Err(_elapsed) => Err(RequestLogIndexError::ConnectTimeout),
+        Ok(result) => result,
+    }
+}
+
+pub(crate) async fn open(
+    database_url: &SecretString,
+) -> Result<PostgresDatabase, RequestLogIndexError> {
     let options = connection_options(database_url.expose_secret())?;
     let pool = Pool::builder(Manager::new(options.config, options.tls))
         .max_size(1)
         .build()
         .map_err(|source| RequestLogIndexError::Pool { source })?;
-    let client = timeout(budget, pool.get())
+    let client = pool
+        .get()
         .await
-        .map_err(|_elapsed| RequestLogIndexError::ConnectTimeout)?
         .map_err(|source| RequestLogIndexError::Open { source })?;
-    timeout(budget, client.batch_execute(STATEMENT_TIMEOUT_OFF))
+    client
+        .batch_execute(STATEMENT_TIMEOUT_OFF)
         .await
-        .map_err(|_elapsed| RequestLogIndexError::ConnectTimeout)?
         .map_err(|source| RequestLogIndexError::Statement { source })?;
     Ok(PostgresDatabase { client })
 }
