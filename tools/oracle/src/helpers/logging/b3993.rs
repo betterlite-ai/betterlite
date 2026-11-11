@@ -10,7 +10,9 @@ use betterlite_logging::s3_transport::encryption::{
 };
 use betterlite_logging::s3_transport::error::S3TransportError;
 use betterlite_logging::s3_transport::option_value::OptionValue;
-use betterlite_logging::s3_transport::signing::{Clock, Credentials, StaticCredentials};
+use betterlite_logging::s3_transport::signing::{
+    Clock, CredentialSource, Credentials, StaticCredentials,
+};
 use betterlite_logging::s3_transport::transport::{
     S3HttpClient, S3Request, S3Response, S3Transport, ThrottleSink, UploadOutcome,
 };
@@ -214,12 +216,24 @@ impl Helper for Op {
 async fn execute(input: &Input) -> HelperResult {
     let sink = Arc::new(RecordingSink::default());
     let scripted = Arc::new(ScriptedS3::new(input.responses.clone()));
-    let client: Arc<dyn S3HttpClient> = Arc::clone(&scripted);
+    let client: Arc<dyn S3HttpClient> = scripted.clone();
     let throttle: Option<Arc<dyn ThrottleSink>> = if input.settings.adaptive_concurrency {
-        Some(Arc::clone(&sink))
+        let recording: Arc<dyn ThrottleSink> = sink.clone();
+        Some(recording)
     } else {
         None
     };
+    let credentials: Arc<dyn CredentialSource> = Arc::new(StaticCredentials {
+        credentials: Credentials {
+            access_key_id: SecretString::from(input.credentials.access_key_id.clone()),
+            secret_access_key: SecretString::from(input.credentials.secret_access_key.clone()),
+            session_token: input
+                .credentials
+                .session_token
+                .as_ref()
+                .map(|token| SecretString::from(token.clone())),
+        },
+    });
     let transport = S3Transport {
         client,
         endpoint: S3Endpoint {
@@ -228,17 +242,7 @@ async fn execute(input: &Input) -> HelperResult {
             endpoint_url: input.settings.endpoint_url.clone(),
             virtual_hosted_style: input.settings.use_virtual_hosted_style,
         },
-        credentials: Arc::new(StaticCredentials {
-            credentials: Credentials {
-                access_key_id: SecretString::from(input.credentials.access_key_id.clone()),
-                secret_access_key: SecretString::from(input.credentials.secret_access_key.clone()),
-                session_token: input
-                    .credentials
-                    .session_token
-                    .as_ref()
-                    .map(|token| SecretString::from(token.clone())),
-            },
-        }),
+        credentials,
         encryption: encryption(input),
         drop_on_terminal_error: input.settings.drop_on_terminal_error,
         throttle,
