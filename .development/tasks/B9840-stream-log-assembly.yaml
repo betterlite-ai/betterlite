@@ -1,0 +1,327 @@
+id: B9840
+title: Convert and assemble success results for logging
+description: >-
+  LiteLLM's success handlers turn the last result of a stream into one complete response before cost and the standard
+  payload see it, in Logging._get_assembled_streaming_response (litellm_logging.py L4108-L4144), called from
+  _success_handler_body (L2799-L2805) and _async_success_handler_body (L3311-L3319). B250's success handler asks a
+  StreamAssembler for that response (the trait in crates/betterlite-logging/src/logging_success/ports.rs), and every
+  place that builds a success handler needs one production value of it. B252 builds ChatStreamAssembler for the chat
+  branch (L4116-L4119). This task builds the two other branches and LoggedStreamAssembler, the one StreamAssembler that
+  covers every shape the function handles. Before any of that, LiteLLM's _success_handler_helper_fn converts the result
+  of an Anthropic /v1/messages, Google GenAI generateContent or A2A send_message call into the response logging reads
+  (L2519-L2527), and B250's prepare.rs has no such step. Part 4 adds it to the same port and builds the conversions.
+
+
+  Code goes in betterlite-core, module `stream_log_assembly` (crates/betterlite-core/src/stream_log_assembly.rs and its
+  folder). It sits in core and not in betterlite-logging because the Responses branch calls B906's usage transform and
+  B1717's hidden-params cost helper, and the conversions call B580's Anthropic response transform (betterlite-anthropic),
+  B919's Responses-to-chat transform (betterlite-core) and B1326's Gemini response transform (betterlite-vertex), and
+  core already depends on betterlite-logging. The architect's skeleton creates the empty file and declares it in lib.rs,
+  so leave lib.rs alone. Add betterlite-interactions to betterlite-core's dependencies unless B3491 already did, and
+  betterlite-vertex (it depends on no betterlite crate above it, so the edge makes no cycle).
+
+
+  1. Responses terminal events (L4120-L4140). The Responses stream iterator (B926) hands its terminal event to the
+  success handlers as the result: an object whose type is "response.completed", "response.incomplete" or
+  "response.failed" and whose `response` is the full Responses object (types/llms/openai.py L1596-L1612).
+  `assemble_responses_event(event: &Map<String, Value>) -> Option<Value>` returns that `response` object, never the
+  event. When the response's usage is an object (LiteLLM's isinstance check on ResponseAPIUsage, the only type the field
+  declares), first record the provider cost with B1717's set_response_cost_in_hidden_params (betterlite-core helpers;
+  read its merged signature): when the usage's cost is not null, `llm_provider-x-litellm-response-cost` is merged over
+  the response's `_hidden_params.additional_headers` (core_helpers.py L754-L772). The cost is read the way B1138's
+  ResponseAPIUsage reads it: a number, or the total_cost of an object (the parse_cost validator, L1360-L1365). Then
+  replace usage with the chat usage B906 builds, as a JSON object: `normalize_and_project(UsageInput::Mapping(usage))`
+  in api::responses_usage. A null or absent usage leaves the response as it came, with no cost header. If B906 refuses
+  the usage, log a warning with its error and return the response with its usage unchanged; input of the declared type
+  never takes that path.
+
+
+  2. Interaction chunks (L4141-L4142, L4146-L4171). The interaction stream iterator (B3491) hands its terminal chunk to
+  the success handlers (interactions/streaming_iterator.py L96-L105), and LiteLLM turns it into a full interaction
+  response so cost and spend see the same shape as a non-streamed create. Use B3481's types from
+  betterlite-interactions::types for the streaming chunk (InteractionsAPIStreamingResponse) and the response
+  (InteractionsAPIResponse); do not define them again. `assemble_completed_interaction(chunk: &<B3481's streaming
+  chunk>) -> Option<<B3481's response>>` ports _assemble_completed_interaction_response. When event_type is
+  "interaction.completed" and the chunk's interaction object is present, the response is that object read as a
+  response. Otherwise, when the chunk's status is "completed", the response is the chunk itself without its event_type,
+  delta, index, step, interaction_id and interaction fields. Every other chunk gives None. Both responses keep unknown
+  keys (LiteLLM's models allow extra fields), and object is "interaction" when the source has none.
+
+
+  3. The composed assembler. `pub struct LoggedStreamAssembler { pub chat: ChatStreamAssembler }`, holding B252's unit
+  struct and built as that struct literal (no constructor, since one that only builds the struct breaks
+  no-one-line-functions), implements StreamAssembler. assemble(state, result, mode) returns None unless
+  state.stream is Some(true) (LiteLLM's `self.stream is not True`). A SuccessResult::Other object whose type is one of
+  the three Responses terminal types and whose `response` is an object goes to part 1. Otherwise, when state.call_type
+  is create_interaction, acreate_interaction, create or acreate (the call types B3496's is_billable_interaction accepts)
+  and the result's JSON reads as B3481's streaming chunk, part 2 answers, with the response as JSON or None when it gives
+  None; such a result never falls through to the chat branch. The call type gate stands in for LiteLLM's isinstance
+  check, since every JSON object reads as a chunk whose fields are all optional. Every other result goes to
+  ChatStreamAssembler unchanged, so a Chat result or a text completion still comes back as is and anything else gives
+  None. The mode does not change any branch, and the type keeps no state, so one value serves sync and async handlers.
+  This task builds the type and its tests and edits no server file: B8610 builds one value and
+  hands that Arc to every production success handler.
+
+
+  4. Logged-result conversion (L2519-L2527 and L4177-L4343). The port: give StreamAssembler in ports.rs a provided
+  method `logged_result(&self, state: &mut LoggingState, result: SuccessResult) -> Result<SuccessResult, SuccessError>`
+  whose default returns Ok(result), so B252's ChatStreamAssembler and the test doubles that implement the trait on main
+  keep compiling, and override it in LoggedStreamAssembler. The conversion rides on this port because the composition
+  root already hands one value of it to every success handler; a new SuccessHandler field would have to be filled at
+  every place that builds one. Add `LoggedResult(String)` to SuccessError in types.rs for a conversion that fails. In
+  prepare.rs, call it after the completion start time and the log_event_type, end_time and cache_hit markers and before
+  the standard payload, and use the converted result for the payload, for Prepared.result and so for the assembler and
+  the callbacks. When it fails, log a warning `[Non-Blocking] LiteLLM.Success_Call Error: {error}` and run no callback
+  for the call, since LiteLLM raises out of the handler there (L2576-L2577): prepare returns Option<Prepared> and begin
+  in handler.rs returns None for None. The raw upstream response LiteLLM keeps in model_call_details["httpx_response"]
+  becomes a typed field, `pub httpx_response: Option<UpstreamResponse>` (betterlite_http::proxy::UpstreamResponse,
+  with status, headers and body bytes) on LoggingState. B3488 adds it, None in LoggingState::new, and sets it for GenAI
+  generate_content; read it, don't add it. It stays out of
+  model_call_details so no payload or callback sees it. B976 adds `streamed_anthropic_message_id: Option<String>` next to
+  it; read that field, don't add it.
+
+
+  LoggedStreamAssembler::logged_result matches state.call_type exactly. On "anthropic_messages"
+  (_anthropic_messages_logged_response and _handle_anthropic_messages_response_logging, L4177-L4252): a
+  SuccessResult::Chat comes back as is. A Responses terminal event (the three types of part 1) is replaced by its
+  `response`, and an object whose `object` is "response" is translated (_translate_responses_api_response_to_model_response,
+  L4254-L4298): the served id is B254's provider_response_id (betterlite-logging fields::response) of the response; call
+  B919's transform_response in api::response_chat_result with model state.model, a chat response whose id is the served
+  id, and empty request data, messages, optional params and litellm params; then set the id to the served id when there
+  is one. When B919 returns an error, log it at debug and build a chat response with the served id and model
+  state.model, whose usage, when the response's usage is an object that is_response_api_usage (api::responses_usage)
+  accepts, is normalize_and_project of it. Any other result goes through B580's Anthropic response module, with the
+  model response id set to provider_response_id of the result: when state.httpx_response is Some, its transform_response
+  over that response (model state.model, no messages, state.optional_params, empty litellm params, json_mode false);
+  when the result is null, a warning "LiteLLM: the anthropic_messages stream assembled no response, logging an empty
+  one" and a default chat response with model state.model; otherwise its transform_parsed_response of the result with
+  status 200 and no headers, json_mode None and speed from optional_params "speed". A B580 error fails the conversion.
+  Last, whichever branch ran, a Some state.streamed_anthropic_message_id replaces the id. The answer is a
+  SuccessResult::Chat. On "generate_content" and "agenerate_content" (L4300-L4320): a None state.httpx_response fails
+  with "Google GenAI Generate Content: httpx_response is None", a body that is not JSON fails, and otherwise B1326's
+  _transform_google_generate_content_to_openai_model_response (betterlite-vertex gemini_response) builds the chat
+  response from the body with model state.model, ignoring the result; the answer is a Chat. On "asend_message" and
+  "send_message" (_handle_a2a_response_logging, L4322-L4343): when model_call_details has a "usage" that is not null,
+  the result object gets "usage" set to it and keeps its `_hidden_params`; otherwise it comes back as is. Every other
+  call type comes back as is. A chat response becomes JSON with its hidden params under `_hidden_params`, the shape the
+  handler's Chat results already carry. Read the merged signatures of B580, B919 and B1326 before writing the calls.
+
+
+  Tests live in stream_log_assembly's tests.rs: `responses_*` for part 1 (each event type, cost as a number, as an
+  object with total_cost and null, usage null and absent), `interaction_*` for part 2 (completed event with and without
+  an interaction object, legacy status completed, in_progress and requires_action), `stream_gate_*` for a call with
+  stream None or Some(false) on each shape, `delegates_*` for what reaches ChatStreamAssembler through the composed
+  type: a streamed Chat result comes back as is, and a plain object on a chat call type gives None, and `logged_*` for
+  part 4: each anthropic_messages branch (Chat, streamed id over Chat and over a dict, terminal event, bare Responses
+  object, B919 error with and without usage, httpx response, null, dict), aanthropic_messages left as is, both GenAI call
+  types with a body, a missing response and a body that is not JSON, both A2A call types with usage, null usage and no
+  usage, and a chat call type left as is. In betterlite-logging's logging_success tests, add `logged_result_*` tests
+  with a test double that overrides logged_result: its converted result is what the payload builder, the assembler and
+  the callbacks get, an error runs no callback and stores no payload, and the default leaves the result unchanged.
+
+
+  Oracle helper. The skeleton registers this task's helper operation b9840 in the core_ops group and adds its Rust and
+  Python files to the scope. Its input is `step` ("assemble" or "logged_result"), `stream` (bool or null),
+  `call_type`, `result` (a JSON value), `result_kind` ("chat" or "other", default "other"), `optional_params` (object,
+  default {}), `httpx_response` (null, or status_code, headers and body as text), `streamed_anthropic_message_id`
+  (string or null) and `call_details_usage` (object or null). For assemble, its output is null when nothing is
+  assembled, otherwise `{response, hidden_params}`: response is the assembled object without `_hidden_params`, and
+  hidden_params is the response's hidden params ({} when it has none). For logged_result, its output is `{response,
+  hidden_params}` of the converted result, or `{failed: true}` when the conversion fails. The Rust adapter builds a
+  B247 LoggingState from a LoggingInit with model oracle-model, the stream and the call type, sets optional_params,
+  httpx_response, streamed_anthropic_message_id and model_call_details "usage" from the input, and calls
+  `LoggedStreamAssembler { chat: ChatStreamAssembler }` with assemble (SuccessMode::Async) or logged_result, handing the
+  result over as SuccessResult::Chat for result_kind chat and SuccessResult::Other otherwise. The Python adapter builds
+  Logging(model="oracle-model", messages=[], stream=stream, call_type=call_type, start_time=now,
+  litellm_call_id="oracle", function_id="oracle") and sets optional_params, model_call_details["httpx_response"] (an
+  httpx.Response), record_streamed_anthropic_message_id and model_call_details["usage"] from the input. It turns the
+  result into ModelResponse for result_kind chat, into ResponseCompletedEvent, ResponseIncompleteEvent or
+  ResponseFailedEvent by its type, into ResponsesAPIResponse when its object is "response", into
+  InteractionsAPIStreamingResponse when the call type is an interactions one, into LiteLLMSendMessageResponse when it is
+  asend_message or send_message, and leaves any other value as it is. For assemble it calls
+  _get_assembled_streaming_response(result, now, now, True, []); for logged_result it calls
+  _success_handler_helper_fn(result=result, start_time=now, end_time=now, standard_logging_object=<a minimal payload>),
+  so no payload is built, and returns `{failed: true}` when that raises. It returns None or model_dump(mode="json") of
+  the result with its _hidden_params. An interaction response is dumped with every declared field, nulls included, and
+  its unknown keys, so the Rust side serializes B3481's response type the same way. A converted chat response's
+  `created` is the clock and its id is generated when no id was served, so those cases ignore /response/created, and
+  /response/id where no id is served, each with that reason.
+
+
+  Size: about 165 LiteLLM lines (45 for assembly, 120 for the conversions and their dispatch). Plan 60 lines for part 1,
+  50 for part 2, 40 for the composed assembler, 170 for part 4 with 35 in betterlite-logging, 270 of Rust and Python
+  adapter, and the tests and cases on top.
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/stream_log_assembly.rs
+    - crates/betterlite-core/src/stream_log_assembly/**
+    - crates/betterlite-logging/src/logging_state.rs
+    - crates/betterlite-logging/src/logging_success/ports.rs
+    - crates/betterlite-logging/src/logging_success/prepare.rs
+    - crates/betterlite-logging/src/logging_success/handler.rs
+    - crates/betterlite-logging/src/logging_success/types.rs
+    - crates/betterlite-logging/src/logging_success/tests.rs
+    - crates/betterlite-logging/src/logging_success/tests/**
+    - tools/oracle/cases/helpers/stream-log-assembly/**
+    - tools/oracle/helpers/b9840.py
+    - tools/oracle/helpers/b9840/**
+    - tools/oracle/src/helpers/core_ops/b9840.rs
+    - tools/oracle/src/helpers/core_ops/b9840/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4108-L4171
+    why: _get_assembled_streaming_response with its stream gate (L4116-L4117), chat branch (L4118-L4119, B252's), Responses branch (L4120-L4140) and interaction branch (L4141-L4142), and _assemble_completed_interaction_response (L4146-L4171).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2794-L2810
+    why: The sync success handler skips assembly once complete_streaming_response is set, then stores the assembled response under that key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3308-L3325
+    why: The async success handler does the same under async_complete_streaming_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1339-L1365
+    why: ResponseAPIUsage and the parse_cost validator that turns an object cost into its total_cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388-L1425
+    why: ResponsesAPIResponse, whose usage is ResponseAPIUsage or None and whose _hidden_params is a private dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1596-L1612
+    why: The three terminal event types, each carrying the full response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L754-L772
+    why: set_response_cost_in_hidden_params and the llm_provider-x-litellm-response-cost header name; B1717 builds it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1140-L1230
+    why: _transform_response_api_usage_to_chat_usage, which B906 built as api::responses_usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L507-L575
+    why: Where the Responses stream picks its terminal event and dispatches it to the success handlers (B926).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1057-L1120
+    why: InteractionsAPIResponse and InteractionsAPIStreamingResponse, their optional fields, the "interaction" default for object and extra="allow" from the base class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L69-L117
+    why: Where the interaction stream decides a chunk is terminal and hands it to the success handlers (B3491).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2497-L2577
+    why: _success_handler_helper_fn; the call-type conversion (L2519-L2527) runs after the markers and before the payload, and any error leaves the handler as "[Non-Blocking] LiteLLM.Success_Call Error" (L2576-L2577).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4174-L4343
+    why: record_streamed_anthropic_message_id (B976's), _anthropic_messages_logged_response, _handle_anthropic_messages_response_logging, _translate_responses_api_response_to_model_response, _handle_non_streaming_google_genai_generate_content_response_logging and _handle_a2a_response_logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L536-L538
+    why: _provider_response_id, built by B254 as fields::response::provider_response_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L483-L484
+    why: anthropic_messages and aanthropic_messages are two call types, and only the first is converted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2584-L2759
+    why: AnthropicConfig.transform_parsed_response and transform_response, which B580 builds; the converted response keeps the id it was given, not the upstream one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L890-L949
+    why: LiteLLMResponsesTransformationHandler.transform_response (B919), which raises on a response with an error or with no output it can read, the case the fallback covers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2412-L2511
+    why: _transform_google_generate_content_to_openai_model_response, which B1326 builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1142-L1148
+    why: _is_response_api_usage, the test the fallback applies before converting usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L2256-L2276
+    why: The native /v1/messages call stores its raw httpx response in model_call_details["httpx_response"] for logging, stream or not.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L380-L392
+    why: The GenAI generateContent transform stores the raw response the same way.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L446-L466
+    why: LiteLLMSendMessageResponse, whose usage the A2A conversion fills and whose _hidden_params model_copy keeps.
+dod:
+  - text: A streamed response.completed, response.incomplete or response.failed result assembles to its response, with usage in chat form and the provider cost in the hidden response-cost header, and a response without usage comes back unchanged.
+    proof: [responses-tests, helper-cases, helper-python, oracle]
+  - text: assemble_completed_interaction returns the interaction object of an interaction.completed event, the trimmed chunk for a status completed chunk, and None for every other chunk, keeping unknown keys and the object default.
+    proof: [interaction-tests, helper-cases, helper-python, oracle]
+  - text: LoggedStreamAssembler gives None on a call that is not streamed, answers an interaction call type's chunk itself even when it gives None, and hands every other result to ChatStreamAssembler unchanged.
+    proof: [composition-tests]
+  - text: On an anthropic_messages call, a chat response comes back as is, a Responses result is translated with the served id or falls back to a usage-only response, any other result goes through the Anthropic response transform (from the stored upstream response when there is one), a null result logs an empty response, and a streamed message id replaces the id; aanthropic_messages is left as is.
+    proof: [logged-result-tests, helper-cases, helper-python, oracle]
+  - text: On a GenAI generate_content or agenerate_content call the logged response is built from the stored upstream body and the conversion fails without one, and an A2A send_message result gets the call's usage.
+    proof: [logged-result-tests, helper-cases, helper-python, oracle]
+  - text: The success handler converts the result before it builds the payload or asks for an assembled stream, runs no callback when the conversion fails, and its existing tests and the handlers built on it still pass.
+    proof: [success-handler-tests]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: responses-tests
+      why: the Responses branch returns the event, drops the cost header, converts a missing usage or misreads an object cost
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^stream_log_assembly::.*responses_/)'
+    - id: interaction-tests
+      why: the completed-event, legacy-status or None cases of the interaction assembly are missing or wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^stream_log_assembly::.*interaction_/)'
+    - id: composition-tests
+      why: the stream gate, the interaction call type gate or the hand-off to the chat assembler is missing or wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^stream_log_assembly::.*(stream_gate_|delegates_)/)'
+    - id: logged-result-tests
+      why: a call-type conversion, its fallback, the streamed id or a failure case is missing or wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^stream_log_assembly::.*logged_/)'
+    - id: success-handler-tests
+      why: the handler skips the conversion, builds the payload from the unconverted result, still runs callbacks after a failure, or the port change broke the handlers built on it
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_success::.*logged_result_/)' &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_success::/) | test(/^passthrough_logging_state::/) | test(/^passthrough_stream_logging::/) | test(/^logging_state::/)' &&
+        cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^caching::hit_callbacks::/)'
+    - id: helper-cases
+      why: the assembler has no helper case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/stream-log-assembly)"
+    - id: helper-python
+      why: the Python adapter fails the strict checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-completed-cost-number.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-completed-cost-total-cost-object.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-completed-cost-null.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-completed-cached-and-reasoning-details.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-completed-usage-null.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-incomplete-event.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-failed-event.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/responses-not-streamed.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/plain-object-on-chat-call-type.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-completed-event-with-interaction.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-completed-event-keeps-unknown-keys.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-completed-event-without-interaction.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-completed-event-without-interaction-status-completed.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-legacy-status-completed-with-usage.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-legacy-status-completed-keeps-unknown-keys.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-status-in-progress.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-requires-action-event.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/interaction-not-streamed.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-chat-unchanged.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-chat-streamed-id.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-dict-text.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-dict-tool-use.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-dict-streamed-id.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-httpx-response.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-null-result.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-responses-completed-event.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-responses-object.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-responses-error-fallback.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-anthropic-responses-empty-output-fallback.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-aanthropic-messages-unchanged.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-generate-content-body.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-agenerate-content-body.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-generate-content-no-response-fails.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-generate-content-body-not-json-fails.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-asend-message-usage.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-send-message-without-usage.yaml
+  - tools/oracle/cases/helpers/stream-log-assembly/logged-chat-call-type-unchanged.yaml
+deviations: []
+out_of_scope:
+  - "The stream gate and chat branch of _get_assembled_streaming_response (L4116-L4119) are B252's ChatStreamAssembler, which this type calls; the success handlers that call the port are B250's."
+  - "Building the one production value and handing it to the server's success handlers (the chat and embeddings logging B012 wires, B8931's pass-through runtime, the cache-hit handler B4301 built) belongs to B8610, not to this task. Until it is swapped in, B012's server logging runs on B252's ChatStreamAssembler."
+  - "Anthropic /v1/messages has no assembly branch: its stream hands the success handlers an assembled ModelResponse, which part 4 converts and the chat branch returns."
+  - "record_streamed_anthropic_message_id (L4174-L4175) and the streamed_anthropic_message_id field are B976's, written when its stream wrapper starts; the Responses bridge stream that also records the id (responses_adapters/streaming_iterator.py L127) belongs to that file's owner."
+  - "Storing the upstream response in LoggingState.httpx_response is the job of the calls that receive it, as LiteLLM's native /v1/messages call (llm_http_handler.py L2276) and GenAI transform (google_genai/transformation.py L389) do; B3488 adds the field and sets it for GenAI, and this task reads it. Nothing sets it for the native /v1/messages call yet, so that call logs from the served body without the upstream llm_provider-* headers."
+  - "The A2A usage in model_call_details is written by betterlite-a2a's logging context; this task only copies it onto the result."
+  - "The Responses stream iterator that hands over the terminal event is B926's, the interaction stream iterator B3491's, the usage transform B906's, the hidden-params cost helper B1717's and the interaction billing branch (L2604-L2701) B3481's and B3496's."
+  - "The remaining functions in litellm_logging.py belong to B190 and its named sibling parts (B247 to B254) and the owners their out_of_scope lists name."
+pitfalls:
+  - "The Responses branch returns the event's `response`, not the event; logging the event object would give cost and the standard payload a shape with no usage at the top."
+  - "response.incomplete and response.failed take the same branch as response.completed, cost header included."
+  - "The cost header goes into `_hidden_params.additional_headers` under llm_provider-x-litellm-response-cost and keeps the headers already there; a null cost writes nothing, and an object cost uses its total_cost."
+  - "The status branch drops exactly event_type, delta, index, step, interaction_id and interaction; id, object, model, agent, status, created, updated, outputs, steps, usage and any unknown key stay in the response."
+  - "An interaction.completed event with interaction null is not the end: it falls through to the status test, so it assembles only when its own status is completed."
+  - "interaction.requires_action and in_progress chunks assemble to None; requires_action billing happens on the non-streamed path in B3496, not here."
+  - "Every JSON object reads as B3481's chunk type, since all its fields are optional; without the call type gate a Responses or chat stream result would be taken for an interaction."
+  - "stream must be exactly Some(true): a call with stream None or false assembles nothing for any shape, the way LiteLLM tests `self.stream is not True`."
+  - "Only call type anthropic_messages is converted; aanthropic_messages, which the cache treats as a Messages call too, logs its result as it came."
+  - "The Anthropic transform keeps the id it is handed, so the logged id is the served result's id even on the httpx branch, never the id inside the stored upstream body."
+  - "The streamed message id replaces the id after every anthropic_messages branch, the untouched Chat result included."
+  - "The GenAI conversion reads the stored upstream body and ignores the result, so a call that stored no upstream response logs nothing at all."
+  - "The Responses fallback model is state.model, not the response's model, and it keeps the served resp_ id as the chat id."
+  - "logged_result runs on every call, streamed or not; only assemble looks at the stream flag."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

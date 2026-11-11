@@ -165,7 +165,7 @@ deviations:
 
 out_of_scope:
   - Agent registry mutation, database loading or cache population (B8590 through B8612 for config agents, B8384 for database agents).
-  - Agent route definitions, dispatch or pre-call hook assembly (B141).
+  - Agent route definitions (B4784 to B4787, B8647), dispatch (B8589) or pre-call hook assembly.
   - Rate limiter policy (B3040), admission decisions and limiter assembly (B3055, B5660) or v3 limiter internals.
   - The full rate limiter implementations that call ProxyRateLimitError (B3007, B3040, B3055).
   - The other LiteLLM rate limiter utility functions convert_priority_to_percent and map_v3_rate_limit_type.

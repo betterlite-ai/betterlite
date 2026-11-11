@@ -1,0 +1,5 @@
+kind: helper
+name: inactive-logger-defaults
+call: {"b9520": {"cold_storage_custom_logger": "s3_v2", "metadata": {}, "start_time": "2026-01-02T03:04:05.123456", "response_id": "chatcmpl-1"}}
+env: {}
+compare: {ignore: []}

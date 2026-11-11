@@ -1,0 +1,14 @@
+id: B9372
+milestone: M5 api families
+title: Eval call routing and deployment credential merge
+status: todo
+depends_on: [B8800, B8692, B8611, B2306, B844, B8610]
+file: tasks/B9372-eval-call-route.yaml
+covers:
+  - "litellm/proxy/route_llm_request.py"
+parent: B096
+split_from: B096
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

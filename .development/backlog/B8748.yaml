@@ -4,7 +4,8 @@ title: LangSmith logger lifecycle, batching and catalog arm
 status: todo
 depends_on: [B3911, B8741, B256, B173]
 file: tasks/B8748-langsmith-logger.yaml
-covers: []
+covers:
+  - "litellm/integrations/langsmith.py"
 parent: B112
 split_from: null
 resolution: null

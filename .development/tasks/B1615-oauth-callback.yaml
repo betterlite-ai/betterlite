@@ -14,7 +14,7 @@ description: >-
   check; preserve its difference from the SAML callback.
   CLI completion first reads the flow, then checks DB and result. Use B1624's identity/domain
   policy and async custom-SSO contract, enforce restricted groups, and reconcile the user
-  through B1616. Require a nonempty user ID, retain the assertion with B137, warn through
+  through B1616. Require a nonempty user ID, retain the assertion with B4663's retain, warn through
   B1617, then resolve B1614's team grants; unknown grants fail 500 before marking completion.
   Enroll any trusted Microsoft subject, merge B1611 attribution, store resolved teams/models
   and a fresh 32-byte browser completion token hash in the flow, set sso_complete=true and

@@ -148,10 +148,19 @@ fn free_seats(
     seat: Seat,
 ) -> Result<Option<Vec<File>>, GateError> {
     let mut held = Vec::new();
-    if folder
-        .parent()
-        .is_some_and(|parent| parent.join("limits").join(&vendor.id).exists())
-    {
+    let marker = folder.with_file_name("limits").join(&vendor.id);
+    // an offline marker lapses after a minute, so only a limit or a logout sends one probe ahead
+    let probing = match fs::read_to_string(&marker) {
+        Ok(line) => !matches!(backoff::cause(&line), backoff::Cause::Offline),
+        Err(error) if error.kind() == ErrorKind::NotFound => false,
+        Err(source) => {
+            return Err(GateError::Read {
+                path: marker,
+                source,
+            });
+        }
+    };
+    if probing {
         let Some(probe) = free_seat(folder, &format!("{}-probe", vendor.id), 1)? else {
             return Ok(None);
         };

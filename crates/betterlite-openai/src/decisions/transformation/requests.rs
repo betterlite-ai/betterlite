@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 
 use betterlite_models::decisions::openai::{ContentPart, InputMessage, MessageContent};
 use betterlite_models::decisions::systemone::{self, QuestionName};
+use betterlite_models::decisions::text::TextError;
 use betterlite_models::decisions::validators::{Unchecked, ValidationError};
 use betterlite_models::decisions::{DecisionsJson, Extra, ir};
 
@@ -17,6 +18,8 @@ pub enum RequestConversionError {
     Question(#[from] SystemOneQuestionError),
     #[error(transparent)]
     Invalid(#[from] ValidationError),
+    #[error(transparent)]
+    Text(#[from] TextError),
 }
 
 #[must_use]
