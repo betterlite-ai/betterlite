@@ -1,0 +1,12 @@
+# bedrock_tags travels from litellm_params into the create request unchanged
+model_list:
+  - model_name: bedrock/batch-tags
+    litellm_params:
+      model: bedrock/anthropic.claude-3-haiku-20240307-v1:0
+      bedrock_tags:
+        - key: team
+          value: genai
+litellm_settings:
+  bedrock_tags:
+    - key: env
+      value: prod
