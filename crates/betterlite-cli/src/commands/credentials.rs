@@ -82,7 +82,6 @@ pub enum CredentialsError {
 
 #[derive(Debug, Deserialize)]
 struct CredentialsView {
-    #[serde(default)]
     credentials: Vec<CredentialItem>,
 }
 

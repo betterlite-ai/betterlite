@@ -4,6 +4,7 @@ use clap::{Args, Subcommand};
 use http::Method;
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use serde_json::value::RawValue;
 
 use super::tables::{write_json_response, write_table};
 use super::{Client, ClientError, Payload, Request};
@@ -70,7 +71,7 @@ pub enum UsersError {
 
 #[derive(Debug, Deserialize)]
 struct UsersView {
-    users: Option<Vec<UserItem>>,
+    users: Box<RawValue>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,11 +121,31 @@ fn list_users(
             path: LIST_PATH,
             source,
         })?;
-    let Some(users) = view.users.filter(|users| !users.is_empty()) else {
+    let users_raw = view.users.get();
+    if users_raw.trim_start() == "null" {
         let _unused = writeln!(stdout, "No users found.");
         return Ok(());
-    };
-    let rows = users
+    }
+    let users: Vec<UserItem> =
+        serde_json::from_str(users_raw).map_err(|source| UsersError::Response {
+            path: LIST_PATH,
+            source,
+        })?;
+    if users.is_empty() {
+        let _unused = writeln!(stdout, "No users found.");
+        return Ok(());
+    }
+    write_table(
+        "Users",
+        &["User ID", "Email", "Role", "Teams"],
+        user_rows(users),
+        stdout,
+    );
+    Ok(())
+}
+
+fn user_rows(users: Vec<UserItem>) -> Vec<Vec<String>> {
+    users
         .into_iter()
         .map(|user| {
             vec![
@@ -134,14 +155,7 @@ fn list_users(
                 user.teams.unwrap_or_default().join(", "),
             ]
         })
-        .collect();
-    write_table(
-        "Users",
-        &["User ID", "Email", "Role", "Teams"],
-        rows,
-        stdout,
-    );
-    Ok(())
+        .collect()
 }
 
 fn post_user(
