@@ -1,0 +1,20 @@
+kind: helper
+name: call-setup-callback-lists
+call:
+  b5367:
+    action: setup
+    call_type: completion
+    request: {"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"litellm_call_id":"call-1","litellm_trace_id":"trace-1","callbacks":["langfuse"]}
+    callbacks:
+      - {logger: "otel"}
+      - {logger: "arize"}
+    lists:
+      success: ["datadog"]
+      failure: ["langfuse"]
+    resolver:
+      langfuse: {label: "langfuse"}
+      datadog: {label: "datadog"}
+    provider_map: ["myllm"]
+    providers: ["openai"]
+env: {}
+compare: {ignore: []}
