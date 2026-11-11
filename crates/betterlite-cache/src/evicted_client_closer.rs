@@ -104,6 +104,26 @@ where
     queue.pending = queue.pending.saturating_add(1);
 }
 
+fn take_bucket<Client>(
+    buckets: &mut HashMap<BucketKey, VecDeque<PendingClose<Client>>>,
+    pending: &mut usize,
+    key: &BucketKey,
+    now: f64,
+    due: &mut Vec<PendingClose<Client>>,
+) where
+    Client: EvictableClient,
+{
+    let Some(bucket) = buckets.get_mut(key) else {
+        return;
+    };
+    let mut drained = drain_bucket(bucket, now);
+    *pending = pending.saturating_sub(drained.len());
+    if bucket.is_empty() {
+        buckets.remove(key);
+    }
+    due.append(&mut drained);
+}
+
 fn drain_bucket<Client>(
     bucket: &mut VecDeque<PendingClose<Client>>,
     now: f64,
@@ -238,19 +258,9 @@ impl<Client: EvictableClient> EvictedClientCloser<Client> {
     fn take_due(&self, event_loop: Option<EventLoopId>, now: f64) -> Vec<PendingClose<Client>> {
         let mut guard = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
         let queue = &mut *guard;
-        let keys = bucket_order(event_loop);
         let mut due = Vec::new();
-        for key in keys {
-            let drained = match queue.buckets.get_mut(&key) {
-                Some(bucket) => drain_bucket(bucket, now),
-                None => continue,
-            };
-            queue.pending = queue.pending.saturating_sub(drained.len());
-            let emptied = queue.buckets.get(&key).is_some_and(VecDeque::is_empty);
-            if emptied {
-                queue.buckets.remove(&key);
-            }
-            due.extend(drained);
+        for key in bucket_order(event_loop) {
+            take_bucket(&mut queue.buckets, &mut queue.pending, &key, now, &mut due);
         }
         drop(guard);
         due
