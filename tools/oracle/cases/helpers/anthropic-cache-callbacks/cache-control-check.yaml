@@ -1,0 +1,16 @@
+kind: helper
+name: anthropic-cache-callbacks-cache-control-check
+call:
+  b4126:
+    operation: cache_control_check
+    probes:
+      - params: {}
+      - params: {cache_control_injection_points: null}
+      - params: {cache_control_injection_points: []}
+      - params: {cache_control_injection_points: {}}
+      - params: {cache_control_injection_points: [{location: tool_config, control: null}]}
+      - params: {cache_control_injection_points: {location: tool_config}}
+      - params: {cache_control_injection_points: "default"}
+      - params: {temperature: 0.5, cache_control_injection_points: [{location: message, role: user, index: null, control: null}]}
+env: {}
+compare: {ignore: []}

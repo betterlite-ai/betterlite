@@ -1,0 +1,2 @@
+litellm_settings:
+  azure_managed_identity_unrelated_key: 1

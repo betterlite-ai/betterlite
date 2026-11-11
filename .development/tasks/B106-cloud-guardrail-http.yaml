@@ -1,0 +1,278 @@
+id: B106
+title: Cloud provider guardrails over HTTP and the legacy Azure Content Safety callback
+description: >-
+  Finish the cloud guardrail umbrella. Its parts built the Bedrock, Azure, OpenAI moderation, Model Armor, IBM,
+  Purview and Agent 365 classes (B3720 to B3742), B8290 built their initializers, B8521 registers their wire names and
+  B8666 runs a held guardrail through its class. Two things are left. First, the legacy `azure_content_safety` arm of
+  initialize_callbacks_on_proxy (callback_utils.py L346-L359): `litellm_settings.callbacks: [azure_content_safety]`
+  plus `litellm_settings.azure_content_safety_params` builds B3728's `_PROXY_AzureContentSafety` hook and puts it in
+  the proxy callbacks, and no task turns that config into a running hook (B8741 still answers it with
+  ConfigError::Unsupported). Second, the parts had no route when they were planned, so they only have helper cases;
+  this task adds the booted-proxy HTTP cases that show the configured guardrails really run on a chat request. It
+  registers no route, no guardrail kind and no class: B8613 installs B8666's callbacks, B8399 runs the proxy hooks,
+  B3683 starts the config guardrails, and B004/B005 mount the chat paths.
+
+
+  Config section azure_content_safety (crates/betterlite-config/src/sections/azure_content_safety.rs and its folder;
+  the skeleton adds the stub, the `pub mod` line and the sections! entry). It reads `litellm_settings.callbacks` and
+  `litellm_settings.azure_content_safety_params` and exposes `AzureContentSafetySettings { params:
+  Option<AzureContentSafetyParams> }` as config.sections.azure_content_safety. `AzureContentSafetyParams` holds
+  `endpoint: String`, `api_key: SecretString` and `thresholds: Option<BTreeMap<String, i64>>`, the three constructor
+  arguments of `_PROXY_AzureContentSafety(endpoint, api_key, thresholds=None)`. LiteLLM spreads the params dict into
+  that constructor, so another key stops startup (TypeError) and a missing endpoint or api_key does too; report each
+  as a config error naming the key. When `callbacks` lists azure_content_safety and the params key is absent, startup
+  fails too, since LiteLLM reads it as `litellm_settings["azure_content_safety_params"]` (KeyError); the message names
+  `litellm_settings.azure_content_safety_params`. When the callback is not listed the params are never read, so the
+  section leaves them as None and raises nothing. The `os.environ/` loop at L351-L354 runs on values the config load
+  has already resolved (B8590's env_overlay resolves the whole file first, as LiteLLM's load_config does), so the
+  section reads resolved strings and resolves nothing again. Test it in sections/azure_content_safety/tests.rs through
+  the real loader; the test `loaded_azure_content_safety_config` loads endpoint, api_key and thresholds, the absent
+  params with the callback listed, an unknown key, and params without the callback. Add config_yaml corpus seeds named
+  azure-content-safety-*.
+
+
+  The binding (crates/betterlite-server/src/app/callbacks/azure_content_safety.rs and its folder) follows B8850's
+  prompt_injection binding. `build(state: &ServerState)` returns an `Arc` of a concrete `AzureContentSafetyCallback`,
+  coercible to `Arc<dyn ProxyCallback>`, or the module's typed BuildError. It reads config.sections.azure_content_safety
+  and builds B3728's legacy hook from the params and the pooled outbound client the server state already holds; read
+  B3728's merged constructor for what else it takes. The callback reports class_name `_PROXY_AzureContentSafety`,
+  is_base_logger false, enforces_request_content true (a class attribute of the legacy hook), guardrail None and
+  use_native_lifecycle_hooks false. `overrides()` is true for request.pre_call and post_call.success only, the two hooks
+  the class defines. pre_call forwards to B3728's legacy pre-call hook and answers PreCallReturn::Unchanged on a pass,
+  since LiteLLM's hook returns None. A violation becomes ProxyHookError::Http with status 400 and the hook's detail.
+  post_call_success forwards to the legacy post-call hook and returns Ok(None) on a pass. A violation is the same 400,
+  and any other failure (an Azure transport error) goes out as ProxyHookError::Other so the proxy answers it like any
+  other hook failure. Which call types are scanned and which errors the pre-call hook swallows stay B3728's. Tests in
+  app::callbacks::azure_content_safety cover the build from a loaded Config, the flags and overrides, the pass and the
+  400 mapping on both hooks, and a transport failure that passes in pre_call and fails in post_call.
+
+
+  HTTP cases in tools/oracle/cases/guardrails/cloud-http. Use the normal booted-proxy case format with the master key
+  oracle-master, one chat deployment `chat` on `openai/gpt-oracle` with api_base {{upstream}} and api_key oracle-key,
+  and router_settings.num_retries 0. Every guardrail's endpoint is the same mock, so the ordered upstream answer queue
+  holds the guardrail call and the model call in the order the hooks make them. Configure each guardrail under the
+  top-level `guardrails:` list and select it with the request body's `guardrails` list, except where a case says
+  default_on. Compare status, content-type, x-litellm-applied-guardrails where the class adds it, and error type, param
+  and code. On an error ignore only /error/message when it is a string, with the reason that betterlite writes its own
+  wording around the detail; keep every structured field compared. Compare the provider requests the mock captured,
+  so a 200 cannot hide a skipped scan, and list the vendor headers below in upstream_headers. Ignore generated ids and
+  timestamps in a 200 body with a reason, and nothing else.
+
+
+  Bedrock (guardrail `bedrock`, guardrailIdentifier gr-oracle, guardrailVersion "1", aws_region_name us-east-1, static
+  aws_access_key_id and aws_secret_access_key, aws_bedrock_runtime_endpoint {{upstream}}, so the scan goes to
+  /guardrail/gr-oracle/version/1/apply). bedrock-input-blocked: pre_call, the mock answers GUARDRAIL_INTERVENED with a
+  topicPolicy topic whose action is BLOCKED and an outputs text; the client gets 400 with LiteLLM's "Violated guardrail
+  policy" detail and the model is never called. bedrock-input-anonymized: pre_call, the answer intervenes with only an
+  ANONYMIZED piiEntities assessment and outputs text "My email is {EMAIL}"; the model receives that text and the
+  client gets 200. bedrock-block-as-response: the blocked answer again with disable_exception_on_block true; the
+  client gets a 200 chat response whose content is the outputs text, and the model is never called.
+  bedrock-output-blocked: post_call, the model answers first and the OUTPUT scan blocks with a 400. bedrock-default-on:
+  default_on true and no request guardrails list, a NONE action, and both calls happen. List content-type for Bedrock,
+  never authorization or x-amz-date.
+
+
+  Azure Content Safety (api_key oracle-azure-key, api_base {{upstream}}; list ocp-apim-subscription-key and
+  content-type). azure-prompt-shield-attack: guardrail azure/prompt_shield, pre_call, the mock answers
+  userPromptAnalysis.attackDetected true and the client gets 400 with the "Violated Azure Prompt Shield guardrail
+  policy" detail. azure-prompt-shield-clean: attackDetected false and the model answers. Both requests go to
+  /contentsafety/text:shieldPrompt?api-version=2024-09-01. azure-text-moderation-default: guardrail
+  azure/text_moderations, pre_call, Hate severity 2 with no thresholds configured blocks, since the class default is 2.
+  azure-text-moderation-category: severity_threshold_by_category {Hate: 6} and Hate severity 4 passes.
+  azure-text-moderation-output: post_call, the model answers and the text:analyze call on its text returns Violence 4,
+  so the client gets 400.
+
+
+  Legacy Azure Content Safety (litellm_settings.callbacks [azure_content_safety], azure_content_safety_params endpoint
+  {{upstream}} and api_key oracle-azure-key; list ocp-apim-subscription-key). legacy-content-safety-input: the input
+  analysis returns Hate 4. That meets the default threshold of 4, so the client gets 400 with source input.
+  legacy-content-safety-thresholds: thresholds {Hate: 6}, the input analysis returns Hate 4, the model answers, the
+  output analysis returns nothing over a threshold, and the client gets 200 after three upstream calls.
+  legacy-content-safety-output: the input passes, the output analysis returns SelfHarm 6, and the client gets 400 with
+  source output. These cases need the architect prerequisite in the notes: LiteLLM's hook imports the
+  azure-ai-contentsafety SDK and stops startup without it.
+
+
+  OpenAI moderation (guardrail openai_moderation, api_key oracle-moderation-key, api_base {{upstream}}, so calls go to
+  /moderations; list authorization). B104 already covers the allowed and flagged input scan with its scan headers, so
+  these two cover the rest. openai-moderation-output-flagged: post_call, the model answers and the moderation of its
+  text is flagged, so the client gets 400 with "Violated OpenAI moderation policy". openai-moderation-upstream-error:
+  pre_call, the moderation endpoint answers 500 and the client gets LiteLLM's answer for that HTTPException before any
+  model call.
+
+
+  IBM (guardrail ibm_guardrails, auth_token oracle-ibm-token, base_url {{upstream}}, detector_id hap; list
+  authorization and detector-id). ibm-detector-server-block: is_detector_server left unset (true), pre_call, POST
+  /api/v1/text/contents answers one detection with score 0.9, and the hook raises ValueError, not HTTPException, so
+  compare whatever status and error fields LiteLLM gives for that. ibm-orchestrator-pass: is_detector_server false and
+  optional_params.score_threshold 0.95; POST /api/v2/text/detection/content answers one detection with score 0.9, it
+  falls under the threshold, and the model answers. ibm-detector-http-error: the detector answers 503 with a text body;
+  raise_for_status raises httpx.HTTPStatusError, and _handle_llm_api_exception turns it into the detector's own 503 with
+  `{"error": <body text>}` as the detail.
+
+
+  Model Armor (guardrail model_armor, guardrail_name armor, template_id oracle-template, project_id oracle-project,
+  location us-central1, api_endpoint {{upstream}}, so scans go to
+  /v1/projects/oracle-project/locations/us-central1/templates/oracle-template:sanitizeUserPrompt and
+  :sanitizeModelResponse). The token comes from B9440's Vertex lookup, so `credentials` is a JSON string of an
+  authorized_user credential: {"type": "authorized_user", "client_id": "oracle-client", "client_secret":
+  "oracle-secret", "refresh_token": "oracle-refresh", "token_uri": "{{upstream}}/token"}. The first upstream answer
+  is the token, {"access_token": "oracle-armor-token", "token_type": "Bearer", "expires_in": 3600}, and every scan
+  then sends `Authorization: Bearer oracle-armor-token`; list authorization and never content-type. google-auth posts
+  the refresh as a form body and betterlite's Google auth posts it as JSON, so each case names that request with
+  B9850's selector `/upstream/0/body`, with that reason, and ignores nothing else upstream. model-armor-input-blocked:
+  mode pre_call, the scan answers a sanitizationResult whose filterResults hold a piAndJailbreakFilterResult with
+  matchState MATCH_FOUND, and the client gets 400 with the "Content blocked by Model Armor" detail after two upstream
+  calls; the model is never called. model-armor-input-masked: mask_request_content true, the scan answers an
+  sdpFilterResult whose deidentifyResult has matchState MATCH_FOUND and data.text "My email is [EMAIL_ADDRESS]", and
+  the model receives that text. model-armor-both-scans: mode [pre_call, post_call], both scans answer
+  NO_MATCH_FOUND, the client gets 200, and the mock sees the token request, sanitizeUserPrompt, the chat call and
+  sanitizeModelResponse in that order, since the second scan reuses the token.
+
+
+  no-auth: a default_on Bedrock guardrail and no Authorization header; the 401 comes before any upstream call.
+  Exercise the unprefixed /chat/completions alias in azure-prompt-shield-clean and the canonical /v1/chat/completions
+  everywhere else.
+
+
+  A case that fails because a class answers differently from LiteLLM goes back to that class's task as a finding,
+  never fixed here. Purview and Agent 365 get no HTTP case (see out_of_scope), and this task builds nothing for
+  them or for Model Armor.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/azure_content_safety.rs
+    - crates/betterlite-config/src/sections/azure_content_safety/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/azure-content-safety-*"
+    - crates/betterlite-server/src/app/callbacks/azure_content_safety.rs
+    - crates/betterlite-server/src/app/callbacks/azure_content_safety/**
+    - tools/oracle/cases/guardrails/cloud-http/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L346-L359
+    why: The owned azure_content_safety arm, with the bracket read of azure_content_safety_params and the os.environ/ loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L17-L149
+    why: B3728's legacy hook the binding forwards to, its constructor arguments, default thresholds of 4, enforces_request_content and the two hooks it defines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11957
+    why: The four chat paths the cases call; their handler is already mounted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L798-L860
+    why: The apply URL from aws_bedrock_runtime_endpoint (api_base is passed as None) and the SigV4 signing that makes authorization differ every run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2374-L2486
+    why: The 400 detail, the disable_exception_on_block response and the BLOCKED versus ANONYMIZED rule the Bedrock cases pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2488-L2695
+    why: The pre_call, during_call and post_call hooks, which messages they send and when the model is skipped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/base.py#L63-L91
+    why: The Content Safety URL with api-version and the Ocp-Apim-Subscription-Key header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L156-L268
+    why: The shieldPrompt call, the attack detail and the pre-call hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/text_moderation.py#L40-L266
+    why: The default threshold of 2, the per-category thresholds and the pre-call and post-call scans.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L104-L169
+    why: The /moderations call, the upstream error detail and the flagged detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L101-L278
+    why: The detector server and orchestrator calls, their headers and raise_for_status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L413-L482
+    why: The pre-call hook raises ValueError on a detection above the threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L282-L340
+    why: The token lookup with custom_llm_provider vertex_ai, the scan URL from api_endpoint and the Bearer header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L381-L434
+    why: Which matchState blocks, and the deidentified text that replaces the prompt when mask_request_content is on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L647-L745
+    why: The pre-call hook, its 400 detail and the masked messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L191-L200
+    why: An authorized_user credential is refreshed through its token_uri, the request the cases point at the mock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3700-L3721
+    why: HTTPException and httpx.HTTPStatusError become the client's error with the upstream status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L92-L121
+    why: The wire names bedrock, azure/prompt_shield, azure/text_moderations, openai_moderation and ibm_guardrails.
+
+dod:
+  - text: The azure_content_safety section loads endpoint, api_key and thresholds, fails startup when the callback is listed without params or with an unknown or missing key, and reads nothing when the callback is absent.
+    proof: [section-tests]
+  - text: Fresh azure_content_safety_params corpus seeds replay through the config decoder.
+    proof: [config-corpus]
+  - text: A configured azure_content_safety callback builds a content-enforcing proxy callback with only the pre_call and post_call success overrides and maps passes, violations and transport failures as LiteLLM's hook does.
+    proof: [binding-tests, oracle]
+  - text: Booted-proxy cases show Bedrock blocking, anonymizing, answering a block as a response, scanning output and running default_on, and refuse an unauthenticated request before any scan.
+    proof: [oracle]
+  - text: Booted-proxy cases show Azure Prompt Shield, Azure text moderation thresholds, OpenAI moderation output and upstream errors, and IBM detector, orchestrator and detector error outcomes as LiteLLM answers them.
+    proof: [oracle]
+  - text: Booted-proxy cases show the legacy azure_content_safety callback blocking input and output and honoring configured thresholds.
+    proof: [oracle]
+  - text: Booted-proxy cases show Model Armor blocking input, masking input and scanning input and output on one token refresh.
+    proof: [oracle]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: section-tests
+      why: the azure_content_safety section misses a key, accepts an unknown one or reads params the callback does not use
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::azure_content_safety::/) - test(replays_the_config_yaml_corpus)'
+    - id: config-corpus
+      why: no azure_content_safety_params seed was added, or the config decoder fails on one
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/azure-content-safety-*')"
+        && grep -rlq 'azure_content_safety_params' crates/betterlite-config/fuzz/corpus/config_yaml
+        && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: binding-tests
+      why: the legacy callback is not built, reports the wrong flags or maps a hook outcome differently
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::azure_content_safety::/)'
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/cloud-http/bedrock-input-blocked.yaml
+  - tools/oracle/cases/guardrails/cloud-http/bedrock-input-anonymized.yaml
+  - tools/oracle/cases/guardrails/cloud-http/bedrock-block-as-response.yaml
+  - tools/oracle/cases/guardrails/cloud-http/bedrock-output-blocked.yaml
+  - tools/oracle/cases/guardrails/cloud-http/bedrock-default-on.yaml
+  - tools/oracle/cases/guardrails/cloud-http/azure-prompt-shield-attack.yaml
+  - tools/oracle/cases/guardrails/cloud-http/azure-prompt-shield-clean.yaml
+  - tools/oracle/cases/guardrails/cloud-http/azure-text-moderation-default.yaml
+  - tools/oracle/cases/guardrails/cloud-http/azure-text-moderation-category.yaml
+  - tools/oracle/cases/guardrails/cloud-http/azure-text-moderation-output.yaml
+  - tools/oracle/cases/guardrails/cloud-http/legacy-content-safety-input.yaml
+  - tools/oracle/cases/guardrails/cloud-http/legacy-content-safety-thresholds.yaml
+  - tools/oracle/cases/guardrails/cloud-http/legacy-content-safety-output.yaml
+  - tools/oracle/cases/guardrails/cloud-http/openai-moderation-output-flagged.yaml
+  - tools/oracle/cases/guardrails/cloud-http/openai-moderation-upstream-error.yaml
+  - tools/oracle/cases/guardrails/cloud-http/ibm-detector-server-block.yaml
+  - tools/oracle/cases/guardrails/cloud-http/ibm-orchestrator-pass.yaml
+  - tools/oracle/cases/guardrails/cloud-http/ibm-detector-http-error.yaml
+  - tools/oracle/cases/guardrails/cloud-http/model-armor-input-blocked.yaml
+  - tools/oracle/cases/guardrails/cloud-http/model-armor-input-masked.yaml
+  - tools/oracle/cases/guardrails/cloud-http/model-armor-both-scans.yaml
+  - tools/oracle/cases/guardrails/cloud-http/no-auth.yaml
+
+deviations: []
+
+out_of_scope:
+  - "The guardrail classes and their hooks: B3720 to B3742. Their initializers: B8290. Their registry arms: B8521. Running a held guardrail: B8666. Installing the callbacks: B8613. ProxyLogging and hook dispatch: B8399 and B8390. Config guardrail startup: B3683."
+  - "The legacy hook itself (_PROXY_AzureContentSafety, its thresholds, test_violation and both hooks): B3728."
+  - "The Model Armor class and transport: B3732 and B3733. The token source: B9440. Building the guardrail with that source: B8666. The selector that skips the token request's body: B9850."
+  - "Purview and Agent 365 get no HTTP case: their token and Graph or evaluation URLs are fixed Microsoft hosts (microsoft_purview/base.py L25-L27, agent_365.py L51-L52), and Agent 365 ignores api_base, so no case can point them at the mock."
+  - "The input scan with scan headers for openai_moderation: B104. The unified pre/during/post-call cases across endpoints: B3680."
+  - "The other arms of initialize_callbacks_on_proxy: detect_prompt_injection is B8850; the rest stay with B189's inventory. Callback name acceptance, the resolver answer and the hooks::configured entry for azure_content_safety are architect prerequisites in B8741's and B8742's files."
+  - "add_guardrail_to_applied_guardrails_header: B3680. add_guardrail_scan_id, add_guardrail_response_to_standard_logging_object and _serialize_scan_metadata_header: B8994."
+
+pitfalls:
+  - "LiteLLM reads litellm_settings[\"azure_content_safety_params\"] with brackets, so listing the callback without params stops startup, while params without the callback are never read."
+  - "The legacy hook's default threshold is 4 per category and azure/text_moderations defaults to 2; a severity of 2 blocks the guardrail but passes the legacy callback."
+  - "The text moderation wire name is azure/text_moderations with an s, and prompt shield is azure/prompt_shield."
+  - "Bedrock builds its URL from aws_bedrock_runtime_endpoint and passes api_base=None, so api_base never moves the scan to the mock."
+  - "SigV4 puts the request time into authorization and x-amz-date, so listing either in upstream_headers fails every Bedrock case."
+  - "With disable_exception_on_block true a Bedrock block is a 200 chat response carrying the guardrail's outputs text, not a 400."
+  - "The IBM pre-call hook raises ValueError, not HTTPException, while a detector HTTP error reaches the client with the detector's own status through the httpx.HTTPStatusError branch."
+  - "The legacy pre-call hook swallows every error except HTTPException, but its post-call hook lets an Azure error through, so a transport failure passes on input and fails on output."
+  - "The os.environ/ loop in the azure_content_safety arm sees values the config load already resolved; resolving them again in the section would read an env var named after a secret."
+  - "A service_account credential can't drive a Model Armor case: google-auth exchanges a signed JWT at token_uri, while google-cloud-auth signs its own token and sends no request, so the captured request counts differ."
+  - "Model Armor's credentials is a string field in LiteLLM's guardrail params, so the authorized_user credential goes in as JSON text, not a YAML mapping."
+  - "With mask_request_content true a deidentifyResult MATCH_FOUND masks instead of blocking, while an inspectResult MATCH_FOUND still blocks."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

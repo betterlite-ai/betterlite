@@ -1,0 +1,84 @@
+id: B9652
+title: MCP client transports for streamable HTTP, legacy SSE and stdio
+description: >-
+  LiteLLM's MCPClient hands each transport to the MCP Python SDK: sse_client for transport sse, streamable_http_client for http, stdio_client for stdio (client.py L461-L495). betterlite has B4744's TransportContext trait and the stdio process handling, and B9651's one-exchange HTTP transport, but no code that speaks either HTTP transport. This task ports the client side of the SDK's two HTTP transports and wraps all three as rmcp transports, so B9653 can run rmcp's JSON-RPC client over any of them. The SDK is mcp 2.3.0 with httpx2 2.16.0, the versions tools/oracle/litellm/uv.lock pins; read mcp/client/streamable_http.py, mcp/client/sse.py and mcp/shared/_httpx_utils.py in the oracle's environment. The JSON-RPC session itself, request ids and timeouts are rmcp's and B9653's, not this task's.
+
+
+  Code goes in crates/betterlite-mcp/src/client/sdk_transport.rs and crates/betterlite-mcp/src/client/sdk_transport/ (origin.rs, streamable.rs, legacy_sse.rs, stdio.rs, context.rs, error.rs, tests.rs); the skeleton declares `pub mod sdk_transport;` in client.rs. Add rmcp to crates/betterlite-mcp/Cargo.toml at the workspace's version 3.9.0 with only the client side it needs (`client`, `transport-async-rw`), and sse-stream at the version rmcp 3.9.0 itself resolves to in Cargo.lock, so no second copy enters the lock.
+
+
+  error.rs. `SdkError` is the one error type the whole SDK runtime uses, since B4744's McpRuntime ties its transport, HTTP client and session errors together: HTTP (Arc of B9651's McpHttpError), an SSE framing error, an event over the size limit, a message that is not valid JSON-RPC, the endpoint origin mismatch, an unfollowed redirect (its message), the stdio io::Error, and rmcp's ServiceError and JSON-RPC ErrorData for B9653. Display texts follow the SDK's where it has one: "Endpoint origin does not match connection origin: {endpoint_url}", "Unexpected content type: {content_type}", "Server returned an error response", "Session terminated", "Not Found", "SSE stream failed: {error}".
+
+
+  origin.rs ports stream_within_origin and next_request_within_origin (_httpx_utils.py L67-L185). A response is followed only when it is a redirect with a Location, the next request keeps the method (307 and 308 for any method, any redirect of a GET; httpx2 turns a POST into a body-less GET on 301, 302 and 303, so those are not followed for a POST), the next URL is on the sent URL's origin or its http to https upgrade on the same host with default ports, and the Location brings no userinfo of its own. At most 20 hops, httpx2's max_redirects; the redirect body is drained before the next hop. Anything else hands back the redirect response itself, and redirect_note names the location without userinfo, query or fragment: " (redirected to {location}; not followed)".
+
+
+  streamable.rs is the client half of StreamableHTTPTransport (streamable_http.py L111-L793) as an rmcp `Transport<RoleClient>` over B4743's McpHttpClient carrying B9651's McpHttpTransport. Every request sends accept "application/json, text/event-stream" and content-type application/json, plus mcp-session-id once known and MCP-Protocol-Version once negotiated (cleared for initialize). POST handling follows _handle_post_request: 202 resolves a request with an INVALID_REQUEST error "server answered a request with 202 Accepted"; an unfollowed redirect resolves it with the redirect note as INVALID_REQUEST; a status of 400 or more surfaces a JSON-RPC error body when the content type is JSON (with this request's id), else 404 becomes METHOD_NOT_FOUND "Not Found" before a session exists and INVALID_REQUEST "Session terminated" after, and any other status INTERNAL_ERROR "Server returned an error response"; the initialize response's mcp-session-id is kept; a JSON body is one message; an SSE body is read event by event with the response id rewritten to the request's id, priming events (empty data) skipped, and reconnection with last-event-id when the stream ends early, at most 2 attempts with the server's retry or 1000 ms; any other content type is INVALID_REQUEST "Unexpected content type: {type}". After notifications/initialized, open the GET stream for server messages with the same reconnect rule. On close, when a session id exists, send one DELETE through the origin rule (405 logs at debug, another status other than 200 and 204 logs a warning "Session termination failed: {status}") inside B4743's cleanup scope. One SSE event is at most 1 MiB (DEFAULT_MAX_SSE_EVENT_SIZE).
+
+
+  legacy_sse.rs ports sse_client (sse.py L35-L171). The GET carries accept text/event-stream and follows the origin rule, then raise for a non-success status. The read timeout for the stream is 300 seconds (the SDK's sse_read_timeout default, which LiteLLM never overrides) while connect and writes use the client timeout, so the GET sets McpHttpRequest.read_timeout. The first `endpoint` event is joined to the URL; a different scheme or host and port fails with the origin error before anything is posted. `message` events with empty data are keep-alives; others parse as JSON-RPC, and a parse failure is reported as a stream failure and the reader continues. Unknown event names log a warning. Each outgoing message is one POST to the endpoint through the origin rule (307 and 308 only), raising for a non-success status.
+
+
+  stdio.rs wraps the child process streams B4744's StdioTransport already starts as an rmcp async read/write transport. Keep B4744's spawn, environment and process-group shutdown as they are.
+
+
+  context.rs. `SdkTransport` is an enum over the three that implements B4744's TransportContext with `Streams = SdkStreams`, the rmcp transport for each, and `Error = SdkError`. enter opens what the SDK opens on context entry: the SSE GET up to its endpoint event, the stdio process, nothing for streamable HTTP. exit closes in the SDK's order: the DELETE first, then the readers. A stream-level failure that belongs to no request (an SSE parse error on the legacy stream, an HTTP error on the GET stream, a read error) goes to the B4744 MessageHandler the transport was built with, as StreamMessage::Failure with the kind B4744's StreamFailureKind names (ValueError for a parse error, Http, Io), and the transport's receive then ends.
+
+
+  Tests in client::sdk_transport::tests drive each transport against a local axum MCP stub: origin rule cases (307 same origin followed, 302 on a POST not followed, cross-origin not followed with the note, upgrade followed, userinfo refused, 21st hop not followed), every POST status branch above, session id capture and the DELETE on close, SSE response id rewriting and one reconnect, the 1 MiB limit, legacy endpoint origin mismatch, keep-alives and a bad message reported as a failure, and a stdio round trip through a test-only echo binary or script run under the test.
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-mcp/src/client/sdk_transport.rs
+    - crates/betterlite-mcp/src/client/sdk_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L461-L495
+    why: Which SDK transport each MCPTransport value opens and with which timeout and client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/Readme.md#L36-L40
+    why: The redirect behavior LiteLLM documents for its users; origin.rs is that rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L594-L604
+    why: Which stream failures LiteLLM's message handler records (ValueError, HTTP errors, OSError) and why it raises.
+  - url: https://pypi.org/project/mcp/2.3.0/
+    why: The pinned SDK; streamable_http.py, sse.py and shared/_httpx_utils.py are the behavior this task ports.
+  - url: https://github.com/modelcontextprotocol/python-sdk
+    why: The SDK's repository, for the transport docs and history.
+  - url: https://docs.rs/rmcp/3.9.0/rmcp/transport/trait.Transport.html
+    why: The rmcp transport trait each transport implements.
+dod:
+  - text: Redirects are followed only within the origin and method rules, at most 20 times, and an unfollowed one is reported with the location note.
+    proof: [transport-tests]
+  - text: The streamable HTTP transport answers every POST outcome with the SDK's JSON-RPC error codes and messages, keeps the session id and protocol version headers, reconnects SSE at most twice and deletes the session on close.
+    proof: [transport-tests]
+  - text: The legacy SSE transport refuses a cross-origin endpoint, skips keep-alives, reports a bad message as a stream failure and posts through the origin rule.
+    proof: [transport-tests]
+  - text: SdkTransport implements B4744's TransportContext for all three transports, and stream-level failures reach the message handler with their kind.
+    proof: [transport-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: transport-tests
+      why: A redirect, status, header, reconnect or framing rule differs from the SDK's transports.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client::sdk_transport::/)'
+oracle_cases: []
+deviations:
+  - what: The SDK's modern-protocol POST cancellation (2026-07-28 notifications/cancelled aborting an in-flight POST) is not built.
+    why: LiteLLM negotiates only the legacy protocol versions with upstreams (B4744's LegacyVersion), so the SDK never takes that path from LiteLLM.
+out_of_scope:
+  - "The JSON-RPC session, initialize negotiation, read timeouts and the runtime: B9653."
+  - "Sending one HTTP exchange with credentials, the redirect guard and error capture: B9651."
+  - "Starting and stopping the stdio process and its environment: B4744 (done)."
+  - "HTTP cases through the booted proxy: B140, once the runtime is wired in by B9654."
+pitfalls:
+  - "LiteLLM opens SSE with timeout=self.timeout, so httpx2's read timeout is the SDK default 300 seconds while connect, write and pool use the client timeout; using the client timeout for reads drops idle SSE sessions after 60 seconds."
+  - "A JSON-RPC error body at a non-2xx status wins over the status mapping, and its id is replaced with the request's id even when the server sent null."
+  - "404 means METHOD_NOT_FOUND only before a session id exists; after it, it means the session is gone (INVALID_REQUEST \"Session terminated\")."
+  - "The SDK clears the cached MCP-Protocol-Version when it sends initialize, so a retried handshake never carries a stale version header."
+  - "The legacy endpoint check compares scheme and netloc of the joined URL, so a relative endpoint path always passes and an absolute one on another port fails."
+  - "Notifications never wait for a response body; only JSONRPCRequest POSTs read JSON or SSE."
+  - "The redirect note strips userinfo, query and fragment, since those can carry tokens; never log the raw Location."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

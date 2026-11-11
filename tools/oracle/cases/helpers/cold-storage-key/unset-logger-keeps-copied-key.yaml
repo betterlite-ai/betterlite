@@ -1,0 +1,5 @@
+kind: helper
+name: unset-logger-keeps-copied-key
+call: {"b9520": {"cold_storage_custom_logger": null, "metadata": {"cold_storage_object_key": "copied", "user_api_key_alias": "alias"}, "start_time": "2026-01-02T03:04:05.123456", "response_id": "chatcmpl-1"}}
+env: {}
+compare: {ignore: []}

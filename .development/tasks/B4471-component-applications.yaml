@@ -7,7 +7,7 @@ description: >-
   and the backend serves the management/dashboard surface; both enforce their route
   policies as a tower middleware that checks each request path before routing.
 
-  Each binary takes the same CLI flags as betterlite (--config required, --host
+  Each binary takes the same CLI flags as betterlite (--config required, also read from env CONFIG_FILE_PATH, --host
   default 0.0.0.0 via HOST env, --port default 4000/4001 via PORT env) and starts
   the HTTP server with the betterlite-server application and its auth layer from B003.
   A request to a path outside the component's allowlist returns 404, just as if the
@@ -27,7 +27,9 @@ description: >-
   --host or HOST env). Each binary exits with status 2 if database startup fails, just as
   the legacy uvicorn launcher does. Each binary is built as a separate Cargo binary target
   (crates/betterlite-gateway/src/main.rs and crates/betterlite-backend/src/main.rs) and
-  shipped in its own Docker image.
+  shipped in its own Docker image. Keep each crate's code in src/lib.rs, with main.rs only
+  parsing the Cli and calling the library, so B131 can add startup checks beside main.rs
+  without editing the crate root.
 
 scope:
   paths:
@@ -58,9 +60,9 @@ references:
   - url: https://docs.rs/tower/latest/tower/
     why: Tower middleware for per-request path validation before routing.
 dod:
-  - text: The gateway binary reads --config (required), --host (default 0.0.0.0, env HOST) and --port (default 4000, env PORT) and serves on a listening socket with the betterlite-server application and auth.
+  - text: The gateway binary reads --config (required, env CONFIG_FILE_PATH), --host (default 0.0.0.0, env HOST) and --port (default 4000, env PORT) and serves on a listening socket with the betterlite-server application and auth.
     proof: [gateway-backend-cli-flags]
-  - text: The backend binary reads --config (required), --host (default 0.0.0.0, env HOST) and --port (default 4001, env PORT) and serves on a listening socket with the betterlite-server application and auth.
+  - text: The backend binary reads --config (required, env CONFIG_FILE_PATH), --host (default 0.0.0.0, env HOST) and --port (default 4001, env PORT) and serves on a listening socket with the betterlite-server application and auth.
     proof: [gateway-backend-cli-flags]
   - text: A request to a path in GATEWAY_PATH_PREFIXES, GATEWAY_EXACT_PATHS or GATEWAY_MOUNT_PATHS on the gateway returns the routed response or 401 if auth fails; a path outside these sets returns 404 with no routing attempt.
     proof: [component-route-filtering]
@@ -84,8 +86,8 @@ checks:
       run: |
         gateway_help="$(cargo run --locked --quiet -p betterlite-gateway -- --help)" &&
         backend_help="$(cargo run --locked --quiet -p betterlite-backend -- --help)" &&
-        grep -q -- '--config' <<<"$gateway_help" && grep -qE -- '--host.*\[env: HOST=' <<<"$gateway_help" && grep -q 'default: 0.0.0.0' <<<"$gateway_help" && grep -qE -- '--port.*\[env: PORT=' <<<"$gateway_help" && grep -q 'default: 4000' <<<"$gateway_help" &&
-        grep -q -- '--config' <<<"$backend_help" && grep -qE -- '--host.*\[env: HOST=' <<<"$backend_help" && grep -q 'default: 0.0.0.0' <<<"$backend_help" && grep -qE -- '--port.*\[env: PORT=' <<<"$backend_help" && grep -q 'default: 4001' <<<"$backend_help"
+        grep -qE -- '--config.*\[env: CONFIG_FILE_PATH=' <<<"$gateway_help" && grep -qE -- '--host.*\[env: HOST=' <<<"$gateway_help" && grep -q 'default: 0.0.0.0' <<<"$gateway_help" && grep -qE -- '--port.*\[env: PORT=' <<<"$gateway_help" && grep -q 'default: 4000' <<<"$gateway_help" &&
+        grep -qE -- '--config.*\[env: CONFIG_FILE_PATH=' <<<"$backend_help" && grep -qE -- '--host.*\[env: HOST=' <<<"$backend_help" && grep -q 'default: 0.0.0.0' <<<"$backend_help" && grep -qE -- '--port.*\[env: PORT=' <<<"$backend_help" && grep -q 'default: 4001' <<<"$backend_help"
     - id: component-route-filtering
       why: Request path filtering does not match the allowlists or HTTP status/auth behavior differs
       run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/gateway tools/oracle/cases/backend
@@ -119,7 +121,7 @@ deviations:
     why: The native startup path threads typed endpoints through the config loader and application context, not through process environment variables at binary startup.
 out_of_scope:
   - Database URL assembly or environment variable mutation. B051 owns database_startup configuration through the proxy lifespan and application context.
-  - Multiple worker processes or instrumentation (NUM_WORKERS, USE_DDTRACE). The native binary serves requests in a single Tokio runtime; multi-process scaling and tracing instrumentation are future tasks.
+  - "--workers, WEB_CONCURRENCY and KEEPALIVE_TIMEOUT: B131. USE_DDTRACE: B5070. NUM_WORKERS has no effect (B8233)."
   - Any route handler implementation. Both binaries serve the full application from B003; filtering only.
 pitfalls:
   - Request filtering is done at the middleware level per-request, not by modifying a static route list. A request to /v1/chat/completions on the backend (which is not in its allowlist) returns 404 even though the route exists in the application.

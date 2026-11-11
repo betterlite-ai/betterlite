@@ -151,7 +151,7 @@ out_of_scope:
   - "validate_redirect_uri_shape and is_loopback_redirect_host: B4655. TOKEN_NO_CACHE_HEADERS, canonical_resource_uri and python_url urlparse: B4654."
   - "encrypt_value_helper and decrypt_value_helper (the StoredCipher): B1600."
   - "The Redis ClaimBackend implementation and the choice of Shared or Local authority: B8623, over the dual-tier cache (B4293)."
-  - "The HTTP routes POST /register and its parsing of a non-object body: the umbrella B137 and B4675 register routes; this task has no route yet, so its cases are helper cases."
+  - "The HTTP routes POST /register and its parsing of a non-object body: B7971 owns POST /register and B8702 mounts it; this task has no route yet, so its cases are helper cases."
 pitfalls:
   - "Registration validates redirect_uris in two passes: the list shape and count first, then every item's type and length, and only then each URI's shape one by one, so [\"https://a.example/cb\", 5] fails on the type pass before the first URI is looked at."
   - "The length cap counts Python characters, so a 256-character string of multi-byte letters passes; count chars, not bytes."

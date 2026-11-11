@@ -26,7 +26,7 @@ description: >-
   variables, active alerts and webhook map, email and ms_teams, each resolved from the stored env then the process env
   through B4140's resolve_fields; admins get mask_sensitive_keys on alerting variables, others get the redaction, and
   the webhook map shows "REDACTED" per alert type for non-admins. It answers status, callbacks, alerts,
-  active_alerting_destinations, router_settings and available_callbacks.
+  active_alerting_destinations, router_settings (taken from B9711's get_settings) and available_callbacks.
 
 
   GET /config/yaml answers {"hello": "world"}; it exists only to document ConfigYAML in the API schema.

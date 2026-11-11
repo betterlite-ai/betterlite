@@ -1,0 +1,25 @@
+kind: helper
+name: ollama-chat-reply-tools
+env: {}
+compare: {ignore: []}
+call:
+  b8155:
+    op: reply
+    replies:
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": {"b": 2, "a": 1}}}]}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": "{\"z\": 1}"}}]}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f"}}]}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"type": null, "function": {"name": "f", "arguments": "{}"}}]}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "parameters": {"p": 1}}}]}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"id": "given", "type": "other", "function": {"name": "f", "arguments": "{}"}}]}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": []}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": null}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "{\"name\":\"other\",\"arguments\":{\"a\":1}}"}}', request_data: {format: json}, litellm_params: {function_name: f}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "{\"b\":2,\"a\":1}"}}', request_data: {format: json}, litellm_params: {function_name: f}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "{\"name\":null,\"arguments\":{}}"}}', request_data: {format: json}, litellm_params: {function_name: f}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "{\"name\":\"n\"}", "thinking": "t"}}', request_data: {format: json}, litellm_params: {function_name: f}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "not json"}}', request_data: {format: json}, litellm_params: {function_name: f}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "[1, 2]"}}', request_data: {format: json}, litellm_params: {function_name: f}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": null}}', request_data: {format: json}, litellm_params: {function_name: f}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "{\"name\":\"n\"}"}}', request_data: {format: json}}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "{}"}}', request_data: {format: {type: object}}, litellm_params: {function_name: f}}

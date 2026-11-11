@@ -307,7 +307,7 @@ deviations:
 - what: >-
     ProxyBaseLLMRequestProcessing.get_custom_headers is called but its implementation
     (get_custom_headers, _process_chunk_with_cost_injection, and error/hook methods) are not built
-    by this task; they are owned by B004 or a shared proxy infrastructure task (gap D).
+    by this task; get_custom_headers is built by B9802 (custom_headers).
   why: >-
     This task builds the route factory which calls that method; the method's implementation
     is a dependency owned elsewhere. betterlite calls the method with the same parameters
@@ -330,7 +330,7 @@ out_of_scope:
   this task calls them as external dependencies for the CustomLogger branch.
 - >-
   ProxyBaseLLMRequestProcessing.get_custom_headers and its related methods (ProxyBaseLLMRequestProcessing itself);
-  B004 or a shared proxy infrastructure task owns them (gap D).
+  B9802 builds get_custom_headers as custom_headers; the other methods belong to the shared proxy tasks (gap D).
 - >-
   add_litellm_data_to_request, pre_call_hook, and post_call_failure_hook; these are imported
   from the proxy context (proxy_server globals) and called by this task.
