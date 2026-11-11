@@ -37,15 +37,24 @@ pub fn project_message(message: &Message) -> Json {
 pub fn project_messages(messages: &[Message], names: &mut ToolNameMap) -> Vec<Json> {
     let mut projected = Vec::with_capacity(messages.len());
     for message in messages {
-        let mut value = project_message(message);
-        if message.role == ASSISTANT
-            && let Json::Object(fields) = &mut value
-        {
-            sanitize_tool_call_names(fields, names);
-        }
+        let value = if message.role == ASSISTANT {
+            project_message_with_names(message, names)
+        } else {
+            project_message(message)
+        };
         projected.push(value);
     }
     projected
+}
+
+// A continue message is converted in the blank assistant turn it replaces, so its calls are named like any other
+#[must_use]
+pub fn project_message_with_names(message: &Message, names: &mut ToolNameMap) -> Json {
+    let mut value = project_message(message);
+    if let Json::Object(fields) = &mut value {
+        sanitize_tool_call_names(fields, names);
+    }
+    value
 }
 
 fn sanitize_tool_call_names(fields: &mut Object, names: &mut ToolNameMap) {

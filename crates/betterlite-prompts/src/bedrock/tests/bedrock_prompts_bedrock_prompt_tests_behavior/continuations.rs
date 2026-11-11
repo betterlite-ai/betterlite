@@ -143,6 +143,45 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_custom_assistant_contin
 }
 
 #[tokio::test]
+async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_continue_message_tool_call_is_made_valid_and_mapped()
+ {
+    let harness = Harness::new();
+    let continue_message = AssistantContinue::Message(
+        messages(
+            r#"[{"role":"assistant","content":"x","tool_calls":[
+                {"id":"c1","type":"function","function":{"name":"get weather","arguments":"{}"}}
+            ]}]"#,
+        )
+        .into_iter()
+        .next()
+        .unwrap(),
+    );
+    let settings = Settings::default().with_assistant_continue(&continue_message);
+    let converted = harness
+        .convert(
+            &messages(r#"[{"role":"user","content":"a"},{"role":"assistant","content":""}]"#),
+            &[],
+            &settings,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        converted.messages,
+        list(
+            r#"[{"role":"user","content":[{"text":"a"}]},
+                {"role":"assistant","content":[
+                    {"text":"x"},
+                    {"toolUse":{"input":{},"name":"get_weather","toolUseId":"c1"}}
+                ]}]"#
+        )
+    );
+    assert_eq!(
+        converted.names.get("get_weather").map(String::as_str),
+        Some("get weather")
+    );
+}
+
+#[tokio::test]
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_prefix_assistant_turn_takes_no_continue_message()
  {
     let harness = Harness::new();

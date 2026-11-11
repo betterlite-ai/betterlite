@@ -11,7 +11,7 @@ use crate::bedrock_tools::tools::{BedrockTools, bedrock_tools};
 use crate::message_content::Message;
 
 use super::error::PromptError;
-use super::projection::{project_message, project_messages};
+use super::projection::{project_message, project_message_with_names, project_messages};
 
 // LiteLLM's str | ChatCompletionAssistantMessage | None, where a bare string becomes one text block
 #[derive(Debug, Deserialize)]
@@ -42,10 +42,13 @@ pub struct BedrockPrompt {
     pub names: ToolNameMap,
 }
 
-fn project_assistant_continue(continue_message: &AssistantContinue) -> Json {
+fn project_assistant_continue(
+    continue_message: &AssistantContinue,
+    names: &mut ToolNameMap,
+) -> Json {
     match continue_message {
         AssistantContinue::Text(text) => Json::Text(text.clone()),
-        AssistantContinue::Message(message) => project_message(message),
+        AssistantContinue::Message(message) => project_message_with_names(message, names),
     }
 }
 
@@ -65,7 +68,7 @@ where
     let user_continue = settings.user_continue_message.map(project_message);
     let assistant_continue = settings
         .assistant_continue_message
-        .map(project_assistant_continue);
+        .map(|continue_message| project_assistant_continue(continue_message, &mut names));
     let conversion = Conversion {
         model: settings.model,
         cache_points: deps.cache_points,
