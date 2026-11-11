@@ -1,7 +1,7 @@
 id: B176
 milestone: M1 openai data plane
 title: Trusted controls, provider headers and affinity
-status: todo
+status: done
 depends_on: [B174, B213, B2228]
 file: tasks/B176-provider-controls.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/litellm_params.py"
 parent: B010
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1241

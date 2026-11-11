@@ -2026,6 +2026,7 @@ dependencies = [
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
+ "betterlite-env",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
