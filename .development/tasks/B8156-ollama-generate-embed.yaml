@@ -69,5 +69,5 @@ pitfalls:
   - "The oracle helper for this task is pre-registered as b8156 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
   - "The reasoning split depends on the model reply fields; read _OllamaGenerateReasoning before writing transform_response."
   - "Embedding token counts come from the reply's prompt_eval_count. Only when it is missing is the injected token encoder used (handler.py L58-L63): an error from encode propagates, and an absent encoder gives 0 with a warning."
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 2250, max_new_expects: 0}
 review_level: standard
