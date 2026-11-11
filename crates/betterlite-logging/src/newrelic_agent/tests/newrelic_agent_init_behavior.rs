@@ -52,6 +52,17 @@ fn missing_credentials_disable_the_integration_with_a_warning(
 }
 
 #[test]
+fn missing_credentials_are_reported_before_a_missing_agent() {
+    let mut fixture = enabled_fixture();
+    fixture.agent_kind = AgentKind::Missing;
+    fixture.environment = environment(&[]);
+    let (logger, logs) = capture_logs(|| fixture.build());
+    assert!(!logger.enabled);
+    assert!(logs.contains("NEW_RELIC_LICENSE_KEY"));
+    assert!(!logs.contains("not installed"));
+}
+
+#[test]
 fn a_missing_agent_module_disables_the_integration_with_an_error() {
     let mut fixture = enabled_fixture();
     fixture.agent_kind = AgentKind::Missing;

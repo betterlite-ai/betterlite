@@ -122,8 +122,8 @@ pub(super) struct RecordedEvent {
 #[derive(Default)]
 pub(super) struct FakeApplication {
     enabled: AtomicBool,
-    fail_events: AtomicUsize,
-    failing_metrics: Mutex<Vec<String>>,
+    failing_events: Mutex<Vec<String>>,
+    fail_metrics: AtomicUsize,
     events: Mutex<Vec<RecordedEvent>>,
     metrics: Mutex<Vec<(String, i64)>>,
 }
@@ -132,8 +132,8 @@ impl FakeApplication {
     pub(super) fn new(enabled: bool) -> Arc<Self> {
         Arc::new(Self {
             enabled: AtomicBool::new(enabled),
-            fail_events: AtomicUsize::new(0),
-            failing_metrics: Mutex::new(Vec::new()),
+            failing_events: Mutex::new(Vec::new()),
+            fail_metrics: AtomicUsize::new(0),
             events: Mutex::new(Vec::new()),
             metrics: Mutex::new(Vec::new()),
         })
@@ -143,15 +143,27 @@ impl FakeApplication {
         self.enabled.store(enabled, Ordering::SeqCst);
     }
 
-    pub(super) fn fail_next_events(&self, count: usize) {
-        self.fail_events.store(count, Ordering::SeqCst);
-    }
-
-    pub(super) fn fail_metric(&self, name: &str) {
-        self.failing_metrics
+    pub(super) fn fail_event(&self, name: &str) {
+        self.failing_events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(name.to_owned());
+    }
+
+    pub(super) fn fail_next_metrics(&self, count: usize) {
+        self.fail_metrics.store(count, Ordering::SeqCst);
+    }
+
+    fn take_event_failure(&self, name: &str) -> bool {
+        let mut failing = self
+            .failing_events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let Some(index) = failing.iter().position(|candidate| candidate == name) else {
+            return false;
+        };
+        failing.remove(index);
+        true
     }
 
     pub(super) fn events(&self) -> Vec<RecordedEvent> {
@@ -206,8 +218,7 @@ impl NewRelicApplication for FakeApplication {
         name: &str,
         attributes: &IndexMap<String, Json>,
     ) -> Result<(), NewRelicAgentError> {
-        if self.fail_events.load(Ordering::SeqCst) > 0 {
-            self.fail_events.fetch_sub(1, Ordering::SeqCst);
+        if self.take_event_failure(name) {
             return Err(NewRelicAgentError::Event {
                 message: "event boom".to_owned(),
             });
@@ -223,17 +234,12 @@ impl NewRelicApplication for FakeApplication {
     }
 
     fn record_custom_metric(&self, name: &str, value: i64) -> Result<(), NewRelicAgentError> {
-        let mut failing = self
-            .failing_metrics
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if let Some(index) = failing.iter().position(|candidate| candidate == name) {
-            failing.remove(index);
+        if self.fail_metrics.load(Ordering::SeqCst) > 0 {
+            self.fail_metrics.fetch_sub(1, Ordering::SeqCst);
             return Err(NewRelicAgentError::Metric {
                 message: "metric boom".to_owned(),
             });
         }
-        drop(failing);
         self.metrics
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

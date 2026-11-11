@@ -66,7 +66,7 @@ fn an_application_that_is_not_enabled_is_unhealthy_with_the_agent_message() {
 #[test]
 fn a_failed_connection_test_is_unhealthy_with_the_agent_error() {
     let fixture = default_fixture();
-    fixture.application.fail_next_events(1);
+    fixture.application.fail_event(CONNECTION_TEST_EVENT_NAME);
     let logger = fixture.build();
     let status = async_health_check(&logger);
     assert_eq!(status.status, HealthState::Unhealthy);

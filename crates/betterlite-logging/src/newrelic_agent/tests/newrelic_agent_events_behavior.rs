@@ -220,7 +220,7 @@ fn content_is_omitted_when_the_request_asks_for_redaction() {
 #[test]
 fn a_failed_summary_still_records_the_message_events() {
     let fixture = default_fixture();
-    fixture.application.fail_next_events(1);
+    fixture.application.fail_event(SUMMARY_EVENT_NAME);
     let logger = fixture.build();
     let ((), logs) = capture_logs(|| logger.log_success_event(&event(payload())).unwrap());
     assert!(
