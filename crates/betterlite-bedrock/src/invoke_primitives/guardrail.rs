@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 use thiserror::Error;
 
@@ -32,29 +35,7 @@ impl GuardrailError {
 }
 
 #[derive(Deserialize)]
-struct GuardrailConfig {
-    #[serde(default, rename = "guardrailIdentifier")]
-    identifier: Text,
-    #[serde(default, rename = "guardrailVersion")]
-    version: Text,
-    #[serde(default)]
-    trace: Trace,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(untagged)]
-enum Text {
-    #[default]
-    #[serde(skip_deserializing)]
-    Absent,
-    Present(String),
-}
-
-#[derive(Default, Deserialize)]
 enum Trace {
-    #[default]
-    #[serde(skip_deserializing)]
-    Absent,
     #[serde(rename = "enabled")]
     Enabled,
     #[serde(rename = "disabled")]
@@ -64,28 +45,53 @@ enum Trace {
 }
 
 pub fn guardrail_headers(raw: &RawValue) -> Result<Vec<(String, String)>, GuardrailError> {
-    let config: GuardrailConfig =
-        serde_json::from_str(raw.get()).map_err(|source| GuardrailError::Invalid {
-            raw: raw.get().to_owned(),
-            source,
-        })?;
-    let Text::Present(identifier) = config.identifier else {
+    // a struct derive reads a JSON array positionally; a map rejects every non-object up front
+    let config: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(raw.get()).map_err(invalid(raw))?;
+    let identifier_field: Option<String> =
+        parse_field::<String>(&config, "guardrailIdentifier").map_err(invalid(raw))?;
+    let version_field: Option<String> =
+        parse_field::<String>(&config, "guardrailVersion").map_err(invalid(raw))?;
+    let trace_field: Option<Trace> =
+        parse_field::<Trace>(&config, "trace").map_err(invalid(raw))?;
+    let Some(identifier) = identifier_field else {
         return Err(GuardrailError::MissingIdentifier {
             raw: raw.get().to_owned(),
         });
     };
     let mut headers = vec![(IDENTIFIER.to_owned(), identifier)];
-    if let Text::Present(version) = config.version {
+    if let Some(version) = version_field {
         headers.push((VERSION.to_owned(), version));
     }
-    let trace = match config.trace {
-        Trace::Absent => None,
-        Trace::Enabled => Some("ENABLED"),
-        Trace::Disabled => Some("DISABLED"),
-        Trace::EnabledFull => Some("ENABLED_FULL"),
-    };
-    if let Some(value) = trace {
-        headers.push((TRACE.to_owned(), value.to_owned()));
+    if let Some(trace) = trace_field {
+        headers.push((
+            TRACE.to_owned(),
+            match trace {
+                Trace::Enabled => "ENABLED".to_owned(),
+                Trace::Disabled => "DISABLED".to_owned(),
+                Trace::EnabledFull => "ENABLED_FULL".to_owned(),
+            },
+        ));
     }
     Ok(headers)
+}
+
+fn invalid(raw: &RawValue) -> impl Fn(serde_json::Error) -> GuardrailError + '_ {
+    |source| GuardrailError::Invalid {
+        raw: raw.get().to_owned(),
+        source,
+    }
+}
+
+fn parse_field<T>(
+    config: &BTreeMap<String, Box<RawValue>>,
+    name: &str,
+) -> Result<Option<T>, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
+    config
+        .get(name)
+        .map(|value| serde_json::from_str(value.get()))
+        .transpose()
 }
