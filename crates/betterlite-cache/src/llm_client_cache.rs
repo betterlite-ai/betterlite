@@ -42,6 +42,8 @@ struct Inner<Client: EvictableClient> {
 }
 
 pub struct LlmClientCache<Client: EvictableClient> {
+    capacity: usize,
+    clock: Clock,
     closer: Arc<EvictedClientCloser<Client>>,
     inner: Mutex<Inner<Client>>,
 }
@@ -67,15 +69,43 @@ impl<Client: EvictableClient> LlmClientCache<Client> {
             Some(default_ttl),
             None,
             ITEM_KIB,
-            clock,
+            Arc::clone(&clock),
         )?;
         Ok(Self {
+            capacity,
+            clock,
             closer,
             inner: Mutex::new(Inner {
                 markers,
                 values: BTreeMap::new(),
             }),
         })
+    }
+
+    // LiteLLM's evict_cache removes an expired or capacity-victim entry before the overwrite, so its client leaves with it
+    fn replaces_an_evicted_entry(&self, markers: &LocalTtlCache, key: &str, now: f64) -> bool {
+        let entries = markers.ttl_entries();
+        let Some((_marker, key_expiry)) = entries.iter().find(|(marker, _expiry)| marker == key)
+        else {
+            return false;
+        };
+        if *key_expiry <= now {
+            return true;
+        }
+        let live_count = entries.iter().filter(|(_, expiry)| *expiry > now).count();
+        if live_count < self.capacity {
+            return false;
+        }
+        let victim = entries
+            .iter()
+            .filter(|(_, expiry)| *expiry > now)
+            .map(|(marker, expiry)| (marker, *expiry))
+            .min_by(|(left_key, left_expiry), (right_key, right_expiry)| {
+                left_expiry
+                    .total_cmp(right_expiry)
+                    .then_with(|| left_key.cmp(right_key))
+            });
+        victim.is_some_and(|(victim_key, _expiry)| victim_key.as_str() == key)
     }
 
     pub fn set_cache(
@@ -89,10 +119,11 @@ impl<Client: EvictableClient> LlmClientCache<Client> {
             self.closer.mark_owned(&client);
         }
         let decorated = event_loop_key(key);
+        let now = (self.clock)();
         let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         let inner = &mut *guard;
-        // LiteLLM overwrites a live entry without closing the client it replaces
-        let (evicted, _replaced) = store_marked(
+        let replaced_evicted = self.replaces_an_evicted_entry(&inner.markers, &decorated, now);
+        let (evicted, replaced) = store_marked(
             &mut inner.markers,
             &mut inner.values,
             decorated,
@@ -100,7 +131,11 @@ impl<Client: EvictableClient> LlmClientCache<Client> {
             ttl,
         )?;
         drop(guard);
-        self.retire(&evicted);
+        let mut retired = evicted;
+        if replaced_evicted {
+            retired.extend(replaced);
+        }
+        self.retire(&retired);
         Ok(())
     }
 

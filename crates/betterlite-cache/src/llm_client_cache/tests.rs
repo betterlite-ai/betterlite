@@ -584,6 +584,80 @@ fn llm_cache_keeps_a_live_entry_expiry_when_overwritten() {
 }
 
 #[test]
+fn llm_cache_same_key_set_after_expiry_retires_the_old_client() {
+    let fixture = fixture();
+    let old = ProbeClient::sync();
+    fixture
+        .cache
+        .set_cache("httpx_client", Arc::clone(&old), Some(1.0_f64), true)
+        .expect("set succeeds");
+
+    advance(&fixture.time, 2.0_f64);
+    fixture
+        .cache
+        .set_cache("httpx_client", ProbeClient::sync(), None, true)
+        .expect("set succeeds");
+    assert_eq!(fixture.closer.pending_count(), 1);
+
+    advance(&fixture.time, 900.0_f64);
+    fixture
+        .cache
+        .set_cache("another", ProbeClient::sync(), None, false)
+        .expect("set succeeds");
+    assert_eq!(close_count(&old), 1);
+}
+
+#[test]
+fn llm_cache_capacity_victim_same_key_retires_the_old_client() {
+    let fixture = fixture();
+    fill_two_hundred_entries(&fixture.cache);
+
+    let old = ProbeClient::sync();
+    fixture
+        .cache
+        .set_cache("client-000", Arc::clone(&old), None, true)
+        .expect("set succeeds");
+    assert_eq!(fixture.closer.pending_count(), 0);
+
+    fixture
+        .cache
+        .set_cache("client-000", ProbeClient::sync(), None, true)
+        .expect("set succeeds");
+    assert_eq!(fixture.closer.pending_count(), 1);
+
+    advance(&fixture.time, 900.0_f64);
+    fixture
+        .cache
+        .set_cache("another", ProbeClient::sync(), None, false)
+        .expect("set succeeds");
+    assert_eq!(close_count(&old), 1);
+}
+
+#[test]
+fn llm_cache_live_overwrite_does_not_retire_the_old_client() {
+    let fixture = fixture();
+    let old = ProbeClient::sync();
+    fixture
+        .cache
+        .set_cache("httpx_client", Arc::clone(&old), None, true)
+        .expect("set succeeds");
+
+    advance(&fixture.time, 60.0_f64);
+    fixture
+        .cache
+        .set_cache("httpx_client", ProbeClient::sync(), None, true)
+        .expect("set succeeds");
+    assert_eq!(fixture.closer.pending_count(), 0);
+
+    advance(&fixture.time, 900.0_f64);
+    fixture
+        .cache
+        .set_cache("another", ProbeClient::sync(), None, false)
+        .expect("set succeeds");
+    assert_eq!(close_count(&old), 0);
+}
+
+#[test]
 fn llm_cache_async_get_closes_a_due_async_client() {
     let fixture = fixture();
     let client = ProbeClient::asynchronous();
