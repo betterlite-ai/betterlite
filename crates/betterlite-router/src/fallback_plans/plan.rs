@@ -1,5 +1,6 @@
 use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
+use betterlite_config::sections::settings::JsonValue;
 
 use crate::fallback_plans::attempts::{AttemptedTargets, has_unattempted_targets};
 use crate::fallback_plans::chains::{ProviderNames, resolve_for_lookup_groups};
@@ -9,6 +10,9 @@ pub struct RequestOverrides<'request> {
     pub fallbacks: Option<&'request [FallbackChainEntry]>,
     pub context_window_fallbacks: Option<&'request [FallbackChainEntry]>,
     pub content_policy_fallbacks: Option<&'request [FallbackChainEntry]>,
+    // the two retry controls ride along because a hop must not fall back to the router-level retry settings
+    pub num_retries: Option<i64>,
+    pub model_group_retry_policy: Option<&'request JsonValue>,
     pub depth: i64,
 }
 

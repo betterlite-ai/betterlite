@@ -102,6 +102,8 @@ fn overrides(payload: &Payload) -> RequestOverrides<'_> {
         fallbacks: payload.request.fallbacks.as_deref(),
         context_window_fallbacks: payload.request.context_window_fallbacks.as_deref(),
         content_policy_fallbacks: payload.request.content_policy_fallbacks.as_deref(),
+        num_retries: payload.request.num_retries,
+        model_group_retry_policy: payload.request.model_group_retry_policy.as_ref(),
         depth: payload.config.depth,
     }
 }
@@ -171,6 +173,8 @@ fn hop_output(
             .overrides
             .content_policy_fallbacks
             .map(<[FallbackChainEntry]>::to_vec),
+        num_retries: hop.overrides.num_retries,
+        model_group_retry_policy: hop.overrides.model_group_retry_policy.cloned(),
     }
 }
 

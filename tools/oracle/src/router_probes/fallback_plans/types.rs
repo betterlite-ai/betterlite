@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
+use betterlite_config::sections::settings::JsonValue;
 use serde::{Deserialize, Serialize};
 
 // the enum in mod.rs would otherwise carry every field of this payload inline in its largest variant
@@ -82,6 +83,10 @@ pub struct RequestChains {
     pub context_window_fallbacks: Option<Vec<FallbackChainEntry>>,
     #[serde(default)]
     pub content_policy_fallbacks: Option<Vec<FallbackChainEntry>>,
+    #[serde(default)]
+    pub num_retries: Option<i64>,
+    #[serde(default)]
+    pub model_group_retry_policy: Option<JsonValue>,
 }
 
 // the enum in mod.rs would otherwise carry every field of this output inline in its largest variant
@@ -134,4 +139,6 @@ pub struct HopOutput {
     pub fallbacks: Option<Vec<FallbackChainEntry>>,
     pub context_window_fallbacks: Option<Vec<FallbackChainEntry>>,
     pub content_policy_fallbacks: Option<Vec<FallbackChainEntry>>,
+    pub num_retries: Option<i64>,
+    pub model_group_retry_policy: Option<JsonValue>,
 }

@@ -49,3 +49,18 @@ probes:
         request:
           fallbacks:
             - {other: [request-other]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request:
+          num_retries: 0
+          model_group_retry_policy:
+            gpt-4: {RateLimitErrorRetries: 3}

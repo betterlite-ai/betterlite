@@ -275,6 +275,8 @@ fn request_chains_resolve(slugs: &[String]) {
         fallbacks: Some(&override_chain),
         context_window_fallbacks: None,
         content_policy_fallbacks: None,
+        num_retries: None,
+        model_group_retry_policy: None,
         depth: 2,
     };
     let selected = select_chains(&settings, &overrides);
@@ -286,19 +288,26 @@ fn request_chains_resolve(slugs: &[String]) {
     assert!(resolved.has_unattempted);
     let window = resolve_chain(selected.context_window, &["gpt-4"], &names, &attempted).unwrap();
     assert_eq!(target_models(&window.targets), ["router-long"]);
+    empty_request_chain_disables(&settings, &names);
+    let tried = AttemptedTargets::from_targets(&[name("request")]);
+    let retried = resolve_chain(selected.ordinary, &["gpt-4"], &names, &tried).unwrap();
+    assert!(!retried.has_unattempted);
+}
+
+fn empty_request_chain_disables(settings: &Settings, names: &ProviderNames<'_>) {
     let disabled = select_chains(
-        &settings,
+        settings,
         &RequestOverrides {
             fallbacks: Some(&[]),
             context_window_fallbacks: None,
             content_policy_fallbacks: None,
+            num_retries: None,
+            model_group_retry_policy: None,
             depth: 0,
         },
     );
-    assert!(resolve_chain(disabled.ordinary, &["gpt-4"], &names, &attempted).is_none());
-    let tried = AttemptedTargets::from_targets(&[name("request")]);
-    let retried = resolve_chain(selected.ordinary, &["gpt-4"], &names, &tried).unwrap();
-    assert!(!retried.has_unattempted);
+    let attempted = AttemptedTargets::default();
+    assert!(resolve_chain(disabled.ordinary, &["gpt-4"], names, &attempted).is_none());
 }
 
 fn selection_and_pre_routing() {
@@ -410,10 +419,14 @@ fn the_hop_copies_the_metadata_and_keeps_the_controls() {
     let mut live = request_state(bucket(Some("tier"), None, None), Bucket::default());
     let request = vec![group("gpt-4", vec![name("request")])];
     let empty: Vec<FallbackChainEntry> = Vec::new();
+    let policy: JsonValue =
+        serde_json::from_str(r#"{"gpt-4":{"RateLimitErrorRetries":3}}"#).unwrap();
     let overrides = RequestOverrides {
         fallbacks: Some(&request),
         context_window_fallbacks: None,
         content_policy_fallbacks: Some(&empty),
+        num_retries: Some(0),
+        model_group_retry_policy: Some(&policy),
         depth: 1,
     };
     let hop = HopRequest {
@@ -429,6 +442,9 @@ fn the_hop_copies_the_metadata_and_keeps_the_controls() {
             .content_policy_fallbacks
             .is_some_and(<[FallbackChainEntry]>::is_empty)
     );
+    assert_eq!(hop.overrides.num_retries, Some(0));
+    assert_eq!(hop.overrides.model_group_retry_policy, Some(&policy));
+    assert_eq!(hop.overrides.depth, 1);
     assert_eq!(hop.metadata, live);
     record_pre_routing_selection(&mut live, "changed");
     assert_eq!(get_pre_routing_selection(&hop.metadata), Some("tier"));

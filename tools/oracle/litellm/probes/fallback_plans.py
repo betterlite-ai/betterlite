@@ -84,6 +84,8 @@ class RequestChains(Strict):
     fallbacks: list[JsonValue] | None = None
     context_window_fallbacks: list[JsonValue] | None = None
     content_policy_fallbacks: list[JsonValue] | None = None
+    num_retries: int | None = None
+    model_group_retry_policy: JsonValue | None = None
 
 
 class ChainOutput(Strict):
@@ -108,6 +110,8 @@ class HopOutput(Strict):
     fallbacks: list[JsonValue] | None
     context_window_fallbacks: list[JsonValue] | None
     content_policy_fallbacks: list[JsonValue] | None
+    num_retries: int | None
+    model_group_retry_policy: JsonValue | None
 
 
 class Output(Strict):
@@ -220,6 +224,10 @@ class FallbackPlans(Operation):
             kwargs["context_window_fallbacks"] = self.request.context_window_fallbacks
         if self.request.content_policy_fallbacks is not None:
             kwargs["content_policy_fallbacks"] = self.request.content_policy_fallbacks
+        if self.request.num_retries is not None:
+            kwargs["num_retries"] = self.request.num_retries
+        if self.request.model_group_retry_policy is not None:
+            kwargs["model_group_retry_policy"] = self.request.model_group_retry_policy
         return kwargs
 
     def resolve(
@@ -265,4 +273,6 @@ class FallbackPlans(Operation):
             fallbacks=hop_field(hop, "fallbacks"),
             context_window_fallbacks=hop_field(hop, "context_window_fallbacks"),
             content_policy_fallbacks=hop_field(hop, "content_policy_fallbacks"),
+            num_retries=cast("int | None", hop.get("num_retries")),
+            model_group_retry_policy=cast("JsonValue | None", hop.get("model_group_retry_policy")),
         )
