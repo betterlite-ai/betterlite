@@ -5,7 +5,7 @@ use betterlite_tokenizer::count::wire::TokenRequestWire;
 use betterlite_tokenizer::reservation::RequestBody;
 
 use super::support::{self, Behavior, RecordingCounter};
-use crate::io_token_reservations::counter::{DualIoCounter, IoCounter};
+use crate::io_token_reservations::counter::{CountObservation, DualIoCounter, IoCounter};
 use crate::io_token_reservations::error::{IoChannel, IoPreCallError};
 use crate::io_token_reservations::estimate::estimate_input_tokens;
 use crate::io_token_reservations::limits::IoDeployment;
@@ -18,7 +18,7 @@ pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 28] = [
+const CASES: [(&str, fn()); 30] = [
     ("full_reservation_stashes_both_channels", || {
         super::runtime().block_on(full_reservation_stashes_both_channels());
     }),
@@ -32,10 +32,13 @@ const CASES: [(&str, fn()); 28] = [
         super::runtime().block_on(explicit_zero_output_cap_reserves_nothing());
     }),
     ("max_completion_tokens_used_when_max_tokens_absent", || {
-        super::runtime().block_on(reserve_output("max_completion_tokens", 7));
+        super::runtime().block_on(reserve_output_case("max_completion_tokens", 7, 7));
     }),
     ("max_output_tokens_used_when_other_caps_absent", || {
-        super::runtime().block_on(reserve_output("max_output_tokens", 9));
+        super::runtime().block_on(reserve_output_case("max_output_tokens", 9, 9));
+    }),
+    ("max_completion_tokens_wins_over_max_output_tokens", || {
+        super::runtime().block_on(max_completion_tokens_wins());
     }),
     ("max_tokens_wins_over_later_fields", || {
         super::runtime().block_on(max_tokens_wins_over_later_fields());
@@ -101,6 +104,10 @@ const CASES: [(&str, fn()); 28] = [
     (
         "standard_logging_cached_metadata",
         standard_logging_cached_metadata,
+    ),
+    (
+        "usage_prefers_response_over_standard_logging",
+        usage_prefers_response_over_standard_logging,
     ),
 ];
 
@@ -180,6 +187,25 @@ async fn reserve_output(name: &str, cap: i64) -> i64 {
         .unwrap()
         .unwrap()
         .otpm_reserved
+}
+
+async fn reserve_output_case(name: &str, cap: i64, expected: i64) {
+    assert_eq!(reserve_output(name, cap).await, expected);
+}
+
+async fn max_completion_tokens_wins() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = support::deployment(None, Some(100));
+    let mut request = support::body();
+    request.insert("max_completion_tokens".to_owned(), support::number(7));
+    request.insert("max_output_tokens".to_owned(), support::number(9));
+    let reserved = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reserved.otpm_reserved, 7);
 }
 
 async fn max_tokens_wins_over_later_fields() {
@@ -375,6 +401,29 @@ fn usage_missing_keeps_reservation() {
     assert_eq!(usage, ReconcileUsage::default());
 }
 
+fn usage_prefers_response_over_standard_logging() {
+    let usage = resolve_reconcile_usage(
+        Some(UsageTokens {
+            prompt_tokens: 10,
+            completion_tokens: 3,
+            cached_tokens: 4,
+        }),
+        Some(UsageTokens {
+            prompt_tokens: 50,
+            completion_tokens: 20,
+            cached_tokens: 0,
+        }),
+    );
+    assert_eq!(
+        usage,
+        ReconcileUsage {
+            billable_input: 6,
+            completion_tokens: 3,
+            usage_resolved: true,
+        }
+    );
+}
+
 async fn messages_and_prompt_estimate_zero() {
     let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
     let reservations = support::service(counter, Some(10));
@@ -418,11 +467,11 @@ async fn store_counter_increments_and_reports() {
     let key = format!("global_router:dep-a:gpt-4o:itpm:{}", support::minute());
     assert_eq!(
         IoCounter::increment_counter(&counter, &key, 5, 60).await,
-        Some(5)
+        CountObservation::Counted(5)
     );
     assert_eq!(
         IoCounter::increment_counter(&counter, &key, 2, 60).await,
-        Some(7)
+        CountObservation::Counted(7)
     );
     let route = RouteKey::parse(&key).unwrap();
     assert_eq!(
@@ -472,7 +521,7 @@ async fn store_counter_rejects_oversized_key() {
     let key = "k".repeat(1025);
     assert_eq!(
         IoCounter::increment_counter(&counter, &key, 1, 60).await,
-        None
+        CountObservation::Unavailable
     );
 }
 

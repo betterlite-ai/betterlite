@@ -8,6 +8,7 @@ use tokio::time::timeout;
 
 use super::support::{self, Behavior, RecordingCounter};
 use crate::io_token_reservations::clock::{minute_label, seconds_until_minute_reset};
+use crate::io_token_reservations::counter::DualIoCounter;
 use crate::io_token_reservations::error::{IoChannel, IoPreCallError};
 use crate::io_token_reservations::limits::{IoDeployment, IoLimits};
 use crate::io_token_reservations::reservation::{
@@ -15,12 +16,13 @@ use crate::io_token_reservations::reservation::{
     clear_reservation, read_reservation, stash_reservation,
 };
 use crate::io_token_reservations::usage::{UsageTokens, resolve_reconcile_usage};
+use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, StoreRead};
 
 pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 29] = [
+const CASES: [(&str, fn()); 30] = [
     ("channel_labels", channel_labels),
     ("otpm_failure_without_itpm_releases_nothing", || {
         super::runtime().block_on(otpm_failure_without_itpm_releases_nothing());
@@ -48,6 +50,9 @@ const CASES: [(&str, fn()); 29] = [
     }),
     ("provider_mismatched_model_uses_4096", || {
         super::runtime().block_on(provider_mismatched_model_uses_4096());
+    }),
+    ("overflowing_output_cap_still_rate_limits", || {
+        super::runtime().block_on(overflowing_output_cap_still_rate_limits());
     }),
     ("mantle_region_prefix_is_stripped", || {
         super::runtime().block_on(mantle_region_cap(
@@ -238,7 +243,33 @@ async fn provider_mismatched_model_uses_4096() {
     assert_eq!(reserved.otpm_reserved, 4096);
 }
 
-// a region head is stripped before the bedrock_mantle lookup; any other head keeps the model as sent
+// the seeded counter plus max_tokens i64::MAX overflows i64; LiteLLM's unbounded int still compares above the limit
+async fn overflowing_output_cap_still_rate_limits() {
+    let local = support::local_store();
+    let deployment = support::deployment(None, Some(100));
+    let keys = support::keys(&deployment);
+    let route = RouteKey::parse(&keys.otpm).unwrap();
+    local
+        .increment(&route, &RouteIncrement::Counter(5), None)
+        .unwrap();
+    let counter = Arc::new(DualIoCounter {
+        local,
+        remote: None,
+    });
+    let reservations = support::service(Arc::clone(&counter), Some(10));
+    let mut request = support::body();
+    request.insert("max_tokens".to_owned(), support::number(i64::MAX));
+    let error = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap_err();
+    assert_eq!(rate_limit(error), (IoChannel::Otpm, 100, i64::MAX));
+    assert_eq!(
+        counter.local.get(&route).unwrap(),
+        StoreRead::Value(RouteValue::Counter(5))
+    );
+}
+
 async fn mantle_region_cap(model: &str, stripped: bool) {
     let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
     let reservations = support::service(counter, Some(10));

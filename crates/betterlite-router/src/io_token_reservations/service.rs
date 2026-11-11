@@ -8,7 +8,7 @@ use betterlite_tokenizer::model_capabilities::BEDROCK_NAMES;
 use betterlite_tokenizer::reservation::RequestBody;
 
 use super::clock::{IoClock, ROUTING_ARGS_TTL_SECONDS, minute_label};
-use super::counter::IoCounter;
+use super::counter::{CountObservation, IoCounter};
 use super::error::{IoChannel, IoPreCallError, RateLimitExceeded};
 use super::estimate::{InputTokenCounter, estimate_input_tokens};
 use super::limits::{IoDeployment, IoLimits, MinuteKeys, minute_keys};
@@ -96,22 +96,27 @@ impl IoTokenReservations {
         if value <= 0 {
             return Ok(());
         }
-        let Some(current) = self
+        match self
             .counter
             .increment_counter(key, value, ROUTING_ARGS_TTL_SECONDS)
             .await
-        else {
-            return Ok(());
-        };
-        if current > limit {
-            self.release(key, value).await;
-            return Err(RateLimitExceeded {
+        {
+            // the overflowing add never landed, so there is no stored increment to release
+            CountObservation::Overflow => Err(RateLimitExceeded {
                 channel,
                 limit,
-                current,
-            });
+                current: i64::MAX,
+            }),
+            CountObservation::Counted(current) if current > limit => {
+                self.release(key, value).await;
+                Err(RateLimitExceeded {
+                    channel,
+                    limit,
+                    current,
+                })
+            }
+            CountObservation::Unavailable | CountObservation::Counted(_) => Ok(()),
         }
-        Ok(())
     }
 
     async fn release(&self, key: &str, value: i64) {
@@ -119,7 +124,7 @@ impl IoTokenReservations {
             return;
         }
         let by = value.checked_neg().unwrap_or_default();
-        let _released: Option<i64> = self
+        let _released = self
             .counter
             .increment_counter(key, by, ROUTING_ARGS_TTL_SECONDS)
             .await;

@@ -35,7 +35,7 @@ use serde_json::Number;
 use tokio::time::Instant;
 
 use crate::io_token_reservations::clock::{IoClock, minute_label};
-use crate::io_token_reservations::counter::IoCounter;
+use crate::io_token_reservations::counter::{CountObservation, IoCounter};
 use crate::io_token_reservations::estimate::{
     InputTokenCounter, IoInputField, TokenizerInputCounter,
 };
@@ -128,31 +128,38 @@ impl RecordingCounter {
 
 #[async_trait]
 impl IoCounter for RecordingCounter {
-    async fn increment_counter(&self, key: &str, value: i64, ttl_seconds: u64) -> Option<i64> {
+    async fn increment_counter(&self, key: &str, value: i64, ttl_seconds: u64) -> CountObservation {
         if value < 0 && self.fail_releases.load(Ordering::SeqCst) {
-            return None;
+            return CountObservation::Unavailable;
         }
         match self.behavior(key) {
-            Behavior::Unavailable => return None,
+            Behavior::Unavailable => return CountObservation::Unavailable,
             Behavior::Pending => pending::<()>().await,
             Behavior::Record => {}
         }
-        let mut calls = self.calls.lock().ok()?;
+        let Ok(mut calls) = self.calls.lock() else {
+            return CountObservation::Unavailable;
+        };
         calls.push(CounterCall {
             key: key.to_owned(),
             value,
             ttl_seconds,
         });
         drop(calls);
-        let mut values = self.values.lock().ok()?;
-        let current = values
+        let Ok(mut values) = self.values.lock() else {
+            return CountObservation::Unavailable;
+        };
+        let Some(current) = values
             .get(key)
             .copied()
             .unwrap_or_default()
-            .checked_add(value)?;
+            .checked_add(value)
+        else {
+            return CountObservation::Overflow;
+        };
         values.insert(key.to_owned(), current);
         drop(values);
-        Some(current)
+        CountObservation::Counted(current)
     }
 }
 

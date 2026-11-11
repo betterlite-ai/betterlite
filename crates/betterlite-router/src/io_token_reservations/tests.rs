@@ -22,6 +22,9 @@ fn runtime() -> Runtime {
 #[case::max_output_tokens_used_when_other_caps_absent(
     "max_output_tokens_used_when_other_caps_absent"
 )]
+#[case::max_completion_tokens_wins_over_max_output_tokens(
+    "max_completion_tokens_wins_over_max_output_tokens"
+)]
 #[case::max_tokens_wins_over_later_fields("max_tokens_wins_over_later_fields")]
 #[case::model_cap_used_without_explicit_cap("model_cap_used_without_explicit_cap")]
 #[case::unmapped_model_uses_4096_fallback("unmapped_model_uses_4096_fallback")]
@@ -39,6 +42,9 @@ fn runtime() -> Runtime {
 #[case::usage_total_tokens_only_is_absent("usage_total_tokens_only_is_absent")]
 #[case::standard_logging_cached_metadata("standard_logging_cached_metadata")]
 #[case::usage_missing_keeps_reservation("usage_missing_keeps_reservation")]
+#[case::usage_prefers_response_over_standard_logging(
+    "usage_prefers_response_over_standard_logging"
+)]
 #[case::messages_and_prompt_estimate_zero("messages_and_prompt_estimate_zero")]
 #[case::tokenizer_counts_messages("tokenizer_counts_messages")]
 #[case::tokenizer_counts_text("tokenizer_counts_text")]
@@ -65,6 +71,7 @@ fn io_token_reservations_behaviors(#[case] name: &str) {
 #[case::model_cap_equal_to_limit_passes("model_cap_equal_to_limit_passes")]
 #[case::model_cap_over_limit_by_one_fails("model_cap_over_limit_by_one_fails")]
 #[case::provider_mismatched_model_uses_4096("provider_mismatched_model_uses_4096")]
+#[case::overflowing_output_cap_still_rate_limits("overflowing_output_cap_still_rate_limits")]
 #[case::mantle_region_prefix_is_stripped("mantle_region_prefix_is_stripped")]
 #[case::non_region_prefix_is_not_stripped("non_region_prefix_is_not_stripped")]
 #[case::missing_model_id_skips_limits("missing_model_id_skips_limits")]
