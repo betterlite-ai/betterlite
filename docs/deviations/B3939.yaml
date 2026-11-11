@@ -1,0 +1,5 @@
+task: B3939
+deviations:
+  - what: The litellm.llm_api.latency gauge is built whenever the metric source carries an api_call_start_time, but the success and failure event adapters never supply one, so a request handled by the proxy records total latency, overhead latency and the request count without the provider-only latency series.
+    why: B8740's LoggerEvent carries the standard logging payload, the dynamic params and the stream flag, not LiteLLM's kwargs; the payload has startTime and endTime but no provider call start, and the event type is outside this task's paths. The metric itself is built and tested from an explicit provider start, and the adapter records no series rather than inventing one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_metrics.py#L105-L113
