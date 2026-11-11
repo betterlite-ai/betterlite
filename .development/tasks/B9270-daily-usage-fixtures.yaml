@@ -1,0 +1,155 @@
+id: B9270
+title: Seed daily usage for HTTP oracle calls without using product repositories
+description: >-
+  B860's independent oracle databases contain the 2025 baseline and typed identity seeds, but no
+  LiteLLM_DailyUserSpend, LiteLLM_DailyTeamSpend or LiteLLM_DailyTagSpend tables. B074 needs real,
+  distinguishable usage for two users to test the usage-chat engine's scoping over HTTP. Build an
+  additive fixture module in tools/postgres-fixture/src/daily_usage.rs and daily_usage/**, plus
+  tools/postgres-fixture/fixtures/daily_usage.sql. This is test support, with zero new LiteLLM
+  production functions; allow about 450 changed source, SQL and corpus lines. Reuse the existing
+  PostgresFixture lifecycle, tokio-postgres, rust_decimal and typed identity seeds. Nothing starts
+  another database process, imports betterlite-db, or runs its migrations.
+
+  The architect supplies the shared connections before dispatch: lib.rs declares daily_usage;
+  FixtureSeed has a serde-defaulted daily_usage: Option<Vec<DailyUsageRow>>; when it is Some,
+  FixtureSeed::validate calls daily_usage::validate(rows, &self.keys). FixtureError has a
+  DailyUsage error variant. Only when daily_usage is Some does seed_sql::seed_database apply
+  daily_usage::SCHEMA after BASELINE and call daily_usage::seed after seed_keys. Those shared
+  files are outside this task. Set the new field to None in existing FixtureSeed literals.
+  An absent field preserves the old baseline, since product migration tests use those fixtures;
+  an explicit empty list installs the three empty tables. These calls run through ordinary
+  PostgresFixture provisioning, so an
+  HTTP case needs only database.seed.daily_usage, not a new case kind or a special runner.
+
+  Public types. DailyUsageTable is the closed serde snake_case enum user, team, tag; it selects a
+  fixed SQL statement, never an interpolated table name. DailyUsageRow derives Deserialize,
+  Debug, Clone, PartialEq and Eq and rejects unknown fields. Required fields are table, id,
+  entity_id: Option<String>, date: String, key_index: usize, model: Option<String>, and
+  custom_llm_provider: Option<String>. Optional model_group defaults to None. spend is Decimal
+  default zero; prompt_tokens, completion_tokens, api_requests, successful_requests and
+  failed_requests are i64 default zero. entity_id maps to user_id, team_id or tag according to
+  table. key_index refers to database.seed.keys in file order; the module computes the stored
+  api_key with FixtureSeed::key_hash over that key's SecretString, never a second hashing scheme
+  or a raw token column. There is no entity ownership inference: a team or tag row can use a key
+  belonging to either seeded user.
+
+  validate(rows: &[DailyUsageRow], keys: &[KeyRow]) returns Result<(), DailyUsageError> and rejects
+  more than 256 rows, an out-of-range key_index, duplicate (table,id), an id or date over 64 bytes,
+  and any other supplied string over 4096 bytes. Reject negative supplied counters; spend remains
+  Decimal and may be negative, since this fixture does not impose a new product spend rule.
+  Dates are literal database text, so this module does not parse or normalize them. Every failure
+  identifies the row and field without including a token. The limits are fixture input limits,
+  not proxy settings. Validate before opening a database, through FixtureSeed::validate; seed
+  validates again for direct callers.
+
+  SCHEMA is include_str! of daily_usage.sql. Create the three empty tables with final column
+  names, PostgreSQL types, nullability, defaults, primary keys, composite uniqueness and indexes
+  from the pinned schema and migrations. DailyTeamSpend alone has ptu_flat_cost; DailyTagSpend
+  alone has request_id. Include compression and caching savings, endpoint, namespaced MCP tool,
+  response-time and timed-request columns even though the seed row leaves them at their defaults.
+  Use BIGINT for counters, DOUBLE PRECISION for the existing schema's money columns, TEXT for ids
+  and dates, and TIMESTAMP(3) for created_at/updated_at. Prisma uuid() and @updatedAt are client
+  actions, not PostgreSQL defaults: seed supplies its id and a fixed timestamp for both times.
+  Copy no foreign key into these daily tables because the pin declares none. baseline.sql stays
+  byte for byte unchanged; no rows are inserted by SCHEMA itself.
+
+  seed(client: &tokio_postgres::Client, rows: &[DailyUsageRow], keys: &[KeyRow]) returns
+  Result<(), DailyUsageError>. Insert in input order with bound parameters and one exhaustive
+  table match. Convert Decimal at the SQL boundary with a numeric parameter cast to double
+  precision; never convert through a Rust float. Set the fixed timestamp to 2026-01-01T00:00:00Z.
+  Leave model_group nullable and all unspecified metrics zero. Do not add an upsert or a transaction:
+  a constraint failure is a fixture setup failure, which B860 cleans up. Database errors keep their
+  source in this module's own error enum.
+
+  Tests under daily_usage::tests use ordinary PostgresFixture provisioning, not a direct call that
+  bypasses the shared connections. usage_schema_matches_pin inspects columns, defaults and uniqueness;
+  usage_seeds_three_tables checks explicit rows, defaulted metrics, hashed keys and the fixed timestamp;
+  usage_databases_are_independent changes a row in one of two fixtures and reads the unchanged value
+  from the other; rejects_bad_usage_seed covers limits, duplicate ids, bad key indices and negative
+  counters. The existing fixture tests must also pass with the new defaulted field absent,
+  and usage_schema_matches_pin proves that daily_usage: [] installs empty tables while an omitted
+  daily_usage leaves them absent for product migration tests.
+
+  This extends the existing outside-byte decoder betterlite_oracle::case::decode_case, whose input
+  is a whole HTTP case YAML byte slice; do not add a second YAML decoder or fuzz target. Its existing
+  http_case fuzz target already reaches FixtureSeed::validate. Add usage-activity-* corpus files
+  for a missing key index, an invalid table tag, an unknown field, an oversized seed and duplicate
+  row ids, and replay them with replays_the_http_case_corpus. All five must be rejected, matching
+  that existing replay test's rule for new filenames. The ordinary HTTP-case parser
+  must reject bad inputs before any database is provisioned. Add a test-only module in
+  tools/oracle/src/daily_usage_fixture.rs and daily_usage_fixture/tests.rs, declared by the
+  skeleton, with rstest decodes_daily_usage_seed calling decode_case on a valid three-table seed,
+  an absent daily_usage field, an explicit empty list and those invalid forms, asserting the
+  decoded values or rejection. This test supplies the positive parsing proof alongside the
+  negative corpus assertions without changing the shared replay test's filename registry.
+scope:
+  paths:
+    - tools/postgres-fixture/src/daily_usage.rs
+    - tools/postgres-fixture/src/daily_usage/**
+    - tools/postgres-fixture/fixtures/daily_usage.sql
+    - tools/oracle/src/daily_usage_fixture.rs
+    - tools/oracle/src/daily_usage_fixture/**
+    - tools/oracle/fuzz/corpus/http_case/usage-activity-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L848-L883
+    why: Final DailyUserSpend fields and indexes for independent test data; B701 owns schema.prisma and the product schema parts retain their migrations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1029-L1104
+    why: DailyTeamSpend and DailyTagSpend, including the team flat-cost and tag request-id differences.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L253-L339
+    why: The three actual table reads B074 exercises; B3103 retains their implementation ownership.
+dod:
+  - text: Ordinary independent Postgres fixtures contain all three pinned daily tables, and explicit daily_usage seeds preserve values, defaults and hashed key references.
+    proof: [usage-schema-tests, usage-seed-tests]
+  - text: A write in one fixture is absent from the other, while existing identity-only fixture provisioning still works.
+    proof: [usage-isolation-tests, fixture-regression]
+  - text: Invalid daily_usage rows fail validation before provisioning, a valid three-table case decodes completely, and new invalid YAML corpus inputs are rejected by the existing HTTP-case decoder.
+    proof: [usage-validation-tests, usage-decoder-tests, usage-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: usage-schema-tests
+      why: The optional daily fixture schema is missing, changes the absent-field baseline, or differs from the pin.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(usage_schema_matches_pin)'
+    - id: usage-seed-tests
+      why: Ordinary provisioning does not seed all three tables with the supplied metrics and hashed key references.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(usage_seeds_three_tables)'
+    - id: usage-isolation-tests
+      why: Independent fixtures share daily usage rows or seed different initial values.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(usage_databases_are_independent)'
+    - id: usage-validation-tests
+      why: Invalid daily usage seeds pass through validation before provisioning.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(rejects_bad_usage_seed)'
+    - id: usage-decoder-tests
+      why: The ordinary case parser accepts an invalid daily seed or fails to populate a valid one.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(decodes_daily_usage_seed)'
+    - id: fixture-regression
+      why: Adding daily_usage breaks the existing identity-only fixture contract or resource cleanup.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/postgres-fixture/fixtures/daily_usage.sql)" &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
+    - id: usage-case-corpus
+      why: No new daily-usage input reaches the existing byte decoder, or its replay fails.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/usage-activity-*')" &&
+        grep -l 'daily_usage:' tools/oracle/fuzz/corpus/http_case/usage-activity-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/http_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "No production function is ported; B3103 owns the three data fetchers, B3091-B3093 own their services, and B727/B729 own query and repository logic."
+  - "B701 owns schema.prisma; B703 and the later schema parts own product migrations, while B051 owns database startup; this independent fixture is not a product database upgrade."
+  - "B860 owns database provisioning, identity seeds and cleanup; B5076 owns the Prisma toolchain needed by the booted HTTP oracle."
+  - "Shared FixtureSeed, FixtureError, seed_database and module declarations are architect wiring, supplied before dispatch and outside this module's scope."
+  - "HTTP usage-chat cases are B074; route mounting and production ports remain B8673."
+pitfalls:
+  - Prisma's uuid() and @updatedAt annotations do not justify adding SQL defaults that the pinned database does not have.
+  - A daily row stores the SHA256 key from key_index, while the HTTP request still sends the raw token from the existing keys seed.
+  - An explicit daily_usage empty list installs empty tables, while an absent field preserves the baseline used by product migration tests.
+  - An admin global query must see every seeded user's daily rows, so the fixture must not prefilter rows by the key used to call the gateway.
+  - The new strings are bounded fixture data, and table names always come from DailyUsageTable rather than from YAML text.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

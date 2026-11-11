@@ -115,7 +115,7 @@ oracle_cases:
   - tools/oracle/cases/api/video-content-remix-routes/content-remix-auth.yaml
 deviations: []
 out_of_scope:
-  - "B3343 owns POST/GET /videos and GET /videos/{video_id}, with their cases. B3345 owns the character routes. The edits and extensions routes in the same file have no task yet, see the planner notes."
+  - "B3343 owns POST/GET /videos and GET /videos/{video_id}, with their cases. B3345 owns the character routes. B6360 owns the edit and extension routes in the same file."
   - "B3339 and B3340 own the call functions, B3334 the remix transport and B3333 the content transport; B672 owns the id codec; B844 owns resolve_model_name_from_model_id."
   - "B8801 owns the pre-call step, B004 the rest of the common request processing, response headers and exception handling; B2400 the provider accessors; B1100 the body read; B052 authentication."
   - "video_reference_to_id, extract_model_from_target_model_names, get_custom_provider_from_data and encode_character_id_in_response in video_endpoints/utils.py are not used by these two routes."

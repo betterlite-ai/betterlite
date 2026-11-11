@@ -204,8 +204,8 @@ deviations:
 out_of_scope:
   - >-
     FocusLogger.dry_run_export_usage_data (litellm/integrations/focus/focus_logger.py:107-110)
-    is not called at the pinned commit; it is owned by the task that consumes it through the Vantage dry-run route (B073)
-    which implements its own simplified query-and-sample logic instead.
+    has no caller at the pinned commit, so the engine wrapper it forwards to is unreachable too. Build neither; B073
+    implements the Vantage dry-run route's preview directly.
 pitfalls:
   - >-
     FOCUS_CRON_OFFSET is parsed as int(os.getenv("FOCUS_CRON_OFFSET", "5")) without try/except;

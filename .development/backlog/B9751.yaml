@@ -1,0 +1,17 @@
+id: B9751
+milestone: M10 admin ui
+title: Guardrail page form and submission HTTP contracts
+status: todo
+depends_on: [B9740, B9750, B8667, B8668, B8634, B060, B813, B9735]
+file: tasks/B9751-dashboard-guardrail-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/guardrails/**"
+  - "ui/litellm-dashboard/src/components/guardrails/**"
+  - "ui/litellm-dashboard/src/components/GuardrailSettingsView.*"
+  - "ui/litellm-dashboard/src/components/GuardrailSettingsView.test.*"
+parent: B148
+split_from: B148
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

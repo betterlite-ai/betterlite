@@ -1,0 +1,155 @@
+id: B8994
+title: Guardrail scan metadata and response header utilities
+description: >-
+  B3731 leaves add_guardrail_scan_id and logging-object utilities to B104, while
+  B3786 keeps Prisma scan ids in a provider-local GuardrailAudit. Build the shared
+  pure functions in betterlite-guardrails::guardrail_metadata so live dispatch can drain
+  those records into the request and response headers. Own callback_utils.py
+  add_guardrail_scan_id, _serialize_scan_metadata_header,
+  get_logging_caching_headers and add_guardrail_response_to_standard_logging_object,
+  99 nonblank noncomment physical lines including their docstrings. No existing
+  task implements these four complete functions. Do not replace B3680's applied
+  guardrail recorder or B3664's invocation logging.
+
+  Use typed metadata projections over the existing GuardrailValue records and
+  B3662's GuardrailEventHooks, preserving presence of an empty list separately
+  from an absent field. record_scan_id takes request data, optional scan id,
+  optional guardrail name, provider and stage. Absent or empty id is a no-op.
+  Select litellm_metadata if that key exists, otherwise metadata, creating the
+  selected object when needed. Append an id only if it is absent from
+  guardrail_scan_ids. Separately append a ScanEntry with fields guardrail, stage,
+  provider and scan_id only if the complete entry is absent from
+  guardrail_scan_metadata. The same id at pre_call and post_call therefore appears
+  once in the ids and twice in the entries. Preserve first-seen order and allow a
+  null guardrail name; do not reuse Prisma's String-only ScanIdEntry as the public
+  shared type.
+
+  logging_caching_headers reads metadata then overlays litellm_metadata by key;
+  it does not create either bucket. Emit x-litellm-applied-guardrails and
+  x-litellm-applied-policies when their list key exists, even for an empty list,
+  joining names with commas. Nonempty scan ids become x-litellm-guardrail-scan-id.
+  Compactly serialize scan entries for x-litellm-guardrail-scan-metadata, retaining
+  the longest leading sequence that fits MAX_GUARDRAIL_SCAN_METADATA_HEADER_LENGTH
+  2048 including brackets and commas; drop trailing entries, and omit the header
+  when even the first entry does not fit. The ids header is not truncated by that
+  metadata limit. Use serde_json's existing serializer and docs/compatibility.md
+  for Python formatting differences, not a new JSON encoder. policy_sources becomes
+  x-litellm-policy-sources with entries in source order joined by "; ", each
+  name=reason; reasons may contain commas. semantic-similarity becomes
+  x-litellm-semantic-similarity. Only the literal trusted marker
+  _pillar_response_headers_trusted true permits pillar_response_headers keys whose
+  lowercase name begins x-pillar-; keep their actual spelling. If a trusted map is
+  absent, pillar_flagged supplies x-pillar-flagged in lowercase. A present empty map
+  suppresses that fallback. Ordinary request-intake stripping of forged internal
+  fields remains B1137; this projection must not treat an untrusted map as trusted.
+
+  append_guardrail_response takes an optional mutable standard logging object and
+  a B3664 GuardrailInvocationRecord (StandardLoggingGuardrailInformation on the
+  wire). With no logging object or
+  no existing standard_logging_object, do nothing; do not allocate a missing
+  standard object. Missing/null guardrail_information becomes a list and the
+  record is appended without deduplication. This is distinct from B3664's
+  standard_logging_guardrail_information metadata and its deduplicating sync.
+
+  Provide two fieldwise producer adapters in this same module. merge_prisma_audit
+  reads B3786's GuardrailAudit.scan_metadata in order and calls record_scan_id for
+  each entry, mapping its pre/post stage; leave its applied names and information
+  to their existing recorders. merge_moderation_scan reads the new invocation's
+  B3731 GuardrailLogRecord entries and takes the id only from the Moderation variant
+  of guardrail_response, because process_outcome consumes the temporary
+  _openai_moderation_response stash. It takes the starting record index, guardrail
+  name and input type so repeated calls do not reread unrelated old records. Run
+  it after both Ok and a flagged Err; a skipped/failed transport run has no new
+  moderation response and produces no id. Its provider is openai_moderation and
+  response input maps to post_call, all request input to pre_call. The adapters
+  only move already parsed results and do not call either remote service.
+
+  B3734 calls append_guardrail_response from its native Model Armor post-call hook
+  before the block decision. Keeping the function in betterlite-guardrails permits
+  that import without a reverse dependency on betterlite-server.
+  B8666 calls the producer adapters before returning the class result, including failures;
+  the existing response-header composition calls logging_caching_headers after
+  guardrails run. B104 supplies HTTP scan-header tests after those owners are wired.
+  Here use rstest functions named guardrail_metadata_cases for bucket choice,
+  per-stage deduplication, cap boundaries, metadata overlay, trusted Pillar gating,
+  logging-object absence and both producer adapters. Pure helper cases invoke
+  only the four source functions, with a simple logging-object record for the last
+  one; never import a proxy handler. Add b8994-tagged seeds to the existing shared
+  helper_case decoder corpus and replay that decoder. This code transforms parsed
+  records, so it adds no byte decoder or separate fuzz target. Budget roughly 280
+  module lines, 110 oracle adapter lines and 300 fixture/test lines.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_metadata.rs
+    - crates/betterlite-guardrails/src/guardrail_metadata/**
+    - tools/oracle/cases/helpers/guardrail-metadata/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-metadata-*
+    - tools/oracle/helpers/b8994.py
+    - tools/oracle/helpers/b8994/**
+    - tools/oracle/src/helpers/guardrails/b8994.rs
+    - tools/oracle/src/helpers/guardrails/b8994/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L467-L529
+    why: Complete scan-header serializer and logging/caching header projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L602-L634
+    why: Id and complete scan-entry deduplication in the selected metadata bucket.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L672-L689
+    why: Append to an existing standard logging object's guardrail_information.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L164-L166
+    why: Fixed 2048-character scan metadata header limit, with no new env setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L215-L234
+    why: Moderation records its scan id before checking whether the response is flagged.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1842-L1855
+    why: Production caller merges these headers into get_custom_headers.
+dod:
+  - text: Scan ids and complete entries retain first-seen order, use the correct bucket and deduplicate independently across stages.
+    proof: [metadata-tests, oracle, helper-python]
+  - text: Logging/caching headers obey overlay, empty-list, prefix-cap and trusted-Pillar rules without truncating the ids header.
+    proof: [metadata-tests, oracle, helper-python]
+  - text: Prisma and moderation adapters carry the current invocation's ids on success and policy failure, and standard logging append neither creates a missing object nor deduplicates entries.
+    proof: [metadata-tests, oracle, helper-python]
+  - text: New b8994 helper inputs replay through the existing shared decoder.
+    proof: [helper-corpus]
+checks:
+  optional: []
+  commands:
+    - id: metadata-tests
+      why: Shared recording, header projection or a producer adapter may be absent even when provider-local audit tests pass.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::guardrail_metadata_cases($|::)/)'
+    - id: helper-python
+      why: Pure source adapters must pass the oracle's strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: Replaying only the old helper corpus cannot exercise the new operation.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/guardrail-metadata-*')" &&
+        grep -lq 'b8994:' tools/oracle/fuzz/corpus/helper_case/guardrail-metadata-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-metadata/id-stage-dedup.yaml
+  - tools/oracle/cases/helpers/guardrail-metadata/metadata-bucket.yaml
+  - tools/oracle/cases/helpers/guardrail-metadata/header-overlay.yaml
+  - tools/oracle/cases/helpers/guardrail-metadata/header-prefix-limit.yaml
+  - tools/oracle/cases/helpers/guardrail-metadata/policy-and-pillar-headers.yaml
+  - tools/oracle/cases/helpers/guardrail-metadata/append-standard-object.yaml
+deviations: []
+out_of_scope:
+  - B3680 owns add_guardrail_to_applied_guardrails_header; B3664 owns invocation records, sanitization and synchronization of request metadata to logging targets.
+  - B8850 owns prompt-injection callback binding; B189 retains initialize_callbacks_on_proxy's other arms, get_model_group_from_litellm_kwargs, get_model_group_from_request_data, get_remaining_tokens_and_requests_from_request_data, sanitize_openai_provider_metadata, add_policy_to_applied_policies_header, add_policy_sources_to_metadata, process_callback and normalize_callback_names inventory.
+  - B189 retains coverage inventory for _classify_loaded_callback, _raise_callback_load_error and _loaded_callback_or_raise; their actual implementation owners B8043/B165 need the architect's covers correction, not a second Python loader here.
+  - B2304 owns strip_callback_config, encrypt_callback_vars, decrypt_callback_vars, _transform_callback_vars, is_sensitive_callback_key, _encrypt_if_plaintext and _decrypt_or_passthrough and their constants.
+  - B3731 owns moderation requests/checks and local logging, B3786 owns Prisma scan/GuardrailAudit, and B3734 owns Model Armor's hook that calls the standard-object append.
+  - B8666 owns class dispatch and uses the new adapters; B8633 owns the chat response composition that adds these headers, with HTTP proof in B104.
+pitfalls:
+  - The same scan id from two stages creates two metadata entries but only one comma-separated id.
+  - B3731 consumes its temporary response stash while creating GuardrailLogRecord, so reading only _openai_moderation_response after the call loses every id.
+  - Header reading overlays both buckets, whereas recording selects exactly one bucket by the presence of litellm_metadata.
+  - A trusted empty pillar_response_headers object suppresses the pillar_flagged fallback.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

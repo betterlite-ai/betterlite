@@ -1,0 +1,14 @@
+id: B9200
+milestone: M3 providers
+title: Native self-hosted inference and metadata HTTP parity
+status: todo
+depends_on: [B001, B007, B851, B900, B2328, B8157]
+file: tasks/B9200-native-self-hosted-http.yaml
+covers:
+  - "litellm/llms/{ollama,triton,petals}/**"
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

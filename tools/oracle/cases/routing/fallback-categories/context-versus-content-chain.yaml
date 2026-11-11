@@ -1,0 +1,98 @@
+kind: probe
+name: fallback-context-versus-content-chain
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: context_window
+        original_model_group: requested
+        model_group: requested
+        pre_routing_selected: requested-tier
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: resolved
+          targets: [{model: window-model}]
+          has_unattempted: true
+        content_policy:
+          state: resolved
+          targets: [{model: policy-model}]
+          has_unattempted: true
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          has_choices: true
+          first_finish_reason: content_filter
+          function_name: anthropic_messages
+          refusal: with_stop_details
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: content_policy
+        original_model_group: requested
+        model_group: requested
+        pre_routing_selected: requested-tier
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: resolved
+          targets: [{model: window-model}]
+          has_unattempted: true
+        content_policy:
+          state: resolved
+          targets: [{model: policy-model}]
+          has_unattempted: true
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: content_policy
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          has_choices: true
+          first_finish_reason: content_filter
+          function_name: completion
+          refusal: not_refusal
