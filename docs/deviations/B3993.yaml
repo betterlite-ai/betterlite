@@ -1,8 +1,5 @@
 task: B3993
 deviations:
-  - what: PUT request signing freezes RefreshableCredentials before reading access key, secret and token, but GET request signing does not.
-    why: LiteLLM freezes credentials for PUT (line 425-427) but not for GET (line 971); betterlite keeps that asymmetry so a signature built from a mid-refresh credential set fails the same way.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L413-L431
   - what: Terminal error classification is conservative; unknown, empty and non-XML bodies fail safe toward retry.
     why: LiteLLM only drops objects for the seven fixed XML codes on 400 and 403; every other body or status stays in the retry path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L98-L101

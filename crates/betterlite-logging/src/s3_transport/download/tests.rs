@@ -234,7 +234,7 @@ async fn get_reports_a_transport_failure_as_none() {
 }
 
 #[tokio::test]
-async fn get_signs_without_freezing_the_credentials() {
+async fn get_signs_with_one_credential_resolution() {
     let client = FakeS3::with_replies(vec![Reply::Response(
         200,
         "{\"id\":\"request\"}".to_owned(),
@@ -244,8 +244,8 @@ async fn get_signs_without_freezing_the_credentials() {
     transport.download_object(object_key()).await;
     assert_eq!(
         generations.calls.load(Ordering::SeqCst),
-        3,
-        "LiteLLM reads the access key, secret and token as three separate properties"
+        1,
+        "LiteLLM calls get_credentials once per GET"
     );
     let requests = client.requests();
     let request = &requests[0];
@@ -260,8 +260,8 @@ async fn get_signs_without_freezing_the_credentials() {
         },
         &Credentials {
             access_key_id: SecretString::from("AKIA1"),
-            secret_access_key: SecretString::from("secret2"),
-            session_token: Some(SecretString::from("token3")),
+            secret_access_key: SecretString::from("secret1"),
+            session_token: Some(SecretString::from("token1")),
         },
     )
     .expect("the request signs");
@@ -270,5 +270,5 @@ async fn get_signs_without_freezing_the_credentials() {
         .find(|(name, _)| name == "authorization")
         .map(|(_, value)| value.as_str());
     assert_eq!(header(request, "authorization"), expected_authorization);
-    assert_eq!(header(request, "x-amz-security-token"), Some("token3"));
+    assert_eq!(header(request, "x-amz-security-token"), Some("token1"));
 }

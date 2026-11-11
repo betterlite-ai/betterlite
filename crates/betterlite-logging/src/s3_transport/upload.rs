@@ -63,7 +63,7 @@ impl S3Transport {
                 attempt = attempt.saturating_add(1);
                 continue;
             }
-            if seen.status < 400 {
+            if (200..300).contains(&seen.status) {
                 return UploadOutcome::Delivered;
             }
             tracing::warn!(

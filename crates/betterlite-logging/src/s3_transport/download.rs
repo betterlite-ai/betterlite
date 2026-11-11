@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use http::Method;
 
 use crate::s3_transport::error::S3TransportError;
-use crate::s3_transport::signing::{Credentials, RequestToSign, sign_request};
+use crate::s3_transport::signing::{RequestToSign, sign_request};
 use crate::s3_transport::transport::{S3Request, S3Response, S3Transport};
 
 mod tests;
@@ -29,7 +29,7 @@ impl S3Transport {
     async fn object_request(&self, object_key: &str) -> Result<S3Request, S3TransportError> {
         let url = self.endpoint.object_url(object_key);
         let headers = vec![("x-amz-content-sha256".to_owned(), EMPTY_SHA256.to_owned())];
-        let credentials = self.read_credentials().await?;
+        let credentials = self.credentials.resolve().await?;
         let signed = sign_request(
             &RequestToSign {
                 method: "GET",
@@ -48,18 +48,6 @@ impl S3Transport {
             url,
             headers: signed_headers,
             body: Vec::new(),
-        })
-    }
-
-    // LiteLLM signs GET without freezing, reading the access key, secret and token as separate properties
-    async fn read_credentials(&self) -> Result<Credentials, S3TransportError> {
-        let access_key_id = self.credentials.resolve().await?.access_key_id;
-        let secret_access_key = self.credentials.resolve().await?.secret_access_key;
-        let session_token = self.credentials.resolve().await?.session_token;
-        Ok(Credentials {
-            access_key_id,
-            secret_access_key,
-            session_token,
         })
     }
 }

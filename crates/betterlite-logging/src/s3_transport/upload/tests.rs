@@ -366,7 +366,7 @@ async fn retryable_statuses_are_retried_with_exponential_backoff() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_retry_that_succeeds_is_delivered() {
     let client = FakeS3::with_replies(vec![
         Reply::Response(500, String::new()),
@@ -384,7 +384,7 @@ async fn a_retry_that_succeeds_is_delivered() {
 #[case::forbidden(403)]
 #[case::server_error(500)]
 #[case::unavailable(503)]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn only_403_500_and_503_are_retried(#[case] status: u16) {
     let client = FakeS3::with_replies(vec![Reply::Response(status, String::new()); 3]);
     let transport = transport(&client, Arc::new(static_credentials()));
@@ -401,8 +401,23 @@ async fn only_403_500_and_503_are_retried(#[case] status: u16) {
 #[case::not_found(404)]
 #[case::too_many_requests(429)]
 #[case::bad_gateway(502)]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn other_statuses_end_the_upload_after_one_attempt(#[case] status: u16) {
+    let client = FakeS3::with_replies(vec![Reply::Response(status, String::new()); 3]);
+    let transport = transport(&client, Arc::new(static_credentials()));
+    let outcome = transport
+        .async_upload_data_to_s3(&element("2026-01-02/id.json", ID_JSON))
+        .await;
+    assert_eq!(outcome, UploadOutcome::Retry);
+    assert_eq!(client.requests().len(), 1);
+}
+
+#[rstest]
+#[case::moved_permanently(301)]
+#[case::temporary_redirect(307)]
+#[case::not_modified(304)]
+#[tokio::test]
+async fn redirects_are_not_a_delivery(#[case] status: u16) {
     let client = FakeS3::with_replies(vec![Reply::Response(status, String::new()); 3]);
     let transport = transport(&client, Arc::new(static_credentials()));
     let outcome = transport
@@ -418,7 +433,7 @@ async fn other_statuses_end_the_upload_after_one_attempt(#[case] status: u16) {
 #[case::terminal_400_kept("EntityTooLarge", 400, false, 1, UploadOutcome::Retry)]
 #[case::terminal_403_kept("EntityTooLarge", 403, false, 3, UploadOutcome::Retry)]
 #[case::server_error_is_not_terminal("EntityTooLarge", 500, true, 3, UploadOutcome::Retry)]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn only_configured_terminal_errors_are_dropped(
     #[case] code: &str,
     #[case] status: u16,
@@ -443,7 +458,7 @@ async fn only_configured_terminal_errors_are_dropped(
 #[case::slow_down(400, "<Error><Code>SlowDown</Code></Error>", vec![true])]
 #[case::server_error(500, "", vec![false, false, false])]
 #[case::delivered(200, "", vec![false])]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn adaptive_sampling_counts_throttle_signals(
     #[case] status: u16,
     #[case] body: &str,
@@ -473,7 +488,7 @@ async fn a_failed_send_is_a_throttle_sample_and_a_retry() {
     assert_eq!(client.requests().len(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn every_attempt_resolves_the_credentials_and_signs_again() {
     let client = FakeS3::with_replies(vec![
         Reply::Response(500, String::new()),
