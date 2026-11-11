@@ -29,7 +29,8 @@ use self::key::{SampleRateKey, channel_spec, tracing_key};
 use self::setup::{resource, sampler};
 
 pub const TRACER_NAME: &str = "langfuse-sdk";
-pub const CHANNEL_RETIRE_GRACE_SECONDS: f64 = 60.0;
+// litellm's _CHANNEL_RETIRE_GRACE_SECONDS = 60.0
+pub const CHANNEL_RETIRE_GRACE: Duration = Duration::from_secs(60);
 pub const MAX_QUEUE_SIZE: usize = 100_000;
 pub const DEFAULT_FLUSH_TIMEOUT_MILLIS: u64 = 30_000;
 pub const UNSET: u32 = u32::MAX;
@@ -128,7 +129,7 @@ pub fn build_langfuse_tracing<E>(
 where
     E: SpanExporter + 'static,
 {
-    warn_when_otel_sdk_disabled(lookup);
+    let disabled = otel_sdk_disabled(lookup);
     let resource = resource(spec.environment, spec.release);
     let mut prepared = exporter;
     prepared.set_resource(&resource);
@@ -144,7 +145,7 @@ where
         .build();
     let provider = SdkTracerProvider::builder()
         .with_resource(resource)
-        .with_sampler(sampler(spec.sample_rate))
+        .with_sampler(sampler(spec.sample_rate, disabled))
         .with_id_generator(RequestedIdGenerator::default())
         .with_span_limits(SPAN_LIMITS)
         .with_span_processor(
@@ -161,9 +162,9 @@ where
     }
 }
 
-fn warn_when_otel_sdk_disabled(lookup: &dyn EnvironmentLookup) {
+fn otel_sdk_disabled(lookup: &dyn EnvironmentLookup) -> bool {
     let Some(raw) = lookup.lookup("OTEL_SDK_DISABLED") else {
-        return;
+        return false;
     };
     match flag("OTEL_SDK_DISABLED", &raw) {
         // LiteLLM writes this through verbose_logger; betterlite emits it on its tracing subscriber
@@ -171,10 +172,12 @@ fn warn_when_otel_sdk_disabled(lookup: &dyn EnvironmentLookup) {
             tracing::warn!(
                 "OTEL_SDK_DISABLED=true also disables the langfuse callback's export channel"
             );
+            true
         }
-        Ok(Some(false) | None) => {}
+        Ok(Some(false) | None) => false,
         Err(error) => {
             tracing::warn!(%error, "OTEL_SDK_DISABLED is not a bool; ignoring it");
+            false
         }
     }
 }
@@ -225,11 +228,8 @@ where
     Ok(tracing)
 }
 
-pub async fn release_langfuse_tracing(tracing: &LangfuseTracing, grace: Option<Duration>) {
-    let wait = grace.unwrap_or_else(|| {
-        Duration::try_from_secs_f64(CHANNEL_RETIRE_GRACE_SECONDS).unwrap_or_default()
-    });
-    if let cache::ReleaseOutcome::Shutdown(released) = cache::begin_release(tracing, wait) {
+pub async fn release_langfuse_tracing(tracing: &LangfuseTracing, grace: Duration) {
+    if let cache::ReleaseOutcome::Shutdown(released) = cache::begin_release(tracing, grace) {
         let mut shutdown = JoinSet::new();
         shutdown.spawn_blocking(move || released.shutdown());
         let _finished = shutdown.join_next().await;

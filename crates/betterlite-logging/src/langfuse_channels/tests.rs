@@ -22,7 +22,7 @@ use super::support::{
     linked_context, lookup, request, retire_id, secret, settings, spec, wait_until,
 };
 use super::{
-    CHANNEL_RETIRE_GRACE_SECONDS, ChannelSpec, DEFAULT_FLUSH_TIMEOUT_MILLIS, LangfuseChannelError,
+    CHANNEL_RETIRE_GRACE, ChannelSpec, DEFAULT_FLUSH_TIMEOUT_MILLIS, LangfuseChannelError,
     LangfuseChannelRequest, LangfuseTracing, MAX_QUEUE_SIZE, SPAN_LIMITS, TRACER_NAME, UNSET,
     acquire_langfuse_tracing, build_langfuse_tracing, release_langfuse_tracing,
 };
@@ -30,7 +30,6 @@ use super::{
 #[test]
 fn the_channel_constants_match_the_sdk_contract() {
     assert_eq!(TRACER_NAME, "langfuse-sdk");
-    assert_eq!(CHANNEL_RETIRE_GRACE_SECONDS.to_bits(), 60.0_f64.to_bits());
     assert_eq!(MAX_QUEUE_SIZE, 100_000);
     assert_eq!(DEFAULT_FLUSH_TIMEOUT_MILLIS, 30_000);
     assert_eq!(SPAN_LIMITS.max_attributes_per_span, UNSET);
@@ -40,11 +39,20 @@ fn the_channel_constants_match_the_sdk_contract() {
     assert_eq!(SPAN_LIMITS.max_attributes_per_link, 128);
 }
 
+#[rstest]
+#[case::one_second(1, 1_000)]
+#[case::zero(0, 0)]
+#[case::half_a_minute(30, 30_000)]
+fn the_flush_interval_in_seconds_becomes_milliseconds(#[case] seconds: u64, #[case] millis: u64) {
+    let mut request = request("pk-interval");
+    request.flush_interval = seconds;
+    let spec = super::key::channel_spec(&settings(&[]), &request);
+    assert_eq!(spec.flush_interval_millis, millis);
+}
+
 #[test]
 fn the_default_retirement_grace_is_sixty_seconds() {
-    let grace = Duration::try_from_secs_f64(CHANNEL_RETIRE_GRACE_SECONDS)
-        .expect("the constant is a usable number of seconds");
-    assert_eq!(grace, Duration::from_secs(60));
+    assert_eq!(CHANNEL_RETIRE_GRACE, Duration::from_secs(60));
 }
 
 #[tokio::test]
@@ -137,16 +145,17 @@ async fn the_exporter_is_given_the_environment_and_release_resource(
 }
 
 #[rstest]
-#[case::true_warns("true", Some("also disables the langfuse callback"))]
-#[case::capitalized_and_padded_warns(" TRUE ", Some("also disables the langfuse callback"))]
-#[case::one_warns("1", Some("also disables the langfuse callback"))]
-#[case::empty_does_not_warn("", None)]
-#[case::false_does_not_warn("false", None)]
-#[case::unusable_value_warns_about_the_parse("maybe", Some("is not a bool"))]
+#[case::true_warns("true", Some("also disables the langfuse callback"), 0)]
+#[case::capitalized_and_padded_warns(" TRUE ", Some("also disables the langfuse callback"), 0)]
+#[case::one_warns("1", Some("also disables the langfuse callback"), 0)]
+#[case::empty_does_not_warn("", None, 1)]
+#[case::false_does_not_warn("false", None, 1)]
+#[case::unusable_value_warns_about_the_parse("maybe", Some("is not a bool"), 1)]
 #[tokio::test]
 async fn otel_sdk_disabled_warns_and_still_builds_the_provider(
     #[case] value: &str,
     #[case] expected: Option<&str>,
+    #[case] exported: usize,
 ) {
     let exporter = Recording::default();
     let environment = lookup(&[("OTEL_SDK_DISABLED", value)]);
@@ -163,7 +172,7 @@ async fn otel_sdk_disabled_warns_and_still_builds_the_provider(
     }
     end_span(&tracing, "after-disabled");
     assert!(tracing.flush(5_000).await);
-    assert_eq!(exporter.span_count(), 1);
+    assert_eq!(exporter.span_count(), exported);
 }
 
 #[tokio::test]
@@ -183,7 +192,7 @@ async fn langfuse_debug_raises_the_debug_logging_when_the_filter_allows_it() {
             .iter()
             .any(|message| message.contains("LANGFUSE_DEBUG"))
     );
-    release_langfuse_tracing(&tracing, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&tracing, Duration::ZERO).await;
 }
 
 #[tokio::test]
@@ -203,7 +212,7 @@ async fn langfuse_debug_reports_when_the_filter_hides_the_output() {
             .iter()
             .any(|message| message.contains("LANGFUSE_DEBUG"))
     );
-    release_langfuse_tracing(&tracing, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&tracing, Duration::ZERO).await;
 }
 
 #[tokio::test]
@@ -231,15 +240,15 @@ async fn the_same_credentials_hand_out_one_channel() {
     assert!(Arc::ptr_eq(&first.ledger.exporter, &second.ledger.exporter));
     assert_eq!(builds.load(Ordering::Acquire), 1);
     assert_eq!(cached(&first), Some(2));
-    release_langfuse_tracing(&first, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&first, Duration::ZERO).await;
     assert_eq!(cached(&second), Some(1));
-    release_langfuse_tracing(&second, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&second, Duration::ZERO).await;
 }
 
 #[tokio::test(start_paused = true)]
 async fn the_last_release_retires_the_channel_after_the_grace_period() {
     let tracing = acquire_with(&request("pk-retire"), Recording::default());
-    release_langfuse_tracing(&tracing, None).await;
+    release_langfuse_tracing(&tracing, CHANNEL_RETIRE_GRACE).await;
     yield_now().await;
     assert!(cached(&tracing).is_some());
     advance(Duration::from_secs(59)).await;
@@ -253,7 +262,7 @@ async fn the_last_release_retires_the_channel_after_the_grace_period() {
 async fn reacquisition_before_the_deadline_cancels_the_retirement() {
     let request = request("pk-reacquire");
     let first = acquire_with(&request, Recording::default());
-    release_langfuse_tracing(&first, None).await;
+    release_langfuse_tracing(&first, CHANNEL_RETIRE_GRACE).await;
     yield_now().await;
     advance(Duration::from_secs(30)).await;
     let second = acquire_with(&request, Recording::default());
@@ -271,7 +280,7 @@ async fn the_retirement_timer_shuts_the_provider_down() {
     let mut request = request("pk-retire-shutdown");
     request.mock_mode = false;
     let tracing = acquire_with(&request, exporter.clone());
-    release_langfuse_tracing(&tracing, Some(Duration::from_millis(20))).await;
+    release_langfuse_tracing(&tracing, Duration::from_millis(20)).await;
     wait_until(|| exporter.shut_down()).await;
     assert_eq!(cached(&tracing), None);
 }
@@ -289,11 +298,11 @@ async fn a_stale_retirement_does_not_remove_a_reacquired_channel() {
 #[tokio::test(start_paused = true)]
 async fn a_release_while_retirement_is_pending_changes_nothing() {
     let tracing = acquire_with(&request("pk-double-release"), Recording::default());
-    release_langfuse_tracing(&tracing, None).await;
+    release_langfuse_tracing(&tracing, CHANNEL_RETIRE_GRACE).await;
     yield_now().await;
     let pending = retire_id(&tracing);
     assert!(pending.is_some());
-    release_langfuse_tracing(&tracing, None).await;
+    release_langfuse_tracing(&tracing, CHANNEL_RETIRE_GRACE).await;
     assert_eq!(retire_id(&tracing), pending);
     assert_eq!(cached(&tracing), Some(0));
 }
@@ -302,7 +311,7 @@ async fn a_release_while_retirement_is_pending_changes_nothing() {
 async fn releasing_without_grace_shuts_the_channel_down_and_forgets_it() {
     let request = request("pk-immediate");
     let tracing = acquire_with(&request, Recording::default());
-    release_langfuse_tracing(&tracing, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&tracing, Duration::ZERO).await;
     assert_eq!(cached(&tracing), None);
     assert!(!tracing.flush(1_000).await);
     let again = acquire_with(&request, Recording::default());
@@ -310,7 +319,7 @@ async fn releasing_without_grace_shuts_the_channel_down_and_forgets_it() {
         &tracing.ledger.exporter,
         &again.ledger.exporter
     ));
-    release_langfuse_tracing(&again, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&again, Duration::ZERO).await;
 }
 
 #[tokio::test]
@@ -321,7 +330,7 @@ async fn releasing_a_channel_that_is_not_cached_leaves_it_running() {
         &spec(),
         &lookup(&[]),
     );
-    release_langfuse_tracing(&tracing, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&tracing, Duration::ZERO).await;
     end_span(&tracing, "still-running");
     assert!(tracing.flush(5_000).await);
     tracing.shutdown();
@@ -411,8 +420,8 @@ async fn every_acquire_parameter_separates_the_channels(#[case] change: Change) 
         &first.ledger.exporter,
         &second.ledger.exporter
     ));
-    release_langfuse_tracing(&first, Some(Duration::ZERO)).await;
-    release_langfuse_tracing(&second, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&first, Duration::ZERO).await;
+    release_langfuse_tracing(&second, Duration::ZERO).await;
 }
 
 #[test]

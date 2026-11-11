@@ -19,8 +19,8 @@ use super::support::{
     wait_until,
 };
 use super::{
-    ChannelSpec, LangfuseChannelError, acquire_langfuse_tracing, build_langfuse_tracing,
-    flush_langfuse_tracing, release_langfuse_tracing,
+    ChannelSpec, LangfuseChannelError, LangfuseTracing, acquire_langfuse_tracing,
+    build_langfuse_tracing, flush_langfuse_tracing, release_langfuse_tracing,
 };
 
 #[tokio::test]
@@ -41,7 +41,7 @@ async fn mock_mode_discards_spans_and_never_builds_the_live_exporter() {
     assert_eq!(builds.load(Ordering::Acquire), 0);
     end_span(&tracing, "discarded");
     assert!(tracing.flush(5_000).await);
-    release_langfuse_tracing(&tracing, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&tracing, Duration::ZERO).await;
 }
 
 #[tokio::test]
@@ -241,8 +241,8 @@ async fn flushing_all_channels_returns_true_when_every_queue_drains() {
     end_span(&first, "first");
     end_span(&second, "second");
     assert!(flush_langfuse_tracing(5_000).await);
-    release_langfuse_tracing(&first, Some(Duration::ZERO)).await;
-    release_langfuse_tracing(&second, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&first, Duration::ZERO).await;
+    release_langfuse_tracing(&second, Duration::ZERO).await;
 }
 
 #[tokio::test]
@@ -275,8 +275,37 @@ async fn flushing_all_channels_returns_false_when_one_misses_the_deadline() {
     .await;
     gate.add_permits(16);
     sleep(Duration::from_millis(50)).await;
-    release_langfuse_tracing(&fast, Some(Duration::ZERO)).await;
-    release_langfuse_tracing(&slow, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&fast, Duration::ZERO).await;
+    release_langfuse_tracing(&slow, Duration::ZERO).await;
+}
+
+fn blocked_channel(name: &str, gate: &Arc<Semaphore>) -> LangfuseTracing {
+    let mut blocked = request(name);
+    blocked.mock_mode = false;
+    let channel = acquire_with(
+        &blocked,
+        Gated {
+            gate: Arc::clone(gate),
+        },
+    );
+    end_span(&channel, "blocked");
+    channel
+}
+
+#[tokio::test]
+async fn flushing_all_channels_waits_on_one_shared_deadline() {
+    let gate = Arc::new(Semaphore::new(0));
+    let first = blocked_channel("pk-shared-deadline-a", &gate);
+    let second = blocked_channel("pk-shared-deadline-b", &gate);
+    let third = blocked_channel("pk-shared-deadline-c", &gate);
+    let started = Instant::now();
+    assert!(!flush_langfuse_tracing(300).await);
+    assert!(started.elapsed() < Duration::from_millis(600));
+    gate.add_permits(16);
+    sleep(Duration::from_millis(50)).await;
+    release_langfuse_tracing(&first, Duration::ZERO).await;
+    release_langfuse_tracing(&second, Duration::ZERO).await;
+    release_langfuse_tracing(&third, Duration::ZERO).await;
 }
 
 #[tokio::test]
@@ -288,6 +317,6 @@ async fn flushing_all_channels_reports_a_channel_whose_delivery_failed() {
     end_span(&healthy, "healthy");
     end_span(&failing, "failing");
     assert!(!flush_langfuse_tracing(5_000).await);
-    release_langfuse_tracing(&healthy, Some(Duration::ZERO)).await;
-    release_langfuse_tracing(&failing, Some(Duration::ZERO)).await;
+    release_langfuse_tracing(&healthy, Duration::ZERO).await;
+    release_langfuse_tracing(&failing, Duration::ZERO).await;
 }

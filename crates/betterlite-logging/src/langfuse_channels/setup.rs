@@ -18,8 +18,10 @@ pub(super) fn resource(environment: Option<&str>, release: Option<&str>) -> Reso
         .build()
 }
 
-pub(super) fn sampler(rate: f64) -> Box<dyn ShouldSample> {
-    if rate >= 1.0 {
+pub(super) fn sampler(rate: f64, disabled: bool) -> Box<dyn ShouldSample> {
+    if disabled {
+        Box::new(Sampler::AlwaysOff)
+    } else if rate >= 1.0 {
         Box::new(Sampler::AlwaysOn)
     } else {
         Box::new(TraceIdHashSampler { rate })
