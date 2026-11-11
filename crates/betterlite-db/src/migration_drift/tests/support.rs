@@ -107,6 +107,17 @@ async fn ahead_unavailable_is_silent(known: &[String]) {
         direct_url: None,
     };
     assert!(warn_if_db_ahead_of_head(&malformed, known).await.is_empty());
+    let unreachable = MigrationDriftCheck {
+        database_url: Some(SecretString::from(
+            "postgresql://postgres:postgres@127.0.0.1:1/postgres",
+        )),
+        direct_url: None,
+    };
+    assert!(
+        warn_if_db_ahead_of_head(&unreachable, known)
+            .await
+            .is_empty()
+    );
 }
 
 async fn assert_repair_result(client: &PostgresClient, schema: &str, captured: &str) {

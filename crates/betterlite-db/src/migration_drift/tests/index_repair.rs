@@ -16,8 +16,30 @@ async fn invalid_index_repair() {
         let _guard = set_default(&dispatch);
         assert!(repair_invalid_indexes(&database.check(), "30s").await);
         assert_repair_result(raw, &database.schema, &logs.joined()).await;
+        assert!(repair_invalid_indexes(&database.check(), "30s").await);
     }))
     .await;
+}
+
+#[tokio::test]
+async fn repair_without_database_returns_false() {
+    let absent = MigrationDriftCheck {
+        database_url: None,
+        direct_url: None,
+    };
+    assert!(!repair_invalid_indexes(&absent, "30s").await);
+    let malformed = MigrationDriftCheck {
+        database_url: Some(SecretString::from("postgresql://[::1/db")),
+        direct_url: None,
+    };
+    assert!(!repair_invalid_indexes(&malformed, "30s").await);
+    let unreachable = MigrationDriftCheck {
+        database_url: Some(SecretString::from(
+            "postgresql://postgres:postgres@127.0.0.1:1/postgres",
+        )),
+        direct_url: None,
+    };
+    assert!(!repair_invalid_indexes(&unreachable, "30s").await);
 }
 
 #[tokio::test]
