@@ -1,0 +1,13 @@
+kind: helper
+name: claude_platform_inputs_api_base_before_region
+call:
+  claude_platform_inputs:
+    api_base_before_region:
+      cases:
+        - api_base: https://custom.example
+          optional_params: {}
+          environment: {}
+        - optional_params: {}
+          environment: {ANTHROPIC_AWS_BASE_URL: https://base.example}
+env: {}
+compare: {ignore: []}

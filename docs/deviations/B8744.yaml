@@ -1,0 +1,20 @@
+task: B8744
+deviations:
+  - what: Argilla reads its field mapping from the callback_settings.argilla entry, not from litellm_settings.argilla_transformation_object.
+    why: Config models litellm_settings as a typed struct without that key and the config crate is outside this task's scope, so the per-callback settings entry is the only configuration a catalog wrapper receives. A LiteLLM config must move the same map under callback_settings.argilla.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L43-L53
+  - what: Argilla resolves the dataset name to its id when the first event arrives, not in the logger's constructor.
+    why: the catalog builder is synchronous while ArgillaLogger::connect is async, so a failed lookup becomes a delivery failure on that event instead of one exception that skips the callback for the process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L83-L117
+  - what: Helicone does not merge helicone_-prefixed proxy request headers into the event metadata.
+    why: LoggerEvent carries the standard logging payload, which has no proxy_server_request, and the event type belongs to B8740, outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L96-L125
+  - what: An async completion logs nothing to Helicone, while LiteLLM runs its sync success handler in an executor for async calls and reaches HeliconeLogger.log_success there.
+    why: betterlite's sync success handler serves sync requests only, and this task's DoD has the wrapper forward the sync success event alone so a call is never logged twice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3983-L4004
+  - what: Galileo chooses the response content family from the standard logging payload's call_type instead of the response object's class.
+    why: the standard logging payload keeps the response as plain JSON with no class tag, and the call type is the declared field that names the family.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L543-L625
+  - what: A _arealtime Galileo record carries no input text, because the standard logging payload has no kwargs.input to serialize.
+    why: the realtime branch reads kwargs.get("input"), a model_call_details key the standard logging payload does not model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L601-L607
