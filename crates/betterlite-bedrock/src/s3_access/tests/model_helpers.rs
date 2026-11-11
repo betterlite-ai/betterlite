@@ -8,9 +8,8 @@ use betterlite_models::resolution::ResolutionContext;
 use rstest::rstest;
 
 use crate::s3_access::S3AccessError;
-use crate::s3_access::models::{
-    bedrock_model_id, invoke_route_model, parse_s3_uri, strip_llm_routing_prefix,
-};
+use crate::s3_access::models::{bedrock_model_id, invoke_route_model, strip_llm_routing_prefix};
+use crate::s3_access::uri::parse_s3_uri;
 
 fn context<'context>(
     catalog: &'context ModelCatalog,

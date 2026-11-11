@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -11,47 +10,14 @@ use betterlite_models::resolution::ResolutionContext;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::ExposeSecret as _;
 
-use crate::aws_settings::AUTHENTICATION_PARAMS;
 use crate::s3_access::decode::decode_managed_file_id;
-use crate::s3_access::handler::{AwsBase, BatchFiles, BedrockFilesHandler};
 use crate::s3_access::managed::resolve_managed_s3_object;
 use crate::s3_access::models::{invoke_route_model, strip_llm_routing_prefix};
 use crate::s3_access::settings::{S3Setting, S3SettingSources, SettingMap, resolve_s3_setting};
-use crate::s3_access::{TrustedValue, allow_legacy_cloud_file_ids, configured_bucket_name};
+use crate::s3_access::{TrustedValue, configured_bucket_name};
 
 use super::fixtures::{MANAGED_FILE_ID, MANAGED_OBJECT};
-use super::support::{
-    client, credential_cache, environment, rendered, secrets, settings, snapshot, trusted_params,
-};
-
-#[tokio::test]
-async fn handler_holds_the_base_and_the_pooled_client() {
-    let shared = credential_cache();
-    let handler = BedrockFilesHandler {
-        base: AwsBase {
-            credential_cache: Arc::clone(&shared),
-            authentication_params: &AUTHENTICATION_PARAMS,
-        },
-        client: client(),
-    };
-    assert!(Arc::ptr_eq(&handler.base.credential_cache, &shared));
-    assert_eq!(AUTHENTICATION_PARAMS.len(), 12);
-    assert_eq!(
-        AUTHENTICATION_PARAMS.first().copied(),
-        Some("aws_access_key_id")
-    );
-    assert_eq!(
-        AUTHENTICATION_PARAMS.last().copied(),
-        Some("aws_session_tags")
-    );
-    let batch = BatchFiles {
-        base: AwsBase {
-            credential_cache: Arc::clone(&shared),
-            authentication_params: &AUTHENTICATION_PARAMS,
-        },
-    };
-    assert!(Arc::ptr_eq(&batch.base.credential_cache, &shared));
-}
+use super::support::{environment, params, rendered, secrets, settings, snapshot};
 
 #[test]
 fn the_shared_functions_serve_extraction_and_bucket_selection() {
@@ -59,7 +25,7 @@ fn the_shared_functions_serve_extraction_and_bucket_selection() {
         decode_managed_file_id(MANAGED_FILE_ID).expect("the managed id decodes"),
         MANAGED_OBJECT
     );
-    let configured = trusted_params(snapshot(&[(
+    let configured = params(snapshot(&[(
         "s3_bucket_name",
         TrustedValue::Text("managed-bucket".to_owned()),
     )]));
@@ -115,11 +81,11 @@ fn bedrock_services_s3_access_credential_identity_isolation() {
 }
 
 fn assert_bucket_identity_isolation() {
-    let first = trusted_params(snapshot(&[(
+    let first = params(snapshot(&[(
         "s3_bucket_name",
         TrustedValue::Text("tenant-a".to_owned()),
     )]));
-    let second = trusted_params(snapshot(&[(
+    let second = params(snapshot(&[(
         "s3_bucket_name",
         TrustedValue::Text("tenant-b".to_owned()),
     )]));
@@ -148,7 +114,7 @@ fn assert_bucket_identity_isolation() {
         &no_environment,
     )
     .expect("tenant b owns its bucket");
-    assert!(!allow_legacy_cloud_file_ids(&first));
+    assert!(!first.trusted.allows_legacy());
 }
 
 fn assert_setting_identity_isolation() {
@@ -173,7 +139,7 @@ fn resolved_setting(
 ) -> Option<String> {
     let sources = S3SettingSources {
         params: configuration,
-        optional_params: None,
+        optional_params: &SettingMap::new(),
         secrets: lookup,
         environment,
     };
@@ -185,7 +151,7 @@ fn resolved_setting(
 #[test]
 fn bedrock_services_s3_access_secret_safe_failure() {
     let bucket_secret = "fixture-secret-bucket";
-    let configured = trusted_params(snapshot(&[(
+    let configured = params(snapshot(&[(
         "s3_bucket_name",
         TrustedValue::Text(bucket_secret.to_owned()),
     )]));
@@ -204,7 +170,7 @@ fn bedrock_services_s3_access_secret_safe_failure() {
     let empty = SettingMap::new();
     let sources = S3SettingSources {
         params: &empty,
-        optional_params: None,
+        optional_params: &SettingMap::new(),
         secrets: &lookup,
         environment: &secret_environment,
     };

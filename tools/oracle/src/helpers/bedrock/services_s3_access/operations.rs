@@ -8,14 +8,15 @@ use betterlite_bedrock::s3_access::managed::{
     resolve_managed_s3_object, validate_configured_file_id,
 };
 use betterlite_bedrock::s3_access::models::{
-    bedrock_model_id, invoke_route_model, parse_s3_uri, strip_llm_routing_prefix,
+    bedrock_model_id, invoke_route_model, strip_llm_routing_prefix,
 };
 use betterlite_bedrock::s3_access::settings::{
     S3Setting, S3SettingSources, SettingMap, SettingValue, resolve_s3_setting,
 };
+use betterlite_bedrock::s3_access::uri::parse_s3_uri;
 use betterlite_bedrock::s3_access::{
-    S3AccessError, S3AccessParams, TrustedModelCredentials, TrustedValue,
-    allow_legacy_cloud_file_ids, configured_bucket_name, configured_bucket_names, frozen_mapping,
+    S3AccessError, S3AccessParams, TrustedModelCredentials, TrustedValue, configured_bucket_name,
+    configured_bucket_names, frozen_mapping,
 };
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
@@ -62,7 +63,7 @@ fn access_params(
     output: Option<&str>,
 ) -> S3AccessParams {
     S3AccessParams {
-        trusted: trusted.map(snapshot),
+        trusted: trusted.map(snapshot).unwrap_or_default(),
         bucket_name: bucket.map(str::to_owned),
         output_bucket_name: output.map(str::to_owned),
     }
@@ -123,7 +124,7 @@ fn foreign_bucket(input: &Input) -> Value {
 
 fn legacy_id(input: &Input) -> Value {
     let params = access_params(input.trusted.as_deref(), None, None);
-    let opt_in = allow_legacy_cloud_file_ids(&params);
+    let opt_in = params.trusted.allows_legacy();
     let buckets = input
         .bucket
         .as_deref()
@@ -181,11 +182,15 @@ fn s3_failure(error: &S3AccessError) -> Box<HelperError> {
 
 fn kms_owner(input: &Input) -> HelperResult {
     let params = setting_map(&input.litellm_params);
-    let optional = input.optional_params.as_ref().map(setting_map);
+    let optional = input
+        .optional_params
+        .as_ref()
+        .map(setting_map)
+        .unwrap_or_default();
     let lookup = fixtures::secrets();
     let sources = S3SettingSources {
         params: &params,
-        optional_params: optional.as_ref(),
+        optional_params: &optional,
         secrets: &lookup,
         environment: &input.environment,
     };

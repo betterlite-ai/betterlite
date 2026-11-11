@@ -24,11 +24,12 @@ fn resolve(
     optional: Option<&SettingMap>,
     variables: &[(&str, &str)],
 ) -> Option<String> {
+    let none = SettingMap::new();
     let lookup = secrets();
     let environment = environment(variables);
     let sources = S3SettingSources {
         params,
-        optional_params: optional,
+        optional_params: optional.unwrap_or(&none),
         secrets: &lookup,
         environment: &environment,
     };

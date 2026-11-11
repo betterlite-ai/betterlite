@@ -7,8 +7,8 @@ use crate::s3_access::managed::{
 };
 use crate::s3_access::{
     MANAGED_FILE_ID_ERROR, S3_BUCKET_REQUIRED_ERROR, S3AccessError, S3AccessParams,
-    TrustedModelCredentials, TrustedValue, allow_legacy_cloud_file_ids, configured_bucket_name,
-    configured_bucket_names, frozen_mapping,
+    TrustedModelCredentials, TrustedValue, configured_bucket_name, configured_bucket_names,
+    frozen_mapping,
 };
 
 use super::support::{assert_bedrock_rejection, environment, params, store};
@@ -120,7 +120,7 @@ fn configured_bucket_cases(
     #[case] variables: &[(&str, &str)],
     #[case] expected: Expected,
 ) {
-    let configured = params(Some(trusted(bucket, output)));
+    let configured = params(trusted(bucket, output));
     let environment = environment(variables);
     match expected {
         Expected::Single(wanted) => {
@@ -143,7 +143,11 @@ fn configured_bucket_cases(
 
 #[test]
 fn a_missing_bucket_carries_the_litellm_message() {
-    let error = configured_bucket_name(&params(None), &environment(&[])).expect_err("no bucket");
+    let error = configured_bucket_name(
+        &params(TrustedModelCredentials::default()),
+        &environment(&[]),
+    )
+    .expect_err("no bucket");
     assert_eq!(error.to_string(), S3_BUCKET_REQUIRED_ERROR);
 }
 
@@ -173,7 +177,7 @@ fn trusted_snapshot_validation(#[case] pairs: Vec<(&str, TrustedValue)>, #[case]
             .into_iter()
             .map(|(name, value)| (name.to_owned(), value)),
     );
-    let error = configured_bucket_name(&params(Some(snapshot)), &environment(&[]))
+    let error = configured_bucket_name(&params(snapshot), &environment(&[]))
         .expect_err("the snapshot has no bucket");
     assert_eq!(store(&error), expected);
 }
@@ -181,7 +185,7 @@ fn trusted_snapshot_validation(#[case] pairs: Vec<(&str, TrustedValue)>, #[case]
 #[test]
 fn request_bucket_fields_do_not_authorize() {
     let request = S3AccessParams {
-        trusted: None,
+        trusted: TrustedModelCredentials::default(),
         bucket_name: Some("request-bucket".to_owned()),
         output_bucket_name: Some("request-output".to_owned()),
     };
@@ -211,7 +215,7 @@ fn frozen_mapping_keeps_the_last_duplicate_and_ignores_nested_values() {
         ),
         ("s3_output_bucket_name".to_owned(), TrustedValue::Other),
     ]);
-    let error = configured_bucket_names(&params(Some(trusted)), &environment(&[]))
+    let error = configured_bucket_names(&params(trusted), &environment(&[]))
         .expect_err("the last output value is not a string");
     assert_eq!(store(&error), "output_bucket_name_type");
 
@@ -226,7 +230,7 @@ fn frozen_mapping_keeps_the_last_duplicate_and_ignores_nested_values() {
         ),
     ]);
     assert_eq!(
-        configured_bucket_name(&params(Some(duplicated)), &environment(&[]))
+        configured_bucket_name(&params(duplicated), &environment(&[]))
             .expect("the snapshot supplies the bucket"),
         "second"
     );
@@ -247,9 +251,10 @@ fn legacy_opt_in_reads_only_the_trusted_snapshot(
     #[case] setting: Option<TrustedValue>,
     #[case] expected: bool,
 ) {
-    let trusted = setting
-        .map(|value| frozen_mapping(vec![("allow_legacy_cloud_file_ids".to_owned(), value)]));
-    assert_eq!(allow_legacy_cloud_file_ids(&params(trusted)), expected);
+    let trusted = setting.map_or_else(TrustedModelCredentials::default, |value| {
+        frozen_mapping(vec![("allow_legacy_cloud_file_ids".to_owned(), value)])
+    });
+    assert_eq!(trusted.allows_legacy(), expected);
 }
 
 #[test]
@@ -304,7 +309,7 @@ fn an_empty_bucket_list_is_refused_without_panicking() {
 
 #[test]
 fn a_foreign_file_id_becomes_a_400_bedrock_error() {
-    let configured = params(Some(trusted(Some("configured"), None)));
+    let configured = params(trusted(Some("configured"), None));
     let rejection = resolve_managed_s3_object(
         "s3://foreign/litellm-bedrock-files-x",
         &configured,
@@ -323,7 +328,7 @@ fn a_foreign_file_id_becomes_a_400_bedrock_error() {
 
 #[test]
 fn a_foreign_managed_id_becomes_a_400_bedrock_error() {
-    let configured = params(Some(trusted(Some("configured"), None)));
+    let configured = params(trusted(Some("configured"), None));
     let rejection = resolve_managed_s3_object("not-a-file-id", &configured, &environment(&[]))
         .expect_err("the id does not decode");
     let ManagedObjectError::Rejected(error) = rejection else {
@@ -334,18 +339,22 @@ fn a_foreign_managed_id_becomes_a_400_bedrock_error() {
 
 #[test]
 fn missing_configuration_and_snapshot_errors_stay_configuration_errors() {
-    let missing = resolve_managed_s3_object("s3://bucket/x", &params(None), &environment(&[]))
-        .expect_err("no bucket is configured");
+    let missing = resolve_managed_s3_object(
+        "s3://bucket/x",
+        &params(TrustedModelCredentials::default()),
+        &environment(&[]),
+    )
+    .expect_err("no bucket is configured");
     assert_eq!(missing.status_code(), None);
     let ManagedObjectError::Configuration(bucket_error) = missing else {
         panic!("missing configuration is not a BedrockError");
     };
     assert!(matches!(*bucket_error, S3AccessError::BucketRequired));
 
-    let malformed = params(Some(frozen_mapping(vec![(
+    let malformed = params(frozen_mapping(vec![(
         "s3_bucket_name".to_owned(),
         TrustedValue::Boolean(false),
-    )])));
+    )]));
     let invalid = resolve_managed_s3_object("s3://bucket/x", &malformed, &environment(&[]))
         .expect_err("the snapshot field is not a string");
     let ManagedObjectError::Configuration(type_error) = invalid else {
@@ -356,7 +365,7 @@ fn missing_configuration_and_snapshot_errors_stay_configuration_errors() {
 
 #[test]
 fn a_managed_object_resolves_through_the_configured_bucket() {
-    let configured = params(Some(trusted(Some("configured"), None)));
+    let configured = params(trusted(Some("configured"), None));
     assert_eq!(
         resolve_managed_s3_object(
             "s3://configured/litellm-bedrock-files-x",

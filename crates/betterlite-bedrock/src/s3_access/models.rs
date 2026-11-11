@@ -1,7 +1,5 @@
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
 
-use super::{S3_SCHEME, S3AccessError};
-
 const BEDROCK_ROUTING_PREFIX: &str = "bedrock/";
 const INVOKE_ROUTE_PREFIX: &str = "invoke/";
 
@@ -40,18 +38,4 @@ pub fn invoke_route_model(model: &str, context: &ResolutionContext<'_>) -> Strin
         .strip_prefix(INVOKE_ROUTE_PREFIX)
         .unwrap_or(&stripped);
     format!("{INVOKE_ROUTE_PREFIX}{rest}")
-}
-
-pub fn parse_s3_uri(s3_uri: &str) -> Result<(String, String), S3AccessError> {
-    let Some(path) = s3_uri.strip_prefix(S3_SCHEME) else {
-        return Err(S3AccessError::InvalidS3Uri {
-            uri: s3_uri.to_owned(),
-        });
-    };
-    let Some((bucket, key)) = path.split_once('/') else {
-        return Err(S3AccessError::InvalidS3Uri {
-            uri: s3_uri.to_owned(),
-        });
-    };
-    Ok((bucket.to_owned(), key.to_owned()))
 }

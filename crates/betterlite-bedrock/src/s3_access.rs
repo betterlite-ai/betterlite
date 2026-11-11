@@ -9,14 +9,13 @@ use betterlite_context::cloud_storage::policy::{
 };
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 
-use crate::bedrock_settings::HeaderError;
-
 pub mod decode;
 pub mod handler;
 pub mod managed;
 pub mod models;
 pub mod settings;
 mod tests;
+pub mod uri;
 
 pub const S3_BUCKET_REQUIRED_ERROR: &str = "S3 bucket_name is required. Set 's3_bucket_name' in proxy config or AWS_S3_BUCKET_NAME for Bedrock file content retrieval.";
 pub const MANAGED_FILE_ID_ERROR: &str = "file_id must be a managed LiteLLM S3 file id";
@@ -47,8 +46,6 @@ pub enum S3AccessError {
     Storage(#[from] CloudStorageError),
     #[error(transparent)]
     Secret(#[from] SecretLookupError),
-    #[error(transparent)]
-    Header(#[from] HeaderError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,18 +92,20 @@ impl TrustedModelCredentials {
         Ok((bucket, output))
     }
 
-    fn legacy_setting(&self) -> LegacyCloudSetting {
-        match self.values.get(LEGACY_SETTING) {
+    #[must_use]
+    pub fn allows_legacy(&self) -> bool {
+        let setting = match self.values.get(LEGACY_SETTING) {
             Some(TrustedValue::Boolean(flag)) => LegacyCloudSetting::Boolean(*flag),
             Some(TrustedValue::Text(value)) => LegacyCloudSetting::Text(value.clone()),
             Some(TrustedValue::Null | TrustedValue::Other) | None => LegacyCloudSetting::Other,
-        }
+        };
+        allow_legacy(Some(&TrustedCloudCredentials::from(setting)))
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct S3AccessParams {
-    pub trusted: Option<TrustedModelCredentials>,
+    pub trusted: TrustedModelCredentials,
     // a deployment or request bucket name carried in litellm_params never authorizes a file id on its own
     pub bucket_name: Option<String>,
     pub output_bucket_name: Option<String>,
@@ -125,22 +124,11 @@ fn bucket_or_environment(
     })
 }
 
-fn trusted_buckets(
-    params: &S3AccessParams,
-) -> Result<(Option<String>, Option<String>), S3AccessError> {
-    params
-        .trusted
-        .as_ref()
-        .map(TrustedModelCredentials::bucket_fields)
-        .transpose()
-        .map(Option::unwrap_or_default)
-}
-
 pub fn configured_bucket_name(
     params: &S3AccessParams,
     environment: &BTreeMap<String, String>,
 ) -> Result<String, S3AccessError> {
-    let (input, _output) = trusted_buckets(params)?;
+    let (input, _output) = params.trusted.bucket_fields()?;
     bucket_or_environment(input, environment, BUCKET_NAME_ENV).ok_or(S3AccessError::BucketRequired)
 }
 
@@ -148,7 +136,7 @@ pub fn configured_bucket_names(
     params: &S3AccessParams,
     environment: &BTreeMap<String, String>,
 ) -> Result<Vec<String>, S3AccessError> {
-    let (input, output) = trusted_buckets(params)?;
+    let (input, output) = params.trusted.bucket_fields()?;
     let candidates = [(input, BUCKET_NAME_ENV), (output, OUTPUT_BUCKET_NAME_ENV)];
     let mut buckets = Vec::new();
     for (trusted, variable) in candidates {
@@ -162,13 +150,4 @@ pub fn configured_bucket_names(
         return Err(S3AccessError::BucketRequired);
     }
     Ok(buckets)
-}
-
-#[must_use]
-pub fn allow_legacy_cloud_file_ids(params: &S3AccessParams) -> bool {
-    let credentials = params
-        .trusted
-        .as_ref()
-        .map(|snapshot| TrustedCloudCredentials::from(snapshot.legacy_setting()));
-    allow_legacy(credentials.as_ref())
 }

@@ -27,7 +27,7 @@ pub enum S3Setting {
 
 pub struct S3SettingSources<'sources> {
     pub params: &'sources SettingMap,
-    pub optional_params: Option<&'sources SettingMap>,
+    pub optional_params: &'sources SettingMap,
     pub secrets: &'sources SecretLookup,
     pub environment: &'sources BTreeMap<String, String>,
 }
@@ -40,10 +40,7 @@ pub fn resolve_s3_setting(
         S3Setting::EncryptionKeyId => (ENCRYPTION_KEY_ID_PARAM, ENCRYPTION_KEY_ID_ENV),
         S3Setting::BucketOwner => (BUCKET_OWNER_PARAM, BUCKET_OWNER_ENV),
     };
-    for map in [Some(sources.params), sources.optional_params]
-        .into_iter()
-        .flatten()
-    {
+    for map in [sources.params, sources.optional_params] {
         if let Some(SettingValue::Text(value)) = map.get(name)
             && !value.is_empty()
         {

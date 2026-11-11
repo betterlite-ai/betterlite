@@ -65,16 +65,12 @@ pub(super) fn snapshot(pairs: &[(&str, TrustedValue)]) -> TrustedModelCredential
     )
 }
 
-pub(super) fn params(trusted: Option<TrustedModelCredentials>) -> S3AccessParams {
+pub(super) fn params(trusted: TrustedModelCredentials) -> S3AccessParams {
     S3AccessParams {
         trusted,
         bucket_name: None,
         output_bucket_name: None,
     }
-}
-
-pub(super) fn trusted_params(trusted: TrustedModelCredentials) -> S3AccessParams {
-    params(Some(trusted))
 }
 
 pub(super) fn secrets() -> SecretLookup {
@@ -128,7 +124,6 @@ pub(super) fn store(error: &S3AccessError) -> &'static str {
         S3AccessError::InvalidS3Uri { .. } => "invalid_s3_uri",
         S3AccessError::Storage(_) => "storage",
         S3AccessError::Secret(_) => "secret",
-        S3AccessError::Header(_) => "header",
     }
 }
 

@@ -10,11 +10,12 @@ use crate::s3_access::handler::{AwsBase, BatchFiles, BedrockFilesHandler};
 use crate::s3_access::managed::{
     ManagedObjectError, resolve_managed_s3_object, validate_configured_file_id,
 };
-use crate::s3_access::models::{bedrock_model_id, parse_s3_uri};
+use crate::s3_access::models::bedrock_model_id;
 use crate::s3_access::settings::{S3Setting, S3SettingSources, resolve_s3_setting};
+use crate::s3_access::uri::parse_s3_uri;
 use crate::s3_access::{
-    S3AccessError, S3AccessParams, TrustedValue, allow_legacy_cloud_file_ids,
-    configured_bucket_name, configured_bucket_names, frozen_mapping,
+    S3AccessError, S3AccessParams, TrustedModelCredentials, TrustedValue, configured_bucket_name,
+    configured_bucket_names, frozen_mapping,
 };
 
 use super::fixtures::{
@@ -24,7 +25,7 @@ use super::fixtures::{
 use super::model_helpers::{invoke_with_empty_context, strip_with_empty_context};
 use super::support::{
     assert_bedrock_rejection, client, credential_cache, environment, params, secrets, settings,
-    snapshot, store, trusted_params,
+    snapshot, store,
 };
 
 #[rstest::rstest]
@@ -75,7 +76,7 @@ fn managed_file_id_decode() {
 }
 
 fn configured_input_output_buckets() {
-    let output_only = trusted_params(snapshot(&[(
+    let output_only = params(snapshot(&[(
         "s3_output_bucket_name",
         TrustedValue::Text("trusted-out".to_owned()),
     )]));
@@ -96,7 +97,7 @@ fn configured_input_output_buckets() {
         configured_bucket_names(&request, &variables).expect("both buckets resolve"),
         ["env-in", "trusted-out"]
     );
-    let only_output = trusted_params(snapshot(&[(
+    let only_output = params(snapshot(&[(
         "s3_output_bucket_name",
         TrustedValue::Text("trusted-out".to_owned()),
     )]));
@@ -170,7 +171,7 @@ fn assert_one_pass_decoding(buckets: &[String]) {
 }
 
 fn foreign_bucket_rejected() {
-    let configured = trusted_params(snapshot(&[(
+    let configured = params(snapshot(&[(
         "s3_bucket_name",
         TrustedValue::Text("configured".to_owned()),
     )]));
@@ -193,15 +194,22 @@ fn foreign_bucket_rejected() {
         validate_configured_file_id("s3://configured/plain", &buckets, false),
         Err(CloudStorageError::Unmanaged)
     );
+    assert_configuration_errors_stay_original();
+}
 
-    let missing = resolve_managed_s3_object("s3://bucket/x", &params(None), &environment(&[]))
-        .expect_err("no bucket is configured");
+fn assert_configuration_errors_stay_original() {
+    let missing = resolve_managed_s3_object(
+        "s3://bucket/x",
+        &params(TrustedModelCredentials::default()),
+        &environment(&[]),
+    )
+    .expect_err("no bucket is configured");
     let ManagedObjectError::Configuration(missing_error) = missing else {
         panic!("missing configuration is not a BedrockError");
     };
     assert!(matches!(*missing_error, S3AccessError::BucketRequired));
 
-    let malformed = trusted_params(frozen_mapping(vec![(
+    let malformed = params(frozen_mapping(vec![(
         "s3_bucket_name".to_owned(),
         TrustedValue::Boolean(false),
     )]));
@@ -215,12 +223,9 @@ fn foreign_bucket_rejected() {
 
 fn legacy_id_opt_in() {
     let opt_in = |value: TrustedValue| {
-        allow_legacy_cloud_file_ids(&trusted_params(frozen_mapping(vec![(
-            "allow_legacy_cloud_file_ids".to_owned(),
-            value,
-        )])))
+        frozen_mapping(vec![("allow_legacy_cloud_file_ids".to_owned(), value)]).allows_legacy()
     };
-    assert!(!allow_legacy_cloud_file_ids(&params(None)));
+    assert!(!TrustedModelCredentials::default().allows_legacy());
     assert!(opt_in(TrustedValue::Boolean(true)));
     assert!(!opt_in(TrustedValue::Boolean(false)));
     assert!(opt_in(TrustedValue::Text("1".to_owned())));
@@ -251,7 +256,7 @@ fn request_credentials_rejected() {
 
 fn assert_bucket_sources(variables: &BTreeMap<String, String>) {
     let trusted = S3AccessParams {
-        trusted: Some(frozen_mapping(vec![
+        trusted: frozen_mapping(vec![
             (
                 "s3_bucket_name".to_owned(),
                 TrustedValue::Text("first".to_owned()),
@@ -261,7 +266,7 @@ fn assert_bucket_sources(variables: &BTreeMap<String, String>) {
                 TrustedValue::Text("trusted".to_owned()),
             ),
             ("nested".to_owned(), TrustedValue::Other),
-        ])),
+        ]),
         bucket_name: Some("request-bucket".to_owned()),
         output_bucket_name: Some("request-output".to_owned()),
     };
@@ -275,7 +280,7 @@ fn assert_bucket_sources(variables: &BTreeMap<String, String>) {
     );
 
     let plain = S3AccessParams {
-        trusted: None,
+        trusted: TrustedModelCredentials::default(),
         bucket_name: Some("request-bucket".to_owned()),
         output_bucket_name: Some("request-output".to_owned()),
     };
@@ -290,7 +295,7 @@ fn assert_bucket_sources(variables: &BTreeMap<String, String>) {
 }
 
 fn assert_malformed_snapshot_is_rejected(variables: &BTreeMap<String, String>) {
-    let malformed = trusted_params(frozen_mapping(vec![(
+    let malformed = params(frozen_mapping(vec![(
         "s3_output_bucket_name".to_owned(),
         TrustedValue::Other,
     )]));
@@ -315,7 +320,7 @@ fn kms_owner_precedence() {
     ]);
     let sources = S3SettingSources {
         params: &params_map,
-        optional_params: Some(&optional),
+        optional_params: &optional,
         secrets: &lookup,
         environment: &variables,
     };
@@ -409,7 +414,7 @@ fn files_handler_initialization() {
     let rejection =
         decode_managed_file_id("not-a-file-id").expect_err("the same rejection as the handler");
     assert_eq!(store(&rejection), "managed_file_id");
-    let configured = trusted_params(snapshot(&[(
+    let configured = params(snapshot(&[(
         "s3_bucket_name",
         TrustedValue::Text("managed-bucket".to_owned()),
     )]));
@@ -417,7 +422,10 @@ fn files_handler_initialization() {
         configured_bucket_name(&configured, &environment(&[])).expect("the same bucket"),
         "managed-bucket"
     );
-    let missing = configured_bucket_name(&params(None), &environment(&[]))
-        .expect_err("the same error as the handler");
+    let missing = configured_bucket_name(
+        &params(TrustedModelCredentials::default()),
+        &environment(&[]),
+    )
+    .expect_err("the same error as the handler");
     assert_eq!(store(&missing), "bucket_required");
 }
