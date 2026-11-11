@@ -244,11 +244,10 @@ impl<'request> MappingState<'request> {
             });
         };
         for (name, entry) in fields {
-            if classify_parameter(name, call_type) == ParameterClass::Reserved {
-                return Err(ParameterError::ReservedParameter { name: name.clone() });
-            }
             if name == "model" || self.drops_extra_body() || self.drops_name(name) {
                 self.mapping.dropped_fields.push(name.clone());
+            } else if classify_parameter(name, call_type) == ParameterClass::Reserved {
+                return Err(ParameterError::ReservedParameter { name: name.clone() });
             } else {
                 self.mapping
                     .provider_fields

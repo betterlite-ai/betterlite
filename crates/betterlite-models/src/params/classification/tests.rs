@@ -16,7 +16,7 @@ use crate::params::{CallType, TYPED_PARAMETER_NAMES};
     ParameterClass::Standard
 )]
 #[case::chat_metadata(CallType::ChatCompletion, "metadata", ParameterClass::Standard)]
-#[case::chat_thinking(CallType::ChatCompletion, "thinking", ParameterClass::Standard)]
+#[case::chat_thinking(CallType::ChatCompletion, "thinking", ParameterClass::Reserved)]
 #[case::unknown_vendor_field(
     CallType::ChatCompletion,
     "vendor_flag",
