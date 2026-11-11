@@ -4,7 +4,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use num_traits::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
-use subtle::ConstantTimeEq as _;
 use thiserror::Error;
 
 use crate::credential_lifecycle::files::CredentialFiles;
@@ -20,6 +19,7 @@ use crate::token_records::freshness::is_token_fresh;
 use super::contracts::CliTokenData;
 use super::login::pkce_token_record;
 use super::notice::{MessageSink, storage_notice};
+use super::sibling::key_rotated_by_a_sibling;
 use super::worker::{WorkerError, run_blocking};
 
 pub struct RefreshInputs {
@@ -259,48 +259,4 @@ where
         (warn)(&format!("Could not renew the key: {failure}"));
     }
     sibling
-}
-
-#[must_use]
-pub fn key_rotated_by_a_sibling(
-    reloaded: Option<&CliTokenData>,
-    previous: &CliTokenData,
-    now_seconds: f64,
-) -> Option<SecretString> {
-    let candidate = reloaded?;
-    if same_secret(
-        candidate.refresh_token.as_ref(),
-        previous.refresh_token.as_ref(),
-    ) {
-        return None;
-    }
-    if candidate.base_url != previous.base_url
-        || candidate.token_endpoint != previous.token_endpoint
-        || candidate.resource != previous.resource
-        || candidate.user_id != previous.user_id
-        || candidate.team_id != previous.team_id
-    {
-        return None;
-    }
-    if now_seconds >= candidate.expires_at? {
-        return None;
-    }
-    let key = candidate.key.as_ref()?;
-    if key.expose_secret().is_empty() {
-        return None;
-    }
-    Some(key.clone())
-}
-
-fn same_secret(left: Option<&SecretString>, right: Option<&SecretString>) -> bool {
-    match (left, right) {
-        (Some(left_token), Some(right_token)) => bool::from(
-            left_token
-                .expose_secret()
-                .as_bytes()
-                .ct_eq(right_token.expose_secret().as_bytes()),
-        ),
-        (None, None) => true,
-        (Some(_), None) | (None, Some(_)) => false,
-    }
 }

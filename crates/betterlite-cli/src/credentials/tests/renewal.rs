@@ -7,9 +7,9 @@ use crate::credential_lifecycle::outcome::SecretSave;
 use crate::credential_lifecycle::save::save_cli_token;
 use crate::credentials::contracts::CliTokenData;
 use crate::credentials::renewal::{
-    FreshApiKeyRequest, RenewalStore as _, RenewalVault, fresh_api_key, key_rotated_by_a_sibling,
-    refresh_inputs,
+    FreshApiKeyRequest, RenewalStore as _, RenewalVault, fresh_api_key, refresh_inputs,
 };
+use crate::credentials::sibling::key_rotated_by_a_sibling;
 use crate::keyring::KeyringUnusable;
 
 use super::support::{
