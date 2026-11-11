@@ -1,0 +1,98 @@
+kind: helper
+name: count-token-http-request
+call:
+  bedrock_other_count_call:
+    count_token_http_request:
+      calls:
+        - model: bedrock/converse/us.anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": 42}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+              api_base: https://api.example
+              aws_bedrock_runtime_endpoint: https://runtime.example
+          environment:
+            runtime_endpoint: https://env.example
+          reply: {status: 200, body: '{"inputTokens": 7, "extra": {"a": 1}}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+              aws_bedrock_runtime_endpoint: https://runtime.example
+          environment:
+            runtime_endpoint: https://env.example
+          reply: {status: 200, body: '{"inputTokens": 8}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          environment:
+            runtime_endpoint: https://env.example
+          reply: {status: 200, body: '{"inputTokens": 9}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          environment: {region_name: eu-west-1}
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": 10}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 201, body: created}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 302, body: relocated}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          request_model: requested-model
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{}'}
+          now: 1767225600
+env: {}
+compare: {ignore: []}

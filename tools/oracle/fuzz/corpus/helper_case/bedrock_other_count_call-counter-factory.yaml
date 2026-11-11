@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-other-count-call-factory
+call:
+  bedrock_other_count_call:
+    counter_factory:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          provider: bedrock
+          now: 1767225600
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,71 @@
+kind: helper
+name: native-count-selection
+call:
+  bedrock_other_count_call:
+    native_count_selection:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: null
+          provider: bedrock
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: []
+          provider: bedrock_converse
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          provider: bedrock_mantle
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          provider: Bedrock
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          tools: []
+          system: ''
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": 3}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          tools:
+            - name: lookup
+              input_schema: {type: object}
+          system: be nice
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": 4}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0:51k
+          messages:
+            - role: user
+              content: hi
+          deployment: null
+          reply: {status: 200, body: '{"inputTokens": 5}'}
+          now: 1767225600
+env: {}
+compare: {ignore: []}

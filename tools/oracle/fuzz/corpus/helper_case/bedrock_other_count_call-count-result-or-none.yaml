@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-other-count-call-result
+call:
+  bedrock_other_count_call:
+    count_result_or_none:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          handler: none
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          handler: empty_object
+          now: 1767225600
+env: {}
+compare: {ignore: []}
