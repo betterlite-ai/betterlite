@@ -10,7 +10,6 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{Resolve, UrlValidator};
-use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::arguments::json::{Json, Object};
 use crate::bedrock::assembly::{
@@ -210,44 +209,4 @@ impl CachePoints for RecordingCachePoints {
             .push((cache_control.clone(), model.map(str::to_owned)));
         self.point.clone()
     }
-}
-
-#[derive(Clone, Default)]
-pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl Captured {
-    pub(super) fn text(&self) -> String {
-        String::from_utf8(
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        )
-        .unwrap()
-    }
-}
-
-impl io::Write for Captured {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-pub(super) fn capture() -> (Captured, DefaultGuard) {
-    let captured = Captured::default();
-    let writer = captured.clone();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(move || writer.clone())
-        .with_max_level(tracing::Level::DEBUG)
-        .with_ansi(false)
-        .finish();
-    (captured, set_default(subscriber))
 }

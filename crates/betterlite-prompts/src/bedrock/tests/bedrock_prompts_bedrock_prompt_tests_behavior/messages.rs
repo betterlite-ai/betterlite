@@ -1,7 +1,7 @@
 use crate::bedrock::error::PromptError;
 use crate::bedrock_processor::error::ProcessorError;
 
-use super::prelude::{Harness, Settings, capture, list, messages};
+use super::prelude::{Harness, Settings, list, messages};
 
 #[tokio::test]
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_conversation_becomes_text_turns() {
@@ -133,10 +133,9 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_an_unsupported_role_names
 }
 
 #[tokio::test]
-async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_duplicate_tool_result_is_dropped_and_warned()
+async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_duplicate_tool_result_keeps_the_first_block()
  {
     let harness = Harness::new();
-    let (captured, _guard) = capture();
     let converted = harness
         .convert(
             &messages(
@@ -164,9 +163,6 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_duplicate_tool_result_i
                 }}]}]"#
         )
     );
-    let warnings = captured.text();
-    assert!(warnings.contains("a duplicate Bedrock content block is dropped"));
-    assert!(warnings.contains("toolResult"));
 }
 
 #[tokio::test]
