@@ -2,7 +2,7 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 
 #[must_use]
 // ast-grep-ignore: no-python-habits
-pub(super) fn is_truthy(value: &OtelModelValue) -> bool {
+pub(crate) fn is_truthy(value: &OtelModelValue) -> bool {
     match value {
         OtelModelValue::Null(()) => false,
         OtelModelValue::Bool(flag) => *flag,

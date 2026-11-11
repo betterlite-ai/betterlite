@@ -1,19 +1,18 @@
 import asyncio
-from typing import Self, TypeAlias, cast
+from typing import Self, cast
 
 from litellm.caching.redis_batch import RedisBatch
 from litellm.caching.redis_cache import RedisCache, RedisCircuitBreaker
+from pydantic import JsonValue
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
-Json: TypeAlias = bool | int | float | str | list["Json"] | dict[str, "Json"] | None
-
 
 class Output(Strict):
-    results: list[Json]
+    results: list[JsonValue]
 
 
 class Pipeline:
@@ -80,7 +79,7 @@ class Batch(Operation):
     def run(self) -> Output:
         return Output(results=asyncio.run(self.execute()))
 
-    async def execute(self) -> list[Json]:
+    async def execute(self) -> list[JsonValue]:
         cache = object.__new__(RedisCache)
         fields: dict[str, object] = {
             "namespace": self.namespace,
@@ -95,6 +94,6 @@ class Batch(Operation):
         mget = batch.mget(["alpha"])
         increment = batch.increment("counter", 1.5, 20)
         return [
-            {"operation": "mget", "value": cast("Json", dict(await mget))},
+            {"operation": "mget", "value": cast("JsonValue", dict(await mget))},
             {"operation": "increment", "value": await increment},
         ]

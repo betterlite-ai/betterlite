@@ -1,0 +1,11 @@
+kind: helper
+name: clear-erased-success
+call:
+  b4592:
+    operation: clear
+    file: '{"base_url":"https://gateway.example","user_id":"u-1","timestamp":1000.0}'
+    vault:
+      blob: '{"base_url":"https://gateway.example","key":"sk-vault","jwt_token":"","refresh_token":null,"timestamp":1000.0}'
+    failures: {}
+env: {}
+compare: {ignore: []}

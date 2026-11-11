@@ -172,7 +172,8 @@ async fn run_command(
     let mut argv = vec![OsString::from("betterlite-db-admin")];
     argv.extend(arguments.iter().map(OsString::from));
     let mut recorder = Recorder(Vec::new());
-    let status = run(argv, environment, backend, &mut recorder).await;
+    // run's future sits near clippy's large_futures limit, and a bigger config pushes callers past it
+    let status = Box::pin(run(argv, environment, backend, &mut recorder)).await;
     (status, recorder.0)
 }
 

@@ -1,0 +1,12 @@
+kind: helper
+name: api-key-getter-origin-mismatch
+call:
+  b4592:
+    operation: gateway_key
+    file: '{"base_url":"https://gateway.example","key":"sk-legacy","user_id":"u-1","timestamp":1000.0}'
+    expected_base_url: https://other.example
+    vault:
+      blob: '{"base_url":"https://gateway.example","key":"sk-vault","jwt_token":"","refresh_token":null,"timestamp":1000.0}'
+    failures: {}
+env: {}
+compare: {ignore: []}
