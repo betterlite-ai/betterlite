@@ -49,10 +49,13 @@ impl HeaderText for String {
     }
 }
 
-pub(super) fn header<'headers, Value: HeaderText>(
+pub(super) fn header<'headers, Value>(
     headers: &'headers [(String, Value)],
     name: &str,
-) -> Option<&'headers str> {
+) -> Option<&'headers str>
+where
+    Value: HeaderText,
+{
     headers
         .iter()
         .find(|(found, _)| found == name)

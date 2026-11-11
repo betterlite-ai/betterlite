@@ -1,8 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::{Json as Field, Object};
-use betterlite_prompts::message_content::{
-    Content, ContentPart, Message, convert_content_list_to_str,
-};
+use betterlite_prompts::message_content::{Content, ContentPart, Message};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
