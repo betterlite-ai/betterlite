@@ -60,9 +60,6 @@ pub fn invoked_runtime(url: &str) -> Option<AgentCoreRuntime> {
         .path()
         .strip_prefix(RUNTIMES_OPEN)?
         .strip_suffix(RUNTIMES_CLOSE)?;
-    if encoded.is_empty() || encoded.contains('/') {
-        return None;
-    }
     let decoded = percent_decode_str(encoded).decode_utf8().ok()?;
     let runtime = agentcore_runtime(decoded.as_ref())?;
     (runtime.invocations_url() == parsed.as_str()).then_some(runtime)

@@ -3,6 +3,7 @@
 use rstest::rstest;
 
 use super::StrandsDeciderDecisionsConfig;
+use super::arn::invoked_runtime;
 use crate::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 
 #[test]
@@ -88,4 +89,39 @@ fn strands_url_falls_back_to_the_parent_systemone_path_for_a_plain_base(
 ) {
     let config = StrandsDeciderDecisionsConfig::default();
     assert_eq!(config.get_complete_url(api_base, "any-model"), expected);
+}
+
+const INVOKED_ARN: &str = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime";
+
+#[test]
+fn strands_url_invoked_runtime_accepts_the_canonical_invocations_url() {
+    let config = StrandsDeciderDecisionsConfig::default();
+    let url = config.get_complete_url(INVOKED_ARN, "any-model");
+    let runtime = invoked_runtime(&url).expect("the canonical invocations url");
+    assert_eq!(runtime.arn, INVOKED_ARN);
+    assert_eq!(runtime.region, "us-east-1");
+}
+
+#[rstest]
+#[case::other_host(
+    "https://evil.example/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A123456789012%3Aruntime%2Fmy-runtime/invocations"
+)]
+#[case::lowercase_percent_encoding(
+    "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn%3aaws%3abedrock-agentcore%3aus-east-1%3a123456789012%3aruntime%2fmy-runtime/invocations"
+)]
+#[case::unencoded_arn(
+    "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime/invocations"
+)]
+#[case::other_region_host(
+    "https://bedrock-agentcore.eu-west-1.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A123456789012%3Aruntime%2Fmy-runtime/invocations"
+)]
+#[case::query_string(
+    "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A123456789012%3Aruntime%2Fmy-runtime/invocations?x=1"
+)]
+#[case::empty_runtime("https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes//invocations")]
+#[case::not_an_arn("https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/other/invocations")]
+#[case::other_path("https://strands.example/v1/systemone")]
+#[case::not_a_url("not a url")]
+fn strands_url_invoked_runtime_rejects_other_urls(#[case] url: &str) {
+    assert_eq!(invoked_runtime(url), None, "{url}");
 }
