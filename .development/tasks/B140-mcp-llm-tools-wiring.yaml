@@ -1,0 +1,122 @@
+id: B140
+title: MCP tools in gateway chat and Responses calls through the production MCP area
+description: >-
+  A chat or Responses request whose tools include `{"type": "mcp", "server_url": "litellm_proxy"}` (or `litellm_proxy/mcp/<name>`, or an http(s) URL ending in /mcp/<name> that the gateway serves) makes LiteLLM list the tools of its own configured MCP servers, hand them to the model, run the tool calls the model makes when require_approval is "never", and make one follow-up model call with the results. The algorithms are built: B956 and B957 for chat (chat_completions_handler.py), B948 to B955 for Responses (litellm_proxy_mcp_handler.py, mcp_streaming_iterator.py, responses/main.py). They reach the MCP manager, the proxy hooks and the model only through the ports their modules declare, and no task implements those ports over the gateway's MCP area, so through the booted proxy a `litellm_proxy` tool reaches nothing. This task writes those adapters once over B8620's McpState and plugs them into the three places a gateway request enters the MCP branch. It mounts no route and ports no LiteLLM algorithm.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/llm_tools.rs and app/mcp/llm_tools/ (ports.rs, chat.rs, tests.rs); the skeleton declares `pub mod llm_tools;` in app/mcp.rs. Every name stays at 30 characters or fewer.
+
+
+  ports.rs. Read the merged modules of B948, B949, B950, B951, B955, B956 and B957 and write one adapter per trait they declare for the MCP manager and the proxy hooks; never declare a parallel trait. `McpLlmTools::from_state(state: &ServerState) -> McpLlmTools` clones the Arc handles each adapter needs from `McpState::shared(state)` and the server state, so a request builds it without I/O. What each LiteLLM call stands for and the betterlite owner the adapter forwards to: global_mcp_server_manager.get_registry, get_mcp_server_by_name and _get_mcp_server_from_tool_name are B4731's registry reads over the shared registry in McpState; get_toolset_by_name_cached and resolve_toolset_tool_permissions are the toolset store and B6593's scope filter (with no database, the lookup answers "no toolset", as LiteLLM's prisma_client None branch does); granted_toolset_ids and _user_has_admin_view come from B8621's caller identity state; get_allowed_mcp_servers, get_mcp_servers_from_ids and _get_allowed_mcp_servers_from_mcp_server_names are B6591's allowed-server union; server.py's _get_tools_from_mcp_servers is B8197's listing and _resolve_display_name_to_original is B8195's; call_tool is B8465's dispatch over `McpState::shared(state).upstream.clients` (B9654), so every upstream request goes through the production runtime with B8194's capture; proxy_logging_obj.post_mcp_call_hook is B8394's MCP result hook and post_call_failure_hook with route "/responses/mcp/call_tool" is B8399's, both on the ProxyLogging the server state holds. The caller's admitted principal, request tags, trace id and the MCP auth headers reach the adapters through the port arguments the core modules pass (B949 resolves them from the request); an adapter reads no header, env var or global of its own.
+
+
+  chat.rs. The gateway chat route does not go through B5656's completion call: it selects a deployment and sends through B014's ChatExecutor (crates/betterlite-openai/src/chat/execution.rs). LiteLLM runs the MCP branch inside completion() after routing (main.py L5265-L5300), so the follow-up goes to the same deployment with `_skip_mcp_handler` set and never re-enters the branch. `ChatMcpCall` implements B956's and B957's model-call port over the ChatExecutor and the deployment the route selected: a finished call is ChatExecutor::send, a streamed one is ChatExecutor::stream with its SSE body read by betterlite-openai's SseParser and each data payload decoded into the chunk type B957 takes, ending at `[DONE]`. In crates/betterlite-server/src/routes/chat.rs, after the shared pre-call (B8803) and deployment selection, a request whose tools pass B956's gateway split runs B956's plan and B957's loop with McpLlmTools and ChatMcpCall instead of the plain executor call; a finished result goes out through the route's existing JSON path and a streamed one through the route's existing SSE path, so mcp_list_tools, mcp_tool_calls and mcp_call_results arrive in provider_specific_fields as LiteLLM puts them. A request with no gateway MCP tool keeps the route's current path untouched.
+
+
+  Router completion. B8630 builds B5656's completion targets in crates/betterlite-server/src/app/inference/router_completion.rs, where a model group that takes the RouterCompletion path (B117's prompt-management groups) still gets NoMcpLoop and fails by name. Replace that one value with B5849's ChatMcpRunner built over McpLlmTools. If B5849's constructor takes only resolved settings and no ports, add a constructor in crates/betterlite-sdk/src/mcp_loop.rs that takes B956's and B957's ports and keep the existing one unchanged.
+
+
+  Responses. B080 assembles B955's dispatch from crates/betterlite-server/src/api/responses_routes.rs through its small core composition module crates/betterlite-core/src/api/responses_routes.rs. Replace whatever manager and hook ports the server side passes there with the McpLlmTools adapters; when the core composition builds those ports itself with no parameter for them, add that one parameter. The dispatch, B954's stream loop and the follow-up through B932 stay as B080 composed them.
+
+
+  Tests in app::mcp::llm_tools::tests boot B8610's application with a config that names one MCP server, a local rmcp test server over streamable HTTP and a local mock model upstream: a chat request with require_approval "never" lists the server's tools, calls the one tool the model picks and sends one follow-up; the same as a stream; a Responses request through B955 reaches the same tool; a key whose object permission excludes the server sees no tool and makes no upstream MCP request; and an upstream tool error comes back as the "Error executing tool: ..." text in the follow-up's tool message with B8399's failure hook called once.
+
+
+  HTTP oracle cases in tools/oracle/cases/mcp-llm-tools/ compare the booted proxies. They set up the upstream MCP server the way B136's fixture does: an mcp_servers entry named alpha with transport http and url "{{upstream}}/__mcp_fixture/alpha", answered by the mock's MCP reply correlation, with the model replies on the same scripted upstream in the order LiteLLM sends them. Chat cases post to /v1/chat/completions with model mcp-model (openai/gpt-mcp-upstream on the mock) and the tool `{type: mcp, server_label: alpha, server_url: "litellm_proxy/mcp/alpha", require_approval: never}`: chat-auto-execute, chat-auto-execute-stream, chat-approval-required (require_approval omitted, so one model call and no tools/call), chat-tool-error (tools/call answers isError) and chat-unknown-server (server_url litellm_proxy/mcp/missing, so no MCP request is made). Responses cases post to /v1/responses with the same tool: responses-auto-execute, responses-auto-execute-stream and responses-approval-required. Transport cases call POST /mcp-rest/tools/call (B8626's route) with name alpha-echo through the production runtime: rest-call-redirect-same-origin (the upstream answers the POST with 307 and a relative Location /__mcp_fixture/alpha-moved, followed), rest-call-redirect-cross-origin (307 to http://127.0.0.1:9/mcp, not followed, no request reaches it) and rest-call-upstream-500. Each case checks status, content-type and the body; generated ids and timestamps are ignored at their pointers only. Add one http_case corpus seed per case.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/app/mcp/llm_tools.rs
+    - crates/betterlite-server/src/app/mcp/llm_tools/**
+    - crates/betterlite-server/src/routes/chat.rs
+    - crates/betterlite-server/src/routes/chat/tests/**
+    - crates/betterlite-server/src/api/responses_routes.rs
+    - crates/betterlite-core/src/api/responses_routes.rs
+    - crates/betterlite-server/src/app/inference/router_completion.rs
+    - crates/betterlite-sdk/src/mcp_loop.rs
+    - Cargo.lock
+    - tools/oracle/cases/mcp-llm-tools/**
+    - tools/oracle/fuzz/corpus/http_case/mcp-llm-tools-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5258-L5300
+    why: Where completion() enters the MCP branch after routing, with _skip_mcp_handler popped first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L60-L190
+    why: The litellm_proxy server_url forms and the gateway split; the registry and toolset lookups the adapters answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L235-L352
+    why: _get_mcp_tools_from_manager, every manager call made while listing tools for a request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L687-L972
+    why: _execute_tool_calls, the manager call_tool and post_mcp_call_hook calls and the error texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1120-L1144
+    why: _log_mcp_tool_failure, the failure hook with route /responses/mcp/call_tool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/chat_completions_handler.py#L85-L651
+    why: The chat flow B956 and B957 built; it shows which calls go to the model and which to the manager.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L157-L424
+    why: aresponses_api_with_mcp, the Responses flow B955 built.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L967-L1035
+    why: _responses_try_dispatch_mcp_gateway, how a Responses create call enters the MCP branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/Readme.md#L1-L40
+    why: The client package's documented use and its redirect rule, which the transport cases check through the proxy.
+  - url: https://docs.litellm.ai/docs/mcp
+    why: The user-facing litellm_proxy tool syntax and require_approval.
+dod:
+  - text: The manager and hook ports of the chat and Responses MCP modules are implemented over the gateway's MCP area, its upstream runtime and ProxyLogging.
+    proof: [llm-tools-tests]
+  - text: A gateway chat request with litellm_proxy MCP tools lists, calls and follows up as LiteLLM does, finished and streamed, and a request without them keeps its path.
+    proof: [llm-tools-tests, route-tests, case-files, oracle]
+  - text: A Responses request with litellm_proxy MCP tools runs B955's dispatch over the production ports.
+    proof: [llm-tools-tests, route-tests, case-files, oracle]
+  - text: RouterCompletion's targets run the real chat MCP runner instead of NoMcpLoop.
+    proof: [route-tests, runner-tests]
+  - text: An MCP tool call through the booted proxy follows a same-origin redirect, refuses a cross-origin one and reports an upstream 500 as LiteLLM does.
+    proof: [case-files, oracle]
+  - text: The new HTTP transcripts replay through the existing HTTP-case decoder.
+    proof: [http-corpus]
+checks:
+  optional: []
+  commands:
+    - id: llm-tools-tests
+      why: An adapter is missing, forwards to the wrong owner, or the booted gateway never reaches the MCP server.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::llm_tools::/)'
+    - id: route-tests
+      why: The chat branch, the Responses composition or the router targets broke the tests of the code they changed.
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/mcp/llm_tools.rs crates/betterlite-server/src/app/mcp/llm_tools)" && cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^routes::chat::/) | test(/^api::responses_routes::/) | test(/^app::inference::router_completion::/)'
+    - id: runner-tests
+      why: A new ChatMcpRunner constructor broke B5849's runner tests.
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/inference/router_completion.rs)" && cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^mcp_loop::/)'
+    - id: case-files
+      why: No new chat, Responses or transport case exists on this branch.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/mcp-llm-tools)"
+    - id: http-corpus
+      why: The HTTP transcripts never reach the production case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/mcp-llm-tools-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/mcp-llm-tools/chat-auto-execute.yaml
+  - tools/oracle/cases/mcp-llm-tools/chat-auto-execute-stream.yaml
+  - tools/oracle/cases/mcp-llm-tools/chat-approval-required.yaml
+  - tools/oracle/cases/mcp-llm-tools/chat-tool-error.yaml
+  - tools/oracle/cases/mcp-llm-tools/chat-unknown-server.yaml
+  - tools/oracle/cases/mcp-llm-tools/responses-auto-execute.yaml
+  - tools/oracle/cases/mcp-llm-tools/responses-auto-execute-stream.yaml
+  - tools/oracle/cases/mcp-llm-tools/responses-approval-required.yaml
+  - tools/oracle/cases/mcp-llm-tools/rest-call-redirect-same-origin.yaml
+  - tools/oracle/cases/mcp-llm-tools/rest-call-redirect-cross-origin.yaml
+  - tools/oracle/cases/mcp-llm-tools/rest-call-upstream-500.yaml
+deviations: []
+out_of_scope:
+  - "litellm/responses/mcp/chat_completions_handler.py: B956 owns _add_mcp_metadata_to_response L24-L82 and acompletion_with_mcp L85-L327, B957 owns L328-L651."
+  - "litellm/responses/mcp/litellm_proxy_mcp_handler.py and request_context.py: B948, B949, B950 and B951. litellm/responses/mcp/mcp_streaming_iterator.py: B952, B953 and B954. responses/main.py's MCP dispatch: B955."
+  - "litellm/experimental_mcp_client/client.py and tools.py: B4740 to B4746 and B9651 to B9654; Readme.md has no code."
+  - "The MCP post-call content hook on loggers (litellm_logging.py L1633-L1709): B9650, called from B950's execution."
+  - "Mounting /chat/completions, /v1/responses and /mcp-rest/tools/call: B014, B080 and B8626. The Python SDK's MCP runner: B5849."
+  - "The MCP reply id correlation in the oracle mock: B136."
+pitfalls:
+  - "The branch sits inside the per-deployment call, so a retry or fallback reruns the whole plan with its tool calls, as LiteLLM's router wraps acompletion_with_mcp; don't hoist it above deployment selection."
+  - "ChatMcpCall sends straight to the ChatExecutor and never back through routes/chat.rs, while the RouterCompletion path relies on `_skip_mcp_handler: true` in every follow-up; dropping either lists the same tools again and loops."
+  - "The chat stream sends mcp_list_tools on the first chunk and mcp_tool_calls and mcp_call_results on the initial stream's final chunk, before the follow-up chunks."
+  - "Build McpLlmTools from McpState::shared each request; never open an MCP client or a runtime of its own, or the upstream calls lose B9654's capture and the shutdown tracker."
+  - "post_call_failure_hook is skipped when the caller has no admitted principal (user_api_key_auth None), so a master-key-less test must still pass a principal to see the hook."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

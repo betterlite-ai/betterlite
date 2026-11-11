@@ -1,0 +1,125 @@
+id: B9692
+title: Prove the router settings, routing group, retry and alias page requests through the booted proxy
+description: >-
+  Add HTTP oracle cases for the writes the Router Settings page and the model page's Retry
+  Settings and Model Group Alias tabs send, each followed by the read the page does next.
+  B9090 takes in the covered files unchanged and B9091 builds them. None of these components
+  checks premiumUser, so there is no patch, and every route has an owner: B348 builds GET
+  /router/settings and GET /router/fields, B8596 GET /get/config/callbacks, B8594 POST
+  /config/update, and B8595 GET /config/list, POST /config/field/update and POST
+  /config/field/delete, with B8675 mounting the B8594-B8596 routes. Nothing is registered here.
+
+  Reads. The Loadbalancing tab loads GET /get/config/callbacks and keeps router_settings
+  without model_group_retry_policy, then GET /router/settings, reading fields[].field_name,
+  ui_field_name, field_description, options, link and field_value, the routing_strategy
+  field's options and routing_strategy_descriptions. The Routing Groups tab reads GET
+  /router/settings again for current_values.routing_groups and current_values.routing_strategy,
+  with routing_group_strategies or the routing_strategy options as the strategy list, plus GET
+  /router/fields, GET /model_group/info for model names and GET /get/ui_settings. B348's
+  settings-current-values, fields-with-null-values, routing-groups-present and strategy-options
+  cases send these GETs exactly (no query, no body), and B9735 covers /model_group/info and
+  /get/ui_settings, so reuse them for the reads and assert only the read-backs here. The
+  General and Prompt Caching tabs read GET /config/list?config_type=general_settings and use
+  field_name, field_type, field_value, field_default_value and stored_in_db.
+
+  Writes, all POST /config/update unless named. The Loadbalancing save sends {router_settings:
+  {...}} holding every key the callbacks read returned except retry_policy,
+  model_group_retry_policy and routing_groups; allowed_fails, cooldown_time, num_retries,
+  timeout and retry_after are numbers, the literal "null" becomes null, model_group_alias is
+  parsed JSON or null when blank, "true"/"false" become booleans, routing_strategy and
+  enable_tag_filtering come from the form, and routing_strategy_args {lowest_latency_buffer,
+  ttl} is sent only with latency-based-routing. The Routing Groups tab sends {router_settings:
+  {routing_groups:[{group_name (trimmed), models, routing_strategy, routing_strategy_args
+  (parsed JSON or null), model_priorities ({model: integer}, only with priority)}]}} for every
+  add, edit and delete, so a delete sends the remaining list and the last delete sends [].
+  ModelRetrySettingsPanel sends {router_settings:{retry_policy, model_group_retry_policy}}
+  where either may be null, then reads the callbacks route again for both plus num_retries.
+  model_group_alias_settings sends {router_settings:{model_group_alias:{alias: target}}} with
+  the full map each time, and {} after the last alias is removed; ModelGroupAliasPanel reads it
+  back from router_settings.model_group_alias. The General tab sends POST /config/field/update
+  {field_name, field_value, config_type:"general_settings"} for a non-null value and POST
+  /config/field/delete {field_name, config_type:"general_settings"} on reset or when a Select or
+  List field is cleared; the Prompt Caching tab uses the same two calls for
+  enable_anthropic_prompt_caching, anthropic_prompt_caching_ttl and openai_system_messages_first.
+
+  Cases use B860's Postgres fixture and B5076's bootstrap with store_model_in_db true, so
+  /config/update persists to the config table, and a config with two model groups behind the
+  mock upstream. Compare the write status and body and the following read projection; the
+  router_settings envelope must not grow keys the page never sent. Add a non-admin case: an
+  internal_user and a proxy_admin_viewer sending the routing-group save, the retry save and a
+  field update must get the real 403 bodies. The Fallbacks tab, the callback and alert forms
+  and the cache settings tab are other tasks' (B9772 and B9771); do not cover them here.
+  Coverage audit: no case on disk sends POST /config/update, /config/field/update or
+  /config/field/delete, and B8594's planned cases are helper cases on redaction. About 420
+  case lines.
+scope:
+  paths:
+    - tools/oracle/cases/ui/routing-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/router_settings/index.tsx#L28-L175
+    why: The two reads and the router_settings save with its parsing and the keys it leaves out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/routingGroups/useRoutingGroups.ts#L17-L52
+    why: Routing groups are read from current_values and saved as the whole list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/routing_groups/routingGroupPayload.ts#L55-L105
+    why: The group body, null args and the priority map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/panels/ModelRetrySettingsPanel.tsx#L36-L80
+    why: Retry read and save, with null allowed for both policies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/model_group_alias_settings.tsx#L42-L64
+    why: The alias map is sent whole on every change.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/router-settings/_components/general_settings.tsx#L222-L286
+    why: General settings read, update for set values and delete for reset or cleared lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3126-L3178
+    why: Callbacks, general settings and router settings read requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3327-L3358
+    why: Field update and delete bodies always name general_settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L83-L213
+    why: B348's /router/settings and /router/fields decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17954-L18213
+    why: B8594's /config/update, admin-only and merging router_settings into the stored config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18258-L18370
+    why: B8595's field update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18728-L18990
+    why: B8595's /config/list and field delete.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19141-L19307
+    why: B8596's callbacks read that returns router_settings.
+dod:
+  - text: Loadbalancing, latency args, routing groups, retry policies and aliases saved through /config/update read back the same way as LiteLLM.
+    proof: [routing-settings-cases, oracle]
+  - text: General and prompt caching field updates and resets match LiteLLM, and non-admin writes keep the server's 403.
+    proof: [routing-settings-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: routing-settings-cases
+      why: No booted-proxy case sends the router settings page writes with their read-backs.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/routing-settings)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/routing-settings
+oracle_cases:
+  - tools/oracle/cases/ui/routing-settings/loadbalancing-save-and-read.yaml
+  - tools/oracle/cases/ui/routing-settings/latency-strategy-args.yaml
+  - tools/oracle/cases/ui/routing-settings/routing-groups-add-edit-delete.yaml
+  - tools/oracle/cases/ui/routing-settings/routing-group-priority-map.yaml
+  - tools/oracle/cases/ui/routing-settings/retry-policy-set-and-null.yaml
+  - tools/oracle/cases/ui/routing-settings/model-group-alias-set-and-empty.yaml
+  - tools/oracle/cases/ui/routing-settings/general-field-update-and-reset.yaml
+  - tools/oracle/cases/ui/routing-settings/prompt-caching-fields.yaml
+  - tools/oracle/cases/ui/routing-settings/non-admin-writes-denied.yaml
+  - tools/oracle/cases/routing/router-settings/settings-current-values.yaml
+  - tools/oracle/cases/routing/router-settings/fields-with-null-values.yaml
+  - tools/oracle/cases/routing/router-settings/routing-groups-present.yaml
+  - tools/oracle/cases/routing/router-settings/strategy-options.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every function in the covered settings components; B9091 builds them and B146 drives the pages in the browser.
+  - B348, B8594, B8595 and B8596 own the handlers and B8675 the mounts; whether a saved routing group changes routing at request time is B323's.
+  - The Fallbacks tab and callback reads are B9772's, the cache tab B9771's, and the shared /model_group/info and /get/ui_settings cases B9735's.
+pitfalls:
+  - The Loadbalancing save drops retry_policy, model_group_retry_policy and routing_groups on purpose; sending them back would overwrite the other tabs.
+  - Deleting a routing group or an alias is a /config/update with the remaining list or map, not a DELETE request.
+  - A cleared Select or List field goes to /config/field/delete, while a cleared text or number field is not sent at all.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

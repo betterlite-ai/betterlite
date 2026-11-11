@@ -95,7 +95,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - "_init_coordination_redis_from_db, _get_transaction_buffer_redis_cache's Redis build and the Redis usage cache helpers it calls (L4861-L4962): B8377. This task only supplies wants_buffer_redis."
-  - "_initialize_semantic_tool_filter: SemanticToolFilterHook has no owner yet; the notes name the gap."
+  - "_initialize_semantic_tool_filter: B138."
   - "_initialize_startup_logging (cost_tracking and ProxyLogging.startup_event): B8374 calls the logging setup owners directly."
   - "_init_dd_tracer and _init_pyroscope: they start Python's ddtrace and pyroscope profilers in-process, which betterlite does not embed; not built."
   - "refresh_model_info and the scheduled jobs: B8372."

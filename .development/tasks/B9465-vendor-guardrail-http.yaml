@@ -1,0 +1,233 @@
+id: B9465
+title: Booted-proxy cases for the Noma, Noma v2, Onyx, Ovalix, Pangea, Prompt Security, Repello, custom code and LLM judge guardrails
+description: >-
+  The Noma, Noma v2, Onyx, Ovalix, Pangea, Prompt Security, Repello, custom code and LLM judge classes were planned
+  before any chat route ran a guardrail, so they only have helper cases or Rust tests. This task adds the booted-proxy
+  HTTP cases that show each configured guardrail really runs on a chat request: B3780 and B3781 build Noma, B3782
+  Noma v2, B3783 Onyx, B3784 Ovalix, B3785 Pangea, B3791 and B3792 Prompt Security, B3793 and B3794 Repello, B3801 to
+  B3803 the custom code guardrail and B3809 the judge; B8521 registers the wire names, B8666 runs a held guardrail
+  through its class, B8613 installs the callbacks, B8399 runs the proxy hooks, B3683 starts the config guardrails, B004
+  serves the chat route and B9850 lets a case skip one captured request body. It writes no code and registers no
+  route, guardrail kind or class. A case that fails because a class answers differently from
+  LiteLLM goes back to that class's task as a finding and is never fixed here.
+
+
+  Cases go in tools/oracle/cases/guardrails/m-z-vendor-http. Use the booted-proxy case format with master key
+  oracle-master, one deployment `chat` on `openai/gpt-oracle` with api_base {{upstream}} and api_key oracle-key, and
+  router_settings.num_retries 0. Every vendor endpoint is the same mock, so the ordered upstream queue holds the
+  guardrail calls and the model call in the order the hooks make them. Configure each guardrail in the top-level
+  `guardrails:` list and select it with the request body's `guardrails` list. Compare status, content-type,
+  x-litellm-applied-guardrails where the class records it, and the error type, param and code. On an error ignore
+  /error/message only where it embeds the HTTP client's own error text, with that reason; keep every structured detail
+  field compared. Compare the upstream requests the mock captured, so a 200 cannot hide a skipped scan, and list the
+  vendor headers named below in upstream_headers. Ignore generated ids and timestamps in a 200 body with a reason, and
+  nothing else. Every case calls /v1/chat/completions.
+
+
+  Noma (guardrail noma, api_base {{upstream}}, api_key oracle-noma-key, so calls go to /ai-dr/v2/prompt/scan; list
+  authorization, content-type and x-noma-request-id). noma-block-request: mode pre_call and a verdict that flags the
+  prompt; the client gets 400 with {"error": "Request blocked by Noma guardrail", "details": the verdict} and the model
+  is never called. noma-allow: a clean verdict and the model answers. noma-monitor-mode: monitor_mode true and a
+  flagging verdict, so the model still answers. noma-block-response: mode post_call; the model answers and the verdict
+  flags the response. noma-failure-blocks: the scan answers 500 with block_failures at its default true.
+  noma-failure-open: block_failures false and a 500, so the model answers.
+
+
+  Noma v2 (guardrail noma_v2, api_base {{upstream}}, api_key oracle-noma-key, so calls go to /litellm/guardrail;
+  list authorization and content-type). Its scan body carries request_data (the whole chat request minus messages)
+  and litellm_logging_obj (the logging object's model_call_details), and both hold each gateway's own call state, so
+  every Noma v2 case names `/upstream/0/body` with that reason; the scan's path and headers and the model request
+  after it stay compared. noma-v2-block-request: mode pre_call and an answer with action BLOCKED; the client gets 400
+  with {"error": "Request blocked by Noma guardrail", "details": the answer} and the model is never called.
+  noma-v2-intervened: action GUARDRAIL_INTERVENED with texts ["oracle text, cleaned"], and the model receives that
+  text in place of the user message. noma-v2-failure-open: block_failures false and a 500, so the model answers.
+
+
+  Onyx (guardrail onyx, api_base {{upstream}}, api_key oracle-onyx-key, so calls go to
+  /guard/evaluate/v1/oracle-onyx-key/litellm with the key in the compared path; list content-type). Its request scan
+  sends proxy_server_request, which holds each gateway's own URL and Host header, and conversation_id, the call id, so
+  every Onyx case names `/upstream/0/body` with that reason. onyx-block-request: mode pre_call and the answer
+  {"allowed": false, "violated_rules": ["pii", "secrets"]}; the client gets 400 with "Request blocked by Onyx Guard.
+  Violations: pii, secrets." and the model is never called. onyx-allow: {"allowed": true} and the model answers.
+  onyx-error-open: the evaluation answers 500, apply_guardrail logs it and returns the inputs, so the model answers.
+
+
+  Ovalix (guardrail ovalix, tracker_api_base {{upstream}}, tracker_api_key oracle-ovalix-key, application_id
+  oracle-app, so calls go to /tracking/custom_application/checkpoint; list authorization and content-type).
+  ovalix-block-request: pre_checkpoint_id set and the checkpoint answers action_type block with modified_data.content;
+  the client gets 400 with that content as the message, unwrapped. ovalix-correct-request: action_type allow with
+  modified_data.content and the model receives the corrected text. ovalix-correct-response: post_checkpoint_id set and
+  the checkpoint rewrites the answer the client gets. ovalix-checkpoint-error: the checkpoint answers 500 and the client
+  gets "Ovalix guardrail error: ..."; ignore the text after the colon with the HTTP client reason.
+
+
+  Pangea (guardrail pangea, api_base {{upstream}}, api_key oracle-pangea-key, so calls go to /v1beta/guard; list
+  authorization and content-type). pangea-block-input: mode pre_call, pangea_input_recipe set, and the answer has
+  result.blocked true; the client gets 400 with {"error": "Violated Pangea guardrail policy", "guardrail_name": ...}.
+  pangea-transform-input: result.transformed true with output messages and the model receives them.
+  pangea-block-output: mode post_call and a blocked answer for the response scan. pangea-api-error: the guard answers
+  500 and the client gets 500 with "Error in Pangea Guardrail"; ignore only the exceptions field, with the HTTP client
+  reason.
+
+
+  Prompt Security (guardrail prompt_security, api_base {{upstream}}, api_key oracle-ps-key, so calls go to
+  /api/protect; list app-id and content-type). ps-block-prompt: mode pre_call and result.prompt.action block with two
+  violations; the client gets 400 "Blocked by Prompt Security, Violations: a, b". ps-modify-prompt: action modify with
+  modified_messages and the model receives them. ps-block-response: mode post_call and result.response.action block.
+  ps-allow: action log and the model answers. A key alias on the caller adds X-LiteLLM-Key-Alias; the cases use the
+  master key, which has none.
+
+
+  Repello (guardrail repelloai, api_base {{upstream}}, api_key oracle-repello-key and asset_id oracle-asset, so calls
+  go to /analyze/prompt and /analyze/response; list x-api-key and content-type). repello-prompt-blocked: verdict
+  blocked with policies_violated; the client gets 400 with the formatted policy list. repello-prompt-passed: verdict
+  passed and the model answers. repello-response-blocked: mode post_call and a blocked response verdict.
+  repello-misconfigured: the analyzer answers 401 and the client gets 500 with "RepelloAI Argus guardrail is
+  misconfigured". repello-unreachable: the analyzer answers 503 with unreachable_fallback at its default fail_closed and
+  the client gets 500 "RepelloAI Argus guardrail unreachable". repello-fail-open: unreachable_fallback fail_open and a
+  503, so the model answers.
+
+
+  Custom code (guardrail custom_code with litellm_params.custom_code holding a sync apply_guardrail that uses the
+  regex_match, block, allow and modify primitives; no vendor call). custom-code-block-request: mode pre_call and a text
+  that matches; LiteLLM raises its passthrough exception, so the client gets 200 with the reason as the assistant
+  message and the model is never called. custom-code-block-response: mode post_call; the model answers and the client
+  gets 400 with {"error": reason, "guardrail": name, "detection_info": ...}. custom-code-modify: the code returns
+  modify with new texts and the model receives them. custom-code-allow: no match and the model answers.
+
+
+  LLM judge (guardrail llm_as_a_judge, judge_model chat, one criterion with weight 100, overall_threshold 80; the judge
+  call is a chat completion to the same mock). judge-block-request: mode pre_call and the judge answers JSON with
+  overall_score 40; the client gets 422 with "LLM judge rejected request: score below threshold", the score, the
+  threshold and the verdicts, and the model is never called. judge-pass: score 90, then the model answers.
+  judge-log-only: on_failure log and score 40, so the model answers. judge-block-response: mode post_call; the model
+  answers, the judge scores 40 and the client gets 422. judge-fails-open: the judge call answers 500 and the model
+  answers. The captured judge request shows LiteLLM's system prompt, the criteria block, response_format json_object
+  and temperature 0.
+
+
+  no-auth: a Pangea guardrail with default_on true and no Authorization header; the 401 comes before any upstream
+  call.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/m-z-vendor-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L60-L71
+    why: Noma's 400 block detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L722-L756
+    why: The scan endpoint, the Bearer and X-Noma-Request-ID headers and the x-noma-context the mock captures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L550-L694
+    why: Noma's pre-call, moderation and post-call hooks with monitor_mode and block_failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma_v2.py#L142-L236
+    why: Noma v2's scan payload with request_data and litellm_logging_obj, the /litellm/guardrail endpoint and its headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma_v2.py#L257-L354
+    why: The BLOCKED, GUARDRAIL_INTERVENED and NONE actions and block_failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/__init__.py#L38-L67
+    why: initialize_guardrail_v2 and the noma_v2 wire name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L64-L141
+    why: Onyx's evaluate path with the key in it, the proxy_server_request payload, the 400 text and the fail-open on any other error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ovalix/ovalix.py#L169-L292
+    why: Ovalix's session id, checkpoint call, block and correction rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L103-L220
+    why: Pangea's guard call, the blocked and transformed answers and the 500 wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L174-L388
+    why: Prompt Security's protect calls for prompts and responses and its block and modify actions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L790-L795
+    why: The APP-ID and X-LiteLLM-Key-Alias headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L183-L300
+    why: Repello's analyze call, the misconfigured and unreachable answers and the block detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L369-L477
+    why: How the custom code result becomes a passthrough block, a 400, a flag or modified inputs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L293-L332
+    why: The passthrough exception that turns a pre-call block into a 200.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L234-L341
+    why: The judge call, its fail-open paths and the 422 detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L348-L386
+    why: The judge initializer and its config checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L273-L276
+    why: x-litellm-call-id sets the call id Noma sends.
+dod:
+  - text: Booted-proxy cases show Noma blocking a request and a response, allowing, monitoring and both block_failures settings.
+    proof: [oracle]
+  - text: Booted-proxy cases show Noma v2 blocking a request, replacing its text and failing open with block_failures false, with the scan's path and headers compared.
+    proof: [oracle]
+  - text: Booted-proxy cases show Onyx blocking a request with its violated rules, allowing, and failing open on an evaluation error, with the scan's path compared.
+    proof: [oracle]
+  - text: Booted-proxy cases show Ovalix blocking and correcting a request, correcting a response and failing on a checkpoint error.
+    proof: [oracle]
+  - text: Booted-proxy cases show Pangea blocking input and output, transforming input and wrapping an API error.
+    proof: [oracle]
+  - text: Booted-proxy cases show Prompt Security blocking and modifying a prompt, blocking a response and allowing.
+    proof: [oracle]
+  - text: Booted-proxy cases show Repello blocking a prompt and a response, passing, and its misconfigured, fail-closed and fail-open answers.
+    proof: [oracle]
+  - text: Booted-proxy cases show the custom code guardrail's passthrough block, response block, modify and allow results.
+    proof: [oracle]
+  - text: Booted-proxy cases show the LLM judge blocking a request and a response with 422, passing, logging only and failing open, and an unauthenticated request is refused before any scan.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-block-request.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-monitor-mode.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-block-response.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-failure-blocks.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-failure-open.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-v2-block-request.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-v2-intervened.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/noma-v2-failure-open.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/onyx-block-request.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/onyx-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/onyx-error-open.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ovalix-block-request.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ovalix-correct-request.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ovalix-correct-response.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ovalix-checkpoint-error.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/pangea-block-input.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/pangea-transform-input.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/pangea-block-output.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/pangea-api-error.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ps-block-prompt.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ps-modify-prompt.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ps-block-response.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/ps-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/repello-prompt-blocked.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/repello-prompt-passed.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/repello-response-blocked.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/repello-misconfigured.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/repello-unreachable.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/repello-fail-open.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/custom-code-block-request.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/custom-code-block-response.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/custom-code-modify.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/custom-code-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/judge-block-request.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/judge-pass.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/judge-log-only.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/judge-block-response.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/judge-fails-open.yaml
+  - tools/oracle/cases/guardrails/m-z-vendor-http/no-auth.yaml
+deviations: []
+out_of_scope:
+  - "The classes and their initializers: B3780 and B3781 (Noma), B3782 (Noma v2), B3783 (Onyx), B3784 (Ovalix), B3785 (Pangea), B3791 and B3792 (Prompt Security), B3793 and B3794 (Repello), B3801 to B3803 (custom code) and B3809 (judge). Registry arms: B8521. Running a held guardrail: B8666. Installing callbacks: B8613. Proxy hook dispatch: B8399. Config guardrail startup: B3683."
+  - "The `/upstream/{i}/body` selector the Onyx and Noma v2 cases use: B9850. The fields inside those scan bodies (Onyx's proxy_server_request, Noma v2's request_data and litellm_logging_obj) are left to B3783's and B3782's tests."
+  - "Prompt Security file and image sanitization (/api/sanitizeFile): B3791's helper cases cover it."
+  - "Streamed responses: Noma's buffered stream (B3781) and Repello's stream blocking (B3794) own that code; the streaming cases across guardrails are B8993's."
+  - "The decision_model, promptguard, qostodian_nexus, qualifire, singulr and zscaler_ai_guard cases: B108. The Presidio, Pillar, TypeSafe, XecGuard and Straiker cases: B9464."
+pitfalls:
+  - "Only the Onyx and Noma v2 cases skip a scan body; every other case compares each captured body whole. Noma puts litellm_call_id in x-noma-context.sessionId and in X-Noma-Request-ID, so send x-litellm-call-id oracle-call-1 on every Noma request (LiteLLM honors it in common_request_processing.py L273-L276)."
+  - "Onyx has no fail-closed setting: apply_guardrail re-raises only its own 400 HTTPException and returns the inputs unchanged on any other error, a 500 from the evaluation included."
+  - "Noma v2 is its own wire name, noma_v2; guardrail noma with use_v2 true reaches the same class, but the cases use noma_v2 so they never depend on the use_v2 string parsing in initialize_guardrail."
+  - "Ovalix's session_id holds the UTC date, so both sides of one case agree unless the run crosses midnight UTC; rerun such a failure rather than ignoring the field."
+  - "Ovalix answers with modified_data.content for both block and correction; an action_type block on the first text raises, on a later text it only replaces that text."
+  - "Prompt Security sends its key in an APP-ID header, not a Bearer token, and scans each response text with its own protect call."
+  - "Repello maps 400, 401, 403, 404 and 422 from the analyzer to 500 misconfigured, and only HTTP errors go through unreachable_fallback."
+  - "The custom code pre-call block is a 200 with the reason as the assistant message, not an error; only the post-call block is a 400."
+  - "The judge calls the router with judge_model, so the judge request and the model request land on the same mock in order; num_retries 0 keeps a judge 500 to one call."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,101 @@
+id: B9802
+title: Proxy custom response headers
+description: >-
+  Every LLM route in LiteLLM answers with the headers ProxyBaseLLMRequestProcessing.get_custom_headers builds (litellm/proxy/common_request_processing.py L1728-L1854): the call id, the deployment, the cost and its breakdown, the key's limits and spend, the timings, the remaining-limit headers and the guardrail headers. On main only the chat route sends some of them, from its own fixed list in routes/chat/headers.rs, and several planned tasks point at "B004's get_custom_headers", but B004 never built it. This task builds it once as a pure function so B081's /v1/messages pipeline, and later the other routes, call the same code. Everything goes in crates/betterlite-server, module `custom_headers` (crates/betterlite-server/src/custom_headers.rs and custom_headers/: input.rs, cost.rs, tests.rs), plus one config section. Every name stays at 30 characters or fewer.
+
+
+  Config. Section `detailed_timing` (crates/betterlite-config/src/sections/detailed_timing.rs and detailed_timing/tests.rs) reads the environment variable LITELLM_DETAILED_TIMING through the section's EnvironmentLookup, the way sections/aiohttp_transport_toggle.rs reads its variable. Its value is `DetailedTiming { enabled: bool }`: true only when the value lowercased equals "true" (LiteLLM's constants.py L124), false when unset or anything else. No config.yaml key feeds it. The skeleton creates the section stub and declares it in sections.rs, so fill only the section's own files.
+
+
+  Input (input.rs). `KeyHeaderView { tpm_limit: Option<i64>, rpm_limit: Option<i64>, max_budget: Option<f64>, spend: Option<f64>, allowed_model_region: Option<String> }` with `from_key(key: &UserAPIKeyAuth) -> Result<Self, CustomHeadersError>` reads those five fields from the key's serde form (betterlite-auth's UserAPIKeyAuth in crates/betterlite-auth/src/resolved_key/auth.rs derives Serialize and keeps its fields crate-private). `LoggingHeaderView { cost_breakdown: Option<Map<String, Value>>, call_type: String, litellm_params: Option<Map<String, Value>>, response_timing_metrics: Option<Map<String, Value>> }` is what the headers read off LiteLLM's logging object. `CustomHeadersInput` holds, with LiteLLM's parameter names: `key: KeyHeaderView`, `call_id`, `model_id`, `cache_key`, `api_base`, `version` and `model_region` as `Option<String>`, `response_cost: Option<Value>` (a JSON number or string, None when the caller passes none), `hidden_params: Map<String, Value>`, `fastest_response_batch_completion: Option<bool>`, `request_data: Map<String, Value>`, `timeout: Option<f64>`, `logging: Option<LoggingHeaderView>`, `read_timing_from_logging: bool` (LiteLLM's default true) and `extra: Vec<(String, Value)>` for LiteLLM's **kwargs (the hidden params' additional_headers), in order.
+
+
+  `custom_headers(input: &CustomHeadersInput, timing: DetailedTiming) -> HeaderMap` follows get_custom_headers:
+  1. The call id is input.call_id, else hidden_params `litellm_call_id`, else request_data `litellm_call_id`, the first one that is set and not empty.
+  2. Timing values (_timing_values, L1673-L1686): the hidden params when their `_response_ms` is present and not null, when read_timing_from_logging is false or when there is no logging view; otherwise the logging view's response_timing_metrics, or an empty map.
+  3. Cost breakdown (cost.rs, L1459-L1546): without a logging view, all ten parts are absent. When cost_breakdown is None or empty, all parts are absent, except that a call_type in LiteLLM's NON_INFERENCE_CALL_TYPES (constants.py L2121-L2154, the 30 get, delete, cancel, list input items and vector store names) with a response cost that totals zero (None, "", or a value float() reads as 0.0) gets original_cost, discount_amount, margin_total_amount, margin_percent, input_cost, output_cost and tool_usage_cost as 0.0 and the other three absent. Otherwise each part is the breakdown's key of the same name, except input_cost: that one is input_cost minus cache_read_cost minus cache_creation_cost (each missing one counted as 0.0) when input_cost is present.
+  4. Updated spend: the key's spend, 0.0 when None; when response_cost is set and reads as a float above 0 (a string through Python float(), a failure keeps the spend), add it.
+  5. Deployment model name (_get_deployment_model_name, L2402-L2421): the first truthy `deployment` in the logging view's litellm_params under `litellm_metadata`, then `metadata`.
+  6. Classifier cost (_classifier_cost_from_request_data, L1548-L1569): for `litellm_metadata`, then `metadata`, when it is an object whose `routing_decision` is an object, the first non-None `classifier_cost` read with betterlite-models' numeric_savings (crates/betterlite-models/src/savings_evidence/numeric.rs, LiteLLM's classifier_cost_from_decision).
+  7. The headers, in this order, each a Python str() of its value: x-litellm-call-id, x-litellm-model-id, x-litellm-model-name, x-litellm-cache-key, x-litellm-model-api-base (api_base cut at its first "?", None when api_base is empty), x-litellm-version, x-litellm-model-region, x-litellm-response-cost, x-litellm-response-cost-original, -discount-amount, -margin-amount, -margin-percent, -input, -output, -cache-read, -cache-creation, -reasoning and -tool-usage (each None when its part is absent), x-litellm-classifier-cost, x-litellm-key-tpm-limit, x-litellm-key-rpm-limit, x-litellm-key-max-budget, x-litellm-key-spend, x-litellm-response-duration-ms (timing `_response_ms`), x-litellm-overhead-duration-ms (timing `litellm_overhead_time_ms`), x-litellm-callback-duration-ms (hidden `callback_duration_ms`), then only when timing.enabled x-litellm-timing-pre-processing-ms, -llm-api-ms, -post-processing-ms and -message-copy-ms from the hidden params' timing_pre_processing_ms, timing_llm_api_ms, timing_post_processing_ms and timing_message_copy_ms, then x-litellm-fastest_response_batch_completion, x-litellm-timeout, then every `extra` pair, replacing an earlier header of the same name.
+  8. When request_data is not empty, add the remaining-limit headers (get_remaining_tokens_and_requests_from_request_data, callback_utils.py L429-L464): the model group is request_data `metadata.model_group`; when `metadata` holds a truthy `litellm-key-remaining-requests-{model_group}` it becomes `x-litellm-key-remaining-requests-{group}`, and the same for `litellm-key-remaining-tokens-{model_group}`, where {group} is the model group with "/" and ":" replaced by "-" (and the text "None" in both places when there is no model group). Then add B8994's logging_caching_headers over the request data (betterlite-guardrails' guardrail_metadata module; read its public API there), when it gives any. Both replace earlier headers of the same name.
+  9. Leave out every header whose value is null, the empty string or the string "None", the way LiteLLM's exclude_values does before it calls str(), and turn the rest into header values.
+  Python's str() follows docs/compatibility.md: a float as Python's repr (6000.0, 1e-05), an int as digits, a bool as True or False, a JSON string as its text. A name or value axum cannot carry is left out with a warning naming the header (see deviations).
+
+
+  Tests in custom_headers/tests.rs (`custom_headers::tests`) are rstest cases: each call id source, both timing sources, the breakdown absent, empty, zero for a non-inference call type and read from the logging view with the uncached input cost, the spend with a number, a string, a bad string and a negative cost, the deployment name from either bucket, the classifier cost from either bucket, api_base with a query, the detailed timing headers on and off, an extra pair replacing a fixed header, the remaining-limit headers with a group holding "/" and ":", a guardrail header, and the excluded values. Helper oracle cases compare custom_headers with LiteLLM through the operation named b9802, with detailed timing off: the Python side builds a UserAPIKeyAuth from the given key fields and a plain object with the given cost_breakdown, call_type, litellm_params and response_timing_metrics attributes, calls ProxyBaseLLMRequestProcessing.get_custom_headers with the given arguments and returns the header map.
+scope:
+  paths:
+  - crates/betterlite-server/src/custom_headers.rs
+  - crates/betterlite-server/src/custom_headers/**
+  - crates/betterlite-config/src/sections/detailed_timing.rs
+  - crates/betterlite-config/src/sections/detailed_timing/**
+  - tools/oracle/cases/helpers/custom-headers/**
+  - tools/oracle/helpers/b9802.py
+  - tools/oracle/helpers/b9802/**
+  - tools/oracle/src/helpers/server/b9802.rs
+  - tools/oracle/src/helpers/server/b9802/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1728-L1854
+  why: get_custom_headers, its header names, the exclude values, the spend update and the order kwargs and the later helpers override in.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1459-L1569
+  why: The cost breakdown values, the uncached input cost, the zero split for non-inference calls and the classifier cost lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1673-L1686
+  why: _timing_values and when the logging object's timing replaces the hidden params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2402-L2421
+  why: _get_deployment_model_name reads `deployment` from litellm_metadata, then metadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L429-L464
+  why: The model group lookup and the remaining requests and tokens headers with the "/" and ":" replacement.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L124
+  why: LITELLM_DETAILED_TIMING, read once from the environment.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2119-L2154
+  why: NON_INFERENCE_CALL_TYPES.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L492-L503
+  why: classifier_cost_from_decision; numeric_savings already ports it.
+dod:
+- text: custom_headers gives the same header map as LiteLLM's get_custom_headers for the call id, deployment, cost, breakdown, key, timing, extra and excluded values.
+  proof: [custom-headers-tests, oracle, helper-python]
+- text: >-
+    The cost breakdown is absent without a logging view, zero for a non-inference call priced at zero, and read with the uncached input cost otherwise,
+    and the key spend adds only a positive response cost.
+  proof: [custom-headers-tests]
+- text: The remaining-limit headers use the h11-safe group name, and the guardrail headers from logging_caching_headers are added when the request data is not empty.
+  proof: [custom-headers-tests]
+- text: LITELLM_DETAILED_TIMING turns the four timing headers on only for the value true in any case.
+  proof: [config-tests, custom-headers-tests]
+checks:
+  optional: [mutants]
+  commands:
+  - id: custom-headers-tests
+    why: a header is missing, misnamed, wrongly formatted, or not excluded or replaced the way LiteLLM does
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^custom_headers::/)'
+  - id: config-tests
+    why: LITELLM_DETAILED_TIMING does not load with LiteLLM's lowercase check and default
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::detailed_timing::/)'
+  - id: helper-python
+    why: the header builder has no pinned LiteLLM comparison through the b9802 helper
+    run: grep -qE '^[[:space:]]+b9802:' tools/oracle/fuzz/corpus/helper_case/b9802-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/custom-headers/deployment-and-key.yaml
+- tools/oracle/cases/helpers/custom-headers/cost-breakdown.yaml
+- tools/oracle/cases/helpers/custom-headers/remaining-limits.yaml
+deviations:
+- what: A header whose name or value cannot be sent (a control character in an extra header, say) is left out with a warning, where LiteLLM keeps it in the map and the server fails when it writes the response.
+  why: axum's HeaderMap cannot hold such a header, and dropping one header keeps the response that LiteLLM loses.
+out_of_scope:
+- "build_litellm_proxy_success_headers_from_llm_response (L1857-L1911) and _merge_passthrough_streaming_headers (L1698-L1725): the pass-through routes, B8694 and B8693."
+- "get_logging_caching_headers and _serialize_scan_metadata_header: B8994, called here."
+- "Which values each route passes (response cost, hidden params, version, model region): the route tasks; B081 for /v1/messages. post_call_response_headers_hook: B8399."
+- "The chat route's own header list in routes/chat/headers.rs stays as it is; moving chat onto this builder is not part of this task."
+pitfalls:
+- 'Values are excluded before str(), so a key limit of None ("None") goes, but a response cost of 0 stays as "0" and False stays as "False".'
+- 'The cost breakdown header names drop "_cost" and "total": margin_total_amount is x-litellm-response-cost-margin-amount and input_cost is x-litellm-response-cost-input.'
+- 'x-litellm-fastest_response_batch_completion keeps its underscores.'
+- 'The remaining-limit lookup keys keep the raw model group ("litellm-key-remaining-requests-a/b") while the header names use the replaced one.'
+- 'The zero breakdown leaves cache-read, cache-creation and reasoning absent.'
+- 'LITELLM_DETAILED_TIMING compares the lowercased value with "true", so "1" and "yes" leave it off.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
