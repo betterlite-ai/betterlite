@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::iter::repeat_n;
+
 use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
@@ -58,6 +60,38 @@ fn nested_arrays(depth: usize) -> JsonValue {
         value = array(vec![value]);
     }
     value
+}
+
+const LONG_ROOT_BYTES: usize = 1000;
+const LONG_ROOT_CHILDREN: usize = 9900;
+
+fn long_root_name() -> String {
+    "r".repeat(LONG_ROOT_BYTES)
+}
+
+fn numbered_children(count: usize, value_len: usize) -> JsonValue {
+    let mut fields = IndexMap::new();
+    for index in 0..count {
+        fields.insert(format!("{index:07}"), text_of_size(value_len));
+    }
+    JsonValue::Object(fields)
+}
+
+fn repeated_values(count: usize, value_len: usize) -> JsonValue {
+    JsonValue::Array(repeat_n(text_of_size(value_len), count).collect())
+}
+
+fn long_root_source(children: JsonValue) -> JsonValue {
+    let mut fields = IndexMap::new();
+    fields.insert(long_root_name(), children);
+    JsonValue::Object(fields)
+}
+
+fn repeated_value_source(extra: usize) -> JsonValue {
+    let mut sizes = vec![999_999_usize; 10];
+    sizes.push(extra);
+    let values = JsonValue::Array(sizes.iter().map(|size| text_of_size(*size)).collect());
+    object(vec![("k", values)])
 }
 
 fn flatten_source(sources: &[JsonValue], max_depth: usize) -> Vec<FormField> {
@@ -143,6 +177,34 @@ fn varied_scalars() -> JsonValue {
     },
     Expected::Error(FormFieldError::TooLarge { limit: MAX_FORM_FIELD_BYTES })
 )]
+#[case::form_names_at_the_byte_limit_are_allowed(
+    Action::Flatten {
+        sources: vec![long_root_source(numbered_children(LONG_ROOT_CHILDREN, 1))],
+        max_depth: 100,
+    },
+    Expected::Accepted
+)]
+#[case::form_names_past_the_byte_limit_fail(
+    Action::Flatten {
+        sources: vec![long_root_source(numbered_children(LONG_ROOT_CHILDREN + 1, 1))],
+        max_depth: 100,
+    },
+    Expected::Error(FormFieldError::TooLarge { limit: MAX_FORM_FIELD_BYTES })
+)]
+#[case::repeated_values_at_the_byte_limit_are_allowed(
+    Action::Flatten {
+        sources: vec![repeated_value_source(9)],
+        max_depth: 100,
+    },
+    Expected::Accepted
+)]
+#[case::repeated_values_past_the_byte_limit_fail(
+    Action::Flatten {
+        sources: vec![repeated_value_source(1_000_000)],
+        max_depth: 100,
+    },
+    Expected::Error(FormFieldError::TooLarge { limit: MAX_FORM_FIELD_BYTES })
+)]
 #[case::a_source_that_is_not_an_object_fails(
     Action::Flatten { sources: vec![array(vec![])], max_depth: 100 },
     Expected::Error(FormFieldError::NotAnObject)
@@ -170,6 +232,20 @@ fn varied_scalars() -> JsonValue {
 #[case::multipart_past_the_byte_limit_fails(
     Action::Serialize {
         data: object(vec![("k", text_of_size(MAX_FORM_FIELD_BYTES))]),
+        max_depth: 100,
+    },
+    Expected::Error(FormFieldError::TooLarge { limit: MAX_FORM_FIELD_BYTES })
+)]
+#[case::multipart_names_at_the_byte_limit_are_allowed(
+    Action::Serialize {
+        data: long_root_source(repeated_values(LONG_ROOT_CHILDREN, 8)),
+        max_depth: 100,
+    },
+    Expected::Accepted
+)]
+#[case::multipart_names_past_the_byte_limit_fail(
+    Action::Serialize {
+        data: long_root_source(repeated_values(LONG_ROOT_CHILDREN + 1, 8)),
         max_depth: 100,
     },
     Expected::Error(FormFieldError::TooLarge { limit: MAX_FORM_FIELD_BYTES })
