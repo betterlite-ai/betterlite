@@ -9,3 +9,6 @@ deviations:
   - what: A boolean overall_score and Python-only float text such as digit underscores fail open as not a number, where Python float() accepts them.
     why: A boolean is not a declared score type, Rust has no parser for Python float literals, and no judge reply relies on either.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L269-L341
+  - what: Criterion weights below 1e-4 or at least 1e16 render in the judge prompt with Rust's full-decimal Display, where Python's f-string uses scientific notation.
+    why: A valid config only carries such a weight next to one that completes the 100 sum, so no working setup relies on that prompt text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/llm_as_a_judge/__init__.py#L164-L166
