@@ -3,6 +3,7 @@ use betterlite_azure::azure_default_chain::provider::{
     AzureTokenProvider, ProviderInner, ProviderRequest, get_azure_ad_token_provider,
     try_default_credential,
 };
+use betterlite_config::sections::azure_default_chain::AzureCredentialType;
 use serde_json::{Value, json};
 
 use super::fixture::{Recorder, capture};
@@ -27,6 +28,7 @@ fn warning_log(logs: &[String]) -> Option<String> {
 }
 
 fn error_value(error: &DefaultChainError) -> Value {
+    let (variable, missing) = error.detail();
     let message = match error {
         DefaultChainError::MissingEnvironment { .. }
         | DefaultChainError::UnsupportedFilter { .. }
@@ -38,9 +40,9 @@ fn error_value(error: &DefaultChainError) -> Value {
     };
     json!({
         "category": error.category(),
-        "variable": error.missing_variable(),
+        "variable": variable,
         "message": message,
-        "missing": error.missing_arguments().map(<[&'static str]>::to_vec).unwrap_or_default(),
+        "missing": missing.map(<[&'static str]>::to_vec).unwrap_or_default(),
     })
 }
 
@@ -57,30 +59,50 @@ pub(super) fn infer_steps(steps: &[InferStep]) -> Value {
     json!({ "steps": results })
 }
 
+fn run_provider<'env, 'grants>(
+    environment: &'env ChainEnvironment,
+    recorder: &'grants Recorder,
+    scope: Option<&'env str>,
+    credential: Option<AzureCredentialType>,
+) -> (
+    Result<AzureTokenProvider<'grants, Recorder>, DefaultChainError>,
+    Vec<String>,
+) {
+    capture(|| {
+        get_azure_ad_token_provider(&ProviderRequest {
+            scope,
+            credential,
+            environment,
+            grants: recorder,
+        })
+    })
+}
+
+fn provider_report(
+    provider: &AzureTokenProvider<'_, Recorder>,
+    recorder: &Recorder,
+    log: Option<String>,
+) -> Value {
+    json!({
+        "kind": "credential",
+        "chosen": provider.credential.as_str(),
+        "scope": provider.scope,
+        "constructed": recorder.records(),
+        "warnings": provider.warnings,
+        "log": log,
+    })
+}
+
 pub(super) fn provider_value(
     step: &ProviderStep,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let environment = environment_of(&step.environment)?;
     let recorder = Recorder::new(&[], &step.construct_errors);
     let credential = requested(step.credential.as_deref())?;
-    let (result, logs) = capture(|| {
-        get_azure_ad_token_provider(&ProviderRequest {
-            scope: step.scope.as_deref(),
-            credential,
-            environment: &environment,
-            grants: &recorder,
-        })
-    });
+    let (result, logs) = run_provider(&environment, &recorder, step.scope.as_deref(), credential);
     let log = selection_log(&logs);
     Ok(match result {
-        Ok(provider) => json!({
-            "kind": "credential",
-            "chosen": provider.credential.as_str(),
-            "scope": provider.scope,
-            "constructed": recorder.records(),
-            "warnings": provider.warnings,
-            "log": log,
-        }),
+        Ok(provider) => provider_report(&provider, &recorder, log),
         Err(error) => json!({
             "kind": "error",
             "error": error_value(&error),
@@ -94,23 +116,26 @@ pub(super) fn chain_value(step: &ChainStep) -> Result<Value, Box<crate::helpers:
     let environment = environment_of(&step.environment)?;
     let recorder = Recorder::new(&step.scripts, &step.construct_errors);
     let credential = requested(step.credential.as_deref())?;
-    let (result, logs) = capture(|| {
-        get_azure_ad_token_provider(&ProviderRequest {
-            scope: step.scope.as_deref(),
-            credential,
-            environment: &environment,
-            grants: &recorder,
-        })
-    });
-    let log = selection_log(&logs);
+    let outcome = run_provider(&environment, &recorder, step.scope.as_deref(), credential);
+    Ok(chain_outcome(&recorder, outcome))
+}
+
+fn chain_outcome(
+    recorder: &Recorder,
+    outcome: (
+        Result<AzureTokenProvider<'_, Recorder>, DefaultChainError>,
+        Vec<String>,
+    ),
+) -> Value {
+    let (result, logs) = outcome;
     match result {
-        Err(error) => Ok(json!({
+        Ok(provider) => chain_result(&provider, recorder, &logs, selection_log(&logs).as_deref()),
+        Err(error) => json!({
             "kind": "error",
             "error": error_value(&error),
             "constructed": recorder.records(),
-            "log": log,
-        })),
-        Ok(provider) => Ok(chain_result(&provider, &recorder, &logs, log.as_deref())),
+            "log": selection_log(&logs),
+        }),
     }
 }
 

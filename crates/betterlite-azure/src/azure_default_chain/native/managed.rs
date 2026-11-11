@@ -2,10 +2,11 @@ use crate::azure_arc_identity::ArcHost;
 use crate::azure_managed_identity::environment::ManagedIdentityEnvironment;
 use crate::azure_managed_identity::error::ManagedIdentityError;
 use crate::azure_managed_identity::imds::ProbePolicy;
-use crate::azure_managed_identity::runtime::ManagedIdentityIo;
+use crate::azure_managed_identity::runtime::{ManagedIdentityIo, WorkloadIo};
 use crate::azure_managed_identity::{ManagedIdentityCredential, ManagedIdentityToken};
 
-use super::super::grant::{ChainPlacement, ChainToken, Grant, LinkError};
+use super::super::grant::{ChainPlacement, ChainToken, Grant, LinkError, ManagedIdentityRecord};
+use super::NativeGrants;
 
 pub struct ManagedIdentityGrant<'io, H: ArcHost> {
     pub environment: &'io ManagedIdentityEnvironment,
@@ -16,6 +17,35 @@ pub struct ManagedIdentityGrant<'io, H: ArcHost> {
     pub imds_probe: Option<bool>,
     pub placement: ChainPlacement,
     pub scope: String,
+}
+
+impl<H: ArcHost> ManagedIdentityGrant<'_, H> {
+    pub fn from_record<'grants, 'io>(
+        record: &ManagedIdentityRecord,
+        source: &'grants NativeGrants<'io, H>,
+    ) -> ManagedIdentityGrant<'grants, H>
+    where
+        'io: 'grants,
+    {
+        ManagedIdentityGrant {
+            environment: source.managed_environment,
+            host: source.host,
+            io: ManagedIdentityIo {
+                imds: source.imds,
+                hosted: source.hosted,
+                arc: source.arc,
+                workload: WorkloadIo {
+                    exchange: source.exchange,
+                    files: source.token_files,
+                },
+            },
+            client_id: record.client_id.clone(),
+            exclude_workload_identity: record.exclude_workload_identity,
+            imds_probe: record.imds_probe,
+            placement: record.placement,
+            scope: record.scope.clone(),
+        }
+    }
 }
 
 impl<H: ArcHost> Grant for ManagedIdentityGrant<'_, H> {

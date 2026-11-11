@@ -72,29 +72,17 @@ impl DefaultChainError {
         }
     }
 
+    // the variable name and the argument list each belong to exactly one variant, so one match carries both
     #[must_use]
-    pub const fn missing_variable(&self) -> Option<&'static str> {
+    pub fn detail(&self) -> (Option<&'static str>, Option<&[&'static str]>) {
         match self {
-            Self::MissingEnvironment { variable } => Some(*variable),
+            Self::MissingEnvironment { variable } => (Some(*variable), None),
+            Self::MissingArguments { arguments, .. } => (None, Some(arguments)),
             Self::InvalidFilter { .. }
             | Self::UnsupportedFilter { .. }
             | Self::Construction { .. }
             | Self::Credential { .. }
-            | Self::Exhausted { .. }
-            | Self::MissingArguments { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn missing_arguments(&self) -> Option<&[&'static str]> {
-        match self {
-            Self::MissingArguments { arguments, .. } => Some(arguments),
-            Self::MissingEnvironment { .. }
-            | Self::InvalidFilter { .. }
-            | Self::UnsupportedFilter { .. }
-            | Self::Construction { .. }
-            | Self::Credential { .. }
-            | Self::Exhausted { .. } => None,
+            | Self::Exhausted { .. } => (None, None),
         }
     }
 }

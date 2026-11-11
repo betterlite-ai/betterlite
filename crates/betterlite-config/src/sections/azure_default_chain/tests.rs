@@ -231,10 +231,12 @@ fn rejects_developer_credential_filters(#[case] filter: &str) {
     }
     .load("")
     .unwrap_err();
-    let ConfigError::InvalidScalar { path, .. } = &error else {
-        panic!("the developer filter {filter} loaded");
-    };
-    assert!(path.contains("AZURE_TOKEN_CREDENTIALS"));
+    match &error {
+        ConfigError::InvalidScalar { path, .. } => {
+            assert!(path.contains("AZURE_TOKEN_CREDENTIALS"));
+        }
+        other => panic!("the developer filter {filter} loaded as {other:?}"),
+    }
 }
 
 #[rstest]

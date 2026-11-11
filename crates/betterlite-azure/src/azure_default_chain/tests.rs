@@ -52,6 +52,61 @@ pub(super) struct Recorded {
     pub(super) within_default_credential: Option<bool>,
 }
 
+impl Recorded {
+    fn blank(credential: &'static str) -> Self {
+        Self {
+            credential: credential.to_owned(),
+            client_id: None,
+            tenant_id: None,
+            client_secret: None,
+            username: None,
+            password: None,
+            certificate_path: None,
+            send_certificate_chain: None,
+            token_file: None,
+            exclude_workload_identity: None,
+            imds_probe: None,
+            within_credential_chain: None,
+            within_default_credential: None,
+        }
+    }
+
+    fn secret(record: &ClientSecretRecord) -> Self {
+        let mut recorded = Recorded::blank("ClientSecretCredential");
+        recorded.client_id = Some(record.client_id.clone());
+        recorded.tenant_id = Some(record.tenant_id.clone());
+        recorded.client_secret = Some(exposed(&record.client_secret));
+        recorded
+    }
+
+    fn certificate(record: &CertificateRecord) -> Self {
+        Recorded {
+            client_id: Some(record.client_id.clone()),
+            tenant_id: Some(record.tenant_id.clone()),
+            certificate_path: Some(record.certificate_path.clone()),
+            password: record.password.as_ref().map(exposed),
+            send_certificate_chain: Some(record.send_certificate_chain),
+            ..Recorded::blank("CertificateCredential")
+        }
+    }
+
+    fn with_user_password(mut self, record: &UsernamePasswordRecord) -> Self {
+        self.client_id = Some(record.client_id.clone());
+        self.tenant_id = record.tenant_id.clone();
+        self.username = Some(record.username.clone());
+        self.password = Some(exposed(&record.password));
+        self
+    }
+
+    fn workload(record: &WorkloadRecord) -> Self {
+        let mut recorded = Recorded::blank("WorkloadIdentityCredential");
+        recorded.client_id = Some(record.client_id.clone());
+        recorded.tenant_id = Some(record.tenant_id.clone());
+        recorded.token_file = Some(record.token_file.clone());
+        recorded
+    }
+}
+
 pub(super) struct FixtureGrants {
     records: Mutex<Vec<Recorded>>,
     calls: Mutex<Vec<String>>,
@@ -162,21 +217,7 @@ impl Grants for FixtureGrants {
         &'grants self,
         record: &ClientSecretRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        self.record(Recorded {
-            credential: "ClientSecretCredential".to_owned(),
-            client_id: Some(record.client_id.clone()),
-            tenant_id: Some(record.tenant_id.clone()),
-            client_secret: Some(exposed(&record.client_secret)),
-            username: None,
-            password: None,
-            certificate_path: None,
-            send_certificate_chain: None,
-            token_file: None,
-            exclude_workload_identity: None,
-            imds_probe: None,
-            within_credential_chain: None,
-            within_default_credential: None,
-        })?;
+        self.record(Recorded::secret(record))?;
         Ok(ScriptedGrant {
             grants: self,
             credential: "ClientSecretCredential".to_owned(),
@@ -187,21 +228,7 @@ impl Grants for FixtureGrants {
         &'grants self,
         record: &CertificateRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        self.record(Recorded {
-            credential: "CertificateCredential".to_owned(),
-            client_id: Some(record.client_id.clone()),
-            tenant_id: Some(record.tenant_id.clone()),
-            password: record.password.as_ref().map(exposed),
-            certificate_path: Some(record.certificate_path.clone()),
-            send_certificate_chain: Some(record.send_certificate_chain),
-            client_secret: None,
-            username: None,
-            token_file: None,
-            exclude_workload_identity: None,
-            imds_probe: None,
-            within_credential_chain: None,
-            within_default_credential: None,
-        })?;
+        self.record(Recorded::certificate(record))?;
         Ok(ScriptedGrant {
             grants: self,
             credential: "CertificateCredential".to_owned(),
@@ -212,21 +239,7 @@ impl Grants for FixtureGrants {
         &'grants self,
         record: &UsernamePasswordRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        self.record(Recorded {
-            credential: "UsernamePasswordCredential".to_owned(),
-            client_id: Some(record.client_id.clone()),
-            tenant_id: record.tenant_id.clone(),
-            username: Some(record.username.clone()),
-            password: Some(exposed(&record.password)),
-            client_secret: None,
-            certificate_path: None,
-            send_certificate_chain: None,
-            token_file: None,
-            exclude_workload_identity: None,
-            imds_probe: None,
-            within_credential_chain: None,
-            within_default_credential: None,
-        })?;
+        self.record(Recorded::blank("UsernamePasswordCredential").with_user_password(record))?;
         Ok(ScriptedGrant {
             grants: self,
             credential: "UsernamePasswordCredential".to_owned(),
@@ -237,21 +250,7 @@ impl Grants for FixtureGrants {
         &'grants self,
         record: &WorkloadRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        self.record(Recorded {
-            credential: "WorkloadIdentityCredential".to_owned(),
-            client_id: Some(record.client_id.clone()),
-            tenant_id: Some(record.tenant_id.clone()),
-            token_file: Some(record.token_file.clone()),
-            client_secret: None,
-            username: None,
-            password: None,
-            certificate_path: None,
-            send_certificate_chain: None,
-            exclude_workload_identity: None,
-            imds_probe: None,
-            within_credential_chain: None,
-            within_default_credential: None,
-        })?;
+        self.record(Recorded::workload(record))?;
         Ok(ScriptedGrant {
             grants: self,
             credential: "WorkloadIdentityCredential".to_owned(),

@@ -85,20 +85,23 @@ fn environment_credential_used() {
 
 fn empty_environment_credential_falls_through() {
     let grants = FixtureGrants::new();
-    let env = environment(&[
-        ("AZURE_CREDENTIAL", ""),
-        ("AZURE_CLIENT_ID", "inferred-client"),
-        ("AZURE_CLIENT_SECRET", "inferred-secret"),
-        ("AZURE_TENANT_ID", "inferred-tenant"),
-    ]);
-    let token_provider = provider(None, None, &env, &grants).unwrap();
+    let token_provider = provider(
+        None,
+        None,
+        &environment(&[
+            ("AZURE_CREDENTIAL", ""),
+            ("AZURE_CLIENT_ID", "inferred-client"),
+            ("AZURE_CLIENT_SECRET", "inferred-secret"),
+            ("AZURE_TENANT_ID", "inferred-tenant"),
+        ]),
+        &grants,
+    )
+    .unwrap();
+    let record = &grants.records()[0];
+    assert_eq!(record.client_secret.as_deref(), Some("inferred-secret"));
     assert_eq!(
         token_provider.credential,
         AzureCredentialType::ClientSecretCredential
-    );
-    assert_eq!(
-        grants.records()[0].client_secret.as_deref(),
-        Some("inferred-secret")
     );
 }
 
@@ -238,7 +241,7 @@ fn missing_arguments_fail_before_construction() {
     ]);
     let error = provider(None, None, &env, &grants).unwrap_err();
     assert_eq!(error.category(), "missing_environment");
-    assert_eq!(error.missing_variable(), Some("AZURE_CLIENT_ID"));
+    assert_eq!(error.detail().0, Some("AZURE_CLIENT_ID"));
     assert!(grants.records().is_empty());
 }
 
@@ -477,7 +480,8 @@ fn missing_secret_and_tenant() {
     assert_eq!(
         provider(None, None, &missing_secret, &grants)
             .unwrap_err()
-            .missing_variable(),
+            .detail()
+            .0,
         Some("AZURE_CLIENT_SECRET")
     );
     let missing_tenant = environment(&[
@@ -488,14 +492,16 @@ fn missing_secret_and_tenant() {
     assert_eq!(
         provider(None, None, &missing_tenant, &grants)
             .unwrap_err()
-            .missing_variable(),
+            .detail()
+            .0,
         Some("AZURE_TENANT_ID")
     );
     let missing_client = environment(&[("AZURE_CREDENTIAL", CLIENT_SECRET)]);
     assert_eq!(
         provider(None, None, &missing_client, &grants)
             .unwrap_err()
-            .missing_variable(),
+            .detail()
+            .0,
         Some("AZURE_CLIENT_ID")
     );
 }
@@ -515,7 +521,8 @@ fn managed_identity_arguments() {
     assert_eq!(
         provider(None, None, &missing, &grants)
             .unwrap_err()
-            .missing_variable(),
+            .detail()
+            .0,
         Some("AZURE_CLIENT_ID")
     );
 }
@@ -570,9 +577,7 @@ fn missing_certificate_path() {
         ("AZURE_TENANT_ID", "cert-tenant"),
     ]);
     assert_eq!(
-        provider(None, None, &env, &grants)
-            .unwrap_err()
-            .missing_variable(),
+        provider(None, None, &env, &grants).unwrap_err().detail().0,
         Some("AZURE_CERTIFICATE_PATH")
     );
 }
@@ -907,7 +912,7 @@ fn username_password_without_arguments() {
     let error = provider(None, None, &env, &grants).unwrap_err();
     assert_eq!(error.category(), "type_error");
     assert_eq!(
-        error.missing_arguments(),
+        error.detail().1,
         Some(["client_id", "username", "password"].as_slice())
     );
     assert!(grants.records().is_empty());

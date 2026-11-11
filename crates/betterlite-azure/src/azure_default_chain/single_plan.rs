@@ -8,129 +8,12 @@ use super::grant::{
 };
 use super::plan::{construction, missing_workload_arguments, workload_record};
 
-fn single_client_secret<'grants, F>(
-    environment: &ChainEnvironment,
-    grants: &'grants F,
-    scope: &str,
-) -> Result<F::Grant<'grants>, DefaultChainError>
-where
-    F: Grants + 'grants,
-{
-    let record = ClientSecretRecord {
-        client_id: environment
-            .client_id
-            .as_deref()
-            .ok_or(DefaultChainError::MissingEnvironment {
-                variable: "AZURE_CLIENT_ID",
-            })?
-            .to_owned(),
-        client_secret: environment.client_secret.clone().ok_or(
-            DefaultChainError::MissingEnvironment {
-                variable: "AZURE_CLIENT_SECRET",
-            },
-        )?,
-        tenant_id: environment
-            .tenant_id
-            .as_deref()
-            .ok_or(DefaultChainError::MissingEnvironment {
-                variable: "AZURE_TENANT_ID",
-            })?
-            .to_owned(),
-        scope: scope.to_owned(),
-    };
-    grants
-        .client_secret(&record)
-        .map_err(|error| construction("ClientSecretCredential", error))
-}
-
-fn single_managed_identity<'grants, F>(
-    environment: &ChainEnvironment,
-    grants: &'grants F,
-    scope: &str,
-) -> Result<F::Grant<'grants>, DefaultChainError>
-where
-    F: Grants + 'grants,
-{
-    let record = ManagedIdentityRecord {
-        client_id: Some(
-            environment
-                .client_id
-                .as_deref()
-                .ok_or(DefaultChainError::MissingEnvironment {
-                    variable: "AZURE_CLIENT_ID",
-                })?
-                .to_owned(),
-        ),
-        exclude_workload_identity: false,
-        imds_probe: None,
-        placement: ChainPlacement::Standalone,
-        scope: scope.to_owned(),
-    };
-    grants
-        .managed_identity(&record)
-        .map_err(|error| construction("ManagedIdentityCredential", error))
-}
-
-fn single_certificate<'grants, F>(
-    environment: &ChainEnvironment,
-    grants: &'grants F,
-    scope: &str,
-) -> Result<F::Grant<'grants>, DefaultChainError>
-where
-    F: Grants + 'grants,
-{
-    // the LiteLLM branch forwards this password only when it is truthy
-    let password = environment
-        .certificate_password
-        .as_ref()
-        .filter(|secret| !secret.expose_secret().is_empty())
-        .cloned();
-    let record = CertificateRecord {
-        client_id: environment
-            .client_id
-            .as_deref()
-            .ok_or(DefaultChainError::MissingEnvironment {
-                variable: "AZURE_CLIENT_ID",
-            })?
-            .to_owned(),
-        tenant_id: environment
-            .tenant_id
-            .as_deref()
-            .ok_or(DefaultChainError::MissingEnvironment {
-                variable: "AZURE_TENANT_ID",
-            })?
-            .to_owned(),
-        certificate_path: environment
-            .certificate_path
-            .as_deref()
-            .ok_or(DefaultChainError::MissingEnvironment {
-                variable: "AZURE_CERTIFICATE_PATH",
-            })?
-            .to_owned(),
-        password,
-        send_certificate_chain: false,
-        scope: scope.to_owned(),
-    };
-    grants
-        .certificate(&record)
-        .map_err(|error| construction("CertificateCredential", error))
-}
-
-fn single_workload<'grants, F>(
-    environment: &ChainEnvironment,
-    grants: &'grants F,
-    scope: &str,
-) -> Result<F::Grant<'grants>, DefaultChainError>
-where
-    F: Grants + 'grants,
-{
-    let record =
-        workload_record(environment, scope).ok_or_else(|| DefaultChainError::InvalidFilter {
-            message: workload_missing_message(&missing_workload_arguments(environment)),
-        })?;
-    grants
-        .workload(&record)
-        .map_err(|error| construction("WorkloadIdentityCredential", error))
+// the explicit LiteLLM branch reads each variable with a required lookup, in the order it names them
+fn required(value: &Option<String>, variable: &'static str) -> Result<String, DefaultChainError> {
+    match value {
+        Some(value) => Ok(value.clone()),
+        None => Err(DefaultChainError::MissingEnvironment { variable }),
+    }
 }
 
 pub fn single_grant<'grants, F>(
@@ -144,16 +27,63 @@ where
 {
     match credential {
         AzureCredentialType::ClientSecretCredential => {
-            single_client_secret(environment, grants, scope)
+            let record = ClientSecretRecord {
+                client_id: required(&environment.client_id, "AZURE_CLIENT_ID")?,
+                client_secret: environment.client_secret.clone().ok_or(
+                    DefaultChainError::MissingEnvironment {
+                        variable: "AZURE_CLIENT_SECRET",
+                    },
+                )?,
+                tenant_id: required(&environment.tenant_id, "AZURE_TENANT_ID")?,
+                scope: scope.to_owned(),
+            };
+            grants
+                .client_secret(&record)
+                .map_err(|error| construction("ClientSecretCredential", error))
         }
         AzureCredentialType::ManagedIdentityCredential => {
-            single_managed_identity(environment, grants, scope)
+            let record = ManagedIdentityRecord {
+                client_id: Some(required(&environment.client_id, "AZURE_CLIENT_ID")?),
+                exclude_workload_identity: false,
+                imds_probe: None,
+                placement: ChainPlacement::Standalone,
+                scope: scope.to_owned(),
+            };
+            grants
+                .managed_identity(&record)
+                .map_err(|error| construction("ManagedIdentityCredential", error))
         }
         AzureCredentialType::CertificateCredential => {
-            single_certificate(environment, grants, scope)
+            // the LiteLLM branch forwards this password only when it is truthy
+            let password = environment
+                .certificate_password
+                .as_ref()
+                .filter(|secret| !secret.expose_secret().is_empty())
+                .cloned();
+            let record = CertificateRecord {
+                client_id: required(&environment.client_id, "AZURE_CLIENT_ID")?,
+                tenant_id: required(&environment.tenant_id, "AZURE_TENANT_ID")?,
+                certificate_path: required(
+                    &environment.certificate_path,
+                    "AZURE_CERTIFICATE_PATH",
+                )?,
+                password,
+                send_certificate_chain: false,
+                scope: scope.to_owned(),
+            };
+            grants
+                .certificate(&record)
+                .map_err(|error| construction("CertificateCredential", error))
         }
         AzureCredentialType::WorkloadIdentityCredential => {
-            single_workload(environment, grants, scope)
+            let record = workload_record(environment, scope).ok_or_else(|| {
+                DefaultChainError::InvalidFilter {
+                    message: workload_missing_message(&missing_workload_arguments(environment)),
+                }
+            })?;
+            grants
+                .workload(&record)
+                .map_err(|error| construction("WorkloadIdentityCredential", error))
         }
         AzureCredentialType::UsernamePasswordCredential => {
             Err(DefaultChainError::MissingArguments {

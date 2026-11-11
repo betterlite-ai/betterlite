@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use crate::azure_arc_identity::ArcHost;
 use crate::azure_client_secret::authority::{Authority, discover_authority};
 use crate::azure_client_secret::transport::Clock;
 use crate::azure_username_password::UsernamePasswordInput;
@@ -7,8 +8,10 @@ use crate::azure_username_password::authority::Bridged;
 use crate::azure_username_password::token::{self, PasswordToken};
 use crate::azure_username_password::transport::Transport as PasswordTransport;
 
-use super::super::grant::{ChainToken, Grant, LinkError};
+use super::super::grant::{ChainToken, Grant, LinkError, UsernamePasswordRecord};
+use super::NativeGrants;
 
+const DEFAULT_AUTHORITY_HOST: &str = "login.microsoftonline.com";
 const REUSE_WINDOW_SECONDS: i64 = 300;
 
 #[derive(Default)]
@@ -25,6 +28,38 @@ pub struct EnvironmentPasswordGrant<'io> {
     pub transport: &'io dyn PasswordTransport,
     pub clock: Arc<dyn Clock>,
     pub state: Mutex<State>,
+}
+
+impl EnvironmentPasswordGrant<'_> {
+    pub fn from_record<'grants, 'io, H: ArcHost>(
+        record: &UsernamePasswordRecord,
+        source: &'grants NativeGrants<'io, H>,
+    ) -> EnvironmentPasswordGrant<'grants>
+    where
+        'io: 'grants,
+    {
+        EnvironmentPasswordGrant {
+            input: UsernamePasswordInput {
+                client_id: record.client_id.clone(),
+                username: record.username.clone(),
+                password: record.password.clone(),
+                scope: Some(record.scope.clone()),
+            },
+            tenant: record
+                .tenant_id
+                .as_deref()
+                .filter(|tenant| !tenant.is_empty())
+                .unwrap_or("organizations")
+                .to_owned(),
+            authority_host: source
+                .authority_host
+                .clone()
+                .unwrap_or_else(|| DEFAULT_AUTHORITY_HOST.to_owned()),
+            transport: source.password_transport,
+            clock: Arc::clone(&source.clock),
+            state: Mutex::new(State::default()),
+        }
+    }
 }
 
 impl Grant for EnvironmentPasswordGrant<'_> {
