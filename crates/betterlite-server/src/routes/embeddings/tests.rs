@@ -5,9 +5,12 @@ use axum::body::to_bytes;
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_provider::operation::OperationError;
+use betterlite_provider::transform_retry::TransformRetryError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
+use rstest::rstest;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,11 +19,9 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tower::ServiceExt as _;
 
-use super::{EmbeddingError, embedding_routes, failure};
+use super::{EmbeddingError, embedding_routes, failure, internal_failure};
 use crate::server::chat_setup::chat_executor;
-
-mod call_failure;
-mod mapping;
+use crate::server::chat_setup::provider_call::CallError;
 
 #[derive(serde::Deserialize)]
 struct ErrorEnvelope {
@@ -348,4 +349,20 @@ async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
     assert_eq!(response.status(), StatusCode::OK);
     assert!(!sent.contains("mock_response"), "{sent}");
     assert!(!sent.contains("mock_tool_calls"), "{sent}");
+}
+
+#[rstest]
+#[case::mismatched_operation(CallError::Mismatched)]
+#[case::transform_retry(CallError::Operation {
+    source: OperationError::TransformRetry(TransformRetryError::Attempts { max_attempts: 0 }),
+})]
+#[tokio::test]
+async fn provider_framework_tests_behavior(#[case] error: CallError<EmbeddingError>) {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let response = internal_failure(&error, "call-7", None, &redactor);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
+    assert_eq!(reply.error.error_type, "internal_server_error");
+    assert_eq!(reply.error.code, "500");
 }

@@ -2,12 +2,13 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_openai::embedding::EmbeddingError;
 use betterlite_provider::operation::OperationError;
 use betterlite_provider::transform_retry::TransformRetryError;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
 
-use super::super::{CallError, EmbeddingError, embedding_error};
+use super::super::{CallError, embedding_error};
 
 fn provider_error() -> OperationError {
     OperationError::Provider {

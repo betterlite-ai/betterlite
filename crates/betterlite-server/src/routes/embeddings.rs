@@ -5,15 +5,12 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use betterlite_config::sections::mock_response::selection::resolve_mock;
-use betterlite_http::error::HttpError;
 use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, provider_failure};
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
-use betterlite_provider::operation::{
-    EmbeddingOperation, OperationError, OperationRequest, OperationResult,
-};
+use betterlite_provider::operation::{EmbeddingOperation, OperationRequest, OperationResult};
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
 use betterlite_redact::secret::Redactor;
@@ -24,7 +21,7 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
-use crate::server::chat_setup::provider_call::CallError;
+use crate::server::chat_setup::provider_call::{CallError, embedding_error};
 
 use super::chat::headers::{failure_headers, success_headers};
 
@@ -164,31 +161,6 @@ async fn provider_embedding(
         return Err(CallError::Mismatched);
     };
     Ok((*response, upstream_headers, upstream_time))
-}
-
-fn embedding_error(error: OperationError) -> CallError<EmbeddingError> {
-    let route = match error {
-        OperationError::Provider { response } => EmbeddingError::Provider { response },
-        OperationError::MissingApiKey => EmbeddingError::MissingApiKey,
-        OperationError::Encode { source } => EmbeddingError::Encode { source },
-        OperationError::Decode { source, .. } => EmbeddingError::Decode { source },
-        OperationError::UnavailableAdapter { provider }
-        | OperationError::UnsupportedOperation { provider, .. } => {
-            EmbeddingError::UnsupportedProvider { model: provider }
-        }
-        OperationError::Timeout => EmbeddingError::Http {
-            source: HttpError::Timeout,
-        },
-        OperationError::TooLarge { limit } => EmbeddingError::Http {
-            source: HttpError::TooLarge { limit },
-        },
-        kept @ (OperationError::Http { .. }
-        | OperationError::InvalidHeader { .. }
-        | OperationError::TransformRetry(_)) => {
-            return CallError::Operation { source: kept };
-        }
-    };
-    CallError::Route(route)
 }
 
 // a provider call that ends without a route error is the server's own fault, so the client sees a 500
