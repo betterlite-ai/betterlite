@@ -1,0 +1,105 @@
+id: B9461
+title: TypeSafe guardrail construction and tool result compaction
+description: >-
+  B3798 shipped TypeSafe's candidate selection, state building, the /v1/systemone call and its failure handling as
+  `TypeSafeGuardrail` in crates/betterlite-guardrails/src/typesafe, but nothing builds that value and nothing runs the
+  compaction: `TypeSafeGuardrail.__init__` and `apply_guardrail` (typesafe.py L151-L193 and L319-L408) are left. Build
+  them as `TypeSafeGuard` in betterlite-guardrails, module typesafe_runtime (typesafe_runtime.rs and typesafe_runtime/,
+  with error.rs and tests.rs), implementing B5471's `GuardrailContract`. B8218 builds the initializer arguments
+  (`TypeSafeArgs` in third_party_init_b), B8521 holds the spec and marks it as a compression guardrail, and B8666
+  constructs and dispatches the value. TypeSafe runs both as an ordinary pre_call guardrail through the unified path
+  and as a compression guardrail that B3546 calls; both reach the same apply_guardrail.
+
+
+  Constructor `TypeSafeGuard::new(args: &TypeSafeArgs, defaults: TypeSafeDefaults, base: GuardrailBase, client:
+  reqwest::Client) -> Result<TypeSafeGuard, TypeSafeRuntimeError>`. LiteLLM reads TYPESAFE_API_BASE and
+  TYPESAFE_API_KEY with get_secret_str, so `TypeSafeDefaults { api_base: Option<String>, api_key:
+  Option<SecretString> }` holds what B8666 resolved for those two names through B8500's secret lookup, the same way it
+  resolves Vigil's; this task reads no environment itself. The base is the argument, else the default, else
+  "https://api.typesafe.ai", with trailing slashes cut. The key is the argument, else the default; an empty or missing
+  key fails with "TypeSafe guardrail requires an API key. Set `api_key` in the guardrail config or the
+  TYPESAFE_API_KEY env var." The model is the argument or "jev-latest". relevance_threshold, min_chars_to_evaluate and
+  max_result_chars_in_state take the argument when it is present, zero included, else 0.2, 200 and 4000.
+  unreachable_fallback is fail_closed only when the argument is exactly "fail_closed"; anything else, absent included,
+  is fail_open. The request timeout is the base timeout when set, else B3798's DEFAULT_JEV_TIMEOUT (30 seconds). Fill
+  B3798's `TypeSafeGuardrail` with these values and the three function pointers it takes: `group_tool_exchanges` from
+  betterlite_prompts::anthropic_history::groups, `get_protected_indices` from
+  betterlite_compression::protected_indices and B3663's `content_to_text`, each through a named function where the
+  argument types differ. LiteLLM's constructor passes no supported_event_hooks to the base, so the base B8521 hands
+  over carries none and no event hook check runs; keep it that way.
+
+
+  apply_guardrail(inputs, request_data, input_type, logging_obj). A response returns the inputs unchanged. So does a
+  request whose structured_messages is absent or empty, or holds any entry that is not a JSON object. Otherwise take
+  B3798's candidate exchanges; with none, log at debug "TypeSafe: no completed tool exchanges eligible for
+  evaluation" and return the inputs. Question ids are "e0", "e1" and so on in candidate order. Build the state with
+  B3798, time the call with a monotonic clock, and call /v1/systemone through B3798. When the call fails and fail_open
+  applies (B3798 answers none), record guardrail information through B3664's `add_guardrail_record` with the response
+  {"error": "TypeSafe evaluation unavailable; request forwarded uncompacted", "model": <model>}, status
+  guardrail_failed_to_respond, provider typesafe and the measured times, then return the inputs. A fail_closed failure
+  is B3798's 502 and goes back as it is. With an answer, an exchange is dropped when its answer exists and its noul is
+  below the threshold; a missing answer keeps it. The dropped messages are the members after the first of each
+  dropped exchange whose role is tool or function. With none, log at debug "TypeSafe: all evaluated exchanges still
+  relevant; request unchanged" and return the inputs. Otherwise replace the content of each dropped message with
+  B3798's DROPPED_RESULT_TEXT and keep every other field of every message. chars_removed is the sum over dropped
+  messages of the code point length of content_to_text(content) minus the length of DROPPED_RESULT_TEXT, so it can be
+  negative for a short result. Log at info "TypeSafe: evaluated <n> tool exchange(s), dropped <d>, ~<c> chars
+  removed", record guardrail information with {"exchanges_evaluated", "exchanges_dropped", "chars_removed", "model"},
+  status success and provider typesafe, and return the inputs with only structured_messages replaced.
+
+
+  Tests in typesafe_runtime/tests.rs use the rstest function `typesafe_runtime_cases` with an axum server on
+  127.0.0.1 as the TypeSafe endpoint: constructor precedence and defaults, the missing key error, a zero threshold kept,
+  unreachable_fallback text other than fail_closed giving fail_open, the response and non-object early returns, no
+  candidates (no call), one exchange dropped and one kept in the same request with the exact rewritten messages, a
+  missing answer kept, fail_open on a 500 with the failed_to_respond record, and fail_closed giving the 502. The
+  client sees this code through the chat route; B9464 adds those HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/typesafe_runtime.rs
+    - crates/betterlite-guardrails/src/typesafe_runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L46-L56
+    why: The defaults, DROPPED_RESULT_TEXT and the 30 second request timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L150-L193
+    why: The owned constructor, get_secret_str lookups, the fail_open default and the base call without supported hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L319-L408
+    why: The owned apply_guardrail, its early returns, the drop rule, the rewrite and both guardrail information records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L195-L317
+    why: B3798's failure handling, candidate selection, state and call that apply_guardrail uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/__init__.py#L41-L73
+    why: The initializer B8218 ports and the arguments it passes.
+dod:
+  - text: TypeSafeGuard::new resolves base, key, model, the three tuning values, the fallback and the timeout as LiteLLM does and fails without a key.
+    proof: [runtime-tests]
+  - text: apply_guardrail returns the inputs unchanged for responses, empty or malformed messages, no candidates and all-relevant answers.
+    proof: [runtime-tests]
+  - text: Dropped tool results are replaced with the fixed text, other fields stay, and the success record carries the counts.
+    proof: [runtime-tests]
+  - text: A failed call records guardrail_failed_to_respond and forwards the request under fail_open and answers 502 under fail_closed.
+    proof: [runtime-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: runtime-tests
+      why: the TypeSafe class is missing, compacts the wrong messages or handles a failed call differently
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_runtime::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Candidate selection, state building, instructions, the systemone call, its failure handling and response parsing (typesafe.py L63-L147 and L195-L317): B3798."
+  - "get_config_model: B6561's form tables. The compression marker and suppression: B3682 and B3546."
+  - "The initializer: B8218. Resolving TYPESAFE_API_BASE and TYPESAFE_API_KEY through B8500 and building this value: B8666."
+  - "content_to_text: B3663. add_guardrail_record and the dispatch boundary record: B3664 and B3680."
+  - "The booted-proxy cases: B9464."
+pitfalls:
+  - "An unset unreachable_fallback means fail_open here, although the shared guardrail params default reads fail_closed; B8218 passes none when the config left it out."
+  - "relevance_threshold 0 and min_chars_to_evaluate 0 are real values, not a request for the default."
+  - "A response input type returns before anything else, so a post_call TypeSafe guardrail never calls the service."
+  - "chars_removed subtracts the fixed text's length per message and can go negative; Python's len counts code points, not bytes."
+  - "The constructor never passes supported_event_hooks, so a mode TypeSafe cannot serve is not a start error."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

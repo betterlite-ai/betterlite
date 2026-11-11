@@ -16,7 +16,7 @@ description: 'Implement the reusable additive-increase/multiplicative-decrease c
   AdaptiveConcurrencyLimiter._grant (L57-L63), AdaptiveConcurrencyLimiter.__aexit__ (L65-L67), AdaptiveConcurrencyLimiter.record
   (L69-L78). Implement these behaviors through the typed Rust services above; synchronous facades and
   structural accessors reuse the same primitive instead of separate ports.
-  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B115, B3993 and B3994 call this service.'
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B3993 and B3994 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/adaptive_concurrency.rs

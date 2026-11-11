@@ -113,6 +113,9 @@ description: >-
   A startup test proves install_prompt_runtime runs after callback initialization and is available before requests.
   Run the existing factory, proxy-logging, router-completion, chat, Responses and preview tests with a branch-change
   guard in addition to the new runtime tests.
+
+  Compaction. The prompt test route (prompt_endpoints.py L1122) runs through base_process_llm_request with the
+  compaction executor installed in LiteLLM. Its dispatch here calls B9810's GatewayCompaction once.
 scope:
   paths:
     - crates/betterlite-server/src/app/inference/prompt_runtime.rs
