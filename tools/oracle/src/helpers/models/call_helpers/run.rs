@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use betterlite_context::request_records::RequestRecordProjection;
+use betterlite_context::request_records::record::RequestRecord;
 use betterlite_models::call_helpers::arithmetic::{safe_divide, safe_divide_seconds};
 use betterlite_models::call_helpers::drop_params::{
     drop_params_env_flag, drop_params_flag, normalize_drop_params,
@@ -20,12 +21,14 @@ use betterlite_models::call_helpers::token_limit::coerce_token_limit;
 use betterlite_models::decisions::Json;
 use serde_json::{Value, json};
 
+use crate::helpers::{HelperError, HelperResult};
+
 use super::input::{
     HeaderStep, Input, ModelNameInput, SafeDivideInput, SafeDivideSecondsInput, TrustedStep,
 };
 
-pub(super) fn run(input: &Input) -> Value {
-    match input {
+pub(super) fn run(input: &Input) -> HelperResult {
+    Ok(match input {
         Input::FinishReasons { values } => finish_reasons(values),
         Input::TokenLimits { values } => token_limits(values),
         Input::ExpectedClientError { facts } => expected_client_errors(facts),
@@ -42,6 +45,7 @@ pub(super) fn run(input: &Input) -> Value {
                 "trusted": process_response_headers(HeaderSource::Internal(&internal)),
             })
         }
+        Input::SnapshotIsolation { record } => return snapshot_isolation(record),
         Input::FilterInternal { record, additional } => {
             let names: BTreeSet<String> = additional.iter().cloned().collect();
             json!(RequestRecordProjection::filter_internal(
@@ -59,7 +63,31 @@ pub(super) fn run(input: &Input) -> Value {
                 .map(|params| json!(proxy_server_request_headers(params.as_ref())))
                 .collect(),
         ),
+    })
+}
+
+fn snapshot_isolation(record: &RequestRecord) -> HelperResult {
+    let mut source = record.clone();
+    let mut snapshot = RequestRecordProjection::safe_copy(&mut source, false)
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "RequestRecordError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?
+        .into_owned();
+    if let RequestRecord::Object(fields) = &mut snapshot {
+        for value in fields.values_mut() {
+            if let RequestRecord::Object(bucket) = value {
+                bucket.insert("edited".to_owned(), RequestRecord::Bool(true));
+            }
+        }
     }
+    Ok(json!({"source": source, "snapshot": snapshot}))
 }
 
 fn finish_reasons(values: &[String]) -> Value {

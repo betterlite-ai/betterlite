@@ -19,6 +19,7 @@ from litellm.litellm_core_utils.core_helpers import (
     process_response_headers,  # pyright: ignore[reportUnknownVariableType]
     proxy_stamped_used_client_oauth_token,
     reconstruct_model_name,  # pyright: ignore[reportUnknownVariableType]
+    safe_deep_copy,  # pyright: ignore[reportUnknownVariableType]
     safe_divide,
     safe_divide_seconds,
 )
@@ -249,6 +250,15 @@ def _upstream_internal_header(input_value: Object) -> Json:
     }
 
 
+def _snapshot_isolation(input_value: Object) -> Json:
+    record = _object(input_value.get("record"), "record")
+    snapshot = cast(Object, safe_deep_copy(record))
+    for value in snapshot.values():
+        if isinstance(value, dict):
+            value["edited"] = True
+    return {"source": record, "snapshot": snapshot}
+
+
 def _filter_internal(input_value: Object) -> Json:
     record = _object(input_value.get("record"), "record")
     additional = input_value.get("additional", [])
@@ -357,6 +367,8 @@ def run(input_value: dict[str, Json]) -> Json:  # noqa: C901, PLR0911, PLR0912
         return _response_headers(input_value)
     if function == "upstream_internal_header":
         return _upstream_internal_header(input_value)
+    if function == "snapshot_isolation":
+        return _snapshot_isolation(input_value)
     if function == "filter_internal":
         return _filter_internal(input_value)
     if function == "drop_env_invalid":
