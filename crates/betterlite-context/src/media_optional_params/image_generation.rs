@@ -61,9 +61,7 @@ fn vertex_optional_params(params: &Params) -> Result<Params, MediaParamsError> {
         Some(JsonValue::Number(count)) if count.is_i64() || count.is_u64() => {
             optional_params.insert("sampleCount".to_owned(), JsonValue::Number(count.clone()));
         }
-        Some(_) => {
-            return Err(MediaParamsError::WrongType("n", "an integer"));
-        }
+        Some(_) => return Err(MediaParamsError::WrongType("n", "an integer")),
     }
     match params.get("size") {
         None | Some(JsonValue::Null) => {}
@@ -71,9 +69,7 @@ fn vertex_optional_params(params: &Params) -> Result<Params, MediaParamsError> {
             let ratio = vertex_aspect_ratio(Some(size));
             optional_params.insert("aspectRatio".to_owned(), JsonValue::Text(ratio.to_owned()));
         }
-        Some(_) => {
-            return Err(MediaParamsError::WrongType("size", "a string"));
-        }
+        Some(_) => return Err(MediaParamsError::WrongType("size", "a string")),
     }
     Ok(optional_params)
 }

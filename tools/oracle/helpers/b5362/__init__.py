@@ -12,7 +12,6 @@ from litellm.utils import ProviderConfigManager
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Fields: TypeAlias = dict[str, Json]
-Handler: TypeAlias = Callable[[Fields], Json]
 
 
 class Utils(Protocol):
@@ -87,11 +86,8 @@ class Mapper:
         return mapped
 
     def get_json_schema_from_pydantic_object(self, response_format: Fields) -> Json:
-        if self.rewrite_refs:
-            return _BASE_UTILS.type_to_response_format_param(
-                response_format, ref_template="/$defs/{model}"
-            )
-        return _BASE_UTILS.type_to_response_format_param(response_format)
+        template: Final = "/$defs/{model}" if self.rewrite_refs else None
+        return _BASE_UTILS.type_to_response_format_param(response_format, ref_template=template)
 
     get_supported_openai_params_stt = get_supported_openai_params
     map_openai_params_stt = map_openai_params
@@ -198,7 +194,7 @@ def _image_generation(fields: Fields) -> Json:
         )
 
 
-_HANDLERS: Final[dict[str, Handler]] = {
+_HANDLERS: Final[dict[str, Callable[[Fields], Json]]] = {
     "select_non_default": lambda fields: _UTILS._get_non_default_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         passed_params=_obj(fields, "passed_params"),
         default_params=dict.fromkeys(_strs(fields, "default_names")),

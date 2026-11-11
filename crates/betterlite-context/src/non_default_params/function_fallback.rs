@@ -40,7 +40,8 @@ pub fn pre_process_optional_params(
     let sends_functions = ["functions", "function_call", "tools"]
         .iter()
         .any(|name| non_default_params.contains_key(*name));
-    if custom_llm_provider == "ollama" && sends_functions {
+    let add_function_to_prompt = custom_llm_provider == "ollama" && sends_functions;
+    if add_function_to_prompt {
         optional_params.insert("format".to_owned(), JsonValue::Text("json".to_owned()));
         let moved = if let Some(tools) = non_default_params.remove("tools") {
             non_default_params.remove("tool_choice");
@@ -51,13 +52,9 @@ pub fn pre_process_optional_params(
         if let Some(functions) = moved {
             optional_params.insert("functions_unsupported_model".to_owned(), functions);
         }
-        return PreProcessedOptional {
-            optional_params,
-            add_function_to_prompt: true,
-        };
     }
     PreProcessedOptional {
         optional_params,
-        add_function_to_prompt: false,
+        add_function_to_prompt,
     }
 }
