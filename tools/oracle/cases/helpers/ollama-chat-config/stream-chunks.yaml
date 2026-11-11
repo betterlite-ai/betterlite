@@ -23,6 +23,7 @@ call:
       - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": []}, "done": false}'
       - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": null}, "done": false}'
       - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"index": 5, "function": {"name": "f", "arguments": {}}}, {"function": {"name": "g", "arguments": {}}}]}, "done": false}'
+      - '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"type": null, "function": {"name": "f", "arguments": {}}}]}, "done": false}'
       - '{"model": "llama3", "message": {"role": "assistant", "content": "z"}, "done": true, "done_reason": "stop", "prompt_eval_count": 3, "eval_count": 4}'
       - '{"model": "llama3", "message": {"role": "assistant", "content": "w"}, "done": true, "done_reason": "length"}'
       - '{"model": "llama3", "message": {"role": "assistant", "content": "l"}, "done": true, "done_reason": "load"}'

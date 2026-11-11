@@ -145,15 +145,16 @@ fn transform_request_bodies_match_litellm(
 
 #[rstest]
 #[case::data_url_string(
-    r#"[{"role": "user", "content": [{"type": "text", "text": "look"}, {"type": "image_url", "image_url": "data:image/png;base64,AA"}]}]"#
+    r#"[{"role": "user", "content": [{"type": "text", "text": "look"}, {"type": "image_url", "image_url": "data:image/png;base64,AA"}]}]"#,
+    "AA"
 )]
 #[case::data_url_object(
-    r#"[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,BB"}}]}]"#
+    r#"[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,BB"}}]}]"#,
+    "BB"
 )]
-fn images_are_extracted_as_base64(#[case] message_json: &str) {
+fn images_are_extracted_as_base64(#[case] message_json: &str, #[case] expected: &str) {
     let request = transformed("llama3", message_json, "{}").unwrap();
-    let images = &request.messages.first().unwrap().images;
-    assert_eq!(images.len(), 1);
+    assert_eq!(request.messages.first().unwrap().images, [expected]);
 }
 
 #[test]

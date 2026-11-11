@@ -153,7 +153,7 @@ fn reply_tool_calls(
     for call in calls {
         converted.push(ToolCall {
             id: call.id.clone().unwrap_or_else(|| ids.next_id()),
-            kind: call.kind.clone(),
+            kind: String::from(call.kind.as_deref().unwrap_or(FUNCTION_TYPE)),
             function: Function {
                 name: call.function.name.clone(),
                 arguments: call.function.call_arguments()?.arguments,

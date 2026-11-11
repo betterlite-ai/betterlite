@@ -34,10 +34,14 @@ class ToolCall(Protocol):
     function: Function
 
 
+class DeltaToolCall(ToolCall, Protocol):
+    index: int
+
+
 class Delta(Protocol):
     content: str | None
     reasoning_content: str | None
-    tool_calls: list[ToolCall] | None
+    tool_calls: list[DeltaToolCall] | None
 
 
 class Usage(Protocol):
@@ -143,6 +147,21 @@ def calls_value(calls: list[ToolCall] | None) -> Json:
     ]
 
 
+def delta_calls_value(calls: list[DeltaToolCall] | None) -> Json:
+    if calls is None:
+        return None
+    return [
+        {
+            "id": uuid_text(call.id),
+            "type": call.type,
+            "name": call.function.name,
+            "arguments": arguments_text(call.function.arguments),
+            "index": call.index,
+        }
+        for call in calls
+    ]
+
+
 def reply_value(result: Completion) -> Json:
     choice = result.choices[0]
     message = choice.message
@@ -181,8 +200,8 @@ def chunk_value(chunk: StreamChunk) -> Json:
                     "reasoning_content": cast(
                         "str | None", getattr(delta, "reasoning_content", None)
                     ),
-                    "tool_calls": calls_value(
-                        cast("list[ToolCall] | None", getattr(delta, "tool_calls", None))
+                    "tool_calls": delta_calls_value(
+                        cast("list[DeltaToolCall] | None", getattr(delta, "tool_calls", None))
                     ),
                 },
             )

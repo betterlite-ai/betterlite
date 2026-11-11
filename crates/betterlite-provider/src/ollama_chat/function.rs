@@ -32,10 +32,6 @@ fn default_role() -> String {
     String::from(ASSISTANT_ROLE)
 }
 
-fn default_kind() -> String {
-    String::from(FUNCTION_TYPE)
-}
-
 // the tool-call shapes shared by a reply and a stream chunk
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct WireMessage {
@@ -53,8 +49,8 @@ pub struct WireMessage {
 pub struct WireToolCall {
     #[serde(default)]
     pub id: Option<String>,
-    #[serde(default = "default_kind", rename = "type")]
-    pub kind: String,
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
     #[serde(default)]
     pub index: Option<u32>,
     pub function: WireFunction,

@@ -243,6 +243,25 @@ async fn tool_call_parameters_fill_missing_arguments() {
 }
 
 #[tokio::test]
+async fn a_null_tool_call_type_is_a_function() {
+    let response = reply_with(
+        r#"{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"type": null, "function": {"name": "f", "arguments": "{}"}}]}}"#,
+    )
+    .await
+    .unwrap();
+    let call = response
+        .choices
+        .first()
+        .unwrap()
+        .message
+        .tool_calls
+        .as_ref()
+        .and_then(|calls| calls.first())
+        .unwrap();
+    assert_eq!(call.kind, "function");
+}
+
+#[tokio::test]
 async fn a_given_tool_call_id_and_type_are_kept() {
     let response = reply_with(
         r#"{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"id": "given", "type": "other", "function": {"name": "f", "arguments": "{}"}}]}}"#,

@@ -9,6 +9,7 @@ call:
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": {"b": 2, "a": 1}}}]}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "arguments": "{\"z\": 1}"}}]}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f"}}]}}'}
+      - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"type": null, "function": {"name": "f", "arguments": "{}"}}]}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"function": {"name": "f", "parameters": {"p": 1}}}]}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": [{"id": "given", "type": "other", "function": {"name": "f", "arguments": "{}"}}]}}'}
       - {model: llama3, body: '{"model": "llama3", "message": {"role": "assistant", "content": "x", "tool_calls": []}}'}

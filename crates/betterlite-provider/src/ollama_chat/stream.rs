@@ -4,7 +4,7 @@ use betterlite_streaming::stream_chunk_shaping::tokens::mapped_finish_reason;
 use self::chunk::{DeltaFunction, DeltaToolCall, OllamaStreamChunk, StreamChoice, StreamDelta};
 use self::wire::{RawChunk, decode_chunk};
 use super::error::OllamaError;
-use super::function::WireToolCall;
+use super::function::{FUNCTION_TYPE, WireToolCall};
 use super::ids::IdSource;
 use super::usage::Usage;
 
@@ -182,7 +182,7 @@ fn delta_tool_calls(
             } else {
                 call.id.clone()
             },
-            kind: call.kind.clone(),
+            kind: String::from(call.kind.as_deref().unwrap_or(FUNCTION_TYPE)),
             index,
             function: DeltaFunction {
                 name: call.function.name.clone(),

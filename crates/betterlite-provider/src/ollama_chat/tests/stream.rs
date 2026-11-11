@@ -135,6 +135,23 @@ fn a_complete_tool_call_gets_an_id_and_json_arguments() {
     );
 }
 
+#[test]
+fn a_null_tool_call_type_is_a_function() {
+    let chunk = parsed(
+        r#"{"model": "m", "message": {"content": "x", "tool_calls": [{"type": null, "function": {"name": "f", "arguments": {"a": 1}}}]}, "done": false}"#,
+    );
+    let call = chunk
+        .choices
+        .first()
+        .unwrap()
+        .delta
+        .tool_calls
+        .as_ref()
+        .and_then(|calls| calls.first())
+        .unwrap();
+    assert_eq!(call.kind, "function");
+}
+
 #[rstest]
 #[case::empty_object("{}", false)]
 #[case::incomplete_string(r#""{\"a\":""#, false)]

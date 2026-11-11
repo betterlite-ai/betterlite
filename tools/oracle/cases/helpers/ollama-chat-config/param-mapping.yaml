@@ -21,7 +21,7 @@ call:
       system: ""
       template: t
       temperature: 0.5
-      stop: [x, y]
+      stop: [x, "y"]
       top_p: 0.9
     cases:
       - {model: llama3, non_default: {max_tokens: 5}}
@@ -33,7 +33,7 @@ call:
       - {model: llama3, non_default: {seed: 1}}
       - {model: llama3, non_default: {top_p: 0.9}}
       - {model: llama3, non_default: {frequency_penalty: 1.2}}
-      - {model: llama3, non_default: {stop: [x, y]}}
+      - {model: llama3, non_default: {stop: [x, "y"]}}
       - {model: llama3, non_default: {response_format: {type: json_object}}}
       - {model: llama3, non_default: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}}
       - {model: llama3, non_default: {response_format: {type: json_schema}}}
