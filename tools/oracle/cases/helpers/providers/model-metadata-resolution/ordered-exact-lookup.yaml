@@ -20,6 +20,12 @@ call:
         exact-model: {litellm_provider: groq, mode: chat, input_cost_per_token: 13}
         Groq/MiXeD-Case: {litellm_provider: groq, mode: chat, input_cost_per_token: 14}
         bare-entry: {mode: chat}
+        groq/duo: {litellm_provider: groq, mode: chat, input_cost_per_token: 15}
+        duo: {litellm_provider: groq, mode: chat, input_cost_per_token: 16}
+        target: {litellm_provider: groq, mode: chat, input_cost_per_token: 17}
+        groq/groq/target-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 18}
+        converse/x: {litellm_provider: bedrock, mode: chat, input_cost_per_token: 19}
+        x: {litellm_provider: bedrock, mode: chat, input_cost_per_token: 20}
       fallback_generalizations:
         - {pattern: "^groq/", model_info: {input_cost_per_token: 99}}
     queries:
@@ -33,5 +39,8 @@ call:
       - {model: exact-model, custom_llm_provider: groq}
       - {model: groq/mixed-case, custom_llm_provider: groq}
       - {model: bare-entry}
+      - {model: duo-2024-01-01, custom_llm_provider: groq}
+      - {model: groq/target-2024-01-01, custom_llm_provider: groq}
+      - {model: converse/x, custom_llm_provider: bedrock}
 env: {}
 compare: {ignore: []}

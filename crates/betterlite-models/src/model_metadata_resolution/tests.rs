@@ -33,6 +33,7 @@ use crate::resolution::ResolutionContext;
 type Fields = BTreeMap<String, Box<RawValue>>;
 
 mod dynamic;
+mod ordered;
 
 const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: test_bedrock_base_model,
@@ -406,7 +407,7 @@ async fn model_metadata_resolution_cases(#[case] scenario: Scenario) {
         }
         Scenario::ProviderAliases => provider_aliases_case().await,
         Scenario::DynamicProviderMetadata => dynamic::dynamic_provider_metadata_case().await,
-        Scenario::OrderedExactLookup => ordered_exact_lookup_case().await,
+        Scenario::OrderedExactLookup => ordered::ordered_exact_lookup_case().await,
         Scenario::FillMissingExactEntry => fill_missing_exact_entry_case().await,
         Scenario::GeneralizationOnlyUnknown => generalization_only_unknown_case().await,
         Scenario::UnmappedErrorBoundary => unmapped_error_boundary_case().await,
@@ -554,86 +555,6 @@ async fn declared_provider_case() {
     assert_eq!(string_field(&declared, "key"), "github_copilot/gpt-4");
 }
 
-async fn ordered_exact_lookup_case() {
-    let fixture = ordered_fixture();
-    candidate_order_case(&fixture).await;
-    provider_match_case(&fixture).await;
-    exact_before_generalization_case().await;
-    providerless_entry_case().await;
-}
-
-async fn providerless_entry_case() {
-    let fixture = Fixture::new(r#"{"bare-entry": {"mode": "chat"}}"#);
-    let bare = resolve(&fixture, "bare-entry", None, &NeverDynamic)
-        .await
-        .unwrap();
-    assert_eq!(raw_field(&bare, "litellm_provider"), "null");
-}
-
-fn ordered_fixture() -> Fixture {
-    Fixture::new(
-        r#"{
-            "groq/llama3-8b-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 1},
-            "groq/llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 2},
-            "llama3-8b-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 3},
-            "llama3-8b": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 4},
-            "groq/groq/llama3-8b-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 5},
-            "plain-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 6},
-            "split-only-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 7},
-            "groq/dated-only": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 8},
-            "solo": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 9},
-            "groq/groq/groq-target": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 10},
-            "groq/mismatch-model": {"litellm_provider": "openai", "mode": "chat", "input_cost_per_token": 11},
-            "mismatch-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 12},
-            "Groq/MiXeD-Case": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 14}
-        }"#,
-    )
-}
-
-async fn candidate_order_case(fixture: &Fixture) {
-    let combined = lookup(fixture, "groq/llama3-8b-2024-01-01").await;
-    assert_eq!(string_field(&combined, "key"), "groq/llama3-8b-2024-01-01");
-    assert_eq!(number_field(&combined, "input_cost_per_token"), Some(1));
-
-    let plain = lookup(fixture, "plain-model").await;
-    assert_eq!(string_field(&plain, "key"), "plain-model");
-    let split = lookup(fixture, "groq/split-only-model").await;
-    assert_eq!(string_field(&split, "key"), "split-only-model");
-    let stripped_combination = lookup(fixture, "groq/dated-only-2024-02-02").await;
-    assert_eq!(
-        string_field(&stripped_combination, "key"),
-        "groq/dated-only"
-    );
-    let stripped = lookup(fixture, "solo-2024-04-04").await;
-    assert_eq!(string_field(&stripped, "key"), "solo");
-    let prefixed = lookup(fixture, "groq/groq-target").await;
-    assert_eq!(string_field(&prefixed, "key"), "groq/groq/groq-target");
-}
-
-async fn provider_match_case(fixture: &Fixture) {
-    let mismatch = lookup(fixture, "mismatch-model").await;
-    assert_eq!(string_field(&mismatch, "key"), "mismatch-model");
-    let casefolded = lookup(fixture, "groq/mixed-case").await;
-    assert_eq!(string_field(&casefolded, "key"), "Groq/MiXeD-Case");
-}
-
-async fn exact_before_generalization_case() {
-    let rules = r#"[{"pattern": "^groq/", "model_info": {"input_cost_per_token": 99}}]"#;
-    let fixture = Fixture::with_rules(
-        r#"{"exact-model": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 13}}"#,
-        "{}",
-        rules,
-    );
-    let exact = lookup(&fixture, "exact-model").await;
-    assert_eq!(number_field(&exact, "input_cost_per_token"), Some(13));
-}
-
-async fn lookup(fixture: &Fixture, model: &str) -> Fields {
-    resolve(fixture, model, Some("groq"), &NeverDynamic)
-        .await
-        .unwrap()
-}
-
 async fn fill_missing_exact_entry_case() {
     let fixture = fill_fixture();
     fill_modes_case(&fixture).await;
@@ -727,12 +648,14 @@ async fn fill_uses_entry_provider_case() {
 async fn generalization_only_unknown_case() {
     let fixture = generalization_fixture();
     generalization_rules_case(&fixture).await;
+    generalization_empty_rule_case(&fixture).await;
     generalization_blocked_case(&fixture).await;
 }
 
 fn generalization_fixture() -> Fixture {
     let rules = r#"[
         {"pattern": "^anthropic/claude-future$", "model_info": {"max_tokens": 4096, "litellm_provider": "anthropic"}},
+        {"pattern": "^claude-future$", "model_info": {"max_tokens": 1}},
         {"pattern": "^mystery-model$", "model_info": {"max_tokens": 7, "litellm_provider": "acme"}},
         {"pattern": "^empty-rule$", "model_info": {}},
         {"pattern": "^anthropic/blocked", "model_info": {"max_tokens": 11}}
@@ -759,6 +682,19 @@ async fn generalization_rules_case(fixture: &Fixture) {
     assert_eq!(number_field(&retained, "max_tokens"), Some(7));
     assert_eq!(string_field(&retained, "litellm_provider"), "acme");
 
+    let overwritten = resolve(
+        fixture,
+        "mystery-model-2024-01-01",
+        Some("other"),
+        &NeverDynamic,
+    )
+    .await
+    .unwrap();
+    assert_eq!(string_field(&overwritten, "key"), "mystery-model");
+    assert_eq!(string_field(&overwritten, "litellm_provider"), "other");
+}
+
+async fn generalization_empty_rule_case(fixture: &Fixture) {
     let empty = resolve(fixture, "empty-rule", Some("acme"), &NeverDynamic)
         .await
         .unwrap();

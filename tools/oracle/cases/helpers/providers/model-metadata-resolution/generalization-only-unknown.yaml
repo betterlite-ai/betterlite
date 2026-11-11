@@ -9,6 +9,8 @@ call:
       fallback_generalizations:
         - pattern: "^anthropic/claude-future$"
           model_info: {max_tokens: 4096, litellm_provider: anthropic}
+        - pattern: "^claude-future$"
+          model_info: {max_tokens: 1}
         - pattern: "^mystery-model$"
           model_info: {max_tokens: 7, litellm_provider: acme}
         - pattern: "^empty-rule$"
@@ -18,6 +20,7 @@ call:
     queries:
       - {model: claude-future, custom_llm_provider: anthropic}
       - {model: mystery-model-2024-01-01}
+      - {model: mystery-model-2024-01-01, custom_llm_provider: other}
       - {model: empty-rule, custom_llm_provider: acme}
       - {model: empty-rule}
       - {model: blocked-prefix, custom_llm_provider: anthropic}
