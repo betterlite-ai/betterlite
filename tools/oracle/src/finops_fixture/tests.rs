@@ -319,6 +319,40 @@ async fn finops_http_fixture_decode_contract(#[case] yaml: String, #[case] expec
     }
 }
 
+fn assert_corpus_outcome(name: &str, path: &Path, result: Result<Case, OracleError>) {
+    match name {
+        "finops-valid-empty.yaml" | "finops-valid-populated.yaml" => {
+            assert!(result.is_ok(), "{} should be accepted", path.display());
+        }
+        "finops-unknown-field.yaml" | "finops-truncated-input.yaml" => {
+            assert!(
+                matches!(result, Err(OracleError::CaseParse { .. })),
+                "{} should fail parsing",
+                path.display()
+            );
+        }
+        "finops-duplicate.yaml" => assert!(matches!(
+            result,
+            Err(OracleError::HttpCaseFixture {
+                source: FixtureError::FinOps(FinOpsFixtureError::DuplicateOrganization { .. })
+            })
+        )),
+        "finops-excess-row.yaml" => assert!(matches!(
+            result,
+            Err(OracleError::HttpCaseFixture {
+                source: FixtureError::FinOps(FinOpsFixtureError::TooManyRows { .. })
+            })
+        )),
+        "finops-missing-reference.yaml" => assert!(matches!(
+            result,
+            Err(OracleError::HttpCaseFixture {
+                source: FixtureError::FinOps(FinOpsFixtureError::MissingBudget { .. })
+            })
+        )),
+        _ => panic!("unexpected corpus seed {}", path.display()),
+    }
+}
+
 #[test]
 fn replays_the_finops_http_fixture_corpus() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/http_case/finops");
@@ -337,39 +371,7 @@ fn replays_the_finops_http_fixture_corpus() {
                 .file_name()
                 .and_then(|value| value.to_str())
                 .expect("the corpus seed is named");
-            match name {
-                "finops-valid-empty.yaml" | "finops-valid-populated.yaml" => {
-                    assert!(result.is_ok(), "{} should be accepted", path.display());
-                }
-                "finops-unknown-field.yaml" | "finops-truncated-input.yaml" => {
-                    assert!(
-                        matches!(result, Err(OracleError::CaseParse { .. })),
-                        "{} should fail parsing",
-                        path.display()
-                    );
-                }
-                "finops-duplicate.yaml" => assert!(matches!(
-                    result,
-                    Err(OracleError::HttpCaseFixture {
-                        source: FixtureError::FinOps(
-                            FinOpsFixtureError::DuplicateOrganization { .. }
-                        )
-                    })
-                )),
-                "finops-excess-row.yaml" => assert!(matches!(
-                    result,
-                    Err(OracleError::HttpCaseFixture {
-                        source: FixtureError::FinOps(FinOpsFixtureError::TooManyRows { .. })
-                    })
-                )),
-                "finops-missing-reference.yaml" => assert!(matches!(
-                    result,
-                    Err(OracleError::HttpCaseFixture {
-                        source: FixtureError::FinOps(FinOpsFixtureError::MissingBudget { .. })
-                    })
-                )),
-                _ => panic!("unexpected corpus seed {}", path.display()),
-            }
+            assert_corpus_outcome(name, &path, result);
             Ok::<(), ()>(())
         })
         .expect("every corpus seed replays");
