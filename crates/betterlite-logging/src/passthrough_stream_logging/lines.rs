@@ -2,18 +2,15 @@
 pub fn convert_raw_bytes_to_str_lines(raw_bytes: &[Vec<u8>]) -> Vec<String> {
     let text = lossy_text(&raw_bytes.concat());
     text.split('\n')
-        .map(|line| line.trim_matches(is_strip_whitespace))
+        // str.strip follows str.isspace, which accepts U+001C to U+001F where Rust's trim does not.
+        .map(|line| {
+            line.trim_matches(|character: char| {
+                matches!(character, '\u{1c}'..='\u{1f}') || character.is_whitespace()
+            })
+        })
         .filter(|line| !line.is_empty())
         .map(str::to_owned)
         .collect()
-}
-
-// str.strip follows str.isspace, which accepts U+001C to U+001F where Rust's trim does not.
-const fn is_strip_whitespace(character: char) -> bool {
-    if matches!(character, '\u{1c}'..='\u{1f}') {
-        return true;
-    }
-    character.is_whitespace()
 }
 
 // from_utf8_lossy is disallowed in this crate, so the replacement decode is built from utf8_chunks.
