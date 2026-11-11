@@ -1,0 +1,95 @@
+id: B9801
+title: First-chunk answer for the messages stream
+description: >-
+  LiteLLM's /v1/messages pipeline hands its SSE body to create_response (litellm/proxy/common_request_processing.py L979-L1118) before it answers. create_response pulls the first chunk and decides from it alone whether the client gets a stream or a plain JSON error: an Anthropic error frame or a `data: {"error": {...}}` chunk with an HTTP code becomes a JSON error with that status, an empty stream becomes an empty 200 SSE body, a failure while pulling becomes an SSE error body with the failure's status, and anything else streams with two anti-buffering headers. The chat route on main has no such step: routes/chat.rs calls the executor's stream, answers JSON with the status when the call fails before the stream opens, and ends the body with an io::Error when it fails later, so its first chunk can never be an error frame. The messages generator B9720 builds turns a failure into an error frame instead, and B9720 keeps the AnthropicError item for exactly this step. This task builds that step for B081's stream branch and blocked branch. Everything goes in crates/betterlite-server, module `messages_first_chunk` (crates/betterlite-server/src/messages_first_chunk.rs and messages_first_chunk/: frame_error.rs, answer.rs, tests.rs). Every name stays at 30 characters or fewer.
+
+
+  Pure frame checks (frame_error.rs), the byte decoder of this task.
+  `frame_error_code(frame: &[u8]) -> Option<u16>` is _parse_event_data_for_error (L737-L769). Bytes that are not UTF-8 give None (LiteLLM's decode raises there and create_response swallows it and streams). The text must start with "data: "; the rest, stripped of surrounding whitespace, gives None when it is empty or "[DONE]" and is otherwise parsed as JSON, where a parse failure gives None. A JSON object whose `error` is an object is read for `error.code`: an integer is used as it is, a string is converted the way Python's int() does (surrounding whitespace, one leading sign and single underscores between digits are accepted) and logs at warning "Error code is a string but not a valid integer: {raw}" when it is not one, any other type counts as no code. A code in 100..=599 is the answer. When `code` is present and not null but no code in range came out, log at warning "Error has invalid or non-convertible code: {raw}" and give None. A JSON bool is not an integer here, per docs/compatibility.md, and logs the second warning.
+  `frame_error_object(frame: &[u8]) -> Map<String, Value>` is _extract_error_from_sse_chunk (L772-L806): the `error` object of the same parse when it is an object, else the default `{"message": "Unknown error", "type": "internal_server_error", "param": null, "code": "500"}` in that key order.
+
+
+  Answer (answer.rs). `HeaderRefresh` is a trait with one async method `refresh(&self) -> Result<HeaderMap, String>`, LiteLLM's refresh_headers callable. B081 passes one that rebuilds its headers for the deployment that served the stream; it is None when nothing can change them. `resolve_headers(headers: &HeaderMap, refresh: Option<&dyn HeaderRefresh>) -> HeaderMap` is _resolve_stream_headers (L964-L973): without a refresher the headers as given, else the refreshed map, and on Err log at error "Error refreshing streaming response headers: {error}" and keep the given headers. `sse_stream_headers(headers: HeaderMap) -> HeaderMap` is _sse_stream_headers (L959-L961): the map plus Cache-Control "no-cache" and X-Accel-Buffering "no", replacing values of the same name.
+
+  `first_chunk_answer(body: BoxStream<'static, Result<Emitted, StreamAbort>>, headers: HeaderMap, refresh: Option<Arc<dyn HeaderRefresh>>, call_id_in_body: bool) -> ProducedResponse` is create_response with media type "text/event-stream" and status 200. `Emitted` and `StreamAbort` are B9720's (crates/betterlite-server/src/shared_stream.rs), `ProducedResponse` and `StreamedResponse` are B7324's (crates/betterlite-server/src/first_byte_sse.rs), so B081 can return the answer from the future it hands to open_sse_before_first_byte. `call_id_in_body` is B011's general_settings.include_call_id_in_error_body (config.sections.error_body_call_id), and the call id is error_body_call_id(call_id_in_body, the resolved headers' x-litellm-call-id) from betterlite_error::envelope. Pull the first item, then:
+  1. `Ok(Emitted::AnthropicError(frame))`: resolve the headers, drop the stream, and answer plain JSON with status `frame.status_code` and body `frame.json_body(call id)` (B958's AnthropicErrorSseFrame in crates/betterlite-anthropic/src/api/messages_errors/frame.rs) under the resolved headers, without the two SSE headers. A WireDecodeError from json_body logs at error and answers the step 4 SSE error body with status 500 and the error text as detail.
+  2. `Ok(Emitted::Frame(bytes))`: resolve the headers. When frame_error_code gives a code, log at debug "Error detected in first stream chunk. Returning JSON error response with status code: {code}", drop the stream and answer plain JSON with that status and body `{"error": error object}`, where the error object is frame_error_object with `litellm_call_id` added last when the call id is set (LiteLLM's with_call_id), under the resolved headers. Otherwise answer `ProducedResponse::Streaming` with status 200, `sse_stream_headers(resolved)` with content-type "text/event-stream; charset=utf-8", and a body of the first bytes followed by every later item: a Frame as its bytes, an AnthropicError as `into_bytes()`, and an Err as described below.
+  3. The stream ends with no item: answer `Streaming` with status 200, `sse_stream_headers(resolve_headers(..))` and an empty body.
+  4. `Err(StreamAbort { status, detail })`: log at error "Error consuming first chunk from generator: {detail}", build B7324's `SseFailure` with status_code `Some(status)` and detail the string, take `sse_error_payload` and answer `Streaming` with the payload's status, `sse_stream_headers(resolve_headers(..))` and the two frames of `sse_error_frames` as the body.
+  Every plain JSON answer is serialized the way the JSON responses on main already are, with content-type application/json. A later Err item, after the first chunk went out, logs at error with its status and detail and ends the body there (see deviations).
+
+
+  Tests in messages_first_chunk/tests.rs (`messages_first_chunk::tests`) are rstest cases over scripted item streams: every frame_error_code rule (no prefix, empty, [DONE], bad JSON, error not an object, int code in and out of range, digit string, Python int() spellings, a non-numeric string, a float and a bool, a missing code, not UTF-8), frame_error_object's default and its pass-through, each of the four answers with its status, body and headers, the call id in and out of both JSON bodies, a refresher that answers, one that fails, and none, and a later Err ending the body after the earlier bytes. A fuzz target `first_chunk_error` (crates/betterlite-server/fuzz/fuzz_targets/first_chunk_error.rs) feeds arbitrary bytes to frame_error_code and frame_error_object; seeds go in crates/betterlite-server/fuzz/corpus/first_chunk_error/ and an rstest `replays_the_first_chunk_error_corpus` reads every seed from `Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/first_chunk_error")` and runs both functions. Helper oracle cases compare both functions with LiteLLM through the operation named b9801: the Python side calls _parse_event_data_for_error and _extract_error_from_sse_chunk on the given text and returns the code and the error object. B081's HTTP cases cover the answers through the booted proxy.
+scope:
+  paths:
+  - crates/betterlite-server/src/messages_first_chunk.rs
+  - crates/betterlite-server/src/messages_first_chunk/**
+  - crates/betterlite-server/fuzz/fuzz_targets/first_chunk_error.rs
+  - crates/betterlite-server/fuzz/corpus/first_chunk_error/**
+  - tools/oracle/cases/helpers/messages-first-chunk/**
+  - tools/oracle/helpers/b9801.py
+  - tools/oracle/helpers/b9801/**
+  - tools/oracle/src/helpers/server/b9801.rs
+  - tools/oracle/src/helpers/server/b9801/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L737-L806
+  why: _parse_event_data_for_error and _extract_error_from_sse_chunk, their warnings and the default error object.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L854-L926
+  why: The disconnect watch around the first chunk that this task leaves to axum dropping the handler future.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L929-L973
+  why: sse_error_payload, the two error frames, the anti-buffering headers and the header refresh with its fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L979-L1126
+  why: create_response, the order of its branches, the branches that add the SSE headers, and _TTFT_KEEPALIVE_HEADERS.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/error_body_call_id.py#L1-L20
+  why: error_body_call_id, and with_call_id adding litellm_call_id to the error object.
+dod:
+- text: frame_error_code and frame_error_object read a first SSE chunk the way LiteLLM does, including Python int() spellings, out-of-range codes and the default error object.
+  proof: [first-chunk-tests, oracle, helper-python]
+- text: >-
+    An Anthropic error frame or a data chunk with an error code as the first item answers plain JSON with that status, the resolved headers
+    and litellm_call_id only when include_call_id_in_error_body is true.
+  proof: [first-chunk-tests]
+- text: >-
+    A normal first chunk streams with status 200, the refreshed headers plus Cache-Control no-cache and X-Accel-Buffering no, and every later item in order;
+    an empty stream answers an empty 200 body and a first-item failure answers the SSE error and DONE frames with its status.
+  proof: [first-chunk-tests]
+- text: A failing header refresh keeps the original headers, and a failure after the first chunk ends the body after the bytes already sent.
+  proof: [first-chunk-tests]
+- text: The first-chunk decoder has a fuzz target whose seeds replay through both functions.
+  proof: [first-chunk-corpus]
+checks:
+  optional: []
+  commands:
+  - id: first-chunk-tests
+    why: a first-chunk rule, an answer's status, body or headers, the call id or the header refresh is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^messages_first_chunk::/) - test(replays_the_first_chunk_error_corpus)'
+  - id: first-chunk-corpus
+    why: the first-chunk decoder has no fuzz target or its seeds do not replay
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/first_chunk_error)" && test -f crates/betterlite-server/fuzz/fuzz_targets/first_chunk_error.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_first_chunk_error_corpus)'
+  - id: helper-python
+    why: the two frame checks have no pinned LiteLLM comparison through the b9801 helper
+    run: grep -qE '^[[:space:]]+b9801:' tools/oracle/fuzz/corpus/helper_case/b9801-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/messages-first-chunk/error-codes.yaml
+- tools/oracle/cases/helpers/messages-first-chunk/error-objects.yaml
+deviations:
+- what: When the stream fails after its first chunk went out, the body ends after the bytes already sent with a normal end of the chunked body, where LiteLLM's server drops the connection mid-body.
+  why: B7324's ByteStream carries betterlite-http's HttpError. That type has no variant for an aborted stream, and it belongs to another crate; see the notes on B9801.
+out_of_scope:
+- "_wait_for_http_disconnect, _buffer_first_chunk_honoring_disconnect and _ClientDisconnectedBeforeFirstChunk (L854-L926): axum drops the handler future when the client leaves, so the body stream is dropped too and that runs B9720's drop guard (the 499 record and the cleanup); LiteLLM's 499 JSON goes to a client that is gone."
+- "_UpstreamClosingStreamingResponse (L809-L851): dropping the Rust stream closes the upstream."
+- "The Datadog per-chunk span in combined_generator: no Datadog tracer in betterlite; the fast path is the only path."
+- "sse_error_payload, sse_error_frames, exception_detail_parts and open_sse_before_first_byte: B7324 (done). The generator and its error frames: B9720. The header builder B081 passes as the refresher: B9802 and B081."
+- "create_response's other callers (chat and Responses streams through proxy_server.py's generator): B8604 and the routes that wire it."
+pitfalls:
+- 'Only the first item is checked; an error frame later in the stream is passed through as bytes.'
+- 'The two JSON answers use the resolved headers without Cache-Control and X-Accel-Buffering, while the empty, failed and normal streams get both.'
+- 'Python int() accepts " 404 ", "+404" and "4_04", so those codes count; "404.0" does not.'
+- 'frame_error_object returns the error object even when frame_error_code found no code, but it is only called after a code was found.'
+- 'The call id read for the JSON bodies comes from the resolved headers, after the refresh, not from the headers B081 passed in.'
+- 'A ping frame from B9720''s keepalive wrapper can be the first item; it does not start with "data: " and streams normally.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -4,52 +4,13 @@ description: >-
   Close the successful-image path left by B8178's pure uploader tests. GigaChat sends
   a fresh uuid.uuid4() filename to /files before referring to the returned id in its
   chat body. B900's multipart comparator correctly treats filenames as significant,
-  so today's oracle cannot compare two successful uploads. Extend only the HTTP
-  comparison boundary with a narrow opt-in for this generated value, then exercise
-  the real uploader through chat. The gateway uploader and its cache stay with B8178;
-  B8312 already injects them. Plan about 600 changed lines across comparison, tests
-  and three HTTP fixtures, with zero newly implemented LiteLLM production lines.
-
-  Reuse the existing compare.ignore record instead of adding a case schema field.
-  For HTTP comparisons only, a pointer exactly matching
-  /upstream/{request_index}/parts/{part_index}/filename requests generated-filename
-  matching for that captured part. Both indices are zero-based decimal indices as
-  rendered by the comparator; no wildcard, leading-zero or parent selector matches.
-  Keep the existing nonempty why requirement. Match selectors against the concrete
-  paths produced while visiting captured requests and parts rather than introducing
-  a second JSON-pointer decoder. Reject every unmatched /upstream/ selector, repeated
-  selector, non-multipart target or selected part without a filename with a Difference
-  at that selector. No selector may silently succeed because its upload never ran.
-
-  A selected filename must on each side be a canonical lowercase, hyphenated UUID
-  version 4 with the RFC variant, followed by a dot and a nonempty extension. Validate
-  the UUID using the uuid dependency already in tools/oracle/Cargo.toml, including
-  its version/variant and a canonical-format round trip; do not write a UUID parser.
-  The extensions must be exactly equal. Only the UUID value may differ. Require
-  these invariants even when the two strings happen to be identical. Missing or
-  empty names, UUIDs of another version, uppercase/compact spellings and differing
-  extensions fail at /upstream/{request_index}/parts/{part_index}/filename.
-
-  Without this exact selector, filenames retain byte-for-byte equality. Part order,
-  count, field name, content type and payload bytes, and provider method/path/header
-  comparisons remain significant with or without it. Keep B900's boundary masking.
-  Partition these selectors away from response-body ignores before calling the
-  existing response comparison: they must never erase a response field named
-  upstream. Ordinary response ignores and all helper/SDK comparison semantics stay
-  unchanged. Put the behavior in compare/multipart.rs and its own child files, with
-  only the necessary call-site changes in compare.rs. It transforms already decoded
-  Part and Ignore records; case decoding and decode_multipart_capture remain the
-  existing fuzzed decoders and gain no new grammar or byte parser.
-
-  Tests in compare/multipart/tests.rs invoke the public-to-the-crate compare entry
-  point with captured HTTP requests, not a second implementation of comparison.
-  Add explicit_uuid_selector, filenames_are_strict_by_default,
-  rejects_noncanonical_filename, rejects_unused_selector, rejects_duplicate_selector,
-  retains_other_part_fields and separates_response_ignores. Use rstest rows for
-  invalid UUID forms and each changed part field, and prove each rejection's exact
-  Difference.pointer. Also exercise selectors in a step's Compare value, where the
-  upstream request index is relative to that step's captures. No randomness is
-  needed in these tests; choose two fixed, valid version-4 UUIDs.
+  so today's oracle cannot compare two successful uploads. B9850 adds the opt-in
+  for such generated values, so this task writes no comparator code: it uses B9850's
+  compare.ignore pointer /upstream/{request_index}/parts/{part_index}/filename on
+  the observed file part, then exercises the real uploader through chat. The
+  gateway uploader and its cache stay with B8178; B8312 already injects them. Plan
+  about 250 changed lines across three HTTP fixtures, with zero newly implemented
+  LiteLLM production lines.
 
   Add data-url, cached-data-url and upload-rejected fixtures below
   providers/gigachat-upload. Use an untagged HTTP case, model alias upload-model for
@@ -63,7 +24,7 @@ description: >-
   MIME type and extension, and the chat message's attachments containing that id.
   The filename selector names the observed file part, not the purpose part.
 
-  cached-data-url makes two requests in one steps flow with exactly the same image
+  cached-data-url is a kind: http_scenario case (browser step flows take no selector) with two requests of exactly the same image
   URL and a different text message. Script upload plus chat for the first step and
   chat alone for the second: the cached attachment id is reused without a second
   upload. Use a distinct image payload from data-url to avoid cross-case cache hits.
@@ -76,9 +37,6 @@ description: >-
   Run against the built gateway and LiteLLM; --self-check is not this task's proof.
 scope:
   paths:
-    - tools/oracle/src/compare.rs
-    - tools/oracle/src/compare/multipart.rs
-    - tools/oracle/src/compare/multipart/**
     - tools/oracle/cases/providers/gigachat-upload/**
   lint_tables: false
 references:
@@ -95,24 +53,11 @@ references:
   - url: https://docs.rs/uuid/1.28.0/uuid/struct.Uuid.html
     why: Reuse the installed crate's parsing, version, variant and canonical formatting instead of a custom UUID grammar.
 dod:
-  - text: Only explicitly selected canonical UUID-v4 filename values can differ; missing targets, invalid names and every other changed multipart field still fail precisely.
-    proof: [upload-comparison-tests, upload-comparison-regressions]
-  - text: Upstream filename selectors cannot hide response-body changes, and existing multipart and step comparison behavior remains intact.
-    proof: [upload-comparison-tests, upload-comparison-regressions]
   - text: A successful GigaChat image call uploads the file and forwards its id, a repeated image reuses the cache, and upload rejection leaves successful text-only chat.
     proof: [upload-http-fixtures, oracle]
 checks:
   optional: []
   commands:
-    - id: upload-comparison-tests
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^compare::multipart::/)'
-      why: The new comparator behavior has no tests on the base branch and every assertion uses the actual HTTP comparison entry point.
-    - id: upload-comparison-regressions
-      run: >-
-        test -f tools/oracle/src/compare/multipart/tests.rs
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail
-        -E 'test(/^multipart_oracle::/) | test(/^http::browser_flow::/) | test(/^tests::/)'
-      why: Requiring the new test file makes the check fail on base while the shared comparison change reruns existing consumers.
     - id: upload-http-fixtures
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/gigachat-upload)"
@@ -126,11 +71,9 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B8178 owns every function in file_handler.py; upload_file_async and its async downloader have no live caller at the pin. B8177 owns the chat transform and B8312 supplies the uploader binding.
-  - B900's multipart encoding/capture and B171's HTTP runner remain in place; this task changes comparison of decoded captures, not their representation or size limits.
+  - B900's multipart encoding/capture and B171's HTTP runner remain in place. The filename selector and its comparator code are B9850's; this task only uses it.
   - B004 owns the chat endpoint and B8633 connects its production generator. B9230 supplies OAuth, streaming, invalid-image and alias cases, and B043 consumes this task's three fixtures in its final suite.
 pitfalls:
-  - Selecting a nonexistent /upstream/0/parts/0/filename must fail even when both sides produce zero requests; otherwise a broken uploader could satisfy its own oracle.
-  - uuid parsing accepts spellings that uuid.uuid4() does not emit, so version and canonical-format checks are required in addition to parse success.
   - GigaChat caches by the original URL string; reusing a payload across independent cases can consume the wrong scripted upstream answer.
   - The purpose part and file part have different metadata; only the part carrying the generated filename receives a selector.
 review_level: standard
