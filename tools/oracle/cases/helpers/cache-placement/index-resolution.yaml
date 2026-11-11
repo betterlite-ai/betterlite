@@ -1,0 +1,56 @@
+kind: helper
+name: cache-placement-index-resolution
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: 0, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: 2, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -1, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -3, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -4, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: -100, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: 3, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: "2", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: "-1", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: "-100", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: assistant, index: "first", control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: assistant, index: 0, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: assistant, index: 9, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: system, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: null, control: null}]
+        max_blocks: 4
+env: {}
+compare: {ignore: []}

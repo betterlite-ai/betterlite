@@ -1,0 +1,76 @@
+kind: helper
+name: cache-placement-openai-dialect
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages: [{role: user, content: hello}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: assistant, content: hello}]
+        points: [{location: message, role: assistant, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: text, text: hello}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: image, source: picture}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: image_url, image_url: {url: https://example.test/p.png}}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: file, file: {file_id: file_1}}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: input_audio, input_audio: {data: abc, format: wav}}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: input_text, text: hello}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: input_image, image_url: https://example.test/p.png}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: input_file, file_id: file_1}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: video, source: clip}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: pdf, source: paper}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: text, text: one}, {type: video, source: clip}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, name: alice}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: []}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: assistant, content: [{type: text, text: hello}]}]
+        points: [{location: message, role: null, index: 0, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: video, source: clip}, {type: input_file, file_id: file_1}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+env: {}
+compare: {ignore: []}
