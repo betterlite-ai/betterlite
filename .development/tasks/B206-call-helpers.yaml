@@ -25,6 +25,14 @@ description: >-
   a context-only leaf.
 scope:
   paths:
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers/b5367/__init__.py"
+  - "tools/oracle/helpers/b5367/**"
+  - "tools/oracle/helpers/b4002.py"
+  - "tools/oracle/helpers/b3937.py"
+  - "tools/oracle/helpers"
+  - "tools/oracle/src/helpers/azure/chat_base_policy/reports.rs"
+  - "crates/betterlite-config/src/sections/drop_params/tests.rs"
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/call_helpers.rs

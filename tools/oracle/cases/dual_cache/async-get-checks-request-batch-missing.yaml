@@ -1,0 +1,16 @@
+kind: helper
+name: dual-cache-async-get-checks-request-batch-missing
+call:
+  b4293:
+    async_get_checks_request_batch_missing:
+      clock: 1000.0
+      value: null
+      memory: []
+      default_in_memory_ttl: null
+      entries: []
+      key_count: 0
+      key: missing-key
+      redis_get: from-redis
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,7 @@
+model_list:
+  - model_name: a
+    litellm_params:
+      model: openai/gpt-4o
+      DEFAULT_MAX_LRU_CACHE_SIZE: 4
+litellm_settings:
+  DEFAULT_MAX_LRU_CACHE_SIZE: 8

@@ -1,0 +1,18 @@
+kind: helper
+name: dual-cache-get-backfills-memory-from-redis
+call:
+  b4293:
+    get_backfills_memory_from_redis:
+      clock: 1000.0
+      value: null
+      memory: []
+      entries: []
+      key_count: 0
+      default_in_memory_ttl: 30.0
+      key: backfilled-key
+      redis_get:
+        model: gpt-4o
+        spend: 12.5
+env: {}
+compare:
+  ignore: []
