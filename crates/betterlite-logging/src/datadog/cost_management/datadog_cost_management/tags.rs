@@ -78,15 +78,30 @@ fn apply_allowlist(
             add_request_tag(tags, allow, text);
         }
     }
-    for (key, value) in scalar_metadata(&payload.metadata) {
+    let metadata = &payload.metadata;
+    let text = serde_json::to_string(metadata).unwrap_or_default();
+    if let Json::Object(fields) = serde_json::from_str(&text).unwrap_or(Json::Null) {
+        for (key, value) in &fields {
+            add_metadata_tag(tags, allow, key, value);
+        }
+    }
+    for (key, value) in nested_metadata(metadata) {
         if allow.iter().any(|allowed| allowed == key) {
             set_custom_tag(tags, key, &value);
         }
     }
-    for (key, value) in nested_metadata(&payload.metadata) {
-        if allow.iter().any(|allowed| allowed == key) {
-            set_custom_tag(tags, key, &value);
-        }
+}
+
+fn add_metadata_tag(
+    tags: &mut IndexMap<String, String>,
+    allow: &[String],
+    key: &str,
+    value: &Json,
+) {
+    if allow.iter().any(|allowed| allowed == key)
+        && let Some(text) = json_text(value)
+    {
+        set_custom_tag(tags, key, &text);
     }
 }
 
@@ -121,178 +136,16 @@ fn nested_metadata(metadata: &StandardLoggingMetadata) -> Vec<(&str, String)> {
         let Some(Json::Object(entries)) = value else {
             continue;
         };
-        collect_scalars(&mut found, entries);
+        for (key, nested) in entries {
+            if let Some(text) = json_text(nested) {
+                found.push((key.as_str(), text));
+            }
+        }
     }
     found
 }
 
-fn collect_scalars<'entries>(
-    found: &mut Vec<(&'entries str, String)>,
-    entries: &'entries IndexMap<String, Json>,
-) {
-    for (key, value) in entries {
-        if let Some(text) = scalar_text(value) {
-            found.push((key.as_str(), text));
-        }
-    }
-}
-
-fn scalar_metadata(metadata: &StandardLoggingMetadata) -> Vec<(&'static str, String)> {
-    let mut found = Vec::new();
-    push_strings(&mut found, metadata);
-    push_numbers(&mut found, metadata);
-    push_json_scalars(&mut found, metadata);
-    if let Some(flag) = metadata.used_client_oauth_token {
-        found.push((
-            "used_client_oauth_token",
-            if flag { "true" } else { "false" }.to_owned(),
-        ));
-    }
-    found
-}
-
-fn push_strings(found: &mut Vec<(&'static str, String)>, metadata: &StandardLoggingMetadata) {
-    push_key_strings(found, metadata);
-    let strings = [
-        (
-            "requester_ip_address",
-            metadata.requester_ip_address.as_deref(),
-        ),
-        ("user_agent", metadata.user_agent.as_deref()),
-        (
-            "cold_storage_object_key",
-            metadata.cold_storage_object_key.as_deref(),
-        ),
-        ("team_alias", metadata.team_alias.as_deref()),
-        ("team_id", metadata.team_id.as_deref()),
-    ];
-    collect_text(found, &strings);
-}
-
-fn push_key_strings(found: &mut Vec<(&'static str, String)>, metadata: &StandardLoggingMetadata) {
-    push_identity_strings(found, metadata);
-    let scope = [
-        (
-            "user_api_key_project_id",
-            metadata.user_api_key_project_id.as_deref(),
-        ),
-        (
-            "user_api_key_project_alias",
-            metadata.user_api_key_project_alias.as_deref(),
-        ),
-        (
-            "user_api_key_user_id",
-            metadata.user_api_key_user_id.as_deref(),
-        ),
-        (
-            "user_api_key_user_email",
-            metadata.user_api_key_user_email.as_deref(),
-        ),
-        (
-            "user_api_key_team_alias",
-            metadata.user_api_key_team_alias.as_deref(),
-        ),
-        (
-            "user_api_key_end_user_id",
-            metadata.user_api_key_end_user_id.as_deref(),
-        ),
-        (
-            "user_api_key_request_route",
-            metadata.user_api_key_request_route.as_deref(),
-        ),
-    ];
-    collect_text(found, &scope);
-}
-
-fn push_identity_strings(
-    found: &mut Vec<(&'static str, String)>,
-    metadata: &StandardLoggingMetadata,
-) {
-    let identity = [
-        ("user_api_key_hash", metadata.user_api_key_hash.as_deref()),
-        ("user_api_key_alias", metadata.user_api_key_alias.as_deref()),
-        (
-            "user_api_key_budget_reset_at",
-            metadata.user_api_key_budget_reset_at.as_deref(),
-        ),
-        (
-            "user_api_key_org_id",
-            metadata.user_api_key_org_id.as_deref(),
-        ),
-        (
-            "user_api_key_org_alias",
-            metadata.user_api_key_org_alias.as_deref(),
-        ),
-        (
-            "user_api_key_team_id",
-            metadata.user_api_key_team_id.as_deref(),
-        ),
-    ];
-    collect_text(found, &identity);
-}
-
-fn collect_text(found: &mut Vec<(&'static str, String)>, strings: &[(&'static str, Option<&str>)]) {
-    for &(key, value) in strings {
-        if let Some(text) = value {
-            found.push((key, text.to_owned()));
-        }
-    }
-}
-
-fn push_numbers(found: &mut Vec<(&'static str, String)>, metadata: &StandardLoggingMetadata) {
-    let numbers = [
-        ("user_api_key_spend", metadata.user_api_key_spend.as_ref()),
-        (
-            "user_api_key_max_budget",
-            metadata.user_api_key_max_budget.as_ref(),
-        ),
-        (
-            "user_api_key_user_spend",
-            metadata.user_api_key_user_spend.as_ref(),
-        ),
-        (
-            "user_api_key_user_max_budget",
-            metadata.user_api_key_user_max_budget.as_ref(),
-        ),
-        (
-            "user_api_key_team_spend",
-            metadata.user_api_key_team_spend.as_ref(),
-        ),
-        (
-            "user_api_key_team_max_budget",
-            metadata.user_api_key_team_max_budget.as_ref(),
-        ),
-    ];
-    for (key, value) in numbers {
-        if let Some(number) = value {
-            found.push((key, number.0.to_string()));
-        }
-    }
-}
-
-fn push_json_scalars(found: &mut Vec<(&'static str, String)>, metadata: &StandardLoggingMetadata) {
-    let values = [
-        ("spend_logs_metadata", metadata.spend_logs_metadata.as_ref()),
-        ("requester_metadata", metadata.requester_metadata.as_ref()),
-        (
-            "prompt_management_metadata",
-            metadata.prompt_management_metadata.as_ref(),
-        ),
-        (
-            "mcp_tool_call_metadata",
-            metadata.mcp_tool_call_metadata.as_ref(),
-        ),
-        ("routing_decision", metadata.routing_decision.as_ref()),
-        ("usage_object", metadata.usage_object.as_ref()),
-    ];
-    for (key, value) in values {
-        if let Some(text) = value.and_then(scalar_text) {
-            found.push((key, text));
-        }
-    }
-}
-
-fn scalar_text(value: &Json) -> Option<String> {
+fn json_text(value: &Json) -> Option<String> {
     match value {
         Json::Bool(set) => Some(if *set { "true" } else { "false" }.to_owned()),
         Json::Number(number) => Some(number.to_string()),
