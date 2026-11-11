@@ -79,7 +79,9 @@ fn apply_allowlist(
         }
     }
     let metadata = &payload.metadata;
-    let decoded = match metadata_fields(metadata) {
+    let decoded = match serde_json::to_string(metadata)
+        .and_then(|text| serde_json::from_str::<Json>(&text))
+    {
         Ok(decoded) => decoded,
         Err(error) => {
             tracing::error!(
@@ -99,12 +101,6 @@ fn apply_allowlist(
             set_custom_tag(tags, key, &value);
         }
     }
-}
-
-fn metadata_fields(metadata: &StandardLoggingMetadata) -> Result<Json, serde_json::Error> {
-    let text = serde_json::to_string(metadata)?;
-    let fields = serde_json::from_str(&text)?;
-    Ok(fields)
 }
 
 fn add_metadata_tag(
