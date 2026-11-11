@@ -1,0 +1,31 @@
+kind: helper
+name: claude-platform-unsupported-override
+call:
+  claude_platform_inputs:
+    unsupported_override:
+      calls:
+        - {}
+        - deployment: {list: [context_management]}
+        - deployment: {list: [context_management, cache_control]}
+        - deployment: {list: [context_management]}
+          optional: {list: [cache_control]}
+        - deployment: {list: [context_management]}
+          optional: {list: []}
+        - deployment: {set: [context_management, cache_control]}
+        - optional: {frozenset: [cache_control]}
+        - deployment: {tuple: [1, null]}
+        - optional: {other: not-a-list}
+        - optional: {other: not-a-list}
+          log_invalid: false
+        - optional: {other: null}
+        - deployment: {list: [context_management]}
+          optional: {other: null}
+        - deployment: {list: [context_management]}
+          optional: {other: not-a-list}
+        - deployment: {other: 5}
+        - deployment: {other: 5.5}
+        - deployment: {other: true}
+        - deployment: {other: {a: 1}}
+        - optional: {list: [duplicate, duplicate]}
+env: {}
+compare: {ignore: []}

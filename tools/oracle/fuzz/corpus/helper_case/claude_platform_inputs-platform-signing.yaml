@@ -1,0 +1,21 @@
+kind: helper
+name: claude_platform_inputs_platform_signing
+call:
+  claude_platform_inputs:
+    platform_signing:
+      calls:
+        - sign:
+            headers: {content-type: application/json}
+            optional_params: {}
+            request_data: {model: claude-fixture, max_tokens: 16}
+            api_base: https://aws-external-anthropic.eu-west-1.api.aws/v1/messages
+            api_key: fixture-key
+            environment: {}
+            credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: example-secret}
+            now: 1767225600
+        - error_class:
+            message: fixture message
+            status_code: 400
+            headers: [[x-amzn-errortype, fixture]]
+env: {}
+compare: {ignore: []}
