@@ -138,7 +138,7 @@ oracle_cases:
 - tools/oracle/cases/routing/admission-control/scalar-root-exempt.yaml
 deviations: []
 out_of_scope:
-- Implementing a Prometheus exporter (B111) or new health endpoints (B130).
+- Implementing a Prometheus exporter (B111) or new health endpoints (B4444 to B4448, mounted by B8540).
 - Reordering middleware to bypass authentication.
 pitfalls:
 - Admission overload returns 503 with retry-after, whereas a deployment capacity rejection is 429.

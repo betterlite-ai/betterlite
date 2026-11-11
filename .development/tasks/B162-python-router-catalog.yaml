@@ -1,0 +1,120 @@
+id: B162
+title: Python Router catalog and settings methods
+description: >-
+  After B8356 a betterlite `Router` can be built and called, but LiteLLM users also read and change the router they built: `router.get_model_names()`, `router.get_model_list()`, `router.add_deployment(...)`, `router.delete_deployment(id)`, `router.update_settings(num_retries=3)`, `router.get_available_deployment("gpt-4o")`. None of these exist on the betterlite class. Their logic is already planned in Rust (B844, B845, B846, B847, B368, B016, B9711), so this task is wiring: a native class that reaches that logic through the `NativeRouter` the constructor built, a Python mixin with LiteLLM's method names and signatures, and the mixin added to `Router`. It is the last part of the Python Router umbrella.
+
+
+  Native side. Put it in `crates/betterlite-python/src/router_call/catalog.rs` and `src/router_call/catalog/**`. `src/router_call.rs` is B6022's and isn't on main yet, so add its two lines yourself: `mod catalog;` and `catalog::register(module)?;` in B6022's `register`. Touch nothing else in that file, and never edit `lib.rs`, `_native.pyi` or `betterlite/__init__.py`. `NativeRouterCatalog` is a `#[pyclass]` built from a `NativeRouter`, sharing its deployment catalog and its router settings, so a deployment added here is one the next `acompletion` can pick. Each method takes JSON text and gives JSON text, and none holds routing logic: `model_list(model_name, team_id)` (B844), `model_names(team_id)` (B844), `model_ids(model_name, exclude_team_models)` (B844), `has_model_id(id)` (B844), `deployment(model_id)` (B844), `model_info(id)` (B845), `model_group_info(model_group)` (B846), `model_access_groups(model_name, model_access_group, team_id)` (B847), `set_model_list(list)`, `add_deployment(deployment)`, `upsert_deployment(deployment)` and `delete_deployment(id)` (B368), `get_settings()` and `update_settings(pairs)` (B9711), and `available_deployment(request)`, which blocks inside `py.detach`, plus `aavailable_deployment(request)`, which returns an awaitable through `future_into_py` (B016's selection; LiteLLM's sync form runs the same selection). `update_settings` needs a `RouterSettingsTarget` (B9711): implement it in `catalog/settings_target.rs` over the strategy, pre-call checks and routing groups the native router holds, calling B395's strategy init and args step, B350's lar1 step, B364's pre-call checks and B323's group build. `SettingsView` gets the router's dumped groups from B323 and, for `latency-based-routing`, the latency handler's args text. Errors reuse B5659's `NativeError`; a B9711 `NotAnInteger` or `RetryPolicy` error reaches Python as `ValueError` naming the key, and a missing deployment is `null`, not an error. Stubs go in `python/betterlite/_native_router_call.pyi` next to B6022's.
+
+
+  Python side. `python/betterlite/_router/catalog.py` holds the mixin `RouterCatalog` with these methods and LiteLLM's exact parameter names, kinds and defaults: `set_model_list(self, model_list)`, `add_deployment(self, deployment)`, `upsert_deployment(self, deployment)`, `delete_deployment(self, id)`, `get_deployment(self, model_id)`, `get_model_info(self, id)`, `get_model_group_info(self, model_group)`, `get_model_ids(self, model_name=None, exclude_team_models=False)`, `has_model_id(self, candidate_id)`, `get_model_names(self, team_id=None)`, `get_model_list(self, model_name=None, team_id=None)`, `get_model_access_groups(self, model_name=None, model_access_group=None, team_id=None)`, `get_settings(self)`, `update_settings(self, **kwargs)`, `get_available_deployment(self, model, messages=None, input=None, specific_deployment=False, request_kwargs=None)` and `async def async_get_available_deployment(self, model, request_kwargs, messages=None, input=None, specific_deployment=False)`. A `Deployment` argument goes over as `model_dump(exclude_none=True)`; `get_deployment`, `add_deployment`, `upsert_deployment` and `delete_deployment` answer B8584's `Deployment` or None, `get_model_group_info` answers B8584's `ModelGroupInfo` or None, and the list and dict methods answer plain lists and dicts. `get_settings` turns a stored retry policy back into B8584's `RetryPolicy`, as LiteLLM's attribute holds one. `update_settings` sends its kwargs as pairs in call order, with `RetryPolicy` and `RoutingStrategy` values dumped first. After any method that changes the router, refresh the attributes B8356 keeps (`model_list`, `model_names`, `num_retries`, `retry_policy`, `fallbacks`, `context_window_fallbacks`, `routing_strategy`) from the native answers, so they match what LiteLLM's attributes would show. `set_custom_routing_strategy(self, CustomRoutingStrategy)` raises `NotImplementedError` with the text "set_custom_routing_strategy is not supported by betterlite: custom routing strategies written in Python cannot run inside the native router".
+
+
+  Wiring. `python/betterlite/_router/__init__.py` is B8356's file; change only its class line to `class Router(RouterCalls, RouterEndpoints, RouterCatalog)` and its import, nothing else.
+
+
+  Tests: `cargo nextest` covers the JSON conversions in `router_call/catalog/tests.rs` (names start with `catalog_`). `tests/test_router_catalog.py` builds a betterlite `Router` and a LiteLLM `Router` from the same two-group model list in the same process and checks that each method's `inspect.signature` matches LiteLLM's; that `get_model_names`, `get_model_ids`, `get_model_list`, `get_model_info`, `get_model_group_info` and `get_model_access_groups` answer the same (pydantic answers compared by `model_dump()`); that `add_deployment`, `upsert_deployment` and `delete_deployment` change both routers the same way and that an added deployment answers `acompletion` against a local mock server; that `update_settings(num_retries="3", timeout=30.5, retry_policy={"RateLimitErrorRetries": 2})` leaves both `get_settings()` answers equal after `fastapi.encoders.jsonable_encoder`; and that `get_available_deployment` returns a deployment of the asked group.
+scope:
+  paths:
+  - crates/betterlite-python/src/router_call.rs
+  - crates/betterlite-python/src/router_call/catalog.rs
+  - crates/betterlite-python/src/router_call/catalog/**
+  - crates/betterlite-python/python/betterlite/_native_router_call.pyi
+  - crates/betterlite-python/python/betterlite/_router/catalog.py
+  - crates/betterlite-python/python/betterlite/_router/__init__.py
+  - crates/betterlite-python/tests/test_router_catalog.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9519-L9524
+    why: set_model_list signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9775-L9808
+    why: add_deployment, its return value and when it answers None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9925-L9993
+    why: upsert_deployment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10183-L10284
+    why: delete_deployment and get_deployment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10802-L10816
+    why: get_model_info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11171-L11198
+    why: get_model_group_info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11444-L11526
+    why: get_model_ids and has_model_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11715-L11734
+    why: get_model_names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12078
+    why: get_model_list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12120-L12164
+    why: get_model_access_groups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12185-L12291
+    why: get_settings and update_settings, which B9711 builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13282-L13292
+    why: async_get_available_deployment signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14153-L14162
+    why: get_available_deployment signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14719-L14738
+    why: set_custom_routing_strategy, which this task refuses.
+  - url: https://docs.litellm.ai/docs/routing
+    why: How SDK users read and change a Router.
+dod:
+  - text: Every catalog and settings method has LiteLLM's signature.
+    proof: [router-catalog-signature]
+  - text: The read methods answer what LiteLLM's Router answers for the same model list.
+    proof: [router-catalog-read]
+  - text: Adding, upserting and deleting deployments change the router like LiteLLM's, and an added deployment serves a completion.
+    proof: [router-catalog-write]
+  - text: "`update_settings` and `get_settings` match LiteLLM's after `jsonable_encoder`, including the `int()` casts and the retry policy object."
+    proof: [router-catalog-settings]
+  - text: "`get_available_deployment` and `async_get_available_deployment` pick a deployment of the asked group, and `set_custom_routing_strategy` raises `NotImplementedError` with the documented text."
+    proof: [router-catalog-select]
+  - text: The JSON conversions turn bad input into `NativeError`, never a panic.
+    proof: [router-catalog-native]
+  - text: The files pass strict basedpyright and ruff.
+    proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: router-catalog-native
+    why: A conversion panics or loses a field.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^router_call::catalog::tests::catalog_/)'
+  - id: router-catalog-signature
+    why: A parameter name, kind or default differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_catalog.py -k signature
+  - id: router-catalog-read
+    why: A read method answers differently from LiteLLM's Router.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_catalog.py -k read
+  - id: router-catalog-write
+    why: A change to the deployments differs, or does not reach completions.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_catalog.py -k write
+  - id: router-catalog-settings
+    why: Settings are cast, stored or shown unlike LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_catalog.py -k settings
+  - id: router-catalog-select
+    why: The selection ignores the group, or the custom strategy call fails silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_catalog.py -k select
+  - id: python-lint
+    why: Type drift against the mixins, the stubs and B8584's models.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+  - what: "`Router.set_custom_routing_strategy` raises `NotImplementedError` instead of installing the strategy."
+    why: The native router picks deployments in Rust and cannot call a Python strategy object per request yet.
+  - what: "The other public Router helpers (for example `get_model_group_usage`, `arefresh_model_info`, `get_deployment_credentials`, `async_get_fully_unhealthy_model_names`, `validate_fallbacks`) are not on the betterlite Router, so calling one raises `AttributeError`."
+    why: They are proxy internals with Rust owners; each needs its own native bridge, and this task exposes the methods LiteLLM's routing docs show.
+out_of_scope:
+  - "The logic behind every method: B844 (model list, names, ids, deployment lookup), B845 (model info), B846 (group info), B847 (access groups), B368 (set, add, upsert and delete), B016 (deployment selection), B9711 (settings). B9710 prices an added deployment, called by B368."
+  - "B8356 owns the Router class, its constructor and its attributes; B5078 and B8355 the call methods; B6022 `NativeRouter`."
+  - "The `router` argument of the vector store search helpers stays refused with `UnsupportedCallArgument` (B7875); this task gives that code no native handle."
+  - "`_redact_prompt_text_if_needed` (router.py L14121-L14151) is called only by `_record_routing_decision`, so it goes with B362."
+  - "`aguardrail` and `_aguardrail_helper` have no caller at the pin; `get_available_guardrail` and `guardrail_list` are B9711's and B3683's, and the proxy, not the SDK, fills the list."
+  - "Every other function in litellm/router.py has the owner the router tasks' shared out_of_scope line names (B016 carries it), except the pricing helpers it credits to B013, which are B9710's. litellm/types/router.py: B8584 ports its pydantic models into the wheel and B165 owns `CustomRoutingStrategyBase`."
+pitfalls:
+  - "`async_get_available_deployment` takes `request_kwargs` as its second, required parameter, while the sync form takes it last with a default of None."
+  - "With no `model_name`, `get_model_list` puts the alias rows and the routing group rows before the deployments, so the read test compares the lists in order."
+  - "`add_deployment` answers None, without changing anything, when a deployment with the same `model_info.id` is already there."
+  - "`delete_deployment(id)` and `get_model_info(id)` name their parameter `id`, so keyword callers pass `id=`; do not rename it to dodge the builtin."
+  - "`update_settings(timeout=30.5)` stores 30, because LiteLLM casts the five integer settings with `int()`."
+  - "After `set_model_list` or `add_deployment` the Python attributes `model_list` and `model_names` must change too; LiteLLM users read them directly."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

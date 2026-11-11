@@ -1,0 +1,150 @@
+id: B9463
+title: Presidio guardrail construction, request masking and the guard class
+description: >-
+  B3804 to B3807 built Presidio's analyzer, anonymizer, check_pii, the post-call, logging and streaming transforms,
+  but every one of them left the class to "the lifecycle task": `_OPTIONAL_PresidioPIIMasking.__init__`,
+  `async_pre_call_hook` and `apply_guardrail` (presidio.py L188-L268, L1011-L1099 and L1710-L1745) have no owner, and
+  nothing holds the analyzer, anonymizer and settings together, so a configured `guardrail: presidio` cannot run.
+  Build `PresidioGuard` in betterlite-guardrails, module presidio_runtime (presidio_runtime.rs and presidio_runtime/,
+  with error.rs and tests.rs), implementing B5471's `GuardrailContract`. B3681 builds one `PresidioArgs` per callback
+  (input scan, restore, output mask), B3682 keeps them as `CallbackSpec::Presidio`, and B8666 builds one
+  `PresidioGuard` per callback and dispatches to it.
+
+
+  Config section presidio_runtime (crates/betterlite-config/src/sections/presidio_runtime.rs and its folder; the
+  skeleton adds the stub, the `pub mod` line and the sections! entry). It reads `litellm_settings.output_parse_pii`,
+  LiteLLM's module-level `litellm.output_parse_pii` (bool, default false), and exposes `Settings { output_parse_pii:
+  bool }` as config.sections.presidio_runtime. A wrong type is a config error naming the key. Tests in
+  sections/presidio_runtime/tests.rs load it through the real loader (absent, true, false, a string), and config_yaml
+  corpus seeds named presidio-runtime-* replay through the config decoder.
+
+
+  Constructor `PresidioGuard::new(args: &PresidioArgs, defaults: PresidioDefaults, settings:
+  &presidio_runtime::Settings, logging_only: bool, base: GuardrailBase, client: reqwest::Client) ->
+  Result<PresidioGuard, PresidioRuntimeError>`. LiteLLM reads PRESIDIO_ANALYZER_API_BASE and
+  PRESIDIO_ANONYMIZER_API_BASE with get_secret, so `PresidioDefaults` holds the two values B8666 resolved through
+  B8500's secret lookup, and the constructor passes the explicit argument or that default to B3805's
+  `validate_environment` (whose own errors, "Missing `PRESIDIO_ANALYZER_API_BASE` from environment" and the anonymizer
+  one, stay as they are). `logging_only` is false for every guardrail built from the guardrails list (B3681 never
+  passes it); when true the base event hook becomes logging_only. The callback role is the args' role. Fields:
+  output_parse_pii (absent is false), apply_to_output, pii_entities_config, score thresholds and entities deny list
+  (absent is empty), language (absent is "en"), the chunk size through B3804's coerce_analyze_chunk_size, the mock
+  redacted text, and guardrail provider "presidio". Only a callback without a role whose output_parse_pii or
+  apply_to_output is true, and that is not logging_only, widens its event hook: a single hook other than post_call
+  becomes [hook, post_call], a list without post_call gets post_call appended, and a tagged mode or none stays. When
+  `presidio_ad_hoc_recognizers` names a file, read it as JSON into the recognizer list B3804's analyze payload sends.
+  A missing file fails with "File not found. file_path=<path>", invalid JSON with "Error decoding JSON file: <error>,
+  file_path=<path>" and any other read error with "An error occurred: <error>, file_path=<path>". The recognizers are
+  read before validate_environment runs. Build B3804's `PresidioAnalyzer` and B3805's `PresidioAnonymizer` from these
+  values and the pooled client; read their merged modules for the fields.
+
+
+  pre_call(data, call_type). Ask B3665's gate with event pre_call and return the data unchanged unless it answers
+  `Ok(true)`, so a logging_only guardrail never masks the live request. Read the per-request config with B3805's
+  `presidio_settings_from_request`. With no `messages`, return. Otherwise check every text at once: a string content
+  is one check, and a list content gives one check per item that has a `text` key; other content is skipped. Each
+  check is B3805's check_pii with the guardrail's output_parse_pii and the per-request config. Write each result back
+  to the slot it came from, then set `messages` on the data. Any error (a blocked entity, an analyzer failure under
+  fail-closed) goes back as it is. B3806's async_logging_hook already masks request messages this way in its private
+  `mask_request_messages` (presidio_response/logging.rs) with `collect_text_tasks` and `apply_masked_texts`
+  (presidio_response/messages.rs); make those `pub(crate)`, with `pub(crate) mod messages;` in presidio_response.rs,
+  and call them rather than copying them, and keep presidio_response's tests passing.
+
+
+  apply_guardrail(inputs, request_data, input_type). The texts are inputs.texts or an empty list, and the tokens are
+  request_data.metadata.pii_tokens or an empty map. For a response on a restore callback, or on a callback without a
+  role that has apply_to_output false and a non-empty token map, every text goes through B3805's unmask_pii_text.
+  Otherwise every text goes through check_pii in order, with the guardrail's output_parse_pii, no per-request config,
+  and the request data. Set inputs.texts to the results, even when the inputs had no texts, and return the inputs.
+
+
+  The guard also carries thin methods for the hooks B3806 and B3807 built as free functions, so B8666 has one value to
+  call: `post_call_success`, `logging_hook`, `async_logging_hook` and `streaming_iterator`, each building B3806's
+  `HookContext` from the guard's analyzer, anonymizer, entity config, request params and the section's
+  output_parse_pii and calling the B3806 or B3807 function. pre_call, these four and apply_guardrail are exactly what
+  the class defines, so B8666 reports them as overridden. Tests in presidio_runtime/tests.rs use the rstest function
+  `presidio_runtime_cases` and an axum server on 127.0.0.1 as the analyzer and anonymizer: constructor defaults, the
+  hook widening for a roleless callback only, logging_only, every recognizer file error, the example recognizer file
+  (copy LiteLLM's example_presidio_ad_hoc_recognizer.json byte for byte to
+  presidio_runtime/tests/example_presidio_ad_hoc_recognizer.json, load it through the constructor and check both
+  recognizers reach the analyze request), pre_call skipped by the gate, string and list content masked in place, a
+  blocked entity, and apply_guardrail masking, restoring on a restore callback and adding empty texts. B9464 adds the
+  booted-proxy cases.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/presidio_runtime.rs
+    - crates/betterlite-guardrails/src/presidio_runtime/**
+    - crates/betterlite-guardrails/src/presidio_response.rs
+    - crates/betterlite-guardrails/src/presidio_response/logging.rs
+    - crates/betterlite-guardrails/src/presidio_response/messages.rs
+    - crates/betterlite-config/src/sections/presidio_runtime.rs
+    - crates/betterlite-config/src/sections/presidio_runtime/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/presidio-runtime-*"
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L172-L268
+    why: The owned constructor, the logging_only switch, the hook widening, the defaults and the recognizer file errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1011-L1099
+    why: The owned pre-call hook, its gate, the per-request config and the slot-by-slot rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1710-L1745
+    why: The owned apply_guardrail and its restore versus mask rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L270-L302
+    why: B3805's validate_environment the constructor calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json#L1-L27
+    why: The example recognizer file this task ships as its test fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_initializers.py#L135-L195
+    why: How the three callbacks are built, with role scan or restore and apply_to_output false except on the output mask.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L559
+    why: The module-level output_parse_pii the section reads from litellm_settings.
+dod:
+  - text: The presidio_runtime section loads litellm_settings.output_parse_pii with default false and rejects a wrong type.
+    proof: [section-tests]
+  - text: Fresh presidio-runtime config seeds replay through the config decoder.
+    proof: [config-corpus]
+  - text: PresidioGuard::new applies LiteLLM's defaults, widens the hook only for a roleless output callback, honors logging_only and reports each recognizer file error.
+    proof: [runtime-tests]
+  - text: The example recognizer file loads through the constructor and both recognizers reach the analyze request.
+    proof: [runtime-tests]
+  - text: pre_call masks string and list content in place only when the gate allows it, and apply_guardrail masks or restores as LiteLLM chooses.
+    proof: [runtime-tests]
+  - text: Making B3806's request masking helpers reusable leaves its behavior unchanged.
+    proof: [response-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: section-tests
+      why: litellm_settings.output_parse_pii is not loaded, defaults wrong or accepts a wrong type
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::presidio_runtime::/) - test(replays_the_config_yaml_corpus)'
+    - id: config-corpus
+      why: no presidio-runtime seed was added, or the config decoder fails on one
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/presidio-runtime-*')"
+        && grep -rlq 'output_parse_pii' crates/betterlite-config/fuzz/corpus/config_yaml
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: runtime-tests
+      why: the Presidio class is missing, built with other defaults, masks a request it should skip or restores where it should mask
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_runtime::/)'
+    - id: response-tests
+      why: sharing the request masking helpers changed B3806's post-call or logging behavior
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^presidio_response::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Analyzer payload, chunking, filtering, the session iterator (B3804); validate_environment, anonymize, check_pii, blocked entities, unmask_pii_text and the per-request config (B3805); post-call, logging and Anthropic transforms (B3806); streamed masking and unmasking (B3807)."
+  - "get_supported_event_hooks: the per-kind list in B3682. Building the three callbacks: B3681 and B3682. Resolving the two API bases through B8500 and building one PresidioGuard per callback: B8666."
+  - "update_in_memory_litellm_params, _has_block_action, _close_http_session, __del__ and print_verbose: no caller at the pin (the registry never calls update_in_memory_litellm_params, and the other four are called only from tests or not at all)."
+  - "The legacy `presidio` arm of initialize_callbacks_on_proxy (callback_utils.py L182-L199), which would pass logging_only: B106 leaves the other arms to B189's inventory."
+  - "Calling a held guardrail's logging hooks for logging_only mode from the logging pipeline has no owner yet; see the B108 report notes."
+  - "The booted-proxy cases: B9464."
+pitfalls:
+  - "Every callback B3681 builds has role scan or restore, so the post_call widening in the constructor only ever runs for a roleless callback such as the legacy one."
+  - "pre_call must check the gate first: a logging_only Presidio guardrail that masks the live request sends anonymization tokens to the model."
+  - "apply_guardrail writes inputs.texts back even when the inputs had none, so the answer gains an empty texts list."
+  - "The restore branch on a roleless callback needs a non-empty pii_tokens map and apply_to_output false; with either missing it masks instead."
+  - "The recognizer file is read before the API bases are checked, so a bad file path wins over a missing PRESIDIO_ANALYZER_API_BASE."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

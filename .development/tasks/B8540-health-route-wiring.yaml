@@ -27,7 +27,9 @@ description: >-
   _run_background_health_check and the db-save helpers around it): it calls B4443's perform_health_check, B4444's perform_shared_health_check and B7640's
   changed-result save, and the results cache it fills is B4444's `HealthResultsCache`, its implementation of `HealthResultsSource`. HealthSlot holds that cache and hands it to B4445's routes,
   and `start` hands the same Arc to the loop. When `use_background_health_checks` is false the loop does not run and B4445 never reads the source, so its
-  empty cache changes nothing a user sees in that mode. `start` reads general_settings.background_health_checks once (LiteLLM's use_background_health_checks, acted on at proxy_server.py L1523-L1524): when it is true it spawns background_loop on the server's TaskTracker (the tracker behind shared.http, B8610) and returns; when it is false or absent nothing is spawned.
+  empty cache changes nothing a user sees in that mode. `HealthSlot::new` takes health_check_details, health_check_concurrency and background_health_checks for B4445 and
+  health_check_interval, health_check_concurrency, use_shared_health_check and health_check_details for B4444's loop from
+  config.sections.health_check_settings (B9580). `start` reads config.sections.health_check_settings.background_health_checks (B9580) once, logs LiteLLM's background_health_check_config info line from the B9580, B307 and B4441 sections (proxy_server.py L6861-L6871), and acts on it (LiteLLM's use_background_health_checks, proxy_server.py L1523-L1524): when it is true it spawns background_loop on the server's TaskTracker (the tracker behind shared.http, B8610) and returns; when it is false or absent nothing is spawned.
 
   services.rs implements B4447's traits over the real crates. `MockRequests` calls B5656's completion entry with exactly the
   arguments B4447's text gives (model `openai/litellm-mock-response-model`, the one user message, user `litellm:/health/services`,

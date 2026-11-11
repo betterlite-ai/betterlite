@@ -12,6 +12,9 @@ description: 'Compute the canonical counterfactual baseline through B068 cost ca
   _digest (L100-L101), AutoRouterBaselineCache.__init__ (L105-L117), AutoRouterBaselineCache.async_pre_call_deployment_hook
   (L119-L176), AutoRouterBaselineCache._count (L178-L194), AutoRouterBaselineCache.plan (L196-L223), AutoRouterBaselineCache.plan.count
   (L212-L213), invalidate_baseline_cache (L226-L243), finalize_baseline_cache (L246-L255), _capture (L258-L338).
+  The Logging methods _prepare_baseline_cache_estimate and invalidate_baseline_cache_estimate (litellm_logging.py
+  L2440-L2451) are the entry points that call finalize_baseline_cache and invalidate_baseline_cache, so they are
+  owned here.
   Implement these behaviors through the typed Rust services above; synchronous facades and structural
   accessors reuse the same primitive instead of separate ports. Function coverage in litellm/router_strategy/savings_baseline.py:
   canonical_model (L48-L70), _models_in (L73-L101), _models_in.candidate (L87-L99), _priced (L104-L134),
@@ -41,6 +44,8 @@ references:
   why: Scoped captures and bounded count cache.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/autorouter_baseline_cache.py#L226-L338
   why: Invalidation and final observations.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2440-L2451
+  why: The Logging methods _prepare_baseline_cache_estimate and invalidate_baseline_cache_estimate, thin calls into finalize_baseline_cache and invalidate_baseline_cache.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1518-L1534
   why: Previously uncovered helper owned by this task.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1537-L1553
