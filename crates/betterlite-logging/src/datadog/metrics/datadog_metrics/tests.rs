@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod clock;
 mod flush;
 mod health;
 mod latency;
