@@ -1,0 +1,14 @@
+kind: helper
+name: full-model-metadata-helper-and-full-caches
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        fixture/model: {litellm_provider: openai, mode: chat}
+      cache_maxsize: 0
+    steps:
+      - {op: helper_call, model: fixture/model, custom_llm_provider: openai}
+      - {op: call, model: fixture/model, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: invalidate}
+env: {}
+compare: {ignore: []}

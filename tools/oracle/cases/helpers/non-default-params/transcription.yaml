@@ -1,0 +1,82 @@
+kind: helper
+name: non-default-params-transcription
+call:
+  b5362:
+    calls:
+      - function: transcription
+        model: whisper-1
+        custom_llm_provider: openai
+        params: {language: en, response_format: json, temperature: 0.2, prompt: hi, timestamp_granularities: [word]}
+      - function: transcription
+        model: whisper-1
+        custom_llm_provider: azure
+        params: {language: null, response_format: verbose_json, custom_field: 1}
+      - function: transcription
+        model: whisper-1
+        custom_llm_provider: openai
+        params: {language: en, extra_body: {inner: 2}, custom_field: 1}
+      - function: transcription
+        model: whisper-large-v3
+        custom_llm_provider: groq
+        params: {language: en, response_format: text, temperature: 0.1, prompt: p}
+        mapper: {supported: [language, response_format], fail_status: null, records: true}
+      - function: transcription
+        model: whisper-large-v3
+        custom_llm_provider: groq
+        params: {language: en, response_format: text, temperature: 0.1}
+        drop_params: true
+        mapper: {supported: [language, response_format], fail_status: null, records: true}
+      - function: transcription
+        model: whisper-large-v3
+        custom_llm_provider: groq
+        params: {language: en, temperature: 0.1}
+        drop_params: false
+        mapper: {supported: [language], fail_status: null, records: true}
+      - function: transcription
+        model: whisper-large-v3
+        custom_llm_provider: groq
+        params: {language: en, temperature: 0.1}
+        drop_params: false
+        litellm_drop_params: true
+        mapper: {supported: [language], fail_status: null, records: true}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: en, prompt: p, custom_field: 1}
+        mapper: {supported: [language, prompt], fail_status: null, records: true}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: en, response_format: json}
+        mapper: {supported: [language], fail_status: null, records: true}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: en, response_format: json}
+        drop_params: true
+        mapper: {supported: [language], fail_status: null, records: true}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: en}
+        mapper: {supported: [language], fail_status: 502, records: true}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: null, prompt: null}
+        mapper: {supported: [], fail_status: null, records: true}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: "", temperature: 0}
+        mapper: {supported: [language, temperature], fail_status: null, records: true}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: en, custom_field: 1}
+      - function: transcription
+        model: nova-3
+        custom_llm_provider: deepgram
+        params: {language: en, response_format: json}
+env: {}
+compare: {ignore: []}

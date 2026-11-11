@@ -1,0 +1,20 @@
+kind: helper
+name: full-model-metadata-invalidation-generation
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai, mode: chat, max_tokens: 100}
+      cache_maxsize: 8
+    steps:
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: replace, key: gpt-4o, entry: {litellm_provider: openai, mode: chat, max_tokens: 200}}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: invalidate}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: invalidate}
+env: {}
+compare: {ignore: []}

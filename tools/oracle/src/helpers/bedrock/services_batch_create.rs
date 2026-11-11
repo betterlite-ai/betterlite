@@ -1,9 +1,14 @@
+mod input;
+mod ops;
+mod support;
+mod tests;
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("bedrock_services_batch_create")
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        ops::run(input)
     }
 }

@@ -119,8 +119,15 @@ repos:
         types: [python]
         pass_filenames: false
       - id: basedpyright-helpers
-        name: basedpyright on the legacy oracle helpers
+        name: basedpyright on the whole oracle helpers folder, as task checks run it
         entry: bash .development/hooks/python.sh pyright
+        language: system
+        files: ^tools/oracle/helpers/(.*\.py|pyrightconfig\.json)$
+        pass_filenames: false
+        require_serial: true
+      - id: basedpyright-changed-helpers
+        name: basedpyright on the helper files the change touches, as this machine runs it
+        entry: bash .development/hooks/python.sh pyright-files
         language: system
         files: ^tools/oracle/helpers/.*\.py$
         require_serial: true

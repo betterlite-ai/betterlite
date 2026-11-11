@@ -194,7 +194,7 @@ checks:
   commands:
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/agentcore_search_reply.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/agentcore_search_reply.py tools/oracle/helpers/agentcore_search_reply)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus

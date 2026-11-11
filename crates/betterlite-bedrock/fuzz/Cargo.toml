@@ -38,6 +38,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_image_reply"
+path = "fuzz_targets/bedrock_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_services_agentcore_response"
 path = "fuzz_targets/bedrock_services_agentcore_response.rs"
 test = false
@@ -61,6 +68,13 @@ bench = false
 [[bin]]
 name = "bedrock_web_identity"
 path = "fuzz_targets/bedrock_web_identity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_batch_create"
+path = "fuzz_targets/bedrock_services_batch_create.rs"
 test = false
 doc = false
 bench = false

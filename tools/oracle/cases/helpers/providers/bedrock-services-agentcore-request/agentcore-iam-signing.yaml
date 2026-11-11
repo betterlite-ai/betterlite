@@ -1,0 +1,35 @@
+kind: helper
+name: agentcore-iam-signing
+call:
+  bedrock_services_agentcore_request:
+    scenario: agentcore_iam_signing
+    runs:
+      - model: 'agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime'
+        api_base: 'https://bedrock-agentcore.us-west-2.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-west-2%3A123456789012%3Aruntime%2Fagent_runtime/invocations'
+        headers: [[X-Amzn-Bedrock-AgentCore-Runtime-Session-Id, session-1], [X-Amzn-Bedrock-AgentCore-Runtime-User-Id, user-1], [Accept, text/plain]]
+        optional_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        request_data: {prompt: hello}
+        api_key: null
+        configured_bearer: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        now: 1767225600
+      - model: 'agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime'
+        api_base: 'https://bedrock-agentcore.us-west-2.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-west-2%3A123456789012%3Aruntime%2Fagent_runtime/invocations'
+        headers: []
+        optional_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        request_data: {prompt: hello}
+        api_key: ''
+        configured_bearer: null
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: session-token}
+        now: 1767225600
+      - model: 'agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime'
+        api_base: 'https://bedrock-agentcore.us-west-2.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-west-2%3A123456789012%3Aruntime%2Fagent_runtime/invocations'
+        headers: []
+        optional_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        request_data: {prompt: hello}
+        api_key: null
+        configured_bearer: env-bearer-token
+        credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY, session_token: null}
+        now: 1767225600
+env: {}
+compare: {ignore: []}

@@ -231,6 +231,7 @@ fn steps_case(steps: Vec<Step>) -> Case {
     Case {
         name: "cleanup".to_owned(),
         config: String::new(),
+        config_files: BTreeMap::new(),
         env: BTreeMap::new(),
         native_feature_eligibility: false,
         request: Box::new(Request {

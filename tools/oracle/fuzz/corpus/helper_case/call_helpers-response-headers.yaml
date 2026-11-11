@@ -1,0 +1,15 @@
+kind: helper
+name: call-helpers-response-headers
+call:
+  call_helpers:
+    function: response_headers
+    steps:
+      - function: project
+        headers: {x-ratelimit-limit-requests: "100", x-request-id: abc}
+      - function: set_hidden
+        headers: {x-request-id: id}
+        existing: {llm_provider-x-litellm-response-cost: 0.25}
+      - function: get_hidden
+        hidden: {headers: {x-a: "1"}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: call-helpers-upstream-internal-header
+call:
+  call_helpers:
+    function: upstream_internal_header
+    upstream: {x-litellm-attempted-fallbacks: "1", x-request-id: abc}
+    trusted: {x-litellm-attempted-fallbacks: "1", x-extra: e}
+env: {}
+compare: {ignore: []}

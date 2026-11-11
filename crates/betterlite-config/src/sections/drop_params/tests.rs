@@ -55,9 +55,9 @@ fn an_empty_environment_is_unset() {
     assert!(!settings.policy.global_drop_params);
 }
 
-fn a_non_flag_environment_fails() {
-    let error = settings("model_list: []", &[("LITELLM_DROP_PARAMS", "always")]).unwrap_err();
-    assert!(error.contains("LITELLM_DROP_PARAMS"), "{error}");
+fn a_non_flag_environment_turns_the_global_flag_on() {
+    let settings = settings("model_list: []", &[("LITELLM_DROP_PARAMS", "always")]).unwrap();
+    assert!(settings.policy.global_drop_params);
 }
 
 fn a_non_list_additional_drop_params_fails() {
@@ -109,7 +109,9 @@ fn a_nested_drop_path_is_rejected() {
 #[case::an_explicit_false_overrides_the_environment(an_explicit_false_overrides_the_environment)]
 #[case::the_environment_enables_the_global_flag(the_environment_enables_the_global_flag)]
 #[case::an_empty_environment_is_unset(an_empty_environment_is_unset)]
-#[case::a_non_flag_environment_fails(a_non_flag_environment_fails)]
+#[case::a_non_flag_environment_turns_the_global_flag_on(
+    a_non_flag_environment_turns_the_global_flag_on
+)]
 #[case::a_non_list_additional_drop_params_fails(a_non_list_additional_drop_params_fails)]
 #[case::deployment_policies_stay_aligned_with_model_list(
     deployment_policies_stay_aligned_with_model_list

@@ -27,6 +27,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-openapi = { path = "../betterlite-openapi" }
+betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
