@@ -268,6 +268,17 @@ fn start_writes_the_pid_record_and_restores_settings_after_the_wait() {
         stdout.contains("Stopped ephemeral proxy and restored Claude Code settings."),
         "{stdout}"
     );
+    assert!(stdout.ends_with("multi-tenant host.\n"), "{stdout}");
+}
+
+#[test]
+fn start_installs_the_status_line_into_the_settings() {
+    let mut fixture = default_fixture();
+    fixture.start(PORT).unwrap();
+    let snapshot = fixture.snapshot();
+    let settings_document = snapshot.settings.unwrap();
+    let command = settings_document["statusLine"]["command"].as_str().unwrap();
+    assert_eq!(command, "/usr/local/bin/lite statusline");
 }
 
 #[test]

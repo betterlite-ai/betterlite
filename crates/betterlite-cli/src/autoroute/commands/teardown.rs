@@ -34,7 +34,7 @@ pub fn run_teardown(mut request: TeardownRequest<'_>, done: &AtomicBool) -> bool
     let _cleared = clear_pid_record(request.pid_record);
     match restore_claude_settings(request.settings, request.backup, request.files) {
         Ok(_restored) => {
-            let _done = write!(
+            let _done = writeln!(
                 request.stdout,
                 "\nStopped ephemeral proxy and restored Claude Code settings.\nRestart any Claude Code session still open from this session, or another local account could bind the now-free port {} and receive its requests. Do not use `lite autoroute start` on a shared or multi-tenant host.",
                 request.port

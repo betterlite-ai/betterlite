@@ -104,8 +104,7 @@ impl LogTail for RecordingTail {
         if let Ok(mut starts) = self.starts.lock() {
             starts.push(log_path.to_owned());
         }
-        let worker: Box<dyn TailWorker> = Box::new(QuietTailWorker);
-        Ok(worker)
+        Ok(Box::new(QuietTailWorker))
     }
 }
 

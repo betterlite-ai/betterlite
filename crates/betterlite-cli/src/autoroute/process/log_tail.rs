@@ -23,9 +23,7 @@ pub struct StdoutLogTail;
 
 impl LogTail for StdoutLogTail {
     fn start(&self, log_path: &Path) -> Result<Box<dyn TailWorker>, ProcessError> {
-        let tailer = spawn_log_tail(log_path)?;
-        let worker: Box<dyn TailWorker> = Box::new(tailer);
-        Ok(worker)
+        Ok(Box::new(spawn_log_tail(log_path)?))
     }
 }
 
