@@ -62,3 +62,26 @@ fn a_null_system_instruction_is_dropped() {
     assert_eq!(request.messages.len(), 1);
     assert_eq!(request.messages[0].role, Role::User);
 }
+
+#[test]
+fn the_snake_case_system_instruction_is_read() {
+    let request = translate(json!({
+        "model": "m",
+        "system_instruction": {"parts": [{"text": "be terse"}]},
+        "contents": [{"parts": [{"text": "hi"}]}],
+    }));
+    assert_eq!(request.messages.len(), 2);
+    assert_eq!(request.messages[0].role, Role::System);
+    assert_eq!(text_of(&request.messages[0]), "be terse");
+}
+
+#[test]
+fn the_camel_case_system_instruction_wins_over_the_snake_case_one() {
+    let request = translate(json!({
+        "model": "m",
+        "systemInstruction": {"parts": [{"text": "camel"}]},
+        "system_instruction": {"parts": [{"text": "snake"}]},
+        "contents": [],
+    }));
+    assert_eq!(text_of(&request.messages[0]), "camel");
+}

@@ -1512,6 +1512,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-core",
+ "betterlite-models",
+ "betterlite-openai",
  "chrono",
  "jiff",
  "libfuzzer-sys",

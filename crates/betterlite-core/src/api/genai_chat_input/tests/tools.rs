@@ -1,7 +1,8 @@
 use rstest::rstest;
 use serde_json::{Value, json};
 
-use super::prelude::translate;
+use super::prelude::{limits_with_nodes, translate, translate_result};
+use crate::api::genai_chat_input::GenAiInputError;
 
 #[test]
 fn function_declarations_become_openai_tools() {
@@ -158,4 +159,26 @@ fn tools_without_declarations_do_not_add_a_tools_field() {
 fn an_empty_tools_list_does_not_add_a_tools_field() {
     let request = translate(json!({"model": "m", "contents": [], "tools": []}));
     assert_eq!(request.tools, None);
+}
+
+#[test]
+fn tool_parameters_past_the_limits_fail_the_translation() {
+    let limits = limits_with_nodes(3);
+    let error = translate_result(
+        json!({
+            "model": "m",
+            "contents": [],
+            "tools": [{"functionDeclarations": [{
+                "name": "lookup",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+                },
+            }]}],
+        }),
+        None,
+        limits,
+    )
+    .expect_err("a schema limit error");
+    assert!(matches!(error, GenAiInputError::Schema(_)));
 }

@@ -88,6 +88,7 @@ fn litellm_params_are_returned_beside_the_completion_request() {
         api_version: Some(String::from("2024-01-01")),
         custom_llm_provider: Some(String::from("openai")),
         max_retries: Some(2),
+        organization: None,
     };
     let (request, forwarded) = translate_with(
         json!({"model": "m", "contents": [], "generationConfig": {"temperature": 1_i32}}),
@@ -118,6 +119,7 @@ fn absent_litellm_params_stay_absent() {
             api_version: None,
             custom_llm_provider: None,
             max_retries: None,
+            organization: None,
         },
     );
     let params = forwarded.expect("the forwarded params");
@@ -126,4 +128,31 @@ fn absent_litellm_params_stay_absent() {
     assert_eq!(params.api_version, None);
     assert_eq!(params.custom_llm_provider, None);
     assert_eq!(params.max_retries, None);
+}
+
+#[test]
+fn the_snake_case_tool_config_is_read() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [],
+        "tool_config": {"functionCallingConfig": {"mode": "NONE"}},
+    }));
+    assert_eq!(
+        request.tool_choice,
+        Some(ToolChoice::Mode(String::from("none")))
+    );
+}
+
+#[test]
+fn the_camel_case_tool_config_wins_over_the_snake_case_one() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [],
+        "toolConfig": {"functionCallingConfig": {"mode": "ANY"}},
+        "tool_config": {"functionCallingConfig": {"mode": "NONE"}},
+    }));
+    assert_eq!(
+        request.tool_choice,
+        Some(ToolChoice::Mode(String::from("required")))
+    );
 }

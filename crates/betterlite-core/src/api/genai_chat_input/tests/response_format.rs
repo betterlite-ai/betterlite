@@ -2,8 +2,8 @@ use betterlite_openai::chat::ChatRequest;
 use rstest::rstest;
 use serde_json::{Value, json};
 
-use super::prelude::{translate, translate_with};
-use crate::api::genai_chat_input::GenerateLiteLLMParams;
+use super::prelude::{limits_with_nodes, translate, translate_result, translate_with};
+use crate::api::genai_chat_input::{GenAiInputError, GenerateLiteLLMParams};
 
 fn body(config: &Value) -> Value {
     json!({"model": "m", "contents": [], "generationConfig": config})
@@ -141,6 +141,7 @@ fn provider_params(provider: Option<&str>) -> GenerateLiteLLMParams {
         api_version: None,
         custom_llm_provider: provider.map(str::to_owned),
         max_retries: None,
+        organization: None,
     }
 }
 
@@ -151,6 +152,9 @@ fn provider_params(provider: Option<&str>) -> GenerateLiteLLMParams {
 #[case::custom_anthropic("gpt-4", Some("anthropic"), true)]
 #[case::empty_provider("gpt-4", Some(""), false)]
 #[case::openai_provider("gpt-4", Some("openai"), false)]
+#[case::azure_prefix("azure/gpt-4", None, true)]
+#[case::openai_prefix("openai/gpt-4", None, false)]
+#[case::unknown_prefix("my-org/gpt-4", None, true)]
 fn the_provider_response_format_support_decides_the_field(
     #[case] model: &str,
     #[case] provider: Option<&str>,
@@ -167,22 +171,31 @@ fn the_provider_response_format_support_decides_the_field(
     assert_eq!(request.response_format.is_some(), supported);
 }
 
-fn nested_schema(depth: usize, total: usize, marked: &[(usize, &str)]) -> Value {
+fn nested_schema(depth: usize, total: usize, marked: &[(usize, &str)], via: &str) -> Value {
     let mut object = json!({"type": "object"});
     if let Some((_, key)) = marked.iter().find(|(at, _)| *at == depth) {
         object[*key] = json!(["x"]);
     }
     if depth < total {
-        object["items"] = nested_schema(depth.saturating_add(1), total, marked);
+        let child = nested_schema(depth.saturating_add(1), total, marked, via);
+        if via == "items" {
+            object["items"] = child;
+        } else {
+            object["anyOf"] = json!([child]);
+        }
     }
     object
 }
 
-fn descend(schema: &Value, depth: usize) -> &Value {
+fn descend<'call>(schema: &'call Value, depth: usize, via: &str) -> &'call Value {
     if depth == 0 {
         return schema;
     }
-    descend(&schema["items"], depth.saturating_sub(1))
+    if via == "items" {
+        descend(&schema["items"], depth.saturating_sub(1), via)
+    } else {
+        descend(&schema["anyOf"][0], depth.saturating_sub(1), via)
+    }
 }
 
 #[test]
@@ -191,9 +204,55 @@ fn the_gemini_key_filter_stops_past_litellms_recursion_bound() {
         0,
         101,
         &[(100, "propertyOrdering"), (101, "property_ordering")],
+        "items",
     );
     let request = translate(body(&json!({"responseSchema": schema})));
     let cleaned = schema_of(&request);
-    assert!(descend(&cleaned, 100).get("propertyOrdering").is_none());
-    assert!(descend(&cleaned, 101).get("property_ordering").is_some());
+    assert!(
+        descend(&cleaned, 100, "items")
+            .get("propertyOrdering")
+            .is_none()
+    );
+    assert!(
+        descend(&cleaned, 101, "items")
+            .get("property_ordering")
+            .is_some()
+    );
+}
+
+#[test]
+fn a_response_schema_past_the_limits_fails_the_translation() {
+    let limits = limits_with_nodes(3);
+    let error = translate_result(
+        body(&json!({"responseSchema": {
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+        }})),
+        None,
+        limits,
+    )
+    .expect_err("a schema limit error");
+    assert!(matches!(error, GenAiInputError::Schema(_)));
+}
+
+#[test]
+fn the_gemini_key_filter_counts_a_list_as_no_extra_level() {
+    let schema = nested_schema(
+        0,
+        101,
+        &[(100, "propertyOrdering"), (101, "property_ordering")],
+        "anyOf",
+    );
+    let request = translate(body(&json!({"responseSchema": schema})));
+    let cleaned = schema_of(&request);
+    assert!(
+        descend(&cleaned, 100, "anyOf")
+            .get("propertyOrdering")
+            .is_none()
+    );
+    assert!(
+        descend(&cleaned, 101, "anyOf")
+            .get("property_ordering")
+            .is_some()
+    );
 }
