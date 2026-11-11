@@ -33,15 +33,28 @@ impl GuardrailError {
 
 #[derive(Deserialize)]
 struct GuardrailConfig {
-    #[serde(rename = "guardrailIdentifier")]
-    identifier: Option<String>,
-    #[serde(rename = "guardrailVersion")]
-    version: Option<String>,
-    trace: Option<Trace>,
+    #[serde(default, rename = "guardrailIdentifier")]
+    identifier: Text,
+    #[serde(default, rename = "guardrailVersion")]
+    version: Text,
+    #[serde(default)]
+    trace: Trace,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+enum Text {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Present(String),
+}
+
+#[derive(Default, Deserialize)]
 enum Trace {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
     #[serde(rename = "enabled")]
     Enabled,
     #[serde(rename = "disabled")]
@@ -56,21 +69,22 @@ pub fn guardrail_headers(raw: &RawValue) -> Result<Vec<(String, String)>, Guardr
             raw: raw.get().to_owned(),
             source,
         })?;
-    let Some(identifier) = config.identifier else {
+    let Text::Present(identifier) = config.identifier else {
         return Err(GuardrailError::MissingIdentifier {
             raw: raw.get().to_owned(),
         });
     };
     let mut headers = vec![(IDENTIFIER.to_owned(), identifier)];
-    if let Some(version) = config.version {
+    if let Text::Present(version) = config.version {
         headers.push((VERSION.to_owned(), version));
     }
-    if let Some(trace) = config.trace {
-        let value = match trace {
-            Trace::Enabled => "ENABLED",
-            Trace::Disabled => "DISABLED",
-            Trace::EnabledFull => "ENABLED_FULL",
-        };
+    let trace = match config.trace {
+        Trace::Absent => None,
+        Trace::Enabled => Some("ENABLED"),
+        Trace::Disabled => Some("DISABLED"),
+        Trace::EnabledFull => Some("ENABLED_FULL"),
+    };
+    if let Some(value) = trace {
         headers.push((TRACE.to_owned(), value.to_owned()));
     }
     Ok(headers)

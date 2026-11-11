@@ -10,8 +10,12 @@ call:
         - {guardrailIdentifier: '', guardrailVersion: ''}
         - {guardrailVersion: '1'}
         - {guardrailIdentifier: 5}
+        - {guardrailIdentifier: null}
         - {guardrailIdentifier: id, guardrailVersion: 1}
+        - {guardrailIdentifier: id, guardrailVersion: null}
+        - {guardrailIdentifier: id, trace: null}
         - {guardrailIdentifier: id, trace: bogus}
+        - {guardrailIdentifier: id, trace: Absent}
         - {guardrailIdentifier: id, trace: 5}
         - text
         - 5

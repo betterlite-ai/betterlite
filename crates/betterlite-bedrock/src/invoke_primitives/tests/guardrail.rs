@@ -43,7 +43,7 @@ fn derived_headers() {
         ]
     );
     assert_eq!(
-        headers(r#"{"guardrailIdentifier":"id","guardrailVersion":null,"trace":"disabled"}"#),
+        headers(r#"{"guardrailIdentifier":"id","trace":"disabled"}"#),
         [
             (
                 "X-Amzn-Bedrock-GuardrailIdentifier".to_owned(),
@@ -94,7 +94,11 @@ fn invalid_configurations() {
     for value in [
         r#"{"guardrailIdentifier":5}"#,
         r#"{"guardrailIdentifier":"id","guardrailVersion":1}"#,
+        r#"{"guardrailIdentifier":null}"#,
+        r#"{"guardrailIdentifier":"id","guardrailVersion":null}"#,
+        r#"{"guardrailIdentifier":"id","trace":null}"#,
         r#"{"guardrailIdentifier":"id","trace":"bogus"}"#,
+        r#"{"guardrailIdentifier":"id","trace":"Absent"}"#,
         r#"{"guardrailIdentifier":"id","trace":5}"#,
         r#""text""#,
         "5",
