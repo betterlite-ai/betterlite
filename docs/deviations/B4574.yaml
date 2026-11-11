@@ -1,0 +1,5 @@
+task: B4574
+deviations:
+  - what: run_pkce_login calls the injected browser opener on the calling thread instead of starting a daemon thread for it.
+    why: betterlite forbids detached threads, which outlive their owner and lose errors; a browser opener that never returns therefore delays the check for the callback instead of running beside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L456

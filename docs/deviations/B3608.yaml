@@ -1,0 +1,29 @@
+task: B3608
+deviations:
+  - what: The fallback response text renders the chunk lines as a JSON array of strings (serde_json), where LiteLLM formats a Python list with repr (single quotes, Python escapes).
+    why: Python repr text is not ported (docs/compatibility.md). The two agree for an empty chunk list, which is the only fallback oracle case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L501-L520
+  - what: A handler that fails makes build_passthrough_logging_result return HandlerError, where LiteLLM raises the handler's exception and the router's catch-all logs it.
+    why: Rust has no exceptions; the router catches the typed error where LiteLLM's catch-all does and logs the same message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L365-L374
+  - what: The model is read from the caller's model_call_details slice and passed to extract_model_for_cost_injection as an Option<&str>.
+    why: LiteLLM probes the logging object with hasattr; the typed logging state always has the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L471-L499
+  - what: The Anthropic stream-complete probes (message_stop event, provider error frame) and the four TinyFish billing operations are injected traits, not direct calls.
+    why: The probes are private to the Messages stream iterator and the TinyFish operations belong to leaf tasks; B102 wires the real ones.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L33-L38
+  - what: The endpoint kinds this router dispatches on are declared as EndpointType in this module instead of reusing betterlite-server's copy.
+    why: betterlite-server sits above betterlite-logging, so this crate cannot depend on it; B102 maps the server enum onto this one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/pass_through_endpoints.py#L26-L33
+  - what: The "/models/([^:]+)" URL model rule is implemented here instead of calling B3638's extract_model_from_url.
+    why: betterlite-vertex depends on betterlite-openai, which depends on betterlite-logging, so calling it would be a dependency cycle; the rule matches B3638's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L663-L673
+  - what: split_complete_sse_frames is implemented in this module because B005's function is not merged yet.
+    why: B005 keeps ownership of the canonical SSE frame split; the copy here has its delimiter set and last-boundary rule so the stamp matches LiteLLM today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L92-L100
+  - what: The success dispatch goes through the StreamSuccessDispatch seam, whose production implementation (SuccessHandlerDispatch) calls B250's dispatch_success_handlers with prefer_async_handlers true.
+    why: The success handler borrows per-request data that cannot cross the blocking build boundary, so the logging object carries an owned dispatch instead of a borrowed SuccessHandler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2151-L2204
+  - what: The Anthropic frame probes are evaluated for every endpoint type, with empty frame bytes for non-Anthropic types, where LiteLLM short-circuits before calling them.
+    why: The probes are pure and see only the empty split for those types, so no output differs; evaluating them keeps the empty-byte rule observable in a test.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L299-L310

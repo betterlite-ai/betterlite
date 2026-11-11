@@ -123,6 +123,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "passthrough_stream_lines"
+path = "fuzz_targets/passthrough_stream_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "legacy_raw_response"
 path = "fuzz_targets/legacy_raw_response.rs"
 test = false

@@ -1,0 +1,1 @@
+{"messages":[{"role":"user","content":"a"},{"role":"tool","tool_call_id":"call_1","content":"result"},{"role":"user","content":"b"}],"model":"anthropic.claude-sonnet-4-5-20250929-v1:0","assistant_continue_message":"keep going","user_continue_message":{"role":"user","content":"carry on"},"modify_params":true}
