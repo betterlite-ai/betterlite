@@ -16,7 +16,7 @@ from litellm.llms.watsonx.common_utils import (
     _generate_watsonx_token,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
     _get_api_params,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
 )
-from litellm.types.llms.watsonx import WatsonXAPIParams  # noqa: TC002
+from litellm.types.llms.watsonx import WatsonXAPIParams
 
 Json: TypeAlias = bool | int | float | str | list["Json"] | dict[str, "Json"] | None
 Object: TypeAlias = dict[str, Json]

@@ -1,14 +1,14 @@
 id: B655
 milestone: M3 providers
 title: Bedrock AgentCore streaming adapters
-status: todo
+status: done
 depends_on: [B654, B173, B682, B249, B004, B171, B005]
 file: tasks/B655-bedrock-services-agentcore-stream.yaml
 covers:
   - "litellm/llms/bedrock/chat/agentcore/transformation.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1268

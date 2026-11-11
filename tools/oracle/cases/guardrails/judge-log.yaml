@@ -1,0 +1,29 @@
+kind: helper
+name: judge-log
+call:
+  b3809:
+    guardrail:
+      guardrail_name: quality
+      litellm_params:
+        guardrail: llm_as_a_judge
+        mode: during_call
+        judge_model: gpt-4o-mini
+        overall_threshold: 80
+        on_failure: log
+        criteria:
+          - {name: Accuracy, description: Is it accurate?, weight: 60}
+          - {name: Safety, description: Is it safe?, weight: 40}
+    inputs:
+      texts: ["a shaky answer"]
+      structured_messages:
+        - {role: user, content: "a shaky answer"}
+    request_data:
+      messages:
+        - {role: user, content: "a shaky answer"}
+      metadata: {}
+    input_type: request
+    judge:
+      content: |-
+        {"verdicts": [{"criterion_name": "Accuracy", "score": 50, "reasoning": "thin", "passed": false, "weight": 60}], "overall_score": 50}
+env: {}
+compare: {ignore: [{pointer: /value/guardrail_records/0/start_time, why: "The record time is the wall clock at the call"}, {pointer: /value/guardrail_records/0/end_time, why: "The record time is the wall clock at the call"}]}
