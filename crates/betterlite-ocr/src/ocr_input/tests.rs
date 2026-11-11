@@ -67,6 +67,25 @@ fn request_with(document: Json) -> OcrWireRequest {
 }
 
 #[test]
+fn document_inputs_convert_from_documents_and_paths() {
+    let document = OcrDocument::DocumentUrl {
+        document_url: "data:application/pdf;base64,YWJj".to_owned(),
+        extra: BTreeMap::new(),
+    };
+    assert_eq!(
+        OcrDocumentInput::from(document.clone()),
+        OcrDocumentInput::Document(document)
+    );
+    assert_eq!(
+        OcrDocumentInput::from(PathBuf::from("/tmp/scan.pdf")),
+        OcrDocumentInput::Path {
+            path: PathBuf::from("/tmp/scan.pdf"),
+            mime_type: None,
+        }
+    );
+}
+
+#[test]
 fn wire_request_decodes_every_field() {
     let request = decode_request(OcrWireRequest {
         model: "mistral/model-name".to_owned(),
