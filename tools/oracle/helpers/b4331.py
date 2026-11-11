@@ -195,9 +195,7 @@ class Scenario:
         elif kind == "post_call":
             self.declare_post_call(None, step)
         elif kind == "post_call_on":
-            self.declare_post_call(
-                integer_value(step.get("request"), "request"), step
-            )
+            self.declare_post_call(integer_value(step.get("request"), "request"), step)
         else:
             return False
         return True
@@ -219,9 +217,7 @@ class Scenario:
         if kind == "nested":
             await self.nested(integer_value(step.get("cache"), "cache"))
         elif kind == "create_request":
-            _ = self.record_request(
-                RequestRedisBatches(post_call_deadline=self.deadline)
-            )
+            _ = self.record_request(RequestRedisBatches(post_call_deadline=self.deadline))
         elif kind in ("prefetch_arm", "prefetch_take"):
             self.prefetch(step)
         elif kind == "snapshot":
