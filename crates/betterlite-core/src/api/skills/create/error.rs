@@ -1,6 +1,7 @@
 use betterlite_anthropic::skills::error::SkillsError;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
-use betterlite_error::error::ErrorClass;
+use betterlite_error::error::details::ResponseDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
@@ -54,10 +55,28 @@ pub fn failure(
     redactor: &Redactor,
 ) -> CreateSkillFailureError {
     let provider = call.params.provider();
-    let class = dispatch(
-        &DispatchInput::Raw(Box::new(raw_exception(&error, provider))),
-        redactor,
-    );
+    let class = match &error {
+        // docs/compatibility.md rejects a value outside the declared type with a 400 naming the field, not a provider error
+        CreateSkillError::FieldType { name } => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+                ErrorContext {
+                    message: error.to_string(),
+                    model: None,
+                    provider: Some(provider.to_owned()),
+                    max_retries: None,
+                    num_retries: None,
+                    body_type: None,
+                    body_param: Some((*name).to_owned()),
+                    body_code: None,
+                },
+                None,
+            )))
+        }
+        CreateSkillError::Unsupported { .. } | CreateSkillError::Call(_) => dispatch(
+            &DispatchInput::Raw(Box::new(raw_exception(&error, provider))),
+            redactor,
+        ),
+    };
     CreateSkillFailureError { error, class }
 }
 
