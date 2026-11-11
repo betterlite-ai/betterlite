@@ -3,9 +3,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 
-use betterlite_db_admin::command_shell::{
-    AdminEnvironment, DbAdminBackend, Diagnostics, ExitStatus, run,
-};
+use betterlite_db_admin::command_shell::{AdminEnvironment, Diagnostics, ExitStatus, run};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use rust_decimal::Decimal;
@@ -127,25 +125,21 @@ impl Diagnostics for Recorder {
     }
 }
 
-async fn run_command(
-    arguments: &[&str],
-    database_url: &str,
-    backend: &DbAdminBackend,
-) -> (ExitStatus, Vec<String>) {
+async fn run_command(arguments: &[&str], database_url: &str) -> (ExitStatus, Vec<String>) {
     let environment = AdminEnvironment {
         variables: BTreeMap::from([("DATABASE_URL".to_owned(), database_url.to_owned())]),
         home: None,
     };
     let mut argv = vec![OsString::from("betterlite-db-admin")];
     argv.extend(arguments.iter().map(OsString::from));
+    let backend = crate::backend_for(&argv);
     let mut recorder = Recorder(Vec::new());
-    let status = Box::pin(run(argv, environment, backend, &mut recorder)).await;
+    let status = Box::pin(run(argv, environment, &backend, &mut recorder)).await;
     (status, recorder.0)
 }
 
 async fn rejects(arguments: &[&str]) {
-    let backend = crate::backend();
-    let (status, lines) = run_command(arguments, "postgresql://pinned.example/db", &backend).await;
+    let (status, lines) = run_command(arguments, "postgresql://pinned.example/db").await;
     assert_eq!(status, ExitStatus::Usage);
     assert_eq!(status.code(), 2);
     assert!(lines.iter().all(|line| line.starts_with("err|")));
@@ -177,17 +171,15 @@ async fn dispatches_native_operation() {
         .await
         .expect("the backfill rows");
     let url = postgres.fixture.options.url.expose_secret().to_owned();
-    let backend = crate::backend();
-    dispatch_each(&url, &backend).await;
+    dispatch_each(&url).await;
     assert_rows(&postgres).await;
     postgres.close().await;
 }
 
-async fn dispatch_each(url: &str, backend: &DbAdminBackend) {
+async fn dispatch_each(url: &str) {
     let (daily_status, daily_lines) = run_command(
         &["daily-tool-spend", "--cutover", "2026-07-25T00:00:00Z"],
         url,
-        backend,
     )
     .await;
     assert_eq!(daily_status, ExitStatus::Success);
@@ -195,14 +187,13 @@ async fn dispatch_each(url: &str, backend: &DbAdminBackend) {
         daily_lines,
         vec!["out|daily-tool-spend inserted 1 buckets.".to_owned()]
     );
-    let (floor_status, floor_lines) = run_command(&["key-total-spend"], url, backend).await;
+    let (floor_status, floor_lines) = run_command(&["key-total-spend"], url).await;
     assert_eq!(floor_status, ExitStatus::Success);
     assert_eq!(
         floor_lines,
         vec!["out|key-total-spend updated 1 active and 1 archived keys.".to_owned()]
     );
-    let (history_status, history_lines) =
-        run_command(&["key-total-spend-from-logs"], url, backend).await;
+    let (history_status, history_lines) = run_command(&["key-total-spend-from-logs"], url).await;
     assert_eq!(history_status, ExitStatus::Success);
     assert_eq!(
         history_lines,

@@ -52,11 +52,6 @@ pub enum Operation {
     KeyTotalSpendFromLogs,
 }
 
-// the backend keys a registered service by operation, so the parsed cutover is not part of the lookup
-pub const DAILY_TOOL_SPEND_KEY: Operation = Operation::DailyToolSpend {
-    cutover: DateTime::<Utc>::UNIX_EPOCH,
-};
-
 impl Operation {
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -82,28 +77,19 @@ impl Operation {
                         .map_or("true", String::as_str),
                 )),
             }),
-            Self::DatabaseViews => DbAdminCommand::DatabaseViews,
-            Self::DailyToolSpend { cutover } => {
-                DbAdminCommand::DailyToolSpend(DailyToolSpendOptions { cutover })
-            }
-            Self::KeyTotalSpend => DbAdminCommand::KeyTotalSpend,
-            Self::KeyTotalSpendFromLogs => DbAdminCommand::KeyTotalSpendFromLogs,
+            // the executable builds the offline service from the parsed operation; this slot only routes it
+            Self::DatabaseViews
+            | Self::DailyToolSpend { .. }
+            | Self::KeyTotalSpend
+            | Self::KeyTotalSpendFromLogs => DbAdminCommand::DatabaseViews,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DailyToolSpendOptions {
-    pub cutover: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DbAdminCommand {
     Migrate(MigrationOptions),
     DatabaseViews,
-    DailyToolSpend(DailyToolSpendOptions),
-    KeyTotalSpend,
-    KeyTotalSpendFromLogs,
 }
 
 impl DbAdminCommand {
@@ -112,15 +98,10 @@ impl DbAdminCommand {
         match self {
             Self::Migrate(_) => Operation::Migrate,
             Self::DatabaseViews => Operation::DatabaseViews,
-            Self::DailyToolSpend(_) => DAILY_TOOL_SPEND_KEY,
-            Self::KeyTotalSpend => Operation::KeyTotalSpend,
-            Self::KeyTotalSpendFromLogs => Operation::KeyTotalSpendFromLogs,
         }
     }
 }
 
-// padding keeps the command enum's larger options variant within three times this one's size
-#[repr(align(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MigrationOptions {
     pub use_migrate: bool,

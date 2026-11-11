@@ -8,14 +8,15 @@ use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::ExposeSecret as _;
 use tokio_postgres::NoTls;
 
-pub(crate) struct SpendBackfillsService;
+pub(crate) struct SpendBackfillsService {
+    pub(crate) plan: BackfillPlan,
+}
 
 impl DbAdminService for SpendBackfillsService {
-    fn run(&self, command: DbAdminCommand, config: ResolvedConfig) -> DbAdminFuture<'_> {
+    fn run(&self, _command: DbAdminCommand, config: ResolvedConfig) -> DbAdminFuture<'_> {
         Box::pin(async move {
             let session = session(&config).await?;
-            let plan = plan(command)?;
-            let outcome = run_plan(&session, plan).await?;
+            let outcome = run_plan(&session, self.plan).await?;
             Ok(DbAdminOutcome::Views {
                 lines: vec![outcome_line(outcome)],
             })
@@ -45,21 +46,6 @@ async fn session(config: &ResolvedConfig) -> Result<Client, DbAdminError> {
         .map_err(|source| DbAdminError::SpendBackfill {
             source: SpendBackfillError::Session { source },
         })
-}
-
-const fn plan(command: DbAdminCommand) -> Result<BackfillPlan, DbAdminError> {
-    match command {
-        DbAdminCommand::DailyToolSpend(options) => Ok(BackfillPlan::DailyToolSpend {
-            cutover: options.cutover,
-        }),
-        DbAdminCommand::KeyTotalSpend => Ok(BackfillPlan::KeyTotalSpend),
-        DbAdminCommand::KeyTotalSpendFromLogs => Ok(BackfillPlan::KeyTotalSpendFromLogs),
-        other @ (DbAdminCommand::Migrate(_) | DbAdminCommand::DatabaseViews) => {
-            Err(DbAdminError::Unregistered {
-                operation: other.operation().name(),
-            })
-        }
-    }
 }
 
 fn outcome_line(outcome: BackfillOutcome) -> String {

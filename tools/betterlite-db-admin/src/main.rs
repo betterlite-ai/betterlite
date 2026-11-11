@@ -1,12 +1,15 @@
 use std::env;
+use std::ffi::OsString;
 use std::io;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use betterlite_db::spend_backfills::BackfillPlan;
 use betterlite_db_admin::command_shell::{
     AdminEnvironment, DbAdminBackend, DbAdminService, Diagnostics as _, Streams, run,
 };
-use betterlite_db_admin::commands::{DAILY_TOOL_SPEND_KEY, Operation};
+use betterlite_db_admin::commands::{Cli, Operation};
+use clap::Parser as _;
 use tokio::runtime::Builder;
 
 use crate::database_views::{DatabaseViewsService, OFFLINE_TIMEOUT};
@@ -26,21 +29,33 @@ fn backend() -> DbAdminBackend {
     backend
         .services
         .insert(Operation::DatabaseViews, Arc::new(views));
-    let backfills: Arc<dyn DbAdminService> = Arc::new(SpendBackfillsService);
     backend
-        .services
-        .insert(DAILY_TOOL_SPEND_KEY, Arc::clone(&backfills));
-    backend
-        .services
-        .insert(Operation::KeyTotalSpend, Arc::clone(&backfills));
-    backend
-        .services
-        .insert(Operation::KeyTotalSpendFromLogs, backfills);
+}
+
+pub(crate) fn backend_for(arguments: &[OsString]) -> DbAdminBackend {
+    let Ok(cli) = Cli::try_parse_from(arguments.iter().cloned()) else {
+        return backend();
+    };
+    match cli.operation {
+        Operation::DailyToolSpend { cutover } => {
+            backend_with_plan(BackfillPlan::DailyToolSpend { cutover })
+        }
+        Operation::KeyTotalSpend => backend_with_plan(BackfillPlan::KeyTotalSpend),
+        Operation::KeyTotalSpendFromLogs => backend_with_plan(BackfillPlan::KeyTotalSpendFromLogs),
+        Operation::Migrate | Operation::DatabaseViews => backend(),
+    }
+}
+
+fn backend_with_plan(plan: BackfillPlan) -> DbAdminBackend {
+    let mut backend = backend();
+    let backfills: Arc<dyn DbAdminService> = Arc::new(SpendBackfillsService { plan });
+    backend.services.insert(Operation::DatabaseViews, backfills);
     backend
 }
 
 fn main() -> ExitCode {
-    let backend = backend();
+    let arguments: Vec<OsString> = env::args_os().collect();
+    let backend = backend_for(&arguments);
     let mut output = io::stdout();
     let mut errors = io::stderr();
     let mut streams = Streams {
@@ -60,6 +75,6 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let status = runtime.block_on(run(env::args_os(), environment, &backend, &mut streams));
+    let status = runtime.block_on(run(arguments, environment, &backend, &mut streams));
     ExitCode::from(status.code())
 }
