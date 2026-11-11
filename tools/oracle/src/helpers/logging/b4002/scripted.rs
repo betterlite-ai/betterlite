@@ -86,27 +86,31 @@ const NETWORK_FAILURE: TransportFailure = TransportFailure::Url(url::ParseError:
 
 fn call_json(request: &PostRequest) -> Value {
     let header = |name: &str| {
-        request
-            .headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
+        let value = request.headers.get(name)?;
+        value.to_str().ok()
     };
-    let mut call = json!({
-        "authorization": header("authorization"),
-        "content_type": header("content-type"),
-        "url": request.url,
-    });
+    let authorization = header("authorization");
+    let content_type = header("content-type");
     if request.url.ends_with(TOKEN_PATH) {
         let form: BTreeMap<String, String> =
             form_urlencoded::parse(&request.body).into_owned().collect();
-        call["kind"] = json!("token");
-        call["form"] = json!(form);
-    } else {
-        let records: Vec<Value> = serde_json::from_slice(&request.body).unwrap_or_default();
-        call["kind"] = json!("batch");
-        call["entries"] = records.iter().map(entry).collect();
+        return json!({
+            "authorization": authorization,
+            "content_type": content_type,
+            "url": request.url,
+            "kind": "token",
+            "form": form,
+        });
     }
-    call
+    let records: Vec<Value> = serde_json::from_slice(&request.body).unwrap_or_default();
+    let entries: Vec<Value> = records.iter().map(entry).collect();
+    json!({
+        "authorization": authorization,
+        "content_type": content_type,
+        "url": request.url,
+        "kind": "batch",
+        "entries": entries,
+    })
 }
 
 // audit records are kept whole; a model record is told apart by its id and status
