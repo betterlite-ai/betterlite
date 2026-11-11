@@ -1,0 +1,12 @@
+kind: helper
+name: model-metadata-resolution-potential-names
+call:
+  model_metadata_resolution:
+    scenario: potential_names
+    fixture:
+      model_cost:
+        fixture/model: {litellm_provider: groq, mode: chat}
+    queries:
+      - {model: fixture/model, custom_llm_provider: groq}
+env: {}
+compare: {ignore: []}

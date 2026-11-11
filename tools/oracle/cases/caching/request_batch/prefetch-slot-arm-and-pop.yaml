@@ -1,0 +1,17 @@
+kind: helper
+name: caching-request-batch-prefetch-slot-arm-and-pop
+call:
+  b4331:
+    caches:
+      - {setting: one, namespace: ns}
+    deadline_millis: 1000
+    in_scope: true
+    steps:
+      - {kind: prefetch_take, slot: routing_read}
+      - {kind: prefetch_arm, slot: routing_read, value: early}
+      - {kind: prefetch_arm, slot: update_cache_read, value: second}
+      - {kind: prefetch_take, slot: routing_read}
+      - {kind: prefetch_take, slot: routing_read}
+      - {kind: prefetch_take, slot: update_cache_read}
+env: {}
+compare: {ignore: []}

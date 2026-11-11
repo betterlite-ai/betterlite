@@ -1341,6 +1341,7 @@ dependencies = [
  "num-traits",
  "regex",
  "rstest",
+ "rust_decimal",
  "rustix",
  "secrecy",
  "serde",
@@ -1432,6 +1433,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-models",
  "betterlite-redact",
+ "hex",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1439,6 +1441,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -1480,6 +1483,7 @@ dependencies = [
  "jiff",
  "jsonschema",
  "lopdf",
+ "num-traits",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -2428,6 +2432,9 @@ dependencies = [
 name = "betterlite-prompts-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
  "chrono",
  "indexmap 2.14.2",
@@ -2666,6 +2673,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
  "unicode-general-category",
 ]
 
