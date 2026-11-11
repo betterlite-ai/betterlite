@@ -137,20 +137,17 @@ class ScriptedLogger(S3Logger):
         limiter: RecordingLimiter | None,
     ) -> None:
         empty_source: dict[str, str] = {}
-        virtual_hosted = settings.get("use_virtual_hosted_style")
-        drop_terminal = settings.get("drop_on_terminal_error")
-        adaptive = settings.get("adaptive_concurrency")
         init_params = self._init_s3_params  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128
         init_params(
             params_source=empty_source,
             s3_bucket_name=settings["bucket_name"],
             s3_region_name=settings["region_name"],
             s3_endpoint_url=settings.get("endpoint_url"),
-            s3_use_virtual_hosted_style=False if virtual_hosted is None else virtual_hosted,
+            s3_use_virtual_hosted_style=settings.get("use_virtual_hosted_style") is True,
             s3_server_side_encryption=settings.get("server_side_encryption"),
             s3_sse_kms_key_id=settings.get("sse_kms_key_id"),
-            s3_drop_on_terminal_error=True if drop_terminal is None else drop_terminal,
-            s3_adaptive_concurrency=False if adaptive is None else adaptive,
+            s3_drop_on_terminal_error=settings.get("drop_on_terminal_error") is not False,
+            s3_adaptive_concurrency=settings.get("adaptive_concurrency") is True,
         )
         self.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L227
         self.get_credentials = CredentialProvider(keys)
@@ -169,22 +166,10 @@ class ScriptedLogger(S3Logger):
         return cast("dict[str, Json] | None", found)  # fmt: skip  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
 
 
-def build_element(element_input: Element) -> s3BatchLoggingElement:
-    payload_value = element_input.get("payload")
-    content_type_value = element_input.get("content_type")
-    payload: dict[str, Json] = {} if payload_value is None else payload_value
-    return s3BatchLoggingElement(
-        payload=payload,
-        s3_object_key=element_input["s3_object_key"],
-        s3_object_download_filename=element_input["s3_object_download_filename"],
-        body=element_input.get("body"),
-        content_type="application/json" if content_type_value is None else content_type_value,
-    )
-
-
 async def execute(input_value: Input) -> dict[str, Json]:
     settings = input_value["settings"]
-    limiter = RecordingLimiter() if settings.get("adaptive_concurrency") is True else None
+    adaptive = settings.get("adaptive_concurrency")
+    limiter = RecordingLimiter() if adaptive is True else None
     client = ScriptedClient(input_value["responses"])
     logger = ScriptedLogger(settings, input_value["credentials"], client, limiter)
     freeze_auth_clock(input_value["now"])
@@ -195,7 +180,17 @@ async def execute(input_value: Input) -> dict[str, Json]:
         element_input = input_value.get("element")
         if element_input is None:
             raise ValueError("a put call needs an element")
-        outcome = await logger.upload(build_element(element_input))
+        payload_value = element_input.get("payload")
+        content_type_value = element_input.get("content_type")
+        payload: dict[str, Json] = {} if payload_value is None else payload_value
+        element = s3BatchLoggingElement(
+            payload=payload,
+            s3_object_key=element_input["s3_object_key"],
+            s3_object_download_filename=element_input["s3_object_download_filename"],
+            body=element_input.get("body"),
+            content_type="application/json" if content_type_value is None else content_type_value,
+        )
+        outcome = await logger.upload(element)
         if limiter is not None:
             samples = limiter.samples
     else:
