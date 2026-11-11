@@ -14,16 +14,21 @@ use betterlite_error::envelope::{EnvelopeError, error_body_call_id};
 use betterlite_error::normalize::class::Class;
 use betterlite_error::normalize::provider::provider_facts;
 use betterlite_error::normalize::{ErrorFacts, Normalizer};
+use betterlite_models::controls::control_options::InvalidControlOption;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError};
+use betterlite_provider::operation::ChatCompletion;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde::Serialize;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
+use crate::server::chat_setup::provider_call::{
+    chat_mocks_resolve, control_options, provider_chat,
+};
 
 use headers::{failure_headers, success_headers};
 
@@ -148,22 +153,73 @@ async fn execute_chat(
     deployment: &ChatDeployment,
     call: &CallContext<'_>,
 ) -> Response {
+    let control = match control_options(request) {
+        Ok(control) => control,
+        Err(error) => return control_failure(error, call, Some(deployment)),
+    };
     if request.stream {
-        return stream_chat(&state.executor, deployment, request, call).await;
+        return stream_chat(state, deployment, request, control, call).await;
     }
-    match state.executor.send(deployment, request).await {
-        Ok(outcome) => {
+    let mocked = match chat_mocks_resolve(&state.executor, deployment, request) {
+        Ok(mocked) => mocked,
+        Err(error) => return failure(&error, call, Some(deployment)),
+    };
+    let answered = if mocked {
+        state
+            .executor
+            .send(deployment, request)
+            .await
+            .map(|outcome| {
+                (
+                    ChatCompletion::OpenAi(Box::new(outcome.response)),
+                    outcome.upstream.headers,
+                    outcome.upstream_time,
+                )
+            })
+    } else {
+        provider_chat(&state.executor, request, deployment, control).await
+    };
+    render_answer(answered, deployment, call)
+}
+
+fn render_answer(
+    answered: Result<(ChatCompletion, HeaderMap, Duration), ChatError>,
+    deployment: &ChatDeployment,
+    call: &CallContext<'_>,
+) -> Response {
+    match answered {
+        Ok((completion, upstream_headers, upstream_time)) => {
             let headers = success_headers(
-                &outcome.upstream.headers,
+                &upstream_headers,
                 deployment,
                 call.id,
-                outcome.upstream_time,
+                upstream_time,
                 call.started.elapsed(),
             );
-            (headers, Json(outcome.response)).into_response()
+            (headers, Json(completion)).into_response()
         }
         Err(error) => failure(&error, call, Some(deployment)),
     }
+}
+
+fn control_failure(
+    error: InvalidControlOption,
+    call: &CallContext<'_>,
+    deployment: Option<&ChatDeployment>,
+) -> Response {
+    let body = ErrorBody {
+        error: ErrorObject {
+            message: error.to_string(),
+            error_type: String::from("invalid_request_error"),
+            param: Some(error.param().to_owned()),
+            code: String::from("400"),
+            provider_specific_fields: None,
+            litellm_call_id: error_body_call_id(call.include_in_body, Some(call.id))
+                .map(str::to_owned),
+        },
+    };
+    let headers = failure_headers(None, None, call.id, deployment);
+    (StatusCode::BAD_REQUEST, headers, Json(body)).into_response()
 }
 
 fn failure(

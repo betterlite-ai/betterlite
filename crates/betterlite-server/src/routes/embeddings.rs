@@ -4,15 +4,23 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use betterlite_config::sections::mock_response::selection::resolve_mock;
+use betterlite_http::error::HttpError;
+use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, provider_failure};
-use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest};
+use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
+use betterlite_provider::operation::{
+    EmbeddingOperation, OperationError, OperationRequest, OperationResult,
+};
+use betterlite_provider::prepared::deployment::Deployment;
+use betterlite_provider::provider::Provider;
 use betterlite_redact::secret::Redactor;
 use serde::Serialize;
 use std::str;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
@@ -33,20 +41,6 @@ struct ErrorObject {
     error_type: String,
     param: Option<String>,
     code: String,
-}
-
-#[derive(serde::Deserialize)]
-struct ProviderErrorBody {
-    error: ProviderErrorFields,
-}
-
-#[derive(serde::Deserialize)]
-struct ProviderErrorFields {
-    message: String,
-    #[serde(rename = "type")]
-    error_type: String,
-    param: Option<String>,
-    code: Option<String>,
 }
 
 pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
@@ -85,18 +79,110 @@ async fn embeddings(
             &executor.redactor,
         );
     };
-    match embedding::send(&executor, deployment, &request).await {
-        Ok(outcome) => {
+    match embed(&executor, deployment, &request).await {
+        Ok((response, upstream_headers, upstream_time)) => {
             let response_headers = success_headers(
-                &outcome.upstream.headers,
+                &upstream_headers,
                 deployment,
                 &call_id,
-                outcome.upstream_time,
+                upstream_time,
                 started.elapsed(),
             );
-            (response_headers, Json(outcome.response)).into_response()
+            (response_headers, Json(response)).into_response()
         }
         Err(error) => failure(&error, &call_id, Some(deployment), &executor.redactor),
+    }
+}
+
+async fn embed(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<(EmbeddingResponse, HeaderMap, Duration), EmbeddingError> {
+    if embedding_mocks_resolve(executor, deployment, request)? {
+        let outcome = embedding::send(executor, deployment, request).await?;
+        return Ok((
+            outcome.response,
+            outcome.upstream.headers,
+            outcome.upstream_time,
+        ));
+    }
+    provider_embedding(executor, deployment, request).await
+}
+
+fn embedding_mocks_resolve(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<bool, EmbeddingError> {
+    let (client_response, client_tool_calls) =
+        client_mock(&request.passthrough, executor.mock.permission)
+            .map_err(|source| EmbeddingError::Body { source })?;
+    let resolved = resolve_mock(
+        executor.mock.responses.get(&deployment.model_id),
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
+        None,
+    );
+    Ok(resolved.and_then(|plan| plan.response).is_some())
+}
+
+async fn provider_embedding(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<(EmbeddingResponse, HeaderMap, Duration), EmbeddingError> {
+    let provider = Provider::from_deployment(deployment).map_err(embedding_error)?;
+    let inputs = Deployment::from_chat(deployment);
+    let operation = OperationRequest::Embedding(Box::new(EmbeddingOperation {
+        model: inputs.model.clone(),
+        request: request.clone(),
+    }));
+    let prepared = provider
+        .prepare(&operation, &inputs, &executor.catalog)
+        .map_err(embedding_error)?;
+    let started = Instant::now();
+    let client = executor
+        .client
+        .deployments
+        .get(&deployment.model_id)
+        .unwrap_or(&executor.client);
+    let upstream = provider
+        .execute(client, &prepared, &inputs)
+        .await
+        .map_err(embedding_error)?;
+    let upstream_time = started.elapsed();
+    let upstream_headers = upstream.headers().clone();
+    let result = provider
+        .decode(&prepared, upstream)
+        .map_err(embedding_error)?;
+    let OperationResult::Embedding(response) = result else {
+        return Err(EmbeddingError::UnsupportedProvider {
+            model: String::from("embeddings"),
+        });
+    };
+    Ok((*response, upstream_headers, upstream_time))
+}
+
+fn embedding_error(error: OperationError) -> EmbeddingError {
+    match error {
+        OperationError::Provider { response } => EmbeddingError::Provider { response },
+        OperationError::MissingApiKey => EmbeddingError::MissingApiKey,
+        OperationError::Encode { source } => EmbeddingError::Encode { source },
+        OperationError::Decode { source, .. } => EmbeddingError::Decode { source },
+        OperationError::UnavailableAdapter { provider }
+        | OperationError::UnsupportedOperation { provider, .. } => {
+            EmbeddingError::UnsupportedProvider { model: provider }
+        }
+        OperationError::Endpoint { .. }
+        | OperationError::TooLarge
+        | OperationError::Timeout
+        | OperationError::Http { .. }
+        | OperationError::InvalidHeader { .. }
+        | OperationError::Deployment(_)
+        | OperationError::TransformRetry(_) => EmbeddingError::Http {
+            source: HttpError::Timeout,
+        },
     }
 }
 
@@ -107,21 +193,7 @@ fn failure(
     redactor: &Redactor,
 ) -> Response {
     let failure = embedding_failure(error, redactor);
-    let message = match error {
-        EmbeddingError::Provider { response } => {
-            provider_message(response.status, &response.body, error)
-        }
-        EmbeddingError::Body { .. }
-        | EmbeddingError::Unsupported { .. }
-        | EmbeddingError::Encode { .. }
-        | EmbeddingError::Decode { .. }
-        | EmbeddingError::Http { .. }
-        | EmbeddingError::UnknownModel { .. }
-        | EmbeddingError::UnsupportedProvider { .. }
-        | EmbeddingError::MissingApiKey
-        | EmbeddingError::Endpoint { .. }
-        | EmbeddingError::Mock { .. } => error.to_string(),
-    };
+    let message = error.to_string();
     let body = ErrorBody {
         error: ErrorObject {
             message,
@@ -195,22 +267,4 @@ fn failure_headers_for_embedding(
             failure_headers(Some(&chat_error), None, call_id, deployment)
         }
     }
-}
-
-fn provider_message(status: u16, body: &[u8], fallback: &EmbeddingError) -> String {
-    if let Ok(parsed) = serde_json::from_slice::<ProviderErrorBody>(body) {
-        let error = parsed.error;
-        return format!(
-            "Error code: {status} - {{'error': {{'message': '{}', 'type': '{}', 'param': {}, 'code': {}}}}}",
-            error.message,
-            error.error_type,
-            error
-                .param
-                .map_or_else(|| String::from("None"), |value| format!("'{value}'")),
-            error
-                .code
-                .map_or_else(|| String::from("None"), |value| format!("'{value}'")),
-        );
-    }
-    fallback.to_string()
 }
