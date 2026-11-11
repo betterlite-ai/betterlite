@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-services-batch-status-decode
+call:
+  bedrock_services_batch_status:
+    operation: decode
+    now: 1700000000
+    status_code: 200
+    bodies:
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"InProgress","submitTime":"2024-01-15T10:30:00Z","message":"slow"}'
+      - '{"status":"Queued"}'
+env: {}
+compare: {ignore: []}

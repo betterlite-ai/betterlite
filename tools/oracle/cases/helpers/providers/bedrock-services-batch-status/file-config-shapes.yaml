@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-services-batch-status-file-config-shapes
+call:
+  bedrock_services_batch_status:
+    operation: decode
+    now: 1700000000
+    status_code: 200
+    bodies:
+      - '{"jobArn":"a","inputDataConfig":{"s3InputDataConfig":{"s3Uri":"s3://bucket/in.jsonl"}},"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://bucket/out"}}}'
+      - '{"jobArn":"a","inputDataConfig":{},"outputDataConfig":{}}'
+      - '{"jobArn":"a"}'
+      - '{"jobArn":"a","inputDataConfig":null,"outputDataConfig":"prefix"}'
+      - '{"jobArn":"a","inputDataConfig":{"s3InputDataConfig":"uri"},"outputDataConfig":{"s3OutputDataConfig":["uri"]}}'
+      - '{"jobArn":"a","inputDataConfig":{"s3InputDataConfig":{}},"outputDataConfig":{"s3OutputDataConfig":{}}}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:1:model-invocation-job/job","inputDataConfig":{"s3InputDataConfig":{"s3Uri":"s3://bucket/in.jsonl"}},"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://bucket/out"}}}'
+      - '{"jobArn":"a","inputDataConfig":{"s3InputDataConfig":{"s3Uri":null}}}'
+      - '{"jobArn":"a","outputDataConfig":{"s3OutputDataConfig":{"s3Uri":5}}}'
+      - '{"jobArn":"a","outputDataConfig":{"s3OutputDataConfig":{"s3Uri":null}}}'
+env: {}
+compare: {ignore: []}

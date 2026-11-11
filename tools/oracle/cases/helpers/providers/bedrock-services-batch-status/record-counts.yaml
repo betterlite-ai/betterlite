@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-services-batch-status-record-counts
+call:
+  bedrock_services_batch_status:
+    operation: record_counts
+    responses:
+      - {totalRecordCount: 10, successRecordCount: 7, errorRecordCount: 3}
+      - {successRecordCount: 7, errorRecordCount: 3}
+      - {totalRecordCount: 10, errorRecordCount: 3}
+      - {totalRecordCount: "10", successRecordCount: 7}
+      - {totalRecordCount: 10, successRecordCount: 7.0}
+      - {totalRecordCount: true, successRecordCount: false, errorRecordCount: true}
+      - {totalRecordCount: -2, successRecordCount: -1, errorRecordCount: -4}
+      - {totalRecordCount: 10, successRecordCount: 7}
+      - {totalRecordCount: 10, successRecordCount: 7, errorRecordCount: "3"}
+      - {totalRecordCount: 2, successRecordCount: 0, errorRecordCount: 5}
+env: {}
+compare: {ignore: []}

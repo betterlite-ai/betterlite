@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-services-batch-status-table
+call:
+  bedrock_services_batch_status:
+    operation: decode
+    now: 1700000000
+    status_code: 200
+    bodies:
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Submitted"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Validating"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Scheduled"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"InProgress"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"PartiallyCompleted"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Completed"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Failed"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Stopping"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Stopped"}'
+      - '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Expired"}'
+      - '{"status":"Submitted"}'
+env: {}
+compare: {ignore: []}

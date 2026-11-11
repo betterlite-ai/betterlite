@@ -1,0 +1,8 @@
+task: B650
+deviations:
+  - what: A submitTime, lastModifiedTime, endTime or jobExpirationTime that Python's datetime.fromisoformat accepts but the extended ISO 8601 subset does not (basic format, week or ordinal dates, a space separator with an offset) parses as None, so created_at falls back to the clock and the other fields stay absent.
+    why: Bedrock emits RFC 3339 UTC timestamps, and those forms are what a working retrieval sees; betterlite parses the extended date and date-time forms with an optional fraction and offset instead of porting CPython's whole fromisoformat grammar.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L458
+  - what: A record count or epoch value outside the 64-bit integer range is a typed error naming the field instead of Python's arbitrary-precision int.
+    why: the count and epoch records are i64 typed, so a value larger than that cannot be carried; no working setup reports record counts or timestamps in that range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L82-L102
