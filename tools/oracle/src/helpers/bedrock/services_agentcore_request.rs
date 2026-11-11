@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::ready;
-use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_bedrock::agentcore_request::error::AgentCoreRequestError;
 use betterlite_bedrock::agentcore_request::message::AgentCoreMessage;
@@ -9,21 +7,16 @@ use betterlite_bedrock::agentcore_request::policy::{
     HAS_CUSTOM_STREAM_WRAPPER, SHOULD_FAKE_STREAM, SUPPORTED_OPENAI_PARAMS,
     SUPPORTS_STREAM_PARAM_IN_BODY, get_error_class,
 };
-use betterlite_bedrock::agentcore_request::signing::{SignRequest, sign_request};
 use betterlite_bedrock::agentcore_request::url::complete_url;
-use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::bedrock_settings::ErrorHeaders;
 use betterlite_bedrock::model_routes::ParamMap;
-use betterlite_bedrock::signing::request::AwsSignedRequest;
-use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
 use uuid::Uuid;
 
+mod signing;
 mod tests;
 
 pub(crate) struct Op;
@@ -159,7 +152,7 @@ fn run_scenario(input: &Input) -> Value {
             "error": error_result(error),
         }),
         Input::AgentcoreBearerSigning { runs } | Input::AgentcoreIamSigning { runs } => json!({
-            "results": runs.iter().map(sign_result).collect::<Vec<_>>(),
+            "results": runs.iter().map(signing::sign_result).collect::<Vec<_>>(),
         }),
     }
 }
@@ -198,66 +191,6 @@ fn transform_result(run: &TransformRun) -> Value {
     }
 }
 
-fn sign_result(run: &SignRun) -> Value {
-    let credentials = Credentials {
-        access_key_id: SecretString::from(run.credentials.access_key_id.clone()),
-        secret_access_key: SecretString::from(run.credentials.secret_access_key.clone()),
-        session_token: run
-            .credentials
-            .session_token
-            .as_ref()
-            .map(|token| SecretString::from(token.clone())),
-    };
-    let api_key = run
-        .api_key
-        .as_ref()
-        .map(|key| SecretString::from(key.clone()));
-    let configured = run
-        .configured_bearer
-        .as_ref()
-        .map(|token| SecretString::from(token.clone()));
-    let headers = optional_headers(&run.headers);
-    let now = UNIX_EPOCH
-        .checked_add(Duration::from_secs(run.now))
-        .unwrap_or(UNIX_EPOCH);
-    let runtime = match Builder::new_current_thread().enable_all().build() {
-        Ok(runtime) => runtime,
-        Err(error) => return json!({"ok": false, "error": error.to_string()}),
-    };
-    let signed = runtime.block_on(sign_request(
-        SignRequest {
-            headers: &headers,
-            optional_params: &run.optional_params,
-            request_data: &run.request_data,
-            api_base: &run.api_base,
-            model: Some(&run.model),
-            api_key: api_key.as_ref(),
-            configured_bearer: configured.as_ref(),
-            region_inputs: RegionInputs::default(),
-            now,
-        },
-        move |_settings, _region| ready(Ok(credentials)),
-    ));
-    match signed {
-        Ok(signed) => signed_result(&signed),
-        Err(error) => json!({"ok": false, "error": error_kind(&error)}),
-    }
-}
-
-fn signed_result(signed: &AwsSignedRequest) -> Value {
-    let body = String::from_utf8(signed.body.clone());
-    match body {
-        Ok(body) => json!({
-            "ok": true,
-            "method": signed.method,
-            "url": signed.url,
-            "headers": header_map(&signed.headers),
-            "body": body,
-        }),
-        Err(_) => json!({"ok": false, "error": "non_utf8_body"}),
-    }
-}
-
 fn error_result(run: &ErrorRun) -> Value {
     let headers = ErrorHeaders::Http(run.headers.clone());
     match get_error_class(run.message.clone(), run.status, Some(headers)) {
@@ -271,7 +204,7 @@ fn error_result(run: &ErrorRun) -> Value {
     }
 }
 
-fn error_kind(error: &AgentCoreRequestError) -> String {
+pub(super) fn error_kind(error: &AgentCoreRequestError) -> String {
     match error {
         AgentCoreRequestError::InvalidModelFormat => "invalid_model_format".to_owned(),
         AgentCoreRequestError::InvalidArn { .. } => "invalid_arn".to_owned(),
@@ -282,14 +215,14 @@ fn error_kind(error: &AgentCoreRequestError) -> String {
     }
 }
 
-fn optional_headers(pairs: &[(String, String)]) -> Vec<(String, Option<String>)> {
+pub(super) fn optional_headers(pairs: &[(String, String)]) -> Vec<(String, Option<String>)> {
     pairs
         .iter()
         .map(|(name, value)| (name.clone(), Some(value.clone())))
         .collect()
 }
 
-fn header_map(pairs: &[(String, String)]) -> BTreeMap<String, String> {
+pub(super) fn header_map(pairs: &[(String, String)]) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
     for (name, value) in pairs {
         map.insert(name.clone(), value.clone());
