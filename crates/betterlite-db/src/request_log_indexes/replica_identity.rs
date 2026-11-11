@@ -60,22 +60,22 @@ async fn open_with_schema(
     database_url: &SecretString,
 ) -> Result<PostgresDatabase, RequestLogIndexError> {
     let database = connect::open(database_url).await?;
-    if let Some(statement) = search_path_statement(database_url) {
-        database.execute(&statement).await?;
+    if let Some(schema) = schema_parameter(database_url) {
+        database
+            .client
+            .query_one("SELECT set_config('search_path', $1, false)", &[&schema])
+            .await
+            .map_err(RequestLogIndexError::from)?;
     }
     Ok(database)
 }
 
-fn search_path_statement(database_url: &SecretString) -> Option<String> {
+fn schema_parameter(database_url: &SecretString) -> Option<String> {
     let schema = url_query_value(Some(database_url.expose_secret()), "schema").ok()?;
     if schema.is_empty() {
         return None;
     }
-    let quoted = format!("\"{}\"", schema.replace('"', "\"\""));
-    let literal = quoted.replace('\'', "''");
-    Some(format!(
-        "SELECT set_config('search_path', '{literal}', false)"
-    ))
+    Some(format!("\"{}\"", schema.replace('"', "\"\"")))
 }
 
 pub(crate) fn remaining(command_timeout: Duration, started: Instant) -> Duration {
