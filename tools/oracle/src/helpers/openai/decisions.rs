@@ -66,7 +66,7 @@ struct IrToResponseCall {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 enum Source {
     OpenAi {
         request: openai::DecisionRequestBody,
