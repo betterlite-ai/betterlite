@@ -300,7 +300,10 @@ async fn a_success_event_posts_the_mapped_trace() {
         member(span, "endTime"),
         &Json::Text("2024-01-01T00:00:01.500Z".to_owned())
     );
-    assert_eq!(member(span, "input"), &Json::Text("NO_INPUT".to_owned()));
+    assert_eq!(
+        member(span, "input"),
+        &json(r#"[{"role": "user", "content": "Hello"}]"#)
+    );
     assert_eq!(member(span, "output"), &Json::Text("hi".to_owned()));
     assert_eq!(member(span, "model"), &Json::Text("gpt-4o".to_owned()));
     assert_eq!(member(span, "inputTokenCount"), &json("2"));
@@ -323,6 +326,10 @@ async fn a_failure_event_posts_the_error_as_the_output() {
         &Json::Text("litellm_failure_callback".to_owned())
     );
     assert_eq!(member(span, "status"), &Json::Text("ERRORED".to_owned()));
+    assert_eq!(
+        member(span, "input"),
+        &json(r#"[{"role": "user", "content": "Hello"}]"#)
+    );
     assert_eq!(
         member(span, "output"),
         &Json::Text("upstream returned 500".to_owned())

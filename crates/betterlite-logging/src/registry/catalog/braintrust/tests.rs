@@ -29,7 +29,7 @@ const PAYLOAD: &str = r#"{
     "trace_id": "trace-1",
     "session_id": "session-1",
     "litellm_call_id": "call-1",
-    "call_type": "completion",
+    "call_type": "__CALL_TYPE__",
     "stream": false,
     "response_cost": 0.5,
     "status": "success",
@@ -54,13 +54,33 @@ const PAYLOAD: &str = r#"{
     "model_parameters": {},
     "hidden_params": {},
     "messages": [{"role": "user", "content": "Hello"}],
-    "response": {
-        "id": "chatcmpl-1",
-        "object": "chat.completion",
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}}],
-        "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}
-    },
+    "response": __RESPONSE__,
     "error_str": null
+}"#;
+
+const CHAT_RESPONSE: &str = r#"{
+    "id": "chatcmpl-1",
+    "object": "chat.completion",
+    "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}}],
+    "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}
+}"#;
+
+const TEXT_RESPONSE: &str = r#"{
+    "id": "cmpl-1",
+    "object": "text_completion",
+    "choices": [{"index": 0, "text": "hi"}],
+    "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}
+}"#;
+
+const EMBEDDING_RESPONSE: &str = r#"{
+    "object": "list",
+    "data": [{"object": "embedding", "index": 0, "embedding": [0.25]}],
+    "usage": {"prompt_tokens": 2, "total_tokens": 2}
+}"#;
+
+const IMAGE_RESPONSE: &str = r#"{
+    "created": 1704067200,
+    "data": [{"url": "https://images.example/one.png"}]
 }"#;
 
 const REQUESTER: &str = r#"{
@@ -188,8 +208,11 @@ fn fixture(replies: &[&'static str]) -> (BraintrustAdapter<Captured>, Captured, 
     (adapter, capture, tracker)
 }
 
-fn event_from(requester: &str) -> LoggerEvent {
-    let payload = PAYLOAD.replace("__REQUESTER__", requester);
+fn event_with(requester: &str, call_type: &str, response: &str) -> LoggerEvent {
+    let payload = PAYLOAD
+        .replace("__REQUESTER__", requester)
+        .replace("__CALL_TYPE__", call_type)
+        .replace("__RESPONSE__", response);
     LoggerEvent {
         payload: Arc::new(serde_json::from_str(&payload).expect("the fixture payload decodes")),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
@@ -306,7 +329,7 @@ fn assert_metrics(event: &Json, first_token: Option<&str>) {
 async fn a_success_event_posts_the_mapped_event() {
     let (adapter, capture, tracker) = fixture(&[]);
     adapter
-        .log_success_event(&event_from(REQUESTER))
+        .log_success_event(&event_with(REQUESTER, "completion", CHAT_RESPONSE))
         .expect("the event is accepted");
     tracker.close();
     tracker.wait().await;
@@ -318,11 +341,67 @@ async fn a_success_event_posts_the_mapped_event() {
 }
 
 #[tokio::test]
+async fn a_text_completion_event_posts_text_choices() {
+    let (adapter, capture, tracker) = fixture(&[]);
+    adapter
+        .log_success_event(&event_with(REQUESTER, "text_completion", TEXT_RESPONSE))
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_insert_request(&requests, "proj-1");
+    let event = posted_event(&requests[0].body);
+    let Json::List(output) = member(event, "output") else {
+        panic!("the event carries the output choices");
+    };
+    assert_eq!(member(&output[0], "text"), &Json::Text("hi".to_owned()));
+    // a text choice with no finish reason keeps LiteLLM's null instead of the chat "stop"
+    assert_eq!(member(&output[0], "finish_reason"), &Json::Null);
+    assert!(matches!(member(event, "metrics"), Json::Object(_)));
+}
+
+#[tokio::test]
+async fn an_embedding_event_posts_an_empty_output_with_metrics() {
+    let (adapter, capture, tracker) = fixture(&[]);
+    adapter
+        .log_success_event(&event_with(REQUESTER, "embedding", EMBEDDING_RESPONSE))
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_insert_request(&requests, "proj-1");
+    let event = posted_event(&requests[0].body);
+    assert_eq!(member(event, "output"), &json("[]"));
+    assert_eq!(
+        member(member(event, "metrics"), "prompt_tokens"),
+        &json("2")
+    );
+}
+
+#[tokio::test]
+async fn an_image_event_posts_an_empty_output_without_metrics() {
+    let (adapter, capture, tracker) = fixture(&[]);
+    adapter
+        .log_success_event(&event_with(REQUESTER, "image_generation", IMAGE_RESPONSE))
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_insert_request(&requests, "proj-1");
+    let event = posted_event(&requests[0].body);
+    assert_eq!(member(event, "output"), &json("[]"));
+    let Json::Object(fields) = event else {
+        panic!("the event is an object");
+    };
+    assert!(!fields.contains_key("metrics"));
+}
+
+#[tokio::test]
 async fn an_async_success_event_registers_the_project_it_names() {
     let requester = r#"{"project_name": "team", "span_name": "My Span"}"#;
     let (adapter, capture, _tracker) = fixture(&[r#"{"id": "team-1"}"#]);
     adapter
-        .async_log_success_event(Arc::new(event_from(requester)))
+        .async_log_success_event(Arc::new(event_with(requester, "completion", CHAT_RESPONSE)))
         .await
         .expect("the event is accepted");
     let requests = capture.requests();
@@ -348,8 +427,11 @@ async fn an_async_success_event_registers_the_project_it_names() {
 #[test]
 fn an_invalid_start_time_is_reported() {
     let (adapter, capture, _tracker) = fixture(&[]);
-    let with_overflow = PAYLOAD.replace("1704067200.0", "100000000000000000000");
-    let broken = with_overflow.replace("__REQUESTER__", REQUESTER);
+    let broken = PAYLOAD
+        .replace("1704067200.0", "100000000000000000000")
+        .replace("__REQUESTER__", REQUESTER)
+        .replace("__CALL_TYPE__", "completion")
+        .replace("__RESPONSE__", CHAT_RESPONSE);
     let event = LoggerEvent {
         payload: Arc::new(serde_json::from_str(&broken).expect("the fixture payload decodes")),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),

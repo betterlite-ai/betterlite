@@ -347,6 +347,21 @@ async fn a_success_event_posts_the_mapped_step() {
 }
 
 #[tokio::test]
+async fn the_request_tags_supply_the_step_tags() {
+    let (adapter, capture, tracker) = fixture();
+    let with_request_tags =
+        event_from(&PAYLOAD.replace(r#""request_tags": []"#, r#""request_tags": ["prod"]"#));
+    adapter
+        .log_success_event(&with_request_tags)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_request(&requests);
+    assert_eq!(field(&requests[0].body, "tags_0"), &json(r#"["prod"]"#));
+}
+
+#[tokio::test]
 async fn a_failure_event_posts_the_error() {
     let (adapter, capture, tracker) = fixture();
     let failed =

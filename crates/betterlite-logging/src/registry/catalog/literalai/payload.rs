@@ -44,6 +44,10 @@ fn request_metadata(payload: &StandardLoggingPayload) -> IndexMap<String, Json> 
     if let Some(Json::Object(requester)) = payload.metadata.requester_metadata.as_ref() {
         fields.extend(requester.clone());
     }
+    // the proxy merges the body, key and team tags into litellm_params.metadata.tags, which literalai reads before literalai_tags
+    if !fields.contains_key("tags") && !payload.request_tags.is_empty() {
+        fields.insert("tags".to_owned(), Json::List(payload.request_tags.clone()));
+    }
     fields
 }
 

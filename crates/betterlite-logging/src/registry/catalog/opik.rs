@@ -7,11 +7,10 @@ use std::fs;
 use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
-use tokio_util::task::TaskTracker;
 
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
-use crate::http_analytics_loggers::delivery::PooledDelivery;
+use crate::http_analytics_loggers::delivery::{Delivery, PooledDelivery};
 use crate::opik::delivery::logger::{LoggerDependencies, OpikLogger};
 use crate::opik::delivery::native::NoNativeClient;
 use crate::opik::delivery::settings::LoggerOptions;
@@ -39,36 +38,47 @@ pub(super) fn environment(
 }
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let logger = build_logger(
+        inputs,
+        PooledDelivery {
+            client: inputs.http.clone(),
+        },
+    )?;
+    Ok(Arc::new(OpikAdapter {
+        logger,
+        tracker: inputs.tracker.clone(),
+    }))
+}
+
+// the merged flush loop runs on the catalog's tracker, and shutdown closes it so the loop flushes once more and exits
+fn build_logger<D>(inputs: &CatalogInputs, delivery: D) -> Result<Arc<OpikLogger<D>>, CatalogError>
+where
+    D: Delivery + 'static,
+{
     let environment = environment(inputs.env.as_ref());
     // get_opik_config_variable reads ~/.opik.config when neither a constructor value nor an environment variable answers
     let config_file = inputs
         .env
         .system_home()
         .and_then(|home| fs::read_to_string(home.join(CONFIG_FILE_NAME)).ok());
-    let tasks = TaskTracker::new();
     let logger = OpikLogger::build(
         &LoggerOptions::default(),
         &environment,
         config_file.as_deref(),
         LoggerDependencies {
-            delivery: PooledDelivery {
-                client: inputs.http.clone(),
-            },
+            delivery,
             native: &NoNativeClient,
-            tasks: Some(&tasks),
+            tasks: Some(&inputs.tracker),
         },
     )
     .map_err(|error| CatalogError::Init {
         message: error.to_string(),
     })?;
-    // the merged flush loop stops when its tracker closes, so shutdown closes the tracker this logger owns
     let shutdown = inputs.shutdown.clone();
+    let tracker = inputs.tracker.clone();
     let _watcher = inputs.tracker.spawn(async move {
         shutdown.cancelled().await;
-        tasks.close();
+        tracker.close();
     });
-    Ok(Arc::new(OpikAdapter {
-        logger,
-        tracker: inputs.tracker.clone(),
-    }))
+    Ok(logger)
 }

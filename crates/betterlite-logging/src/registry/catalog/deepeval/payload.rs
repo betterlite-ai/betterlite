@@ -8,7 +8,7 @@ use crate::deepeval::deepeval_logging::payload::{
 use crate::deepeval::deepeval_logging::types::SpanValue;
 use crate::fields::payload::StandardLoggingPayload;
 
-// DeepevalLogger reads kwargs["standard_logging_object"] and kwargs["input"]; the payload carries no input
+// DeepevalLogger reads kwargs["standard_logging_object"] and kwargs["input"], and the logging frame puts the request messages in input
 pub(super) fn callback_kwargs(payload: &StandardLoggingPayload) -> CallbackKwargs {
     CallbackKwargs {
         standard_logging_object: Some(StandardLoggingObject {
@@ -18,7 +18,7 @@ pub(super) fn callback_kwargs(payload: &StandardLoggingPayload) -> CallbackKwarg
             error_str: payload.error_str.clone(),
             response: response_body(payload.response.as_ref()),
         }),
-        input: SpanField::Absent,
+        input: span_field(payload.messages.as_ref()),
     }
 }
 

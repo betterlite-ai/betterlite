@@ -14,12 +14,14 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use tempfile::TempDir;
-use tokio::time::timeout;
+use tokio::task::yield_now;
+use tokio::time::{advance, timeout};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use super::adapter::OpikAdapter;
 use super::build;
+use super::build_logger;
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
@@ -340,16 +342,36 @@ async fn the_logger_still_builds_without_an_api_key() {
     assert_eq!(logger.callback_name(), "opik");
 }
 
-#[tokio::test]
-async fn the_flush_loop_stops_on_shutdown() {
-    let inputs = inputs(&[("OPIK_API_KEY", "opik-key")]);
-    let logger = build(&inputs).expect("the logger builds");
-    assert_eq!(logger.callback_name(), "opik");
+#[tokio::test(start_paused = true)]
+async fn the_flush_loop_flushes_on_the_interval_and_stops_on_shutdown() {
+    let inputs = inputs(&[
+        ("OPIK_API_KEY", "opik-key"),
+        ("DEFAULT_FLUSH_INTERVAL_SECONDS", "1"),
+    ]);
+    let capture = Captured::default();
+    let logger = build_logger(&inputs, capture.clone()).expect("the logger builds");
+    // the merged periodic flush and the shutdown watcher both run on the catalog's tracker
+    assert_eq!(inputs.tracker.len(), 2);
+    let adapter = OpikAdapter {
+        logger,
+        tracker: inputs.tracker.clone(),
+    };
+    yield_now().await;
+    adapter
+        .async_log_success_event(Arc::new(event()))
+        .await
+        .expect("the event is accepted");
+    assert!(capture.requests().is_empty());
+    advance(Duration::from_secs(1)).await;
+    yield_now().await;
+    assert_eq!(capture.requests().len(), 2);
     inputs.shutdown.cancel();
-    inputs.tracker.close();
+    yield_now().await;
+    advance(Duration::from_secs(1)).await;
+    yield_now().await;
     timeout(Duration::from_secs(1), inputs.tracker.wait())
         .await
-        .expect("the shutdown watcher finishes");
+        .expect("the flush loop stops on shutdown");
 }
 
 #[test]
