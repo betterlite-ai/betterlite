@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-invoke-primitives-invoke-model-url-seed
+call:
+  bedrock_invoke_primitives:
+    invoke_model_url:
+      cases:
+        - model: anthropic.claude-v2
+          stream: true
+        - model: ai21.j2-mid-v1
+          stream: true
+          optional_params: {aws_region_name: eu-central-1}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+task: B4584
+deviations:
+  - what: "`lite autoroute start` launches the native betterlite gateway executable instead of `sys.executable -m litellm.proxy.proxy_cli`, and the availability check finds that executable and runs `--version` instead of importing six Python proxy modules."
+    why: "betterlite ships its gateway as a binary, not as a Python package. On Linux the launcher wraps the real argv in `setpriv --pdeathsig KILL` so the OS terminates the gateway when the CLI dies without teardown; on other Unix systems the gateway leads its own process group, which the owning handle kills, because setpriv is a util-linux tool. LiteLLM gets the same effect from running the proxy as its own child."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L45-L86
+  - what: "A PID record whose pid is zero or negative is rejected as corrupt; it is a NonZeroU32 here. LiteLLM's pydantic `PidRecord` accepts any integer and passes it to `os.kill`."
+    why: "In kill(2), pid 0 names the caller's own process group and a negative pid names the process group at that number, so a crafted or hand-edited record would make `stop` terminate betterlite's own process group or every process in another group. A working LiteLLM setup never writes such a record, because `Popen.pid` is always positive."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L141-L162
+  - what: "When writing the PID record, installing the signal watcher or starting the log-tail worker fails after launch, betterlite runs the teardown before returning the error. LiteLLM lets the exception escape and leaves the started proxy and the patched settings behind."
+    why: "Those failures happen before `atexit.register(_teardown)`, so LiteLLM's cleanup never runs: the proxy keeps running with no PID record pointing at it and the Claude settings stay patched. Nothing a working setup relies on depends on that leak, and the teardown is already locked to run once."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L69-L86
+  - what: "A signal-0 probe that fails with an error other than ESRCH or EPERM counts as the process existing. LiteLLM lets that OSError propagate out of `is_running`."
+    why: "Only ESRCH proves the process is gone and EPERM proves another user owns it. Treating any other errno as \"gone\" would let `start` launch a second proxy next to a live one, so betterlite keeps the conservative answer LiteLLM would give if the call succeeded."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/process.py#L141-L148
+  - what: "Nested maps in the regenerated config.yaml, such as general_settings, are emitted in sorted key order; only the top-level key order is preserved. LiteLLM's `yaml.safe_dump(..., sort_keys=False)` keeps the order inside nested maps too."
+    why: "The passthrough document nests serde_json values, whose object map is a BTreeMap unless serde_json's preserve_order feature is on. Turning that feature on changes key order in every JSON response of every crate, and YAML maps carry no order a working proxy relies on."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L71-L77
+  - what: "The `up` and `down` deprecation line goes to stderr uncolored. LiteLLM's `click.secho(..., fg=\"yellow\")` colors it on a terminal and prints it plain otherwise."
+    why: "The command writes through an injected writer and cannot tell whether that writer is a terminal, so the line stays plain; the text, the stream and the single write are the same, and the piped output LiteLLM produces is byte-identical."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/commands.py#L248-L256

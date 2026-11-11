@@ -1,0 +1,8 @@
+task: B2205
+deviations:
+  - what: The Bedrock llama3/llama4 instruct prompt branch uses the local chat-template assets only. A missing local template fails with "No chat template found" and makes no outbound request, where LiteLLM falls through to the Hugging Face fetch.
+    why: The download decision is still open for Max, so this branch keeps the local-only failure instead of borrowing the fetch path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5266-L5309
+  - what: When prompt_factory selects a model family and returns no prompt (a falcon model that is neither instruct nor 180B-chat, or an mpt model without chat), betterlite fails with a typed "the bedrock prompt is not text" error instead of carrying a null prompt into the provider request body.
+    why: LiteLLM returns None from prompt_factory and writes prompt null into the Bedrock body, which every working setup that reaches this path needs fixed; a typed error names the failure at the call instead of shipping an invalid body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5335-L5343
