@@ -6,8 +6,8 @@ deviations:
   - what: A non-2xx Ollama embedding reply fails with the provider's status and body; LiteLLM never checks the status and parses any body.
     why: LiteLLM answers a rejected embedding call with the 500 of its own KeyError, while the provider's 4xx describes the request that failed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/handler.py#L104-L108
-  - what: An image that is neither JPEG nor PNG is re-encoded with the Rust image crate at quality 75, and formats that build does not decode (GIF, WebP, QOI, EXR, AVIF) are sent unchanged.
-    why: LiteLLM re-encodes through Pillow, whose JPEG bytes cannot be reproduced by another encoder, and the pinned dependency set only carries the JPEG, PNG and TIFF codecs.
+  - what: An image that is neither JPEG nor PNG is re-encoded with the Rust image crate at quality 75, and formats that build does not decode (GIF, WebP, QOI, EXR, AVIF, TIFF) are sent unchanged.
+    why: LiteLLM re-encodes through Pillow, whose JPEG bytes cannot be reproduced by another encoder, and the image crate's tiff codec would pull a second weezl version into the lock, so it is left out.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L19-L42
   - what: A rendered prompt or image payload over 1 MiB is rejected before the request; LiteLLM has no such limit.
     why: betterlite caps every outbound transform at a fixed size (B177's prompt bounds), which a gateway needs against a caller sending an unbounded prompt.
