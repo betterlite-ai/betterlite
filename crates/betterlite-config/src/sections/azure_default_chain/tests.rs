@@ -235,7 +235,14 @@ fn rejects_developer_credential_filters(#[case] filter: &str) {
         ConfigError::InvalidScalar { path, .. } => {
             assert!(path.contains("AZURE_TOKEN_CREDENTIALS"));
         }
-        other => panic!("the developer filter {filter} loaded as {other:?}"),
+        ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::Unsupported { .. }
+        | ConfigError::MissingEnvironment { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. } => {
+            panic!("the developer filter {filter} loaded as {error:?}");
+        }
     }
 }
 

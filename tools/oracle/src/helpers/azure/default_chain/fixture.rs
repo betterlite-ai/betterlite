@@ -83,15 +83,14 @@ impl Recorder {
             .clone()
     }
 
-    fn record(&self, credential: &str, fields: Value) -> Result<(), GrantError> {
+    fn record(&self, credential: &str, mut recorded: Value) -> Result<(), GrantError> {
         if let Some(message) = self.errors.get(credential) {
             return Err(GrantError {
                 credential: "fixture",
                 message: message.clone(),
             });
         }
-        let mut fields = fields;
-        if let Some(map) = fields.as_object_mut() {
+        if let Some(map) = recorded.as_object_mut() {
             map.insert(
                 "credential".to_owned(),
                 Value::String(credential.to_owned()),
@@ -100,7 +99,7 @@ impl Recorder {
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(fields);
+            .push(recorded);
         Ok(())
     }
 

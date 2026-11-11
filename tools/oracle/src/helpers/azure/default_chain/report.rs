@@ -1,3 +1,4 @@
+use betterlite_azure::azure_default_chain::environment::ChainEnvironment;
 use betterlite_azure::azure_default_chain::error::DefaultChainError;
 use betterlite_azure::azure_default_chain::provider::{
     AzureTokenProvider, ProviderInner, ProviderRequest, get_azure_ad_token_provider,
@@ -81,7 +82,7 @@ fn run_provider<'env, 'grants>(
 fn provider_report(
     provider: &AzureTokenProvider<'_, Recorder>,
     recorder: &Recorder,
-    log: Option<String>,
+    log: Option<&str>,
 ) -> Value {
     json!({
         "kind": "credential",
@@ -102,7 +103,7 @@ pub(super) fn provider_value(
     let (result, logs) = run_provider(&environment, &recorder, step.scope.as_deref(), credential);
     let log = selection_log(&logs);
     Ok(match result {
-        Ok(provider) => provider_report(&provider, &recorder, log),
+        Ok(provider) => provider_report(&provider, &recorder, log.as_deref()),
         Err(error) => json!({
             "kind": "error",
             "error": error_value(&error),
