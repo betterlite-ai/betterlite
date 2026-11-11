@@ -18,9 +18,8 @@ use super::super::object::{
     StreamLoggingCallbacks, StreamLoggingObject, StreamLoggingState, StreamSuccessCall,
     StreamSuccessDispatch,
 };
-use super::super::router::{
-    AnthropicFrameProbe, StreamLoggingRouter, TinyfishCollectedChunks, TinyfishStreamBilling,
-};
+use super::super::router::{AnthropicFrameProbe, StreamLoggingRouter};
+use super::super::tinyfish::{TinyfishCollectedChunks, TinyfishStreamBilling};
 use super::super::types::{
     CollectedChunksCall, CollectedChunksHandler, EndpointType, HandlerError, HandlerOutcome,
     ProviderChunkHandlers,
@@ -346,6 +345,27 @@ pub(super) async fn route_stream(
 
 pub(super) async fn route_default(input: StreamLoggingInput, frames: Arc<dyn AnthropicFrameProbe>) {
     route_stream(input, frames, Arc::new(FakeTinyfish::default())).await;
+}
+
+pub(super) async fn route_anthropic(
+    raw: &[u8],
+    stream: ProbeStream,
+) -> (Arc<StreamLoggingObject>, Arc<FakeProbe>) {
+    let (logging_obj, mut input) = stream_input(EndpointType::Anthropic);
+    input.raw_bytes = vec![raw.to_vec()];
+    let fake = probe(stream);
+    let frames = Arc::clone(&fake);
+    route_default(input, frames).await;
+    (logging_obj, fake)
+}
+
+// The fuzz target splits the same way, so a crash input replays with its chunk boundaries.
+pub(super) fn corpus_chunks(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let Some((&first, rest)) = bytes.split_first() else {
+        return Vec::new();
+    };
+    let stride = usize::from(first).rem_euclid(7).saturating_add(1);
+    rest.chunks(stride).map(<[u8]>::to_vec).collect()
 }
 
 #[derive(Default)]

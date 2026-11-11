@@ -1,6 +1,5 @@
 use std::sync::{Arc, PoisonError};
 
-use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
 use tokio::task::{JoinError, JoinSet};
@@ -9,42 +8,18 @@ use tokio::task::{JoinError, JoinSet};
 use super::build::{StreamLoggingInput, StreamLoggingOutput, build_passthrough_logging_result};
 use super::lines::convert_raw_bytes_to_str_lines;
 use super::object::{StreamLoggingObject, StreamSuccessCall};
-use super::types::{EndpointType, HandlerError, HandlerOutcome, ProviderChunkHandlers};
+use super::sse_frames::{split_complete_sse_frames, tail_is_blank};
+use super::tinyfish::{TinyfishCollectedChunks, TinyfishStreamBilling};
+use super::types::{EndpointType, HandlerError, ProviderChunkHandlers};
 use crate::logging_success::types::SuccessResult;
 use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 
 const PROMPT_CACHE_RESPONSE_COMPLETE: &str = "prompt_cache_response_complete";
 const ROUTE_ERROR_PREFIX: &str = "Error in _route_streaming_logging_to_handler:";
-const SSE_FRAME_DELIMITERS: [&[u8]; 3] = [b"\r\n\r\n", b"\n\n", b"\r\r"];
 
 pub trait AnthropicFrameProbe: Send + Sync {
     fn is_message_stop(&self, frames: &[u8]) -> bool;
     fn is_provider_error(&self, frames: &[u8]) -> bool;
-}
-
-pub struct TinyfishCollectedChunks<'call> {
-    pub logging_obj: &'call StreamLoggingObject,
-    pub url_route: &'call str,
-    pub start_time: DateTime<FixedOffset>,
-    pub end_time: DateTime<FixedOffset>,
-    pub lines: &'call [String],
-}
-
-#[async_trait]
-pub trait TinyfishStreamBilling: Send + Sync {
-    fn sse_poller_spawned(&self, logging_obj: &StreamLoggingObject) -> bool;
-    fn run_id_from_sse_frames(&self, frames: &[u8]) -> Option<String>;
-    fn start_sse_run_billing(
-        &self,
-        run_id: &str,
-        logging_obj: &StreamLoggingObject,
-        start_time: DateTime<FixedOffset>,
-    );
-    // ast-grep-ignore: no-long-names
-    async fn handle_logging_tinyfish_collected_chunks(
-        &self,
-        call: &TinyfishCollectedChunks<'_>,
-    ) -> Result<HandlerOutcome, HandlerError>;
 }
 
 pub struct StreamLoggingRouter {
@@ -73,7 +48,7 @@ impl StreamLoggingRouter {
         let stopped = self.frames.is_message_stop(frames);
         let provider_error = self.frames.is_provider_error(frames);
         let complete = input.endpoint_type == EndpointType::Anthropic
-            && tail.trim_ascii().is_empty()
+            && tail_is_blank(tail)
             && stopped
             && !provider_error;
         input.logging_obj.edit(&mut |state| {
@@ -217,21 +192,4 @@ fn join_build(
         Some(Err(source)) => Err(HandlerError::BlockingTask { source }),
         None => Err(HandlerError::BlockingTaskLost),
     }
-}
-
-fn split_complete_sse_frames(pending: &[u8]) -> (&[u8], &[u8]) {
-    let mut boundary_end = 0;
-    for delimiter in SSE_FRAME_DELIMITERS {
-        let Some(index) = pending
-            .windows(delimiter.len())
-            .rposition(|window| window == delimiter)
-        else {
-            continue;
-        };
-        boundary_end = boundary_end.max(index.saturating_add(delimiter.len()));
-    }
-    if boundary_end == 0 {
-        return (&[], pending);
-    }
-    pending.split_at(boundary_end)
 }

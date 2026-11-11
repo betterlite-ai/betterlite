@@ -12,8 +12,8 @@ use rstest::rstest;
 
 use self::support::{
     FakeHandler, FakeTinyfish, PASS_THROUGH, PanickingHandler, ProbeStream, RecordingDispatch,
-    RecordingLogger, billing_handle, capture_logs, dispatch_handle, handler_handle, json, object,
-    object_state, probe, providers_with, route_default, route_stream, state, time,
+    RecordingLogger, billing_handle, capture_logs, corpus_chunks, dispatch_handle, handler_handle,
+    json, object, object_state, probe, providers_with, route_default, route_stream, state, time,
 };
 use super::build::build_passthrough_logging_result;
 use super::lines::convert_raw_bytes_to_str_lines;
@@ -112,12 +112,27 @@ fn lines_empty_chunk_list_is_empty() {
     );
 }
 
+#[test]
+fn lines_strip_python_whitespace_separators() {
+    let chunks = vec![b"data: {}\x1e\n\x1f\n\x1cdata\x1d\n".to_vec()];
+
+    assert_eq!(
+        convert_raw_bytes_to_str_lines(&chunks),
+        vec!["data: {}".to_owned(), "data".to_owned()]
+    );
+}
+
 #[rstest]
 fn replays_the_passthrough_stream_lines_corpus(
     #[files("fuzz/corpus/passthrough_stream_lines/*")] path: PathBuf,
 ) {
     let bytes = fs::read(path).expect("corpus file");
-    let _lines = convert_raw_bytes_to_str_lines(&[bytes]);
+    let chunked = convert_raw_bytes_to_str_lines(&corpus_chunks(&bytes));
+    let joined = match bytes.split_first() {
+        Some((_, content)) => convert_raw_bytes_to_str_lines(&[content.to_vec()]),
+        None => Vec::new(),
+    };
+    assert_eq!(chunked, joined);
 }
 
 #[test]
@@ -524,18 +539,8 @@ fn result_fallback_escapes_json_metacharacters() {
 
 #[tokio::test]
 async fn evidence_stamps_true_for_a_complete_anthropic_stream() {
-    let dispatch = Arc::new(RecordingDispatch::default());
-    let logging_obj = object(state(PASS_THROUGH, &[]), dispatch);
-    let mut input = support::input(
-        Arc::clone(&logging_obj),
-        Arc::clone(&support::handlers().providers),
-        EndpointType::Anthropic,
-    );
-    input.raw_bytes = vec![b"event: message_stop\ndata: {}\n\n".to_vec()];
-    let fake = probe(ProbeStream::Complete);
-    let frames = Arc::clone(&fake);
-
-    route_default(input, frames).await;
+    let (logging_obj, fake) =
+        support::route_anthropic(b"event: message_stop\ndata: {}\n\n", ProbeStream::Complete).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -549,11 +554,8 @@ async fn evidence_stamps_true_for_a_complete_anthropic_stream() {
 
 #[tokio::test]
 async fn evidence_stamps_false_without_a_message_stop() {
-    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
-    input.raw_bytes = vec![b"event: ping\n\n".to_vec()];
-    let frames = probe(ProbeStream::NoMessageStop);
-
-    route_default(input, frames).await;
+    let (logging_obj, _fake) =
+        support::route_anthropic(b"event: ping\n\n", ProbeStream::NoMessageStop).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -563,11 +565,11 @@ async fn evidence_stamps_false_without_a_message_stop() {
 
 #[tokio::test]
 async fn evidence_stamps_false_for_a_provider_error_frame() {
-    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
-    input.raw_bytes = vec![b"event: message_stop\nevent: error\n\n".to_vec()];
-    let frames = probe(ProbeStream::ProviderError);
-
-    route_default(input, frames).await;
+    let (logging_obj, _fake) = support::route_anthropic(
+        b"event: message_stop\nevent: error\n\n",
+        ProbeStream::ProviderError,
+    )
+    .await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -577,11 +579,11 @@ async fn evidence_stamps_false_for_a_provider_error_frame() {
 
 #[tokio::test]
 async fn evidence_stamps_false_with_a_non_whitespace_tail() {
-    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
-    input.raw_bytes = vec![b"event: message_stop\n\ndata: partial".to_vec()];
-    let frames = probe(ProbeStream::Complete);
-
-    route_default(input, frames).await;
+    let (logging_obj, _fake) = support::route_anthropic(
+        b"event: message_stop\n\ndata: partial",
+        ProbeStream::Complete,
+    )
+    .await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -589,17 +591,47 @@ async fn evidence_stamps_false_with_a_non_whitespace_tail() {
     );
 }
 
+#[rstest]
+#[case::spaces(b"event: message_stop\n\n   ")]
+#[case::vertical_tab(b"event: message_stop\ndata: {}\n\n\x0b")]
 #[tokio::test]
-async fn evidence_stamps_true_with_a_whitespace_only_tail() {
-    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
-    input.raw_bytes = vec![b"event: message_stop\n\n   ".to_vec()];
-    let frames = probe(ProbeStream::Complete);
-
-    route_default(input, frames).await;
+async fn evidence_stamps_true_with_a_whitespace_only_tail(#[case] raw: &[u8]) {
+    let (logging_obj, _fake) = support::route_anthropic(raw, ProbeStream::Complete).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
         Some(&Json::Bool(true))
+    );
+}
+
+#[rstest]
+#[case::crlf(b"event: message_stop\r\ndata: {}\r\n\r\n")]
+#[case::cr_only(b"event: message_stop\rdata: {}\r\r")]
+#[tokio::test]
+async fn evidence_stamps_true_for_other_frame_delimiters(#[case] raw: &[u8]) {
+    let (logging_obj, _fake) = support::route_anthropic(raw, ProbeStream::Complete).await;
+
+    assert_eq!(
+        object_state(&logging_obj).get("prompt_cache_response_complete"),
+        Some(&Json::Bool(true))
+    );
+}
+
+#[tokio::test]
+async fn evidence_uses_the_last_frame_boundary_for_the_probe() {
+    let (logging_obj, fake) = support::route_anthropic(
+        b"event: ping\n\nevent: message_stop\r\n\r\ndata: tail",
+        ProbeStream::Complete,
+    )
+    .await;
+
+    assert_eq!(
+        object_state(&logging_obj).get("prompt_cache_response_complete"),
+        Some(&Json::Bool(false))
+    );
+    assert_eq!(
+        fake.stop_inputs.lock().unwrap().as_slice(),
+        [b"event: ping\n\nevent: message_stop\r\n\r\n".to_vec()]
     );
 }
 
