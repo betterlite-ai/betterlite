@@ -96,6 +96,21 @@ fn index_names(indexes: &[InvalidIndex]) -> Vec<&str> {
     indexes.iter().map(|index| index.name.as_str()).collect()
 }
 
+async fn schema_check(
+    database: &TestDatabase,
+    expected: &SchemaContract,
+    disabled: bool,
+) -> SchemaCheck {
+    check_schema(
+        &database.check(),
+        disabled,
+        Some(expected),
+        &database.schema,
+        READ_TIMEOUT,
+    )
+    .await
+}
+
 async fn index_valid(client: &PostgresClient, schema: &str, name: &str) -> Option<bool> {
     client
         .query_opt(

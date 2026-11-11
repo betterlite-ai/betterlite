@@ -63,7 +63,6 @@ async fn postgres_failure_effects() {
 async fn native_native_pg_catalog_comparison_replaces_prisma_migrate_diff_and_remains() {
     Box::pin(with_schema(|database| async move {
         let client = database.pool.get().await.unwrap();
-        let check = database.check();
         client
             .batch_execute("CREATE TABLE \"LiteLLM_Native\" (id text PRIMARY KEY)")
             .await
@@ -71,27 +70,13 @@ async fn native_native_pg_catalog_comparison_replaces_prisma_migrate_diff_and_re
         let expected = read_contract(&database.pool, &database.schema).await;
         let (logs, dispatch) = capture();
         let _guard = set_default(&dispatch);
-        let in_sync = check_schema(
-            &check,
-            true,
-            Some(&expected),
-            &database.schema,
-            READ_TIMEOUT,
-        )
-        .await;
+        let in_sync = schema_check(&database, &expected, true).await;
         assert_eq!(in_sync, SchemaCheck::InSync);
         client
             .batch_execute("CREATE INDEX \"extra_idx\" ON \"LiteLLM_Native\" (id)")
             .await
             .unwrap();
-        let outcome = check_schema(
-            &check,
-            true,
-            Some(&expected),
-            &database.schema,
-            READ_TIMEOUT,
-        )
-        .await;
+        let outcome = schema_check(&database, &expected, true).await;
         let SchemaCheck::Differing(comparison) = outcome else {
             panic!("a catalog index added after the expected contract must be drift");
         };

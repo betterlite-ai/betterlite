@@ -13,15 +13,7 @@ async fn disabled_updates_difference_warns() {
             .unwrap();
         let (logs, dispatch) = capture();
         let _guard = set_default(&dispatch);
-        let check = database.check();
-        let outcome = check_schema(
-            &check,
-            true,
-            Some(&expected),
-            &database.schema,
-            READ_TIMEOUT,
-        )
-        .await;
+        let outcome = schema_check(&database, &expected, true).await;
         let SchemaCheck::Differing(comparison) = outcome else {
             panic!("a dropped column must be reported as drift");
         };
@@ -35,14 +27,7 @@ async fn disabled_updates_difference_warns() {
         assert!(logs.joined().contains("out of sync"));
 
         let before = logs.joined();
-        let enabled = check_schema(
-            &check,
-            false,
-            Some(&expected),
-            &database.schema,
-            READ_TIMEOUT,
-        )
-        .await;
+        let enabled = schema_check(&database, &expected, false).await;
         assert_eq!(enabled, SchemaCheck::UpdatesEnabled);
         assert_eq!(logs.joined(), before);
     }))
