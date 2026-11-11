@@ -4,7 +4,7 @@ budget:
 checks:
   commands:
   - id: helper-python
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/invoke_agent_reply.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/invoke_agent_reply.py tools/oracle/helpers/invoke_agent_reply)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
     why: The operation adapter is absent, unchanged or fails strict Python checks.
