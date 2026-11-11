@@ -4,6 +4,12 @@ call:
   b4293:
     delete_cache_keys_chunks_redis:
       clock: 1000.0
+      key: ""
+      value: null
+      redis_get: null
+      memory: []
+      default_in_memory_ttl: null
+      entries: []
       key_count: 1001
 env: {}
 compare:

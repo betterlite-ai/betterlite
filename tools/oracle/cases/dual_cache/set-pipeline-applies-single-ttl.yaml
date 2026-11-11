@@ -4,6 +4,11 @@ call:
   b4293:
     set_pipeline_applies_single_ttl:
       clock: 1000.0
+      key: ""
+      value: null
+      redis_get: null
+      memory: []
+      key_count: 0
       default_in_memory_ttl: 30.0
       entries:
         - key: first

@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import NamedTuple, NotRequired, TypeAlias, TypedDict, cast
+from typing import NamedTuple, Protocol, TypeAlias, TypedDict, cast
 
 from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
@@ -50,13 +50,27 @@ class Entry(TypedDict):
 
 class Fields(TypedDict):
     clock: float
-    key: NotRequired[str]
-    value: NotRequired[Json]
-    redis_get: NotRequired[Json]
-    memory: NotRequired[list[Entry]]
-    default_in_memory_ttl: NotRequired[float]
-    entries: NotRequired[list[Entry]]
-    key_count: NotRequired[int]
+    key: str
+    value: Json
+    redis_get: Json
+    memory: list[Entry]
+    default_in_memory_ttl: float | None
+    entries: list[Entry]
+    key_count: int
+
+
+class TypedCache(Protocol):
+    def get_cache(self, key: str, *, local_only: bool = False) -> Json: ...
+    def set_cache(self, key: str, value: Json, *, local_only: bool = False) -> None: ...
+    def increment_cache(self, key: str, value: Json) -> Json: ...
+    async def async_get_cache(self, key: str) -> Json: ...
+    async def async_get_ttl(self, key: str) -> int | None: ...
+    async def async_increment_cache(self, key: str, value: Json) -> Json: ...
+    async def async_set_cache_pre_call(
+        self, key: str, value: Json, ttl: float | None
+    ) -> Awaitable[Json] | None: ...
+    async def async_set_cache_pipeline(self, cache_list: list[tuple[str, Json]]) -> None: ...
+    async def async_delete_cache_keys(self, keys: list[str]) -> None: ...
 
 
 class Script:
@@ -111,7 +125,7 @@ class Handler(socketserver.StreamRequestHandler):
 
 
 class Harness(NamedTuple):
-    dual: DualCache
+    dual: TypedCache
     redis: RedisCache
     script: Script
 
@@ -120,17 +134,14 @@ Scenario: TypeAlias = Callable[[Fields, Harness], Awaitable[dict[str, Json]]]
 
 
 async def observe(harness: Harness, key: str, read: Json) -> dict[str, Json]:
-    ttl: Json = await harness.dual.async_get_ttl(key)
-    second: Json = harness.dual.get_cache(key)
-    return {"read": read, "ttl": ttl, "second": second}
+    ttl = await harness.dual.async_get_ttl(key)
+    return {"read": read, "ttl": ttl, "second": harness.dual.get_cache(key)}
 
 
 async def read(call: Fields, harness: Harness) -> dict[str, Json]:
-    memory = call.get("memory")
-    if memory is not None:
-        for entry in memory:
-            harness.dual.set_cache(entry["key"], entry["value"], local_only=True)
-    found: Json = harness.dual.get_cache(call["key"])
+    for entry in call["memory"]:
+        harness.dual.set_cache(entry["key"], entry["value"], local_only=True)
+    found = harness.dual.get_cache(call["key"])
     return await observe(harness, call["key"], found)
 
 
@@ -140,28 +151,25 @@ async def batch_read(call: Fields, harness: Harness) -> dict[str, Json]:
         if batch is None:
             raise RuntimeError("the request scope has no Redis batch")
         await batch.mget([call["key"]])
-        found = await cast(Awaitable[Json], harness.dual.async_get_cache(call["key"]))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261
+        found = await harness.dual.async_get_cache(call["key"])
     return await observe(harness, call["key"], found)
 
 
 async def set_default_ttl(call: Fields, harness: Harness) -> dict[str, Json]:
     harness.dual.set_cache(call["key"], call["value"])
-    ttl: Json = await harness.dual.async_get_ttl(call["key"])
+    ttl = await harness.dual.async_get_ttl(call["key"])
     return {"memory_ttl": ttl, "sets": harness.script.expiries()}
 
 
 async def increment_error(call: Fields, harness: Harness) -> dict[str, Json]:
-    amount = cast(int, call["value"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164
-    increment = cast(Callable[[str, int], int], harness.dual.increment_cache)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164
     with ThreadPoolExecutor(max_workers=1) as pool:
-        failure = pool.submit(increment, call["key"], amount).exception()
-    memory: Json = harness.dual.get_cache(call["key"], local_only=True)
+        failure = pool.submit(harness.dual.increment_cache, call["key"], call["value"]).exception()
+    memory = harness.dual.get_cache(call["key"], local_only=True)
     return {"error": failure is not None, "memory": memory}
 
 
 async def increment_fallback(call: Fields, harness: Harness) -> dict[str, Json]:
-    amount = cast(float, call["value"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L565
-    result: Json = await harness.dual.async_increment_cache(call["key"], amount)
+    result = await harness.dual.async_increment_cache(call["key"], call["value"])
     return {"result": result}
 
 
@@ -174,14 +182,14 @@ async def pre_call(call: Fields, harness: Harness) -> dict[str, Json]:
         if queued is not None:
             in_scope = True
             await queued
-    memory: Json = harness.dual.get_cache(key, local_only=True)
+    memory = harness.dual.get_cache(key, local_only=True)
     sets = harness.script.expiries()
     return {"outside": outside is not None, "in_scope": in_scope, "memory": memory, "sets": sets}
 
 
 async def pipeline(call: Fields, harness: Harness) -> dict[str, Json]:
     pairs = [(entry["key"], entry["value"]) for entry in call["entries"]]
-    await cast(Awaitable[None], harness.dual.async_set_cache_pipeline(pairs))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L543
+    await harness.dual.async_set_cache_pipeline(pairs)
     ttls: list[Json] = [await harness.dual.async_get_ttl(key) for key, _value in pairs]
     return {"ttls": ttls, "sets": harness.script.expiries()}
 
@@ -193,8 +201,7 @@ async def delete_keys(call: Fields, harness: Harness) -> dict[str, Json]:
     await harness.dual.async_delete_cache_keys(keys)
     remaining = 0
     for key in keys:
-        left: Json = harness.dual.get_cache(key, local_only=True)
-        remaining += left is not None
+        remaining += harness.dual.get_cache(key, local_only=True) is not None
     return {"chunks": harness.script.delete_lengths(), "remaining": remaining}
 
 
@@ -213,12 +220,15 @@ SCENARIOS: dict[str, Scenario] = {
 
 async def execute(name: str, call: Fields, port: int, script: Script) -> dict[str, Json]:
     redis = RedisCache(host="127.0.0.1", port=port, socket_timeout=2.0)
-    dual = DualCache(
-        in_memory_cache=InMemoryCache(clock=partial(float, call["clock"])),
-        redis_cache=redis,
-        default_in_memory_ttl=call.get("default_in_memory_ttl"),
-        default_redis_ttl=None,
-        default_redis_batch_cache_expiry=None,
+    dual = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164
+        TypedCache,
+        DualCache(
+            in_memory_cache=InMemoryCache(clock=partial(float, call["clock"])),
+            redis_cache=redis,
+            default_in_memory_ttl=call["default_in_memory_ttl"],
+            default_redis_ttl=None,
+            default_redis_batch_cache_expiry=None,
+        ),
     )
     return await SCENARIOS[name](call, Harness(dual, redis, script))
 
@@ -226,7 +236,7 @@ async def execute(name: str, call: Fields, port: int, script: Script) -> dict[st
 def run(input_value: dict[str, Fields]) -> dict[str, Json]:
     ((name, call),) = input_value.items()
     replies: defaultdict[str, deque[bytes]] = defaultdict(deque)
-    replies["GET"].append(bulk(json.dumps(call.get("redis_get"))))
+    replies["GET"].append(bulk(json.dumps(call["redis_get"])))
     if name in FAILURES:
         replies[FAILURES[name]].append(b"-ERR boom\r\n")
     script = Script(replies)
