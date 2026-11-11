@@ -136,6 +136,25 @@ fn a_complete_tool_call_gets_an_id_and_json_arguments() {
 }
 
 #[test]
+fn a_given_tool_call_index_is_kept_and_missing_ones_count_up_from_zero() {
+    let chunk = parsed(
+        r#"{"model": "m", "message": {"content": "x", "tool_calls": [{"index": 5, "function": {"name": "f"}}, {"function": {"name": "g"}}, {"function": {"name": "h"}}]}, "done": false}"#,
+    );
+    let indexes: Vec<u32> = chunk
+        .choices
+        .first()
+        .unwrap()
+        .delta
+        .tool_calls
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|call| call.index)
+        .collect();
+    assert_eq!(indexes, [5, 0, 1]);
+}
+
+#[test]
 fn a_null_tool_call_type_is_a_function() {
     let chunk = parsed(
         r#"{"model": "m", "message": {"content": "x", "tool_calls": [{"type": null, "function": {"name": "f", "arguments": {"a": 1}}}]}, "done": false}"#,
