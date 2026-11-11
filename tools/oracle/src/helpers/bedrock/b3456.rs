@@ -1,28 +1,15 @@
-use std::collections::{BTreeMap, VecDeque};
-use std::mem;
-use std::str;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::collections::BTreeMap;
 
-use async_trait::async_trait;
-use betterlite_bedrock::aws_settings::sources::Credentials;
-use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::signing::request::AwsSignedRequest;
-use betterlite_config::sections::bedrock_settings::AwsSettings;
-use betterlite_rag::bedrock_ingestion::client::clock::Clock;
-use betterlite_rag::bedrock_ingestion::client::credentials::RagCredentialResolver;
-use betterlite_rag::bedrock_ingestion::client::{
-    AwsRagResponse, AwsRagTransport, BedrockRagClients,
-};
 use betterlite_rag::bedrock_ingestion::resources::principal::normalize_principal_arn;
-use betterlite_rag::bedrock_ingestion::settings::{BedrockRagSettings, VectorStoreConfig};
-use betterlite_rag::bedrock_ingestion::state::BedrockRagState;
-use secrecy::SecretString;
+use betterlite_rag::bedrock_ingestion::settings::VectorStoreConfig;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use self::harness::{Harness, answer, location_constraint, polls, request_params, take_sent};
+use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+
+mod harness;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
@@ -75,147 +62,6 @@ pub(crate) struct KnowledgeBase {
     collection_arn: String,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct FixedClock(SystemTime);
-
-impl Clock for FixedClock {
-    fn now(&self) -> SystemTime {
-        self.0
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct StaticResolver;
-
-#[async_trait]
-impl RagCredentialResolver for StaticResolver {
-    async fn credentials(
-        &self,
-        _settings: &AwsSettings,
-        _region: &str,
-    ) -> Result<Credentials, CredentialError> {
-        Ok(Credentials {
-            access_key_id: SecretString::from("AKIDRAGEXAMPLE".to_owned()),
-            secret_access_key: SecretString::from("secret".to_owned()),
-            session_token: None,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, thiserror::Error)]
-#[error("the oracle transport has no scripted answer")]
-struct NoAnswer;
-
-#[derive(Debug, Clone, Default)]
-struct Transport {
-    responses: Arc<Mutex<VecDeque<AwsRagResponse>>>,
-    sent: Arc<Mutex<Vec<AwsSignedRequest>>>,
-}
-
-impl Transport {
-    fn answering(responses: Vec<AwsRagResponse>) -> Self {
-        Self {
-            responses: Arc::new(Mutex::new(VecDeque::from(responses))),
-            sent: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn take(&self) -> Vec<AwsSignedRequest> {
-        mem::take(&mut *self.sent.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-}
-
-#[async_trait]
-impl AwsRagTransport for Transport {
-    type Error = NoAnswer;
-
-    async fn send(&self, request: AwsSignedRequest) -> Result<AwsRagResponse, NoAnswer> {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        self.responses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or(NoAnswer)
-    }
-}
-
-fn answer(body: String) -> AwsRagResponse {
-    AwsRagResponse {
-        status: 200,
-        body: body.into_bytes(),
-    }
-}
-
-fn fixed_now() -> SystemTime {
-    UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_767_225_600))
-        .unwrap_or(UNIX_EPOCH)
-}
-
-struct Harness {
-    settings: BedrockRagSettings,
-    state: BedrockRagState,
-    transport: Transport,
-}
-
-impl Harness {
-    fn build(
-        vector: &VectorStoreConfig,
-        environment: &BTreeMap<String, String>,
-        responses: Vec<AwsRagResponse>,
-    ) -> Result<Self, Box<HelperError>> {
-        let settings =
-            BedrockRagSettings::from_vector_store_config(vector, environment).or_value_error()?;
-        Ok(Self {
-            state: BedrockRagState::new(&settings),
-            settings,
-            transport: Transport::answering(responses),
-        })
-    }
-
-    fn clients(&self) -> BedrockRagClients<'static, Transport> {
-        BedrockRagClients {
-            settings: self.settings.clone(),
-            resolver: Box::new(StaticResolver),
-            clock: Box::new(FixedClock(fixed_now())),
-            transport: self.transport.clone(),
-        }
-    }
-}
-
-fn request_params(request: &AwsSignedRequest) -> Value {
-    let mut value: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
-    if let Value::Object(object) = &mut value {
-        object.remove("clientToken");
-    }
-    value
-}
-
-fn polls(requests: &[AwsSignedRequest]) -> Vec<Value> {
-    requests
-        .iter()
-        .filter(|request| request.method == "GET")
-        .filter_map(|request| request.url.rsplit('/').next())
-        .map(|id| json!({"knowledgeBaseId": id}))
-        .collect()
-}
-
-fn location_constraint(body: &[u8]) -> Option<String> {
-    let text = str::from_utf8(body).ok()?;
-    let open = "<LocationConstraint>";
-    let start = text.find(open)?.saturating_add(open.len());
-    let end = text.find("</LocationConstraint>")?;
-    text.get(start..end).map(str::to_owned)
-}
-
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    let built = Builder::new_current_thread().enable_all().build();
-    built.or_value_error()
-}
-
 fn detect(
     runtime: &Runtime,
     vector: &VectorStoreConfig,
@@ -253,7 +99,7 @@ fn bucket(runtime: &Runtime, cases: &[Bucket]) -> HelperResult {
         let name = runtime
             .block_on(state.create_s3_bucket(&clients, &case.unique_id))
             .or_value_error()?;
-        let sent = harness.transport.take();
+        let sent = take_sent(&harness.transport);
         buckets.push(json!({
             "name": name,
             "location_constraint": sent.first().and_then(|request| location_constraint(&request.body)),
@@ -283,7 +129,7 @@ fn create_knowledge_base(runtime: &Runtime, case: &KnowledgeBase) -> HelperResul
             &case.collection_arn,
         ))
         .or_value_error()?;
-    let sent = harness.transport.take();
+    let sent = take_sent(&harness.transport);
     Ok(json!({
         "knowledge_base_id": created,
         "created": state.created_resources.knowledge_base,
@@ -312,7 +158,7 @@ fn create_data_source(
     let created = runtime
         .block_on(state.create_data_source(&clients, kb_name))
         .or_value_error()?;
-    let sent = harness.transport.take();
+    let sent = take_sent(&harness.transport);
     Ok(json!({
         "data_source_id": created,
         "created": state.created_resources.data_source,
@@ -335,7 +181,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = runtime()?;
+        let runtime = Builder::new_current_thread().enable_all().build().or_value_error()?;
         match input {
             Input::Principal { cases } => Ok(principals(cases)),
             Input::Detect {
