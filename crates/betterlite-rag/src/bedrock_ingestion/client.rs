@@ -4,9 +4,7 @@ use async_trait::async_trait;
 use betterlite_bedrock::signing::headers::{merge_computed, prepare, without_computed};
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use betterlite_bedrock::signing::sigv4::{Signable, sign_request};
-use betterlite_config::sections::bedrock_settings::AwsSettings;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
-use serde::de::DeserializeOwned;
 
 use super::error::BedrockIngestionError;
 use super::settings::BedrockRagSettings;
@@ -18,10 +16,12 @@ use super::wire::{
 use clock::Clock;
 use credentials::RagCredentialResolver;
 use endpoints::bedrock_agent_endpoint;
+use request::{aws_settings, parse_response};
 
 pub mod clock;
 pub mod credentials;
 pub mod endpoints;
+mod request;
 mod tests;
 
 pub const BEDROCK_AGENT_SERVICE: &str = "bedrock";
@@ -284,37 +284,5 @@ where
             })
             .await?;
         response.require_success(operation)
-    }
-}
-
-fn parse_response<Response, TransportFailure>(
-    operation: &'static str,
-    body: &[u8],
-) -> Result<Response, BedrockIngestionError<TransportFailure>>
-where
-    Response: DeserializeOwned,
-    TransportFailure: StdError + 'static,
-{
-    serde_json::from_slice(body)
-        .map_err(|source| BedrockIngestionError::Response { operation, source })
-}
-
-// the ten BaseAWSLLM.get_credentials keys, plus the region every call resolves them with
-pub(crate) fn aws_settings(settings: &BedrockRagSettings) -> AwsSettings {
-    AwsSettings {
-        access_key_id: settings.credentials.access_key_id.clone(),
-        secret_access_key: settings.credentials.secret_access_key.clone(),
-        session_token: settings.credentials.session_token.clone(),
-        region_name: Some(settings.aws_region_name.clone()),
-        session_name: settings.credentials.session_name.clone(),
-        profile_name: settings.credentials.profile_name.clone(),
-        role_name: settings.credentials.role_name.clone(),
-        web_identity_token: settings.credentials.web_identity_token.clone(),
-        sts_endpoint: settings.credentials.sts_endpoint.clone(),
-        external_id: settings.credentials.external_id.clone(),
-        session_tags: None,
-        role_arn: None,
-        web_identity_token_file: None,
-        bearer_token: None,
     }
 }
