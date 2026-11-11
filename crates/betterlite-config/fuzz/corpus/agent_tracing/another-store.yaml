@@ -1,0 +1,3 @@
+general_settings:
+  tracing:
+    store: other

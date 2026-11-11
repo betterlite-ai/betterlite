@@ -4,7 +4,7 @@ description: >-
   Give the Python `Router` class its call methods: `completion`, `acompletion`, `anthropic_messages`, `abatch_completion_one_model_multiple_requests` and `abatch_completion_fastest_response`. Each one is thin. It builds the request JSON, calls the matching `NativeRouter` method from B6022 and wraps the answer in the Python types that B158 already defines. All routing, retry, fallback, cooldown and stream-fallback logic lives in Rust (B6020 and B6021). This task adds none of it.
 
 
-  Files: `python/betterlite/_router/calls.py` holds a mixin class `RouterCalls` with the methods above, and `python/betterlite/_router/__init__.py` is where B162's last part wires `Router(RouterCalls)`. If the package or the mixin base is missing when you start, add only `calls.py` and its test, and report in the blocker that the wiring is missing.
+  Files: `python/betterlite/_router/calls.py` holds a mixin class `RouterCalls` with the methods above, and `python/betterlite/_router/__init__.py` is where B8356 wires `Router(RouterCalls)`. If the package or the mixin base is missing when you start, add only `calls.py` and its test, and report in the blocker that the wiring is missing.
 
 
   Behavior to keep from LiteLLM's `Router`: `acompletion(model, messages, stream=False, **kwargs)` returns the response or, with `stream=True`, an object you iterate with `async for` that yields chunk objects. `completion` is the blocking form and returns a stream you iterate with `for`. `anthropic_messages` is async only and yields raw bytes when streaming. Responses are B158's `ModelResponse` and `ModelResponseStream` (parse the chunk JSON with B158's own function, never a second parser). The `_hidden_params` key of the answer fills `response._hidden_params`, and for streams it is read from `hidden_params()` on every access so a mid-stream fallback shows up. A `NativeError` becomes the matching class from B163 through B158's error mapping, with `num_retries` and `max_retries` set. The batch helpers take a list of messages lists (or a list of model names) and return a list in input order, where a failed item is the exception object and is not raised, as LiteLLM does.
@@ -61,7 +61,7 @@ deviations:
   - what: A native error carries `num_retries` and `max_retries` taken from the Rust call, and the Python side adds nothing.
     why: LiteLLM sets them in the retry loop; here the loop is Rust.
 out_of_scope:
-  - "Routing, retry, fallback and cooldown logic is B6020 and B6021. The native bridge is B6022. Router construction and settings JSON is B162's last part."
+  - "Routing, retry, fallback and cooldown logic is B6020 and B6021. The native bridge is B6022. Router construction and settings JSON is B8356."
   - "Other Router call types (embeddings, images, audio and the like) are plugged in by later parts."
 pitfalls:
   - "Do not call `asyncio.run` or start a thread for `completion`; the native blocking method releases the GIL."

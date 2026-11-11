@@ -1,0 +1,14 @@
+id: B9810
+milestone: M5 api families
+title: Loopback compaction executor on the gateway chat, messages and responses calls
+status: todo
+depends_on: [B100, B336, B021, B017, B080, B081, B577, B8610, B940]
+file: tasks/B9810-gateway-compaction-step.yaml
+covers:
+  - "litellm/proxy/native_compaction.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

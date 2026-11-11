@@ -1,0 +1,102 @@
+id: B9650
+title: Logging MCP post-call content hook
+description: >-
+  After an MCP tool call, LiteLLM hands the result to every success logger before the result goes back to the caller, and a logger may rewrite the content. That is Logging.async_post_mcp_tool_call_hook with its helper _parse_post_mcp_call_hook_response (litellm_logging.py L1633-L1709). The logging tasks B247 to B253 left exactly this range to B140. Two callers wait on it: B950's Responses tool execution (litellm_proxy_mcp_handler.py L876-L884) and B8198's _fire_mcp_tool_call_logging for the gateway's own tool calls (operations.py L2267-L2273). Both depend on this task, so the hook lives in betterlite-logging, which both crates already reach.
+
+
+  Code goes in crates/betterlite-logging/src/mcp_tool_hook.rs and crates/betterlite-logging/src/mcp_tool_hook/ (types.rs, dispatch.rs, tests.rs). The skeleton declares `pub mod mcp_tool_hook;` in lib.rs. betterlite-logging can't depend on betterlite-mcp (betterlite-mcp already depends on betterlite-logging), so the result types here are plain JSON. `McpToolResult { content: Vec<serde_json::Value>, structured_content: Option<serde_json::Value>, is_error: bool }` is the CallToolResult the caller holds; each content item keeps its wire shape (a text, image or embedded resource object). `McpPostCallResponse { mcp_tool_call_response: Vec<serde_json::Value>, hidden_params: McpHiddenParams }` is MCPPostCallResponseObject, and `McpHiddenParams { response_cost: Option<f64> }` is the one HiddenParams field LiteLLM reads back. `McpToolHookCall<'call>` is what one logger receives: `kwargs: &'call IndexMap<String, serde_json::Value>` (the logging state's model_call_details), `response: &'call mut McpPostCallResponse` (the logger's own copy), `original: &'call mut McpToolResult` (the live result, which LiteLLM exposes to loggers as kwargs["original_response"] after the caller's post_call), `start_time` and `end_time` as `DateTime<FixedOffset>`.
+
+
+  B8740's CallbackLogger trait (crates/betterlite-logging/src/callback_logger.rs) gets one more method with a default body, the way CustomLogger.async_post_mcp_tool_call_hook returns None (custom_logger.py L587-L600): `async fn async_post_mcp_tool_call_hook(&self, call: McpToolHookCall<'_>) -> Result<Option<McpPostCallResponse>, LoggerError>` returning Ok(None). Change nothing else in that file. Every existing logger keeps compiling because of the default.
+
+
+  dispatch.rs holds `pub async fn async_post_mcp_tool_call_hook(state: &mut LoggingState, registry: &CallbackRegistry, result: McpToolResult, start_time, end_time) -> McpToolResult`. The callback list is B248's get_combined_callback_list over the request's success list (`DynamicCallbackLists::from(&state.dynamic_callbacks).success`) and the registry's `loggers(CallbackPhase::Success)`, each wrapped as `DynamicCallback::Logger`. A `DynamicCallback::Name` entry is skipped, since LiteLLM's `isinstance(callback, CustomLogger)` is false for a string. One `McpHiddenParams::default()` value starts the walk and carries from logger to logger. For each logger, in list order:
+
+  1. Copy the result's content and structured_content as they are now (the originals for this logger).
+  2. Build the logger's `McpPostCallResponse` from a copy of that content and the carried hidden params, and call the trait method.
+  3. Ok(Some(reply)): write `reply.hidden_params.response_cost` into `state.model_call_details["response_cost"]` (JSON null when None), take reply's content as the hook content, and carry reply's hidden params on. Ok(None): the hook content is the logger's copy as the logger left it, so an in-place edit counts, and the hidden params stay. Err(error): log at error level "LiteLLM.LoggingError: [Non-Blocking] Exception occurred while logging {error}" and there is no hook content.
+  4. The structured replacement matches when the result's structured_content now differs from the original and either there is no hook content, the hook content equals the original content, or the result's content equals the hook content.
+  5. When there is hook content and it differs from the original content, it replaces the result's content.
+  6. When the result's content now differs from the original content, the result has structured_content, and the structured replacement does not match, set structured_content to None and is_error to true.
+
+  Return the result. Nothing in the walk fails the call: LiteLLM wraps each logger in a try block and logs the same line for anything that escapes.
+
+
+  Oracle helper cases in tools/oracle/cases/helpers/logging-mcp-tool-hook/ call this task's helper with a starting result, the request's dynamic success list and the global success list, each logger given as a scripted behavior: none (returns None, no edit), edit_in_place (appends a text item to its copy and returns None), replace (returns a new response with given content and response_cost), replace_unchanged (returns the original content), fail (raises), rewrite_live (sets the live result's content and structured_content, as Cisco's guardrail does through kwargs, and returns None). The output is the final content, structured_content and is_error, model_call_details' response_cost when present, and the number of error lines. Cases: no-loggers, in-place-edit-clears-structured, replacement-sets-cost, replacement-equal-content, failing-logger-continues, live-rewrite-keeps-structured, two-loggers-carry-hidden-params, logger-in-both-lists-runs-once, name-entries-skipped. The Python adapter builds a real Logging object, sets litellm.success_callback for the global list, and stores the result under model_call_details["original_response"] before the call, as both callers do through post_call.
+
+
+  Behavior tests in mcp_tool_hook::tests use rstest cases with the names above plus result_without_structured_content_keeps_is_error, and one test that a logger implementing only the default method leaves the result unchanged. callback_logger::tests gets one test that the default method returns Ok(None).
+scope:
+  paths:
+    - crates/betterlite-logging/src/mcp_tool_hook.rs
+    - crates/betterlite-logging/src/mcp_tool_hook/**
+    - crates/betterlite-logging/src/callback_logger.rs
+    - crates/betterlite-logging/src/callback_logger/tests.rs
+    - tools/oracle/cases/helpers/logging-mcp-tool-hook/**
+    - "tools/oracle/fuzz/corpus/helper_case/logging-mcp-tool-hook-*"
+    - tools/oracle/helpers/b9650.py
+    - tools/oracle/helpers/b9650/**
+    - tools/oracle/src/helpers/logging/b9650.rs
+    - tools/oracle/src/helpers/logging/b9650/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1633-L1709
+    why: The hook and _parse_post_mcp_call_hook_response, the whole range this task builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L587-L600
+    why: The default CustomLogger method returns None and documents that a content rewrite marks the result as an error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L462-L468
+    why: MCPPostCallResponseObject; hidden_params has no default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L45-L52
+    why: HiddenParams and its response_cost field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2265-L2273
+    why: The gateway caller runs post_call(original_response=result) before the hook, so loggers see the live result in kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L876-L886
+    why: The Responses caller does the same and logs its own line when the hook path raises.
+dod:
+  - text: CallbackLogger has the defaulted MCP post-call method, and a logger that does not override it leaves the result unchanged.
+    proof: [logger-trait-tests, hook-tests]
+  - text: Loggers run once each in combined-list order, string entries are skipped, and a failing logger logs the non-blocking line without stopping the walk.
+    proof: [hook-tests, oracle, new-hook-cases]
+  - text: A replacement writes response_cost into model_call_details and carries its hidden params to the next logger; an in-place edit counts as hook content.
+    proof: [hook-tests, oracle, new-hook-cases]
+  - text: Changed content clears structured_content and sets is_error, unless the logger rewrote structured_content to match, as LiteLLM decides it.
+    proof: [hook-tests, oracle, new-hook-cases, helper-python]
+  - text: New helper corpus seeds call b9650 and replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hook-tests
+      why: The walk, the content replacement or the structured_content rule differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mcp_tool_hook::/)'
+    - id: logger-trait-tests
+      why: The new trait method is missing or its default does something.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^callback_logger::/)'
+    - id: new-hook-cases
+      why: No new helper case for the hook exists on this branch.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/logging-mcp-tool-hook)"
+    - id: helper-python
+      why: The b9650 adapter must exist and pass ruff and basedpyright.
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b9650)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b9650 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b9650/pyrightconfig.json
+    - id: helper-case-corpus
+      why: b9650 needs fresh seeds that replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/logging-mcp-tool-hook-*")" && grep -lE '^[[:space:]]+b9650:' tools/oracle/fuzz/corpus/helper_case/logging-mcp-tool-hook-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/logging-mcp-tool-hook
+deviations: []
+out_of_scope:
+  - "The rest of litellm_logging.py belongs to B190's parts (B247 to B254) and the owners their out_of_scope lists name."
+  - "Calling the hook: B950 (Responses and chat tool execution) and B8198 (_fire_mcp_tool_call_logging); each needs this task in its depends_on."
+  - "Cisco AI Defense's async_post_mcp_tool_call_hook (cisco_ai_defense_mcp.py L97-L173), the only open-source logger that overrides the method. B9450 owns it; that task implements this trait method in betterlite-guardrails, registers CiscoMcpToolHook with the success callbacks this task's dispatch reads, and depends on this one."
+  - "post_mcp_call guardrails (ProxyLogging.post_mcp_call_hook): B8394."
+pitfalls:
+  - "The originals are copied per logger, not once for the walk, so the second logger compares against what the first one left."
+  - "Ok(None) still counts as hook content: the logger's copy, edited or not. Only an error means no hook content, and then a structured_content change the logger made on the live result survives."
+  - "response_cost is written even when the reply's cost is None, as JSON null, because LiteLLM assigns the attribute unconditionally."
+  - "Content equality is JSON value equality of the whole list; an item that only reorders keys is equal, an extra item is not."
+  - "A logger in both the request list and the global list runs once: get_combined_callback_list dedupes by Arc identity, so the test must reuse the same Arc."
+  - "The hidden params start from a fresh default for every call of the hook, never from a previous tool call."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

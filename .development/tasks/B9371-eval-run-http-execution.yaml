@@ -1,0 +1,61 @@
+id: B9371
+title: Eval run create, list, get, cancel and delete HTTP execution
+description: >-
+  The five eval run operations (B3424 for create and list, B3425 for get, cancel and delete) end in BaseLLMHTTPHandler's run handlers in litellm/llms/custom_httpx/llm_http_handler.py (L13139-L13652), and no task builds them. This task builds them in betterlite-core, module `api::eval_run_http` (crates/betterlite-core/src/api/eval_run_http.rs, tests in eval_run_http/tests.rs), on top of B9370's `eval_exchange`. The run operations call these functions; nothing here calls an operation.
+
+
+  LiteLLM writes each handler as a sync function that hands off to an async twin when `_is_async` is set. betterlite-http (B173) has one async client, so each pair is one async function with LiteLLM's sync name and no flag: `create_run_handler`, `list_runs_handler`, `get_run_handler`, `cancel_run_handler` and `delete_run_handler`. Each takes the URL from the provider transform, the headers `validate_environment` returned (empty map when absent), the provider config as `&dyn BaseEvalsAPIConfig` (B3420), `custom_llm_provider`, the litellm params, B249's logging state, the timeout and B173's pooled client; create also takes the request body and list the query map. Build each one as a call to B9370's `eval_exchange` with its own `EvalExchange` value and the matching transform_*_response, so no send, log or error code is written twice.
+
+
+  Per handler, from the pinned lines. create_run: POST the body as JSON with the timeout; logged input is the body's `name` string, else ""; additional_args complete_input_dict (the body), api_base (the URL) and headers. list_runs: GET with the query as params and no timeout; input ""; additional_args api_base, headers and `params` (the query). Note the key: list_runs logs the query under `params`, while B9370's list_evals logs it under `complete_input_dict`. get_run: GET with no params and no timeout; input ""; api_base and headers. cancel_run: POST the JSON body `{}` with the timeout, dropping whatever body transform_cancel_run_request returned; input ""; api_base and headers. delete_run: DELETE with no body and the timeout, also dropping the transform's body; input ""; api_base and headers.
+
+
+  The run create timeout comes in from B3424 already resolved (`timeout or httpx.Timeout(600, connect=5)`); pass what you get. POST and DELETE replies at 400 or above go through `_handle_error` and GET replies of any status go to the transform, the same split eval_exchange already makes for B9370.
+
+
+  Tests in api::eval_run_http::tests run every handler against a local axum upstream on 127.0.0.1 that records method, path, query, headers and body: create posting its body with the timeout, list sending its query and no timeout, get sending neither, cancel posting `{}` to the `/cancel` URL it was given, delete sending no body, the logged input and additional_args per handler with a recording logger (the `params` key on list_runs included), a cancel answered 409 and a delete answered 404 both converted through `_handle_error` with the upstream status and text, and a get answered 404 handed to transform_get_run_response. No oracle case: B8776 and B096 prove these handlers over HTTP once B3424 and B3425 call them.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/eval_run_http.rs
+    - crates/betterlite-core/src/api/eval_run_http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13139-L13243
+    why: create_run_handler pair; POST with timeout, logs name and complete_input_dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13245-L13349
+    why: list_runs_handler pair; GET with params and no timeout, logs the query under params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13351-L13450
+    why: get_run_handler pair; GET with no params and no timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13452-L13551
+    why: cancel_run_handler pair; POST json={} with timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13553-L13652
+    why: delete_run_handler pair; DELETE with timeout and no body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1523-L1616
+    why: get_run, the caller, shows which arguments reach get_run_handler.
+dod:
+  - text: The five run handlers send LiteLLM's method, body, query and timeout, with cancel posting `{}` and list and get sending no timeout.
+    proof: [eval-run-http-tests]
+  - text: Each run handler logs pre_call with LiteLLM's input and additional_args, list_runs under the `params` key.
+    proof: [eval-run-http-tests]
+  - text: POST and DELETE replies at 400 or above go through `_handle_error`, GET replies go to the transform, all through B9370's eval_exchange.
+    proof: [eval-run-http-tests]
+checks:
+  optional: []
+  commands:
+    - id: eval-run-http-tests
+      why: a run handler sends the wrong method, body, query or timeout, logs the wrong fields, or converts the wrong replies
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::eval_run_http::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The run operations that call these handlers: B3424 (create_run, list_runs) and B3425 (get_run, cancel_run, delete_run)."
+  - "eval_exchange, the shared send, log and error step: B9370."
+  - "_handle_error: B2402. The pooled client: B173. pre_call logging: B249. The run transforms: B3420 and B523."
+pitfalls:
+  - "transform_cancel_run_request and transform_delete_run_request both return a body; cancel_run_handler posts `{}` in its place and delete_run_handler sends none, so never forward the transform's body."
+  - "list_runs logs the query as `params` and leaves out complete_input_dict, unlike list_evals; a shared helper that always writes complete_input_dict breaks the logged shape."
+  - "The cancel URL ends in `/cancel` because transform_cancel_run_request appends it; the proxy route that leads here is POST /v1/evals/{eval_id}/runs/{run_id} without the suffix."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
