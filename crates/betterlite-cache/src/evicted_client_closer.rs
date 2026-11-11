@@ -1,11 +1,14 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::runtime::{Handle, Id as RuntimeId};
+use tokio::time::timeout;
 
 pub const CLOSE_GRACE_SECONDS: f64 = 900.0;
 pub const MAX_PENDING_CLOSES: usize = 10_000;
+pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
@@ -61,6 +64,7 @@ struct Queue<Client: EvictableClient> {
 pub struct EvictedClientCloser<Client: EvictableClient> {
     grace_seconds: f64,
     max_pending: usize,
+    close_timeout: Duration,
     clock: Clock,
     owned: Mutex<Vec<Weak<Client>>>,
     queue: Mutex<Queue<Client>>,
@@ -147,6 +151,7 @@ impl<Client: EvictableClient> EvictedClientCloser<Client> {
         Self {
             grace_seconds: CLOSE_GRACE_SECONDS,
             max_pending: MAX_PENDING_CLOSES,
+            close_timeout: CLOSE_TIMEOUT,
             clock,
             owned: Mutex::new(Vec::new()),
             queue: Mutex::new(Queue {
@@ -157,10 +162,16 @@ impl<Client: EvictableClient> EvictedClientCloser<Client> {
     }
 
     #[must_use]
-    pub fn with_limits(grace_seconds: f64, max_pending: usize, clock: Clock) -> Self {
+    pub fn with_limits(
+        grace_seconds: f64,
+        max_pending: usize,
+        close_timeout: Duration,
+        clock: Clock,
+    ) -> Self {
         Self {
             grace_seconds,
             max_pending,
+            close_timeout,
             clock,
             owned: Mutex::new(Vec::new()),
             queue: Mutex::new(Queue {
@@ -243,7 +254,12 @@ impl<Client: EvictableClient> EvictedClientCloser<Client> {
         }
         let now = (self.clock)();
         for client in self.drain_due(current_event_loop_id(), now) {
-            client.close_async().await;
+            if timeout(self.close_timeout, client.close_async())
+                .await
+                .is_err()
+            {
+                tracing::debug!("an evicted client close exceeded the close timeout");
+            }
         }
     }
 

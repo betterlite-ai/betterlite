@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use tokio::runtime::{Builder, Runtime};
 
 use super::{
-    CLOSE_GRACE_SECONDS, Clock, CloseMethod, EvictableClient, EvictedClientCloser,
+    CLOSE_GRACE_SECONDS, CLOSE_TIMEOUT, Clock, CloseMethod, EvictableClient, EvictedClientCloser,
     MAX_PENDING_CLOSES,
 };
 
@@ -81,6 +81,7 @@ fn advance(time: &TestTime, seconds: f64) {
 
 fn runtime() -> Runtime {
     Builder::new_current_thread()
+        .enable_time()
         .build()
         .expect("the test runtime is built")
 }
@@ -242,7 +243,7 @@ fn queue_capacity_holds_ten_thousand_pending_closes() {
 #[test]
 fn a_custom_pending_limit_caps_the_queue() {
     let time = test_time();
-    let closer = EvictedClientCloser::with_limits(900.0_f64, 2, fake_clock(&time));
+    let closer = EvictedClientCloser::with_limits(900.0_f64, 2, CLOSE_TIMEOUT, fake_clock(&time));
     let client = ProbeClient::new(Some(CloseMethod::Sync));
     closer.mark_owned(&client);
     (0..3_u32).for_each(|_index| closer.schedule(&client));
@@ -253,7 +254,7 @@ fn a_custom_pending_limit_caps_the_queue() {
 #[test]
 fn a_custom_grace_window_sets_the_close_deadline() {
     let time = test_time();
-    let closer = EvictedClientCloser::with_limits(10.0_f64, 100, fake_clock(&time));
+    let closer = EvictedClientCloser::with_limits(10.0_f64, 100, CLOSE_TIMEOUT, fake_clock(&time));
     let client = ProbeClient::new(Some(CloseMethod::Sync));
     closer.mark_owned(&client);
     closer.schedule(&client);

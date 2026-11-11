@@ -57,11 +57,58 @@ fn cache_key(credentials: &BTreeMap<String, SecretString>, service_name: &str) -
 }
 
 fn stop_logging_client<Value>(removal: &RemovalEffect<Value>, evicted: Value) {
-    let effect = Arc::clone(removal);
-    let stopped = catch_unwind(AssertUnwindSafe(move || effect(evicted)));
+    let stopped = catch_unwind(AssertUnwindSafe(|| removal(evicted)));
     if stopped.is_err() {
         tracing::debug!("dynamic logging cache: stop() failed during eviction");
     }
+}
+
+// the shared TTL-marker storage: LocalTtlCache owns expiry and capacity for values it cannot hold
+pub fn store_marked<Value>(
+    markers: &mut LocalTtlCache,
+    values: &mut BTreeMap<String, Value>,
+    key: String,
+    value: Value,
+    ttl: Option<f64>,
+) -> Result<(Vec<Value>, Option<Value>), CacheError> {
+    let previous: BTreeSet<String> = markers
+        .ttl_entries()
+        .into_iter()
+        .map(|(marker, _expiry)| marker)
+        .collect();
+    markers.set(&key, CacheValue::Null, ttl)?;
+    let current: BTreeSet<String> = markers
+        .ttl_entries()
+        .into_iter()
+        .map(|(marker, _expiry)| marker)
+        .collect();
+    let mut evicted = Vec::new();
+    for evicted_key in previous.difference(&current) {
+        if let Some(evicted_value) = values.remove(evicted_key) {
+            evicted.push(evicted_value);
+        }
+    }
+    let replaced = if current.contains(&key) {
+        values.insert(key, value)
+    } else {
+        None
+    };
+    Ok((evicted, replaced))
+}
+
+// the value still live under the key, then the one whose marker has just expired
+pub fn lookup_marked<Value>(
+    markers: &mut LocalTtlCache,
+    values: &mut BTreeMap<String, Value>,
+    key: &str,
+) -> Result<(Option<Value>, Option<Value>), CacheError>
+where
+    Value: Clone,
+{
+    let present = markers.get(key)?.is_some();
+    let cached = values.get(key).cloned();
+    let expired = if present { None } else { values.remove(key) };
+    Ok((if present { cached } else { None }, expired))
 }
 
 impl<Value: Clone + Send + 'static> DynamicLoggingCache<Value> {
@@ -91,19 +138,14 @@ impl<Value: Clone + Send + 'static> DynamicLoggingCache<Value> {
         service_name: &str,
     ) -> Result<Option<Value>, DynamicLoggingCacheError> {
         let key = cache_key(credentials, service_name);
-        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        let expired = inner.markers.get(&key)?.is_none();
-        let cached = inner.values.get(&key).cloned();
-        let removed = if expired {
-            inner.values.remove(&key)
-        } else {
-            None
-        };
-        drop(inner);
-        if let Some(evicted) = removed {
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        let inner = &mut *guard;
+        let (cached, expired) = lookup_marked(&mut inner.markers, &mut inner.values, &key)?;
+        drop(guard);
+        if let Some(evicted) = expired {
             stop_logging_client(&self.on_remove, evicted);
         }
-        Ok(if expired { None } else { cached })
+        Ok(cached)
     }
 
     pub fn set_cache(
@@ -113,32 +155,22 @@ impl<Value: Clone + Send + 'static> DynamicLoggingCache<Value> {
         logging_client: Value,
     ) -> Result<(), DynamicLoggingCacheError> {
         let key = cache_key(credentials, service_name);
-        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        let previous: BTreeSet<String> = inner
-            .markers
-            .ttl_entries()
-            .into_iter()
-            .map(|(marker, _expiry)| marker)
-            .collect();
-        inner.markers.set(&key, CacheValue::Null, None)?;
-        let current: BTreeSet<String> = inner
-            .markers
-            .ttl_entries()
-            .into_iter()
-            .map(|(marker, _expiry)| marker)
-            .collect();
-        let mut stopped = Vec::new();
-        for evicted_key in previous.difference(&current) {
-            if let Some(evicted) = inner.values.remove(evicted_key) {
-                stopped.push(evicted);
-            }
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        let inner = &mut *guard;
+        let (evicted, replaced) = store_marked(
+            &mut inner.markers,
+            &mut inner.values,
+            key,
+            logging_client,
+            None,
+        )?;
+        drop(guard);
+        let mut stopped = evicted;
+        if let Some(replaced_client) = replaced {
+            stopped.push(replaced_client);
         }
-        if let Some(replaced) = inner.values.insert(key, logging_client) {
-            stopped.push(replaced);
-        }
-        drop(inner);
-        for evicted in stopped {
-            stop_logging_client(&self.on_remove, evicted);
+        for evicted_client in stopped {
+            stop_logging_client(&self.on_remove, evicted_client);
         }
         Ok(())
     }
