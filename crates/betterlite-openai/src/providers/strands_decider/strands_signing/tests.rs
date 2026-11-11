@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fs;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -7,6 +8,7 @@ use betterlite_models::decisions::ir;
 use betterlite_models::decisions::{DecisionsJson, Extra, Json};
 use rstest::rstest;
 use secrecy::SecretString;
+use tracing::subscriber::with_default;
 
 use super::StrandsDeciderDecisionsConfig;
 use super::headers::SESSION_HEADER;
@@ -174,4 +176,93 @@ fn aws_signing_without_credentials_leaves_the_request_unsigned() {
         signed.get(SESSION_HEADER).map(String::as_str),
         Some(DEFAULT_SESSION)
     );
+}
+
+#[test]
+fn test_litellm_params_credentials_win_over_injected_credentials() {
+    let injected = AwsCredentials {
+        access_key_id: SecretString::from("INJECTEDKEY"),
+        secret_access_key: SecretString::from(SECRET_KEY),
+        session_token: Some(SecretString::from("injected-token")),
+    };
+    let config = with_clock(Some(injected));
+    let body = sample_wire(&config);
+    let mut params = static_credentials();
+    params.insert(
+        "aws_session_token".to_owned(),
+        Json::Text("params-token".to_owned()),
+    );
+    let url = config.get_complete_url(ARN, "m");
+    let context = SigningContext {
+        url: &url,
+        api_base: ARN,
+        body: &body,
+        api_key: None,
+        litellm_params: &params,
+    };
+    let (signed, payload) = config.sign_request(custom_headers(), context);
+    assert!(payload.is_some());
+    let authorization = signed
+        .get("Authorization")
+        .expect("a signed Authorization header");
+    let scope = authorization
+        .split_once("Credential=")
+        .and_then(|(_, rest)| rest.split(',').next())
+        .expect("a credential scope");
+    assert_eq!(
+        scope,
+        "AKIDEXAMPLE/20260101/us-east-1/bedrock-agentcore/aws4_request"
+    );
+    assert_eq!(
+        signed.get("X-Amz-Security-Token").map(String::as_str),
+        Some("params-token")
+    );
+}
+
+#[rstest]
+#[case::role_name("aws_role_name")]
+#[case::profile_name("aws_profile_name")]
+#[case::session_name("aws_session_name")]
+#[case::web_identity_token("aws_web_identity_token")]
+#[case::sts_endpoint("aws_sts_endpoint")]
+#[case::external_id("aws_external_id")]
+#[case::session_tags("aws_session_tags")]
+fn test_unresolved_auth_parameters_are_named_in_an_error(#[case] name: &str) {
+    let log = tempfile::NamedTempFile::new().expect("a log file");
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_writer(log.reopen().expect("a writable log"))
+        .finish();
+    let mut params = Extra::new();
+    params.insert(name.to_owned(), Json::Text("value".to_owned()));
+    with_default(subscriber, || {
+        assert!(super::signing::credentials_from_params(&params).is_none());
+    });
+    let output = fs::read_to_string(log.path()).expect("log contents");
+    assert_eq!(
+        output,
+        format!(
+            "ERROR the AWS auth flow for this credential parameter is not built here; the parameter is ignored parameter={name}\n"
+        )
+    );
+}
+
+#[test]
+fn test_unresolved_auth_parameters_stay_quiet_when_null() {
+    let log = tempfile::NamedTempFile::new().expect("a log file");
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_writer(log.reopen().expect("a writable log"))
+        .finish();
+    let mut params = Extra::new();
+    params.insert("aws_role_name".to_owned(), Json::Null);
+    with_default(subscriber, || {
+        assert!(super::signing::credentials_from_params(&params).is_none());
+    });
+    let output = fs::read_to_string(log.path()).expect("log contents");
+    assert_eq!(output, "");
 }

@@ -23,3 +23,13 @@ deviations:
       Same missing error channel: sign_request cannot return the validation failure, so the provider keeps the default session id
       instead of failing the call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/strands_decider/decisions/transformation.py#L99-L108
+  - what: >-
+      The AwsAuthParams keys aws_role_name, aws_profile_name, aws_session_name, aws_web_identity_token,
+      aws_sts_endpoint, aws_external_id and aws_session_tags are ignored: LiteLLM routes each to an STS assume-role,
+      profile or web-identity flow in BaseAWSLLM.get_credentials, while betterlite logs an error naming the key and
+      signs with the static key pair or the injected credentials.
+    why: >-
+      Those auth flows live in betterlite-bedrock's resolve_credentials (B594), which betterlite-openai cannot depend on.
+      A deployment can use aws_access_key_id with aws_secret_access_key or inject credentials through B590's BaseAWSLLM
+      provider instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L448-L510

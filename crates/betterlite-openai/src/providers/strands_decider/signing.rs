@@ -17,6 +17,23 @@ pub const SERVICE: &str = "bedrock-agentcore";
 const ACCESS_KEY_ID: &str = "aws_access_key_id";
 const SECRET_ACCESS_KEY: &str = "aws_secret_access_key";
 const SESSION_TOKEN: &str = "aws_session_token";
+const ROLE_NAME: &str = "aws_role_name";
+const PROFILE_NAME: &str = "aws_profile_name";
+const SESSION_NAME: &str = "aws_session_name";
+const WEB_IDENTITY_TOKEN: &str = "aws_web_identity_token";
+const STS_ENDPOINT: &str = "aws_sts_endpoint";
+const EXTERNAL_ID: &str = "aws_external_id";
+const SESSION_TAGS: &str = "aws_session_tags";
+// the STS assume-role, profile and web-identity flows live in betterlite-bedrock's resolve_credentials
+const UNRESOLVED_AUTH_PARAMETERS: [&str; 7] = [
+    ROLE_NAME,
+    PROFILE_NAME,
+    SESSION_NAME,
+    WEB_IDENTITY_TOKEN,
+    STS_ENDPOINT,
+    EXTERNAL_ID,
+    SESSION_TAGS,
+];
 const PROVIDER_NAME: &str = "betterlite";
 const CONTENT_LENGTH: &str = "Content-Length";
 
@@ -48,6 +65,7 @@ pub struct JsonPost<'call> {
 
 #[must_use]
 pub fn credentials_from_params(litellm_params: &Extra) -> Option<AwsCredentials> {
+    warn_unresolved_auth_params(litellm_params);
     let access_key_id = secret_parameter(litellm_params, ACCESS_KEY_ID)?;
     let secret_access_key = secret_parameter(litellm_params, SECRET_ACCESS_KEY)?;
     let session_token = secret_parameter(litellm_params, SESSION_TOKEN);
@@ -56,6 +74,21 @@ pub fn credentials_from_params(litellm_params: &Extra) -> Option<AwsCredentials>
         secret_access_key,
         session_token,
     })
+}
+
+fn warn_unresolved_auth_params(litellm_params: &Extra) {
+    for name in UNRESOLVED_AUTH_PARAMETERS {
+        let Some(value) = litellm_params.get(name) else {
+            continue;
+        };
+        if matches!(value, Json::Null) {
+            continue;
+        }
+        tracing::error!(
+            parameter = name,
+            "the AWS auth flow for this credential parameter is not built here; the parameter is ignored"
+        );
+    }
 }
 
 fn secret_parameter(litellm_params: &Extra, name: &'static str) -> Option<SecretString> {

@@ -119,10 +119,9 @@ impl StrandsDeciderDecisionsConfig {
         runtime: &arn::AgentCoreRuntime,
         session: &Headers,
     ) -> Option<(Headers, Vec<u8>)> {
-        let resolved = self.credentials.as_ref().map_or_else(
-            || signing::credentials_from_params(context.litellm_params),
-            |injected| Some(injected.clone()),
-        );
+        // LiteLLM validates the call's litellm_params into AwsAuthParams first, so deployment keys beat injected ones
+        let resolved = signing::credentials_from_params(context.litellm_params)
+            .or_else(|| self.credentials.clone());
         let Some(credentials) = resolved else {
             tracing::error!("no AWS credentials are configured for the AgentCore runtime");
             return None;
