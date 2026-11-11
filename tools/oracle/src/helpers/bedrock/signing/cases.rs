@@ -20,9 +20,7 @@ use tracing_subscriber::registry;
 pub(super) fn service_request_case(case: &ServiceRequestInput) -> Result<Value, Box<HelperError>> {
     let headers: Vec<_> = case.headers.clone().into_iter().collect();
     let signing = sign_service_request(case.request(&headers, epoch(case.now)?), |_s, _r| {
-        ready(Ok::<Credentials, CredentialError>(credentials_of(
-            &case.credentials,
-        )))
+        ready(Ok::<_, CredentialError>(credentials_of(&case.credentials)))
     });
     Ok(signed_result(runtime()?.block_on(signing)))
 }
