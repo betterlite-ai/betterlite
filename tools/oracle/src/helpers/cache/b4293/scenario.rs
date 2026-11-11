@@ -82,20 +82,15 @@ async fn read(call: &Fields) -> HelperResult {
     scenario.observe(&call.key, read).await
 }
 
-async fn scoped_read(scenario: &Scenario, key: &str) -> Option<Json> {
+async fn batch_read(call: &Fields) -> HelperResult {
+    let scenario = Scenario::start(call).await?;
     let redis = Arc::clone(&scenario.redis);
     let (_batches, read) = request_redis_batch_scope(EXPIRY, async {
         let batch = active_request_redis_batch(&redis)?;
-        let _misses = batch.mget(&[key.to_owned()]).await;
-        scenario.cache.async_get_cache(key, false).await
+        let _misses = batch.mget(&[call.key.clone()]).await;
+        scenario.cache.async_get_cache(&call.key, false).await
     })
     .await;
-    read
-}
-
-async fn batch_read(call: &Fields) -> HelperResult {
-    let scenario = Scenario::start(call).await?;
-    let read = scoped_read(&scenario, &call.key).await;
     scenario.observe(&call.key, read).await
 }
 

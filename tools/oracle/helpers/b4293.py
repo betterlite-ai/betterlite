@@ -18,10 +18,8 @@ from typing_extensions import override
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 DEADLINE_SECONDS = 1.0
-SOCKET_TIMEOUT_SECONDS = 2.0
 OK = b"+OK\r\n"
 NIL = b"$-1\r\n"
-ERROR = b"-ERR boom\r\n"
 # the command whose first reply fails, per scenario
 FAILURES = {
     "increment_propagates_redis_error": "INCRBY",
@@ -41,10 +39,7 @@ FALLBACKS = {
     "GET": NIL,
     "INCRBYFLOAT": bulk("1.0"),
     "TTL": b":60\r\n",
-    "INCRBY": b":1\r\n",
-    "DEL": b":1\r\n",
-    "EXPIRE": b":1\r\n",
-    "SADD": b":1\r\n",
+    **dict.fromkeys(["INCRBY", "DEL", "EXPIRE", "SADD"], b":1\r\n"),
 }
 
 
@@ -62,12 +57,6 @@ class Fields(TypedDict):
     default_in_memory_ttl: NotRequired[float]
     entries: NotRequired[list[Entry]]
     key_count: NotRequired[int]
-
-
-def expiry(args: list[str]) -> str:
-    if "EX" not in args:
-        return ""
-    return args[args.index("EX") + 1]
 
 
 class Script:
@@ -91,7 +80,7 @@ class Script:
     def expiries(self) -> list[Json]:
         with self.lock:
             sets = [args for args in self.received if args[0].upper() == "SET"]
-        return [{"key": args[1], "ex": expiry(args)} for args in sets]
+        return [{"key": s[1], "ex": s[s.index("EX") + 1] if "EX" in s else ""} for s in sets]
 
     def delete_lengths(self) -> list[Json]:
         with self.lock:
@@ -119,14 +108,6 @@ class Handler(socketserver.StreamRequestHandler):
                 args.append(self.rfile.read(size + 2)[:size].decode())
             self.wfile.write(self.script.answer(args))
             header = self.rfile.readline()
-
-
-class Clock:
-    def __init__(self, now: float) -> None:
-        self.now = now
-
-    def __call__(self) -> float:
-        return self.now
 
 
 class Harness(NamedTuple):
@@ -231,9 +212,9 @@ SCENARIOS: dict[str, Scenario] = {
 
 
 async def execute(name: str, call: Fields, port: int, script: Script) -> dict[str, Json]:
-    redis = RedisCache(host="127.0.0.1", port=port, socket_timeout=SOCKET_TIMEOUT_SECONDS)
+    redis = RedisCache(host="127.0.0.1", port=port, socket_timeout=2.0)
     dual = DualCache(
-        in_memory_cache=InMemoryCache(clock=Clock(call["clock"])),
+        in_memory_cache=InMemoryCache(clock=partial(float, call["clock"])),
         redis_cache=redis,
         default_in_memory_ttl=call.get("default_in_memory_ttl"),
         default_redis_ttl=None,
@@ -247,7 +228,7 @@ def run(input_value: dict[str, Fields]) -> dict[str, Json]:
     replies: defaultdict[str, deque[bytes]] = defaultdict(deque)
     replies["GET"].append(bulk(json.dumps(call.get("redis_get"))))
     if name in FAILURES:
-        replies[FAILURES[name]].append(ERROR)
+        replies[FAILURES[name]].append(b"-ERR boom\r\n")
     script = Script(replies)
     with socketserver.ThreadingTCPServer(("127.0.0.1", 0), partial(Handler, script)) as server:
         server.daemon_threads = True

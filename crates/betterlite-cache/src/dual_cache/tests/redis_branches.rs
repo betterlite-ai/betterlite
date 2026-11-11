@@ -162,6 +162,15 @@ async fn async_set_cache_sadd_with_local_only_skips_redis() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_whole_number_round_trips_through_the_memory_tier() {
+    let server = FakeRedis::start().await;
+    let cache = with_redis(&server).await;
+    let whole = Json::Number(Number::from(5_i64));
+    cache.set_cache("key", &whole, write(None, true));
+    assert_eq!(cache.get_cache("key", true), Some(whole));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_redis_null_reads_as_a_miss_and_leaves_memory_empty() {
     let server = FakeRedis::start().await;
     server.script(

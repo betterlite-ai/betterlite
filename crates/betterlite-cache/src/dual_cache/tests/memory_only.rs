@@ -315,6 +315,17 @@ async fn async_delete_cache_keys_removes_every_memory_key_without_redis() {
 }
 
 #[tokio::test]
+async fn async_delete_cache_keys_ignores_an_empty_list() {
+    let cache = DualCache::new(local_memory(1000.0), None, settings(None));
+    cache.set_cache("kept", &text("value"), write(None, false));
+    cache
+        .async_delete_cache_keys(&[])
+        .await
+        .expect("an empty deletion");
+    assert_eq!(cache.get_cache("kept", true), Some(text("value")));
+}
+
+#[tokio::test]
 async fn flush_cache_and_delete_cache_clear_the_memory_tier() {
     let cache = DualCache::new(local_memory(1000.0), None, settings(None));
     cache.set_cache("first", &text("value"), write(None, false));

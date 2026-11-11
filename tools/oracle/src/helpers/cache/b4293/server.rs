@@ -22,9 +22,7 @@ use tokio::task::JoinSet;
 use crate::helpers::{HelperError, OrHelperError as _};
 
 const DEFAULT_TTL: i64 = 60;
-const SOCKET_TIMEOUT_SECONDS: f64 = 2.0;
 
-const NIL: &[u8] = b"$-1\r\n";
 // redis-py raises ResponseError for an error frame, and so does the rust client
 pub(crate) const FAILURE: &[u8] = b"-ERR boom\r\n";
 
@@ -144,7 +142,7 @@ fn fallback(name: &str, argument_count: usize) -> Vec<u8> {
             let misses = argument_count.saturating_sub(1);
             format!("*{misses}\r\n{}", "$-1\r\n".repeat(misses)).into_bytes()
         }
-        "GET" => NIL.to_vec(),
+        "GET" => b"$-1\r\n".to_vec(),
         "INCRBYFLOAT" => b"$3\r\n1.0\r\n".to_vec(),
         "TTL" => format!(":{DEFAULT_TTL}\r\n").into_bytes(),
         "INCRBY" | "DEL" | "EXPIRE" | "SADD" => b":1\r\n".to_vec(),
@@ -200,8 +198,8 @@ pub(crate) async fn connect_cache(addr: SocketAddr) -> Result<Arc<RedisCache>, B
     let overrides: RedisOverrides = serde_json::from_value(json!({
         "host": addr.ip().to_string(),
         "port": addr.port(),
-        "socket_timeout": SOCKET_TIMEOUT_SECONDS,
-        "socket_connect_timeout": SOCKET_TIMEOUT_SECONDS,
+        "socket_timeout": 2.0,
+        "socket_connect_timeout": 2.0,
     }))
     .or_value_error()?;
     let options = RedisCacheOptions {
