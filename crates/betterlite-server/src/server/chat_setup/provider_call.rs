@@ -13,9 +13,8 @@ use betterlite_provider::operation::{
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
 use http::HeaderMap;
-use serde_json::Error as JsonError;
-use std::io::Error as IoError;
 use std::time::{Duration, Instant};
+use thiserror::Error;
 
 pub(crate) fn control_options(
     request: &ChatRequest,
@@ -50,7 +49,7 @@ pub(crate) async fn provider_chat(
     request: &ChatRequest,
     deployment: &ChatDeployment,
     control: ControlOptions,
-) -> Result<(ChatCompletion, HeaderMap, Duration), ChatError> {
+) -> Result<(ChatCompletion, HeaderMap, Duration), CallError<ChatError>> {
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
     let inputs = Deployment::from_chat(deployment);
     let operation = OperationRequest::Chat(Box::new(ChatOperation {
@@ -75,28 +74,34 @@ pub(crate) async fn provider_chat(
     let upstream_headers = upstream.headers().clone();
     let result = provider.decode(&prepared, upstream).map_err(chat_error)?;
     let OperationResult::Chat(completion) = result else {
-        return Err(mismatched());
+        return Err(CallError::Mismatched);
     };
     Ok((completion, upstream_headers, upstream_time))
 }
 
-pub(crate) fn mismatched() -> ChatError {
-    ChatError::Decode {
-        source: JsonError::io(IoError::other(
-            "the provider answered a different operation",
-        )),
-    }
+// The route's own error where it names the failure; otherwise the provider's error, or the wrong operation, kept as it is
+#[derive(Debug, Error)]
+pub(crate) enum CallError<Route> {
+    #[error(transparent)]
+    Route(#[from] Route),
+    #[error("the provider call could not run: {source}")]
+    Operation {
+        #[source]
+        source: OperationError,
+    },
+    #[error("the provider answered a different operation than the one sent")]
+    Mismatched,
 }
 
-pub(crate) fn chat_error(error: OperationError) -> ChatError {
-    match error {
+pub(crate) fn chat_error(error: OperationError) -> CallError<ChatError> {
+    let route = match error {
         OperationError::Provider { response } => ChatError::Provider { response },
         OperationError::MissingApiKey => ChatError::MissingApiKey,
         OperationError::Timeout => ChatError::Timeout,
         OperationError::Http { source } => ChatError::Http { source },
         OperationError::Encode { source } => ChatError::Encode { source },
         OperationError::Decode { source, .. } => ChatError::Decode { source },
-        OperationError::TooLarge => ChatError::TooLarge,
+        OperationError::TooLarge { .. } => ChatError::TooLarge,
         OperationError::UnavailableAdapter { provider }
         | OperationError::UnsupportedOperation { provider, .. } => {
             ChatError::UnsupportedProvider { model: provider }
@@ -104,16 +109,13 @@ pub(crate) fn chat_error(error: OperationError) -> ChatError {
         OperationError::InvalidHeader { name, source } => ChatError::Http {
             source: TransportError::InvalidHeader { name, source },
         },
-        OperationError::Endpoint { value, source } => ChatError::Encode {
-            source: JsonError::io(IoError::other(format!("{value}: {source}"))),
-        },
-        OperationError::Deployment(source) => ChatError::Encode {
-            source: JsonError::io(IoError::other(source.to_string())),
-        },
-        OperationError::TransformRetry(source) => ChatError::Encode {
-            source: JsonError::io(IoError::other(source.to_string())),
-        },
-    }
+        OperationError::TransformRetry(source) => {
+            return CallError::Operation {
+                source: OperationError::TransformRetry(source),
+            };
+        }
+    };
+    CallError::Route(route)
 }
 
 mod tests;

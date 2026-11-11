@@ -41,7 +41,6 @@ use crate::openai_assistant_dispatch::{OpenAiAssistantRequest, OpenAiAssistantRe
 use crate::openai_dispatch::{OpenAiRequest, OpenAiResult};
 use crate::openai_media_dispatch::{OpenAiMediaRequest, OpenAiMediaResult};
 use crate::openai_resource_dispatch::{OpenAiResourceRequest, OpenAiResourceResult};
-use crate::prepared::deployment::DeploymentError;
 use crate::self_hosted_dispatch::{SelfHostedRequest, SelfHostedResult};
 use crate::studio_dispatch::{GeminiRequest, GeminiResult};
 use crate::transform_retry::TransformRetryError;
@@ -215,24 +214,16 @@ pub enum OperationError {
         #[source]
         source: JsonError,
     },
-    #[error("the provider answer is larger than betterlite accepts")]
-    TooLarge,
+    #[error("the provider answer is larger than the {limit} bytes betterlite accepts")]
+    TooLarge { limit: usize },
     #[error("no API key is set for this deployment")]
     MissingApiKey,
-    #[error("the provider endpoint {value:?} is not a URL: {source}")]
-    Endpoint {
-        value: String,
-        #[source]
-        source: url::ParseError,
-    },
     #[error("the {name} header holds a value HTTP cannot carry: {source}")]
     InvalidHeader {
         name: String,
         #[source]
         source: InvalidHeaderValue,
     },
-    #[error(transparent)]
-    Deployment(#[from] DeploymentError),
     #[error(transparent)]
     TransformRetry(#[from] TransformRetryError),
 }

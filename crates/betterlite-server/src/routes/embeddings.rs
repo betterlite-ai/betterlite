@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
+use crate::server::chat_setup::provider_call::CallError;
 
 use super::chat::headers::{failure_headers, success_headers};
 
@@ -90,7 +91,7 @@ async fn embeddings(
             );
             (response_headers, Json(response)).into_response()
         }
-        Err(error) => failure(&error, &call_id, Some(deployment), &executor.redactor),
+        Err(error) => call_failure(&error, &call_id, Some(deployment), &executor.redactor),
     }
 }
 
@@ -98,7 +99,7 @@ async fn embed(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &EmbeddingRequest,
-) -> Result<(EmbeddingResponse, HeaderMap, Duration), EmbeddingError> {
+) -> Result<(EmbeddingResponse, HeaderMap, Duration), CallError<EmbeddingError>> {
     if embedding_mocks_resolve(executor, deployment, request)? {
         let outcome = embedding::send(executor, deployment, request).await?;
         return Ok((
@@ -131,7 +132,7 @@ async fn provider_embedding(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &EmbeddingRequest,
-) -> Result<(EmbeddingResponse, HeaderMap, Duration), EmbeddingError> {
+) -> Result<(EmbeddingResponse, HeaderMap, Duration), CallError<EmbeddingError>> {
     let provider = Provider::from_deployment(deployment).map_err(embedding_error)?;
     let inputs = Deployment::from_chat(deployment);
     let operation = OperationRequest::Embedding(Box::new(EmbeddingOperation {
@@ -157,18 +158,13 @@ async fn provider_embedding(
         .decode(&prepared, upstream)
         .map_err(embedding_error)?;
     let OperationResult::Embedding(response) = result else {
-        return Err(EmbeddingError::UnsupportedProvider {
-            model: String::from("embeddings"),
-        });
+        return Err(CallError::Mismatched);
     };
     Ok((*response, upstream_headers, upstream_time))
 }
 
-fn embedding_error(error: OperationError) -> EmbeddingError {
-    let timed_out = EmbeddingError::Http {
-        source: HttpError::Timeout,
-    };
-    match error {
+fn embedding_error(error: OperationError) -> CallError<EmbeddingError> {
+    let route = match error {
         OperationError::Provider { response } => EmbeddingError::Provider { response },
         OperationError::MissingApiKey => EmbeddingError::MissingApiKey,
         OperationError::Encode { source } => EmbeddingError::Encode { source },
@@ -177,14 +173,44 @@ fn embedding_error(error: OperationError) -> EmbeddingError {
         | OperationError::UnsupportedOperation { provider, .. } => {
             EmbeddingError::UnsupportedProvider { model: provider }
         }
-        OperationError::Endpoint { .. }
-        | OperationError::TooLarge
-        | OperationError::Timeout
-        | OperationError::Http { .. }
+        OperationError::Timeout => EmbeddingError::Http {
+            source: HttpError::Timeout,
+        },
+        OperationError::TooLarge { limit } => EmbeddingError::Http {
+            source: HttpError::TooLarge { limit },
+        },
+        kept @ (OperationError::Http { .. }
         | OperationError::InvalidHeader { .. }
-        | OperationError::Deployment(_)
-        | OperationError::TransformRetry(_) => timed_out,
-    }
+        | OperationError::TransformRetry(_)) => {
+            return CallError::Operation { source: kept };
+        }
+    };
+    CallError::Route(route)
+}
+
+// a provider call that ends without a route error is the server's own fault, so the client sees a 500
+fn call_failure(
+    error: &CallError<EmbeddingError>,
+    call_id: &str,
+    deployment: Option<&ChatDeployment>,
+    redactor: &Redactor,
+) -> Response {
+    let route = match error {
+        CallError::Route(route) => route,
+        CallError::Operation { .. } | CallError::Mismatched => {
+            let body = ErrorBody {
+                error: ErrorObject {
+                    message: redactor.redact_internal_details(&error.to_string()),
+                    error_type: String::from("internal_server_error"),
+                    param: None,
+                    code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
+                },
+            };
+            let headers = failure_headers(None, None, call_id, deployment);
+            return (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(body)).into_response();
+        }
+    };
+    failure(route, call_id, deployment, redactor)
 }
 
 fn failure(

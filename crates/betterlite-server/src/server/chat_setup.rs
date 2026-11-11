@@ -11,10 +11,13 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
+use betterlite_openai::chat::deployment::{
+    ChatDeployment, DeploymentError, OpenAiDefaults, Provider as DeploymentProvider,
+};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
-use betterlite_provider::aiohttp_openai_dispatch::DEFAULT_AIOHTTP_BASE;
+use betterlite_provider::aiohttp_openai_dispatch::{DEFAULT_AIOHTTP_BASE, complete_url};
+use betterlite_provider::provider::Provider;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::rngs::StdRng;
@@ -22,6 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+use url::{ParseError, Url};
 
 use mock::mock_settings;
 use uuid::Uuid;
@@ -42,6 +46,14 @@ pub enum ChatSetupError {
     Tls {
         #[from]
         source: TlsPolicyError,
+    },
+    #[error(
+        "model_list entry {model_name} has an api_base the aiohttp_openai provider cannot use: {source}"
+    )]
+    AiohttpBase {
+        model_name: String,
+        #[source]
+        source: ParseError,
     },
     #[error(
         "router_settings.routing_strategy {strategy:?} is not supported, only simple-shuffle is"
@@ -151,49 +163,56 @@ fn chat_deployments(
     resolution: &ResolutionContext<'_>,
 ) -> Result<Vec<ChatDeployment>, ChatSetupError> {
     let identity = &config.sections.provider_resolution;
-    let resolved = config
-        .model_list
-        .iter()
-        .enumerate()
-        .map(|(index, deployment)| {
-            let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
-            let mut resolved = ChatDeployment::resolve_with(
-                deployment,
-                defaults,
-                custom_llm_provider,
-                resolution,
-            )?;
-            if is_aiohttp(custom_llm_provider, deployment) {
-                apply_aiohttp_defaults(&mut resolved, deployment);
-            }
-            Ok(resolved)
-        });
-    resolved
-        .collect::<Result<Vec<_>, DeploymentError>>()
-        .map_err(ChatSetupError::from)
+    let mut resolved = Vec::new();
+    for (index, deployment) in config.model_list.iter().enumerate() {
+        let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
+        let mut chat =
+            ChatDeployment::resolve_with(deployment, defaults, custom_llm_provider, resolution)?;
+        prefix_provider(&mut chat, custom_llm_provider);
+        if matches!(
+            Provider::from_deployment(&chat),
+            Ok(Provider::AiohttpOpenAi(_))
+        ) {
+            apply_aiohttp_defaults(&mut chat, deployment)?;
+        }
+        resolved.push(chat);
+    }
+    Ok(resolved)
+}
+
+// the resolver keeps only the model, so the provider LiteLLM took from custom_llm_provider goes back on as a prefix
+fn prefix_provider(resolved: &mut ChatDeployment, custom_llm_provider: Option<&str>) {
+    let (Some(slug), DeploymentProvider::Unsupported { model }) =
+        (custom_llm_provider, &mut resolved.provider)
+    else {
+        return;
+    };
+    if !model.starts_with(&format!("{slug}/")) {
+        *model = format!("{slug}/{model}");
+    }
 }
 
 // aiohttp_openai reads only its own deployment values: the OpenAI environment defaults never apply to it
-fn is_aiohttp(custom_llm_provider: Option<&str>, deployment: &ModelDeployment) -> bool {
-    custom_llm_provider == Some("aiohttp_openai")
-        || deployment
-            .litellm_params
-            .model
-            .as_deref()
-            .is_some_and(|model| model.starts_with("aiohttp_openai/"))
-}
-
-fn apply_aiohttp_defaults(resolved: &mut ChatDeployment, deployment: &ModelDeployment) {
+fn apply_aiohttp_defaults(
+    resolved: &mut ChatDeployment,
+    deployment: &ModelDeployment,
+) -> Result<(), ChatSetupError> {
     let base = deployment
         .litellm_params
         .api_base
-        .clone()
-        .unwrap_or_else(|| String::from(DEFAULT_AIOHTTP_BASE));
-    resolved.api_base = base;
+        .as_deref()
+        .unwrap_or(DEFAULT_AIOHTTP_BASE);
+    resolved.endpoint =
+        Url::parse(&complete_url(base)).map_err(|source| ChatSetupError::AiohttpBase {
+            model_name: resolved.model_group.clone(),
+            source,
+        })?;
+    base.clone_into(&mut resolved.api_base);
     resolved
         .api_key
         .clone_from(&deployment.litellm_params.api_key);
     resolved.organization = None;
+    Ok(())
 }
 
 fn unix_seconds() -> u64 {

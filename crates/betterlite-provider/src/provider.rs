@@ -100,7 +100,7 @@ impl Provider {
         }
     }
 
-    fn from_slug(slug: &str) -> Result<Self, OperationError> {
+    pub(crate) fn from_slug(slug: &str) -> Result<Self, OperationError> {
         match slug {
             "openai" => Ok(Self::OpenAi(OpenAi)),
             "aiohttp_openai" => Ok(Self::AiohttpOpenAi(AiohttpOpenAi)),

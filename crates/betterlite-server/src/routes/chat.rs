@@ -27,7 +27,7 @@ use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::chat_setup::provider_call::{
-    chat_mocks_resolve, control_options, provider_chat,
+    CallError, chat_mocks_resolve, control_options, provider_chat,
 };
 
 use headers::{failure_headers, success_headers};
@@ -176,6 +176,7 @@ async fn execute_chat(
                     outcome.upstream_time,
                 )
             })
+            .map_err(CallError::Route)
     } else {
         provider_chat(&state.executor, request, deployment, control).await
     };
@@ -183,7 +184,7 @@ async fn execute_chat(
 }
 
 fn render_answer(
-    answered: Result<(ChatCompletion, HeaderMap, Duration), ChatError>,
+    answered: Result<(ChatCompletion, HeaderMap, Duration), CallError<ChatError>>,
     deployment: &ChatDeployment,
     call: &CallContext<'_>,
 ) -> Response {
@@ -198,7 +199,7 @@ fn render_answer(
             );
             (headers, Json(completion)).into_response()
         }
-        Err(error) => failure(&error, call, Some(deployment)),
+        Err(error) => call_failure(&error, call, Some(deployment)),
     }
 }
 
@@ -220,6 +221,36 @@ fn control_failure(
     };
     let headers = failure_headers(None, None, call.id, deployment);
     (StatusCode::BAD_REQUEST, headers, Json(body)).into_response()
+}
+
+// a provider call that ends without a route error is the server's own fault, so the client sees a 500
+fn call_failure(
+    error: &CallError<ChatError>,
+    call: &CallContext<'_>,
+    deployment: Option<&ChatDeployment>,
+) -> Response {
+    let route = match error {
+        CallError::Route(route) => route,
+        CallError::Operation { .. } | CallError::Mismatched => {
+            let redactor = &call.errors.redactor;
+            let message = redactor.redact_internal_details(&error.to_string());
+            tracing::warn!(message, "chat request failed inside the provider call");
+            let body = ErrorBody {
+                error: ErrorObject {
+                    message,
+                    error_type: String::from("internal_server_error"),
+                    param: None,
+                    code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
+                    provider_specific_fields: None,
+                    litellm_call_id: error_body_call_id(call.include_in_body, Some(call.id))
+                        .map(str::to_owned),
+                },
+            };
+            let headers = failure_headers(None, None, call.id, deployment);
+            return (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(body)).into_response();
+        }
+    };
+    failure(route, call, deployment)
 }
 
 fn failure(

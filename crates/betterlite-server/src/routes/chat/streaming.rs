@@ -26,8 +26,8 @@ use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
 use super::headers::stream_headers;
-use super::{CallContext, ChatRouteState, failure};
-use crate::server::chat_setup::provider_call::{chat_error, mismatched};
+use super::{CallContext, ChatRouteState, call_failure, failure};
+use crate::server::chat_setup::provider_call::{CallError, chat_error};
 
 struct RelayState {
     upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
@@ -69,7 +69,7 @@ pub(super) async fn stream_chat(
     let upstream_started = Instant::now();
     let upstream = match provider_stream(state, deployment, request, control).await {
         Ok(upstream) => upstream,
-        Err(error) => return failure(&error, call, Some(deployment)),
+        Err(error) => return call_failure(&error, call, Some(deployment)),
     };
     let upstream_time = upstream_started.elapsed();
     let headers = stream_headers(
@@ -88,7 +88,7 @@ async fn provider_stream(
     deployment: &ChatDeployment,
     request: &ChatRequest,
     control: ControlOptions,
-) -> Result<StreamResponse, ChatError> {
+) -> Result<StreamResponse, CallError<ChatError>> {
     let executor = &state.executor;
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
     let inputs = Deployment::from_chat(deployment);
@@ -111,7 +111,7 @@ async fn provider_stream(
         .map_err(chat_error)?;
     let result = provider.decode(&prepared, answer).map_err(chat_error)?;
     let OperationResult::Stream(stream) = result else {
-        return Err(mismatched());
+        return Err(CallError::Mismatched);
     };
     Ok(*stream)
 }

@@ -11,6 +11,7 @@ use thiserror::Error;
 use url::Url;
 
 use crate::operation::OperationError;
+use crate::provider::Provider;
 
 // LiteLLM's DEFAULT_REQUEST_TIMEOUT_SECONDS
 const DEFAULT_TIMEOUT_SECONDS: f64 = 6000.0;
@@ -110,9 +111,11 @@ impl Deployment {
     }
 }
 
+// only a prefix that names a provider comes off; an org/model name keeps its slash
 fn stripped_model(litellm_model: &str) -> String {
     litellm_model
         .split_once('/')
+        .filter(|(slug, _model)| Provider::from_slug(slug).is_ok())
         .map_or_else(|| litellm_model.to_owned(), |(_, model)| model.to_owned())
 }
 
@@ -261,8 +264,8 @@ impl From<TransportError> for OperationError {
     fn from(source: TransportError) -> Self {
         match source {
             TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => Self::Timeout,
-            TransportError::BodyTooLarge { .. } | TransportError::HeadersTooLarge { .. } => {
-                Self::TooLarge
+            TransportError::BodyTooLarge { limit } | TransportError::HeadersTooLarge { limit } => {
+                Self::TooLarge { limit }
             }
             TransportError::Rejected(_)
             | TransportError::Build(_)
