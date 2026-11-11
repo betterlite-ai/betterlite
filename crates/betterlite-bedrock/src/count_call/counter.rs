@@ -154,7 +154,7 @@ fn handler_failure(
             );
             error_record(call, *status, message)
         }
-        CountTokensHandlerError::Header { source, .. } => generic_failure(call, source),
+        CountTokensHandlerError::Header(source) => generic_failure(call, source),
     }
 }
 

@@ -9,12 +9,11 @@ use betterlite_bedrock::count_call::factory::BedrockModelInfo;
 use betterlite_bedrock::count_call::handler::{BedrockCountTokensHandler, CountTokensEnvironment};
 use betterlite_bedrock::count_call::reply::CountResponse;
 use serde_json::{Value, json};
-use tokio::runtime::{Builder, Runtime};
-use tracing::Level;
+use tokio::runtime::Builder;
 
 use crate::helpers::{HelperError, OrHelperError as _};
 
-use super::input::{Call, Environment, Handler};
+use super::input::{Call, Handler};
 use super::logs::Captured;
 use super::script::{FixedHandler, FixtureCredentials, Script};
 
@@ -22,11 +21,10 @@ pub(super) fn run_call(call: &Call, factory: bool) -> Result<Value, Box<HelperEr
     let (captured, guard) = super::logs::capture();
     let resolved = Arc::new(AtomicUsize::new(0));
     let transport = Script::new(&call.reply);
-    let observed = transport.clone();
-    let selection = BedrockTokenCounter {
+    let selected = BedrockTokenCounter {
         handler: FixedHandler { result: None },
-    };
-    let selected = selection.should_use_token_counting_api(call.provider.as_deref());
+    }
+    .should_use_token_counting_api(call.provider.as_deref());
     let request = CountTokensCall {
         model_to_use: &call.model,
         messages: call.messages.as_ref(),
@@ -36,15 +34,19 @@ pub(super) fn run_call(call: &Call, factory: bool) -> Result<Value, Box<HelperEr
         system: call.system.as_ref(),
         now: epoch(call.now)?,
     };
-    let outcome = runtime()?.block_on(count(call, factory, transport, &resolved, &request));
+    let outcome = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .or_value_error()?
+        .block_on(count(call, factory, transport.clone(), &resolved, &request));
     drop(guard);
     Ok(json!({
         "selected": selected,
         "result": outcome.as_ref().map(result_json),
-        "request": observed.observed()?,
+        "request": transport.observed(),
         "debug": debug_events(&captured),
-        "errors": error_events(&captured),
-        "warnings": warning_events(&captured),
+        "errors": events(&captured, "ERROR", &["subject"]),
+        "warnings": events(&captured, "WARN", &["subject", "status"]),
         "resolved": resolved.load(Ordering::Relaxed),
     }))
 }
@@ -56,7 +58,7 @@ async fn count(
     resolved: &Arc<AtomicUsize>,
     request: &CountTokensCall<'_>,
 ) -> Option<TokenCountResponse> {
-    let environment = environment_of(&call.environment);
+    let environment = environment(call);
     let credentials = FixtureCredentials {
         resolved: Arc::clone(resolved),
     };
@@ -77,20 +79,37 @@ async fn count(
             .count_tokens(request)
             .await
         }
-        Handler::Real => {
-            let counter = if factory {
-                BedrockModelInfo { environment }.get_token_counter(transport, credentials)
-            } else {
-                BedrockTokenCounter {
-                    handler: BedrockCountTokensHandler {
-                        transport,
-                        credentials,
-                        environment,
-                    },
-                }
-            };
-            counter.count_tokens(request).await
+        Handler::Real if factory => {
+            BedrockModelInfo { environment }
+                .get_token_counter(transport, credentials)
+                .count_tokens(request)
+                .await
         }
+        Handler::Real => {
+            BedrockTokenCounter {
+                handler: BedrockCountTokensHandler {
+                    transport,
+                    credentials,
+                    environment,
+                },
+            }
+            .count_tokens(request)
+            .await
+        }
+    }
+}
+
+fn environment(call: &Call) -> CountTokensEnvironment {
+    CountTokensEnvironment {
+        region_name: call.environment.region_name.clone(),
+        region: call.environment.region.clone(),
+        session_region: call.environment.session_region.clone(),
+        runtime_endpoint: call.environment.runtime_endpoint.clone(),
+        bearer_token: call
+            .environment
+            .bearer_token
+            .clone()
+            .map(secrecy::SecretString::from),
     }
 }
 
@@ -116,45 +135,29 @@ fn error_message_kind(text: Option<&str>, status: Option<u16>) -> Option<&str> {
     }
 }
 
-fn debug_events(captured: &Captured) -> Vec<Value> {
+fn events(captured: &Captured, level: &str, keys: &[&str]) -> Vec<Value> {
     captured
-        .entries(Level::DEBUG)
+        .fields(level)
         .iter()
-        .map(|entry| {
-            json!({
-                "subject": entry.subject,
-                "value": entry.value.as_deref().map_or(Value::Null, |text| {
-                    serde_json::from_str(text).unwrap_or(Value::Null)
-                }),
-            })
+        .map(|fields| {
+            keys.iter()
+                .map(|key| (*key, fields[*key].clone()))
+                .collect()
         })
         .collect()
 }
 
-fn error_events(captured: &Captured) -> Vec<Value> {
+fn debug_events(captured: &Captured) -> Vec<Value> {
     captured
-        .entries(Level::ERROR)
+        .fields("DEBUG")
         .iter()
-        .map(|entry| json!({"subject": entry.subject}))
+        .map(|fields| {
+            let value: Option<Value> = fields["value"]
+                .as_str()
+                .and_then(|text| serde_json::from_str(text).ok());
+            json!({"subject": fields["subject"], "value": value})
+        })
         .collect()
-}
-
-fn warning_events(captured: &Captured) -> Vec<Value> {
-    captured
-        .entries(Level::WARN)
-        .iter()
-        .map(|entry| json!({"subject": entry.subject, "status": entry.status}))
-        .collect()
-}
-
-fn environment_of(input: &Environment) -> CountTokensEnvironment {
-    CountTokensEnvironment {
-        region_name: input.region_name.clone(),
-        region: input.region.clone(),
-        session_region: input.session_region.clone(),
-        runtime_endpoint: input.runtime_endpoint.clone(),
-        bearer_token: input.bearer_token.clone().map(secrecy::SecretString::from),
-    }
 }
 
 fn epoch(seconds: i64) -> Result<SystemTime, Box<HelperError>> {
@@ -163,10 +166,4 @@ fn epoch(seconds: i64) -> Result<SystemTime, Box<HelperError>> {
         .checked_add(Duration::from_secs(bounded))
         .ok_or("now is out of range")
         .or_value_error()
-}
-
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    let mut builder = Builder::new_current_thread();
-    builder.enable_all();
-    builder.build().or_value_error()
 }

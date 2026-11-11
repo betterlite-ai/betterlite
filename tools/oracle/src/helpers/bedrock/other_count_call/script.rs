@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::count_call::handler::{
@@ -15,12 +14,9 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use http::Method;
-use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::{HeaderName, HeaderValue};
 use secrecy::SecretString;
-use serde_json::{Value, json};
-
-use crate::helpers::{HelperError, OrHelperError as _};
+use serde_json::{Map, Value, json};
 
 use super::input::Reply;
 
@@ -33,65 +29,24 @@ const REPORTED_HEADERS: [&str; 5] = [
 ];
 
 #[derive(Clone)]
-pub(super) struct Sent {
-    method: Method,
-    url: String,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
-    deadline: Duration,
-}
-
-#[derive(Clone)]
 pub(super) struct Script {
-    reply: Arc<Mutex<Option<Reply>>>,
-    sent: Arc<Mutex<Vec<Sent>>>,
+    reply: Reply,
+    sent: Arc<Mutex<Option<Value>>>,
 }
 
 impl Script {
     pub(super) fn new(reply: &Reply) -> Self {
         Self {
-            reply: Arc::new(Mutex::new(Some(reply.clone()))),
-            sent: Arc::new(Mutex::new(Vec::new())),
+            reply: reply.clone(),
+            sent: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub(super) fn observed(&self) -> Result<Option<Value>, Box<HelperError>> {
-        let first = self
-            .sent
+    pub(super) fn observed(&self) -> Option<Value> {
+        self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .first()
-            .cloned();
-        let Some(request) = first else {
-            return Ok(None);
-        };
-        Ok(Some(json!({
-            "method": request.method.as_str(),
-            "url": request.url,
-            "body": String::from_utf8(request.body).or_value_error()?,
-            "timeout": request.deadline.as_secs_f64(),
-            "headers": reported_headers(&request.headers),
-        })))
-    }
-
-    fn answer(&self) -> Result<UpstreamResponse, TransportError> {
-        let scripted = self
-            .reply
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        let Some(reply) = scripted else {
-            return Err(TransportError::Closed);
-        };
-        if reply.failure {
-            return Err(TransportError::Closed);
-        }
-        let pairs = reply.headers.into_iter().collect::<Vec<(String, String)>>();
-        Ok(UpstreamResponse {
-            status: reply.status,
-            headers: header_map(&pairs),
-            body: reply.body.into_bytes(),
-        })
+            .clone()
     }
 }
 
@@ -100,59 +55,62 @@ impl CountTokensTransport for Script {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        record(&self.sent, request);
-        ready(self.answer())
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert_with(|| describe(&request));
+        if self.reply.failure {
+            return ready(Err(TransportError::Closed));
+        }
+        ready(Ok(UpstreamResponse {
+            status: self.reply.status.unwrap_or(200),
+            headers: self
+                .reply
+                .headers
+                .iter()
+                .filter_map(|(name, value)| {
+                    Some((
+                        HeaderName::from_bytes(name.as_bytes()).ok()?,
+                        HeaderValue::from_str(value).ok()?,
+                    ))
+                })
+                .collect(),
+            body: self
+                .reply
+                .body
+                .as_deref()
+                .unwrap_or("{}")
+                .as_bytes()
+                .to_vec(),
+        }))
     }
 }
 
-fn record(sent: &Mutex<Vec<Sent>>, request: OutboundRequest) {
-    let payload = match request.body {
-        RequestBody::Json(bytes) => bytes,
+fn describe(request: &OutboundRequest) -> Value {
+    let body = match &request.body {
+        RequestBody::Json(bytes) => String::from_utf8_lossy(bytes).into_owned(),
         RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
-            Vec::new()
+            String::new()
         }
     };
-    let pairs = request
+    let headers: Map<String, Value> = request
         .headers
         .iter()
+        .filter(|(name, _)| REPORTED_HEADERS.contains(&name.as_str()))
         .map(|(name, value)| {
             (
                 name.to_string(),
-                value.to_str().unwrap_or_default().to_owned(),
+                Value::from(value.to_str().unwrap_or_default()),
             )
         })
         .collect();
-    sent.lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(Sent {
-            method: request.method,
-            url: request.url.to_string(),
-            headers: pairs,
-            body: payload,
-            deadline: request.deadline,
-        });
-}
-
-fn reported_headers(headers: &[(String, String)]) -> BTreeMap<String, String> {
-    headers
-        .iter()
-        .filter(|(name, _)| REPORTED_HEADERS.contains(&name.to_ascii_lowercase().as_str()))
-        .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
-        .collect()
-}
-
-fn header_map(pairs: &[(String, String)]) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    for (name, value) in pairs {
-        let Ok(header_name) = HeaderName::from_bytes(name.as_bytes()) else {
-            continue;
-        };
-        let Ok(header_value) = HeaderValue::from_str(value) else {
-            continue;
-        };
-        headers.insert(header_name, header_value);
-    }
-    headers
+    json!({
+        "method": request.method.as_str(),
+        "url": request.url.as_str(),
+        "body": body,
+        "timeout": request.deadline.as_secs_f64(),
+        "headers": headers,
+    })
 }
 
 pub(super) struct FixtureCredentials {
@@ -178,7 +136,7 @@ impl CountTokensCredentials for FixtureCredentials {
                 session_token: None,
             },
         };
-        ready(Ok::<Credentials, CredentialError>(credentials))
+        ready(Ok(credentials))
     }
 }
 

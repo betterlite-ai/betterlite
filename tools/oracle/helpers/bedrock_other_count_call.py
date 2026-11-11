@@ -22,8 +22,6 @@ from litellm.types.utils import TokenCountResponse
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 Json: TypeAlias = JsonValue
-Object: TypeAlias = dict[str, Json]
-Messages: TypeAlias = list[dict[str, Json]]
 
 HANDLER_CLIENT: Final = "litellm.llms.bedrock.count_tokens.handler.get_async_httpx_client"
 HANDLER_LOGGER: Final = "litellm.llms.bedrock.count_tokens.handler.verbose_logger"
@@ -53,18 +51,6 @@ ERROR_SUBJECTS: Final[dict[str, str]] = {
 }
 API_WARNING: Final = "Bedrock CountTokens API error: status=%s, message=%s"
 GENERIC_WARNING: Final = "Error calling Bedrock CountTokens API: %s"
-OPERATIONS: Final = frozenset(
-    {
-        "count_api_failure_warning",
-        "count_credentials",
-        "count_debug_events",
-        "count_result_or_none",
-        "count_timeout",
-        "count_token_http_request",
-        "counter_factory",
-        "native_count_selection",
-    }
-)
 
 
 class EnvironmentModel(BaseModel):
@@ -84,11 +70,6 @@ class ReplyModel(BaseModel):
     failure: bool = False
 
 
-class DeploymentModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    litellm_params: dict[str, Json] = {}
-
-
 class CallModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str
@@ -97,7 +78,7 @@ class CallModel(BaseModel):
     tools: Json = None
     system: Json = None
     request_model: str = ""
-    deployment: DeploymentModel | None = None
+    deployment: dict[str, Json] | None = None
     environment: EnvironmentModel = EnvironmentModel()
     provider: str | None = None
     handler: Literal["real", "none", "empty_object"] = "real"
@@ -113,24 +94,19 @@ class CallsModel(BaseModel):
 class Provider:
     def __init__(self, reply: ReplyModel) -> None:
         self.reply = reply
-        self.calls: list[Object] = []
+        self.first: Json = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
-        timeout = cast(dict[str, float], request.extensions["timeout"])
-        content = request.content
-        headers = {name.lower(): value for name, value in request.headers.items()}
-        self.calls.append(
-            cast(
-                Object,
-                {
-                    "method": request.method,
-                    "url": str(request.url),
-                    "timeout": float(timeout["read"]),
-                    "headers": headers,
-                    "body": content.decode(),
-                },
-            )
-        )
+        if self.first is None:
+            timeout = cast(dict[str, float], request.extensions["timeout"])
+            sent = {name.lower(): value for name, value in request.headers.items()}
+            self.first = {
+                "method": request.method,
+                "url": str(request.url),
+                "body": request.content.decode(),
+                "timeout": float(timeout["read"]),
+                "headers": {name: sent[name] for name in REPORTED_HEADERS if name in sent},
+            }
         if self.reply.failure:
             raise httpx.ReadTimeout("fixture transport failure", request=request)
         return httpx.Response(
@@ -138,25 +114,6 @@ class Provider:
             content=self.reply.body.encode(),
             headers=self.reply.headers,
             request=request,
-        )
-
-    def observed(self) -> Json:
-        if not self.calls:
-            return None
-        call = self.calls[0]
-        sent = cast(Object, call["headers"])
-        headers = cast(
-            Json, {name: sent[name] for name in REPORTED_HEADERS if sent.get(name) is not None}
-        )
-        return cast(
-            Json,
-            {
-                "method": call["method"],
-                "url": call["url"],
-                "body": call["body"],
-                "timeout": call["timeout"],
-                "headers": headers,
-            },
         )
 
     def client(self) -> AsyncHTTPHandler:
@@ -298,9 +255,6 @@ async def empty_object_handler(*_args: object, **_kwargs: object) -> dict[str, J
 
 
 async def count_once(counter: BedrockTokenCounter, call: CallModel) -> TokenCountResponse | None:
-    deployment: dict[str, Json] | None = None
-    if call.deployment is not None:
-        deployment = {"litellm_params": call.deployment.litellm_params}
     messages = cast(Sequence[Mapping[str, object]] | None, call.messages)
     contents = cast(Sequence[Mapping[str, object]] | None, call.contents)
     tools = cast(Sequence[Mapping[str, object]] | None, call.tools)
@@ -308,7 +262,7 @@ async def count_once(counter: BedrockTokenCounter, call: CallModel) -> TokenCoun
         model_to_use=call.model,
         messages=messages,
         contents=contents,
-        deployment=deployment,
+        deployment=call.deployment,
         request_model=call.request_model,
         tools=tools,
         system=call.system,
@@ -324,8 +278,8 @@ def counter_for(*, factory: bool) -> BedrockTokenCounter:
 
 def one_call(call: CallModel, *, factory: bool) -> Json:
     provider = Provider(call.reply)
-    params: dict[str, Json] = {} if call.deployment is None else call.deployment.litellm_params
-    resolver = Resolver(params)
+    params = {} if call.deployment is None else call.deployment.get("litellm_params", {})
+    resolver = Resolver(cast(dict[str, Json], params))
     events = Events()
     counter = counter_for(factory=factory)
     selected = counter.should_use_token_counting_api(call.provider)
@@ -347,7 +301,7 @@ def one_call(call: CallModel, *, factory: bool) -> Json:
         {
             "selected": selected,
             "result": None if result is None else result_json(result),
-            "request": provider.observed(),
+            "request": provider.first,
             "debug": events.debugs,
             "errors": events.errors,
             "warnings": events.warnings,
@@ -356,15 +310,9 @@ def one_call(call: CallModel, *, factory: bool) -> Json:
     )
 
 
-def counter_case(payload: Json, *, factory: bool) -> Json:
-    calls = CallsModel.model_validate(payload)
-    results: list[Json] = [one_call(call, factory=factory) for call in calls.calls]
-    return cast(Json, {"calls": results})
-
-
 def run(input_value: dict[str, Json]) -> Json:
     _ = litellm
     operation, argument = next(iter(input_value.items()))
-    if operation not in OPERATIONS:
-        raise ValueError(f"unsupported operation {operation}")
-    return counter_case(argument, factory=operation == "counter_factory")
+    calls = CallsModel.model_validate(argument)
+    factory = operation == "counter_factory"
+    return cast(Json, {"calls": [one_call(call, factory=factory) for call in calls.calls]})

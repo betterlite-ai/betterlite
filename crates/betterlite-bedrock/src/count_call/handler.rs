@@ -26,8 +26,7 @@ use crate::signing::target::RegionInputs;
 
 use super::error::CountCallError;
 use super::record::{
-    HandlerFailure, header_map, processing_record, read_field, reply_fields, transformed_body,
-    upstream_record,
+    header_map, processing_record, read_field, reply_fields, transformed_body, upstream_record,
 };
 use super::reply::CountResponse;
 
@@ -96,8 +95,8 @@ pub enum CountTokensHandlerError {
         status: u16,
         error: Box<BedrockError>,
     },
-    #[error("the error record cannot carry header {name:?}")]
-    Header { name: String, source: HeaderError },
+    #[error(transparent)]
+    Header(#[from] HeaderError),
 }
 
 pub trait CountTokensHandler: Send + Sync {
@@ -127,22 +126,17 @@ where
         match self.count(request, now).await {
             Ok(reply) => Ok(reply),
             // LiteLLM's `except BedrockError: raise` passes an already built record through unchanged
-            Err(HandlerFailure::Bedrock(error)) => Err(CountTokensHandlerError::Record {
+            Err(CountCallError::Upstream(error)) => Err(CountTokensHandlerError::Record {
                 status: error.error.status_code,
                 error,
             }),
-            Err(HandlerFailure::Processing(source)) => match processing_record(&source) {
-                Ok(error) => Err(CountTokensHandlerError::Record {
+            Err(source) => {
+                let error = processing_record(&source)?;
+                Err(CountTokensHandlerError::Record {
                     status: error.error.status_code,
                     error: Box::new(error),
-                }),
-                Err(header) => Err(CountTokensHandlerError::Header {
-                    name: match &header {
-                        HeaderError::NotAscii { name } => name.clone(),
-                    },
-                    source: header,
-                }),
-            },
+                })
+            }
         }
     }
 }
@@ -156,8 +150,8 @@ where
         &self,
         request: &CountTokensHandlerRequest<'_>,
         now: SystemTime,
-    ) -> Result<Option<CountResponse>, HandlerFailure> {
-        validate_count_tokens_request(request.request_data).map_err(CountCallError::Request)?;
+    ) -> Result<Option<CountResponse>, CountCallError> {
+        validate_count_tokens_request(request.request_data)?;
         tracing::debug!(
             subject = "processing",
             value = %dumps(&Json::Text(request.resolved_model.to_owned())),
@@ -172,8 +166,7 @@ where
             environment_region_name: self.environment.region_name.as_deref(),
             environment_region: self.environment.region.as_deref(),
             session_region: self.environment.session_region.as_deref(),
-        })
-        .map_err(CountCallError::Region)?;
+        })?;
         tracing::debug!(
             subject = "region",
             value = %dumps(&Json::Text(region.clone())),
@@ -189,7 +182,7 @@ where
         &self,
         request: &CountTokensHandlerRequest<'_>,
         region: &str,
-    ) -> Result<String, HandlerFailure> {
+    ) -> Result<String, CountCallError> {
         let api_base = read_field::<String>(request.litellm_params, "api_base")?;
         let configured =
             read_field::<String>(request.litellm_params, "aws_bedrock_runtime_endpoint")?;
@@ -214,7 +207,7 @@ where
         body: &IndexMap<String, Json>,
         endpoint: &str,
         now: SystemTime,
-    ) -> Result<UpstreamResponse, HandlerFailure> {
+    ) -> Result<UpstreamResponse, CountCallError> {
         let api_key =
             read_field::<String>(request.litellm_params, "api_key")?.map(SecretString::from);
         let signed = sign_service_request(
@@ -240,8 +233,7 @@ where
                     .resolve(settings.clone(), region.to_owned())
             },
         )
-        .await
-        .map_err(CountCallError::Signing)?;
+        .await?;
         self.post(endpoint, &signed.headers, signed.body).await
     }
 
@@ -250,7 +242,7 @@ where
         endpoint: &str,
         headers: &[(String, String)],
         body: Vec<u8>,
-    ) -> Result<UpstreamResponse, HandlerFailure> {
+    ) -> Result<UpstreamResponse, CountCallError> {
         let outbound = OutboundRequest {
             method: Method::POST,
             url: Url::parse(endpoint).map_err(|source| CountCallError::Endpoint {
@@ -262,11 +254,7 @@ where
             body: RequestBody::Json(body),
             deadline: REQUEST_TIMEOUT,
         };
-        let response = self
-            .transport
-            .send(outbound)
-            .await
-            .map_err(CountCallError::Transport)?;
+        let response = self.transport.send(outbound).await?;
         tracing::debug!(
             subject = "status",
             value = %dumps(&Json::Number(serde_json::Number::from(response.status))),
@@ -274,7 +262,7 @@ where
             response.status
         );
         if response.status != 200 {
-            return Err(HandlerFailure::Bedrock(Box::new(upstream_record(
+            return Err(CountCallError::Upstream(Box::new(upstream_record(
                 &response, endpoint,
             )?)));
         }

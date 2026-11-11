@@ -6,7 +6,7 @@ use url::ParseError;
 use crate::aws_endpoints::error::AwsEndpointError;
 use crate::signing::error::SigningError;
 
-use crate::bedrock_settings::HeaderError;
+use crate::bedrock_settings::{BedrockError, HeaderError};
 use crate::count_tokens::error::CountTokensError;
 
 #[derive(Debug, Error)]
@@ -44,16 +44,15 @@ pub enum CountCallError {
     #[error("the CountTokens request could not be signed")]
     Signing(#[from] SigningError),
     #[error("the CountTokens request could not be sent")]
-    Transport(#[source] TransportError),
+    Transport(#[from] TransportError),
     #[error("the CountTokens response could not be decoded")]
     Decode(#[source] serde_json::Error),
     #[error("the CountTokens response is not a JSON object")]
     NotAnObject,
     #[error("input_tokens is not an integer")]
     InputTokens,
-    #[error("the error record header cannot be carried")]
-    ErrorHeader {
-        #[source]
-        source: HeaderError,
-    },
+    #[error(transparent)]
+    ErrorHeader(#[from] HeaderError),
+    #[error("the CountTokens endpoint answered with an error status")]
+    Upstream(Box<BedrockError>),
 }

@@ -18,23 +18,6 @@ use super::error::CountCallError;
 use super::handler::{CountTokensHandlerRequest, ParamMap};
 use super::reply::{CountResponse, decode_bedrock_count_reply};
 
-pub(super) enum HandlerFailure {
-    Bedrock(Box<BedrockError>),
-    Processing(Box<CountCallError>),
-}
-
-impl From<CountCallError> for HandlerFailure {
-    fn from(source: CountCallError) -> Self {
-        Self::Processing(Box::new(source))
-    }
-}
-
-impl From<HeaderError> for HandlerFailure {
-    fn from(source: HeaderError) -> Self {
-        Self::Processing(Box::new(CountCallError::ErrorHeader { source }))
-    }
-}
-
 pub(super) fn read_field<T>(
     parameters: &ParamMap,
     field: &'static str,
@@ -50,7 +33,7 @@ where
 
 pub(super) fn transformed_body(
     request: &CountTokensHandlerRequest<'_>,
-) -> Result<IndexMap<String, Json>, HandlerFailure> {
+) -> Result<IndexMap<String, Json>, CountCallError> {
     let text = serde_json::to_string(&transform_request(request.request_data))
         .map_err(CountCallError::Encode)?;
     let body: IndexMap<String, Json> =
@@ -66,7 +49,7 @@ pub(super) fn transformed_body(
 
 pub(super) fn reply_fields(
     response: &UpstreamResponse,
-) -> Result<Option<CountResponse>, HandlerFailure> {
+) -> Result<Option<CountResponse>, CountCallError> {
     let reply = decode_bedrock_count_reply(&response.body)?;
     tracing::debug!(
         subject = "reply",
@@ -115,19 +98,21 @@ fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
         .collect()
 }
 
-// LiteLLM reads response.text, which decodes any bytes; betterlite refuses bytes that are not UTF-8
-fn response_text(body: Vec<u8>) -> String {
-    String::from_utf8(body)
-        .unwrap_or_else(|error| format!("{} bytes that are not UTF-8", error.as_bytes().len()))
-}
-
 pub(super) fn upstream_record(
     response: &UpstreamResponse,
     endpoint: &str,
 ) -> Result<BedrockError, HeaderError> {
-    let text = response_text(response.body.clone());
+    // LiteLLM reads response.text, which decodes any bytes; betterlite refuses bytes that are not UTF-8
+    let text = String::from_utf8(response.body.clone())
+        .unwrap_or_else(|error| format!("{} bytes that are not UTF-8", error.as_bytes().len()));
     let headers = header_pairs(&response.headers);
-    log_upstream_failure(response.status, &text);
+    // AsyncHTTPHandler raises for 4xx and 5xx, so LiteLLM's HTTPStatusError branch catches those
+    let subject = if (400..=599).contains(&response.status) {
+        "HTTP error in CountTokens handler"
+    } else {
+        "AWS Bedrock error"
+    };
+    tracing::error!(subject, detail = %text, "{subject}: {text}");
     let reply = ErrorReply {
         response: ErrorResponse {
             status_code: response.status,
@@ -148,23 +133,6 @@ pub(super) fn upstream_record(
         headers: Some(ErrorHeaders::Http(headers)),
         response: Some(reply),
     })
-}
-
-fn log_upstream_failure(status: u16, text: &str) {
-    if (400..=599).contains(&status) {
-        // AsyncHTTPHandler raises for these statuses, so LiteLLM's HTTPStatusError branch catches them
-        tracing::error!(
-            subject = "HTTP error in CountTokens handler",
-            detail = %text,
-            "HTTP error in CountTokens handler: {text}"
-        );
-    } else {
-        tracing::error!(
-            subject = "AWS Bedrock error",
-            detail = %text,
-            "AWS Bedrock error: {text}"
-        );
-    }
 }
 
 pub(super) fn processing_record(source: &CountCallError) -> Result<BedrockError, HeaderError> {
