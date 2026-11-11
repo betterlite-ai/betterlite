@@ -1,0 +1,22 @@
+kind: helper
+name: mistral_aocr_call
+call:
+  b6809:
+    call:
+      model: mistral-ocr-latest
+      document:
+        type: document_url
+        document_url: data:application/pdf;base64,YWJj
+      api_key: sk-test
+      api_base_path: /v1
+      optional_params:
+        pages: [0, 1]
+        include_image_base64: true
+      answer:
+        pages:
+          - index: 0
+            markdown: "# Title"
+            dimensions: {width: 612, height: 792, dpi: 72}
+        usage_info: {pages_processed: 1}
+env: {}
+compare: {ignore: []}
