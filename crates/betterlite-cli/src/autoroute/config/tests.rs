@@ -210,6 +210,17 @@ fn parse_discovered_models_defaults_a_missing_mode_to_chat() {
 }
 
 #[test]
+fn parse_discovered_models_ignores_extra_fields_and_requires_an_id() {
+    let raw: Vec<RawModelListing> = serde_json::from_str(
+        r#"[{"id":"claude","mode":"chat","max_input_tokens":200000,"unknown":true}]"#,
+    )
+    .expect("model listings");
+    assert_eq!(parse_discovered_models(&raw), vec![model("claude", "chat")]);
+    let _missing_id = serde_json::from_str::<Vec<RawModelListing>>(r#"[{"mode":"chat"}]"#)
+        .expect_err("id is required");
+}
+
+#[test]
 fn chat_models_keeps_only_chat_mode_in_discovery_order() {
     let models = vec![
         model("alpha", "chat"),
