@@ -6,7 +6,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::OrHelperError;
+use crate::helpers::OrHelperError as _;
 
 mod calls;
 

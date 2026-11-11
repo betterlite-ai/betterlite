@@ -7,7 +7,7 @@ use betterlite_context::media_optional_params::transcription::{
     TranscriptionRequest, transcription_optional_params,
 };
 use betterlite_context::non_default_params::function_fallback::pre_process_optional_params;
-use betterlite_context::non_default_params::mapper::OptionalParamsMapper as Mapper;
+use betterlite_context::non_default_params::mapper::OptionalParamsMapper as Cfg;
 use betterlite_context::non_default_params::reasoning_aliases::{
     peek_reasoning_summary_aliases, strip_reasoning_aliases,
 };
@@ -53,7 +53,7 @@ fn pre_process_call(call: &Call) -> Result<Value, Failure> {
         special_params: &fields.special_params,
         custom_llm_provider: &fields.custom_llm_provider,
         additional_drop_params: fields.additional_drop_params.as_deref().unwrap_or_default(),
-        provider_config: call.provider_config.as_ref().map(|s| -> &dyn Mapper { s }),
+        provider_config: call.provider_config.as_ref().map(|fx| -> &dyn Cfg { fx }),
     };
     let options = pre_process::PreProcessOptions {
         remove_sensitive_keys: call.remove_sensitive_keys.unwrap_or(false),
@@ -85,8 +85,8 @@ fn media_params(call: &Call) -> Result<Value, Failure> {
             params: &call.params,
             additional_drop_params: call.additional_drop_params.as_deref().unwrap_or_default(),
             drop_policy: drop_policy(call),
-            provider_config: call.provider_config.as_ref().map(|s| -> &dyn Mapper { s }),
-            bedrock_config: call.bedrock.as_ref().map(|s| -> &dyn Mapper { s }),
+            provider_config: call.provider_config.as_ref().map(|fx| -> &dyn Cfg { fx }),
+            bedrock_config: call.bedrock.as_ref().map(|fx| -> &dyn Cfg { fx }),
         };
         return answer(
             get_optional_params_image_gen(&request).map_err(|error| error.status_code()),
@@ -97,7 +97,7 @@ fn media_params(call: &Call) -> Result<Value, Failure> {
         custom_llm_provider: required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?,
         params: &call.params,
         drop_policy: drop_policy(call),
-        mapper: call.mapper.as_ref().map(|s| -> &dyn Mapper { s }),
+        mapper: call.mapper.as_ref().map(|fx| -> &dyn Cfg { fx }),
     };
     answer(transcription_optional_params(&request).map_err(|error| error.status_code()))
 }
