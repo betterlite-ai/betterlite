@@ -1,15 +1,20 @@
 import os
+import sys
 
 os.environ["LITELLM_RUST"] = "false"
 
 from collections.abc import Callable
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stdout
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 from unittest import mock
 
+import litellm
 from litellm.litellm_core_utils.streaming_chunk_builder_utils import ChunkProcessor
 from litellm.llms.base_llm.chat.transformation import BaseConfig
 from litellm.types.utils import ModelResponse, ModelResponseStream, StreamingChoices, Usage
+
+# get_llm_provider prints a provider list to stdout before raising on an unknown model
+litellm.suppress_debug_info = True
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging
@@ -255,10 +260,10 @@ def assembled_case(arguments: dict[str, Json]) -> Json:
     return [assembled_scenario(spec) for spec in scenarios]
 
 
-def run(input_value: dict[str, Json]) -> Json:
+def dispatch(input_value: dict[str, Json]) -> Json:
     function = input_value["function"]
     if function == "batch":
-        return [run(case) for case in cast(list[dict[str, Json]], input_value["cases"])]
+        return [dispatch(case) for case in cast(list[dict[str, Json]], input_value["cases"])]
     if function == "conditional_sort_original_first":
         return sort_case(input_value)
     if function == "base_metadata":
@@ -270,3 +275,9 @@ def run(input_value: dict[str, Json]) -> Json:
     if function == "assembled_provider_metadata":
         return assembled_case(input_value)
     raise ValueError(f"unknown stream_base_assembly function: {function}")
+
+
+def run(input_value: dict[str, Json]) -> Json:
+    # any diagnostic the pinned code prints must not land in the JSON protocol on stdout
+    with redirect_stdout(sys.stderr):
+        return dispatch(input_value)
