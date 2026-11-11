@@ -51,13 +51,19 @@ impl Span for TraceSpan {
     }
 }
 
+impl AsRef<dyn Span> for TraceSpan {
+    fn as_ref(&self) -> &(dyn Span + 'static) {
+        self
+    }
+}
+
 struct FakeTracer {
-    span: Option<Box<dyn Span + Send + Sync>>,
+    span: Option<TraceSpan>,
 }
 
 impl Tracer for FakeTracer {
     fn current_span(&self) -> Option<&dyn Span> {
-        self.span.as_deref()
+        self.span.as_ref().map(AsRef::as_ref)
     }
 }
 
@@ -161,10 +167,8 @@ pub(super) fn logger_for(
     scenario: &Scenario,
     transport: &Arc<ScriptedTransport>,
 ) -> Result<Arc<Logger>, DatadogLlmObsError> {
-    let span = scenario.apm_trace_id.map(|trace_id| {
-        Box::new(TraceSpan {
-            trace_id: Some(trace_id),
-        }) as Box<dyn Span + Send + Sync>
+    let span = scenario.apm_trace_id.map(|trace_id| TraceSpan {
+        trace_id: Some(trace_id),
     });
     let tracer: Arc<dyn Tracer + Send + Sync> = Arc::new(FakeTracer { span });
     let shared = Arc::clone(transport);
