@@ -31,5 +31,10 @@ call:
       - model: m
         messages: []
         optional_params: {n: 2, functions: [{name: f}], function_call: auto, logit_bias: {'1': 2}, logprobs: true, top_logprobs: 2}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          model_version: '2024-05-13'
+          temperature: 0.1
 env: {}
 compare: {ignore: []}

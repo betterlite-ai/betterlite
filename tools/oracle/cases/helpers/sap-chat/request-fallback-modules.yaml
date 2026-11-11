@@ -10,6 +10,7 @@ call:
           temperature: 0.4
           fallback_sap_modules:
             - model: sap/gpt-4o
+              model_version: '2024-05-13'
               messages: [{role: user, content: fb}]
               temperature: 0.1
               strict: true

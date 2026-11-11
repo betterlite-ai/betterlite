@@ -278,19 +278,20 @@ fn a_json_schema_response_format_goes_through_the_schema_model() {
         r#"{"response_format":{"type":"json_schema","json_schema":{"name":"s","schema":{"type":"object"}}}}"#,
     );
     let body = transform_request("m", &messages, &params).unwrap();
-    let format = at(
-        &body,
-        &[
-            "config",
-            "modules",
-            "prompt_templating",
-            "prompt",
-            "response_format",
-        ],
+    // LiteLLM dumps ResponseFormatJSONSchema with exclude_unset, so an unset strict stays absent
+    assert_eq!(
+        at(
+            &body,
+            &[
+                "config",
+                "modules",
+                "prompt_templating",
+                "prompt",
+                "response_format",
+            ],
+        ),
+        &json(r#"{"type":"json_schema","json_schema":{"name":"s","schema":{"type":"object"}}}"#)
     );
-    assert_eq!(at(format, &["type"]), &json(r#""json_schema""#));
-    assert_eq!(at(format, &["json_schema", "name"]), &json(r#""s""#));
-    assert_eq!(at(format, &["json_schema", "strict"]), &json("false"));
 }
 
 #[rstest]
@@ -421,6 +422,38 @@ fn fallback_modules_are_built_from_their_own_params() {
 }
 
 #[test]
+fn model_version_moves_to_the_module_version_field() {
+    let messages = list(r#"[{"role":"user","content":"hi"}]"#);
+    let params = object(
+        r#"{
+            "model_version":"2024-05-13",
+            "temperature":0.1,
+            "fallback_sap_modules":[
+                {"model":"sap/other","model_version":"2024-06-14","temperature":0.2}
+            ]
+        }"#,
+    );
+    let body = transform_request("m", &messages, &params).unwrap();
+    let modules = at(&body, &["config", "modules"]);
+    assert_eq!(
+        at(modules, &["0", "prompt_templating", "model", "version"]),
+        &json(r#""2024-05-13""#)
+    );
+    assert_eq!(
+        at(modules, &["0", "prompt_templating", "model", "params"]),
+        &json(r#"{"temperature":0.1}"#)
+    );
+    assert_eq!(
+        at(modules, &["1", "prompt_templating", "model", "version"]),
+        &json(r#""2024-06-14""#)
+    );
+    assert_eq!(
+        at(modules, &["1", "prompt_templating", "model", "params"]),
+        &json(r#"{"temperature":0.2}"#)
+    );
+}
+
+#[test]
 fn a_fallback_module_without_messages_gets_an_empty_template() {
     let messages = list(r#"[{"role":"user","content":"hi"}]"#);
     let params = object(r#"{"fallback_sap_modules":[{"model":"other"}]}"#);
@@ -517,7 +550,8 @@ fn environment_does_not_wrap_other_setup_failures() {
     let environment = FakeEnvironment::default()
         .home("/nowhere")
         .with_var("AICORE_CONFIG", "/missing/config.json");
-    let error = SapChatConfig::setup(Some(&json("x")), &environment).unwrap_err();
+    let service_key = Json::Text(String::from("x"));
+    let error = SapChatConfig::setup(Some(&service_key), &environment).unwrap_err();
     assert!(matches!(error, SapChatError::Auth(_)));
     assert_eq!(error.status(), None);
 }

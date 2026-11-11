@@ -22,6 +22,12 @@ call:
           response_format:
             type: json_schema
             json_schema: {name: s, description: d, schema: {type: object}, strict: true}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          response_format:
+            type: json_schema
+            json_schema: {name: s, schema: {type: object}}
       - model: gpt-4o
         messages: [{role: user, content: hi}]
         optional_params:
