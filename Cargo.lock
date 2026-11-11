@@ -1340,6 +1340,7 @@ dependencies = [
  "num-traits",
  "regex",
  "rstest",
+ "rust_decimal",
  "rustix",
  "secrecy",
  "serde",
