@@ -129,7 +129,7 @@ fn sort_needs_first_created_at() {
 fn base_metadata() {
     base_metadata_identity();
     base_metadata_defaults();
-    base_metadata_requires_the_first_chunk_fields();
+    base_needs_first_fields();
 }
 
 fn base_metadata_identity() {
@@ -182,7 +182,7 @@ fn base_metadata_defaults() {
     assert_eq!(blank_model.model, "orig");
 }
 
-fn base_metadata_requires_the_first_chunk_fields() {
+fn base_needs_first_fields() {
     let no_created = StreamedChunks::new(chunks(r#"[{"model":"orig","choices":[]}]"#)).unwrap();
     assert_eq!(
         build_base_response(&no_created),
@@ -262,9 +262,13 @@ fn hidden_params_boundaries() {
         Some(&JsonValue::String("orig".to_owned()))
     );
 
+    // the last chunk's hidden map is copied whole; only the overlay is skipped for an empty value
     let absent =
         base_for(r#"[{"created":1,"model":"m","_hidden_params":{"provider_response_model":""}}]"#);
-    assert!(absent.hidden_params.is_empty());
+    assert_eq!(
+        absent.hidden_params,
+        object(r#"{"provider_response_model":""}"#)
+    );
 
     let mut updated = base_for(r#"[{"created":1,"model":"m","_hidden_params":{"keep":1}}]"#);
     apply_hidden_params(&mut updated, None);
