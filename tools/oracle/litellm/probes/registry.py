@@ -76,6 +76,7 @@ from probes.prompt_affinity import PromptAffinity
 from probes.protocol import SAMPLE_LIMIT, Clock, Operation, Strict, serve
 from probes.quality_router import QualityRouter
 from probes.redis_failure_policy import RedisFailurePolicy
+from probes.request_batch import RequestBatch
 from probes.request_scheduler import RequestScheduler
 from probes.responses_stream_fallback import ResponsesStreamFallback
 from probes.retry_policy import RetryPolicy
@@ -212,6 +213,7 @@ OPERATIONS: dict[str, type[Operation]] = {
     "prompt_affinity": PromptAffinity,
     "quality_router": QualityRouter,
     "redis_failure_policy": RedisFailurePolicy,
+    "request_batch": RequestBatch,
     "request_scheduler": RequestScheduler,
     "responses_stream_fallback": ResponsesStreamFallback,
     "retry_policy": RetryPolicy,
