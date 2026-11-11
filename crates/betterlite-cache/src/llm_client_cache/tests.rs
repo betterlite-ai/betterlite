@@ -82,7 +82,7 @@ struct Fixture {
 fn fixture() -> Fixture {
     let time = Arc::new(Mutex::new(0.0_f64));
     let closer = Arc::new(EvictedClientCloser::new(fake_clock(&time)));
-    let cache = LlmClientCache::new(fake_clock(&time), Arc::clone(&closer));
+    let cache = LlmClientCache::new(None, None, fake_clock(&time), Arc::clone(&closer));
     Fixture {
         time,
         closer,
@@ -227,7 +227,7 @@ fn llm_cache_honours_a_ttl_override() {
 fn llm_cache_uses_the_configured_default_ttl() {
     let time: TestTime = Arc::new(Mutex::new(0.0_f64));
     let closer = Arc::new(EvictedClientCloser::new(fake_clock(&time)));
-    let cache = LlmClientCache::with_settings(None, Some(10.0_f64), fake_clock(&time), closer);
+    let cache = LlmClientCache::new(None, Some(10.0_f64), fake_clock(&time), closer);
     cache.set_cache("httpx_client", ProbeClient::sync(), None, false);
 
     advance(&time, 9.5_f64);
@@ -267,7 +267,7 @@ fn llm_cache_evicts_the_earliest_expiry_after_two_hundred_clients() {
 fn llm_cache_capacity_zero_stores_nothing() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let closer = Arc::new(EvictedClientCloser::new(fake_clock(&time)));
-    let cache = LlmClientCache::with_settings(Some(0), None, fake_clock(&time), closer);
+    let cache = LlmClientCache::new(Some(0), None, fake_clock(&time), closer);
 
     cache.set_cache("httpx_client", ProbeClient::sync(), None, true);
 

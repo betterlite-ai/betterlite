@@ -28,45 +28,50 @@ fn event_loop_key(key: &str) -> String {
     format!("{key}-{loop_id}")
 }
 
-fn evict_expired<Client>(
+// InMemoryCache.evict_cache: expired entries first, then the earliest expiry while the cache is full
+fn eviction_keys<Client>(
+    entries: &BTreeMap<String, Entry<Client>>,
+    capacity: usize,
+    now: f64,
+) -> Vec<String>
+where
+    Client: EvictableClient,
+{
+    let mut keys = Vec::new();
+    let mut live: Vec<(&String, f64)> = Vec::new();
+    for (key, entry) in entries {
+        if entry.expiry <= now {
+            keys.push(key.clone());
+        } else {
+            live.push((key, entry.expiry));
+        }
+    }
+    live.sort_by(|(left_key, left_expiry), (right_key, right_expiry)| {
+        left_expiry
+            .total_cmp(right_expiry)
+            .then_with(|| left_key.cmp(right_key))
+    });
+    if live.len() >= capacity {
+        let excess = live.len().saturating_sub(capacity).saturating_add(1);
+        keys.extend(
+            live.iter()
+                .take(excess)
+                .map(|(key, _expiry)| (*key).clone()),
+        );
+    }
+    keys
+}
+
+fn evict<Client>(
     entries: &mut BTreeMap<String, Entry<Client>>,
+    capacity: usize,
     now: f64,
     evicted: &mut Vec<Arc<Client>>,
 ) where
     Client: EvictableClient,
 {
-    let expired: Vec<String> = entries
-        .iter()
-        .filter(|(_key, entry)| entry.expiry <= now)
-        .map(|(key, _entry)| key.clone())
-        .collect();
-    for key in expired {
+    for key in eviction_keys(entries, capacity, now) {
         if let Some(entry) = entries.remove(&key) {
-            evicted.push(entry.client);
-        }
-    }
-}
-
-fn evict_over_capacity<Client>(
-    entries: &mut BTreeMap<String, Entry<Client>>,
-    capacity: usize,
-    evicted: &mut Vec<Arc<Client>>,
-) where
-    Client: EvictableClient,
-{
-    while entries.len() >= capacity {
-        let candidate = entries
-            .iter()
-            .min_by(|(left_key, left), (right_key, right)| {
-                left.expiry
-                    .total_cmp(&right.expiry)
-                    .then_with(|| left_key.cmp(right_key))
-            })
-            .map(|(key, _entry)| key.clone());
-        let Some(oldest) = candidate else {
-            break;
-        };
-        if let Some(entry) = entries.remove(&oldest) {
             evicted.push(entry.client);
         }
     }
@@ -74,18 +79,7 @@ fn evict_over_capacity<Client>(
 
 impl<Client: EvictableClient> LlmClientCache<Client> {
     #[must_use]
-    pub fn new(clock: Clock, closer: Arc<EvictedClientCloser<Client>>) -> Self {
-        Self {
-            capacity: DEFAULT_MAX_SIZE_IN_MEMORY,
-            default_ttl: DEFAULT_TTL_SECONDS,
-            clock,
-            closer,
-            entries: Mutex::new(BTreeMap::new()),
-        }
-    }
-
-    #[must_use]
-    pub fn with_settings(
+    pub fn new(
         capacity: Option<usize>,
         default_ttl: Option<f64>,
         clock: Clock,
@@ -118,8 +112,7 @@ impl<Client: EvictableClient> LlmClientCache<Client> {
         let evicted = {
             let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
             let mut evicted = Vec::new();
-            evict_expired(&mut entries, now, &mut evicted);
-            evict_over_capacity(&mut entries, self.capacity, &mut evicted);
+            evict(&mut entries, self.capacity, now, &mut evicted);
             // whatever survived the expiry sweep is live, and a live entry keeps its own deadline
             let expiry = entries.get(&decorated).map_or_else(
                 || now.mul_add(1.0_f64, ttl.unwrap_or(self.default_ttl)),

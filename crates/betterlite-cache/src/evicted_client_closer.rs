@@ -104,7 +104,7 @@ where
     queue.pending = queue.pending.saturating_add(1);
 }
 
-fn drain_due<Client>(
+fn drain_bucket<Client>(
     bucket: &mut VecDeque<PendingClose<Client>>,
     now: f64,
 ) -> Vec<PendingClose<Client>>
@@ -188,30 +188,9 @@ impl<Client: EvictableClient> EvictedClientCloser<Client> {
         drop(queue);
     }
 
-    // async closes need an await point, so this path closes only the clients that close synchronously
-    pub fn reap(&self) {
-        if self.pending_count() == 0 {
-            return;
-        }
-        let now = (self.clock)();
-        for pending in self.take_due(None, now) {
-            let Some(client) = pending.client.upgrade() else {
-                continue;
-            };
-            if client.has_connection_in_flight() {
-                self.requeue(pending, now);
-                continue;
-            }
-            client.close();
-        }
-    }
-
-    pub async fn reap_async(&self) {
-        if self.pending_count() == 0 {
-            return;
-        }
-        let now = (self.clock)();
-        let event_loop = current_event_loop_id();
+    // closes the due clients whose close is synchronous and returns the due clients that need an await
+    fn drain_due(&self, event_loop: Option<EventLoopId>, now: f64) -> Vec<Arc<Client>> {
+        let mut async_due = Vec::new();
         for pending in self.take_due(event_loop, now) {
             let Some(client) = pending.client.upgrade() else {
                 continue;
@@ -221,10 +200,30 @@ impl<Client: EvictableClient> EvictedClientCloser<Client> {
                 continue;
             }
             if pending.needs_loop {
-                client.close_async().await;
+                async_due.push(client);
             } else {
                 client.close();
             }
+        }
+        async_due
+    }
+
+    // no running loop means only the bucket of clients that close synchronously is taken
+    pub fn reap(&self) {
+        if self.pending_count() == 0 {
+            return;
+        }
+        let now = (self.clock)();
+        self.drain_due(None, now);
+    }
+
+    pub async fn reap_async(&self) {
+        if self.pending_count() == 0 {
+            return;
+        }
+        let now = (self.clock)();
+        for client in self.drain_due(current_event_loop_id(), now) {
+            client.close_async().await;
         }
     }
 
@@ -243,7 +242,7 @@ impl<Client: EvictableClient> EvictedClientCloser<Client> {
         let mut due = Vec::new();
         for key in keys {
             let drained = match queue.buckets.get_mut(&key) {
-                Some(bucket) => drain_due(bucket, now),
+                Some(bucket) => drain_bucket(bucket, now),
                 None => continue,
             };
             queue.pending = queue.pending.saturating_sub(drained.len());
