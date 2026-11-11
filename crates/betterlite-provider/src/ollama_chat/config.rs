@@ -129,8 +129,16 @@ pub fn map_openai_params(
             "frequency_penalty" => {
                 optional.insert(String::from("repeat_penalty"), value.clone());
             }
-            "response_format" => response_format(value, optional)?,
-            "reasoning_effort" => reasoning_effort(model, value, optional)?,
+            "response_format" => {
+                if let Some(format) = response_format(value)? {
+                    optional.insert(String::from("format"), format);
+                }
+            }
+            "reasoning_effort" => {
+                if let Some(think) = reasoning_effort(model, value)? {
+                    optional.insert(String::from("think"), think);
+                }
+            }
             // tool_choice causes ollama requests to hang, so LiteLLM never maps it
             "tools" | "functions" => {
                 optional.insert(String::from("tools"), value.clone());
@@ -141,63 +149,56 @@ pub fn map_openai_params(
     Ok(())
 }
 
-fn response_format(value: &Json, optional: &mut IndexMap<String, Json>) -> Result<(), OllamaError> {
+fn response_format(value: &Json) -> Result<Option<Json>, OllamaError> {
     let Json::Object(fields) = value else {
-        return Ok(());
+        return Ok(None);
     };
     match fields.get("type") {
-        Some(Json::Text(kind)) if kind == JSON_OBJECT => {
-            optional.insert(String::from("format"), Json::Text(String::from("json")));
-            Ok(())
-        }
-        Some(Json::Text(kind)) if kind == JSON_SCHEMA => json_schema_format(fields, optional),
-        _ => Ok(()),
+        Some(Json::Text(kind)) if kind == JSON_OBJECT => Ok(Some(Json::Text(String::from("json")))),
+        Some(Json::Text(kind)) if kind == JSON_SCHEMA => json_schema_format(fields),
+        Some(
+            Json::Null
+            | Json::Text(_)
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::List(_)
+            | Json::Object(_),
+        )
+        | None => Ok(None),
     }
 }
 
-fn json_schema_format(
-    fields: &IndexMap<String, Json>,
-    optional: &mut IndexMap<String, Json>,
-) -> Result<(), OllamaError> {
+fn json_schema_format(fields: &IndexMap<String, Json>) -> Result<Option<Json>, OllamaError> {
     let Some(Json::Object(schema)) = fields.get(JSON_SCHEMA) else {
         return match fields.get(JSON_SCHEMA) {
-            Some(Json::Null) | None => Ok(()),
+            Some(Json::Null) | None => Ok(None),
             Some(_) => Err(OllamaError::Param {
                 field: "response_format.json_schema",
             }),
         };
     };
     match schema.get("schema") {
-        Some(Json::Object(_)) => {
-            if let Some(form) = schema.get("schema").cloned() {
-                optional.insert(String::from("format"), form);
-            }
-            Ok(())
-        }
-        Some(Json::Null) | None => Ok(()),
+        Some(value @ Json::Object(_)) => Ok(Some(value.clone())),
+        Some(Json::Null) | None => Ok(None),
         Some(_) => Err(OllamaError::Param {
             field: "response_format.json_schema.schema",
         }),
     }
 }
 
-fn reasoning_effort(
-    model: &str,
-    value: &Json,
-    optional: &mut IndexMap<String, Json>,
-) -> Result<(), OllamaError> {
-    let think = match value {
-        Json::Null => return Ok(()),
-        Json::Text(text) if model.starts_with(GPT_OSS_PREFIX) => Json::Text(text.clone()),
-        Json::Text(text) => Json::Bool(REASONING_EFFORTS.iter().any(|effort| effort == text)),
+fn reasoning_effort(model: &str, value: &Json) -> Result<Option<Json>, OllamaError> {
+    match value {
+        Json::Null => Ok(None),
+        Json::Text(text) if model.starts_with(GPT_OSS_PREFIX) => Ok(Some(Json::Text(text.clone()))),
+        Json::Text(text) => Ok(Some(Json::Bool(
+            REASONING_EFFORTS.iter().any(|effort| effort == text),
+        ))),
         Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            return Err(OllamaError::Param {
+            Err(OllamaError::Param {
                 field: "reasoning_effort",
-            });
+            })
         }
-    };
-    optional.insert(String::from("think"), think);
-    Ok(())
+    }
 }
 
 pub fn validate_environment(

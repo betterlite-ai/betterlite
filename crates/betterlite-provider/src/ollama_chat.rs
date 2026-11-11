@@ -1,5 +1,6 @@
 pub mod config;
 pub mod error;
+pub mod function;
 pub mod ids;
 pub mod reasoning;
 pub mod reply;

@@ -1,9 +1,14 @@
 use betterlite_prompts::arguments::json::Json;
-use serde::Deserialize;
 
+use self::chunk::{DeltaFunction, DeltaToolCall, OllamaStreamChunk, StreamChoice, StreamDelta};
+use self::wire::{RawChunk, decode_chunk};
 use super::error::OllamaError;
+use super::function::WireToolCall;
 use super::ids::IdSource;
 use super::usage::Usage;
+
+pub mod chunk;
+pub mod wire;
 
 const CHUNK_OBJECT: &str = "chat.completion.chunk";
 const DATA_PREFIX: &str = "data: ";
@@ -14,7 +19,6 @@ const STOP_FINISH_REASON: &str = "stop";
 const TOOL_CALLS_FINISH_REASON: &str = "tool_calls";
 const THINK_OPEN: &str = "<think>";
 const THINK_CLOSE: &str = "</think>";
-const REQUIRED_CHUNK_FIELDS: [&str; 3] = ["message", "done", "model"];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum ReasoningState {
@@ -35,88 +39,6 @@ pub enum OllamaStreamStep {
     Chunk(Box<OllamaStreamChunk>),
     Skipped,
     Done,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OllamaStreamChunk {
-    pub id: String,
-    pub object: String,
-    pub created: i64,
-    pub model: String,
-    pub choices: Vec<StreamChoice>,
-    pub usage: Option<Usage>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StreamChoice {
-    pub index: u32,
-    pub delta: StreamDelta,
-    pub finish_reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct StreamDelta {
-    pub content: Option<String>,
-    pub reasoning_content: Option<String>,
-    pub tool_calls: Option<Vec<DeltaToolCall>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeltaToolCall {
-    pub id: Option<String>,
-    pub kind: String,
-    pub index: u32,
-    pub function: DeltaFunction,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeltaFunction {
-    pub name: Option<String>,
-    pub arguments: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawChunk {
-    model: String,
-    message: RawMessage,
-    done: bool,
-    #[serde(default)]
-    done_reason: Option<String>,
-    #[serde(default)]
-    prompt_eval_count: Option<u64>,
-    #[serde(default)]
-    eval_count: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawMessage {
-    #[serde(default)]
-    content: Option<String>,
-    #[serde(default)]
-    thinking: Option<String>,
-    #[serde(default)]
-    tool_calls: Option<Vec<RawToolCall>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawToolCall {
-    function: RawFunction,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default, rename = "type")]
-    kind: Option<String>,
-    #[serde(default)]
-    index: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawFunction {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    arguments: Option<Json>,
-    #[serde(default)]
-    parameters: Option<Json>,
 }
 
 impl OllamaChatIterator {
@@ -147,27 +69,13 @@ impl OllamaChatIterator {
         Ok(OllamaStreamStep::Chunk(Box::new(chunk)))
     }
 
-    // LiteLLM's chunk_parser: a message, done and model key raise the 400 OllamaError, anything else the generic 500
     pub fn chunk_parser(
         &mut self,
         chunk: &[u8],
         now: i64,
         ids: &dyn IdSource,
     ) -> Result<OllamaStreamChunk, OllamaError> {
-        let parsed = serde_json::from_slice::<Json>(chunk)
-            .map_err(|source| OllamaError::Shape { source })?;
-        let Json::Object(object) = parsed else {
-            return Err(OllamaError::ChunkField { field: "chunk" });
-        };
-        for field in REQUIRED_CHUNK_FIELDS {
-            if !object.contains_key(field) {
-                return Err(OllamaError::ChunkMissing { field });
-            }
-        }
-        let wire =
-            serde_json::to_string(&object).map_err(|source| OllamaError::Shape { source })?;
-        let raw: RawChunk =
-            serde_json::from_str(&wire).map_err(|source| OllamaError::Shape { source })?;
+        let raw = decode_chunk(chunk)?;
         let delta = self.stream_delta(&raw.message, ids)?;
         let finish_reason = raw.done.then(|| self.finish_reason(&raw));
         let usage = done_chunk_usage(&raw);
@@ -187,7 +95,7 @@ impl OllamaChatIterator {
 
     fn stream_delta(
         &mut self,
-        message: &RawMessage,
+        message: &super::function::WireMessage,
         ids: &dyn IdSource,
     ) -> Result<StreamDelta, OllamaError> {
         let mut delta = StreamDelta::default();
@@ -241,16 +149,6 @@ impl OllamaChatIterator {
     }
 }
 
-// LiteLLM's _is_function_call_complete: an object is complete, a string is complete when it parses as JSON
-#[must_use]
-pub fn is_function_call_complete(arguments: &Json) -> bool {
-    match arguments {
-        Json::Object(_) => true,
-        Json::Text(text) => serde_json::from_str::<Json>(text).is_ok(),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => false,
-    }
-}
-
 fn done_chunk_usage(chunk: &RawChunk) -> Option<Usage> {
     if !chunk.done {
         return None;
@@ -265,7 +163,7 @@ fn done_chunk_usage(chunk: &RawChunk) -> Option<Usage> {
 }
 
 fn delta_tool_calls(
-    calls: &[RawToolCall],
+    calls: &[WireToolCall],
     ids: &dyn IdSource,
 ) -> Result<Vec<DeltaToolCall>, OllamaError> {
     let mut converted = Vec::with_capacity(calls.len());
@@ -276,67 +174,23 @@ fn delta_tool_calls(
             current_index = current_index.saturating_add(1);
             assigned
         });
-        let complete = arguments_have_length(&call.function)?
-            && call
-                .function
-                .arguments
-                .as_ref()
-                .is_some_and(is_function_call_complete);
-        let id = if complete {
-            Some(ids.next_id())
-        } else {
-            call.id.clone()
-        };
+        let arguments = call.function.call_arguments()?;
         converted.push(DeltaToolCall {
-            id,
+            id: if arguments.complete {
+                Some(ids.next_id())
+            } else {
+                call.id.clone()
+            },
             kind: call
                 .kind
                 .clone()
                 .unwrap_or_else(|| String::from(TOOL_CALL_TYPE)),
             index,
-            function: delta_function(&call.function)?,
+            function: DeltaFunction {
+                name: call.function.name.clone(),
+                arguments: arguments.arguments,
+            },
         });
     }
     Ok(converted)
-}
-
-fn arguments_have_length(function: &RawFunction) -> Result<bool, OllamaError> {
-    match &function.arguments {
-        None | Some(Json::Null) => Ok(false),
-        Some(Json::Object(fields)) => Ok(!fields.is_empty()),
-        Some(Json::Text(text)) => Ok(!text.is_empty()),
-        Some(Json::List(items)) => Ok(!items.is_empty()),
-        Some(Json::Bool(_) | Json::Number(_)) => Err(OllamaError::ChunkField {
-            field: "message.tool_calls.function.arguments",
-        }),
-    }
-}
-
-fn delta_function(function: &RawFunction) -> Result<DeltaFunction, OllamaError> {
-    let arguments = match &function.arguments {
-        Some(value @ Json::Object(_)) => {
-            serde_json::to_string(value).map_err(|source| OllamaError::Shape { source })?
-        }
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null) | None => parameters_arguments(function)?,
-        Some(Json::List(_) | Json::Bool(_) | Json::Number(_)) => {
-            return Err(OllamaError::ChunkField {
-                field: "message.tool_calls.function.arguments",
-            });
-        }
-    };
-    Ok(DeltaFunction {
-        name: function.name.clone(),
-        arguments,
-    })
-}
-
-fn parameters_arguments(function: &RawFunction) -> Result<String, OllamaError> {
-    match &function.parameters {
-        Some(value @ Json::Object(_)) => {
-            serde_json::to_string(value).map_err(|source| OllamaError::Shape { source })
-        }
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => Ok(String::new()),
-    }
 }

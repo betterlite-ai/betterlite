@@ -2,10 +2,11 @@ use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::super::stream::{
-    DeltaToolCall, OllamaChatIterator, OllamaStreamChunk, OllamaStreamStep, StreamChoice,
-    StreamDelta, is_function_call_complete,
+use super::super::function::is_function_call_complete;
+use super::super::stream::chunk::{
+    DeltaFunction, DeltaToolCall, OllamaStreamChunk, StreamChoice, StreamDelta,
 };
+use super::super::stream::{OllamaChatIterator, OllamaStreamStep};
 use super::super::usage::Usage;
 use super::support::SequenceIds;
 
@@ -125,7 +126,7 @@ fn a_complete_tool_call_gets_an_id_and_json_arguments() {
             id: Some(String::from("id-0")),
             kind: String::from("function"),
             index: 0,
-            function: super::super::stream::DeltaFunction {
+            function: DeltaFunction {
                 name: Some(String::from("f")),
                 arguments: String::from(r#"{"a":1}"#),
             },

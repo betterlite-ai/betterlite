@@ -10,9 +10,10 @@ use betterlite_provider::ollama_chat::reply::{
     ChatChoice, OllamaChatResponse, ReplyInput, ToolCall, transform_response,
 };
 use betterlite_provider::ollama_chat::request::{RequestInput, transform_request};
-use betterlite_provider::ollama_chat::stream::{
-    OllamaChatIterator, OllamaStreamChunk, OllamaStreamStep,
+use betterlite_provider::ollama_chat::stream::chunk::{
+    DeltaToolCall, OllamaStreamChunk, StreamChoice,
 };
+use betterlite_provider::ollama_chat::stream::{OllamaChatIterator, OllamaStreamStep};
 use betterlite_provider::ollama_chat::usage::TokenCounter;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -26,22 +27,21 @@ const USER_MESSAGE: &str = "hi";
 
 struct WordsCounter;
 
-fn count_words(text: &str) -> u64 {
-    u64::try_from(text.split_whitespace().count()).unwrap_or(u64::MAX)
-}
-
 #[async_trait]
 impl TokenCounter for WordsCounter {
     async fn count_messages(&self, messages: &[Message]) -> Option<u64> {
-        let mut total = 0_u64;
-        for message in messages {
-            total = total.saturating_add(count_words(&convert_content_list_to_str(message)));
-        }
-        Some(total)
+        let words = messages
+            .iter()
+            .map(|message| convert_content_list_to_str(message).split_whitespace().count());
+        Some(
+            words.fold(0_u64, |total, count| {
+                total.saturating_add(u64::try_from(count).unwrap_or(u64::MAX))
+            }),
+        )
     }
 
     async fn count_text(&self, text: &str) -> Option<u64> {
-        Some(count_words(text))
+        Some(u64::try_from(text.split_whitespace().count()).unwrap_or(u64::MAX))
     }
 }
 
@@ -106,35 +106,7 @@ fn reply_choice(response: &OllamaChatResponse, choice: &ChatChoice) -> Value {
 }
 
 fn chunk_value(chunk: &OllamaStreamChunk) -> Value {
-    let choices: Vec<Value> = chunk
-        .choices
-        .iter()
-        .map(|choice| {
-            let calls = choice.delta.tool_calls.as_deref().map(|calls| {
-                Value::Array(
-                    calls
-                        .iter()
-                        .map(|call| {
-                            json!({
-                                "id": call.id.as_deref().map(normalize_id),
-                                "type": call.kind,
-                                "index": call.index,
-                                "name": call.function.name,
-                                "arguments": normalize_arguments(&call.function.arguments),
-                            })
-                        })
-                        .collect(),
-                )
-            });
-            json!({
-                "index": choice.index,
-                "finish_reason": choice.finish_reason,
-                "content": choice.delta.content,
-                "reasoning_content": choice.delta.reasoning_content,
-                "tool_calls": calls,
-            })
-        })
-        .collect();
+    let choices: Vec<Value> = chunk.choices.iter().map(chunk_choice).collect();
     let usage = chunk.usage.map(|usage| {
         json!([
             usage.prompt_tokens,
@@ -150,6 +122,33 @@ fn chunk_value(chunk: &OllamaStreamChunk) -> Value {
         "usage": usage,
         "choices": choices,
     })
+}
+
+fn chunk_choice(choice: &StreamChoice) -> Value {
+    json!({
+        "index": choice.index,
+        "finish_reason": choice.finish_reason,
+        "content": choice.delta.content,
+        "reasoning_content": choice.delta.reasoning_content,
+        "tool_calls": choice.delta.tool_calls.as_deref().map(delta_calls),
+    })
+}
+
+fn delta_calls(calls: &[DeltaToolCall]) -> Value {
+    Value::Array(
+        calls
+            .iter()
+            .map(|call| {
+                json!({
+                    "index": call.index,
+                    "id": call.id.as_deref().map(normalize_id),
+                    "arguments": normalize_arguments(&call.function.arguments),
+                    "type": call.kind,
+                    "name": call.function.name,
+                })
+            })
+            .collect(),
+    )
 }
 
 pub(super) fn params(

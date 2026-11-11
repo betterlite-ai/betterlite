@@ -3,8 +3,9 @@ use betterlite_prompts::message_content::Message;
 use betterlite_streaming::stream_chunk_shaping::tokens::mapped_finish_reason;
 use indexmap::IndexMap;
 
-use self::decode::{DecodedReply, ReplyFunction, ReplyMessage};
+use self::decode::DecodedReply;
 use super::error::OllamaError;
+use super::function::WireMessage;
 use super::ids::IdSource;
 use super::reasoning::parse_content_for_reasoning;
 use super::usage::{TokenCounter, Usage};
@@ -72,19 +73,17 @@ pub async fn transform_response(
     let reply = DecodedReply::try_from(input.body)?;
     let (reasoning, content) = message_reasoning(&reply.message);
     let usage = usage_for(&reply, content.as_deref(), input.messages, counter).await;
-    let (message, finish_reason) = if json_mode(input) {
-        json_mode_message(content.as_deref(), reasoning, input.litellm_params, ids)?
-    } else {
-        let mapped = mapped_finish_reason(done_reason(&reply));
-        assistant_message(&reply.message, content, reasoning, mapped, ids)?
-    };
+    let mapped = mapped_finish_reason(done_reason(&reply));
+    let json = json_mode(input).then_some(input.litellm_params);
+    let (message, override_finish) =
+        assistant_message(&reply.message, content, reasoning, json, ids)?;
     Ok(OllamaChatResponse {
         model: format!("{OLLAMA_CHAT_PREFIX}{}", input.model),
         created: input.created,
         choices: vec![ChatChoice {
             index: 0,
             message,
-            finish_reason,
+            finish_reason: override_finish.map_or_else(|| mapped.to_owned(), str::to_owned),
         }],
         usage,
     })
@@ -98,7 +97,7 @@ fn done_reason(reply: &DecodedReply) -> &str {
 }
 
 // LiteLLM only parses the content for reasoning tags when the message carries no thinking text
-fn message_reasoning(message: &ReplyMessage) -> (Option<String>, Option<String>) {
+fn message_reasoning(message: &WireMessage) -> (Option<String>, Option<String>) {
     message.thinking.as_ref().map_or_else(
         || {
             message.content.as_deref().map_or((None, None), |text| {
@@ -123,34 +122,35 @@ fn json_mode(input: &ReplyInput<'_>) -> bool {
 }
 
 fn assistant_message(
-    message: &ReplyMessage,
+    message: &WireMessage,
     content: Option<String>,
     reasoning: Option<String>,
-    mapped_finish: &str,
+    json: Option<&IndexMap<String, Json>>,
     ids: &dyn IdSource,
-) -> Result<(AssistantMessage, String), OllamaError> {
+) -> Result<(AssistantMessage, Option<&'static str>), OllamaError> {
+    let role = message
+        .role
+        .clone()
+        .unwrap_or_else(|| String::from(DEFAULT_ROLE));
+    if let Some(litellm_params) = json {
+        let built = json_mode_message(role, content.as_deref(), reasoning, litellm_params, ids)?;
+        return Ok((built, Some(TOOL_CALLS_FINISH_REASON)));
+    }
     let tool_calls = reply_tool_calls(message, ids)?;
-    let finish_reason = if tool_calls.is_some() {
-        String::from(TOOL_CALLS_FINISH_REASON)
-    } else {
-        mapped_finish.to_owned()
-    };
+    let override_finish = tool_calls.as_ref().map(|_calls| TOOL_CALLS_FINISH_REASON);
     Ok((
         AssistantMessage {
-            role: message
-                .role
-                .clone()
-                .unwrap_or_else(|| String::from(DEFAULT_ROLE)),
+            role,
             content,
             reasoning_content: reasoning,
             tool_calls,
         },
-        finish_reason,
+        override_finish,
     ))
 }
 
 fn reply_tool_calls(
-    message: &ReplyMessage,
+    message: &WireMessage,
     ids: &dyn IdSource,
 ) -> Result<Option<Vec<ToolCall>>, OllamaError> {
     let Some(calls) = message
@@ -168,66 +168,38 @@ fn reply_tool_calls(
                 .kind
                 .clone()
                 .unwrap_or_else(|| String::from(FUNCTION_TYPE)),
-            function: call_function(&call.function)?,
+            function: Function {
+                name: call.function.name.clone(),
+                arguments: call.function.call_arguments()?.arguments,
+            },
         });
     }
     Ok(Some(converted))
 }
 
-fn call_function(function: &ReplyFunction) -> Result<Function, OllamaError> {
-    let arguments = match &function.arguments {
-        Some(value @ Json::Object(_)) => {
-            serde_json::to_string(value).map_err(|source| OllamaError::Shape { source })?
-        }
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null) | None => parameters_arguments(function)?,
-        Some(Json::List(_) | Json::Bool(_) | Json::Number(_)) => {
-            return Err(OllamaError::ReplyField {
-                field: "message.tool_calls.function.arguments",
-            });
-        }
-    };
-    Ok(Function {
-        name: function.name.clone(),
-        arguments,
-    })
-}
-
-fn parameters_arguments(function: &ReplyFunction) -> Result<String, OllamaError> {
-    match &function.parameters {
-        Some(value @ Json::Object(_)) => {
-            serde_json::to_string(value).map_err(|source| OllamaError::Shape { source })
-        }
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => Ok(String::new()),
-    }
-}
-
 fn json_mode_message(
+    role: String,
     content: Option<&str>,
     reasoning: Option<String>,
     litellm_params: &IndexMap<String, Json>,
     ids: &dyn IdSource,
-) -> Result<(AssistantMessage, String), OllamaError> {
+) -> Result<AssistantMessage, OllamaError> {
     let Some(text) = content else {
         return Err(OllamaError::ReplyField {
             field: "message.content",
         });
     };
     let (name, arguments) = json_mode_call(text, litellm_params)?;
-    Ok((
-        AssistantMessage {
-            role: String::from(DEFAULT_ROLE),
-            content: None,
-            reasoning_content: reasoning,
-            tool_calls: Some(vec![ToolCall {
-                id: format!("{JSON_MODE_CALL_ID}{}", ids.next_id()),
-                kind: String::from(FUNCTION_TYPE),
-                function: Function { name, arguments },
-            }]),
-        },
-        String::from(TOOL_CALLS_FINISH_REASON),
-    ))
+    Ok(AssistantMessage {
+        role,
+        content: None,
+        reasoning_content: reasoning,
+        tool_calls: Some(vec![ToolCall {
+            id: format!("{JSON_MODE_CALL_ID}{}", ids.next_id()),
+            kind: String::from(FUNCTION_TYPE),
+            function: Function { name, arguments },
+        }]),
+    })
 }
 
 fn json_mode_call(

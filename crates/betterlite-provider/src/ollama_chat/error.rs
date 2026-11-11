@@ -23,6 +23,8 @@ pub enum OllamaError {
     ChunkMissing { field: &'static str },
     #[error("the Ollama stream chunk field {field} has the wrong type")]
     ChunkField { field: &'static str },
+    #[error("the Ollama tool call {field} has the wrong shape")]
+    Arguments { field: &'static str },
     #[error("the Ollama parameter {field} has the wrong type")]
     Param { field: &'static str },
     #[error("message {index} has a {field} that is not the declared type")]
@@ -53,7 +55,10 @@ impl OllamaError {
             | Self::RequestField { .. }
             | Self::RequestFieldShape { .. }
             | Self::RequestToolArguments { .. } => Some(400),
-            Self::Shape { .. } | Self::ReplyField { .. } | Self::ChunkField { .. } => None,
+            Self::Shape { .. }
+            | Self::ReplyField { .. }
+            | Self::ChunkField { .. }
+            | Self::Arguments { .. } => None,
         }
     }
 }
@@ -68,6 +73,7 @@ impl From<OllamaError> for ProviderError {
             | OllamaError::ReplyField { .. }
             | OllamaError::ChunkMissing { .. }
             | OllamaError::ChunkField { .. }
+            | OllamaError::Arguments { .. }
             | OllamaError::Param { .. }
             | OllamaError::RequestField { .. }
             | OllamaError::RequestFieldShape { .. }

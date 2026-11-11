@@ -1,4 +1,4 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, Message, convert_content_list_to_str};
 use betterlite_prompts::message_fields::image_hoist::extract_images_from_message;
 use indexmap::IndexMap;
@@ -121,25 +121,45 @@ fn ollama_message(message: &Message, index: usize) -> Result<OllamaMessage, Olla
         content: convert_content_list_to_str(message),
         images: extract_images_from_message(message),
         tool_calls: tool_calls_from_message(message, index)?,
-        tool_call_id: string_field(message, "tool_call_id", index)?,
+        tool_call_id: tool_call_id(message, index)?,
     })
 }
 
 fn reasoning_text(message: &Message, index: usize) -> Result<Option<String>, OllamaError> {
-    for name in ["reasoning_content", "reasoning"] {
-        if let Some(value) = message.provider_specific_fields.get(name) {
-            return match value {
-                Json::Text(text) => Ok(Some(text.clone())),
-                Json::Null => Ok(None),
-                Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    Err(OllamaError::RequestField { index, field: name })
-                }
-            };
+    let explicit = first_text(
+        &message.provider_specific_fields,
+        &["reasoning_content", "reasoning"],
+        index,
+    )?;
+    Ok(explicit.or_else(|| content_reasoning(message)))
+}
+
+fn tool_call_id(message: &Message, index: usize) -> Result<Option<String>, OllamaError> {
+    first_text(&message.provider_specific_fields, &["tool_call_id"], index)
+}
+
+fn first_text(
+    fields: &Object,
+    names: &[&'static str],
+    index: usize,
+) -> Result<Option<String>, OllamaError> {
+    for name in names {
+        match fields.get(*name) {
+            Some(Json::Text(value)) => return Ok(Some(value.clone())),
+            Some(Json::Null) => return Ok(None),
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                return Err(OllamaError::RequestField { index, field: name });
+            }
+            None => {}
         }
     }
+    Ok(None)
+}
+
+fn content_reasoning(message: &Message) -> Option<String> {
     match &message.content {
-        Some(Content::Text(text)) => Ok(parse_content_for_reasoning(text).0.map(str::to_owned)),
-        Some(Content::Parts(_)) | None => Ok(None),
+        Some(Content::Text(text)) => parse_content_for_reasoning(text).0.map(str::to_owned),
+        Some(Content::Parts(_)) | None => None,
     }
 }
 
@@ -175,18 +195,4 @@ fn tool_calls_from_message(
         });
     }
     Ok(Some(converted))
-}
-
-fn string_field(
-    message: &Message,
-    name: &'static str,
-    index: usize,
-) -> Result<Option<String>, OllamaError> {
-    match message.provider_specific_fields.get(name) {
-        Some(Json::Text(value)) => Ok(Some(value.clone())),
-        Some(Json::Null) | None => Ok(None),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(OllamaError::RequestField { index, field: name })
-        }
-    }
 }
