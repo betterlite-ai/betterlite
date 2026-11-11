@@ -99,6 +99,12 @@ impl FixtureContext {
     }
 }
 
+// The shipped map keeps the rules under the block's "rules" key; a case input carries the extracted list.
+#[derive(serde::Serialize)]
+struct GeneralizationBlock<'rules> {
+    rules: &'rules [Box<RawValue>],
+}
+
 // The typed catalog is what B174's inference reads; entries it rejects stay only in the cost map.
 fn typed_catalog(fixture: &Fixture) -> Result<ModelCatalog, FixtureError> {
     let mut typed: BTreeMap<String, Box<RawValue>> = BTreeMap::new();
@@ -110,9 +116,12 @@ fn typed_catalog(fixture: &Fixture) -> Result<ModelCatalog, FixtureError> {
         }
     }
     if let Some(rules) = &fixture.fallback_generalizations {
+        let block = GeneralizationBlock {
+            rules: rules.as_slice(),
+        };
         typed.insert(
             "fallback_generalizations".to_owned(),
-            to_raw_value(rules).map_err(|source| FixtureError::Json { source })?,
+            to_raw_value(&block).map_err(|source| FixtureError::Json { source })?,
         );
     }
     let bytes = serde_json::to_vec(&typed).map_err(|source| FixtureError::Json { source })?;
