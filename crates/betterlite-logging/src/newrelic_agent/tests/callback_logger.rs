@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::DateTime;
 
-use super::support::{default_fixture, event, json, payload};
+use super::support::{attribute, default_fixture, event, json, payload};
 use crate::callback_logger::CallbackLogger;
 use crate::logging_pre_post::hooks::{ApiCallLogger, PostCallEvent, PreCallEvent};
 use crate::newrelic_agent::events::{ERROR_METRIC_NAME, MESSAGE_EVENT_NAME, SUMMARY_EVENT_NAME};
@@ -26,6 +26,23 @@ fn callback_logger_reports_its_name_and_message_logging_flags() {
     let quiet_logger = quiet.build();
     let quiet_callback: &dyn CallbackLogger = quiet_logger.as_ref();
     assert!(quiet_callback.turn_off_message_logging());
+}
+
+#[tokio::test]
+async fn callback_logger_uses_the_payload_trace_id_on_both_event_types() {
+    let fixture = default_fixture();
+    let logger = fixture.build();
+    let mut standard = payload();
+    standard.trace_id = "4bf92f3577b34da6a3ce929d0e0e4736".to_owned();
+    logger
+        .async_log_success_event(event(standard))
+        .await
+        .unwrap();
+    let trace_id = json(r#""4bf92f3577b34da6a3ce929d0e0e4736""#);
+    let summary = fixture.application.events_named(SUMMARY_EVENT_NAME);
+    let messages = fixture.application.events_named(MESSAGE_EVENT_NAME);
+    assert_eq!(attribute(&summary[0], "trace_id"), Some(&trace_id));
+    assert_eq!(attribute(&messages[0], "trace_id"), Some(&trace_id));
 }
 
 #[tokio::test]
