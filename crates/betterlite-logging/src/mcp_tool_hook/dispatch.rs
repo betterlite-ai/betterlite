@@ -73,9 +73,7 @@ impl McpToolWalk<'_> {
                 None => true,
                 Some(content) => content == &original_content || result.content == *content,
             };
-        if let Some(content) = hook_content
-            && content != original_content
-        {
+        if let Some(content) = hook_content.filter(|content| content != &original_content) {
             result.content = content;
         }
         if result.content != original_content

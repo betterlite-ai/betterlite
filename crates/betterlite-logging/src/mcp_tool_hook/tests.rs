@@ -75,6 +75,8 @@ enum Behavior {
     EditInPlace,
     Replace,
     ReplaceUnchanged,
+    EditAndRewriteStructured,
+    ReplaceLive,
     Fail,
     RewriteLive,
 }
@@ -115,6 +117,22 @@ impl Script {
             structured_content: Some(structured_content.clone()),
         }
     }
+
+    fn rewrite_content(&self, call: &mut McpToolHookCall<'_>) {
+        call.original.content.clone_from(&self.content);
+    }
+
+    fn rewrite_structured(&self, call: &mut McpToolHookCall<'_>) {
+        call.original
+            .structured_content
+            .clone_from(&self.structured_content);
+    }
+
+    fn edit_copy(call: &mut McpToolHookCall<'_>) {
+        call.response
+            .mcp_tool_call_response
+            .push(text_item("edited"));
+    }
 }
 
 struct ScriptedLogger {
@@ -125,6 +143,13 @@ struct ScriptedLogger {
     received_costs: Arc<Mutex<Vec<Option<f64>>>>,
 }
 
+impl ScriptedLogger {
+    fn record(&self, cost: Option<f64>) {
+        self.runs.lock().unwrap().push(self.name);
+        self.received_costs.lock().unwrap().push(cost);
+    }
+}
+
 #[async_trait]
 impl CallbackLogger for ScriptedLogger {
     fn callback_name(&self) -> &str {
@@ -133,36 +158,44 @@ impl CallbackLogger for ScriptedLogger {
 
     async fn async_post_mcp_tool_call_hook(
         &self,
-        call: McpToolHookCall<'_>,
+        mut call: McpToolHookCall<'_>,
     ) -> Result<Option<McpPostCallResponse>, LoggerError> {
-        self.runs.lock().unwrap().push(self.name);
-        self.received_costs
-            .lock()
-            .unwrap()
-            .push(call.response.hidden_params.response_cost);
-        match self.script.behavior {
+        let script = &self.script;
+        self.record(call.response.hidden_params.response_cost);
+        match script.behavior {
             Behavior::Nothing => Ok(None),
             Behavior::EditInPlace => {
-                call.response
-                    .mcp_tool_call_response
-                    .push(text_item("edited"));
+                Script::edit_copy(&mut call);
                 Ok(None)
             }
             Behavior::Replace => {
-                call.response.mcp_tool_call_response = self.script.content.clone();
-                if let Some(cost) = self.script.response_cost {
+                script.rewrite_content(&mut call);
+                if let Some(cost) = script.response_cost {
                     call.response.hidden_params.response_cost = Some(cost);
                 }
                 Ok(Some(call.response.clone()))
             }
             Behavior::ReplaceUnchanged => Ok(Some(call.response.clone())),
+            Behavior::EditAndRewriteStructured => {
+                Script::edit_copy(&mut call);
+                script.rewrite_structured(&mut call);
+                Ok(None)
+            }
+            Behavior::ReplaceLive => {
+                script.rewrite_content(&mut call);
+                script.rewrite_structured(&mut call);
+                Ok(Some(McpPostCallResponse {
+                    mcp_tool_call_response: script.content.clone(),
+                    hidden_params: call.response.hidden_params,
+                }))
+            }
             Behavior::Fail => Err(LoggerError::Delivery {
                 callback: self.name.to_owned(),
                 message: "logger exploded".to_owned(),
             }),
             Behavior::RewriteLive => {
-                call.original.content = self.script.content.clone();
-                call.original.structured_content = self.script.structured_content.clone();
+                script.rewrite_content(&mut call);
+                script.rewrite_structured(&mut call);
                 Ok(None)
             }
         }
@@ -396,6 +429,28 @@ fn hello() -> McpToolResult {
         error_lines: 0,
     },
 })]
+#[case::in_place_edit_with_a_live_structured_rewrite_clears_it(Scenario {
+    result: hello(),
+    dynamic_success: Vec::new(),
+    global_success: vec![(
+        "editor",
+        Script {
+            behavior: Behavior::EditAndRewriteStructured,
+            content: Vec::new(),
+            response_cost: None,
+            structured_content: Some(object(&[("interim", Json::Bool(true))])),
+        },
+    )],
+    expected: Expected {
+        content: vec![text_item("hello"), text_item("edited")],
+        structured_content: None,
+        is_error: true,
+        response_cost: None,
+        runs: vec!["editor"],
+        received_costs: vec![None],
+        error_lines: 0,
+    },
+})]
 #[case::replacement_sets_cost(Scenario {
     result: hello(),
     dynamic_success: Vec::new(),
@@ -420,6 +475,28 @@ fn hello() -> McpToolResult {
         is_error: false,
         response_cost: Some(Json::Null),
         runs: vec!["keeper"],
+        received_costs: vec![None],
+        error_lines: 0,
+    },
+})]
+#[case::replacement_matching_the_live_content_keeps_structured(Scenario {
+    result: hello(),
+    dynamic_success: Vec::new(),
+    global_success: vec![(
+        "guardrail",
+        Script {
+            behavior: Behavior::ReplaceLive,
+            content: vec![text_item("blocked")],
+            response_cost: None,
+            structured_content: Some(object(&[("blocked", Json::Bool(true))])),
+        },
+    )],
+    expected: Expected {
+        content: vec![text_item("blocked")],
+        structured_content: Some(object(&[("blocked", Json::Bool(true))])),
+        is_error: false,
+        response_cost: Some(Json::Null),
+        runs: vec!["guardrail"],
         received_costs: vec![None],
         error_lines: 0,
     },
