@@ -195,6 +195,7 @@ async fn bucket_exists_fails_on_a_create_status_it_does_not_accept() {
 }
 
 #[rstest]
+#[case::one_character("a")]
 #[case::too_short("ab")]
 #[case::underscore("bad_bucket")]
 #[case::only_separators("...")]
@@ -212,6 +213,21 @@ async fn bucket_names_are_validated_before_a_request(#[case] bucket_name: &str) 
         .expect_err("the bucket name is rejected");
     assert!(matches!(error, S3VectorsError::Input(_)));
     assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
+async fn bucket_names_at_the_minimum_length_reach_the_api() {
+    let transport = FakeTransport::new(vec![response(200)]);
+    let clients = rag_clients(transport.clone());
+    let requests = S3VectorsRequests {
+        clients: &clients,
+        aws_region_name: REGION,
+    };
+    requests
+        .ensure_vector_bucket_exists("abc")
+        .await
+        .expect("the bucket exists");
+    assert_eq!(transport.requests().len(), 1);
 }
 
 #[tokio::test]
