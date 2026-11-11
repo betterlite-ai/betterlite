@@ -1,0 +1,74 @@
+kind: helper
+name: datadog-cost-reserved-key-blocking
+call:
+  b3940:
+    scenarios:
+      - name: reserved-keys-blocked
+        environment:
+          DD_API_KEY: api-key-value
+          DD_APP_KEY: app-key-value
+          DD_SITE: test.datadoghq.com
+          DD_ENV: prod
+          DD_SERVICE: gateway
+          HOSTNAME: host-1
+          POD_NAME: pod-1
+        init:
+          cost_tag_keys:
+            - env
+            - service
+            - host
+            - pod_name
+            - provider
+            - model
+            - model_id
+            - team
+            - user
+            - model_group
+        replies:
+          - status: 202
+            body: ""
+        actions:
+          - do: success
+            payload:
+              id: chatcmpl-1
+              trace_id: trace-1
+              session_id: session-1
+              call_type: completion
+              response_cost: 0.5
+              status: success
+              status_fields: {llm_api_status: success, guardrail_status: not_run}
+              total_tokens: 5
+              prompt_tokens: 2
+              completion_tokens: 3
+              startTime: 1704110400.0
+              endTime: 1704110401.0
+              completionStartTime: 1704110400.5
+              response_time: 0.5
+              model_map_information: {}
+              model: gpt-4o
+              model_group: null
+              custom_llm_provider: openai
+              model_id: router-1
+              api_base: "https://api.openai.com"
+              metadata:
+                user_api_key_alias: trusted-user
+                user_api_key_team_alias: trusted-team
+                spend_logs_metadata: {env: attacker, service: attacker, provider: attacker, team: attacker}
+                requester_metadata: {model: attacker, model_id: attacker, user: attacker, model_group: attacker}
+              saved_cache_cost: 0.0
+              request_tags:
+                - "env:attacker"
+                - "service:attacker"
+                - "host:attacker"
+                - "pod_name:attacker"
+                - "provider:attacker"
+                - "model:attacker"
+                - "model_id:attacker"
+                - "team:attacker"
+                - "user:attacker"
+                - "model_group:attacker"
+              model_parameters: {}
+              hidden_params: {}
+          - do: flush
+env: {}
+compare: {ignore: []}
