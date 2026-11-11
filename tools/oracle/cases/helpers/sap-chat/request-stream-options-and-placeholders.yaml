@@ -1,0 +1,31 @@
+kind: helper
+name: sap-chat-request-stream-options-and-placeholders
+call:
+  b5845:
+    operation: requests
+    calls:
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          stream: true
+          stream_options: {chunk_size: 10, delimiters: ["\n", " "], include_usage: true}
+          placeholder_values: {q: v, empty: ''}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          stream_options: {}
+          placeholder_values: {}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          stream_options: {include_usage: true}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          stream_options: {chunk_size: 5}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          placeholder_values: null
+env: {}
+compare: {ignore: []}
