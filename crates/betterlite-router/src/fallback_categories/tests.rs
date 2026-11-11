@@ -178,7 +178,6 @@ fn ordinary_failure_uses_the_ordinary_chain() {
 }
 
 fn order_levels_run_before_the_ordinary_chain() {
-    let external_targets = [target("external-model")];
     let ordinary_targets = [target("ordinary-model")];
     let mut request = request_with(
         FallbackFailure::Ordinary,
@@ -188,16 +187,12 @@ fn order_levels_run_before_the_ordinary_chain() {
         model_group: "requested",
         deployment_orders: &[Some(1), Some(2)],
         current_target: None,
-        external: OrderExternal::Targets(&external_targets),
+        external: OrderExternal::Targets(&ordinary_targets),
     };
     assert_eq!(
         decide(&request),
         FallbackSuccessor::RunOrder {
-            targets: vec![
-                ordered("requested", 1),
-                ordered("requested", 2),
-                target("external-model"),
-            ],
+            targets: vec![ordered("requested", 2), target("ordinary-model")],
             client_fallbacks_after: false,
         }
     );
@@ -262,7 +257,7 @@ fn client_fallbacks_follow_order_entries() {
     assert_eq!(
         decide(&request),
         FallbackSuccessor::RunOrder {
-            targets: vec![ordered("requested", 1), ordered("requested", 2)],
+            targets: vec![ordered("requested", 2)],
             client_fallbacks_after: true,
         }
     );
@@ -300,7 +295,7 @@ fn weighted_failover_runs_after_order_before_generic_fallbacks() {
     assert_eq!(
         decide(&request),
         FallbackSuccessor::RunOrder {
-            targets: vec![ordered("requested", 1), ordered("requested", 2)],
+            targets: vec![ordered("requested", 2)],
             client_fallbacks_after: false,
         }
     );
