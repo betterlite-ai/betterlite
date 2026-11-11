@@ -2,7 +2,6 @@ import os
 import sys
 from collections.abc import Callable, MutableMapping
 from datetime import UTC, datetime
-from functools import partial
 from types import ModuleType
 from typing import Literal, NamedTuple, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
@@ -175,7 +174,7 @@ class AuthFailure(Protocol):
 
 
 def prepare(fixture: FakeBoto3, clock: Callable[[], float] | None = None) -> BaseAWSLLM:
-    # LiteLLM imports boto3 inside each source method, so the fake module is what those imports find
+    # LiteLLM imports boto3 inside each source method, so these imports find the fake module
     sys.modules["boto3"] = fixture
     instance = BaseAWSLLM()
     memory = InMemoryCache(max_size_in_memory=1000, clock=clock)
@@ -190,8 +189,7 @@ def credentials_call(instance: BaseAWSLLM, config: AwsConfig) -> ReturnedCredent
 def role_config(params: RoleParams) -> AwsConfig:
     return AwsConfig(
         aws_role_name=params["role_arn"], aws_session_name=params["session_name"],
-        aws_external_id=params.get("external_id"), aws_session_tags=params.get("tags"),
-    )
+        aws_external_id=params.get("external_id"), aws_session_tags=params.get("tags"))
 
 
 def static_pair(raw: Json) -> Json:
@@ -245,14 +243,16 @@ def auth_selector(raw: Json) -> Json:
 
 def local(raw: Json) -> Json:
     params = TypeAdapter(LocalParams).validate_python(raw)
-    credentials = credentials_call(prepare(FakeBoto3(*params["fixture"])), params["settings"])
-    return {"credentials": [credentials.access_key, credentials.secret_key, credentials.token]}
+    fixture = FakeBoto3(*params["fixture"])
+    credentials = credentials_call(prepare(fixture), params["settings"])
+    return {"credentials": [credentials.access_key, credentials.secret_key, credentials.token],
+            "source": fixture.source()}
 
 
 def cache(raw: Json) -> Json:
     params = TypeAdapter(CacheParams).validate_python(raw)
     fixture = FakeBoto3(None, "fixture", None)
-    instance = prepare(fixture, partial(fixture.clock))
+    instance = prepare(fixture, fixture.clock)
     results: list[Json] = []
     for step in params["steps"]:
         fixture.now = step["now"]

@@ -10,7 +10,9 @@ use aws_smithy_runtime_api::client::{
     result::ConnectorError,
 };
 use aws_types::os_shim_internal::Fs;
-use betterlite_bedrock::aws_settings::sources::{NativeSources, resolve_local_credentials};
+use betterlite_bedrock::aws_settings::sources::{
+    NativeSources, auth_selector_presence, resolve_local_credentials,
+};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
@@ -43,7 +45,8 @@ pub(super) async fn local(input: &Local) -> HelperResult {
         sleep: SharedAsyncSleep::new(TokioSleep::new()),
         timeout: Duration::from_secs(5),
     };
-    let result = resolve_local_credentials(&AwsSettings::from(&input.settings), &sources)
+    let settings = AwsSettings::from(&input.settings);
+    let result = resolve_local_credentials(&settings, &sources)
         .await
         .map_err(failure)?;
     let value = result.credentials;
@@ -52,6 +55,21 @@ pub(super) async fn local(input: &Local) -> HelperResult {
             value.access_key_id.expose_secret().to_owned(),
             value.secret_access_key.expose_secret().to_owned(),
             value.session_token.map(|token| token.expose_secret().to_owned()),
-        )
+        ),
+        "source": local_source(&settings),
     }))
+}
+
+pub(super) const fn local_source(settings: &AwsSettings) -> &'static str {
+    let [_web_identity, _role, profile, session_token, static_pair] =
+        auth_selector_presence(settings);
+    if profile {
+        "profile"
+    } else if session_token {
+        "session_token"
+    } else if static_pair {
+        "static"
+    } else {
+        "env"
+    }
 }
