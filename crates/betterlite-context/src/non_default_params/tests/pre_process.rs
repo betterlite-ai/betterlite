@@ -51,9 +51,8 @@ impl OptionalParamsMapper for RootDefsConfig {
         Ok(optional_params)
     }
 
-    fn map_response_format(&self, mut response_format: JsonValue) -> JsonValue {
-        point_refs_at_root_defs(&mut response_format);
-        response_format
+    fn map_response_format(&self, response_format: &mut JsonValue) {
+        point_refs_at_root_defs(response_format);
     }
 }
 

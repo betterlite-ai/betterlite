@@ -6,7 +6,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use crate::helpers::OrHelperError;
 
 mod calls;
 
@@ -113,11 +113,10 @@ impl OptionalParamsMapper for MapperSpec {
         Ok(optional_params)
     }
 
-    fn map_response_format(&self, mut response_format: JsonValue) -> JsonValue {
+    fn map_response_format(&self, response_format: &mut JsonValue) {
         if self.rewrite_refs {
-            point_refs_at_root_defs(&mut response_format);
+            point_refs_at_root_defs(response_format);
         }
-        response_format
     }
 }
 
@@ -151,16 +150,7 @@ impl crate::helpers::Helper for Op {
             match calls::run(call) {
                 Ok(value) => results.push(value),
                 Err(Failure::Status(status)) => results.push(json!({ "error": status })),
-                Err(Failure::Invalid(message)) => {
-                    return Err(Box::new(HelperError {
-                        class: "InvalidInput".to_owned(),
-                        status: None,
-                        error_type: None,
-                        param: None,
-                        code: None,
-                        message,
-                    }));
-                }
+                Err(Failure::Invalid(message)) => return Err(message).or_config_error(),
             }
         }
         Ok(Value::Array(results))

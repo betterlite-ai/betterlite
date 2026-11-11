@@ -95,12 +95,9 @@ pub fn pre_process_non_default_params(
         ));
     }
     if let Some(config) = request.provider_config
-        && let Some(format) = non_default_params.remove("response_format")
+        && let Some(format) = non_default_params.get_mut("response_format")
     {
-        non_default_params.insert(
-            "response_format".to_owned(),
-            config.map_response_format(format),
-        );
+        config.map_response_format(format);
     }
     if options.add_provider_specific_params {
         let openai_params: Vec<&str> = DEFAULT_CHAT_COMPLETION_PARAMS.split_whitespace().collect();

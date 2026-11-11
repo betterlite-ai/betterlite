@@ -45,25 +45,12 @@ def _str(fields: Fields, name: str) -> str:
     return cast(str, fields[name])
 
 
-def _opt_str(fields: Fields, name: str) -> str | None:
-    return cast("str | None", fields.get(name))
-
-
 def _flag(fields: Fields, name: str) -> bool:
     return fields.get(name) is True
 
 
-def _opt_bool(fields: Fields, name: str) -> bool | None:
-    value = fields.get(name)
-    return None if value is None else cast(bool, value)
-
-
 def _strs(fields: Fields, name: str) -> list[str]:
     return cast("list[str]", fields.get(name, []))
-
-
-def _opt_strs(fields: Fields, name: str) -> list[str] | None:
-    return cast("list[str] | None", fields.get(name))
 
 
 class FixtureError(Exception):
@@ -138,7 +125,7 @@ def _bedrock_route(fields: Fields) -> Json:
         _UTILS._bedrock_route_for_request(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
             model=_str(fields, "model"),
             passed_params=_obj(fields, "passed_params"),
-            additional_drop_params=_opt_strs(fields, "additional_drop_params"),
+            additional_drop_params=fields.get("additional_drop_params"),
         )
     return recorder.answer
 
@@ -149,7 +136,7 @@ def _pre_process(fields: Fields) -> Json:
         passed_params=dict(_obj(request, "passed_params")),
         special_params=_obj(request, "special_params"),
         custom_llm_provider=_str(request, "custom_llm_provider"),
-        additional_drop_params=_opt_strs(request, "additional_drop_params"),
+        additional_drop_params=request.get("additional_drop_params"),
         model="model",
         remove_sensitive_keys=_flag(fields, "remove_sensitive_keys"),
         add_provider_specific_params=_flag(fields, "add_provider_specific_params"),
@@ -191,7 +178,7 @@ def _transcription(fields: Fields) -> Json:
                 **_obj(fields, "params"),
                 "model": _str(fields, "model"),
                 "custom_llm_provider": _str(fields, "custom_llm_provider"),
-                "drop_params": _opt_bool(fields, "drop_params"),
+                "drop_params": fields.get("drop_params"),
             },
         )
 
@@ -202,11 +189,11 @@ def _image_generation(fields: Fields) -> Json:
         return _UTILS.get_optional_params_image_gen(
             **{
                 **_obj(fields, "params"),
-                "model": _opt_str(fields, "model"),
-                "custom_llm_provider": _opt_str(fields, "custom_llm_provider"),
-                "additional_drop_params": _opt_strs(fields, "additional_drop_params"),
+                "model": fields.get("model"),
+                "custom_llm_provider": fields.get("custom_llm_provider"),
+                "additional_drop_params": fields.get("additional_drop_params"),
                 "provider_config": _mapper(fields, "provider_config"),
-                "drop_params": _opt_bool(fields, "drop_params"),
+                "drop_params": fields.get("drop_params"),
             },
         )
 
@@ -215,7 +202,7 @@ _HANDLERS: Final[dict[str, Handler]] = {
     "select_non_default": lambda fields: _UTILS._get_non_default_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         passed_params=_obj(fields, "passed_params"),
         default_params=dict.fromkeys(_strs(fields, "default_names")),
-        additional_drop_params=_opt_strs(fields, "additional_drop_params"),
+        additional_drop_params=fields.get("additional_drop_params"),
     ),
     "filter_out_litellm": lambda fields: _UTILS.filter_out_litellm_params(
         kwargs=_obj(fields, "kwargs"),
@@ -232,7 +219,7 @@ _HANDLERS: Final[dict[str, Handler]] = {
         passed_params=dict(_obj(fields, "passed_params")),
         custom_llm_provider=_str(fields, "custom_llm_provider"),
         openai_params=_strs(fields, "openai_params"),
-        additional_drop_params=_opt_strs(fields, "additional_drop_params"),
+        additional_drop_params=fields.get("additional_drop_params"),
     ),
     "peek_aliases": lambda fields: _UTILS.peek_reasoning_summary_aliases(
         optional_params=_obj(fields, "optional_params")

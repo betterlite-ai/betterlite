@@ -1,6 +1,6 @@
 use betterlite_models::controls::json_value::JsonValue;
 
-use super::check::{FirstUnsupported, drop_unsupported_params};
+use super::check::drop_unsupported_params;
 use super::error::MediaParamsError;
 use crate::non_default_params::Params;
 use crate::non_default_params::extra_body::{
@@ -78,25 +78,19 @@ fn vertex_optional_params(params: &Params) -> Result<Params, MediaParamsError> {
     Ok(optional_params)
 }
 
-fn unsupported_error(
-    request: &ImageGenerationRequest<'_>,
-    first: FirstUnsupported,
-) -> MediaParamsError {
-    MediaParamsError::ImageUnsupported {
-        param: first.0,
-        provider: request.custom_llm_provider.unwrap_or("None").to_owned(),
-        model: request.model.unwrap_or("None").to_owned(),
-    }
-}
-
 fn drop_unsupported(
     request: &ImageGenerationRequest<'_>,
     non_default_params: &mut Params,
     supported: &[String],
     drop: bool,
 ) -> Result<Vec<String>, MediaParamsError> {
-    drop_unsupported_params(non_default_params, supported, drop)
-        .map_err(|first| unsupported_error(request, first))
+    drop_unsupported_params(non_default_params, supported, drop).map_err(|first| {
+        MediaParamsError::ImageUnsupported {
+            param: first.0,
+            provider: request.custom_llm_provider.unwrap_or("None").to_owned(),
+            model: request.model.unwrap_or("None").to_owned(),
+        }
+    })
 }
 
 fn branch_params(

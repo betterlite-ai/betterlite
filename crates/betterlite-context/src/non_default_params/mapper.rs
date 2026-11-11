@@ -15,10 +15,8 @@ pub trait OptionalParamsMapper {
         drop_params: bool,
     ) -> Result<Params, MapperError>;
 
-    // LiteLLM's get_json_schema_from_pydantic_object; most configs return the response_format as it came.
-    fn map_response_format(&self, response_format: JsonValue) -> JsonValue {
-        response_format
-    }
+    // LiteLLM's get_json_schema_from_pydantic_object; most configs leave the response_format as it came.
+    fn map_response_format(&self, _response_format: &mut JsonValue) {}
 }
 
 // LiteLLM drops an unsupported param when the call's drop_params or the global litellm.drop_params is true.
