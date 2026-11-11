@@ -1,0 +1,14 @@
+id: B9370
+milestone: M5 api families
+title: Eval create, list, get, update, delete and cancel HTTP execution
+status: todo
+depends_on: [B3420, B173, B249, B2402]
+file: tasks/B9370-eval-http-execution.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"
+parent: B096
+split_from: B096
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

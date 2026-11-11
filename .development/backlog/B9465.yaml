@@ -1,0 +1,13 @@
+id: B9465
+milestone: M6 guardrails
+title: Booted-proxy cases for the Noma, Noma v2, Onyx, Ovalix, Pangea, Prompt Security, Repello, custom code and LLM judge guardrails
+status: todo
+depends_on: [B3780, B3781, B3782, B3783, B3784, B3785, B3791, B3792, B3793, B3794, B3801, B3802, B3803, B3809, B8521, B8666, B8613, B8399, B3683, B3680, B004, B9850]
+file: tasks/B9465-vendor-guardrail-http.yaml
+covers: []
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

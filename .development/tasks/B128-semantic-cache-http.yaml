@@ -7,13 +7,12 @@ description: >-
   the cache management routers. Those tasks have no semantic-cache inference HTTP cases.
   This task adds cases only; it neither implements a backend nor registers a route.
 
-  Before dispatch, the architect must name and finish the generic inference-cache wiring
-  task and add it as a direct dependency here. B014 explicitly leaves response caching to
-  the cache tasks; B8630 assembles RouterCompletion but says no route calls it, and B8610
-  only carries the response-cache slot. The prerequisite must connect that slot to the
-  existing authenticated inference pipeline through B4305's lookup and B4304's writes,
-  including the cache controls and cache-key response header. Do not make these cases pass
-  by replacing the production route with a test handler or by monkeypatching LiteLLM.
+  B9560 is the generic inference-cache wiring this task needs: it connects B8610's response-cache
+  slot to the authenticated chat and embeddings routes through B4305's lookup and B4304's writes,
+  including the cache controls and the cache-key response header. B014 leaves response caching to
+  the cache tasks, and B8630 assembles RouterCompletion without a route calling it, so B9560 is the
+  only path. Do not make these cases pass by replacing the production route with a test handler or
+  by monkeypatching LiteLLM.
 
   Reuse the existing HTTP case format, MockProvider, {{upstream}} substitution in config
   and env, and steps support. The current loader uses an omitted kind for HTTP cases;

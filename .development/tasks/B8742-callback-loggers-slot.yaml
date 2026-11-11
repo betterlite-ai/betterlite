@@ -31,7 +31,10 @@ description: >-
   catalog, and `pub fn resolver(&self) -> Arc<dyn LoggerResolver>` that B8399 and B248's callers take. The five proxy
   hook names (dynamic_rate_limiter, dynamic_rate_limiter_v3, anthropic_cache_control_hook, vector_store_pre_call_hook,
   compression_interception) resolve to Ok(None) here: their LiteLLM classes override no log event, and hooks.rs below
-  decides whether they start.
+  decides whether they start. websearch_interception and code_interpreter_interception resolve to Ok(None) too, without
+  asking the catalog: they are not CallbackName values, the config refuses them until B9821 accepts them in
+  litellm_settings.callbacks, and from then on B9821's SDK callback list owns them, so the resolver must not send them
+  to the catalog as unknown names.
 
 
   Startup. LiteLLM resolves and registers the callbacks before the server takes requests. In
@@ -50,7 +53,8 @@ description: >-
   Shared test value B8610's tests build (read them first). Cases: prometheus resolves to the same Arc twice;
   litellm_agent gives a logger named litellm_agent whose events do nothing; pagerduty comes from the catalog; newrelic
   without a team key reaches the catalog (UnavailableAdapter until B8746 fills it); generic_api with missing headers
-  gives Ok(None); langsmith gives UnavailableAdapter naming langsmith; an unknown name gives UnavailableAdapter. A
+  gives Ok(None); langsmith gives UnavailableAdapter naming langsmith; an unknown name gives UnavailableAdapter;
+  websearch_interception and code_interpreter_interception give Ok(None). A
   hooks.rs test: a config with dynamic_rate_limiter in callbacks makes configured() fail naming it, and a config
   without hook names gives an empty list.
 scope:
@@ -73,7 +77,7 @@ references:
 dod:
   - text: The slot builds CallbackLoggers and LoggerCatalog once and resolves server names first, the rest through the catalog, keeping the error that names the callback.
     proof: [slot-tests]
-  - text: litellm_agent resolves to a do nothing logger, newrelic without a team key reaches the catalog, and other server names that give None stay None.
+  - text: litellm_agent resolves to a do nothing logger, newrelic without a team key reaches the catalog, other server names that give None stay None, and the two interception names that are not CallbackName values give None without reaching the catalog.
     proof: [slot-tests]
   - text: app::callbacks::start calls init_callbacks once with the slot's resolver and the configured hooks, and a configured hook name with no built arm stops startup naming it.
     proof: [slot-tests]
@@ -88,6 +92,7 @@ deviations: []
 out_of_scope:
   - "The server arms and their caches: B8655. The catalog and its modules: B8741 and the logger tasks."
   - "Registering resolved loggers inside ProxyLogging: B8399's init_callbacks. Per request selection: B248. The hook arms of hooks.rs: B8747 (anthropic_cache_control_hook) and B8749 (the dynamic rate limiters)."
+  - "compression_interception, websearch_interception and code_interpreter_interception as SDK callbacks: B9821 builds the list, takes compression_interception out of hooks.rs and installs the list in start after the init_callbacks line; B9822, B9823 and B9824 register each one."
 pitfalls:
   - Ask the server arms before the catalog for every name, because a callback_settings entry named after a catalog name with callback_type generic_api is a generic_api logger.
   - A ResolvedLogger variant is an Arc of a concrete type; coerce it with `as Arc<dyn CallbackLogger>` and keep the same Arc so the server's own caches stay shared.

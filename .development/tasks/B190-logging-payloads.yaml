@@ -4,6 +4,9 @@ description: >-
   Complete get_standard_logging_object_payload/emit_standard_logging_payload (litellm_logging.py 6485-6779) over
   B254 typed fields, B253 metadata and B252 stream aggregation. Compose the Logging lifecycle supplied by B247 state,
   B248 dynamic callbacks, B249 pre/post dispatch, B250 success and B251 failure; B012 wires them into server routes.
+  The composed lifecycle takes the success handler's StreamAssembler (B250's port) as an `Arc<dyn StreamAssembler>`
+  input and never picks one: B012 passes B252's ChatStreamAssembler, and the server composition root later passes
+  B9840's LoggedStreamAssembler, which also covers Responses and interaction streams, in its place.
   Implement redact_messages.py redacted_standard_logging_payload/_redact_standard_logging_object (175-210) after
   assembling independent per-callback snapshots. Preserve Decimal seconds/numbers for startTime/endTime/completionStartTime/response_time,
   optional cost fields, service tier from B212 and absent unimplemented auth/spend fields. Classifier audit belongs
@@ -122,6 +125,8 @@ pitfalls:
 - Logged output must reflect post-processing that changed the served response, not the raw provider text.
 - A sparse choice index must not allocate an unbounded vector.
 - Do not create a permissive catch-all JSON logging record to avoid typing the standard payload.
+- The lifecycle tests drive streams through a recording StreamAssembler; naming ChatStreamAssembler inside the lifecycle
+  would leave a Responses or interaction stream with no assembled response once the production assembler is passed in.
 review_level: standard
 budget:
   max_changed_lines: 1500
