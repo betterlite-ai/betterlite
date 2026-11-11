@@ -102,9 +102,6 @@ class FakeBoto3(ModuleType):
     def clock(self) -> float:
         return self.now
 
-    def missing(self, _path: str | bytes) -> bool:
-        return False
-
     def __call__(self, *args: Json, **kwargs: Json) -> "FakeBoto3":
         if not args:
             self.session_calls.append(dict(kwargs))
@@ -156,6 +153,11 @@ class FakeBoto3(ModuleType):
         raise ValueError("get_credentials never called sts assume_role")
 
 
+class MissingFiles:
+    def __call__(self, _path: str | bytes) -> bool:
+        return False
+
+
 class AuthRequest(Protocol):
     method: str
     url: str
@@ -173,6 +175,7 @@ class AuthFailure(Protocol):
 
 
 def prepare(fixture: FakeBoto3, clock: Callable[[], float] | None = None) -> BaseAWSLLM:
+    # LiteLLM imports boto3 inside each source method, so the fake module is what those imports find
     sys.modules["boto3"] = fixture
     instance = BaseAWSLLM()
     memory = InMemoryCache(max_size_in_memory=1000, clock=clock)
@@ -209,8 +212,7 @@ def assume_role(raw: Json) -> Json:
 
 
 def web_policy(_raw: Json) -> Json:
-    policy = build_web_identity_session_policy()
-    return cast(Json, {"value": policy})  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L155
+    return cast(Json, {"value": build_web_identity_session_policy()})  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L155
 
 
 def bearer(raw: Json) -> Json:
@@ -267,7 +269,7 @@ def auth_error(raw: Json) -> Json:
     params = TypeAdapter(AuthErrorParams).validate_python(raw)
     failure = cast(AuthFailure, AwsAuthError(params["status"], params["message"]))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L196
     exists = os.path.exists
-    os.path.exists = FakeBoto3(None, None, None).missing  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L353
+    os.path.exists = MissingFiles()  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L353
     try:
         verification = get_ssl_verify(ssl_verify=params.get("ssl_verify"))
     finally:
