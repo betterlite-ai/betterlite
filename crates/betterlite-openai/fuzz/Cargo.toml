@@ -376,3 +376,10 @@ path = "fuzz_targets/host_named_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "volcengine_embedding_reply"
+path = "fuzz_targets/volcengine_embedding_reply.rs"
+test = false
+doc = false
+bench = false
