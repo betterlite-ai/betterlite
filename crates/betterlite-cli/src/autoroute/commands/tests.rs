@@ -24,6 +24,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::private_json::files::{FileAccess, LocalFiles, PrivateFiles};
+use clap::{Args as _, Command, FromArgMatches as _};
 use indexmap::IndexMap;
 use tempfile::TempDir;
 
@@ -39,6 +40,7 @@ use super::teardown::{TeardownRequest, run_teardown};
 use crate::autoroute::commands::liveliness::{HttpLiveliness, LIVELINESS_TIMEOUT_SECONDS};
 use crate::autoroute::config::model::RawModelListing;
 use crate::autoroute::paths::pid_record_path;
+use crate::autoroute::process::DEFAULT_AUTOROUTE_PORT;
 use crate::autoroute::process::control::TermSignal;
 use crate::autoroute::process::liveliness::LivelinessProbe as _;
 use crate::autoroute::process::pid_record::{PidRecord, write_pid_record};
@@ -221,9 +223,24 @@ fn start_writes_the_pid_record_and_restores_settings_after_the_wait() {
     fixture.start(PORT).unwrap();
     let snapshot = fixture.snapshot();
     assert_eq!(snapshot.record.unwrap().pid, LAUNCHED_PID);
+    let settings_document = snapshot.settings.as_ref().unwrap();
     assert_eq!(
-        snapshot.settings.as_ref().unwrap()["env"]["ANTHROPIC_BASE_URL"].as_str(),
+        settings_document["env"]["ANTHROPIC_BASE_URL"].as_str(),
         Some("http://127.0.0.1:5483")
+    );
+    assert_eq!(settings_document["model"].as_str(), Some("autorouter"));
+    assert_eq!(
+        settings_document["env"]["ANTHROPIC_MODEL"].as_str(),
+        Some("autorouter")
+    );
+    assert_eq!(
+        settings_document["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"].as_str(),
+        Some("autorouter")
+    );
+    assert!(
+        settings_document["statusLine"]["command"]
+            .as_str()
+            .is_some_and(|command| command.contains("statusline"))
     );
     assert!(snapshot.backup.is_some());
     assert_eq!(fixture.signals.sent(), [(LAUNCHED_PID, TermSignal::Term)]);
@@ -556,6 +573,27 @@ fn configure_refuses_a_non_interactive_terminal() {
         error,
         CommandsError::Wizard(WizardError::NotInteractive)
     ));
+}
+
+fn start_command() -> Command {
+    StartArgs::augment_args(Command::new("start"))
+}
+
+#[test]
+fn start_args_default_to_the_documented_port_and_reject_out_of_range_ports() {
+    let matches = start_command().try_get_matches_from(["start"]).unwrap();
+    let args = StartArgs::from_arg_matches(&matches).unwrap();
+    assert_eq!(args.port, DEFAULT_AUTOROUTE_PORT);
+    assert_eq!(args.port, 5483);
+    let _zero_rejected = start_command()
+        .try_get_matches_from(["start", "--port", "0"])
+        .unwrap_err();
+    let _too_large_rejected = start_command()
+        .try_get_matches_from(["start", "--port", "65536"])
+        .unwrap_err();
+    let _limit_accepted = start_command()
+        .try_get_matches_from(["start", "--port", "65535"])
+        .unwrap();
 }
 
 #[test]
