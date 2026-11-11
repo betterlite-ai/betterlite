@@ -117,29 +117,30 @@ fn agent_commands_hide_the_agents_the_table_marks_hidden() {
     assert_eq!(hidden, vec![false, false, false, true]);
 }
 
+fn tail(tokens: &[&str]) -> Vec<String> {
+    tokens.iter().map(|token| String::from(*token)).collect()
+}
+
 #[test]
-fn agent_commands_accept_skip_verify_and_forward_trailing_arguments() {
+fn agent_commands_mount_skip_verify_and_forwarded_arguments() {
     let commands = agent_commands();
-    let matches = commands[0]
+    commands[0]
         .clone()
-        .try_get_matches_from(["claude", "--skip-verify", "run", "hello"])
-        .expect("parses the agent command");
-    let args = parse_agent_args(&matches);
+        .try_get_matches_from(["claude", "--skip-verify", "-p", "hi"])
+        .expect("the command takes --skip-verify and a forwarded tail");
+    let args = parse_agent_args(&tail(&["--skip-verify", "-p", "hi"]));
     assert!(args.skip_verify);
-    assert_eq!(
-        args.forwarded,
-        vec![String::from("run"), String::from("hello")]
-    );
+    assert_eq!(args.forwarded, vec![String::from("-p"), String::from("hi")]);
 }
 
 #[test]
 fn agent_commands_forward_unknown_options_to_the_agent() {
     let commands = agent_commands();
-    let matches = commands[0]
+    commands[0]
         .clone()
         .try_get_matches_from(["claude", "--resume", "abc"])
-        .expect("forwards the unknown option");
-    let args = parse_agent_args(&matches);
+        .expect("the command forwards an unknown option");
+    let args = parse_agent_args(&tail(&["--resume", "abc"]));
     assert!(!args.skip_verify);
     assert_eq!(
         args.forwarded,
@@ -149,52 +150,49 @@ fn agent_commands_forward_unknown_options_to_the_agent() {
 
 #[test]
 fn agent_commands_consume_skip_verify_after_forwarded_values() {
-    let commands = agent_commands();
-    let matches = commands[0]
-        .clone()
-        .try_get_matches_from(["claude", "-p", "hi", "--skip-verify"])
-        .expect("parses the agent command");
-    let args = parse_agent_args(&matches);
+    let args = parse_agent_args(&tail(&["-p", "hi", "--skip-verify"]));
     assert!(args.skip_verify);
     assert_eq!(args.forwarded, vec![String::from("-p"), String::from("hi")]);
 }
 
 #[test]
 fn agent_commands_consume_skip_verify_after_an_unknown_option() {
-    let commands = agent_commands();
-    let matches = commands[0]
-        .clone()
-        .try_get_matches_from(["claude", "--resume", "--skip-verify"])
-        .expect("parses the agent command");
-    let args = parse_agent_args(&matches);
+    let args = parse_agent_args(&tail(&["--resume", "--skip-verify"]));
     assert!(args.skip_verify);
     assert_eq!(args.forwarded, vec![String::from("--resume")]);
 }
 
 #[test]
 fn agent_commands_drop_the_terminator_and_forward_what_follows() {
-    let commands = agent_commands();
-    let matches = commands[0]
-        .clone()
-        .try_get_matches_from(["claude", "x", "--", "y"])
-        .expect("parses the agent command");
-    let args = parse_agent_args(&matches);
+    let args = parse_agent_args(&tail(&["x", "--", "y"]));
     assert!(!args.skip_verify);
     assert_eq!(args.forwarded, vec![String::from("x"), String::from("y")]);
 }
 
 #[test]
 fn agent_commands_keep_skip_verify_after_the_terminator_as_a_value() {
-    let commands = agent_commands();
-    let matches = commands[0]
-        .clone()
-        .try_get_matches_from(["claude", "x", "--", "--skip-verify"])
-        .expect("parses the agent command");
-    let args = parse_agent_args(&matches);
+    let args = parse_agent_args(&tail(&["x", "--", "--skip-verify"]));
     assert!(!args.skip_verify);
     assert_eq!(
         args.forwarded,
         vec![String::from("x"), String::from("--skip-verify")]
+    );
+}
+
+#[test]
+fn agent_commands_forward_skip_verify_after_a_leading_terminator() {
+    let args = parse_agent_args(&tail(&["--", "--skip-verify"]));
+    assert!(!args.skip_verify);
+    assert_eq!(args.forwarded, vec![String::from("--skip-verify")]);
+}
+
+#[test]
+fn agent_commands_keep_a_second_terminator_after_a_leading_one() {
+    let args = parse_agent_args(&tail(&["--", "x", "--", "y"]));
+    assert!(!args.skip_verify);
+    assert_eq!(
+        args.forwarded,
+        vec![String::from("x"), String::from("--"), String::from("y")]
     );
 }
 

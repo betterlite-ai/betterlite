@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_logging::private_json::files::PrivateFiles;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgAction, Command};
 
 use crate::agent_launch::{
     EnvVars, KNOWN_AGENTS, KeyProbe, Platform, ProcessLauncher, Terminal, agent_profile,
@@ -79,24 +79,19 @@ fn build_command(binary: &'static str, display_name: &str, hidden: bool) -> Comm
 }
 
 #[must_use]
-pub fn parse_agent_args(matches: &ArgMatches) -> AgentCommandArgs {
-    let mut skip_verify = matches.get_flag(SKIP_VERIFY);
+pub fn parse_agent_args(tail: &[String]) -> AgentCommandArgs {
+    let mut skip_verify = false;
     let mut forwarded = Vec::new();
     let mut terminated = false;
-    for value in matches
-        .get_many::<String>(FORWARDED_ARGS)
-        .into_iter()
-        .flatten()
-    {
-        let token = value.as_str();
+    for token in tail {
         if terminated {
-            forwarded.push(value.clone());
-        } else if token == TERMINATOR {
+            forwarded.push(token.clone());
+        } else if token.as_str() == TERMINATOR {
             terminated = true;
-        } else if token == SKIP_VERIFY_FLAG {
+        } else if token.as_str() == SKIP_VERIFY_FLAG {
             skip_verify = true;
         } else {
-            forwarded.push(value.clone());
+            forwarded.push(token.clone());
         }
     }
     AgentCommandArgs {
