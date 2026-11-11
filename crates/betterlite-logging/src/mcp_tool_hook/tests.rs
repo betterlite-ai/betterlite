@@ -140,12 +140,14 @@ impl Script {
             .push(text_item("edited"));
     }
 
-    fn replace_copy(&self, call: &mut McpToolHookCall<'_>) {
-        call.response
-            .mcp_tool_call_response
-            .clone_from(&self.content);
+    fn reply(&self, call: &McpToolHookCall<'_>) -> McpPostCallResponse {
+        let mut hidden_params = call.response.hidden_params;
         if let Some(cost) = self.response_cost {
-            call.response.hidden_params.response_cost = Some(cost);
+            hidden_params.response_cost = Some(cost);
+        }
+        McpPostCallResponse {
+            mcp_tool_call_response: self.content.clone(),
+            hidden_params,
         }
     }
 }
@@ -190,10 +192,7 @@ impl CallbackLogger for ScriptedLogger {
                 Script::edit_copy(&mut call);
                 Ok(None)
             }
-            Behavior::Replace => {
-                script.replace_copy(&mut call);
-                Ok(Some(call.response.clone()))
-            }
+            Behavior::Replace => Ok(Some(script.reply(&call))),
             Behavior::ReplaceUnchanged => Ok(Some(call.response.clone())),
             Behavior::EditAndRewriteStructured => {
                 Script::edit_copy(&mut call);

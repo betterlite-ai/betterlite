@@ -12,11 +12,11 @@ from litellm._logging import verbose_logger
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils import litellm_logging
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.types.mcp import MCPPostCallResponseObject
 from mcp.types import CallToolResult, TextContent
 
 if TYPE_CHECKING:
-    from litellm.types.mcp import MCPPostCallResponseObject
-    from mcp.types import ContentBlock
+    from mcp.types import ContentBlock, EmbeddedResource, ImageContent
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Fields: TypeAlias = dict[str, Json]
@@ -102,10 +102,15 @@ class _Scripted(CustomLogger):
             response_obj.mcp_tool_call_response.append(TextContent(type="text", text="edited"))
             return None
         if self.behavior == "replace":
-            response_obj.mcp_tool_call_response[:] = list(self.content)
+            hidden = response_obj.hidden_params
             if self.response_cost is not None:
-                response_obj.hidden_params.response_cost = self.response_cost
-            return response_obj
+                hidden.response_cost = self.response_cost
+            return MCPPostCallResponseObject(
+                mcp_tool_call_response=cast(
+                    "list[TextContent | ImageContent | EmbeddedResource]", list(self.content)
+                ),
+                hidden_params=hidden,
+            )
         if self.behavior == "replace_unchanged":
             return response_obj
         if self.behavior == "fail":

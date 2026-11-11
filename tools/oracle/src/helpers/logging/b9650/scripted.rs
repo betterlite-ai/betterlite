@@ -32,6 +32,17 @@ impl ScriptedLogger {
             message: "logger exploded".to_owned(),
         })
     }
+
+    fn replace(&self, call: &McpToolHookCall<'_>) -> McpPostCallResponse {
+        let mut hidden_params = call.response.hidden_params;
+        if let Some(cost) = self.wire.response_cost {
+            hidden_params.response_cost = Some(cost);
+        }
+        McpPostCallResponse {
+            mcp_tool_call_response: self.wire.content.clone(),
+            hidden_params,
+        }
+    }
 }
 
 #[async_trait]
@@ -50,15 +61,7 @@ impl CallbackLogger for ScriptedLogger {
                 call.response.mcp_tool_call_response.push(edited_item());
                 Ok(None)
             }
-            Behavior::Replace => {
-                call.response
-                    .mcp_tool_call_response
-                    .clone_from(&self.wire.content);
-                if let Some(cost) = self.wire.response_cost {
-                    call.response.hidden_params.response_cost = Some(cost);
-                }
-                Ok(Some(call.response.clone()))
-            }
+            Behavior::Replace => Ok(Some(self.replace(&call))),
             Behavior::ReplaceUnchanged => Ok(Some(call.response.clone())),
             Behavior::Fail => self.fail(),
             Behavior::RewriteLive => {
