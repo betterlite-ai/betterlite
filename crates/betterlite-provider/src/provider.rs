@@ -87,6 +87,53 @@ pub trait Adapter {
     }
 }
 
+// each stage matches the variants named once below, so a variant left out of that list fails to compile
+macro_rules! dispatch_to_adapters {
+    ($($variant:ident),+ $(,)?) => {
+        impl Provider {
+            #[must_use]
+            pub const fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant(_) => <$variant as Adapter>::NAME,)+
+                }
+            }
+
+            pub fn prepare(
+                &self,
+                request: &OperationRequest,
+                deployment: &Deployment,
+                catalog: &CatalogCapabilities,
+            ) -> Result<PreparedRequest, OperationError> {
+                match self {
+                    $(Self::$variant(adapter) => adapter.prepare(request, deployment, catalog),)+
+                }
+            }
+
+            #[must_use]
+            pub fn execute<'call>(
+                &'call self,
+                client: &'call ProxiedClient,
+                prepared: &'call PreparedRequest,
+                deployment: &'call Deployment,
+            ) -> Pin<Box<dyn Future<Output = Result<Upstream, OperationError>> + Send + 'call>> {
+                match self {
+                    $(Self::$variant(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),)+
+                }
+            }
+
+            pub fn decode(
+                &self,
+                prepared: &PreparedRequest,
+                upstream: Upstream,
+            ) -> Result<OperationResult, OperationError> {
+                match self {
+                    $(Self::$variant(adapter) => adapter.decode(prepared, upstream),)+
+                }
+            }
+        }
+    };
+}
+
 impl Provider {
     // The model the resolver keeps carries the slug that picks aiohttp or a stub; OpenAI is named by the resolver itself
     pub fn from_deployment(deployment: &ChatDeployment) -> Result<Self, OperationError> {
@@ -116,113 +163,25 @@ impl Provider {
             }),
         }
     }
-
-    #[must_use]
-    pub const fn name(&self) -> &'static str {
-        match self {
-            Self::OpenAi(_) => OpenAi::NAME,
-            Self::AiohttpOpenAi(_) => AiohttpOpenAi::NAME,
-            Self::Azure(_) => Azure::NAME,
-            Self::AzureAi(_) => AzureAi::NAME,
-            Self::Anthropic(_) => Anthropic::NAME,
-            Self::Bedrock(_) => Bedrock::NAME,
-            Self::VertexAi(_) => VertexAi::NAME,
-            Self::Gemini(_) => Gemini::NAME,
-            Self::XaiMistral(_) => XaiMistral::NAME,
-            Self::EmbeddingRerank(_) => EmbeddingRerank::NAME,
-            Self::Compatible(_) => Compatible::NAME,
-            Self::Legacy(_) => Legacy::NAME,
-            Self::SelfHosted(_) => SelfHosted::NAME,
-            Self::Subscription(_) => Subscription::NAME,
-            Self::MediaProviders(_) => MediaProviders::NAME,
-            Self::SpeechProviders(_) => SpeechProviders::NAME,
-        }
-    }
-
-    pub fn prepare(
-        &self,
-        request: &OperationRequest,
-        deployment: &Deployment,
-        catalog: &CatalogCapabilities,
-    ) -> Result<PreparedRequest, OperationError> {
-        match self {
-            Self::OpenAi(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::AiohttpOpenAi(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::Azure(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::AzureAi(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::Anthropic(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::Bedrock(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::VertexAi(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::Gemini(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::XaiMistral(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::EmbeddingRerank(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::Compatible(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::Legacy(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::SelfHosted(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::Subscription(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::MediaProviders(adapter) => adapter.prepare(request, deployment, catalog),
-            Self::SpeechProviders(adapter) => adapter.prepare(request, deployment, catalog),
-        }
-    }
-
-    // boxed so the sixteen arms stay a plain match; one request allocates one future
-    #[must_use]
-    pub fn execute<'call>(
-        &'call self,
-        client: &'call ProxiedClient,
-        prepared: &'call PreparedRequest,
-        deployment: &'call Deployment,
-    ) -> Pin<Box<dyn Future<Output = Result<Upstream, OperationError>> + Send + 'call>> {
-        match self {
-            Self::OpenAi(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::AiohttpOpenAi(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::Azure(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::AzureAi(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::Anthropic(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::Bedrock(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::VertexAi(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::Gemini(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::XaiMistral(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::EmbeddingRerank(adapter) => {
-                Box::pin(adapter.execute(client, prepared, deployment))
-            }
-            Self::Compatible(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::Legacy(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::SelfHosted(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::Subscription(adapter) => Box::pin(adapter.execute(client, prepared, deployment)),
-            Self::MediaProviders(adapter) => {
-                Box::pin(adapter.execute(client, prepared, deployment))
-            }
-            Self::SpeechProviders(adapter) => {
-                Box::pin(adapter.execute(client, prepared, deployment))
-            }
-        }
-    }
-
-    pub fn decode(
-        &self,
-        prepared: &PreparedRequest,
-        upstream: Upstream,
-    ) -> Result<OperationResult, OperationError> {
-        match self {
-            Self::OpenAi(adapter) => adapter.decode(prepared, upstream),
-            Self::AiohttpOpenAi(adapter) => adapter.decode(prepared, upstream),
-            Self::Azure(adapter) => adapter.decode(prepared, upstream),
-            Self::AzureAi(adapter) => adapter.decode(prepared, upstream),
-            Self::Anthropic(adapter) => adapter.decode(prepared, upstream),
-            Self::Bedrock(adapter) => adapter.decode(prepared, upstream),
-            Self::VertexAi(adapter) => adapter.decode(prepared, upstream),
-            Self::Gemini(adapter) => adapter.decode(prepared, upstream),
-            Self::XaiMistral(adapter) => adapter.decode(prepared, upstream),
-            Self::EmbeddingRerank(adapter) => adapter.decode(prepared, upstream),
-            Self::Compatible(adapter) => adapter.decode(prepared, upstream),
-            Self::Legacy(adapter) => adapter.decode(prepared, upstream),
-            Self::SelfHosted(adapter) => adapter.decode(prepared, upstream),
-            Self::Subscription(adapter) => adapter.decode(prepared, upstream),
-            Self::MediaProviders(adapter) => adapter.decode(prepared, upstream),
-            Self::SpeechProviders(adapter) => adapter.decode(prepared, upstream),
-        }
-    }
 }
+
+dispatch_to_adapters!(
+    OpenAi,
+    AiohttpOpenAi,
+    Azure,
+    AzureAi,
+    Anthropic,
+    Bedrock,
+    VertexAi,
+    Gemini,
+    XaiMistral,
+    EmbeddingRerank,
+    Compatible,
+    Legacy,
+    SelfHosted,
+    Subscription,
+    MediaProviders,
+    SpeechProviders,
+);
 
 mod tests;

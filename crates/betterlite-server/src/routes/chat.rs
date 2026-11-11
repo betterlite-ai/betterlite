@@ -14,7 +14,6 @@ use betterlite_error::envelope::{EnvelopeError, error_body_call_id};
 use betterlite_error::normalize::class::Class;
 use betterlite_error::normalize::provider::provider_facts;
 use betterlite_error::normalize::{ErrorFacts, Normalizer};
-use betterlite_models::controls::control_options::InvalidControlOption;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError};
@@ -155,7 +154,11 @@ async fn execute_chat(
 ) -> Response {
     let control = match control_options(request) {
         Ok(control) => control,
-        Err(error) => return control_failure(error, call, Some(deployment)),
+        Err(error) => {
+            let kind = ("invalid_request_error", Some(error.param().to_owned()));
+            let status = StatusCode::BAD_REQUEST;
+            return plain_failure(call, Some(deployment), status, kind, error.to_string());
+        }
     };
     if request.stream {
         return stream_chat(state, deployment, request, control, call).await;
@@ -203,24 +206,28 @@ fn render_answer(
     }
 }
 
-fn control_failure(
-    error: InvalidControlOption,
+// an error the route names itself: no provider answer, so the headers carry no upstream values
+fn plain_failure(
     call: &CallContext<'_>,
     deployment: Option<&ChatDeployment>,
+    status: StatusCode,
+    kind: (&str, Option<String>),
+    message: String,
 ) -> Response {
+    let (error_type, param) = kind;
     let body = ErrorBody {
         error: ErrorObject {
-            message: error.to_string(),
-            error_type: String::from("invalid_request_error"),
-            param: Some(error.param().to_owned()),
-            code: String::from("400"),
+            message,
+            error_type: error_type.to_owned(),
+            param,
+            code: status.as_u16().to_string(),
             provider_specific_fields: None,
             litellm_call_id: error_body_call_id(call.include_in_body, Some(call.id))
                 .map(str::to_owned),
         },
     };
     let headers = failure_headers(None, None, call.id, deployment);
-    (StatusCode::BAD_REQUEST, headers, Json(body)).into_response()
+    (status, headers, Json(body)).into_response()
 }
 
 // a provider call that ends without a route error is the server's own fault, so the client sees a 500
@@ -232,22 +239,19 @@ fn call_failure(
     let route = match error {
         CallError::Route(route) => route,
         CallError::Operation { .. } | CallError::Mismatched => {
-            let redactor = &call.errors.redactor;
-            let message = redactor.redact_internal_details(&error.to_string());
+            let message = call
+                .errors
+                .redactor
+                .redact_internal_details(&error.to_string());
             tracing::warn!(message, "chat request failed inside the provider call");
-            let body = ErrorBody {
-                error: ErrorObject {
-                    message,
-                    error_type: String::from("internal_server_error"),
-                    param: None,
-                    code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
-                    provider_specific_fields: None,
-                    litellm_call_id: error_body_call_id(call.include_in_body, Some(call.id))
-                        .map(str::to_owned),
-                },
-            };
-            let headers = failure_headers(None, None, call.id, deployment);
-            return (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(body)).into_response();
+            let kind = ("internal_server_error", None);
+            return plain_failure(
+                call,
+                deployment,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                kind,
+                message,
+            );
         }
     };
     failure(route, call, deployment)
