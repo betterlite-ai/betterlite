@@ -95,7 +95,8 @@ fn rejects_an_unknown_key_under_tracing() {
     let ConfigError::Unsupported { paths } = error else {
         panic!("expected unsupported keys, got {error:?}");
     };
-    assert_eq!(paths, ["general_settings.tracing.other"]);
+    // serde_ignored marks the Option wrapper in a path with a question mark
+    assert_eq!(paths, ["general_settings.tracing.?.other"]);
 }
 
 #[test]
