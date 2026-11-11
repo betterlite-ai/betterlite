@@ -153,27 +153,27 @@ fn stream_usage() {
         assert_stop_chunk(&chunks[1], Some((1, 2, 3)));
     }
     for outcome in both(
-        &Scenario::sse(&[r#"data: {"event":{"metadata":{"usage":{}}}}"#]),
+        &Scenario::sse(&["data: {\"event\":{\"metadata\":{\"usage\":{}}}}\n"]),
         &ids(1),
     ) {
         let chunks = outcome.emitted.unwrap();
         assert_eq!(chunks.len(), 1);
         assert_stop_chunk(&chunks[0], Some((0, 0, 0)));
     }
-    let partial = r#"data: {"event":{"metadata":{"usage":{"outputTokens":9}}}}"#;
+    let partial = "data: {\"event\":{\"metadata\":{\"usage\":{\"outputTokens\":9}}}}\n";
     for outcome in both(&Scenario::sse(&[partial]), &ids(1)) {
         assert_stop_chunk(&outcome.emitted.unwrap()[0], Some((0, 9, 0)));
     }
-    let independent = r#"data: {"event":{"metadata":{"usage":{"totalTokens":5}}}}"#;
+    let independent = "data: {\"event\":{\"metadata\":{\"usage\":{\"totalTokens\":5}}}}\n";
     for outcome in both(&Scenario::sse(&[independent]), &ids(1)) {
         assert_stop_chunk(&outcome.emitted.unwrap()[0], Some((0, 0, 5)));
     }
     let null_field =
-        r#"data: {"event":{"metadata":{"usage":{"inputTokens":null,"outputTokens":2}}}}"#;
+        "data: {\"event\":{\"metadata\":{\"usage\":{\"inputTokens\":null,\"outputTokens\":2}}}}\n";
     for outcome in both(&Scenario::sse(&[null_field]), &ids(1)) {
         assert_stop_chunk(&outcome.emitted.unwrap()[0], Some((0, 2, 0)));
     }
-    let combined = r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"x"}},"metadata":{"usage":{"inputTokens":4}}},"message":{}}"#;
+    let combined = "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"x\"}},\"metadata\":{\"usage\":{\"inputTokens\":4}}},\"message\":{}}\n";
     for outcome in both(&Scenario::sse(&[combined]), &ids(3)) {
         let chunks = outcome.emitted.unwrap();
         assert_eq!(contents(&chunks), ["x"]);
@@ -197,14 +197,14 @@ fn usage_failure(read: &str) {
 
 fn stream_usage_failures() {
     for read in [
-        r#"data: {"event":{"metadata":{"usage":null}}}"#,
-        r#"data: {"event":{"metadata":{"usage":5}}}"#,
-        r#"data: {"event":{"metadata":{"usage":{"inputTokens":"1"}}}}"#,
-        r#"data: {"event":{"metadata":5}}"#,
+        "data: {\"event\":{\"metadata\":{\"usage\":null}}}\n",
+        "data: {\"event\":{\"metadata\":{\"usage\":5}}}\n",
+        "data: {\"event\":{\"metadata\":{\"usage\":{\"inputTokens\":\"1\"}}}}\n",
+        "data: {\"event\":{\"metadata\":5}}\n",
     ] {
         usage_failure(read);
     }
-    let negative = r#"data: {"event":{"metadata":{"usage":{"inputTokens":-1}}}}"#;
+    let negative = "data: {\"event\":{\"metadata\":{\"usage\":{\"inputTokens\":-1}}}}\n";
     for outcome in both(&Scenario::sse(&[negative]), &ids(1)) {
         assert!(matches!(
             line_error(outcome.emitted.unwrap_err()),
@@ -216,20 +216,20 @@ fn stream_usage_failures() {
 }
 
 fn stream_terminal_event() {
-    for outcome in both(&Scenario::sse(&[r#"data: {"message":{}}"#]), &ids(1)) {
+    for outcome in both(&Scenario::sse(&["data: {\"message\":{}}\n"]), &ids(1)) {
         let chunks = outcome.emitted.unwrap();
         assert_eq!(chunks.len(), 1);
         assert_stop_chunk(&chunks[0], None);
     }
-    let with_content = r#"data: {"message":{"content":[{"text":"ignored"}]}}"#;
+    let with_content = "data: {\"message\":{\"content\":[{\"text\":\"ignored\"}]}}\n";
     for outcome in both(&Scenario::sse(&[with_content]), &ids(1)) {
         let chunks = outcome.emitted.unwrap();
         assert!(contents(&chunks).is_empty());
         assert_stop_chunk(&chunks[0], None);
     }
     let continued = [
-        r#"data: {"message":{}}"#,
-        r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"after"}}}}"#,
+        "data: {\"message\":{}}\n",
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"after\"}}}}\n",
     ];
     for outcome in both(&Scenario::sse(&continued), &ids(2)) {
         let chunks = outcome.emitted.unwrap();
@@ -238,9 +238,9 @@ fn stream_terminal_event() {
         assert_content_chunk(&chunks[1]);
     }
     let repeated = [
-        r#"data: {"message":{}}"#,
-        r#"data: {"message":{}}"#,
-        r#"data: {"event":{"metadata":{"usage":{}}}}"#,
+        "data: {\"message\":{}}\n",
+        "data: {\"message\":{}}\n",
+        "data: {\"event\":{\"metadata\":{\"usage\":{}}}}\n",
     ];
     for outcome in both(&Scenario::sse(&repeated), &ids(3)) {
         let chunks = outcome.emitted.unwrap();
@@ -257,8 +257,8 @@ fn stream_terminal_event() {
 
 fn multiline_data_not_joined() {
     let separate = [
-        r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"one"}}}}"#,
-        r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"two"}}}}"#,
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"one\"}}}}\n",
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"two\"}}}}\n",
     ];
     for outcome in both(&Scenario::sse(&separate), &ids(2)) {
         assert_eq!(contents(&outcome.emitted.unwrap()), ["one", "two"]);
@@ -288,7 +288,7 @@ fn bad_json_skipped() {
     let reads = [
         "data: {not json}\n",
         "data: [DONE]\n",
-        r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"ok"}}}}"#,
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"ok\"}}}}\n",
     ];
     for outcome in both(&Scenario::sse(&reads), &ids(1)) {
         assert_eq!(contents(&outcome.emitted.unwrap()), ["ok"]);
@@ -297,9 +297,9 @@ fn bad_json_skipped() {
     assert!(text.contains("Skipping non-JSON SSE line"));
     assert!(!text.contains("not json"));
     for (read, expected) in [
-        (r#"data: {"event":{"contentBlockDelta":5}}"#, true),
+        ("data: {\"event\":{\"contentBlockDelta\":5}}\n", true),
         (
-            r#"data: {"event":{"contentBlockDelta":{"delta":5}}}"#,
+            "data: {\"event\":{\"contentBlockDelta\":{\"delta\":5}}}\n",
             false,
         ),
     ] {
@@ -309,7 +309,7 @@ fn bad_json_skipped() {
             assert_eq!(matches!(error, LineError::DeltaNotObject), !expected);
         }
     }
-    let bad_text = r#"data: {"event":{"contentBlockDelta":{"delta":{"text":5}}}}"#;
+    let bad_text = "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":5}}}}\n";
     for outcome in both(&Scenario::sse(&[bad_text]), &ids(1)) {
         assert!(matches!(
             line_error(outcome.emitted.unwrap_err()),
@@ -355,8 +355,8 @@ fn bad_json_chunks_before_error() {
 fn fresh_id_created_zero() {
     let sequence = ids(6);
     let reads = [
-        r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"a"}},"metadata":{"usage":{}}}}"#,
-        r#"data: {"message":{}}"#,
+        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"a\"}},\"metadata\":{\"usage\":{}}}}\n",
+        "data: {\"message\":{}}\n",
     ];
     for outcome in both(&Scenario::sse(&reads), &sequence) {
         let chunks = outcome.emitted.unwrap();
@@ -580,12 +580,14 @@ fn agentcore_stream_body_cap(#[values(HandlerKind::Sync, HandlerKind::Async)] ki
     assert_eq!(run(kind, &at_limit, &ids(2)).emitted.unwrap().len(), 2);
     let mut over = Scenario::json("{}");
     over.reads = vec!["x".repeat(MAX_BODY_BYTES.saturating_add(1))];
-    let AgentCoreStreamError::Provider { cause, .. } =
-        run(kind, &over, &ids(2)).emitted.unwrap_err()
-    else {
-        panic!("a body over the cap fails as a provider error");
-    };
-    assert!(cause.cause.error.message.contains("larger than"));
+    let (status, headers, response_status) =
+        provider_fields(&run(kind, &over, &ids(2)).emitted.unwrap_err());
+    assert_eq!(status, 200);
+    assert_eq!(response_status, 200);
+    assert_eq!(
+        headers,
+        vec![("content-type".to_owned(), "application/json".to_owned())]
+    );
 }
 
 #[test]
