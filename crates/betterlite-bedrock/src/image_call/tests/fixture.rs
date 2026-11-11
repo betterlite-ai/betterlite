@@ -24,7 +24,12 @@ use crate::image_call::transport::{
     ClientFactory, ImageReply, ImageRequest, ImageTransport, TransferError,
 };
 
-pub(super) const NOW: SystemTime = SystemTime::UNIX_EPOCH;
+// 1_700_000_000 seconds is 2023-11-14T22:13:20Z, the instant the signing assertions name
+pub(super) fn now() -> SystemTime {
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000))
+        .unwrap()
+}
 
 pub(super) type Seen = Arc<Mutex<Vec<ImageRequest>>>;
 

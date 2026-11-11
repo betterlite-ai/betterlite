@@ -10,7 +10,7 @@ use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{
-    DiscardingSink, Factory, FixtureClient, NOW, Reply, Source, capture, logging_state,
+    DiscardingSink, Factory, FixtureClient, Reply, Source, capture, logging_state, now,
     prepost_env, redactor,
 };
 use crate::image_call::error::ImageCallError;
@@ -55,7 +55,7 @@ pub(super) fn call<'text>(
         timeout: None,
         aimg_generation: false,
         environment: ImageEnvironment::default(),
-        now: NOW,
+        now: now(),
     }
 }
 
