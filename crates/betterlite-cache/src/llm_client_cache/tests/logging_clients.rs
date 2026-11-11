@@ -242,6 +242,27 @@ fn logging_client_without_a_stop_effect_is_still_evicted() {
 }
 
 #[test]
+fn dynamic_logging_cache_separates_empty_credentials_by_service_name() {
+    let time = Arc::new(Mutex::new(0.0_f64));
+    let stopped = Arc::new(Mutex::new(Vec::new()));
+    let cache = cache_with(&time, &stopped);
+    let empty = BTreeMap::new();
+
+    cache
+        .set_cache(&empty, "langfuse", FixtureLogger { name: "langfuse" })
+        .expect("set succeeds");
+
+    assert_eq!(
+        cache.get_cache(&empty, "datadog").expect("get succeeds"),
+        None
+    );
+    assert_eq!(
+        cache.get_cache(&empty, "langfuse").expect("get succeeds"),
+        Some(FixtureLogger { name: "langfuse" })
+    );
+}
+
+#[test]
 fn dynamic_logging_cache_replaces_a_service_name_credential_with_the_parameter() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));

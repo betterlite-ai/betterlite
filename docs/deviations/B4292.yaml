@@ -50,10 +50,11 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L38-L39
   - what: >-
       The logging client cache and the service trace id cache keep their values in typed native maps driven by native InMemoryCache
-      (LocalTtlCache) markers for expiry and capacity, instead of storing arbitrary Python objects in cache_dict.
+      (LocalTtlCache) markers for expiry and capacity, instead of storing arbitrary Python objects in cache_dict; InMemoryCache's
+      per-item size check has no counterpart for them.
     why: >-
       LocalTtlCache holds typed CacheValue entries; a logger handle or a trace id cannot be one, so the shared cache owns TTL and
-      eviction and the typed map holds the value.
+      eviction and the typed map holds the value. A native handle has no Python object size and is never serialized.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L20-L33
   - what: >-
       The logging client cache key hashes a length-prefixed concatenation of the sorted credential names and values plus the service
