@@ -431,6 +431,8 @@ fn json(text: &str) -> Json {
 #[case::async_speech("aspeech", "{}", Family::Speech)]
 #[case::image("image_generation", r#"{"data": [{"url": "u"}]}"#, Family::Image)]
 #[case::async_image("aimage_generation", r#"{"data": []}"#, Family::Image)]
+#[case::image_edit("image_edit", r#"{"data": [{"url": "u"}]}"#, Family::Image)]
+#[case::async_image_edit("aimage_edit", r#"{"data": []}"#, Family::Image)]
 #[case::transcription("transcription", r#"{"text": "hello"}"#, Family::Transcription)]
 #[case::async_transcription("atranscription", r#"{"text": "hello"}"#, Family::Transcription)]
 #[case::rerank("rerank", r#"{"results": [{"index": 0}]}"#, Family::Rerank)]

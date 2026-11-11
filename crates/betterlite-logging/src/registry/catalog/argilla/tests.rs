@@ -420,7 +420,10 @@ async fn a_sampled_out_sync_event_sends_nothing() {
         .log_success_event(&event())
         .expect("the event is accepted");
     drain(&adapter).await;
-    assert!(capture.calls().is_empty());
+    // the dataset lookup runs before the sampler, as ArgillaLogger.__init__ resolves it whatever the sampler decides
+    assert_eq!(capture.sent(ArgillaMethod::Get).len(), 1);
+    assert!(capture.sent(ArgillaMethod::Post).is_empty());
+    assert!(capture.sent(ArgillaMethod::Put).is_empty());
 }
 
 #[tokio::test(start_paused = true)]

@@ -81,13 +81,17 @@ fn inputs(environment: &[(&str, &str)]) -> CatalogInputs {
     }
 }
 
-fn event() -> LoggerEvent {
+fn event_from(payload: &str) -> LoggerEvent {
     LoggerEvent {
-        payload: Arc::new(serde_json::from_str(PAYLOAD).expect("the fixture payload decodes")),
+        payload: Arc::new(serde_json::from_str(payload).expect("the fixture payload decodes")),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
         stream: false,
         guardrail_snapshot: None,
     }
+}
+
+fn event() -> LoggerEvent {
+    event_from(PAYLOAD)
 }
 
 fn adapter(base: &str, key: Option<&str>) -> HeliconeAdapter {
@@ -250,6 +254,38 @@ fn assert_mapped_envelope(body: &Json) {
     assert_eq!(
         field(field(body, "providerResponse"), "status"),
         &number(200)
+    );
+}
+
+#[tokio::test]
+async fn a_vertex_ai_provider_routes_a_claude_model_to_the_custom_endpoint() {
+    let (base, served) = serve_once().await;
+    let adapter = adapter(&base, Some("helicone-key"));
+    let fixture = PAYLOAD.replace(
+        r#""model": "gpt-4o","#,
+        r#""model": "claude-3-5-sonnet@20240620",
+    "custom_llm_provider": "vertex_ai","#,
+    );
+    adapter
+        .log_success_event(&event_from(&fixture))
+        .expect("the event is accepted");
+    adapter.tracker.close();
+    adapter.tracker.wait().await;
+
+    let received = timeout(Duration::from_secs(5), served)
+        .await
+        .expect("the envelope is posted");
+    assert_eq!(received.request_line, "POST /custom/v1/log HTTP/1.1");
+    let body: Json = serde_json::from_slice(&received.body).expect("the posted body is JSON");
+    let request = field(&body, "providerRequest");
+    assert_eq!(
+        field(request, "url"),
+        &Json::Text("https://aiplatform.googleapis.com/v1".to_owned())
+    );
+    // a vertex_ai model keeps its name and skips the Claude response mapping
+    assert_eq!(
+        field(field(request, "json"), "model"),
+        &Json::Text("claude-3-5-sonnet@20240620".to_owned())
     );
 }
 

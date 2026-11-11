@@ -8,9 +8,11 @@ pub(super) fn response_object(call_type: &str, response: &Json) -> ResponseObj {
     match call_type {
         "embedding" | "aembedding" => ResponseObj::Embedding,
         "speech" | "aspeech" => ResponseObj::Speech,
-        "image_generation" | "aimage_generation" => ResponseObj::Image {
-            data: object_field(response, "data").cloned(),
-        },
+        "image_generation" | "aimage_generation" | "image_edit" | "aimage_edit" => {
+            ResponseObj::Image {
+                data: object_field(response, "data").cloned(),
+            }
+        }
         "transcription" | "atranscription" => ResponseObj::Transcription {
             text: text_field(response),
         },
