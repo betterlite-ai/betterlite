@@ -164,7 +164,7 @@ def decode_bodies(case: DecodeInput) -> Json:
                 logging_obj=cast(Logging, None),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L573
                 litellm_params=params,
             )
-        except ValueError:
+        except (AttributeError, ValueError):
             values.append({"ok": False})
         else:
             values.append({"ok": True, "batch": project_batch(batch)})
