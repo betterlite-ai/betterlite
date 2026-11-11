@@ -779,6 +779,9 @@ fn reply_defaults() {
     assert_eq!(reply.in_progress_at, None);
     assert!(reply.metadata.is_empty());
     assert_unset_fields(&reply);
+    let parsed: OriginalBatchRequest = serde_json::from_str("{}").expect("an empty request parses");
+    assert_eq!(parsed, empty_original());
+    assert_eq!(parsed.metadata, json_of("{}"));
 }
 
 fn assert_unset_fields(reply: &super::reply::BatchCreateReply) {
