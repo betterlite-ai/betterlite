@@ -2021,6 +2021,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "lru",
  "percent-encoding",
  "rstest",
  "rust_decimal",
