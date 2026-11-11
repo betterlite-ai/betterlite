@@ -4,12 +4,13 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use betterlite_db_admin::command_shell::{
-    AdminEnvironment, DbAdminBackend, Diagnostics as _, Streams, run,
+    AdminEnvironment, DbAdminBackend, DbAdminService, Diagnostics as _, Streams, run,
 };
-use betterlite_db_admin::commands::Operation;
+use betterlite_db_admin::commands::{DAILY_TOOL_SPEND_KEY, Operation};
 use tokio::runtime::Builder;
 
 use crate::database_views::{DatabaseViewsService, OFFLINE_TIMEOUT};
+use crate::spend_backfills::SpendBackfillsService;
 
 mod database_repair;
 mod database_startup;
@@ -25,6 +26,16 @@ fn backend() -> DbAdminBackend {
     backend
         .services
         .insert(Operation::DatabaseViews, Arc::new(views));
+    let backfills: Arc<dyn DbAdminService> = Arc::new(SpendBackfillsService);
+    backend
+        .services
+        .insert(DAILY_TOOL_SPEND_KEY, Arc::clone(&backfills));
+    backend
+        .services
+        .insert(Operation::KeyTotalSpend, Arc::clone(&backfills));
+    backend
+        .services
+        .insert(Operation::KeyTotalSpendFromLogs, backfills);
     backend
 }
 
