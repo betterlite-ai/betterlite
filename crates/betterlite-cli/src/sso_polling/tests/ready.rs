@@ -115,10 +115,9 @@ fn ready_retries_when_a_success_body_is_not_json() {
     let data = fixture.poll(&wait_options()).expect("the poll");
 
     assert!(data.is_some());
-    assert_eq!(
-        fixture.echo.recorded(),
-        vec!["Connection error (will retry): expected value at line 1 column 1"]
-    );
+    let notice = fixture.echo.recorded();
+    assert_eq!(notice.len(), 1);
+    assert!(notice[0].starts_with("Connection error (will retry): "));
     assert_eq!(fixture.sleeper.intervals(), vec![Duration::from_secs(2)]);
     assert_eq!(fixture.transport.calls().len(), 2);
 }
@@ -142,12 +141,12 @@ fn ready_notices_a_non_json_success_body_on_the_connection_error_schedule() {
     let data = fixture.poll(&options).expect("the poll");
 
     assert!(data.is_some());
-    assert_eq!(
-        fixture.echo.recorded(),
-        vec![
-            "Connection error (will retry): expected value at line 1 column 1",
-            "Connection error (will retry): expected value at line 1 column 1"
-        ]
+    let notices = fixture.echo.recorded();
+    assert_eq!(notices.len(), 2);
+    assert!(
+        notices
+            .iter()
+            .all(|message| message.starts_with("Connection error (will retry): "))
     );
 }
 
@@ -185,6 +184,22 @@ fn ready_times_out_when_the_success_body_is_never_json() {
     let notice = fixture.echo.recorded();
     assert_eq!(notice.len(), 1);
     assert!(notice[0].starts_with("Connection error (will retry): "));
+}
+
+#[test]
+fn ready_rejects_a_success_body_that_is_not_an_object() {
+    let fixture = PollFixture::new(
+        scripted_transport(vec![Reply::Response(response(200, r#"["ready"]"#))]),
+        Echo::default(),
+    );
+
+    let error = fixture.poll(&wait_options()).expect_err("the array body");
+
+    assert!(
+        error
+            .to_string()
+            .contains("does not match the poll data shape")
+    );
 }
 
 #[test]

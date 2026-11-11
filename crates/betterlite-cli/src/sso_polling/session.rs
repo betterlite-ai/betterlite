@@ -65,7 +65,7 @@ pub fn start_cli_sso_flow(
 }
 
 fn parse_start_body(url: &str, response: &HttpResponse) -> Result<CliSsoStartData, PollingError> {
-    let body: StartWire = match wire::decode(&response.body) {
+    let body: StartWire = match wire::decode_object(&response.body) {
         Ok(body) => body,
         Err(source) if source.is_data_error() => {
             return Err(PollingError::StartBody {

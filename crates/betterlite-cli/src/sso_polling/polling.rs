@@ -95,7 +95,7 @@ fn poll_attempt(poll: &ReadyPoll<'_>, attempt: u64) -> Result<Attempt, PollingEr
             }
         };
     if response.status == 200 {
-        let data: CliPollData = match wire::decode(&response.body) {
+        let data: CliPollData = match wire::decode_object(&response.body) {
             Ok(data) => data,
             Err(source) if source.is_data_error() => {
                 return Err(PollingError::PollData { source });
@@ -160,7 +160,7 @@ struct ErrorBody {
 
 #[must_use]
 pub fn response_error_detail(response: &HttpResponse) -> Option<String> {
-    let Ok(body) = serde_json::from_slice::<ErrorBody>(&response.body) else {
+    let Ok(body) = wire::decode_object::<ErrorBody>(&response.body) else {
         return None;
     };
     body.detail.filter(|detail| !detail.is_empty())

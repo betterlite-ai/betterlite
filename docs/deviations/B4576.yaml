@@ -9,3 +9,6 @@ deviations:
   - what: Arrow-key selection needs stdout to be a terminal as well as stdin; when stdout is redirected the numbered prompt is used instead.
     why: The selection display is written to stdout, so the console key reader only enters raw mode when that display can be seen; LiteLLM keys off stdin alone and would paint the menu into the redirected stream.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L403-L449
+  - what: A start or poll body that is valid JSON but not an object is a clean typed error; LiteLLM crashes with an unhandled AttributeError on data.get().
+    why: A crash on a malformed body is a bug no working setup can rely on, so betterlite reports it as a body-shape error instead of terminating the CLI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L575-L615
