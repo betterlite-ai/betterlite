@@ -272,38 +272,27 @@ fn name_list(count: usize) -> String {
 }
 
 #[rstest]
-#[case::callbacks("callbacks")]
-#[case::success_callback("success_callback")]
-#[case::failure_callback("failure_callback")]
-fn callback_request_list_over_the_limit_is_rejected(#[case] field: &str) {
+#[case::callbacks_over("callbacks", 101)]
+#[case::success_over("success_callback", 101)]
+#[case::failure_over("failure_callback", 101)]
+#[case::callbacks_at("callbacks", 100)]
+#[case::success_at("success_callback", 100)]
+#[case::failure_at("failure_callback", 100)]
+fn callback_request_list_is_bounded(#[case] field: &str, #[case] count: usize) {
     let mut fixture = setup();
-    let error = fixture
-        .call(
-            "completion",
-            &[],
-            chat_request(&format!(r#"{{"{field}":{}}}"#, name_list(101))),
-        )
-        .expect_err("101 names are over the limit");
-
-    assert_eq!(
-        error.to_string(),
-        format!("the {field} dynamic callback list holds 101 callbacks, at most 100 are allowed")
+    let outcome = fixture.call(
+        "completion",
+        &[],
+        chat_request(&format!(r#"{{"{field}":{}}}"#, name_list(count))),
     );
-}
 
-#[rstest]
-#[case::callbacks("callbacks")]
-#[case::success_callback("success_callback")]
-#[case::failure_callback("failure_callback")]
-fn callback_request_list_at_the_limit_is_accepted(#[case] field: &str) {
-    let mut fixture = setup();
-    fixture
-        .call(
-            "completion",
-            &[],
-            chat_request(&format!(r#"{{"{field}":{}}}"#, name_list(100))),
+    let message = outcome.err().map(|error| error.to_string());
+    let expected = (count > 100).then(|| {
+        format!(
+            "the {field} dynamic callback list holds {count} callbacks, at most 100 are allowed"
         )
-        .expect("100 names are within the limit");
+    });
+    assert_eq!(message, expected);
 }
 
 #[rstest]
