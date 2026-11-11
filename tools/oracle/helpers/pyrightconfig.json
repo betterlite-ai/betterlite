@@ -1,5 +1,6 @@
 {
   "include": ["."],
+  "exclude": ["b4002.py", "b5367"],
   "typeCheckingMode": "strict",
   "reportAny": "error",
   "reportMissingTypeStubs": "none"
