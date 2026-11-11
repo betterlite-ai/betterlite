@@ -61,7 +61,7 @@ description: >-
   Production reads. LiveToolReads and LiveSessionReads, in crates/betterlite-server/src/mcp/tool_session_reads.rs with a tests.rs beside it, are the production ToolReads and SessionReads. Their fields (struct literal) are B4668's object permission reads, B736's user lookup and the server manager's registry port. Keep the mapping from those error values to ToolReadError (Unloadable stays Unloadable) and SessionReadError in plain functions, so their tests need no Postgres.
 
 
-  No route reaches this code yet (B4726 to B4728 and the tool call path wire it in, and B137 registers the MCP routes), so the helper operation b4672 covers the three pure functions tool_is_granted, server_is_allowed and restricts_mcp. The HTTP cases come with those routes. B4670's pending HTTP cases are not added here for the same reason.
+  No route reaches this code yet (B4726 to B4728 and the tool call path wire it in, and B8626 and B8728 mount the MCP routes), so the helper operation b4672 covers the three pure functions tool_is_granted, server_is_allowed and restricts_mcp. The HTTP cases come with those routes. B4670's pending HTTP cases are not added here for the same reason.
 
 scope:
   paths:

@@ -147,8 +147,8 @@ out_of_scope:
   - B3570 owns the collector contract and provider_config.create_stream_collector; this task only calls it.
   - B173 owns the HTTPHandler and AsyncHTTPHandler send/iter/aiter/read/aread/close/aclose; this task only calls them through the client interface.
   - B252 owns Logging.flush_passthrough_collected_chunks and async_flush_passthrough_collected_chunks; this task only calls them via the logging object.
-  - Stream relay composition and guardrail translation owned by B101; this task only implements the lifecycle primitives.
-  - The llm_passthrough_route decorator and its request/response preparation are owned by B101.
+  - Stream relay composition is owned by B8690 and guardrail translation by B3573, B3574 and B8693; this task only implements the lifecycle primitives.
+  - The llm_passthrough_route decorator and its request/response preparation are owned by B8690.
   - AsyncPassthroughStreamingResponse.asend/athrow and PassthroughStreamingResponse.send/throw have no caller at the pin and are not implemented.
 
 pitfalls:

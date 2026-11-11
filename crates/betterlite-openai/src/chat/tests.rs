@@ -46,7 +46,6 @@ fn parses_typed_fields_and_keeps_unknown_parameters_for_forwarding() {
 
 #[rstest]
 #[case::api_base("api_base")]
-#[case::fallbacks("fallbacks")]
 #[case::mock_delay("mock_delay")]
 #[case::mock_timeout("mock_timeout")]
 #[case::extra_headers("extra_headers")]

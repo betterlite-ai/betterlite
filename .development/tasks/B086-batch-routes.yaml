@@ -114,7 +114,7 @@ dod:
   proof: [cancel-tests, oracle, new-cases]
 - text: >-
     cancellation_error_envelope makes upstream 429 with message=slow: non-ProxyException becomes
-    429/internal_server_error/null/"429" through B2400, preserving its message after B121 notice
+    429/internal_server_error/null/"429" through B2400, preserving its message after B4170 notice
     stripping. Existing ProxyException retains type/param/code and headers; x-litellm-call-id fills
     only an absent header when request_litellm_call_id finds a string. Failure hook precedes
     log_llm_api_exception and final mapping; early failures may lack a call id. These rules differ

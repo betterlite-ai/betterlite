@@ -1,0 +1,8 @@
+task: B8253
+deviations:
+  - what: The Rust methods take only model, messages, non_default_params and ignore_prompt_manager_model; prompt_id, prompt_variables, dynamic_callback_params, prompt_spec, prompt_label, prompt_version, the tools list, the logging object and ignore_prompt_manager_optional_params are not parameters.
+    why: The Python signature carries ten unused inputs that exist for the shared hook interface; Rust passes only what is used, and the caller passes only those.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/litellm_agent/litellm_agent_model_resolver.py#L25-L47
+  - what: The async method is named async_completion_prompt, not async_get_chat_completion_prompt.
+    why: The 30-character name rule forbids the LiteLLM name, and B4124's orchestration contract already uses this short name for the same hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/litellm_agent/litellm_agent_model_resolver.py#L50-L79

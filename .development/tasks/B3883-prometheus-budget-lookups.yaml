@@ -7,6 +7,8 @@ description: >-
   UserApiKeyCache interface, organization budget joins through get_org_object, and customer
   cache misses that emit nothing.
 
+  The carried team, key, user and org snapshots are B3890's types in betterlite-core, and betterlite-core depends on betterlite-logging, so this module can't import them. Define the snapshot input shapes here (plain structs with the same fields, one per entity); B9480, in betterlite-server, maps B3890's snapshots into them. Where this text says TeamBudgetSnapshot or OrgBudgetSnapshot, it means these shapes.
+
   The four async functions handle per-entity per-request budget metric emission after
   a deployment call completes:
 
@@ -238,7 +240,7 @@ out_of_scope:
     `_customer_budget_metrics_enabled()` (prometheus.py:161), which gate the per-request
     lookups at line 4190, are owned by B3882.
   - Authorization, billing rate calculation or budget enforcement; this task only reads values.
-  - Async orchestration and callback registration; that is in B111.
+  - Async orchestration and callback registration; B9480 runs the five lookups, B111 wires the hooks.
   - Configuration loading of cache settings, database retry policies or timeouts.
 
 pitfalls:

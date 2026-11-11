@@ -234,7 +234,7 @@ out_of_scope:
   - "_process_response_for_pii: owned by B3806 (response transformations)."
   - "_unmask_pii_text: owned by B3805 (entity actions and unmasking)."
   - "_SsePreface helper class/type: owned by framework marshaling, not built by this task. Used as a type marker in streaming."
-  - "apply_to_output, output_parse_pii configuration checks and defaults: owned by lifecycle/constructor tasks."
+  - "apply_to_output, output_parse_pii configuration checks and defaults: owned by B9463."
   - "Guardrail observation and exception handling in framework: owned by U1 (framework leaves)."
 
 pitfalls:
