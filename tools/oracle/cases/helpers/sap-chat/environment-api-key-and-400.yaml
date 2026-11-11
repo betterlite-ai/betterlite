@@ -1,0 +1,19 @@
+kind: helper
+name: sap-chat-environment-api-key-and-400
+call:
+  b5845:
+    operation: environments
+    calls:
+      - service_key: '{"client_id":"id","client_secret":"secret","auth_url":"https://auth.example.com/oauth/token","base_url":"https://api.example.com/v2"}'
+        environment: {}
+        session: {token: Bearer case-token, resource_group: rg1, deployment_url: https://dep.example.com/v2/}
+      - service_key: null
+        session: {token: Bearer case-token, resource_group: rg1, deployment_url: https://dep.example.com/v2/}
+      - service_key: ''
+        session: {token: Bearer case-token, resource_group: rg1, deployment_url: https://dep.example.com/v2/}
+      - service_key: '{}'
+        environment: {vars: {}, files: {}, home: /nowhere}
+      - service_key: '{"client_id":"only"}'
+        environment: {vars: {}, files: {}, home: /nowhere}
+env: {}
+compare: {ignore: []}
