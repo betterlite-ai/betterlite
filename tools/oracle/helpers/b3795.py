@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, TypeAlias, cast
 
+import litellm
 from litellm.proxy.guardrails.guardrail_hooks.straiker import straiker
 from litellm.types.guardrails import GuardrailEventHooks, Mode
 from litellm.types.proxy.guardrails.guardrail_hooks.straiker import StraikerWebhookUsage
@@ -9,6 +10,9 @@ from litellm.types.utils import ModelResponse
 # ruff: noqa: SLF001
 # pyright: reportPrivateUsage=false
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+# an unknown model makes get_llm_provider print to stdout, which corrupts the helper JSON.
+litellm.suppress_debug_info = True
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj

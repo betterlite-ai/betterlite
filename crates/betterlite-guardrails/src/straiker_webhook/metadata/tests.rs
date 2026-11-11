@@ -120,7 +120,7 @@ fn project(scenario: &Scenario) -> Json {
 )]
 #[case::identity_ignores_non_object_metadata(
     Scenario::Identity(r#"{"metadata":5,"litellm_metadata":"text"}"#),
-    parsed("null")
+    parsed("{}")
 )]
 #[case::opaque_ignores_non_object_metadata(
     Scenario::Opaque {
