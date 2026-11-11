@@ -1,0 +1,13 @@
+kind: helper
+name: call-setup-pre-call-rule-failure
+call:
+  b5367:
+    action: setup
+    call_type: completion
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: blocked}]
+      litellm_call_id: call-3
+    rules: [false]
+env: {}
+compare: {ignore: []}

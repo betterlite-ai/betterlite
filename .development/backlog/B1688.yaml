@@ -1,7 +1,7 @@
 id: B1688
 milestone: M4 keys, spend and management
 title: Prepare completion billing candidates and text accounting inputs
-status: todo
+status: done
 depends_on: [B171, B174, B196, B204, B579, B906, B1668, B1678, B1681, B1682, B1683]
 file: tasks/B1688-completion-billing-inputs.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/litellm_core_utils/llm_response_utils/get_formatted_prompt.py"
 parent: B004
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1293

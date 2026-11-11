@@ -1,0 +1,71 @@
+kind: helper
+name: bedrock-invoke-primitives-prompt-template-selection
+call:
+  bedrock_invoke_primitives:
+    prompt_template_selection:
+      cases:
+        - model: invoke/anthropic.claude-v2
+          provider: anthropic
+          messages: [{role: user, content: hi}]
+          custom_prompt_dict:
+            invoke/anthropic.claude-v2:
+              roles:
+                user: {pre_message: '[INST] ', post_message: ' [/INST]'}
+              initial_prompt_value: '<s>'
+              final_prompt_value: '</s>'
+        - model: anthropic.claude-v2
+          provider: anthropic
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+            - {role: assistant, content: a}
+        - model: amazon.titan-text-express-v1
+          provider: amazon
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+            - {role: assistant, content: a}
+        - model: mistral.mixtral-8x7b-instruct
+          provider: mistral
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+            - {role: assistant, content: a}
+        - model: meta.llama2-13b-chat
+          provider: meta
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+            - {role: assistant, content: a}
+        - model: llama/meta.llama2-13b-chat
+          provider: llama
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+            - {role: assistant, content: a}
+        - model: meta.llama3-8b-instruct-v1:0
+          provider: meta
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+        - model: cohere.command-r-v1:0
+          provider: cohere
+          messages: [{role: user, content: hi}]
+        - model: deepseek_r1/deepseek.r1-v1:0
+          provider: deepseek_r1
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+        - model: ai21.j2-mid-v1
+          provider: ai21
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+            - {role: assistant, content: a}
+        - model: ai21.j2-mid-v1
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+            - {role: assistant, content: a}
+env: {}
+compare: {ignore: []}

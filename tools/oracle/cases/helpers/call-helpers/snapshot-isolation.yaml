@@ -1,0 +1,11 @@
+kind: helper
+name: snapshot-isolation
+call:
+  call_helpers:
+    function: snapshot_isolation
+    record:
+      metadata: {litellm_parent_otel_span: span-a, n: 1}
+      litellm_metadata: {litellm_parent_otel_span: span-b}
+      value: {x: 1, items: [true, null, t]}
+env: {}
+compare: {ignore: []}

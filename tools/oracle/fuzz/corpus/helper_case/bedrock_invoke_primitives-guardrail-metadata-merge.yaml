@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-invoke-primitives-guardrail-metadata-merge-seed
+call:
+  bedrock_invoke_primitives:
+    guardrail_metadata_merge:
+      merges:
+        - headers: {x-amzn-bedrock-guardrailidentifier: caller}
+          optional_params: {guardrailConfig: {guardrailIdentifier: derived}}
+      error: {message: boom, status_code: 400, headers: {retry-after: '1'}}
+env: {}
+compare: {ignore: []}

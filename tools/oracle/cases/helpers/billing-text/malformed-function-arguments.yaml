@@ -1,0 +1,37 @@
+kind: helper
+name: billing-text-malformed-function-arguments
+call:
+  billing_text:
+    calls:
+      - function: formatted_prompt
+        call_type: completion
+        data:
+          messages:
+            - tool_calls: [{function: {}}]
+      - function: formatted_prompt
+        call_type: completion
+        data:
+          messages:
+            - content: [{text: x}]
+      - function: formatted_prompt
+        call_type: completion
+        data:
+          messages:
+            - content: [{type: text}]
+      - function: formatted_prompt
+        call_type: completion
+        data: {}
+      - function: formatted_prompt
+        call_type: text_completion
+        data: {}
+      - function: formatted_prompt
+        call_type: embedding
+        data:
+          input: [5]
+      - function: formatted_prompt
+        call_type: completion
+        data:
+          messages:
+            - tool_calls: 5
+env: {}
+compare: {ignore: []}

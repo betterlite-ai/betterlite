@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock-invoke-primitives-provider-family-selection
+call:
+  bedrock_invoke_primitives:
+    provider_family_selection:
+      models:
+        - anthropic.claude-v2
+        - invoke/anthropic.claude-v2
+        - invoke/invoke/anthropic.claude-v2
+        - anthropic/model-name
+        - custom/anthropic-model
+        - us.amazon.nova-pro-v1:0
+        - AMAZON.NOVA-LITE-V1:0
+        - amazon.titan-text-express-v1
+        - llama/arn:aws:bedrock:us-east-1:1:imported-model/x
+        - meta.llama3-8b-instruct-v1:0
+        - deepseek_r1/deepseek.r1-v1:0
+        - qwen.qwen3-32b-v1:0
+        - qwen.qwen2-72b-v1:0
+        - twelvelabs.marengo-embed-2-7-v1:0
+        - openai.gpt-oss-20b
+        - stability.stable-image-core-v1:1
+        - moonshot.kimi-k2
+        - ai21.j2-mid-v1
+        - cohere.command-r-v1:0
+        - mistral.mixtral-8x7b-instruct
+        - unmatched-model
+        - ''
+env: {}
+compare: {ignore: []}

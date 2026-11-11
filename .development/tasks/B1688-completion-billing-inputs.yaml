@@ -40,6 +40,13 @@ description: >-
   226 nonblank lines; allow 250 implementation, 270 tests and 180 oracle integration lines.
 scope:
   paths:
+    - "tools/oracle/helpers/b5367/__init__.py"
+    - "tools/oracle/helpers/b5367/flags.py"
+    - "tools/oracle/helpers/b4002.py"
+    - "tools/oracle/helpers/**"
+    - "tools/oracle/helpers/pyrightconfig.json"
+    - "tools/oracle/helpers/b3937.py"
+    - "tools/oracle/helpers"
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/cost/prepare.rs
     - crates/betterlite-core/src/cost/prepare/**

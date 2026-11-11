@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-aws-federation-fixed-region
+call:
+  vertex_aws_federation:
+    aws_region_name: ap-south-1
+    aws_session_name: oracle-session
+    audience: //iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/pool/providers/provider
+env: {}
+compare: {ignore: []}

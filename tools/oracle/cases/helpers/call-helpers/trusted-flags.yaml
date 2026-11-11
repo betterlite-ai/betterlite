@@ -1,0 +1,36 @@
+kind: helper
+name: trusted-flags
+call:
+  call_helpers:
+    function: trusted_flags
+    steps:
+      - function: litellm_metadata
+        litellm_params:
+          metadata: {user_api_key_hash: caller, drop: 1}
+          litellm_metadata: {user_api_key_alias: alias, keep: 2}
+      - function: litellm_metadata
+        litellm_params: {litellm_metadata: {user_api_key_alias: alias}}
+      - function: litellm_metadata
+        litellm_params: {metadata: {user: u}}
+      - function: litellm_metadata
+        litellm_params: {metadata: {}, litellm_metadata: {}}
+      - function: litellm_metadata
+      - function: stamped_oauth_token
+        metadata: {used_client_oauth_token: false}
+        litellm_params: {litellm_metadata: {used_client_oauth_token: true}}
+      - function: stamped_oauth_token
+        metadata: {used_client_oauth_token: false}
+        litellm_params: {litellm_metadata: {other: 1}}
+      - function: stamped_oauth_token
+        metadata: {used_client_oauth_token: false}
+        litellm_params: {litellm_metadata: {used_client_oauth_token: null}}
+      - function: stamped_oauth_token
+        litellm_params: {litellm_metadata: {other: 1}}
+      - function: add_missing_spend_metadata
+        litellm_metadata: {user_api_key_hash: internal, keep: 1}
+        metadata: {user_api_key_hash: caller, user_api_key_team_id: t, user: u}
+      - function: add_missing_spend_metadata
+        litellm_metadata: {}
+        metadata: {xuser_api_keyx: 1}
+env: {}
+compare: {ignore: []}
