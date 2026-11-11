@@ -4,7 +4,7 @@ use std::error::Error as _;
 use std::fs;
 use std::sync::Arc;
 
-use tracing::subscriber::set_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use betterlite_cache::backend::CacheBackend as _;
 use betterlite_cache::cache_key::value::KeyValue;
@@ -19,6 +19,16 @@ fn local_bridge() -> RedisValues {
     RedisValues {
         cache: Arc::new(local_cache()),
     }
+}
+
+fn capture_logs() -> (tempfile::NamedTempFile, DefaultGuard) {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    (log, set_default(subscriber))
 }
 
 #[tokio::test]
@@ -44,6 +54,7 @@ async fn the_bridge_refuses_a_cache_without_a_redis_backend() {
 
 #[tokio::test]
 async fn the_bridge_swallows_a_redis_write_failure() {
+    let (log, _guard) = capture_logs();
     let bridge = RedisValues {
         cache: Arc::new(unreachable_redis_cache().await),
     };
@@ -55,6 +66,8 @@ async fn the_bridge_swallows_a_redis_write_failure() {
         .batch_cache_write("key", CacheValue::Text("value".to_owned()), None)
         .await
         .expect("a failed write is logged, not raised");
+    let written = fs::read_to_string(log.path()).unwrap();
+    assert!(written.contains("LiteLLM Cache: exception in add_cache"));
 }
 
 #[test]
@@ -77,13 +90,7 @@ fn the_console_prints_nothing() {
 
 #[test]
 fn the_logger_writes_the_error_payload() {
-    let log = tempfile::NamedTempFile::new().unwrap();
-    let subscriber = tracing_subscriber::fmt()
-        .without_time()
-        .with_ansi(false)
-        .with_writer(Arc::new(log.reopen().unwrap()))
-        .finish();
-    let _guard = set_default(subscriber);
+    let (log, _guard) = capture_logs();
     assert!(ErrorLogger.error(&Payload::String("boom".to_owned())));
     let written = fs::read_to_string(log.path()).unwrap();
     assert!(written.contains("boom"));
