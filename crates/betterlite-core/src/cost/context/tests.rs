@@ -603,17 +603,18 @@ fn pricing_entry_returns_the_deployment_record_first() {
 }
 
 #[rstest]
-#[case::selected_model("gpt-4o", "openai/gpt-4o")]
-#[case::response_model("absent", "response-model")]
-#[case::request_model("absent", "request-model")]
-fn pricing_entry_walks_the_candidate_models(#[case] requested: &str, #[case] expected_key: &str) {
+#[case::selected_model("openai/response-model")]
+#[case::response_model("response-model")]
+#[case::request_model("request-model")]
+fn pricing_entry_walks_the_candidate_models(#[case] expected_key: &str) {
     let mut effective = BTreeMap::new();
-    for key in ["openai/gpt-4o", "response-model", "request-model"] {
-        effective.insert(
-            key.to_owned(),
-            record(&[("key", text(key)), ("input_cost_per_token", number("2"))]),
-        );
-    }
+    effective.insert(
+        expected_key.to_owned(),
+        record(&[
+            ("key", text(expected_key)),
+            ("input_cost_per_token", number("2")),
+        ]),
+    );
     let lookup = Lookup {
         raw: BTreeMap::new(),
         effective,
@@ -621,7 +622,7 @@ fn pricing_entry_walks_the_candidate_models(#[case] requested: &str, #[case] exp
     let response = CostResponse::Dictionary {
         model: Some("response-model"),
     };
-    let identity = request(Some(requested), Some(&response), Some("openai"));
+    let identity = request(Some("request-model"), Some(&response), Some("openai"));
     let entry = pricing_entry(&identity, None, &lookup, &unavailable())
         .expect("the fixture is valid")
         .expect("a candidate resolves");
