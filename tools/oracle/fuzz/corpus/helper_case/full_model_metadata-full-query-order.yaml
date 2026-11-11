@@ -1,0 +1,12 @@
+kind: helper
+name: full-model-metadata-full-query-order
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        fixture/model: {litellm_provider: openai, mode: chat}
+      cache_maxsize: 4
+    steps:
+      - {op: call, model: fixture/model, custom_llm_provider: openai, parameters: {kind: value, body: [temperature]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,37 @@
+task: B206
+deviations:
+  - what: >-
+      process_response_headers drops cookie and CORS header names in both the raw and the
+      llm_provider-prefixed form, where LiteLLM prefixes set-cookie, cookie and the five access-control
+      names and keeps the prefixed copies in the provider header projection.
+    why: >-
+      B184 keeps provider cookies and cross-origin policy headers out of every proxy response; the helper
+      is the single place provider headers are projected, so the same names are dropped there instead of
+      being carried into additional_headers. Other provider headers, including HTTP framing and browser
+      security names, still survive prefixing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L491
+  - what: >-
+      coerce_token_limit returns no limit when the configured value lies outside the i64 range, where
+      LiteLLM's Python int keeps an arbitrarily large value.
+    why: >-
+      The typed limit is an i64 so every consumer compares it without a checked conversion; a token limit
+      past 9.2e18 is not a usable limit, and its only other effect in LiteLLM is a larger entry in the
+      /v1/models listing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L168-L194
+  - what: >-
+      safe_divide and safe_divide_seconds divide rust_decimal values where LiteLLM divides binary floats,
+      so a quotient a float cannot represent exactly keeps its full decimal digits.
+    why: >-
+      Money and spend arithmetic in betterlite is decimal by rule, and these helpers feed token and spend
+      ratios. The defaults for a zero denominator and for a nonpositive denominator are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L86-L104
+  - what: >-
+      normalize_drop_params, drop_params_flag and drop_params_env_flag read a text value with the shared
+      betterlite-env bool parser, which takes true, false, 1, 0, yes, no, on and off in any case. LiteLLM's
+      pydantic TypeAdapter(bool) also takes the single-letter spellings y, t, n and f, which betterlite treats
+      as malformed: a request flag warns and stays off, an env value warns and turns on.
+    why: >-
+      docs/compatibility.md gives env text its one shared parser and names the eight accepted spellings, and
+      the no-python-habits ast-grep rule keeps text-to-bool out of other crates. The single-letter spellings
+      are Python's boolean literal grammar rather than a value a deployment writes in a flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L51-L60
