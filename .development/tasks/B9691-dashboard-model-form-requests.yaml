@@ -1,0 +1,166 @@
+id: B9691
+title: Prove the add-model and auto-router form requests and drop the team-model paid gate
+description: >-
+  Add HTTP oracle cases for the requests the Add Model and Auto Routers tabs send, and a
+  reviewed 80-model-forms.patch that removes the one premiumUser gate in these forms. B9090
+  takes in the covered files unchanged and B9091 builds them; nothing in the React tree is
+  ported. Every route has a backend owner, so no handler is registered here.
+
+  The paid gate. AddModelForm disables the Team-BYOK Model switch and the TeamDropdown when
+  premiumUser is false and shows "This is an enterprise-only feature. Upgrade to premium to
+  restrict model+credential combinations to a specific team." The backend mirror is
+  can_user_make_team_model_call: it raises 403 not_premium_user before the team-admin check.
+  Under the no-paid-tier decision B1215 and B832 already drop that license branch and keep the
+  proxy-admin and team-admin rule. The patch enables both controls, drops the tooltip text and
+  keeps the (isAdmin || !isTeamAdmin) visibility, the team-required scope from
+  modelCreationScope and the required-team validation. Do not set premium_user anywhere.
+  ui/dashboard/tests/model-forms/upstream-tests.json reruns the retained
+  AddModelForm.integration.test.tsx, handle_add_model_submit.test.tsx,
+  add_auto_router_tab.integration.test.tsx and edit_auto_router_modal.integration.test.tsx; the
+  patch changes only the enterprise-only assertions at L330-L355 of the first one. A new
+  component test there renders the form with premiumUser false and checks that the switch is
+  enabled and that submitting with a team sends model_info.team_id.
+
+  Add-model requests. The form loads provider metadata from GET /public/providers/fields (no
+  auth, B3190, mounted by B8676 and B8681), credentials from GET /credentials (B1601),
+  guardrail and tag lists (B9735's cases), and model access groups through GET
+  /models?include_model_access_groups=True&only_model_access_groups=True, the capitalized
+  strings modelAvailableCall(token,"","",false,null,true,true) sends with
+  return_wildcard_routes left out (B007). B9735's models-ui-flags-and-team-scope is about
+  the team and expand flags, so add access-group-names-only with this exact pair, reading
+  data[].id and checking that plain model names are absent. prepareModelAddRequest
+  sends one POST /model/new per model mapping, body {model_name, litellm_params, model_info}:
+  per-million input/output prices divided by 1e6, cache_read_input_token_cost defaulting to the
+  converted input price, cache_creation_input_token_cost left out when blank, custom_llm_provider
+  mapped through provider_map, base_model, team_id, mode and model_access_group moved into
+  model_info (as access_groups), litellm_extra_params and model_info_params JSON spread into
+  their objects, PTU fields as numbers and ISO UTC strings, and the all-wildcard choice turned
+  into <provider>/*. B1215 owns POST /model/new and B838 the delete. Its planned cases send
+  minimal bodies; add a two-mapping create, a wildcard create, a priced create read back through
+  /v2/model/info, a team create by a proxy admin and by a team admin, and a team create for a
+  team the caller does not administer that must stay 403. The team-create cases set
+  native_feature_eligibility true (B1644) because stock LiteLLM answers not_premium_user there.
+  The Test Connect button sends POST /health/test_connection with the prepared
+  litellm_params and model_info and mode (B4446); B9690 covers the detail-page body, so add
+  only the unsaved-form body with an inline api_key and a credential name.
+
+  Auto-router requests. The complexity tab reads GET /public/complexity_router/scorer_defaults
+  and GET /public/autorouter_presets (B3192 under B077), the classifier prompt editor sends GET
+  /auto_router/classifier/default_prompt?context_window_size=<n>&tier_labels=<JSON array>&classification_rubric=<text>
+  and the opening prompt editor POSTs the same path with {context_window_size,
+  tier_definitions or tier_labels plus classification_rubric, classification_prompt?,
+  classification_examples?} (B840). Availability polls POST /auto_router/availability
+  {complexity_router_config, team_id?, saved_model_id?} after a 300 ms debounce and Save
+  first sends POST /auto_router/validate_complexity_router_config {complexity_router_config,
+  team_id?} (B379). The routing tester sends POST /auto_router/test_routing {prompt,
+  complexity_router_config, saved_model_id?, default_model?, router_name?, team_id?} (B349)
+  and the connection tester sends, per tier model group, POST /v1/chat/completions
+  {model, messages:[{role:"user",content:"test from litellm"}], ...requestParams} or POST
+  /v1/embeddings {model, input:"test from litellm"} (B004, B006). handleAddAutoRouterSubmit
+  then sends POST /model/new {model_name, litellm_params:{model:"auto_router/complexity_router",
+  complexity_router_config, complexity_router_default_model, compression fields when set},
+  model_info:{team_id?, access_groups?}}. AutoRoutersPanel lists through /v2/model/info
+  (B850, covered by B9690) and deletes with POST /model/delete {id}. edit_auto_router_modal
+  validates, then sends PATCH /model/<id>/update with {model_name, litellm_params (the stored
+  params with the new complexity_router_config, default model and compression patch),
+  model_info with access_groups}, or for a member-managed router only {litellm_params:
+  {complexity_router_config, complexity_router_default_model}}; the legacy semantic router
+  sends auto_router_config, auto_router_default_model and auto_router_embedding_model (B835).
+  Add the default-prompt GET and POST, an availability call with a missing tier model, a
+  failing and a passing validation, a test_routing call against saved and unsaved configs, the
+  create, both edit bodies, a delete and the member-managed edit by a team member.
+
+  Use B860's Postgres fixture with B5076's bootstrap, store_model_in_db true and mock upstream
+  deployments for every tier model so no case reaches a provider. Compare status, error
+  type/param/code and the stable bodies the forms read. Coverage audit: no on-disk case sends
+  any of these bodies; the owners' planned cases (B1215 create-minimal, B379 and B349 config
+  checks, B840 default-prompt) use generic configs. Reuse an owner case that is already on disk
+  and byte-identical; otherwise add the page one. About 60 patch, 120 component-test and 520
+  case lines.
+scope:
+  paths:
+    - ui/dashboard/patches/80-model-forms.patch
+    - ui/dashboard/patches/80-model-forms.json
+    - ui/dashboard/tests/model-forms/**
+    - tools/oracle/cases/ui/model-forms/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_model/AddModelForm.tsx#L327-L385
+    why: The Team-BYOK switch and TeamDropdown are disabled by premiumUser alone.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_model/AddModelForm.tsx#L84-L163
+    why: Form data sources and the creation scope the patch must keep.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_model/handle_add_model_submit.tsx#L6-L229
+    why: One create per mapping, price conversion, field placement and the wildcard rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_model/handle_add_auto_router_submit.tsx#L15-L50
+    why: The complexity auto-router create body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/edit_auto_router/edit_auto_router_modal.tsx#L541-L613
+    why: Validate first, then the full or member-managed PATCH body, and the semantic-router body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_model/AutoRouterAvailability.tsx#L21-L44
+    why: The debounced availability POST.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L21-L84
+    why: Default and assembled classifier prompt requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L414-L456
+    why: Public provider fields, scorer defaults and presets, sent without auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L2255-L2340
+    why: Tier connection test bodies, routing test and config validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1994-L2015
+    why: The backend not_premium_user branch ahead of the team-admin check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2352-L2557
+    why: B1215's /model/new decorator and team handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2984-L3065
+    why: B840's GET and POST default-prompt decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L355-L615
+    why: B379's validate and availability and B349's test_routing decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L400-L430
+    why: B3190 provider fields and B3192 scorer defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L559-L575
+    why: B3192's autorouter presets.
+dod:
+  - text: Add-model creates, the form connection test and the provider, credential and access-group reads match LiteLLM through the booted proxy.
+    proof: [model-form-cases, oracle]
+  - text: Auto-router prompt, availability, validation, routing test, create, both edit bodies and delete match LiteLLM.
+    proof: [model-form-cases, oracle]
+  - text: The Team-BYOK controls work without a paid claim while team scope rules and server checks stay in force.
+    proof: [model-form-components, model-form-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: model-form-cases
+      why: No booted-proxy case sends the add-model or auto-router form bodies.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/model-forms)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/model-forms
+    - id: model-form-components
+      why: The retained form keeps the paid gate or sends a different body after the patch.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/model-forms
+oracle_cases:
+  - tools/oracle/cases/ui/model-forms/access-group-names-only.yaml
+  - tools/oracle/cases/ui/model-forms/create-two-mappings.yaml
+  - tools/oracle/cases/ui/model-forms/create-wildcard-provider.yaml
+  - tools/oracle/cases/ui/model-forms/create-priced-and-read-back.yaml
+  - tools/oracle/cases/ui/model-forms/create-team-model-admin-eligible-mit.yaml
+  - tools/oracle/cases/ui/model-forms/create-team-model-foreign-team-denied.yaml
+  - tools/oracle/cases/ui/model-forms/unsaved-form-connection-test.yaml
+  - tools/oracle/cases/ui/model-forms/classifier-default-and-assembled-prompt.yaml
+  - tools/oracle/cases/ui/model-forms/availability-and-validation.yaml
+  - tools/oracle/cases/ui/model-forms/routing-test-saved-and-unsaved.yaml
+  - tools/oracle/cases/ui/model-forms/tier-connection-tests.yaml
+  - tools/oracle/cases/ui/model-forms/auto-router-create-edit-delete.yaml
+  - tools/oracle/cases/ui/model-forms/member-managed-router-edit.yaml
+deviations:
+  - what: The add-model form enables the Team-BYOK switch and team picker without premiumUser, and a team-scoped create is not refused for missing a license.
+    why: README decision of 2026-10-24 has no paid tier; B1215 and B832 already remove the backend license branch and keep the team-admin check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_model/AddModelForm.tsx#L336-L381
+out_of_scope:
+  - B9090 retains every unpatched function under add_model, edit_auto_router and AutoRouters; B9091 builds them and B146 drives the forms in the browser.
+  - B1215, B835, B838, B840, B349, B379, B3190, B3192, B1601, B4446, B007, B004 and B006 own the handlers; B8676 and B8681 own the public mounts.
+  - The deployed table, detail and credential tab are B9690's; router settings and fallbacks are B9692's.
+pitfalls:
+  - A form with two model mappings sends two POST /model/new requests; a case that sends one body proves nothing about the second.
+  - cache_read_input_token_cost copies the already divided input price, so dividing again sends a value a million times too small.
+  - The member-managed edit sends only litellm_params; a full body from a team member is refused differently.
+  - The availability query is debounced, so the browser sends one POST per settled config, not one per keystroke.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

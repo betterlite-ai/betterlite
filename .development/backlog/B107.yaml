@@ -2,8 +2,8 @@ id: B107
 milestone: M6 guardrails
 title: Third-party guardrails, A to L
 status: todo
-depends_on: [B3750, B3751, B3752, B3753, B3754, B3755, B3756, B3757, B3758, B3759, B3760, B3761, B3762, B3763, B3764, B3765, B3766, B3767, B3768, B3769, B3770, B3771, B3772, B3773, B3774, B3775, B3776, B3777, B3778, B3779, B218, B2227]
-file: null
+depends_on: [B9450, B9451, B3750, B3751, B3752, B3753, B3754, B3755, B3762, B3766, B3767, B3768, B3769, B3770, B3771, B3772, B3776, B3777, B3778, B8522, B3662, B3665, B3680, B3683, B8217, B8390, B8392, B8399, B8521, B8610, B8613, B8666, B8741, B8742]
+file: tasks/B107-third-party-guardrail-http.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/{aim,akto,aporia_ai,cisco_ai_defense,conduct,crowdstrike_aidr,deepkeep,generic_guardrail_api,grayswan,guardrails_ai,headroom,lasso}/__init__.py"
   - "litellm/proxy/guardrails/guardrail_hooks/aim/aim.py"
@@ -21,6 +21,7 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/example_config.yaml"
   - "litellm/proxy/guardrails/guardrail_hooks/{lakera_ai,lakera_ai_v2}.py"
   - "litellm/types/proxy/guardrails/guardrail_hooks/conduct.py"
+  - "litellm/proxy/common_utils/callback_utils.py"
 parent: null
 split_from: null
 resolution: null

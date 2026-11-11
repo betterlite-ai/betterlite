@@ -3,7 +3,7 @@ title: Anthropic chat parameter and context mapping
 description: >-
   Add AnthropicOptions and the final parameter mapper, composing thinking and tool policy. Resolve max_tokens through
   model output capacity with the pinned fallback, stop sequences, user metadata, sampling, web search and context-management
-  edits. Treat native compaction options as wire fields only; B100 executes compression. No cost computation is
+  edits. Treat native compaction options as wire fields only; B3545 and B336 execute native compaction. No cost computation is
   performed.
 
 

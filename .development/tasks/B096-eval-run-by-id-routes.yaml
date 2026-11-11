@@ -1,0 +1,127 @@
+id: B096
+title: Eval run get, cancel and delete routes, mounted and proven over HTTP
+description: >-
+  LiteLLM's evals router (litellm/proxy/openai_evals_endpoints/endpoints.py) has eleven routes. B3426, B3427 and B3428 build eight of them and B8775 mounts those, but nothing builds the last three, GET, POST and DELETE /v1/evals/{eval_id}/runs/{run_id} (L770-L1032), so a client can't read, cancel or delete an eval run. This task builds those three routes, mounts them next to the other eval routers and proves them through the booted proxy. B3425 already has the operations (aget_run, acancel_run, adelete_run); the routes build the call data, run the shared pre-call step, pick the call path with B9372 and call the operation.
+
+
+  Module `api::eval_run_lifecycle_routes` in betterlite-server (crates/betterlite-server/src/api/eval_run_lifecycle_routes.rs, tests in eval_run_lifecycle_routes/tests.rs). `pub fn routes(state: RunLifecycleState) -> Router` registers the one path `/v1/evals/{eval_id}/runs/{run_id}` with GET (get_run), POST (cancel_run) and DELETE (delete_run). LiteLLM has no other alias for these routes: the evals router carries only /v1 paths, and the lazy loader's "/evals" prefix (litellm/proxy/_lazy_features.py L265-L269) matches nothing extra. `RunLifecycleState::new` takes the `Arc<dyn PreCall<UserAPIKeyAuth>>` (B8801) and the `Arc<EvalCallRoute>` (B9372), plus whatever B3425's operations need to run (read their merged signatures).
+
+
+  get_run never reads the request body, even when the client sends one. The data is `{"eval_id": <path>, "run_id": <path>}`. The model is the `x-litellm-model` header, else the `model` query parameter, and is written to `model` only when it is non-empty. `custom_llm_provider` is the query parameter of that name, "openai" when absent. Route type aget_run, reply model `Run`.
+
+
+  cancel_run and delete_run read an optional JSON body. An empty body is an empty map. Otherwise decode it with `decode_run_body(bytes: &[u8]) -> Result<Map<String, Value>, RunBodyError>`, which accepts only a JSON object, before anything else runs. Then write the path `eval_id` and `run_id` over any body values. The model is the body's `model` when it is a non-empty value, else the `model` query parameter, else the `x-litellm-model` header: the opposite order to get_run. Write it only when it is non-empty. When the body has no `custom_llm_provider` key, set it from the query parameter, "openai" when absent; a body key holding null stays null (B3425 turns null into openai). Every other body key stays in the data and reaches the operation. Route types acancel_run and adelete_run, reply models `CancelRunResponse` and `RunDeleteResponse`.
+
+
+  All three then run the pre-call step with the data, the request parts, the key, the route type and the model, call `prepare` on the EvalCallRoute with the matching EvalCallKind (GetRun, CancelRun, DeleteRun) and the key's team id, and call B3425's aget_run, acancel_run or adelete_run with the prepared data: eval_id, run_id and custom_llm_provider as named arguments and the rest as the loose keyword map. A success answers 200 with the reply model's fields only, in B3420's declared order with null for unset optional fields, the way FastAPI's response_model serializes it, and the response headers the other eval routes send. Any failure, a decode failure excepted, goes to the shared exception answer the sibling eval route modules use (B3426, B3427 and B3428 are merged before this task, since B8775 depends on them); call into what they expose rather than copying it.
+
+
+  Mount. B8775 wrote `app::inference::evals::mount`, which builds the production pre-call step once and merges the three sibling routers. Add one merge after them for `api::eval_run_lifecycle_routes::routes(..)`, with the same pre-call Arc and `app::inference::eval_deployments::eval_call_route(state)` from B9372. Its path differs from B3428's /v1/evals/{eval_id}/runs, so the routers merge without a clash. Tests in app::inference::evals::tests, named with the prefix `run_lifecycle_`, build a ServerState from a config.yaml with a blocking pre_call `generic_guardrail_api` guardrail and check, with tower's oneshot, that GET /v1/evals/e/runs/r without a key is the auth 401, that DELETE with the master key is blocked by the guardrail, and that POST /v1/evals/e/runs/r/cancel is 404.
+
+
+  Body decoder fuzzing. decode_run_body parses bytes from outside, so add the cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/eval_run_body.rs (and its [[bin]] entry in the fuzz Cargo.toml) that feeds arbitrary bytes to it, seeds under crates/betterlite-server/fuzz/corpus/eval_run_body/ (an empty object, a body with model and custom_llm_provider null, an array, a number, null, truncated JSON), and `replays_the_eval_run_body_corpus` in the module's tests, an rstest over `#[files("fuzz/corpus/eval_run_body/*")]`.
+
+
+  Route tests in api::eval_run_lifecycle_routes::tests use tower's oneshot over `routes(..)` with a recording fake PreCall and fake EvalDeployments and BlockedModels: the three methods on the one path; get_run ignoring a body that names another model and other ids; the header beating the query on get_run; the body beating the query and the query beating the header on cancel and delete; path ids replacing body ids; custom_llm_provider from the query, the "openai" default and a body null kept; an empty body; the route type and model handed to pre-call; and the reply serialized with declared fields only.
+
+
+  HTTP oracle cases under tools/oracle/cases/evals/run-by-id/, run against LiteLLM with the default master key oracle-master. Use two deployments in model_list: `eval-account-a` (litellm_params model openai/gpt-4o, api_base "{{upstream}}", api_key oracle-key-a, model_info id eval-deployment-a) and `eval-account-b` (model openai/gpt-4o-mini, api_base "{{upstream}}/b", api_key oracle-key-b), so picking the wrong one changes the upstream path and Authorization. Every case that reaches the upstream names a model, because without one LiteLLM sends the call to https://api.openai.com. Compare status, body, content-type, the upstream method, path, body and the authorization and content-type headers it got, and require presence of x-litellm-call-id. Error cases ignore only /error/message, each with a reason, and keep type, param and code. The upstream replies are complete valid Run, CancelRunResponse (status "cancelled") and RunDeleteResponse objects with fixed ids and timestamps.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/eval_run_lifecycle_routes.rs
+    - crates/betterlite-server/src/api/eval_run_lifecycle_routes/**
+    - crates/betterlite-server/src/app/inference/evals.rs
+    - crates/betterlite-server/src/app/inference/evals/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/eval_run_body.rs
+    - crates/betterlite-server/fuzz/corpus/eval_run_body/**
+    - tools/oracle/cases/evals/run-by-id/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L770-L854
+    why: GET /v1/evals/{eval_id}/runs/{run_id}, get_run; no body, header then query model, custom_llm_provider from the query, route type aget_run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L857-L943
+    why: POST /v1/evals/{eval_id}/runs/{run_id}, cancel_run; optional body decoded before the try, body then query then header model, path ids, route type acancel_run. Its docstring's /cancel URL is wrong.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L946-L1032
+    why: DELETE /v1/evals/{eval_id}/runs/{run_id}, delete_run; same body and model rules as cancel, route type adelete_run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L265-L269
+    why: The evals router is mounted lazily under the /v1/evals and /evals prefixes; the routes themselves are /v1 only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L319-L416
+    why: Run, CancelRunResponse and RunDeleteResponse, the reply models and their field order and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/evals/transformation.py#L336-L424
+    why: The upstream URLs the cases expect, /cancel appended for cancel and path segments percent-encoded.
+dod:
+  - text: GET, POST and DELETE /v1/evals/{eval_id}/runs/{run_id} build the call data the way LiteLLM does, with get_run's header-first model and cancel and delete's body-first model.
+    proof: [run-lifecycle-route-tests, oracle]
+  - text: Path ids replace body ids, custom_llm_provider defaults to openai only when the body lacks the key, and get_run ignores any body.
+    proof: [run-lifecycle-route-tests, oracle]
+  - text: The routes run the pre-call step, take the call path from B9372 and answer with the reply model's fields, through the booted proxy.
+    proof: [run-lifecycle-route-tests, oracle]
+  - text: The run router is mounted once inside the auth layers with the production pre-call step, and the /cancel suffix is not a route.
+    proof: [run-lifecycle-mount-tests, oracle]
+  - text: decode_run_body accepts only a JSON object and its corpus replays.
+    proof: [run-body-corpus]
+  - text: Over HTTP, the run get, cancel and delete cases answer as LiteLLM does, the no-router not-found text included.
+    proof: [run-lifecycle-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: run-lifecycle-route-tests
+      why: a route is missing, builds the wrong data or model, or answers with the wrong shape
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_lifecycle_routes::/) - test(replays_the_eval_run_body_corpus)'
+    - id: run-lifecycle-mount-tests
+      why: the run router isn't merged, is outside the key check, or the earlier eval mount tests broke
+      run: >-
+        grep -q 'eval_run_lifecycle_routes::routes' crates/betterlite-server/src/app/inference/evals.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::evals::/)'
+    - id: run-body-corpus
+      why: the body decoder has no fuzz target or seeds on this branch, or a seed panics
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/eval_run_body.rs &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/eval_run_body)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_eval_run_body_corpus)'
+    - id: run-lifecycle-cases
+      why: the run get, cancel and delete routes have no booted-proxy case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/evals/run-by-id)"
+oracle_cases:
+  - tools/oracle/cases/evals/run-by-id/get-run-header-model.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-query-model.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-header-beats-query.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-ignores-body.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-deployment-id.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-encoded-ids.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-unsupported-provider.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-upstream-404.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-no-key.yaml
+  - tools/oracle/cases/evals/run-by-id/get-run-no-router.yaml
+  - tools/oracle/cases/evals/run-by-id/cancel-run-body-model.yaml
+  - tools/oracle/cases/evals/run-by-id/cancel-run-no-body.yaml
+  - tools/oracle/cases/evals/run-by-id/cancel-run-path-ids-win.yaml
+  - tools/oracle/cases/evals/run-by-id/cancel-run-provider-null.yaml
+  - tools/oracle/cases/evals/run-by-id/cancel-run-upstream-409.yaml
+  - tools/oracle/cases/evals/run-by-id/cancel-run-no-router.yaml
+  - tools/oracle/cases/evals/run-by-id/cancel-suffix-not-found.yaml
+  - tools/oracle/cases/evals/run-by-id/delete-run-header-model.yaml
+  - tools/oracle/cases/evals/run-by-id/delete-run-query-beats-header.yaml
+  - tools/oracle/cases/evals/run-by-id/delete-run-upstream-404.yaml
+deviations:
+  - what: A cancel or delete body that isn't valid JSON, or is JSON but not an object, answers 400 invalid_request_error with param request_body instead of LiteLLM's 500 "Internal Server Error" text.
+    why: LiteLLM calls orjson.loads and then indexes the result outside its try block, so the error escapes to Starlette's plain 500; betterlite answers it as the client error it is, the same way B3426, B3427 and B3428 answer it for the other eval routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L899-L905
+out_of_scope:
+  - "The other eight eval routes: B3426, B3427 and B3428; their mount and HTTP cases: B8775 and B8776."
+  - "aget_run, acancel_run and adelete_run: B3425. Their HTTP handlers: B9371. The provider transforms: B523. The reply models: B3420."
+  - "The call path after pre-call (blocked check, deployment credentials, not-found): B9372. The pre-call step: B8801 and B8802."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception in litellm/proxy/common_request_processing.py: B004; authentication: B756."
+  - "litellm/evals/__init__.py only re-exports the main.py functions; the Python package's evals module is B7886. litellm/proxy/openai_evals_endpoints/__init__.py only re-exports the router."
+pitfalls:
+  - "get_run takes the model from the header first and cancel_run and delete_run from the body first (`data.get(\"model\") or query or header`); copying one rule to all three routes breaks two of them."
+  - "cancel_run is POST on /v1/evals/{eval_id}/runs/{run_id}; the docstring's curl with /cancel is wrong, so that URL is a 404, and only the upstream URL gets /cancel."
+  - "get_run sets custom_llm_provider from the query unconditionally (its data never has the key), while cancel and delete keep a body key even when it is null."
+  - "FastAPI serializes the reply through response_model, so extra upstream fields are dropped and every unset optional Run field comes back as null; returning the upstream JSON as is shows a different body."
+  - "An upstream 404 on GET reaches transform_get_run_response because LiteLLM's GET doesn't raise for status, so its answer differs from the 409 on cancel that goes through _handle_error; the cases must take both from LiteLLM, not guess."
+  - "The no-router not-found message for cancel names \"/evals/{eval_id}/runs/{run_id}/cancel\", the endpoint mapping's text, not the route path."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

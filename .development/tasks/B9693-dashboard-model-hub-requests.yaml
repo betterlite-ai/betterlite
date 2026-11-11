@@ -1,0 +1,129 @@
+id: B9693
+title: Prove the AI Hub publish flows and the public hub page requests through the booted proxy
+description: >-
+  Add HTTP oracle cases that send what the admin AI Hub table and the public hub pages send,
+  in the order they send it, so a publish action on the admin side shows up on the public
+  side. B9090 takes in the covered files unchanged and B9091 builds them. ModelHubTable takes a
+  premiumUser prop but never reads it, so there is no patch. Every route has an owner and no
+  handler is registered here.
+
+  Admin hub. ModelHubTable loads GET /model_group/info (B060) and reads data[] with
+  model_group, providers, mode, max_input_tokens, max_output_tokens, input_cost_per_token,
+  output_cost_per_token and is_public_model_group, then GET /config/field/info?field_name=enable_public_model_hub
+  (B8595, mounted by B8675) and treats field_value == true as the switch for the public link.
+  Agents come from GET /v1/agents (B4784, mounted by B8647), read as agents[].agent_id,
+  agent_card_params and litellm_params.is_public; MCP servers from GET /v1/mcp/server with no
+  query (B4720, mounted by B8625); skills from GET /claude-code/plugins?enabled_only=false
+  (B993), read as plugins[] with name, enabled and the manifest fields. The publish forms
+  send POST /model_group/make_public {model_groups:[...]} with the full selected list,
+  already-public groups preselected (B839); POST /v1/agents/make_public {agent_ids:[...]}
+  (B4786); POST /v1/mcp/make_public {mcp_server_ids:[...]} (B4721, mounted by B8627); and for
+  skills one POST /claude-code/plugins/<name>/enable or /disable per skill whose state changes,
+  sent in parallel, with no request for unchanged skills (B992). UsefulLinksManagement reads
+  GET /public/model_hub/info and saves POST /model_hub/update_useful_links {useful_links:
+  {name: url or {url, index}}} with the whole map (B839).
+
+  Public pages. app/model_hub_table renders ModelHubTable with publicPage true. Without a
+  key it calls GET /litellm/.well-known/litellm-ui-config (B144's discovery case), then GET
+  /public/model_hub with no auth and only Content-Type, and on a non-2xx shows an empty list.
+  With ?key=<key> in the page URL it uses that key as the bearer for /model_group/info, the
+  field read and GET /claude-code/plugins?enabled_only=true. public_model_hub reads
+  GET /public/model_hub/info for useful_links, GET /public/agent_hub, GET /public/mcp_hub and
+  GET /public/skill_hub (all without auth, B077 composing B3193 and B3194), the list through
+  GET /public/v1/model_hub?page=1&page_size=50&sort=model_group, adding q=<trimmed search>,
+  sort=-<field> for descending and filter[providers][in]=a,b, filter[mode][in]=... or
+  filter[features][in]=... joined by commas, and the three facets through GET
+  /public/v1/model_hub/{providers,modes,features}?page_size=100. GET /get/ui_settings decides
+  require_auth_for_public_ai_hub; B9735 covers it.
+
+  Owner cases. B839 plans make-public and useful-links success, invalid-target and
+  unauthorized cases, B4786 and B4721 plan their make_public bodies, B992 plugin-disable-enable
+  and B993 plugin-list-pagination, and B3193 and B3194 plan the public list, facet and hub
+  shapes. None is on disk, and none chains a publish with the public read that shows it. Do not
+  duplicate their single-route checks. Add these page transcripts: a model publish that sends
+  two groups, then /model_group/info shows is_public_model_group and /public/model_hub and
+  /public/v1/model_hub list only those; an agent publish followed by /public/agent_hub; an MCP
+  publish followed by /public/mcp_hub; a skill toggle that enables one and disables one, then
+  enabled_only=true and /public/skill_hub; a useful-links save followed by /public/model_hub/info
+  with an indexed and a plain link; the public list with the page's exact default query, then
+  with q, a descending sort and all three filters; the three facets with page_size=100; and
+  the enable_public_model_hub field read before and after a /config/field/update; and the
+  public table opened with an internal user's key, sending /model_group/info and
+  enabled_only=true with that key. A last case
+  sends each publish write as an internal_user and as a proxy_admin_viewer and keeps the 403
+  bodies. Use B860's Postgres fixture with B5076's bootstrap, two configured model groups with
+  model_info metadata, one stored agent, one stored MCP server and two registered plugins.
+  About 430 case lines.
+scope:
+  paths:
+    - tools/oracle/cases/ui/model-hub/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/AIHub/ModelHubTable.tsx#L98-L243
+    why: Admin and public data loads, the enable_public_model_hub read and enabled_only by page kind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/AIHub/forms/MakeModelPublicForm.tsx#L100-L130
+    why: Already-public groups are preselected and the full list is sent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/claude_code_plugins/MakeSkillPublicForm.tsx#L66-L103
+    why: Only skills whose state changes get an enable or disable request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/public_model_hub.tsx#L100-L145
+    why: Public info, agent, MCP and skill hub reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/publicModelHub/publicModelHubFilters.ts#L28-L43
+    why: filter[field][in] values joined by commas.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/common/useResourceList.ts#L50-L81
+    why: page, page_size, sort with a minus for descending and q.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/publicModelHub/usePublicModelHubFacets.ts#L12-L40
+    why: Three facet reads at page_size 100.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1656-L1774
+    why: Unauthenticated public hub reads that fall back to empty, /model_group/info and the useful links body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5830-L5886
+    why: Agent and MCP make-public bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7218-L7246
+    why: enabled_only is always sent as true or false.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2784-L2934
+    why: B839's make-public and useful-links decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L217-L384
+    why: The legacy model hub, agent, MCP and skill hubs and hub info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L392-L728
+    why: B993's list with enabled_only and B992's enable and disable decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1229-L1330
+    why: B4786's bulk make-public.
+dod:
+  - text: Each admin publish action is followed by the public read that shows it, and both match LiteLLM.
+    proof: [model-hub-cases, oracle]
+  - text: The public list and facets match LiteLLM for the page's exact default, search, sort and filter queries.
+    proof: [model-hub-cases, oracle]
+  - text: Non-admin publish writes keep the server's 403.
+    proof: [model-hub-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: model-hub-cases
+      why: No booted-proxy case chains the hub publish writes with the public reads the pages send.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/model-hub)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/model-hub
+oracle_cases:
+  - tools/oracle/cases/ui/model-hub/model-publish-then-public-lists.yaml
+  - tools/oracle/cases/ui/model-hub/agent-publish-then-agent-hub.yaml
+  - tools/oracle/cases/ui/model-hub/mcp-publish-then-mcp-hub.yaml
+  - tools/oracle/cases/ui/model-hub/skill-toggle-then-skill-hub.yaml
+  - tools/oracle/cases/ui/model-hub/useful-links-then-info.yaml
+  - tools/oracle/cases/ui/model-hub/public-list-default-query.yaml
+  - tools/oracle/cases/ui/model-hub/public-list-search-sort-filters.yaml
+  - tools/oracle/cases/ui/model-hub/public-facets-page-size.yaml
+  - tools/oracle/cases/ui/model-hub/public-hub-switch-field.yaml
+  - tools/oracle/cases/ui/model-hub/public-table-with-url-key.yaml
+  - tools/oracle/cases/ui/model-hub/non-admin-publish-denied.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every function in the covered hub components; B9091 builds them and B146 opens the admin and public hub pages in the browser.
+  - B060, B839, B4784, B4786, B4720, B4721, B992, B993, B8595, B077, B3193 and B3194 own the handlers; B8647, B8625, B8627 and B8675 own the mounts.
+  - The MCP server list and agent list shapes on their own pages are B9735's and the agent and MCP page tasks'; the code snippets the hub shows run in a client, not through the proxy.
+pitfalls:
+  - The legacy public model hub call turns any non-2xx into an empty list, so a missing route looks like an empty hub in the browser; the HTTP case is what tells them apart.
+  - enabled_only is a literal true or false string in the query, never omitted.
+  - Skill publishing has no bulk route; each changed skill is its own enable or disable POST.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

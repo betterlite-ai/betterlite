@@ -148,7 +148,7 @@ deviations:
 out_of_scope:
   - "gateway_dcr_flow.py constants, models, OauthError, sealing, register_aggregate_client, the port traits, supported_grant_types and the single-use guard: B4674."
   - "_pkce_verifier_matches, aggregate_token, the grant functions, revoke_refresh_token and introspect_gateway_token with their helpers: B4676."
-  - "The routes in discoverable_endpoints.py (/authorize, /{mcp_server_name}/authorize, /authorize/mcp-session, /authorize/flow, /authorize/complete, /.well-known/litellm-cli-auth), _session_cookie_user_id, _vendor_credential_state and _user_can_reach_mcp_server: the umbrella B137 and the discoverable endpoint route owners; this task has no route, so its cases are helper cases."
+  - "The routes in discoverable_endpoints.py (/authorize, /{mcp_server_name}/authorize, /authorize/mcp-session, /authorize/flow, /authorize/complete, /.well-known/litellm-cli-auth), _session_cookie_user_id, _vendor_credential_state and _user_can_reach_mcp_server: B7971 (routes, _session_cookie_user_id, _vendor_credential_state) and B7532 (_user_can_reach_mcp_server), mounted by B8702; this task has no route, so its cases are helper cases."
   - "lookup_consent_teams (proxy_api_credentials.py): B4658, as ActiveSubjects. This task takes it as the LookupConsentTeams port."
   - "render_native_client_consent_page: B1612, supplied through RenderConsentPage."
   - "get_request_base_url, canonical_resource_uri, canonicalize_url_identity, extract_target_server_names_from_path, TOKEN_NO_CACHE_HEADERS and the python_url helpers: B4654. is_loopback_redirect_host: B4655."
