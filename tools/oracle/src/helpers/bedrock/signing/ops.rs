@@ -12,7 +12,7 @@ use betterlite_bedrock::signing::endpoint::{RequestHeaders as EndpointRequest, r
 use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::json_post::{JsonPost, sign_aws_json_post};
 use betterlite_bedrock::signing::request::AwsSignedRequest;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -80,12 +80,9 @@ pub(super) fn signed_result(result: Result<AwsSignedRequest, SigningError>) -> V
 }
 pub(super) fn credentials_of(input: &CredentialInput) -> Credentials {
     Credentials {
-        access_key_id: SecretString::from(input.access_key_id.clone()),
-        secret_access_key: SecretString::from(input.secret_access_key.clone()),
-        session_token: input
-            .session_token
-            .as_deref()
-            .map(|token| SecretString::from(token.to_owned())),
+        access_key_id: input.access_key_id.clone(),
+        secret_access_key: input.secret_access_key.clone(),
+        session_token: input.session_token.clone(),
     }
 }
 pub(super) fn credentials_json(credentials: &Credentials) -> Value {

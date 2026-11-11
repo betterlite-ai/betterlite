@@ -24,9 +24,9 @@ pub(crate) enum Call {
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct CredentialInput {
-    pub(crate) access_key_id: String,
-    pub(crate) secret_access_key: String,
-    pub(crate) session_token: Option<String>,
+    pub(crate) access_key_id: SecretString,
+    pub(crate) secret_access_key: SecretString,
+    pub(crate) session_token: Option<SecretString>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]

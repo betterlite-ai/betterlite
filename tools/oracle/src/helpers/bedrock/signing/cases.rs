@@ -18,13 +18,13 @@ use std::thread::ThreadId;
 use tracing::subscriber::with_default;
 use tracing_subscriber::registry;
 pub(super) fn service_request_case(case: &ServiceRequestInput) -> Result<Value, Box<HelperError>> {
-    let fixture = credentials_of(&case.credentials);
     let headers: Vec<_> = case.headers.clone().into_iter().collect();
-    let request = case.request(&headers, epoch(case.now)?);
-    let result = runtime()?.block_on(sign_service_request(request, |_settings, _region| {
-        ready(Ok::<Credentials, CredentialError>(fixture.clone()))
-    }));
-    Ok(signed_result(result))
+    let signing = sign_service_request(case.request(&headers, epoch(case.now)?), |_s, _r| {
+        ready(Ok::<Credentials, CredentialError>(credentials_of(
+            &case.credentials,
+        )))
+    });
+    Ok(signed_result(runtime()?.block_on(signing)))
 }
 pub(super) fn batch_request_case(case: &BatchRequestInput) -> Result<Value, Box<HelperError>> {
     let fixture = credentials_of(&case.credentials);
@@ -43,11 +43,11 @@ pub(super) fn request_target_case(case: &RequestTargetInput) -> Result<Value, Bo
         region_inputs: RegionInputs::default(),
         bearer_token: case.bearer_token.as_ref(),
     };
-    let outcome = runtime()?.block_on(request_target(request, |_settings, _region| {
+    let resolving = request_target(request, |_settings, _region| {
         resolved.fetch_add(1, Ordering::Relaxed);
         ready(Ok::<Credentials, CredentialError>(fixture.clone()))
-    }));
-    let Ok(target) = outcome else {
+    });
+    let Ok(target) = runtime()?.block_on(resolving) else {
         return Ok(json!({"ok": false, "status": null}));
     };
     let remaining = serde_json::to_value(&parameters).or_value_error()?;
