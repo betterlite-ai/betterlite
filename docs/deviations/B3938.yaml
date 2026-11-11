@@ -1,0 +1,59 @@
+task: B3938
+deviations:
+  - what: >-
+      When DD_API_KEY is unset in direct API mode, logger initialization raises an exception.
+    why: >-
+      LiteLLM requires explicit credentials for direct API mode; betterlite enforces the same check at
+      startup, so a misconfigured logger never starts and silently drops every span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L463-L466
+  - what: >-
+      Agent mode does not require DD_API_KEY; direct API mode requires both DD_API_KEY and DD_SITE.
+    why: >-
+      LiteLLM distinguishes agent and direct API initialization on LITELLM_DD_AGENT_HOST; betterlite
+      follows the same branch, so an agent-only setup needs no credential.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L451-L467
+  - what: >-
+      Payloads are sent as uncompressed JSON, unlike the log delivery integration which gzips.
+    why: >-
+      The LLM Observability intake accepts uncompressed JSON, and LiteLLM sends it uncompressed; log
+      delivery to /api/v2/logs is the integration that requires gzip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L591-L595
+  - what: >-
+      When the APM tracer has no current span or the span has no trace id, the payload carries no
+      apm_id and the request still succeeds.
+    why: >-
+      APM correlation is best effort; absence of the active span does not prevent LLM Observability
+      intake, exactly as LiteLLM's _get_apm_trace_id returns None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L677-L679
+  - what: >-
+      Swallowed send errors are logged and the queue keeps its events only when the batch-size
+      threshold sent it; the inherited periodic flush clears the queue after every attempt.
+    why: >-
+      LiteLLM's async_send_batch swallows every exception, and the inherited flush_queue then clears
+      the queue regardless; betterlite reproduces both queue states so a transient intake failure is
+      retried by a threshold send and dropped by a periodic flush.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L600-L610
+  - what: >-
+      Spans assembled through the callback catalog report tool_output_tokens as zero, because the
+      catalog has no tokenizer to inject.
+    why: >-
+      betterlite-tokenizer depends transitively on betterlite-logging (through betterlite-prompts),
+      so the logging crate cannot construct B196's counter and CatalogInputs carries none. The
+      counting function and its injection port are built and tested; a composition root outside this
+      crate has to pass the counter before the metric is real.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L207-L213
+  - what: >-
+      The span queue is bounded at DEFAULT_MAX_QUEUE_SIZE and drops its oldest events when a
+      persistently failing intake lets it grow past the bound.
+    why: >-
+      LiteLLM appends without a cap on the threshold path, so a dead intake grows memory without
+      limit; betterlite's shared BatchQueue keeps the bound every other batch logger uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L536
+  - what: >-
+      Caller span_id, name and parent_id come from the per-request callback parameters a betterlite
+      LoggerEvent carries, not from the request's litellm_params.metadata map.
+    why: >-
+      A LoggerEvent has no litellm_params field; standard_callback_dynamic_params is the per-request
+      map the logging pipeline builds from request metadata, so keys the pipeline does not copy into
+      it do not reach the span. Wiring litellm_params into the event belongs to the logging pipeline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L617-L667

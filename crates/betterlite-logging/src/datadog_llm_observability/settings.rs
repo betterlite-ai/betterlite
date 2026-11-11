@@ -1,18 +1,16 @@
-use std::str::FromStr;
-use std::time::Duration;
-
 use betterlite_config::loader::EnvironmentLookup;
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use crate::batch::logger::{
-    BATCH_SIZE_VARIABLE, BatchSettings, DEFAULT_BATCH_SIZE, DEFAULT_FLUSH_INTERVAL_SECONDS,
-    DEFAULT_MAX_QUEUE_SIZE, FLUSH_INTERVAL_VARIABLE,
-};
+use crate::batch::logger::BatchSettings;
 use crate::datadog::tagging::Environment;
 use crate::exporter_options::options::CustomLoggerOptions;
 
 use super::error::DatadogLlmObsError;
+
+mod batch;
+
+use batch::batch;
 
 pub const DEFAULT_AGENT_PORT: &str = "8126";
 pub const INTAKE_PATH: &str = "/api/intake/llm-obs/v1/trace/spans";
@@ -60,27 +58,33 @@ impl DatadogLlmObsSettings {
     ) -> Result<Self, DatadogLlmObsError> {
         let tags = Environment::from_lookup(environment)?;
         let (endpoint_url, api_key) = endpoint(init, environment)?;
-        let intake_url = tags
-            .base_url
-            .as_deref()
-            .filter(|base| !base.is_empty())
-            .map_or(endpoint_url, |base| format!("{base}{INTAKE_PATH}"));
-        let param_flag = init
-            .params
-            .as_ref()
-            .and_then(|params| params.turn_off_message_logging);
         Ok(Self {
-            intake_url,
+            intake_url: base_url(&tags, endpoint_url),
             api_key,
             batch: batch(init, environment)?,
-            options: CustomLoggerOptions {
-                turn_off_message_logging: param_flag
-                    .or(init.turn_off_message_logging)
-                    .unwrap_or(false),
-                message_logging: init.message_logging.unwrap_or(true),
-            },
+            options: options(init),
             environment: tags,
         })
+    }
+}
+
+fn base_url(tags: &Environment, endpoint_url: String) -> String {
+    tags.base_url
+        .as_deref()
+        .filter(|base| !base.is_empty())
+        .map_or(endpoint_url, |base| format!("{base}{INTAKE_PATH}"))
+}
+
+fn options(init: &DatadogLlmObsInit) -> CustomLoggerOptions {
+    let param_flag = init
+        .params
+        .as_ref()
+        .and_then(|params| params.turn_off_message_logging);
+    CustomLoggerOptions {
+        turn_off_message_logging: param_flag
+            .or(init.turn_off_message_logging)
+            .unwrap_or(false),
+        message_logging: init.message_logging.unwrap_or(true),
     }
 }
 
@@ -99,9 +103,7 @@ fn endpoint(
             .filter(|value| !value.is_empty())
     });
     let Some(host) = agent_host else {
-        let Some(key) = api_key else {
-            return Err(DatadogLlmObsError::MissingApiKey);
-        };
+        let key = api_key.ok_or(DatadogLlmObsError::MissingApiKey)?;
         let site = init
             .dd_site
             .clone()
@@ -123,43 +125,6 @@ fn endpoint(
         })
         .unwrap_or_else(|| DEFAULT_AGENT_PORT.to_owned());
     Ok((format!("http://{host}:{port}{INTAKE_PATH}"), api_key))
-}
-
-fn batch(
-    init: &DatadogLlmObsInit,
-    environment: &dyn EnvironmentLookup,
-) -> Result<BatchSettings, DatadogLlmObsError> {
-    let batch_size = match init.batch_size {
-        Some(size) => size,
-        None => number::<usize>(environment, BATCH_SIZE_VARIABLE)?.unwrap_or(DEFAULT_BATCH_SIZE),
-    };
-    let flush_interval = match init.flush_interval_seconds {
-        Some(seconds) => Duration::try_from_secs_f64(seconds)
-            .map_err(|_source| DatadogLlmObsError::FlushInterval { seconds })?,
-        None => Duration::from_secs(
-            number::<u64>(environment, FLUSH_INTERVAL_VARIABLE)?
-                .unwrap_or(DEFAULT_FLUSH_INTERVAL_SECONDS),
-        ),
-    };
-    Ok(BatchSettings {
-        batch_size,
-        flush_interval,
-        max_queue_size: DEFAULT_MAX_QUEUE_SIZE,
-    })
-}
-
-fn number<T>(
-    environment: &dyn EnvironmentLookup,
-    name: &str,
-) -> Result<Option<T>, DatadogLlmObsError>
-where
-    T: FromStr,
-{
-    let Some(text) = environment.lookup(name) else {
-        return Ok(None);
-    };
-    let parsed = betterlite_env::number::<T>(name, &text)?;
-    Ok(parsed)
 }
 
 fn credential(environment: &dyn EnvironmentLookup, name: &str) -> Option<SecretString> {

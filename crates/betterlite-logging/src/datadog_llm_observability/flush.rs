@@ -1,15 +1,19 @@
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, PoisonError};
 
 use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
 
 use crate::batch::delivery::{BatchCancelled, BatchDelivery};
+use crate::batch::logger::FlushReport;
 use crate::datadog_llm_metrics::token_counting::ToolTokenCounter;
 use crate::datadog_llm_obs::span_records::LLMObsPayload;
 
 use super::logger::DatadogLlmObsLogger;
 use super::send;
+use queue::flush_queue;
+
+pub mod queue;
 
 struct IntakeDelivery<'logger, Counter: ToolTokenCounter> {
     logger: &'logger DatadogLlmObsLogger<Counter>,
@@ -37,33 +41,27 @@ where
     }
 }
 
+pub(super) async fn drain<Counter>(logger: &DatadogLlmObsLogger<Counter>) -> FlushReport
+where
+    Counter: ToolTokenCounter + Send + Sync,
+{
+    let report = logger.queue.flush(&IntakeDelivery { logger }).await;
+    tracing::debug!(
+        events = report.batch,
+        cancelled = report.cancelled,
+        "DataDogLLMObs: batch flushed"
+    );
+    report
+}
+
 // the threshold send leaves the queue as it was when the intake refused the batch
 pub async fn async_send_batch<Counter>(logger: &DatadogLlmObsLogger<Counter>)
 where
     Counter: ToolTokenCounter + Send + Sync,
 {
-    let report = logger.queue.flush(&IntakeDelivery { logger }).await;
+    let report = drain(logger).await;
     if report.cancelled {
         tracing::debug!("DataDogLLMObs: the refused threshold batch stays queued");
-    }
-}
-
-// the inherited flush clears the queue after every send attempt, even the one that failed
-pub async fn flush_queue<Counter>(logger: &DatadogLlmObsLogger<Counter>)
-where
-    Counter: ToolTokenCounter + Send + Sync,
-{
-    let report = logger.queue.flush(&IntakeDelivery { logger }).await;
-    if report.batch == 0 {
-        return;
-    }
-    if report.cancelled {
-        let mut queue = logger
-            .queue
-            .queue
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        queue.clear();
     }
 }
 

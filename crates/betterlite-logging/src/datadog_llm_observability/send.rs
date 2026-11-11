@@ -1,5 +1,6 @@
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
+use serde::Serialize;
 
 use crate::datadog_llm_obs::span_records::{DDIntakePayload, DDSpanAttributes, LLMObsPayload};
 use crate::datadog_logging::transport::{LOGGING_TIMEOUT, PostRequest, Transport};
@@ -10,6 +11,11 @@ use super::tags::envelope_tags;
 
 const API_KEY_HEADER: HeaderName = HeaderName::from_static("dd-api-key");
 const ACCEPTED_STATUS: u16 = 202;
+
+#[derive(Serialize)]
+struct IntakeEnvelope {
+    data: DDIntakePayload,
+}
 
 #[must_use]
 pub fn intake_payload(
@@ -32,8 +38,10 @@ pub async fn send_batch(
     transport: &dyn Transport,
     spans: Vec<LLMObsPayload>,
 ) -> Result<(), DatadogLlmObsError> {
-    let body =
-        serde_json::to_vec(&intake_payload(settings, spans)).map_err(DatadogLlmObsError::Encode)?;
+    let envelope = IntakeEnvelope {
+        data: intake_payload(settings, spans),
+    };
+    let body = serde_json::to_vec(&envelope).map_err(DatadogLlmObsError::Encode)?;
     let request = PostRequest {
         url: settings.intake_url.clone(),
         headers: headers(settings)?,

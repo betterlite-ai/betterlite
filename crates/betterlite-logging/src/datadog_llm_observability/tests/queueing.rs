@@ -5,7 +5,7 @@ use tokio::time::advance;
 use tokio_util::task::TaskTracker;
 
 use crate::callback_logger::CallbackLogger as _;
-use crate::datadog_llm_observability::flush::flush_queue;
+use crate::datadog_llm_observability::flush::queue::flush_queue;
 use crate::datadog_llm_observability::settings::DatadogLlmObsInit;
 use crate::datadog_llm_observability::tests::support;
 
