@@ -14,13 +14,14 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use crate::datadog_logging::clock::Clock;
 use crate::datadog_logging::error::DatadogError;
 use crate::datadog_logging::logger::{DatadogDeps, DatadogLogger, uuid_id};
+use crate::datadog_logging::settings::DatadogInitParams;
 use crate::datadog_logging::transport::{
     PostRequest, Transport, TransportFailure, TransportResponse,
 };
 use crate::dynamic_logger_cache::DynamicLoggerCache;
 
 use super::{
-    DatadogTeamHandlerError, datadog_credentials, datadog_credentials_passed,
+    DatadogTeamHandlerError, DatadogTeamSettings, datadog_credentials, datadog_credentials_passed,
     get_datadog_logger_for_request,
 };
 
@@ -72,13 +73,28 @@ fn cache() -> DynamicLoggerCache<Arc<DatadogLogger>> {
     )
 }
 
+fn baseline_settings() -> DatadogTeamSettings {
+    DatadogTeamSettings {
+        params: DatadogInitParams {
+            turn_off_message_logging: false,
+        },
+        use_v1: false,
+    }
+}
+
 fn get(
     params: &BTreeMap<String, String>,
     cache: &DynamicLoggerCache<Arc<DatadogLogger>>,
     environment: &BTreeMap<String, String>,
     builds: &Arc<AtomicUsize>,
 ) -> Result<Arc<DatadogLogger>, DatadogTeamHandlerError> {
-    get_datadog_logger_for_request(params, cache, environment, deps(builds))
+    get_datadog_logger_for_request(
+        params,
+        cache,
+        environment,
+        deps(builds),
+        baseline_settings(),
+    )
 }
 
 #[derive(Clone, Default)]
@@ -370,14 +386,22 @@ fn the_agent_host_and_port_are_passed_as_given() {
 }
 
 #[test]
-fn the_team_logger_uses_the_default_datadog_options() {
+fn the_team_logger_uses_the_proxy_datadog_settings() {
     let cache = cache();
     let builds = Arc::new(AtomicUsize::new(0));
     let params = map(&[("dd_api_key", "team-key"), ("dd_site", "us5.datadoghq.com")]);
     let environment = map(&[]);
-    let logger = get(&params, &cache, &environment, &builds).expect("the team logger");
-    assert!(!logger.settings.use_v1);
-    assert!(!logger.settings.options.turn_off_message_logging);
+    let settings = DatadogTeamSettings {
+        params: DatadogInitParams {
+            turn_off_message_logging: true,
+        },
+        use_v1: true,
+    };
+    let logger =
+        get_datadog_logger_for_request(&params, &cache, &environment, deps(&builds), settings)
+            .expect("the team logger");
+    assert!(logger.settings.use_v1);
+    assert!(logger.settings.options.turn_off_message_logging);
 }
 
 #[test]

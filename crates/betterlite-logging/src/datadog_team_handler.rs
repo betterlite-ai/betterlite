@@ -19,6 +19,12 @@ pub struct DatadogCredentials {
     pub dd_agent_port: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct DatadogTeamSettings {
+    pub params: DatadogInitParams,
+    pub use_v1: bool,
+}
+
 #[derive(Debug, Error)]
 pub enum DatadogTeamHandlerError {
     #[error("the team-scoped Datadog logger cache failed")]
@@ -66,6 +72,7 @@ pub fn get_datadog_logger_for_request(
     cache: &DynamicLoggerCache<Arc<DatadogLogger>>,
     environment: &dyn EnvironmentLookup,
     deps: DatadogDeps,
+    settings: DatadogTeamSettings,
 ) -> Result<Arc<DatadogLogger>, DatadogTeamHandlerError> {
     let credentials = datadog_credentials(params);
     let keyed = cache_credentials(&credentials);
@@ -80,8 +87,8 @@ pub fn get_datadog_logger_for_request(
         dd_agent_host: credentials.dd_agent_host,
         dd_agent_port: credentials.dd_agent_port,
         allow_env_credentials,
-        params: DatadogInitParams::default(),
-        use_v1: false,
+        params: settings.params,
+        use_v1: settings.use_v1,
     };
     let logger = DatadogLogger::new(&init, environment, deps)?;
     cache.set_cache(&keyed, SERVICE_NAME, Arc::clone(&logger))?;
