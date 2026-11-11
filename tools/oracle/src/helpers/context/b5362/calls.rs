@@ -28,10 +28,6 @@ fn drop_policy(call: &Call) -> mapper::DropPolicy {
     }
 }
 
-fn fixture_mapper(spec: Option<&super::MapperSpec>) -> Option<&dyn mapper::OptionalParamsMapper> {
-    spec.map(|fixture| -> &dyn mapper::OptionalParamsMapper { fixture })
-}
-
 fn named_params(call: &Call) -> Result<Value, Failure> {
     if matches!(call.function, Function::SelectNonDefault) {
         let names: Vec<&str> = call.default_names.iter().map(String::as_str).collect();
@@ -78,9 +74,10 @@ fn pre_process_call(call: &Call) -> Result<Value, Failure> {
         remove_sensitive_keys: call.remove_sensitive_keys.unwrap_or(false),
         add_provider_specific_params: call.add_provider_specific_params.unwrap_or(false),
     };
-    answer(pre_process::pre_process_non_default_params(&request, options).map_err(|error| {
-        error.status_code()
-    }))
+    answer(
+        pre_process::pre_process_non_default_params(&request, options)
+            .map_err(|error| error.status_code()),
+    )
 }
 
 fn fallback_params(call: &Call) -> Result<Value, Failure> {
@@ -129,17 +126,28 @@ fn media_params(call: &Call) -> Result<Value, Failure> {
             params: &call.params,
             additional_drop_params: call.additional_drop_params.as_deref().unwrap_or_default(),
             drop_policy: drop_policy(call),
-            provider_config: fixture_mapper(call.provider_config.as_ref()),
-            bedrock_config: fixture_mapper(call.bedrock.as_ref()),
+            provider_config: call
+                .provider_config
+                .as_ref()
+                .map(|fixture| -> &dyn mapper::OptionalParamsMapper { fixture }),
+            bedrock_config: call
+                .bedrock
+                .as_ref()
+                .map(|fixture| -> &dyn mapper::OptionalParamsMapper { fixture }),
         };
-        return answer(get_optional_params_image_gen(&request).map_err(|error| error.status_code()));
+        return answer(
+            get_optional_params_image_gen(&request).map_err(|error| error.status_code()),
+        );
     }
     let request = TranscriptionRequest {
         model: required(call.model.as_deref(), "model")?,
         custom_llm_provider: required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?,
         params: &call.params,
         drop_policy: drop_policy(call),
-        mapper: fixture_mapper(call.mapper.as_ref()),
+        mapper: call
+            .mapper
+            .as_ref()
+            .map(|fixture| -> &dyn mapper::OptionalParamsMapper { fixture }),
     };
     answer(transcription_optional_params(&request).map_err(|error| error.status_code()))
 }
