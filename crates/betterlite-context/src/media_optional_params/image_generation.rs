@@ -91,9 +91,9 @@ fn branch_params(
     request: &ImageGenerationRequest<'_>,
     supported_by_config: Option<&[String]>,
     mut non_default_params: Params,
-    drop_policy: DropPolicy,
 ) -> Result<(Params, Vec<String>), MediaParamsError> {
-    let drop = drop_policy.litellm_drop_params || drop_policy.drop_params == Some(true);
+    let policy = request.drop_policy;
+    let drop = policy.litellm_drop_params || policy.drop_params == Some(true);
     let model = request.model.unwrap_or_default();
     match (request.provider_config, request.custom_llm_provider) {
         (Some(config), _) => {
@@ -145,12 +145,8 @@ pub fn get_optional_params_image_gen(
         &default_names,
         request.additional_drop_params,
     );
-    let (mut optional_params, dropped) = branch_params(
-        request,
-        supported_by_config.as_deref(),
-        non_default_params,
-        request.drop_policy,
-    )?;
+    let (mut optional_params, dropped) =
+        branch_params(request, supported_by_config.as_deref(), non_default_params)?;
     for key in &dropped {
         passed_params.remove(key);
     }
@@ -166,15 +162,11 @@ pub fn get_optional_params_image_gen(
             additional_drop_params: request.additional_drop_params,
         },
     )?;
-    drop_empty_values(&mut optional_params);
-    Ok(optional_params)
-}
-
-fn drop_empty_values(optional_params: &mut Params) {
     optional_params.retain(|_, value| match value {
         JsonValue::Null => false,
         JsonValue::Object(fields) => !fields.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) => true,
     });
+    Ok(optional_params)
 }

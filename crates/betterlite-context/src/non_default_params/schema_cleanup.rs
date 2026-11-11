@@ -22,7 +22,6 @@ where
     }
 }
 
-// Gemini and vertex reject `additionalProperties: false`; any other value of the key stays.
 pub fn remove_additional_properties(schema: &mut JsonValue) {
     edit_every_object(schema, &|fields| {
         if fields.get("additionalProperties") == Some(&JsonValue::Bool(false)) {

@@ -12,7 +12,6 @@ pub struct ProviderSpecificRequest<'request> {
     pub additional_drop_params: &'request [String],
 }
 
-// OpenAI-style providers take unknown params inside extra_body; every other provider gets them at the top level.
 pub fn add_provider_specific_params(
     mut optional_params: Params,
     request: &ProviderSpecificRequest<'_>,

@@ -37,7 +37,6 @@ pub struct PreProcessed {
     pub non_default_params: Params,
 }
 
-// Cloud-init keys only travel to the providers that read them.
 fn special_param_is_dropped(key: &str, custom_llm_provider: &str) -> bool {
     match key {
         "aws_bedrock_project_id" => true,
@@ -45,7 +44,6 @@ fn special_param_is_dropped(key: &str, custom_llm_provider: &str) -> bool {
         _ if key.starts_with("aws_") => {
             custom_llm_provider != "bedrock" && !custom_llm_provider.starts_with("sagemaker")
         }
-        // gdc is the only provider config besides vertex_ai that sets supports_vertex_params.
         _ if key.starts_with("vertex_") => {
             !matches!(custom_llm_provider, "vertex_ai" | "vertex_ai_beta" | "gdc")
         }
@@ -85,19 +83,16 @@ pub fn pre_process_non_default_params(
 ) -> Result<Params, NonDefaultParamsError> {
     let processed = base_pre_process_params(request, DEFAULT_CHAT_COMPLETION_PARAMS, &["messages"]);
     let mut non_default_params = processed.non_default_params;
-    if matches!(
-        non_default_params.get("response_format"),
-        Some(value) if !matches!(value, JsonValue::Object(_))
-    ) {
-        return Err(NonDefaultParamsError::WrongType(
-            "response_format",
-            "an object",
-        ));
-    }
-    if let Some(config) = request.provider_config
-        && let Some(format) = non_default_params.get_mut("response_format")
-    {
-        config.map_response_format(format);
+    if let Some(format) = non_default_params.get_mut("response_format") {
+        if !matches!(format, JsonValue::Object(_)) {
+            return Err(NonDefaultParamsError::WrongType(
+                "response_format",
+                "an object",
+            ));
+        }
+        if let Some(config) = request.provider_config {
+            config.map_response_format(format);
+        }
     }
     if options.add_provider_specific_params {
         let openai_params: Vec<&str> = DEFAULT_CHAT_COMPLETION_PARAMS.split_whitespace().collect();

@@ -10,7 +10,6 @@ use super::names::{
 };
 use crate::owned_parameter_names::is_litellm_owned_kwarg;
 
-// Every default in the tables is null, so a value is non-default when it is not null.
 #[must_use]
 pub fn select_non_default_params(
     passed_params: &Params,

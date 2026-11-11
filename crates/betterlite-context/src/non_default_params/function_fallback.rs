@@ -7,7 +7,6 @@ pub struct PreProcessedOptional {
     pub add_function_to_prompt: bool,
 }
 
-// The cloud providers read these caller keys under a provider-specific name.
 fn special_auth_names(custom_llm_provider: &str) -> &'static [(&'static str, &'static str)] {
     match custom_llm_provider {
         "azure" => &[("token", "azure_ad_token")],

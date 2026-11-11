@@ -88,7 +88,6 @@ struct MapperSpec {
     rewrite_refs: bool,
 }
 
-// The Python helper builds the same mapper, so both sides copy the params and fail with the same status.
 impl OptionalParamsMapper for MapperSpec {
     fn supported_openai_params(&self, _model: &str) -> Vec<String> {
         self.supported.clone()
@@ -122,7 +121,6 @@ impl OptionalParamsMapper for MapperSpec {
     }
 }
 
-// A status becomes the call's answer, anything else means the case itself is wrong.
 enum Failure {
     Status(u16),
     Invalid(String),

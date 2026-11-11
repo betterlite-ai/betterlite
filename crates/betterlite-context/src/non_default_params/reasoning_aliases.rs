@@ -2,7 +2,6 @@ use betterlite_models::controls::json_value::JsonValue;
 
 use super::Params;
 
-// A key that is present decides the answer even when its value is null, so a null camelCase value does not fall back to the snake_case key.
 #[must_use]
 pub fn peek_reasoning_summary_aliases(optional_params: &Params) -> Option<&JsonValue> {
     let top = optional_params

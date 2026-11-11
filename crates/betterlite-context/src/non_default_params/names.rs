@@ -3,7 +3,6 @@ pub const OPENAI_TRANSCRIPTION_PARAMS: &[&str] =
 
 pub const OPENAI_EMBEDDING_PARAMS: &str = "dimensions encoding_format user";
 
-// LiteLLM's OPENAI_CHAT_COMPLETION_PARAMS, without its repeated "temperature" entry.
 pub const OPENAI_CHAT_COMPLETION_PARAMS: &str = "functions function_call temperature top_p n \
     stream stream_options stop max_completion_tokens modalities prediction audio max_tokens \
     presence_penalty frequency_penalty logit_bias user request_timeout api_base api_version \
