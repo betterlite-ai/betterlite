@@ -1,0 +1,20 @@
+kind: helper
+name: principal-passthrough
+call:
+  b3456:
+    step: principal
+    cases:
+      - caller_arn: "arn:aws:iam::123456789012:user/alice"
+        account_id: "123456789012"
+      - caller_arn: "arn:aws:iam::123456789012:role/MyRole"
+        account_id: "123456789012"
+      - caller_arn: "arn:aws:iam::123456789012:root"
+        account_id: "123456789012"
+      - caller_arn: ""
+        account_id: "123456789012"
+      - caller_arn: "arn:aws:sts::123456789012:assumed-role"
+        account_id: "123456789012"
+      - caller_arn: "plain-text"
+        account_id: "123456789012"
+env: {}
+compare: {ignore: []}
