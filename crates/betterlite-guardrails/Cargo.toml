@@ -15,6 +15,7 @@ betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-models = { path = "../betterlite-models" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
 chrono.workspace = true
