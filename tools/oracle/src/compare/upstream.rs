@@ -32,7 +32,10 @@ pub(crate) fn compare_provider_requests(
         .filter(|ignored| ignored.pointer.starts_with("/upstream/"))
         .map(|ignored| ignored.pointer.as_str())
         .collect();
-    check_selectors(&selectors, &rendered_pointers(left, right))?;
+    // a case without selectors never pays for decoding the captures a second time
+    if !selectors.is_empty() {
+        check_selectors(&selectors, &rendered_pointers(left, right))?;
+    }
     let selected: BTreeSet<&str> = selectors.into_iter().collect();
     for (index, (left_request, right_request)) in left.iter().zip(right).enumerate() {
         compare_request(index, left_request, right_request, &selected, compare)?;
