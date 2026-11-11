@@ -1,0 +1,126 @@
+use std::future::Future;
+use std::sync::Arc;
+
+use betterlite_logging::callback_logger::CallbackLogger;
+use betterlite_logging::callback_logger::error::LoggerError;
+use betterlite_logging::callback_logger::event::LoggerEvent;
+use betterlite_logging::clickhouse::clickhouse_logging::batch_logger::ClickHouseBatchLogger;
+use betterlite_logging::clickhouse::clickhouse_logging::context::LensAnalysis;
+use betterlite_logging::clickhouse::clickhouse_logging::payload::CallbackKwargs;
+use betterlite_logging::clickhouse::clickhouse_logging::schema::SPEND_LOGS_TABLE;
+use betterlite_logging::clickhouse::clickhouse_logging::settings::ClickHouseSettings;
+use betterlite_logging::clickhouse::clickhouse_logging::spend_logger::{
+    CallbackEvent, ClickHouseSpendLogger,
+};
+use betterlite_logging::clickhouse::clickhouse_logging::storage::ClickHouseStorage;
+use betterlite_logging::trace_types::SpendLogRecord;
+use tokio_util::task::TaskTracker;
+
+use crate::trace_lifecycle::error::TraceLifecycleError;
+
+pub const CALLBACK_NAME: &str = "ClickHouseSpendLogger";
+
+pub struct SharedStorage<Storage: ClickHouseStorage> {
+    shared: Arc<Storage>,
+}
+
+impl<Storage: ClickHouseStorage> ClickHouseStorage for SharedStorage<Storage> {
+    type Error = Storage::Error;
+
+    fn insert_rows(
+        &self,
+        table: &str,
+        rows: &[SpendLogRecord],
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        self.shared.insert_rows(table, rows)
+    }
+
+    fn ensure_schema(
+        &self,
+        trace_retention_days: u32,
+        spend_log_retention_days: u32,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        self.shared
+            .ensure_schema(trace_retention_days, spend_log_retention_days)
+    }
+}
+
+pub trait SpendLoggerFactory<Storage: ClickHouseStorage>: Send + Sync {
+    fn build(
+        &self,
+        storage: Arc<Storage>,
+    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, TraceLifecycleError>;
+}
+
+pub struct ClickHouseSpendLoggers {
+    pub settings: ClickHouseSettings,
+    pub tasks: TaskTracker,
+}
+
+impl<Storage: ClickHouseStorage> SpendLoggerFactory<Storage> for ClickHouseSpendLoggers {
+    fn build(
+        &self,
+        storage: Arc<Storage>,
+    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, TraceLifecycleError> {
+        Ok(ClickHouseSpendLogger {
+            batch: ClickHouseBatchLogger::new(
+                SharedStorage { shared: storage },
+                SPEND_LOGS_TABLE,
+                self.settings.clone(),
+                self.tasks.clone(),
+            ),
+        })
+    }
+}
+
+pub(crate) struct TraceSpendLogger<Storage: ClickHouseStorage> {
+    pub(crate) spend: ClickHouseSpendLogger<SharedStorage<Storage>>,
+    pub(crate) lens: LensAnalysis,
+}
+
+// B8740's event carries the typed payload, so it crosses into B4001's kwargs shape through the payload's own wire form
+fn callback_kwargs(event: &LoggerEvent) -> Result<CallbackKwargs, LoggerError> {
+    let encoded =
+        serde_json::to_value(&*event.payload).map_err(|source| delivery_error(&source))?;
+    let payload = serde_json::from_value(encoded).map_err(|source| delivery_error(&source))?;
+    Ok(CallbackKwargs {
+        standard_logging_object: Some(payload),
+        litellm_params: None,
+    })
+}
+
+fn delivery_error(source: &serde_json::Error) -> LoggerError {
+    LoggerError::Delivery {
+        callback: CALLBACK_NAME.to_owned(),
+        message: source.to_string(),
+    }
+}
+
+#[async_trait::async_trait]
+impl<Storage: ClickHouseStorage> CallbackLogger for TraceSpendLogger<Storage> {
+    fn callback_name(&self) -> &'static str {
+        CALLBACK_NAME
+    }
+
+    async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        let kwargs = callback_kwargs(&event)?;
+        let callback = CallbackEvent {
+            kwargs: &kwargs,
+            redact: false,
+            lens: &self.lens,
+        };
+        self.spend.async_log_success_event(&callback).await;
+        Ok(())
+    }
+
+    async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        let kwargs = callback_kwargs(&event)?;
+        let callback = CallbackEvent {
+            kwargs: &kwargs,
+            redact: false,
+            lens: &self.lens,
+        };
+        self.spend.async_log_failure_event(&callback).await;
+        Ok(())
+    }
+}
