@@ -640,6 +640,8 @@ async fn answers_failures_in_litellm_shape(
 #[path = "tests/stream/tests.rs"]
 mod stream;
 
+mod provider_framework;
+
 #[tokio::test]
 async fn stream_error_preserves_param() {
     let answered = exchange(
