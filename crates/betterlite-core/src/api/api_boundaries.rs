@@ -68,6 +68,23 @@ pub struct LimitErrorFields {
 }
 
 impl ApiLimitError {
+    const fn rejection(input: ApiBoundariesInput, limit: usize) -> Self {
+        match input {
+            ApiBoundariesInput::Json(boundary) => Self::JsonTooLarge {
+                observed: boundary.known_bytes,
+                limit,
+            },
+            ApiBoundariesInput::Event(boundary) => Self::EventTooLarge {
+                observed: boundary.known_bytes,
+                limit,
+            },
+            ApiBoundariesInput::Items(boundary) => Self::TooManyItems {
+                observed: boundary.known_count,
+                limit,
+            },
+        }
+    }
+
     #[must_use]
     pub const fn fields(self) -> LimitErrorFields {
         match self {
@@ -94,62 +111,18 @@ impl ApiLimitError {
 }
 
 impl ApiLimits {
-    pub const fn check_json(
-        &self,
-        boundary: JsonBoundary,
-    ) -> Result<ApiBoundariesResult, ApiLimitError> {
-        if boundary.known_bytes > self.max_json_bytes {
-            return Err(ApiLimitError::JsonTooLarge {
-                observed: boundary.known_bytes,
-                limit: self.max_json_bytes,
-            });
-        }
-        Ok(ApiBoundariesResult {
-            observed: boundary.known_bytes,
-            limit: self.max_json_bytes,
-        })
-    }
-
-    pub const fn check_event(
-        &self,
-        boundary: EventBoundary,
-    ) -> Result<ApiBoundariesResult, ApiLimitError> {
-        if boundary.known_bytes > self.max_event_bytes {
-            return Err(ApiLimitError::EventTooLarge {
-                observed: boundary.known_bytes,
-                limit: self.max_event_bytes,
-            });
-        }
-        Ok(ApiBoundariesResult {
-            observed: boundary.known_bytes,
-            limit: self.max_event_bytes,
-        })
-    }
-
-    pub const fn check_items(
-        &self,
-        boundary: ItemsBoundary,
-    ) -> Result<ApiBoundariesResult, ApiLimitError> {
-        if boundary.known_count > self.max_items {
-            return Err(ApiLimitError::TooManyItems {
-                observed: boundary.known_count,
-                limit: self.max_items,
-            });
-        }
-        Ok(ApiBoundariesResult {
-            observed: boundary.known_count,
-            limit: self.max_items,
-        })
-    }
-
     pub const fn check(
         &self,
         input: ApiBoundariesInput,
     ) -> Result<ApiBoundariesResult, ApiLimitError> {
-        match input {
-            ApiBoundariesInput::Json(boundary) => self.check_json(boundary),
-            ApiBoundariesInput::Event(boundary) => self.check_event(boundary),
-            ApiBoundariesInput::Items(boundary) => self.check_items(boundary),
+        let (observed, limit) = match input {
+            ApiBoundariesInput::Json(boundary) => (boundary.known_bytes, self.max_json_bytes),
+            ApiBoundariesInput::Event(boundary) => (boundary.known_bytes, self.max_event_bytes),
+            ApiBoundariesInput::Items(boundary) => (boundary.known_count, self.max_items),
+        };
+        if observed > limit {
+            return Err(ApiLimitError::rejection(input, limit));
         }
+        Ok(ApiBoundariesResult { observed, limit })
     }
 }

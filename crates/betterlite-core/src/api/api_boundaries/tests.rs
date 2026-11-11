@@ -3,8 +3,8 @@
 use rstest::rstest;
 
 use super::{
-    ApiBoundariesInput, ApiBoundariesResult, ApiLimitError, ApiLimits, EventBoundary,
-    ItemsBoundary, JsonBoundary, LimitErrorFields,
+    ApiBoundariesInput, ApiLimitError, ApiLimits, EventBoundary, ItemsBoundary, JsonBoundary,
+    LimitErrorFields,
 };
 
 // the caps are literals here (0x0001_0000 is 65536), so a mutated bound constant cannot move the test with it
@@ -12,23 +12,50 @@ const JSON_CAP: usize = 16 * 1024 * 1024;
 const EVENT_CAP: usize = 1024 * 1024;
 const ITEMS_CAP: usize = 0x0001_0000;
 
+const JSON_FIELDS: LimitErrorFields = LimitErrorFields {
+    status: 413,
+    error_type: "invalid_request_error",
+    param: "body",
+    code: "request_too_large",
+};
+
+const EVENT_FIELDS: LimitErrorFields = LimitErrorFields {
+    status: 502,
+    error_type: "bad_gateway",
+    param: "stream",
+    code: "event_too_large",
+};
+
+const ITEMS_FIELDS: LimitErrorFields = LimitErrorFields {
+    status: 400,
+    error_type: "invalid_request_error",
+    param: "input",
+    code: "too_many_items",
+};
+
+fn json(known_bytes: usize) -> ApiBoundariesInput {
+    ApiBoundariesInput::Json(JsonBoundary { known_bytes })
+}
+
+fn event(known_bytes: usize) -> ApiBoundariesInput {
+    ApiBoundariesInput::Event(EventBoundary { known_bytes })
+}
+
+fn items(known_count: usize) -> ApiBoundariesInput {
+    ApiBoundariesInput::Items(ItemsBoundary { known_count })
+}
+
 #[rstest]
 #[case::empty(0)]
 #[case::one_byte(1)]
 #[case::one_below_cap(JSON_CAP - 1)]
 #[case::at_cap(JSON_CAP)]
 fn json_at_cap(#[case] known_bytes: usize) {
-    let limits = ApiLimits::default();
-    let checked = limits
-        .check_json(JsonBoundary { known_bytes })
-        .expect("JSON at or below the cap is accepted");
-    assert_eq!(
-        checked,
-        ApiBoundariesResult {
-            observed: known_bytes,
-            limit: JSON_CAP
-        }
-    );
+    let checked = ApiLimits::default()
+        .check(json(known_bytes))
+        .expect("accepted");
+    assert_eq!(checked.observed, known_bytes);
+    assert_eq!(checked.limit, JSON_CAP);
 }
 
 #[rstest]
@@ -36,26 +63,17 @@ fn json_at_cap(#[case] known_bytes: usize) {
 #[case::twice_the_cap(JSON_CAP * 2)]
 #[case::usize_max(usize::MAX)]
 fn json_over_cap(#[case] known_bytes: usize) {
-    let limits = ApiLimits::default();
-    let error = limits
-        .check_json(JsonBoundary { known_bytes })
-        .expect_err("JSON over the cap is rejected");
+    let error = ApiLimits::default()
+        .check(json(known_bytes))
+        .expect_err("rejected");
     assert_eq!(
         error,
         ApiLimitError::JsonTooLarge {
             observed: known_bytes,
-            limit: JSON_CAP,
+            limit: JSON_CAP
         }
     );
-    assert_eq!(
-        error.fields(),
-        LimitErrorFields {
-            status: 413,
-            error_type: "invalid_request_error",
-            param: "body",
-            code: "request_too_large",
-        }
-    );
+    assert_eq!(error.fields(), JSON_FIELDS);
 }
 
 #[rstest]
@@ -64,17 +82,11 @@ fn json_over_cap(#[case] known_bytes: usize) {
 #[case::one_below_cap(EVENT_CAP - 1)]
 #[case::at_cap(EVENT_CAP)]
 fn event_at_cap(#[case] known_bytes: usize) {
-    let limits = ApiLimits::default();
-    let checked = limits
-        .check_event(EventBoundary { known_bytes })
-        .expect("provider events at or below the cap are accepted");
-    assert_eq!(
-        checked,
-        ApiBoundariesResult {
-            observed: known_bytes,
-            limit: EVENT_CAP
-        }
-    );
+    let checked = ApiLimits::default()
+        .check(event(known_bytes))
+        .expect("accepted");
+    assert_eq!(checked.observed, known_bytes);
+    assert_eq!(checked.limit, EVENT_CAP);
 }
 
 #[rstest]
@@ -82,26 +94,17 @@ fn event_at_cap(#[case] known_bytes: usize) {
 #[case::twice_the_cap(EVENT_CAP * 2)]
 #[case::usize_max(usize::MAX)]
 fn event_over_cap(#[case] known_bytes: usize) {
-    let limits = ApiLimits::default();
-    let error = limits
-        .check_event(EventBoundary { known_bytes })
-        .expect_err("a provider event over the cap is rejected");
+    let error = ApiLimits::default()
+        .check(event(known_bytes))
+        .expect_err("rejected");
     assert_eq!(
         error,
         ApiLimitError::EventTooLarge {
             observed: known_bytes,
-            limit: EVENT_CAP,
+            limit: EVENT_CAP
         }
     );
-    assert_eq!(
-        error.fields(),
-        LimitErrorFields {
-            status: 502,
-            error_type: "bad_gateway",
-            param: "stream",
-            code: "event_too_large",
-        }
-    );
+    assert_eq!(error.fields(), EVENT_FIELDS);
 }
 
 #[rstest]
@@ -110,17 +113,11 @@ fn event_over_cap(#[case] known_bytes: usize) {
 #[case::one_below_cap(ITEMS_CAP - 1)]
 #[case::at_cap(ITEMS_CAP)]
 fn items_at_cap(#[case] known_count: usize) {
-    let limits = ApiLimits::default();
-    let checked = limits
-        .check_items(ItemsBoundary { known_count })
-        .expect("collections at or below the cap are accepted");
-    assert_eq!(
-        checked,
-        ApiBoundariesResult {
-            observed: known_count,
-            limit: ITEMS_CAP
-        }
-    );
+    let checked = ApiLimits::default()
+        .check(items(known_count))
+        .expect("accepted");
+    assert_eq!(checked.observed, known_count);
+    assert_eq!(checked.limit, ITEMS_CAP);
 }
 
 #[rstest]
@@ -128,26 +125,17 @@ fn items_at_cap(#[case] known_count: usize) {
 #[case::twice_the_cap(ITEMS_CAP * 2)]
 #[case::usize_max(usize::MAX)]
 fn items_over_cap(#[case] known_count: usize) {
-    let limits = ApiLimits::default();
-    let error = limits
-        .check_items(ItemsBoundary { known_count })
-        .expect_err("a collection over the cap is rejected");
+    let error = ApiLimits::default()
+        .check(items(known_count))
+        .expect_err("rejected");
     assert_eq!(
         error,
         ApiLimitError::TooManyItems {
             observed: known_count,
-            limit: ITEMS_CAP,
+            limit: ITEMS_CAP
         }
     );
-    assert_eq!(
-        error.fields(),
-        LimitErrorFields {
-            status: 400,
-            error_type: "invalid_request_error",
-            param: "input",
-            code: "too_many_items",
-        }
-    );
+    assert_eq!(error.fields(), ITEMS_FIELDS);
 }
 
 #[rstest]
@@ -174,7 +162,7 @@ fn compatibility_deviations(
     let limits = ApiLimits::default();
     let error = limits
         .check(input)
-        .expect_err("betterlite rejects input past its pinned cap");
+        .expect_err("rejected past the pinned cap");
     assert_eq!(error, expected);
     assert_eq!(error.fields(), fields);
     // the pinned responses iterator parses each event uncapped, so the same size passes without betterlite's caps
@@ -185,6 +173,6 @@ fn compatibility_deviations(
     };
     let unchecked = unconstrained
         .check(input)
-        .expect("the pinned code applies no cap, so the same size passes");
+        .expect("the pinned behavior has no cap");
     assert_eq!(unchecked.limit, usize::MAX);
 }
