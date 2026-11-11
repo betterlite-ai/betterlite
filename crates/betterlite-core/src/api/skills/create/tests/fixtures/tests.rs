@@ -186,6 +186,11 @@ impl FakeHttp {
             status,
         }
     }
+
+    fn answer(&self) -> Result<Skill, SkillsHandlerError> {
+        self.status
+            .map_or_else(|| Ok(sample_skill()), |status| Err(handler_error(status)))
+    }
 }
 
 impl SkillsCreateHttpHandler for FakeHttp {
@@ -199,10 +204,7 @@ impl SkillsCreateHttpHandler for FakeHttp {
         };
         creates.push(recorded(&request));
         drop(creates);
-        ready(
-            self.status
-                .map_or_else(|| Ok(sample_skill()), |status| Err(handler_error(status))),
-        )
+        ready(self.answer())
     }
 }
 
@@ -259,12 +261,17 @@ impl HostedSkillsCreator for FakeHosted {
         &self,
         request: HostedCreateSkillRequest<'_>,
     ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
-        let recorded = hosted_call(&request);
+        self.record(&request);
+        ready(Ok(sample_skill()))
+    }
+}
+
+impl FakeHosted {
+    fn record(&self, request: &HostedCreateSkillRequest<'_>) {
         self.calls
             .lock()
             .expect("the fake records its calls")
-            .push(recorded);
-        ready(Ok(sample_skill()))
+            .push(hosted_call(request));
     }
 }
 

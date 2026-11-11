@@ -9,19 +9,18 @@ pub fn requester_metadata<'values>(
     kwargs: &'values IndexMap<String, Json>,
     extra_body: Option<&'values IndexMap<String, Json>>,
 ) -> Option<&'values IndexMap<String, Json>> {
-    extra_body
+    let from_extra_body = extra_body
         .and_then(|body| body.get("metadata"))
+        .and_then(object);
+    let from_kwargs = kwargs
+        .get("metadata")
         .and_then(object)
-        .or_else(|| {
-            kwargs
-                .get("metadata")
-                .and_then(object)
-                .and_then(|metadata| metadata.get("requester_metadata"))
-                .and_then(object)
-        })
+        .and_then(|metadata| metadata.get("requester_metadata"))
+        .and_then(object);
+    from_extra_body.or(from_kwargs)
 }
 
-// LiteLLM passes description and instructions from the REST form's top-level kwargs, falling back to extra_body
+// LiteLLM reads description and instructions from the REST form's top-level kwargs, then from extra_body
 pub fn hosted_text<'values>(
     kwargs: &'values IndexMap<String, Json>,
     extra_body: Option<&'values IndexMap<String, Json>>,
