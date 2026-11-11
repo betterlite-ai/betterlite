@@ -148,4 +148,5 @@ where
 }
 
 mod decoders;
+mod mp3;
 mod tests;
