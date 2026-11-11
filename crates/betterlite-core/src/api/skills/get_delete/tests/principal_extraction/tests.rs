@@ -43,10 +43,7 @@ fn principal_extraction_falls_back_to_litellm_metadata() {
 fn user_api_key_auth_accepts_any_non_null_value(#[case] principal: Json) {
     let mut values = IndexMap::new();
     values.insert("metadata".to_owned(), metadata_with(principal.clone()));
-    assert_eq!(
-        user_api_key_auth_from_kwargs(&values),
-        Some(&metadata_with(principal))
-    );
+    assert_eq!(user_api_key_auth_from_kwargs(&values), Some(&principal));
 }
 
 #[test]
