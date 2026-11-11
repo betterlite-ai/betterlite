@@ -1,0 +1,11 @@
+id: no-typing-escapes
+language: python
+severity: error
+message: if TYPE_CHECKING and from __future__ import annotations give the checker a different program than the one that runs; import what you use at the top and write the annotations Python evaluates
+rule:
+  any:
+    - kind: if_statement
+      has:
+        field: condition
+        regex: ^(typing\.)?TYPE_CHECKING$
+    - kind: future_import_statement

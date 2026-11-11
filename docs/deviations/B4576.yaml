@@ -1,0 +1,14 @@
+task: B4576
+deviations:
+  - what: A lone Escape key is reported at once; LiteLLM's raw-mode reader waits for two more bytes and blocks until the user types them.
+    why: Waiting on Escape is a hang no working setup can rely on, so betterlite lets the console reader return Escape as soon as the terminal sends that byte alone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L315-L362
+  - what: End of input at the numbered team prompt returns no selection, where click.prompt raises Abort and exits the command.
+    why: A closed stdin means there is nothing left to choose from, and the caller already treats an empty answer as a skipped selection; an error exit would end a login that could still fall back to its own default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L452-L483
+  - what: Arrow-key selection needs stdout to be a terminal as well as stdin; when stdout is redirected the numbered prompt is used instead.
+    why: The selection display is written to stdout, so the console key reader only enters raw mode when that display can be seen; LiteLLM keys off stdin alone and would paint the menu into the redirected stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L403-L449
+  - what: A start or poll body that is valid JSON but not an object is a clean typed error; LiteLLM crashes with an unhandled AttributeError on data.get().
+    why: A crash on a malformed body is a bug no working setup can rely on, so betterlite reports it as a body-shape error instead of terminating the CLI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L575-L615
