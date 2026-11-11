@@ -28,14 +28,14 @@ fn user_team_tags_are_normalized_for_the_alias_and_team_alias() {
 }
 
 #[rstest]
-#[case::team_id_only(vec![("team_id", "Team ID")], "team-id")]
+#[case::team_id_only(vec![("team_id", "Team ID")], "team_id")]
 #[case::team_alias_beats_team_id(
     vec![("team_alias", "Team Alias"), ("team_id", "Team ID")],
-    "team-alias"
+    "team_alias"
 )]
 #[case::api_key_team_id_beats_team_alias(
     vec![("user_api_key_team_id", "Key Team"), ("team_alias", "Team Alias")],
-    "key-team"
+    "key_team"
 )]
 #[case::api_key_team_alias_beats_all(
     vec![
@@ -44,7 +44,7 @@ fn user_team_tags_are_normalized_for_the_alias_and_team_alias() {
         ("team_alias", "Team Alias"),
         ("team_id", "Team ID"),
     ],
-    "key-team-alias"
+    "key_team_alias"
 )]
 fn user_team_precedence_follows_the_metadata_chain(
     #[case] metadata: Vec<(&str, &str)>,

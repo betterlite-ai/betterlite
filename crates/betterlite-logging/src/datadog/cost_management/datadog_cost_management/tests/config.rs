@@ -60,7 +60,7 @@ fn config_reads_the_batch_defaults_from_the_environment() {
         ("DEFAULT_BATCH_SIZE", "64"),
         ("DEFAULT_FLUSH_INTERVAL_SECONDS", "9"),
     ]);
-    let settings = support::settings_with(&support::init(&[]), &environment);
+    let settings = support::settings_with(&CostManagementInit::default(), &environment);
     assert_eq!(settings.batch.batch_size, 64);
     assert_eq!(settings.batch.flush_interval, Duration::from_secs(9));
 }
