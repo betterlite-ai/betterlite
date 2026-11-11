@@ -4,6 +4,7 @@ pub mod admission_control;
 pub mod agent_host_settings;
 pub mod agent_routes;
 pub mod agent_search;
+pub mod agent_tracing;
 pub mod aim_inspection;
 pub mod aiohttp_transport_toggle;
 pub mod akto_mirroring;
@@ -147,6 +148,7 @@ pub mod cost_routing;
 pub mod current_spend;
 pub mod custom_auth;
 pub mod custom_dimensions;
+pub mod dashboard_assets;
 pub mod data_cloud_credentials;
 pub mod database_availability;
 pub mod database_diagnostics;
@@ -318,10 +320,13 @@ pub mod otel_settings;
 pub mod panw_prisma_airs;
 pub mod pass_through_registry;
 pub mod passthrough_request_policies;
+pub mod passthrough_runtime;
 pub mod passthrough_websocket;
 pub mod password_login;
 pub mod password_policy;
 pub mod payload_exclusions;
+pub mod pointfive_params;
+pub mod policy_engine;
 pub mod pre_call;
 pub mod pre_routing_registry;
 pub mod prometheus_bounded_series;
@@ -331,12 +336,15 @@ pub mod prompt_affinity;
 pub mod prompt_cache_accounting;
 pub mod prompt_injection;
 pub mod prompt_repositories;
+pub mod prompt_runtime;
 pub mod prompts;
 pub mod provider_resolution;
 pub mod provider_url_destination;
 pub mod proxy_base_url;
 pub mod proxy_custom_dispatch;
+pub mod proxy_hook_selection;
 pub mod proxy_provider_options;
+pub mod public_discovery;
 pub mod public_router_presets;
 pub mod public_skills_index;
 pub mod quality_router;
@@ -381,7 +389,9 @@ pub mod routing_timeouts;
 pub mod s3_response_cache;
 pub mod sandbox_dispatch;
 pub mod scheduled_job_stagger;
+pub mod secret_manager_bootstrap;
 pub mod security_headers;
+pub mod self_hosted_dispatch;
 pub mod semantic_embedding_inputs;
 pub mod semantic_router;
 pub mod sensitive_data_routing;
@@ -394,6 +404,7 @@ pub mod speech_call;
 pub mod spend_reseed;
 pub mod sso_presence;
 pub mod static_eligibility;
+pub mod stream_usage_cost;
 pub mod streaming_logging;
 pub mod studio_identity;
 pub mod summary_model_access;
@@ -426,6 +437,7 @@ pub mod verbose_hooks;
 pub mod vertex_credential_sources;
 pub mod vertex_embedding_dispatch;
 pub mod vertex_schema_shaping;
+pub mod vigil_runtime;
 pub mod virtual_key_auth;
 pub mod virtual_key_routes;
 pub mod voyage_credentials;
@@ -518,7 +530,7 @@ macro_rules! sections {
 }
 
 sections! {
-    access_windows, adaptive_classification, admission_control, agent_host_settings, agent_routes, agent_search,
+    access_windows, adaptive_classification, admission_control, agent_host_settings, agent_routes, agent_search, agent_tracing,
     aim_inspection, aiohttp_transport_toggle, akto_mirroring, alert_settings,
     alice_conduct_decisions, anthropic_beta_config, anthropic_capability_catalog,
     anthropic_completion, anthropic_count_tokens, anthropic_credentials, anthropic_headers,
@@ -553,7 +565,7 @@ sections! {
     component_contracts, compresr_writeback, compression_interception_state, content_category,
     content_filter_catalog, content_filter_inputs, content_filter_records, context_placement,
     cooldown_decisions, cooldown_state, copilot_device, cost_adjustments, cost_routing,
-    current_spend, custom_auth, custom_dimensions, database_availability, database_diagnostics,
+    current_spend, custom_auth, custom_dimensions, dashboard_assets, database_availability, database_diagnostics,
     database_failures, database_reencryption, database_refresh_loop, database_startup,
     database_tls, database_tokens, database_urls, deepinfra_settings, deepkeep_firewall,
     deepseek_identity, default_user_teams, deployment_affinity, deployment_catalog,
@@ -586,10 +598,10 @@ sections! {
     native_messages_hosts_settings, oauth_tokens, ollama_model_metadata, openai_chat_content,
     openai_credentials, openai_like_settings, openai_mock_transport, openai_provider,
     openai_realtime, openai_workload_identity, otel_settings, panw_prisma_airs,
-    pass_through_registry, passthrough_request_policies, passthrough_websocket, password_login, password_policy, payload_exclusions,
+    pass_through_registry, passthrough_request_policies, passthrough_runtime, passthrough_websocket, password_login, password_policy, payload_exclusions, pointfive_params, policy_engine,
     pre_call, pre_routing_registry, prometheus_bounded_series, prometheus_budget_refresh,
-    prometheus_exporter, prompt_affinity, prompt_cache_accounting, prompt_injection, prompt_repositories, provider_resolution,
-    provider_url_destination, proxy_base_url, proxy_custom_dispatch, proxy_provider_options, public_router_presets,
+    prometheus_exporter, prompt_affinity, prompt_cache_accounting, prompt_injection, prompt_repositories, prompt_runtime, provider_resolution,
+    provider_url_destination, proxy_base_url, proxy_custom_dispatch, proxy_hook_selection, proxy_provider_options, public_discovery, public_router_presets,
     quality_router, rag_records_and_chunking, rate_limit_usage, rate_limiter_settings,
     rds_credentials, redis_cache, redis_cache_primitives, redis_credentials, redis_failure_policy,
     request_body, request_body_safety, request_form, request_headers, request_intake,
@@ -598,16 +610,16 @@ sections! {
     responses_id_security, responses_mcp_execute, responses_parameters, responses_ws_auth,
     responses_ws_native, retry_policy, router_compaction, router_core, router_weights,
     routing_budgets, routing_groups, routing_plugins, routing_state, routing_state_store,
-    routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger,
-    security_headers, semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
+    routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger, secret_manager_bootstrap,
+    security_headers, self_hosted_dispatch, semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
     session_iteration_limits, session_token_codec, settings, speech_call, spend_reseed,
-    sso_presence, static_eligibility, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
+    sso_presence, static_eligibility, stream_usage_cost, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
     team_admin_fields, team_create, team_fields, team_limits, team_state, tier_artifact_predictor,
     tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
     two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
     vector_context_shaping, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
-    vertex_schema_shaping, virtual_key_auth, virtual_key_routes, voyage_credentials,
+    vertex_schema_shaping, vigil_runtime, virtual_key_auth, virtual_key_routes, voyage_credentials,
     websearch_request_hooks, worker_options_reload, xai_identity, xai_oauth_settings,
     config_param_cache, data_cloud_credentials, db_watchdog, enterprise_ml_credentials, fallback_errors, gateway_provider_keys, hosted_platform_keys, mcp_discovery, model_hub_credentials, prompts, public_skills_index, regional_host_keys, smtp_transport, weighted_failover,
 }

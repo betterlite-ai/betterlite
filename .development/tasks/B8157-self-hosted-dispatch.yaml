@@ -11,11 +11,15 @@ description: >-
 
   Ollama model listing (litellm/llms/ollama/common_utils.py): OllamaModelInfo.get_models L93-L134, validate_environment L229-L242 (a no-op that returns an empty map) and get_base_model L244-L249 (returns the model unchanged). get_models takes the base from B2223's get_server_api_base and resolves the key through B2223's get_api_key only when no api_base was passed or a key was given. It sends GET {base}/api/tags over the injected client, with Authorization Bearer {key} only when a key is set. A JSON object with a models list, or a bare JSON list, gives the entries. Each object entry gives its name, else its model, when that is a string, with the ollama/ prefix added unless it is already there. The result is the sorted names without duplicates. Any failure of the request, the status check or the body logs a warning and returns the catalog's ollama models, each with the ollama/ prefix.
 
+  Settings: this task owns the config section self_hosted_dispatch (crates/betterlite-config/src/sections/self_hosted_dispatch.rs). It reads HOSTED_VLLM_API_BASE, OLLAMA_API_BASE, OLLAMA_API_KEY, LEMONADE_API_KEY, litellm.api_base, litellm.api_key, litellm.ollama_key and litellm.lemonade_key through betterlite-config and hands them to the dispatch as config.sections.self_hosted_dispatch. The precedence differs by arm and the source wins: hosted_vllm takes the passed base, then litellm.api_base, then HOSTED_VLLM_API_BASE (L2564); ollama and ollama_chat take litellm.api_base, then the passed base, then OLLAMA_API_BASE, then http://localhost:11434 (L4474, L4514); the ollama_chat key is the passed key, litellm.ollama_key, OLLAMA_API_KEY, then litellm.api_key (L4516); the lemonade key is the passed key, litellm.lemonade_key, LEMONADE_API_KEY, then litellm.api_key (L4838). A key is supported only when a named loader test in the section's tests.rs loads it through the real config loader.
+
   Where the source and this text differ, the source at the pinned commit wins.
 scope:
   paths:
     - crates/betterlite-provider/src/self_hosted_dispatch.rs
     - crates/betterlite-provider/src/self_hosted_dispatch/**
+    - crates/betterlite-config/src/sections/self_hosted_dispatch.rs
+    - crates/betterlite-config/src/sections/self_hosted_dispatch/**
     - Cargo.lock
     - tools/oracle/cases/helpers/self-hosted-dispatch/**
     - tools/oracle/helpers/b8157.py
@@ -26,7 +30,7 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1-L4861
     why: The _complete_* functions for these providers (ranges in the description).
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/llms/lemonade/chat/transformation.py#L1-L255
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L1-L255
     why: Lemonade get_models and transform_response.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L93-L249
     why: OllamaModelInfo get_models, validate_environment and get_base_model.
@@ -39,11 +43,16 @@ dod:
     proof: [self-hosted-dispatch-tests, self-hosted-dispatch-cases]
   - text: Ollama get_models lists the /api/tags names with the ollama/ prefix, sorted and without duplicates, sends the bearer header only with a key and falls back to the catalog list on any failure; validate_environment and get_base_model are no-ops.
     proof: [self-hosted-dispatch-tests, self-hosted-dispatch-cases]
+  - text: The real config loader reads the self_hosted_dispatch settings with the per-arm precedence above, including litellm.ollama_key.
+    proof: [self-hosted-dispatch-config-tests]
   - text: New helper cases for these functions exist.
     proof: [self-hosted-dispatch-cases]
 checks:
   optional: [mutants]
   commands:
+    - id: self-hosted-dispatch-config-tests
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::self_hosted_dispatch::/)'
+      why: Without the section and its loader tests there are no such tests, so the check fails on the base branch.
     - id: self-hosted-dispatch-tests
       run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^self_hosted_dispatch::/)'
       why: Without this provider code there are no such tests, so the check fails on the base branch.

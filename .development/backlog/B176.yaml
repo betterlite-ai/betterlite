@@ -6,6 +6,7 @@ depends_on: [B174, B213, B2228]
 file: tasks/B176-provider-controls.yaml
 covers:
   - "litellm/litellm_core_utils/{get_litellm_params,llm_request_utils,provider_affinity,get_provider_specific_headers}.py"
+  - "litellm/types/litellm_params.py"
 parent: B010
 split_from: null
 resolution: null

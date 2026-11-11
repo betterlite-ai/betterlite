@@ -81,7 +81,7 @@ deviations:
   - what: The request data, call id and failure headers travel inside PassthroughFailure instead of being read from the processor object.
     why: B7324's ExceptionMapper takes only the error and the key; what a client sees is the same.
 out_of_scope:
-  - "base_process_llm_request, _process_llm_request, common_processing_pre_call_logic and get_custom_headers for this route type: B8694 runs them with B004's header code. base_passthrough_process_llm_request: B7324."
+  - "base_process_llm_request, _process_llm_request, common_processing_pre_call_logic and get_custom_headers for this route type: B8694 runs them with B004's header code and B8994's logging_caching_headers. base_passthrough_process_llm_request: B7324."
   - "The rest of ProxyBaseLLMRequestProcessing (the chat, Responses, Anthropic and container branches, the deferred logging closures, create_response and the SSE generators): their route tasks; no task builds the whole class."
   - "The Bedrock event-stream statics and de_anonymize_event_stream: B3678. The ProxyPostCallHook value: B8656."
 pitfalls:

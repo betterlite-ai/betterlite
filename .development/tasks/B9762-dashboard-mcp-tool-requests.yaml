@@ -1,0 +1,130 @@
+id: B9762
+title: Verify MCP tool testing, policy editing and network settings requests
+description: >-
+  Add HTTP cases for the MCP tool drawer, connection test, ToolDetail and network/rules
+  settings. The budget is about 650 lines of transcripts; no backend handler or dashboard
+  function changes ownership. B136 supplies the real MCP mock protocol fixture, including
+  initialize/notifications and dynamic JSON-RPC ids under /__mcp_fixture/. Use its
+  $mcp_request_id response marker instead of assuming the SDK's next integer id.
+
+  Tool request audit. GET /mcp-rest/tools/list?server_id=<id> reads tools[].name,description,
+  inputSchema,annotations and error/status data. The edit form adds
+  include_disabled_tools=true; forwarded provider headers may accompany either request.
+  The ordinary selector request already belongs to B9735's mcp-toolsets-and-tools case.
+  B4727 builds this endpoint. POST /mcp-rest/tools/call sends
+  {server_id,name,arguments,litellm_metadata?:{guardrails:[...]}} and reads
+  content,structuredContent,isError. B4728 owns execution. POST /mcp-rest/test/tools/list
+  sends the unsaved NewMCPServerRequest and reads tools,error,message,status; B4729 owns
+  preview. All three are mounted by B8626, with no /v1 aliases. useTestMCPConnection sends
+  x-litellm-api-key containing the raw gateway key when Authorization carries the upstream
+  OAuth bearer; with a custom dashboard header it also puts Bearer gateway-key there.
+  The normal no-upstream-token path uses the configured gateway auth header. Capture actual
+  upstream headers and ensure the provider token is not mistaken for the gateway credential.
+  Prove a saved server's disabled tool is available to editing, a successful unsaved preview,
+  a populated tool result and a provider denial/WWW-Authenticate challenge. Use B9760's
+  same create payload shape for setup, not an in-process server registry mutation.
+
+  ToolDetail audit. GET /v1/tool/policy/options reads input_policies and output_policies
+  entries' value,label,description. GET /v1/tool/{encoded_name}/detail reads tool and
+  overrides[], including override_id,team_id,key_hash,key_alias,input_policy,output_policy
+  and display/usage fields. GET /v1/tool/{encoded_name}/logs sends page=1,page_size=50,
+  start_date and end_date formatted YYYY-MM-DD HH:mm:ss for its 90-day range; read
+  logs[].id,timestamp,model,spend,total_tokens,input_snippet,total,page,page_size.
+  B1607 owns these report routes. POST /v1/tool/policy sends {tool_name,input_policy?,
+  output_policy?,team_id?|key_hash?,key_alias?}; global changes are partial, and empty
+  optional identifiers are omitted. DELETE /v1/tool/{encoded_name}/overrides sends
+  team_id or key_hash in the query and no body; read deleted,tool_name. B062 owns both
+  writes. Exercise global policy, team and key overrides independently, reload detail,
+  delete each override and confirm another caller cannot mutate it. No /v1/tool/list or
+  /v1/tool/spend is called by ToolDetail, despite neighboring networking helpers.
+
+  Its key picker GET /key/list sends page=1,size=100,return_full_object=true,
+  include_team_keys=true,include_created_by_keys=true,substring_matching=true; read
+  keys[] token/api_key/key_hash,key_alias. B782 builds that route. B9730's key-table case
+  uses size=50, so add this size=100 request. Its TeamDropdown GET /v2/team/list sends
+  page=1,page_size=20 (team_dropdown.tsx defaults to 20 and ToolDetail passes no override), optional team_alias and user_id for a nonadmin; read teams[] and
+  pagination totals (B813), already included in B9731's legacy-and-all-page-selectors
+  plan through useInfiniteTeams. Share only the new key-picker case with B9763. Guardrail
+  selection uses GET /v2/guardrails/list with GET /guardrails/list fallback (B3684/B8667),
+  consuming guardrails[].guardrail_name and info; reuse B9735's existing planned case.
+
+  Settings audit. GET /v1/mcp/network/client-ip reads ip (B4720/B8625). GET
+  /config/list?config_type=general_settings reads field_name/field_value entries for
+  mcp_internal_ip_ranges, mcp_allowed_clients, mcp_client_id_header and mcp_required_fields.
+  MCPNetworkSettings POST /config/field/update sends {field_name,field_value,
+  config_type:general_settings}; POST /config/field/delete sends {field_name,
+  config_type:general_settings}. MCPSubmissionsTab uses the update request for
+  mcp_required_fields with its selected field-name array. B8595 implements these config
+  routes, B8675 mounts them. The HTTP list is a bare array; networking adds its local
+  data wrapper. Set general_settings.store_model_in_db=true for persisted settings and
+  leave the edited keys out of boot config so config ownership does not reject the writes.
+  Preserve array values, allowed-client {alias,value} records and a header-name string,
+  then delete and reread rather than inventing new defaults.
+
+  There is no on-disk HTTP coverage for these exact requests. B8626's no-server/auth
+  failures and B1607/B062's planned route cases do not supply the page's live MCP call,
+  date query, picker size or settings roundtrip. Use B860 database isolation, actual
+  management writes and the dependency-owned logging/runtime for populated usage; never
+  call handlers or insert arbitrary SQL rows from a helper. Compare error status/type/
+  param/code and content-type as well as the fields the drawer consumes; normalize only
+  per-process identifiers and measured times. New decoder/fuzz targets are unnecessary.
+scope:
+  paths:
+    - tools/oracle/cases/ui/mcp-tools/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5102-L5260
+    why: Saved tool listing, forwarded auth, optional disabled tools and call payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L6619-L6664
+    why: Unsaved connection preview separates upstream and gateway credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7491-L7680
+    why: Exact ToolDetail policy, detail, log and override methods and projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L935-L1366
+    why: Decorated list and call routes already owned by B4727 and B4728.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1719-L1776
+    why: Preview is B4729's route, not a client-side-only probe.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L161-L174
+    why: Policy option metadata endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L314-L491
+    why: Detail and usage-log decorators with page/date filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L585-L759
+    why: Existing policy update and override deletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18258-L18370
+    why: B8595's field update handler and config-owned-write guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18728-L18990
+    why: General-settings list and field deletion return the actual values consumed by MCP settings.
+dod:
+  - text: Connection preview, editable tool listing and execution succeed with separate gateway/provider credentials and the exact optional metadata.
+    proof: [tool-page-cases, oracle]
+  - text: Tool detail, date-filtered logs, policy overrides, size-100 keys and size-20 teams retain the page's methods, queries and response projections.
+    proof: [tool-page-cases, oracle]
+  - text: MCP IP/rules settings can be read, updated and cleared through the same admin requests used by the forms.
+    proof: [tool-page-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: tool-page-cases
+      why: No existing transcript sends the tool drawer's headers, query values and settings bodies together.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/mcp-tools)"
+oracle_cases:
+  - tools/oracle/cases/ui/mcp-tools/edit-disabled-and-preview.yaml
+  - tools/oracle/cases/ui/mcp-tools/call-with-provider-auth-and-guardrails.yaml
+  - tools/oracle/cases/ui/mcp-tools/detail-log-dates-and-overrides.yaml
+  - tools/oracle/cases/ui/mcp-tools/key-picker-size-100.yaml
+  - tools/oracle/cases/ui/teams/legacy-and-all-page-selectors.yaml
+  - tools/oracle/cases/ui/mcp-tools/network-and-submission-settings.yaml
+  - tools/oracle/cases/ui/management-selectors/mcp-toolsets-and-tools.yaml
+  - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
+deviations: []
+out_of_scope:
+  - Every tool decoder, executor and policy/report function stays with B4727/B4728/B4729/B062/B1607; B136 owns the MCP protocol fixture.
+  - B9090 retains ToolDetail, its tests, MCP tool components, useTestMCPConnection and all settings components; B9761 tests their credential-management endpoints.
+  - B8595/B8675 own config persistence and B782/B813 the shared picker APIs; route fixes discovered by cases must be returned to those owners.
+pitfalls:
+  - Tool names must be encoded as one path segment before adding /detail, /logs or /overrides.
+  - The log query uses a space-separated date-time string, not the ISO string convenient to a Rust test.
+  - A successful empty tools array cannot prove that include_disabled_tools reached the backend.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

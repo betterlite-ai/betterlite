@@ -18,7 +18,7 @@ description: >-
   to the route, which logs it at debug and lists no config tools. The router refresh after a write is B8384's
   RouterSearchRefresh over `shared.router` (no router installed: the refresh does nothing, as LiteLLM skips it when
   llm_router is None). The team read is B737's get_team_object behind B3275's TeamObjectLookup, over `shared.db` and
-  `shared.auth_cache`. The provider list is B2202's ProviderCatalog and the connection test is B3272's ConnectionSearch,
+  `shared.auth_cache`. The provider list is B3275's injected ProviderCatalog, which you implement over B048's `search_config(name)` registry, and the connection test is B3272's ConnectionSearch,
   with `shared.http` as its client. When a trait already has its implementation in the backing module, pass that
   type; write an adapter only where none exists.
 
@@ -26,7 +26,7 @@ description: >-
   B5656's SDK completion call (LiteLLM's usage AI chat calls litellm.acompletion directly, not the router, so config
   deployments do not apply and the provider key comes from the environment); the data source is B3103's
   DailyActivityUsageData over `shared.db`; the clock gives the local date. Write `DbUsageChatFactory` holding the
-  database and the client. The ping interval is `litellm_settings.sse_keepalive_ping_interval_seconds` from B005's
+  database and the client. The ping interval is `litellm_settings.sse_keepalive_ping_interval_seconds` from B089's
   section in the loaded Config, read once; the caller-id check is B861's.
 
   3. Mount. `pub(crate) fn mount_search_usage(router: Router, state: &Arc<ServerState>) -> Router` merges

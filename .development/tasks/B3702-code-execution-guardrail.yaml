@@ -11,7 +11,7 @@ description: >-
   - registration.rs: get_config_model (L366-L372 LiteLLM) static method returning type[BlockCodeExecutionGuardrailConfigModel]. get_supported_event_hooks (L374-L380 LiteLLM) returning [GuardrailEventHooks.pre_call, GuardrailEventHooks.post_call, GuardrailEventHooks.during_call]. apply_guardrail (L516-L588 LiteLLM) async decorated method: extract texts from inputs.get("texts", []), return inputs unchanged if empty. For each text, call self._scan_text(text, detections, input_type) from B3701, append modified text to processed. If should_raise, determine language from first detection with action_taken=="block" (default "unknown"), call self._raise_block_error(lang, is_output, request_data). Set inputs["texts"]=processed, return inputs. Try/except HTTPException/ModifyResponseException (status="guardrail_intervened"), other Exception (status="guardrail_failed_to_respond"), finally: build detection_dicts from detections, compute max_confidence (None if empty), call self.add_standard_logging_guardrail_information_to_request_data with guardrail_provider="block_code_execution", guardrail_json_response=detection_dicts or exception_str, status, start_time, end_time, duration, event_type (pre_call for request, post_call for response), tracing_detail (guardrail_id, detection_method="fenced_code_block", match_details, confidence_score if not None).
   - initializer.rs: _get_param (L19-L32 CODE_INIT) accepting litellm_params (LitellmParams), guardrail (Guardrail), key (str), default (object). Read getattr(litellm_params, key, default); if found and not None return it. Otherwise read guardrail.get("litellm_params") and access dict[key] if present. Return default if not found. initialize_guardrail (L35-L77 CODE_INIT) accepting litellm_params and guardrail, extracting guardrail_name (required, raise ValueError("Block Code Execution guardrail requires a guardrail_name") if missing/empty). Use _get_param to read: blocked_languages (list[str] | None, default None), action ("block"|"mask", default "block"), confidence_threshold (float, default 0.5, cast and clamp), detect_execution_intent (bool, default true), mode (str|None override for event_hook, default None). Compute event_hook = mode or DEFAULT_EVENT_HOOKS. Construct BlockCodeExecutionGuardrail with all parameters. Call litellm.logging_callback_manager.add_litellm_callback(instance). Return instance. Expose guardrail_initializer_registry (dict keyed by SupportedGuardrailIntegrations.BLOCK_CODE_EXECUTION.value) mapping to initialize_guardrail. Expose guardrail_class_registry mapping to BlockCodeExecutionGuardrail.
 
-  Depend on B3690 (BlockCodeExecutionGuardrailConfigModel, CodeBlockDetection, CodeBlockActionTaken), B3701 (_scan_text), B189 (LoggingCallbackManager.add_litellm_callback), B002 (config loader). Unresolved B104: CustomGuardrail.__init__, raise_passthrough_exception, add_standard_logging_guardrail_information_to_request_data, ModifyResponseException, HTTPException.
+  Depend on B3690 (BlockCodeExecutionGuardrailConfigModel, CodeBlockDetection, CodeBlockActionTaken), B3701 (_scan_text), B189 (LoggingCallbackManager.add_litellm_callback), B002 (config loader). CustomGuardrail.__init__ and raise_passthrough_exception come from B5471, and add_standard_logging_guardrail_information_to_request_data from B3664.
 
   Default mode is pre_call plus post_call, action is "block", confidence_threshold is 0.5, detect_execution_intent is true, default_on is false.
 
@@ -138,10 +138,10 @@ deviations:
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L516-L588"
 
 out_of_scope:
-  - "CustomGuardrail base class and init (belongs to B104)"
-  - "raise_passthrough_exception implementation (belongs to B104)"
-  - "add_standard_logging_guardrail_information_to_request_data implementation (belongs to B104)"
-  - "GuardrailConfigModel base schema (belongs to B104)"
+  - "CustomGuardrail base class and init (belongs to B5471)"
+  - "raise_passthrough_exception implementation (belongs to B5471)"
+  - "add_standard_logging_guardrail_information_to_request_data implementation (belongs to B3664)"
+  - "GuardrailConfigModel base schema (belongs to B3660)"
   - "Text scanning and detection logic (_scan_text, _find_blocks, execution intent checking) (belongs to B3701)"
   - "Configuration loading from YAML/environment (belongs to B002)"
   - "Logging callback manager and request tracing infrastructure (belongs to B189)"

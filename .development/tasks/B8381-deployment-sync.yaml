@@ -19,7 +19,8 @@ description: >-
   Router update (_update_llm_router): re-read config through B8379 (a failure warns and goes on with what it has) and
   its search tools (B8384's parse_search_tools). Rows of None mean the database read failed: warn and keep every deployment. With no
   router yet and a master key, build the router from B8382's decrypted rows when there are rows or search tools, async
-  clients only, ignore invalid deployments. Otherwise set the search tools, delete and then add. Delete
+  clients only, ignore invalid deployments, and install B3008's fallback budget predicate as fallback_budget_check
+  (L7492). Otherwise set the search tools, delete and then add. Delete
   (_delete_deployment): ids from B8382's model info for each row plus each config model's id (model_info.id or the
   router's generated id after resolving os.environ/ params); a config read failure skips deletion; a config without
   model_list keeps every non-database deployment with a warning; remove the rest. Add (_add_deployment): each row's

@@ -3,9 +3,12 @@ title: Native source and database container images
 description: >-
   Build runtime and database Docker images from the Rust workspace. Both images run betterlite as the main process with TCP 4000 exposed.
   The root Dockerfile builds the source in a rust:1.98.0-bookworm builder stage with cargo build --release --locked -p betterlite -p betterlite-db-admin,
-  copies both binaries to /usr/local/bin in the runtime stage, and bundles the admin UI static assets. There is no Prisma CLI or query engine in the image and no prisma generation at build time.
+  copies both binaries to /usr/local/bin in the runtime stage, and copies the admin UI export of B9091 beside them. The
+  export comes in as a BuildKit named context, `--build-context dashboard=target/dashboard/dist`, and the runtime stage copies its `ui` folder
+  to /usr/local/bin/ui (a sibling of the binary, as B8680 expects). No logo files are copied, since the branding is a text wordmark. Node and npm never
+  enter a builder or runtime stage of these images. There is no Prisma CLI or query engine in the image and no prisma generation at build time.
   Dockerfile.database uses the same build stages but does not add the public Wolfi repository. Both runtime stages are minimal: they copy
-  only the two binaries, the docker scripts and the UI assets from builder.
+  only the two binaries and the docker scripts from builder and the ui folder from the dashboard context.
   The native binaries (betterlite and betterlite-db-admin) sit in /usr/local/bin, there is no Python environment, schema.prisma, prisma_migration.py or enterprise/ directory,
   and runtime invokes the prod_entrypoint.sh script (provided by B5070) with the command ["--port", "4000"]. Both images include bash and pgbouncer.
   The native server does not support Datadog instrumentation through ddtrace at this stage; USE_DDTRACE has no effect (a future capability M12).
@@ -36,6 +39,8 @@ dod:
     proof: [no-prisma-generation-root, no-prisma-generation-database]
   - text: The root image adds the public Wolfi repository; the database image does not.
     proof: [public-repo-root, no-public-repo-database]
+  - text: Both runtime images hold /usr/local/bin/ui from the B9091 export passed as the dashboard build context, with its index.html and .litellm_ui_ready, and no Node, npm or logo files.
+    proof: [ui-sidecar-root, ui-sidecar-database]
   - text: Both runtime stages copy /usr/local/bin/betterlite, /usr/local/bin/betterlite-db-admin and the docker scripts from builder, and set ENTRYPOINT to the prod_entrypoint.sh script with no arguments.
     proof: [entrypoint-root, entrypoint-database]
 checks:
@@ -43,10 +48,16 @@ checks:
   commands:
     - id: build-root-image
       why: packaging/docker/Dockerfile does not exist, has syntax errors, or the root image build fails
-      run: test -f packaging/docker/Dockerfile && docker build -t betterlite-test:root -f packaging/docker/Dockerfile . > /dev/null 2>&1
+      run: test -f packaging/docker/Dockerfile && tools/dashboard/build.sh build > /dev/null 2>&1 && docker build --build-context dashboard=target/dashboard/dist -t betterlite-test:root -f packaging/docker/Dockerfile . > /dev/null 2>&1
     - id: build-database-image
       why: packaging/docker/Dockerfile.database does not exist, has syntax errors, or the database image build fails
-      run: test -f packaging/docker/Dockerfile.database && docker build -t betterlite-test:database -f packaging/docker/Dockerfile.database . > /dev/null 2>&1
+      run: test -f packaging/docker/Dockerfile.database && tools/dashboard/build.sh build > /dev/null 2>&1 && docker build --build-context dashboard=target/dashboard/dist -t betterlite-test:database -f packaging/docker/Dockerfile.database . > /dev/null 2>&1
+    - id: ui-sidecar-root
+      why: the root image has no UI folder beside the binary, or the folder is incomplete
+      run: docker run --rm --entrypoint bash betterlite-test:root -c 'ls -A /usr/local/bin/ui | grep -qx "index[.]html" && ls -A /usr/local/bin/ui | grep -qx "[.]litellm_ui_ready"'
+    - id: ui-sidecar-database
+      why: the database image has no UI folder beside the binary, or the folder is incomplete
+      run: docker run --rm --entrypoint bash betterlite-test:database -c 'ls -A /usr/local/bin/ui | grep -qx "index[.]html" && ls -A /usr/local/bin/ui | grep -qx "[.]litellm_ui_ready"'
     - id: admin-binary-root
       why: betterlite-db-admin binary is missing from the root image
       run: docker run --rm betterlite-test:root which betterlite-db-admin
@@ -85,8 +96,8 @@ deviations:
 out_of_scope:
   - B003 builds and packages the betterlite binary; this task only includes it in the runtime image.
   - B1232 builds and packages betterlite-db-admin; this task only includes it in the runtime image.
-  - B5070 provides the shell entrypoint scripts and build_admin_ui.sh hook; this task invokes them during build.
-  - B144 and related tasks own the admin UI source and build; this task bundles the prebuilt UI.
+  - B5070 provides the shell entrypoint scripts; this task invokes them during build. The enterprise no-op hook packaging/docker/build_admin_ui.sh is not used for the UI.
+  - B9091 owns the UI build and its export under target/dashboard/dist, and B144 the dashboard as a whole; this task only copies that export's ui folder into the images.
   - PgBouncer configuration and startup contract; this task bundles the binary but B003 calls start_in_container_pgbouncer.
   - Python callback runtime and its dependencies; betterlite retains the capability (M12) but does not build it yet.
 pitfalls:
@@ -94,8 +105,8 @@ pitfalls:
     The prod_entrypoint.sh script is provided by B5070 at packaging/docker/prod_entrypoint.sh and referenced at container runtime.
     The Dockerfile COPY --from=builder ensures the script is at the correct runtime path.
   - >-
-    The native server reads the UI from a static folder, not from a Python package. The builder clears and rebuilds the UI bundle
-    before copying it, ensuring fresh output.
+    The native server reads the UI from the ui folder beside the binary, not from a Python package. The image build never runs npm:
+    B9091's build.sh prepares target/dashboard/dist first and the Dockerfile only copies from the named context.
   - >-
     Both images use identical build stages except the runtime stage. Root adds the public Wolfi repository and the
     database image omits it.
