@@ -1,10 +1,10 @@
 use std::io::{Cursor, Read, Seek, SeekFrom};
-use std::time::Duration;
 
 use lewton::header::read_header_ident;
 use rust_decimal::Decimal;
 
-const NANOS_PER_SECOND: u32 = 1_000_000_000;
+use super::mp3::mp3_seconds;
+
 const OGG_HEADER_BYTES: usize = 27;
 const OGG_MAX_SEGMENTS: usize = 255;
 // the three Vorbis headers fit far below this, so an oversized first packet is refused unread
@@ -36,46 +36,35 @@ where
     R: Read + Seek,
 {
     match container {
-        Container::Wav => hound::WavReader::new(media).ok().and_then(|reader| {
+        Container::Wav => {
+            let reader = hound::WavReader::new(media).ok()?;
             exact_seconds(u64::from(reader.duration()), reader.spec().sample_rate)
-        }),
-        Container::Flac => flac_seconds(media),
-        Container::Ogg => ogg_sample_rate(&mut media)
-            .and_then(|rate| exact_seconds(last_ogg_granule(&mut media)?, rate)),
-        Container::Mp3 => mp3_duration::from_read(&mut media)
-            .ok()
-            .and_then(duration_seconds),
+        }
+        Container::Flac => {
+            let options = claxon::FlacReaderOptions {
+                metadata_only: true,
+                read_vorbis_comment: false,
+            };
+            let stream = claxon::FlacReader::new_ext(media, options)
+                .ok()?
+                .streaminfo();
+            exact_seconds(stream.samples?, stream.sample_rate)
+        }
+        Container::Ogg => {
+            media.seek(SeekFrom::Start(0)).ok()?;
+            let mut probe = Vec::new();
+            media
+                .by_ref()
+                .take(OGG_HEADER_PROBE_BYTES)
+                .read_to_end(&mut probe)
+                .ok()?;
+            let mut packets = ogg::PacketReader::new(Cursor::new(probe));
+            let packet = packets.read_packet().ok()??;
+            let ident = read_header_ident(&packet.data).ok()?;
+            exact_seconds(last_ogg_granule(&mut media)?, ident.audio_sample_rate)
+        }
+        Container::Mp3 => mp3_seconds(media),
     }
-}
-
-fn flac_seconds<R>(media: R) -> Option<Decimal>
-where
-    R: Read,
-{
-    let options = claxon::FlacReaderOptions {
-        metadata_only: true,
-        read_vorbis_comment: false,
-    };
-    let reader = claxon::FlacReader::new_ext(media, options).ok()?;
-    let stream = reader.streaminfo();
-    exact_seconds(stream.samples?, stream.sample_rate)
-}
-
-fn ogg_sample_rate<R>(media: &mut R) -> Option<u32>
-where
-    R: Read + Seek,
-{
-    media.seek(SeekFrom::Start(0)).ok()?;
-    let mut probe = Vec::new();
-    media
-        .by_ref()
-        .take(OGG_HEADER_PROBE_BYTES)
-        .read_to_end(&mut probe)
-        .ok()?;
-    let mut packets = ogg::PacketReader::new(Cursor::new(probe));
-    let packet = packets.read_packet().ok()??;
-    let ident = read_header_ident(&packet.data).ok()?;
-    Some(ident.audio_sample_rate)
 }
 
 fn last_ogg_granule<R>(media: &mut R) -> Option<u64>
@@ -118,11 +107,4 @@ fn exact_seconds(frames: u64, sample_rate: u32) -> Option<Decimal> {
         return None;
     }
     Decimal::from(frames).checked_div(Decimal::from(sample_rate))
-}
-
-fn duration_seconds(duration: Duration) -> Option<Decimal> {
-    let whole = Decimal::from(duration.as_secs());
-    let fractional =
-        Decimal::from(duration.subsec_nanos()).checked_div(Decimal::from(NANOS_PER_SECOND))?;
-    whole.checked_add(fractional)
 }
