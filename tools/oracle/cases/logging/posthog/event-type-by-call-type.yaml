@@ -1,0 +1,14 @@
+# call_type embedding selects $ai_embedding, $ai_generation covers every other call type
+kind: helper
+name: event-type-by-call-type
+call:
+  b3971:
+    operation: event_payload
+    settings: {api_key: phk-test, api_url: "https://us.i.posthog.com", mock: false}
+    metadata: {}
+    events:
+      - payload: {"id": "span-1", "trace_id": "trace-1", "session_id": "session-1", "call_type": "embedding", "response_cost": 0.0005, "status": "success", "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"}, "custom_llm_provider": "openai", "total_tokens": 4, "prompt_tokens": 4, "completion_tokens": 0, "startTime": 1700000000, "endTime": 1700000001, "completionStartTime": 1700000000, "response_time": 0.25, "model_map_information": {}, "model": "text-embedding-3-small", "api_base": "https://api.openai.com", "metadata": {}, "saved_cache_cost": 0, "request_tags": [], "model_parameters": {}, "hidden_params": {}, "messages": [{"role": "user", "content": "hi"}]}
+      - payload: {"id": "span-2", "trace_id": "trace-2", "session_id": "session-1", "call_type": "completion", "response_cost": 0.5, "status": "success", "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"}, "custom_llm_provider": "openai", "total_tokens": 15, "prompt_tokens": 10, "completion_tokens": 5, "startTime": 1700000000, "endTime": 1700000001, "completionStartTime": 1700000000.5, "response_time": 1, "model_map_information": {}, "model": "gpt-4o", "api_base": "https://api.openai.com", "metadata": {}, "saved_cache_cost": 0, "request_tags": [], "model_parameters": {}, "hidden_params": {}, "messages": [{"role": "user", "content": "hi"}], "response": {"choices": []}}
+    replies: []
+env: {POSTHOG_API_KEY: phk-test, POSTHOG_API_URL: "https://us.i.posthog.com"}
+compare: {ignore: []}

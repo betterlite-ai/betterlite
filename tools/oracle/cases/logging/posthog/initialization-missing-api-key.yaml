@@ -1,0 +1,11 @@
+# without POSTHOG_API_KEY the constructor raises Exception: POSTHOG_API_KEY is not set
+kind: helper
+name: initialization-missing-api-key
+call:
+  b3971:
+    operation: init
+    settings: {api_key: "", api_url: "", mock: false}
+    events: []
+    replies: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+# async_send_batch groups the queue by (api_key, api_url) and posts each batch to its own /batch/ endpoint
+kind: helper
+name: async-batch-grouped-send
+call:
+  b3971:
+    operation: async_batch
+    settings: {api_key: phk-test, api_url: "https://us.i.posthog.com", mock: false}
+    metadata: {}
+    events:
+      - payload: {"id": "span-1", "trace_id": "trace-1", "session_id": "session-1", "call_type": "completion", "response_cost": 0.5, "status": "success", "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"}, "custom_llm_provider": "openai", "total_tokens": 15, "prompt_tokens": 10, "completion_tokens": 5, "startTime": 1700000000, "endTime": 1700000001, "completionStartTime": 1700000000.5, "response_time": 1, "model_map_information": {}, "model": "gpt-4o", "api_base": "https://api.openai.com", "metadata": {}, "saved_cache_cost": 0, "request_tags": [], "model_parameters": {}, "hidden_params": {}, "messages": []}
+        dynamic_params: {posthog_api_key: first-key, posthog_api_url: "https://first.example/"}
+      - payload: {"id": "span-2", "trace_id": "trace-2", "session_id": "session-1", "call_type": "completion", "response_cost": 0.5, "status": "success", "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"}, "custom_llm_provider": "openai", "total_tokens": 15, "prompt_tokens": 10, "completion_tokens": 5, "startTime": 1700000000, "endTime": 1700000001, "completionStartTime": 1700000000.5, "response_time": 1, "model_map_information": {}, "model": "gpt-4o", "api_base": "https://api.openai.com", "metadata": {}, "saved_cache_cost": 0, "request_tags": [], "model_parameters": {}, "hidden_params": {}, "messages": []}
+        dynamic_params: {posthog_api_key: second-key, posthog_api_url: "https://second.example"}
+      - payload: {"id": "span-3", "trace_id": "trace-3", "session_id": "session-1", "call_type": "completion", "response_cost": 0.5, "status": "success", "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"}, "custom_llm_provider": "openai", "total_tokens": 15, "prompt_tokens": 10, "completion_tokens": 5, "startTime": 1700000000, "endTime": 1700000001, "completionStartTime": 1700000000.5, "response_time": 1, "model_map_information": {}, "model": "gpt-4o", "api_base": "https://api.openai.com", "metadata": {}, "saved_cache_cost": 0, "request_tags": [], "model_parameters": {}, "hidden_params": {}, "messages": []}
+        dynamic_params: {posthog_api_key: first-key, posthog_api_url: "https://first.example/"}
+    replies: [{status: 200}, {status: 200}]
+env: {POSTHOG_API_KEY: phk-test, POSTHOG_API_URL: "https://us.i.posthog.com"}
+compare: {ignore: []}

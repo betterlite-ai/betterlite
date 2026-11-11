@@ -212,7 +212,6 @@ fn distinct_id(
     }
     ids()
 }
-
 fn text_value(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) if !text.is_empty() => Some(text),

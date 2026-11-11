@@ -1,0 +1,13 @@
+# the built-in properties project $ai_model, $ai_provider, $ai_input, $ai_trace_id and the token counts
+kind: helper
+name: builtin-properties-projection
+call:
+  b3971:
+    operation: event_payload
+    settings: {api_key: phk-test, api_url: "https://us.i.posthog.com", mock: false}
+    metadata: {}
+    events:
+      - payload: {"id": "span-1", "trace_id": "trace-1", "session_id": "session-1", "call_type": "completion", "response_cost": 0.5, "status": "failure", "status_fields": {"llm_api_status": "failure", "guardrail_status": "not_run"}, "custom_llm_provider": "azure", "total_tokens": 15, "prompt_tokens": 10, "completion_tokens": 5, "startTime": 1700000000, "endTime": 1700000001, "completionStartTime": 1700000000.5, "response_time": 1, "model_map_information": {}, "model": "gpt-4o", "api_base": "https://api.openai.com", "metadata": {}, "saved_cache_cost": 0, "request_tags": [], "model_parameters": {}, "hidden_params": {}, "messages": [{"role": "user", "content": "hi"}], "error_str": "upstream refused"}
+    replies: []
+env: {POSTHOG_API_KEY: phk-test, POSTHOG_API_URL: "https://us.i.posthog.com"}
+compare: {ignore: []}
