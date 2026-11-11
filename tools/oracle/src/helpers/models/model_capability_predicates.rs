@@ -39,49 +39,35 @@ enum Function {
 
 // The four shared readers and the factory itself; the nine named rows are factory calls with a fixed key.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Core {
+enum Call {
     Factory,
     DeclaredValue,
     Disabled,
     NativeStreaming,
     ResponseSchema,
+    Named(NamedCapability),
 }
 
-const fn core_of(function: Function) -> Option<Core> {
+const fn call_of(function: Function) -> Call {
     match function {
-        Function::SupportsFactory => Some(Core::Factory),
-        Function::DeclaredValueFactory => Some(Core::DeclaredValue),
-        Function::IsExplicitlyDisabledFactory => Some(Core::Disabled),
-        Function::SupportsNativeStreaming => Some(Core::NativeStreaming),
-        Function::SupportsResponseSchema => Some(Core::ResponseSchema),
-        Function::SupportsSystemMessages
-        | Function::SupportsParallelCalls
-        | Function::SupportsFunctionCalling
-        | Function::SupportsToolChoice
-        | Function::SupportsPromptCaching
-        | Function::SupportsReasoning
-        | Function::SupportsNoneReasoningEffort
-        | Function::SupportsMidConversationSystem
-        | Function::SupportsNativeStructuredOutput => None,
-    }
-}
-
-const fn named_capability(function: Function) -> Option<NamedCapability> {
-    match function {
-        Function::SupportsSystemMessages => Some(NamedCapability::SystemMessages),
-        Function::SupportsParallelCalls => Some(NamedCapability::ParallelCalls),
-        Function::SupportsFunctionCalling => Some(NamedCapability::FunctionCalling),
-        Function::SupportsToolChoice => Some(NamedCapability::ToolChoice),
-        Function::SupportsPromptCaching => Some(NamedCapability::PromptCaching),
-        Function::SupportsReasoning => Some(NamedCapability::Reasoning),
-        Function::SupportsNoneReasoningEffort => Some(NamedCapability::NoneReasoningEffort),
-        Function::SupportsMidConversationSystem => Some(NamedCapability::MidConversationSystem),
-        Function::SupportsNativeStructuredOutput => Some(NamedCapability::NativeStructuredOutput),
-        Function::SupportsFactory
-        | Function::DeclaredValueFactory
-        | Function::IsExplicitlyDisabledFactory
-        | Function::SupportsNativeStreaming
-        | Function::SupportsResponseSchema => None,
+        Function::SupportsFactory => Call::Factory,
+        Function::DeclaredValueFactory => Call::DeclaredValue,
+        Function::IsExplicitlyDisabledFactory => Call::Disabled,
+        Function::SupportsNativeStreaming => Call::NativeStreaming,
+        Function::SupportsResponseSchema => Call::ResponseSchema,
+        Function::SupportsSystemMessages => Call::Named(NamedCapability::SystemMessages),
+        Function::SupportsParallelCalls => Call::Named(NamedCapability::ParallelCalls),
+        Function::SupportsFunctionCalling => Call::Named(NamedCapability::FunctionCalling),
+        Function::SupportsToolChoice => Call::Named(NamedCapability::ToolChoice),
+        Function::SupportsPromptCaching => Call::Named(NamedCapability::PromptCaching),
+        Function::SupportsReasoning => Call::Named(NamedCapability::Reasoning),
+        Function::SupportsNoneReasoningEffort => Call::Named(NamedCapability::NoneReasoningEffort),
+        Function::SupportsMidConversationSystem => {
+            Call::Named(NamedCapability::MidConversationSystem)
+        }
+        Function::SupportsNativeStructuredOutput => {
+            Call::Named(NamedCapability::NativeStructuredOutput)
+        }
     }
 }
 
@@ -108,7 +94,8 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let fixture = Fixture::load(&input.fixture).map_err(|error| failure(&error))?;
+        let fixture = Fixture::load(&input.fixture)
+            .map_err(|error| helper_error("FixtureError", error.to_string()))?;
         let resolution = fixture.resolution();
         let mut keys = ModelCostKeys::default();
         let dynamic = NoDynamicMetadata;
@@ -116,7 +103,9 @@ impl crate::helpers::Helper for Op {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|source| failure(&FixtureError::Runtime { source }))?;
+            .map_err(|source| {
+                helper_error("FixtureError", FixtureError::Runtime { source }.to_string())
+            })?;
         let answers = runtime.block_on(async {
             let mut answers = Vec::with_capacity(input.steps.len());
             for step in &input.steps {
@@ -128,40 +117,27 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn failure(error: &FixtureError) -> Box<HelperError> {
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: "FixtureError".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message,
     })
 }
 
-fn serialization_failure(error: &serde_json::Error) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "SerializationError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
+// The three keyed readers read the same declaration; a step without one is a malformed call.
+fn key_of(step: &Step) -> Result<&str, Box<HelperError>> {
+    let key = step.key.as_deref();
+    key.ok_or_else(|| {
+        helper_error(
+            "ValueError",
+            format!("the {:?} function needs a key", step.function),
+        )
     })
 }
-
-fn missing_key(function: Function) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: format!("the {function:?} function needs a key"),
-    })
-}
-
-// The three keyed factories read the same declaration; a step without one is a malformed call.
 
 async fn answer<Source, Transport>(
     step: &Step,
@@ -175,52 +151,26 @@ where
         model: &step.model,
         custom_llm_provider: step.custom_llm_provider.as_deref(),
     };
-    let Some(core) = core_of(step.function) else {
-        let capability =
-            named_capability(step.function).ok_or_else(|| missing_key(step.function))?;
-        return Ok(Value::Bool(
-            environment.supports_named(&request, capability).await,
-        ));
-    };
-    core_answer(core, step, &request, environment).await
-}
-
-async fn core_answer<Source, Transport>(
-    core: Core,
-    step: &Step,
-    request: &CapabilityRequest<'_>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<Value, Box<HelperError>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
-    let declared = step.key.as_deref();
-    let value = match core {
-        Core::Factory => {
-            let key = declared.ok_or_else(|| missing_key(step.function))?;
-            Value::Bool(environment.supports_factory(request, key).await)
-        }
-        Core::DeclaredValue => {
-            let key = declared.ok_or_else(|| missing_key(step.function))?;
+    let value = match call_of(step.function) {
+        Call::Factory => Value::Bool(environment.supports_factory(&request, key_of(step)?).await),
+        Call::DeclaredValue => environment
+            .declared_value_factory(&request, key_of(step)?)
+            .await
+            .map_or(Value::Null, Value::String),
+        Call::Disabled => Value::Bool(
             environment
-                .declared_value_factory(request, key)
-                .await
-                .map_or(Value::Null, Value::String)
+                .is_explicitly_disabled_factory(&request, key_of(step)?)
+                .await,
+        ),
+        Call::NativeStreaming => {
+            let flagged = environment.supports_native_streaming(&request).await;
+            serde_json::to_value(flagged)
+                .map_err(|error| helper_error("SerializationError", error.to_string()))?
         }
-        Core::Disabled => {
-            let key = declared.ok_or_else(|| missing_key(step.function))?;
-            Value::Bool(
-                environment
-                    .is_explicitly_disabled_factory(request, key)
-                    .await,
-            )
+        Call::ResponseSchema => Value::Bool(environment.supports_response_schema(&request).await),
+        Call::Named(capability) => {
+            Value::Bool(environment.supports_named(&request, capability).await)
         }
-        Core::NativeStreaming => {
-            let flagged = environment.supports_native_streaming(request).await;
-            serde_json::to_value(flagged).map_err(|error| serialization_failure(&error))?
-        }
-        Core::ResponseSchema => Value::Bool(environment.supports_response_schema(request).await),
     };
     Ok(value)
 }

@@ -24,7 +24,7 @@ fn helper_seeds_select_model_capability_predicates() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no model_capability_predicates seeds");
-    let checked: Vec<&str> = seeds
+    let checked = seeds
         .iter()
         .map(|(stem, source)| {
             let case: HelperCase = serde_saphyr::from_str(source).unwrap();
@@ -36,6 +36,6 @@ fn helper_seeds_select_model_capability_predicates() {
             assert!(!input["steps"].as_array().unwrap().is_empty(), "{stem}");
             stem.as_str()
         })
-        .collect();
-    assert_eq!(checked.len(), seeds.len());
+        .count();
+    assert_eq!(checked, seeds.len());
 }
