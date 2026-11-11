@@ -1,0 +1,9 @@
+kind: helper
+name: jsonable-dict-basemodel
+call:
+  b3795:
+    jsonable:
+      item:
+        model: {input_tokens: 3}
+env: {}
+compare: {ignore: []}
