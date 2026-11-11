@@ -240,23 +240,6 @@ fn the_stream_finish_reason_is_the_raw_done_reason() {
     );
 }
 
-#[rstest]
-#[case::empty(r#""done_reason": "","#)]
-#[case::null(r#""done_reason": null,"#)]
-#[case::missing("")]
-fn a_done_chunk_without_a_reason_finishes_with_stop(#[case] reason: &str) {
-    let line = format!(r#"{{"model": "m", "message": {{"content": "x"}}, {reason} "done": true}}"#);
-    assert_eq!(
-        parsed(&line)
-            .choices
-            .first()
-            .unwrap()
-            .finish_reason
-            .as_deref(),
-        Some("stop")
-    );
-}
-
 #[test]
 fn random_ids_are_distinct_uuids() {
     let first = super::super::ids::IdSource::next_id(&RandomIds);
@@ -265,12 +248,16 @@ fn random_ids_are_distinct_uuids() {
 }
 
 #[rstest]
-#[case::length("length")]
-#[case::stop("stop")]
-fn a_known_done_reason_passes_through(#[case] reason: &str) {
-    let line = format!(
-        r#"{{"model": "m", "message": {{"content": "x"}}, "done": true, "done_reason": "{reason}"}}"#
-    );
+#[case::length(r#""done_reason": "length","#, "length")]
+#[case::stop(r#""done_reason": "stop","#, "stop")]
+#[case::empty(r#""done_reason": "","#, "stop")]
+#[case::null(r#""done_reason": null,"#, "stop")]
+#[case::missing("", "stop")]
+fn the_done_reason_passes_through_or_defaults_to_stop(
+    #[case] reason: &str,
+    #[case] expected: &str,
+) {
+    let line = format!(r#"{{"model": "m", "message": {{"content": "x"}}, {reason} "done": true}}"#);
     assert_eq!(
         parsed(&line)
             .choices
@@ -278,7 +265,7 @@ fn a_known_done_reason_passes_through(#[case] reason: &str) {
             .unwrap()
             .finish_reason
             .as_deref(),
-        Some(reason)
+        Some(expected)
     );
 }
 
