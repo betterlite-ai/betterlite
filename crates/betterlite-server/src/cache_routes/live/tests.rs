@@ -8,9 +8,8 @@ use betterlite_models::decisions::Json;
 
 use crate::cache_routes::admin::CacheAdmin as _;
 
-use super::super::support_tests::{
-    StubBackend, local_cache, parsed_cache_params, unreachable_redis_cache,
-};
+use super::super::redis_support::{StubBackend, local_cache, unreachable_redis_cache};
+use super::super::support_tests::parsed_cache_params;
 use super::{CacheHandle, LiveResponseCache as _, SlotCache, wire_name};
 
 fn with_injected_redis_type() -> Cache {

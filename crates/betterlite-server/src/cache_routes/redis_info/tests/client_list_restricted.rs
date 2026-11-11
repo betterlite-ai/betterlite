@@ -8,9 +8,9 @@ use betterlite_redis::redis_cache_admin::info_parse::InfoValue;
 use indexmap::IndexMap;
 
 use super::super::admin::RedisAdmin;
+use super::super::redis_support::{FakeRedis, fake_redis};
 use super::super::support_tests::{
-    FakeLive, FakeRedis, RedisClientsBody, RedisInfoBody, admin_router, call_json, fake_cache,
-    fake_redis,
+    FakeLive, RedisClientsBody, RedisInfoBody, admin_router, call_json, fake_cache,
 };
 
 #[tokio::test]

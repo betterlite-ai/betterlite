@@ -9,7 +9,8 @@ use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides
 use secrecy::SecretString;
 use serde_json::Number;
 
-use super::super::support_tests::{local_cache, overrides, parsed_cache_params, redis_cache_from};
+use super::super::redis_support::{local_cache, overrides, redis_cache_from};
+use super::super::support_tests::parsed_cache_params;
 use super::{health_check_params, masked_cache_params};
 
 fn with_ttl(mut cache: Cache) -> Cache {

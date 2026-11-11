@@ -3,6 +3,7 @@ use betterlite_cache::types::cache_type::CacheMode;
 use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_cache::types::ping::{HealthCheckCacheParams, TextOrNumber};
 use betterlite_cache::types::semantic::SemanticCacheScope;
+use betterlite_redis::redis_cache::RedisCache;
 use serde::Serialize;
 use serde_json::Number;
 
@@ -44,22 +45,31 @@ pub fn masked_cache_params(cache: &Cache) -> String {
 #[must_use]
 pub fn health_check_params(cache: &Cache) -> HealthCheckCacheParams {
     match &cache.backend {
-        Backend::Redis(redis) => HealthCheckCacheParams {
-            host: None,
-            port: None,
-            redis_kwargs: Some(redis_kwargs(&redis.transport.settings)),
-            namespace: cache.namespace.clone(),
-            redis_version: Some(TextOrNumber::Number(Number::from(
-                redis.redis_major_version,
-            ))),
-        },
-        Backend::Memory(_) | Backend::Disk(_) | Backend::Injected(_) => HealthCheckCacheParams {
-            host: None,
-            port: None,
-            redis_kwargs: None,
-            namespace: None,
-            redis_version: None,
-        },
+        Backend::Redis(redis) => redis_health_params(cache, redis),
+        Backend::Memory(_) | Backend::Disk(_) | Backend::Injected(_) => empty_health_params(),
+    }
+}
+
+fn redis_health_params(cache: &Cache, redis: &RedisCache) -> HealthCheckCacheParams {
+    HealthCheckCacheParams {
+        host: None,
+        port: None,
+        redis_kwargs: Some(redis_kwargs(&redis.transport.settings)),
+        namespace: cache.namespace.clone(),
+        redis_version: Some(TextOrNumber::Number(Number::from(
+            redis.redis_major_version,
+        ))),
+    }
+}
+
+#[must_use]
+pub(crate) const fn empty_health_params() -> HealthCheckCacheParams {
+    HealthCheckCacheParams {
+        host: None,
+        port: None,
+        redis_kwargs: None,
+        namespace: None,
+        redis_version: None,
     }
 }
 

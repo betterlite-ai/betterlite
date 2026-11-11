@@ -5,7 +5,7 @@ use betterlite_redact::structured::SensitiveDataMasker;
 use secrecy::SecretString;
 use serde_json::Number;
 
-use super::super::support_tests::connection_settings;
+use super::super::redis_support::connection_settings;
 use super::redis_kwargs;
 
 #[test]

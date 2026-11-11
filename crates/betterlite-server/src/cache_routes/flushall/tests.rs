@@ -6,9 +6,9 @@ use std::sync::atomic::Ordering;
 use axum::http::StatusCode;
 
 use super::super::admin::RedisAdmin;
+use super::super::redis_support::{FakeRedis, PanickingRedis, fake_redis};
 use super::super::support_tests::{
-    DetailBody, FakeLive, FakeRedis, PanickingRedis, StatusBody, admin_router, call_json,
-    fake_cache, fake_redis,
+    DetailBody, FakeLive, StatusBody, admin_router, call_json, fake_cache,
 };
 
 #[tokio::test]

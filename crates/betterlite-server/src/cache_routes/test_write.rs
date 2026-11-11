@@ -16,6 +16,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 
 use super::admin::CacheAdminError;
 
@@ -74,31 +75,28 @@ impl CacheBackend for RedisValues {
         let Backend::Redis(redis) = &self.cache.backend else {
             return Err(BackendError::Unsupported("async_set_cache"));
         };
-        match redis
-            .values
-            .async_set_cache(Some(key), &value, ttl, REPLACE_EXISTING)
-            .await
-        {
-            Ok(_stored) => Ok(()),
-            Err(source) => {
-                // LiteLLM's add_cache never raises: it logs the failure and the ping route still reports healthy
-                tracing::error!("LiteLLM Cache: exception in add_cache: {source}");
-                Ok(())
-            }
-        }
+        log_write(
+            redis
+                .values
+                .async_set_cache(Some(key), &value, ttl, REPLACE_EXISTING)
+                .await,
+        );
+        Ok(())
     }
 
     async fn batch_cache_write(&self, key: &str, value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
         let Backend::Redis(redis) = &self.cache.backend else {
             return Err(BackendError::Unsupported("batch_cache_write"));
         };
-        match redis.values.batch_cache_write(key, &value).await {
-            Ok(()) => Ok(()),
-            Err(source) => {
-                tracing::error!("LiteLLM Cache: exception in add_cache: {source}");
-                Ok(())
-            }
-        }
+        log_write(redis.values.batch_cache_write(key, &value).await);
+        Ok(())
+    }
+}
+
+// LiteLLM's add_cache never raises: it logs the failure and the ping route still reports healthy.
+fn log_write<Stored>(outcome: Result<Stored, RedisCacheValuesError>) {
+    if let Err(source) = outcome {
+        tracing::error!("LiteLLM Cache: exception in add_cache: {source}");
     }
 }
 

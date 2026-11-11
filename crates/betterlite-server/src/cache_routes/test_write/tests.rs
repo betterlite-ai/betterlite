@@ -12,7 +12,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
 use betterlite_redact::structured::Payload;
 
-use super::super::support_tests::{local_cache, unreachable_redis_cache};
+use super::super::redis_support::{local_cache, unreachable_redis_cache};
 use super::{ErrorLogger, RedisValues, SilentConsole, add_test_key, now_seconds, test_messages};
 
 fn local_bridge() -> RedisValues {

@@ -8,9 +8,9 @@ use betterlite_redis::redis_cache_admin::info_parse::InfoValue;
 use indexmap::IndexMap;
 
 use super::super::admin::RedisAdmin;
+use super::super::redis_support::{FakeRedis, PanickingRedis, fake_redis};
 use super::super::support_tests::{
-    DetailBody, FakeLive, FakeRedis, PanickingRedis, RedisClientsBody, RedisInfoBody, admin_router,
-    call_json, fake_cache, fake_redis,
+    DetailBody, FakeLive, RedisClientsBody, RedisInfoBody, admin_router, call_json, fake_cache,
 };
 
 fn client(addr: &str) -> IndexMap<String, String> {

@@ -18,6 +18,8 @@ use live::LiveResponseCache;
 
 #[path = "cache_routes/tests/auth.rs"]
 mod auth;
+#[path = "cache_routes/tests/redis_support.rs"]
+mod redis_support;
 #[path = "cache_routes/tests/support.rs"]
 mod support_tests;
 
