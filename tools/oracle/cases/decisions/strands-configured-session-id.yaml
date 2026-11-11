@@ -1,0 +1,19 @@
+kind: helper
+name: strands-configured-session-id
+call:
+  b3512:
+    steps:
+      - kind: sign
+        api_base: arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+        headers:
+          X-Request-Source: batch
+        api_key: runtime-jwt
+        litellm_params:
+          agentcore_runtime_session_id: replica-session-a
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+        now: 1767225600
+env: {}
+compare: {ignore: []}

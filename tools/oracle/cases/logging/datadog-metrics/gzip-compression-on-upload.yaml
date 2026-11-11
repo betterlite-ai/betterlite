@@ -1,0 +1,42 @@
+kind: helper
+name: datadog-metrics-gzip-compression-on-upload
+call:
+  b3939:
+    operation: flush
+    environment:
+      DD_API_KEY: test-key
+      DD_APP_KEY: app-key
+      DD_SITE: datadoghq.eu
+    payload:
+      id: chatcmpl-5
+      trace_id: trace-5
+      session_id: session-5
+      call_type: completion
+      response_cost: 0.5
+      status: success
+      status_fields: {llm_api_status: success, guardrail_status: not_run}
+      total_tokens: 5
+      prompt_tokens: 2
+      completion_tokens: 3
+      startTime: 1704067200.0
+      endTime: 1704067201.5
+      completionStartTime: 1704067200.5
+      response_time: 1.5
+      model_map_information: {}
+      model: gpt-4o
+      model_group: production
+      custom_llm_provider: openai
+      api_base: "https://api.openai.com"
+      metadata: {}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+    start_time: 1704067200.0
+    end_time: 1704067201.5
+    api_call_start_time: 1704067201.0
+    status_code: "200"
+    clock: 1704067201.5
+    replies: [{status: 202}]
+env: {}
+compare: {ignore: []}
