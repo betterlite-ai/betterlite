@@ -31,7 +31,9 @@ test("prepare publishes the selected export and leaves proprietary subtrees out"
   assert.equal(result.commit, fixture.pin.commit);
   assert.equal(result.patches.length, 0);
   assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "LICENSE"), "utf8"), fixture.files.LICENSE);
+  assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "ui/litellm-dashboard/package.json"), "utf8"), fixture.files["ui/litellm-dashboard/package.json"]);
   assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "ui/litellm-dashboard/package-lock.json"), "utf8"), fixture.files["ui/litellm-dashboard/package-lock.json"]);
+  assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "ui/litellm-dashboard/README.md"), "utf8"), fixture.files["ui/litellm-dashboard/README.md"]);
   assert.equal((await fs.stat(path.join(fixture.paths.outDir, "ui/litellm-dashboard/package.json"))).mode & 0o777, 0o664);
   assert.equal((await fs.stat(path.join(fixture.paths.outDir, "ui"))).mode & 0o777, 0o775);
   assert.ok(await exists(path.join(fixture.paths.outDir, "litellm/proxy/logo_monogram_dark.png")));

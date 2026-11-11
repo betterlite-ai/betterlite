@@ -29,6 +29,7 @@ export const FILES = {
   LICENSE: "MIT License\n\nCopyright (c) 2023 Berri AI\n\nPermission is hereby granted, free of charge.\n",
   "ui/Dockerfile": "FROM scratch\n",
   "ui/litellm-dashboard/.npmrc": "ignore-scripts=true\nengine-strict=true\n",
+  "ui/litellm-dashboard/README.md": "This is a Next.js project bootstrapped with create-next-app.\n",
   "ui/litellm-dashboard/next.config.mjs": "export default { output: \"standalone\" };\n",
   "ui/litellm-dashboard/package-lock.json": "{\n  \"lockfileVersion\": 3\n}\n",
   "ui/litellm-dashboard/package.json": "{\n  \"name\": \"litellm-dashboard\",\n  \"private\": true\n}\n",
