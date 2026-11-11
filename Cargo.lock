@@ -1355,6 +1355,7 @@ dependencies = [
  "tokio",
  "toml_edit",
  "url",
+ "which",
  "windows-native-keyring-store",
 ]
 
