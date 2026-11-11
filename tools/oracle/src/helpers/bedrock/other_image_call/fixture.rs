@@ -97,6 +97,17 @@ impl Factory {
         }
     }
 
+    fn client(&self, kind: ClientKind, timeout: Option<Duration>) -> Client {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((kind, timeout));
+        Client {
+            reply: self.reply.clone(),
+            seen: self.seen.clone(),
+        }
+    }
+
     pub(crate) fn calls(&self) -> Vec<(ClientKind, Option<Duration>)> {
         self.calls
             .lock()
@@ -109,25 +120,11 @@ impl ClientFactory for Factory {
     type Client = Client;
 
     fn sync_client(&self) -> Self::Client {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((ClientKind::Sync, None));
-        Client {
-            reply: self.reply.clone(),
-            seen: self.seen.clone(),
-        }
+        self.client(ClientKind::Sync, None)
     }
 
     fn async_client(&self, timeout: Option<Duration>) -> Self::Client {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((ClientKind::Async, timeout));
-        Client {
-            reply: self.reply.clone(),
-            seen: self.seen.clone(),
-        }
+        self.client(ClientKind::Async, timeout)
     }
 }
 

@@ -29,7 +29,7 @@ fn secrets_in(text: &str, secrets: &[&str]) -> Vec<String> {
         .collect()
 }
 
-fn identity_run(access: &str, secret_key: &str, guardrail: &str) -> Run {
+fn identity_run(access: &str, secret_key: &str, guardrail: &str, source: &Source) -> Run {
     run_with_source(
         call(
             "amazon.titan-image-generator-v2:0",
@@ -38,14 +38,21 @@ fn identity_run(access: &str, secret_key: &str, guardrail: &str) -> Run {
         ),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
-        &Source::with(access, secret_key),
+        source,
     )
 }
 
 #[test]
 fn image_call_credential_identity_isolation() {
-    let first = identity_run(FIRST_ACCESS, FIRST_SECRET, "first-guardrail");
-    let second = identity_run(SECOND_ACCESS, SECOND_SECRET, "second-guardrail");
+    let first_source = Source::with(FIRST_ACCESS, FIRST_SECRET);
+    let second_source = Source::with(SECOND_ACCESS, SECOND_SECRET);
+    let first = identity_run(FIRST_ACCESS, FIRST_SECRET, "first-guardrail", &first_source);
+    let second = identity_run(
+        SECOND_ACCESS,
+        SECOND_SECRET,
+        "second-guardrail",
+        &second_source,
+    );
     let first_authorization = &first.headers()["Authorization"];
     let second_authorization = &second.headers()["Authorization"];
     assert!(first_authorization.contains(FIRST_ACCESS));
@@ -65,8 +72,8 @@ fn image_call_credential_identity_isolation() {
 fn image_call_resolver_identities_do_not_cross() {
     let first_source = Source::with(FIRST_ACCESS, FIRST_SECRET);
     let second_source = Source::with(SECOND_ACCESS, SECOND_SECRET);
-    identity_run_with_source(FIRST_ACCESS, FIRST_SECRET, &first_source);
-    identity_run_with_source(SECOND_ACCESS, SECOND_SECRET, &second_source);
+    identity_run(FIRST_ACCESS, FIRST_SECRET, "gr", &first_source);
+    identity_run(SECOND_ACCESS, SECOND_SECRET, "gr", &second_source);
     let first_calls = first_source.calls.lock().unwrap();
     let second_calls = second_source.calls.lock().unwrap();
     assert_eq!(first_calls.len(), 1, "each call resolves its own identity");
@@ -91,24 +98,11 @@ fn image_call_resolver_identities_do_not_cross() {
     assert_eq!(second_calls[0].1, "us-east-1");
 }
 
-fn identity_run_with_source(access: &str, secret_key: &str, source: &Source) -> Run {
-    run_with_source(
-        call(
-            "amazon.titan-image-generator-v2:0",
-            "a cat",
-            params_for(access, secret_key, "gr"),
-        ),
-        Reply::ok(r#"{"images": []}"#),
-        Some(ClientKind::Sync),
-        source,
-    )
-}
-
 #[test]
 fn image_call_secret_safe_failure() {
     let access = "AKIALEAKEXAMPLE00000";
     let secret_key = "leakSecretKey0000000000000000000000000000";
-    let run = identity_run_with_source(access, secret_key, &Source::with(access, secret_key));
+    let run = identity_run(access, secret_key, "gr", &Source::with(access, secret_key));
     let request_debug = format!("{:?}", run.posted());
     assert!(request_debug.contains("header_names"));
     assert_eq!(

@@ -21,9 +21,7 @@ mod tests;
 
 use calls::{Probe, Probes, Supplied};
 use fixture::{Client, Factory, Source};
-use handlers::{
-    call_value, error_value, failure_value, prepare_value, runtime_value, selection_value,
-};
+use handlers::{Shape, observe};
 
 pub(crate) struct Op;
 
@@ -63,24 +61,24 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let output = match input {
-            Input::ImageFamilyDispatch(probes) => each(probes, call_value),
-            Input::ImageRuntimeUrl(probes) => each(probes, runtime_value),
+        let (probes, shape) = match input {
+            Input::ImageFamilyDispatch(probes) => (probes, Shape::Dispatch),
+            Input::ImageRuntimeUrl(probes) => (probes, Shape::Runtime),
             Input::SignedJsonBody(probes) | Input::ExtraHeadersOutsideBody(probes) => {
-                each(probes, prepare_value)
+                (probes, Shape::Prepare)
             }
-            Input::Base64ImageResult(probes) => each(probes, failure_value),
-            Input::ImageHttpError(probes) => each(probes, error_value),
-            Input::ImageTransportSelection(probes) => each(probes, selection_value),
+            Input::Base64ImageResult(probes) => (probes, Shape::Result),
+            Input::ImageHttpError(probes) => (probes, Shape::Error),
+            Input::ImageTransportSelection(probes) => (probes, Shape::Selection),
         };
-        output.map_err(Box::<HelperError>::from)
+        each(probes, &shape).map_err(Box::<HelperError>::from)
     }
 }
 
-fn each(probes: &Probes, value: fn(&Probe) -> Result<Value, Failure>) -> Result<Value, Failure> {
+fn each(probes: &Probes, shape: &Shape) -> Result<Value, Failure> {
     let mut results = Vec::with_capacity(probes.probes.len());
     for probe in &probes.probes {
-        results.push(value(probe)?);
+        results.push(observe(probe, shape)?);
     }
     Ok(Value::Array(results))
 }
@@ -177,21 +175,26 @@ impl<'probe> Harness<'probe> {
     }
 }
 
+impl Failure {
+    const fn status(&self) -> Option<u16> {
+        match self {
+            Self::ImageCall(error) => error.status(),
+            Self::Json(_)
+            | Self::Logging(_)
+            | Self::Redact(_)
+            | Self::MissingCredentials
+            | Self::Body(_)
+            | Self::Shape
+            | Self::Runtime(_) => None,
+        }
+    }
+}
+
 impl From<Failure> for Box<HelperError> {
     fn from(failure: Failure) -> Self {
-        let status = match &failure {
-            Failure::ImageCall(error) => error.status(),
-            Failure::Json(_)
-            | Failure::Logging(_)
-            | Failure::Redact(_)
-            | Failure::MissingCredentials
-            | Failure::Body(_)
-            | Failure::Shape
-            | Failure::Runtime(_) => None,
-        };
         Self::new(HelperError {
             class: "ImageCallError".to_owned(),
-            status,
+            status: failure.status(),
             error_type: None,
             param: None,
             code: None,
