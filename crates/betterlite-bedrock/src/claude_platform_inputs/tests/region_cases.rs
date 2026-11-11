@@ -120,12 +120,21 @@ fn empty_and_invalid_regions_fail_validation() {
         "{invalid_error}"
     );
     assert_eq!(invalid_error.status_code(), None);
-    let empty_environment = region(&empty_params(), &[("AWS_REGION_NAME", "")]).unwrap_err();
+    let empty_first_environment = region(&empty_params(), &[("AWS_REGION_NAME", "")]).unwrap_err();
     assert!(
-        matches!(empty_environment, PlatformInputError::Region(_)),
-        "{empty_environment}"
+        matches!(empty_first_environment, PlatformInputError::MissingRegion),
+        "{empty_first_environment}"
     );
-    assert_eq!(empty_environment.status_code(), None);
+    let empty_final_environment = region(
+        &empty_params(),
+        &[("AWS_REGION", ""), ("AWS_DEFAULT_REGION", "")],
+    )
+    .unwrap_err();
+    assert!(
+        matches!(empty_final_environment, PlatformInputError::Region(_)),
+        "{empty_final_environment}"
+    );
+    assert_eq!(empty_final_environment.status_code(), None);
 }
 
 fn scalars_encode_before_validation() {
