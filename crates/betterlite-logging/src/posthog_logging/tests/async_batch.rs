@@ -87,3 +87,34 @@ async fn posthog_async_batch_clears_the_queue_after_a_successful_send() {
     assert_eq!(logger.sink.queued_depth(), 0);
     stop(&logger, &tasks).await;
 }
+
+#[tokio::test]
+async fn posthog_async_batch_keeps_one_url_in_separate_groups() {
+    let transport = ScriptedTransport::new(&[]);
+    let (logger, tasks) = logger_with(default_settings(), &transport, fixed_id);
+    let first = event_with(
+        payload(),
+        dynamic(&[
+            ("posthog_api_key", "first-key"),
+            ("posthog_api_url", "https://shared.example"),
+        ]),
+    );
+    let second = event_with(
+        payload(),
+        dynamic(&[
+            ("posthog_api_key", "second-key"),
+            ("posthog_api_url", "https://shared.example"),
+        ]),
+    );
+    logger
+        .async_log_success_event(Arc::new(first))
+        .await
+        .expect("the first event is queued");
+    logger
+        .async_log_success_event(Arc::new(second))
+        .await
+        .expect("the second event is queued");
+    logger.flush_queue().await;
+    assert_eq!(transport.urls().len(), 2);
+    stop(&logger, &tasks).await;
+}

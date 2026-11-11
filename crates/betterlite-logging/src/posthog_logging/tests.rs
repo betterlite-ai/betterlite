@@ -13,6 +13,7 @@ mod missing_key;
 mod properties;
 mod support;
 mod sync;
+mod transport;
 
 use std::sync::Arc;
 

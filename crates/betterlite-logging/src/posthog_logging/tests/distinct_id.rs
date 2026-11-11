@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 
 use crate::fields::payload::StandardLoggingPayload;
-use crate::posthog_logging::event::create_event_payload;
+use crate::posthog_logging::event::{create_event_payload, uuid_id};
 use crate::posthog_logging::tests::support::{fixed_id, object, payload, text};
 
 fn distinct_id(payload: &StandardLoggingPayload) -> String {
@@ -51,4 +51,12 @@ fn distinct_id_skips_a_user_id_that_is_not_text() {
     payload.end_user = Some("end-1".to_owned());
     payload.metadata.requester_metadata = Some(object(&[("user_id", Json::Bool(true))]));
     assert_eq!(distinct_id(&payload), "end-1");
+}
+
+#[test]
+fn distinct_id_generation_produces_a_fresh_uuid() {
+    let first = uuid_id();
+    let second = uuid_id();
+    assert_eq!(first.len(), 36);
+    assert_ne!(first, second);
 }
