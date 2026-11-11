@@ -45,13 +45,13 @@ pub struct CallArguments {
 }
 
 impl WireFunction {
-    // LiteLLM's Function plus its `len(function_args) > 0` guard: an object is dumped as JSON, a string passes
-    // through, and null falls back to parameters
+    // LiteLLM's Function with its len > 0 guard: an object is dumped as JSON, a string passes through, null falls back to parameters
     pub fn call_arguments(&self) -> Result<CallArguments, OllamaError> {
         match &self.arguments {
             Some(value @ Json::Object(fields)) => Ok(CallArguments {
                 complete: !fields.is_empty(),
-                arguments: compact(value)?,
+                arguments: serde_json::to_string(value)
+                    .map_err(|source| OllamaError::Shape { source })?,
             }),
             Some(value @ Json::Text(text)) => Ok(CallArguments {
                 complete: !text.is_empty() && is_function_call_complete(value),
@@ -69,7 +69,9 @@ impl WireFunction {
 
     fn parameters_text(&self) -> Result<String, OllamaError> {
         match &self.parameters {
-            Some(value @ Json::Object(_)) => compact(value),
+            Some(value @ Json::Object(_)) => {
+                serde_json::to_string(value).map_err(|source| OllamaError::Shape { source })
+            }
             Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
             | None => Ok(String::new()),
         }
@@ -84,8 +86,4 @@ pub fn is_function_call_complete(arguments: &Json) -> bool {
         Json::Text(text) => serde_json::from_str::<Json>(text).is_ok(),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => false,
     }
-}
-
-fn compact(value: &Json) -> Result<String, OllamaError> {
-    serde_json::to_string(value).map_err(|source| OllamaError::Shape { source })
 }

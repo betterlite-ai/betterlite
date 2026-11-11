@@ -2,11 +2,13 @@ use async_trait::async_trait;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::{Content, Message, convert_content_list_to_str};
 use betterlite_provider::ollama_chat::config::{
-    SUPPORTED_OPENAI_PARAMS, OllamaChatConfig, complete_url, map_openai_params,
+    OllamaChatConfig, SUPPORTED_OPENAI_PARAMS, complete_url, map_openai_params,
     validate_environment,
 };
 use betterlite_provider::ollama_chat::ids::RandomIds;
-use betterlite_provider::ollama_chat::reply::{ChatChoice, OllamaChatResponse, ReplyInput, transform_response};
+use betterlite_provider::ollama_chat::reply::{
+    ChatChoice, OllamaChatResponse, ReplyInput, transform_response,
+};
 use betterlite_provider::ollama_chat::request::{RequestInput, transform_request};
 use betterlite_provider::ollama_chat::stream::chunk::OllamaStreamChunk;
 use betterlite_provider::ollama_chat::stream::{OllamaChatIterator, OllamaStreamStep};
@@ -26,9 +28,11 @@ struct WordsCounter;
 #[async_trait]
 impl TokenCounter for WordsCounter {
     async fn count_messages(&self, messages: &[Message]) -> Option<u64> {
-        let words = messages
-            .iter()
-            .map(|message| convert_content_list_to_str(message).split_whitespace().count());
+        let words = messages.iter().map(|message| {
+            convert_content_list_to_str(message)
+                .split_whitespace()
+                .count()
+        });
         Some(words.fold(0_u64, |total, count| {
             total.saturating_add(u64::try_from(count).unwrap_or(u64::MAX))
         }))
@@ -75,7 +79,15 @@ struct CallValue<'call> {
 }
 
 fn calls_json<'call>(
-    calls: impl Iterator<Item = (Option<String>, &'call str, Option<&'call str>, String, Option<u32>)>,
+    calls: impl Iterator<
+        Item = (
+            Option<String>,
+            &'call str,
+            Option<&'call str>,
+            String,
+            Option<u32>,
+        ),
+    >,
 ) -> Value {
     let values: Vec<CallValue<'call>> = calls
         .map(|(id, kind, name, arguments, index)| CallValue {
@@ -88,8 +100,6 @@ fn calls_json<'call>(
         .collect();
     serde_json::to_value(values).unwrap_or_default()
 }
-
-
 
 fn reply_value(response: &OllamaChatResponse) -> Value {
     response.choices.first().map_or_else(
@@ -248,14 +258,12 @@ pub(super) fn stream(lines: &[String]) -> Value {
     let ids = RandomIds;
     let chunks: Vec<Value> = lines
         .iter()
-        .map(
-            |line| match iterator.next_chunk(line, NOW, &ids) {
-                Ok(OllamaStreamStep::Chunk(chunk)) => json!({"ok": true, "chunk": chunk_value(&chunk)}),
-                Ok(OllamaStreamStep::Skipped) => json!({"ok": true, "skipped": true}),
-                Ok(OllamaStreamStep::Done) => json!({"ok": true, "done": true}),
-                Err(error) => json!({"ok": false, "status": error.status()}),
-            },
-        )
+        .map(|line| match iterator.next_chunk(line, NOW, &ids) {
+            Ok(OllamaStreamStep::Chunk(chunk)) => json!({"ok": true, "chunk": chunk_value(&chunk)}),
+            Ok(OllamaStreamStep::Skipped) => json!({"ok": true, "skipped": true}),
+            Ok(OllamaStreamStep::Done) => json!({"ok": true, "done": true}),
+            Err(error) => json!({"ok": false, "status": error.status()}),
+        })
         .collect();
     json!({"chunks": chunks})
 }

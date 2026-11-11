@@ -126,12 +126,8 @@ fn ollama_message(message: &Message, index: usize) -> Result<OllamaMessage, Olla
         content: convert_content_list_to_str(message),
         images: extract_images_from_message(message),
         tool_calls: tool_calls_from_message(message, index)?,
-        tool_call_id: tool_call_id(message, index)?,
+        tool_call_id: first_text(&message.provider_specific_fields, &["tool_call_id"], index)?,
     })
-}
-
-fn tool_call_id(message: &Message, index: usize) -> Result<Option<String>, OllamaError> {
-    first_text(&message.provider_specific_fields, &["tool_call_id"], index)
 }
 
 fn first_text(
