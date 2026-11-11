@@ -43,7 +43,7 @@ pub struct S3Settings {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
-    pub deployments: Vec<S3Settings>,
+    pub deployments: Box<[S3Settings]>,
 }
 
 impl Section for Raw {
@@ -58,7 +58,7 @@ impl Section for Raw {
             .into_iter()
             .enumerate()
             .map(|(index, deployment)| resolve_params(deployment.litellm_params, index, lookup))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Box<[_]>, _>>()?;
         Ok(Settings { deployments })
     }
 }
