@@ -6,9 +6,7 @@ use betterlite_logging::s3_transport::encryption::{
     ServerSideEncryption, resolve_server_side_encryption,
 };
 use betterlite_logging::s3_transport::option_value::OptionValue;
-use betterlite_logging::s3_transport::signing::{
-    Clock, CredentialSource, Credentials, StaticCredentials,
-};
+use betterlite_logging::s3_transport::signing::{CredentialSource, Credentials, StaticCredentials};
 use betterlite_logging::s3_transport::transport::{
     S3HttpClient, S3Transport, ThrottleSink, UploadOutcome,
 };
@@ -54,13 +52,61 @@ impl Helper for Op {
 async fn execute(input: &Input) -> HelperResult {
     let sink = Arc::new(RecordingSink::default());
     let scripted = Arc::new(ScriptedS3::new(input.responses.clone()));
-    let client: Arc<dyn S3HttpClient> = scripted.clone();
-    let throttle: Option<Arc<dyn ThrottleSink>> = if input.settings.adaptive_concurrency {
-        let recording: Arc<dyn ThrottleSink> = sink.clone();
-        Some(recording)
-    } else {
-        None
-    };
+    let transport = build_transport(input, &scripted, &sink)?;
+    let mut outcome = None;
+    let mut samples = None;
+    let mut object = None;
+    match input.operation {
+        Operation::Put => {
+            let logged = logged_element(input)?;
+            outcome = Some(match transport.async_upload_data_to_s3(&logged).await {
+                UploadOutcome::Delivered => "delivered",
+                UploadOutcome::Retry => "retry",
+                UploadOutcome::Dropped => "dropped",
+            });
+            samples = input.settings.adaptive_concurrency.then(|| sink.samples());
+        }
+        Operation::Get => {
+            let object_key = input
+                .object_key
+                .as_ref()
+                .ok_or_else(|| failure("ValueError", "a get call needs an object_key"))?;
+            object = transport.download_object(object_key).await;
+        }
+    }
+    Ok(json!({
+        "requests": recorded_requests(input.operation, &scripted),
+        "outcome": outcome,
+        "samples": samples,
+        "object": object,
+    }))
+}
+
+fn logged_element(input: &Input) -> Result<S3BatchLoggingElement<Json>, Box<HelperError>> {
+    let element = input
+        .element
+        .as_ref()
+        .ok_or_else(|| failure("ValueError", "a put call needs an element"))?;
+    Ok(S3BatchLoggingElement {
+        payload: element.payload.clone().unwrap_or(Json::Null),
+        s3_object_key: element.s3_object_key.clone(),
+        s3_object_download_filename: element.s3_object_download_filename.clone(),
+        body: element.body.clone(),
+        content_type: element.content_type,
+        retrying_since: None,
+    })
+}
+
+fn build_transport(
+    input: &Input,
+    scripted: &Arc<ScriptedS3>,
+    sink: &Arc<RecordingSink>,
+) -> Result<S3Transport, Box<HelperError>> {
+    let client: Arc<dyn S3HttpClient> = Arc::<ScriptedS3>::clone(scripted);
+    let throttle = input
+        .settings
+        .adaptive_concurrency
+        .then(|| -> Arc<dyn ThrottleSink> { Arc::<RecordingSink>::clone(sink) });
     let credentials: Arc<dyn CredentialSource> = Arc::new(StaticCredentials {
         credentials: Credentials {
             access_key_id: SecretString::from(input.credentials.access_key_id.clone()),
@@ -75,12 +121,11 @@ async fn execute(input: &Input) -> HelperResult {
     let now = SystemTime::UNIX_EPOCH
         .checked_add(Duration::from_secs(input.now))
         .ok_or_else(|| failure("ValueError", "now is too large"))?;
-    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now));
-    let transport = S3Transport {
+    Ok(S3Transport {
         client,
         endpoint: S3Endpoint {
             bucket: input.settings.bucket_name.clone(),
-            region_name: input.settings.region_name.clone(),
+            region: input.settings.region_name.clone(),
             endpoint_url: input.settings.endpoint_url.clone(),
             virtual_hosted_style: input.settings.use_virtual_hosted_style,
         },
@@ -88,49 +133,18 @@ async fn execute(input: &Input) -> HelperResult {
         encryption: encryption(input),
         drop_on_terminal_error: input.settings.drop_on_terminal_error,
         throttle,
-        clock,
-    };
-    let mut outcome = None;
-    let mut samples = None;
-    let mut object = None;
-    match input.operation {
-        Operation::Put => {
-            let element = input
-                .element
-                .as_ref()
-                .ok_or_else(|| failure("ValueError", "a put call needs an element"))?;
-            let logged = S3BatchLoggingElement {
-                payload: element.payload.clone().unwrap_or(Json::Null),
-                s3_object_key: element.s3_object_key.clone(),
-                s3_object_download_filename: element.s3_object_download_filename.clone(),
-                body: element.body.clone(),
-                content_type: element.content_type,
-                retrying_since: None,
-            };
-            outcome = Some(match transport.async_upload_data_to_s3(&logged).await {
-                UploadOutcome::Delivered => "delivered",
-                UploadOutcome::Retry => "retry",
-                UploadOutcome::Dropped => "dropped",
-            });
-            if input.settings.adaptive_concurrency {
-                samples = Some(sink.samples());
-            }
-        }
-        Operation::Get => {
-            let object_key = input
-                .object_key
-                .as_ref()
-                .ok_or_else(|| failure("ValueError", "a get call needs an object_key"))?;
-            object = transport.download_object(object_key).await;
-        }
-    }
-    let requests: Vec<Recorded> = scripted
+        clock: Arc::new(FixedClock(now)),
+    })
+}
+
+fn recorded_requests(operation: Operation, scripted: &ScriptedS3) -> Vec<Recorded> {
+    scripted
         .sent()
         .into_iter()
         .map(|request| Recorded {
             method: request.method.as_str().to_owned(),
             url: request.url,
-            body: match input.operation {
+            body: match operation {
                 Operation::Put => Some(String::from_utf8_lossy(&request.body).into_owned()),
                 Operation::Get => None,
             },
@@ -140,13 +154,7 @@ async fn execute(input: &Input) -> HelperResult {
                 .map(|(name, value)| (name.to_ascii_lowercase(), value))
                 .collect(),
         })
-        .collect();
-    Ok(json!({
-        "requests": requests,
-        "outcome": outcome,
-        "samples": samples,
-        "object": object,
-    }))
+        .collect()
 }
 
 fn encryption(input: &Input) -> Option<ServerSideEncryption> {

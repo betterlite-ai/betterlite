@@ -25,6 +25,10 @@ pub(crate) enum Operation {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the fields mirror the Settings model of the case input one to one"
+)]
 pub(crate) struct Settings {
     pub(crate) bucket_name: String,
     pub(crate) region_name: String,
