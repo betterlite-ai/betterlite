@@ -62,6 +62,13 @@ impl<T: Transport, R: RandomSource> Connection<T, R> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ArgillaCall {
+    SyncSuccess,
+    AsyncSuccess,
+    AsyncFailure,
+}
+
 fn delivery_error(message: &str) -> LoggerError {
     LoggerError::Delivery {
         callback: "argilla".to_owned(),
@@ -69,6 +76,7 @@ fn delivery_error(message: &str) -> LoggerError {
     }
 }
 
+// LiteLLM has a sync success hook and an async success hook that also runs the dataset hooks; no merged callback implements one, so the list stays empty.
 #[async_trait]
 impl<T: Transport + 'static, R: RandomSource + 'static> CallbackLogger for ArgillaAdapter<T, R> {
     fn callback_name(&self) -> &'static str {
@@ -79,7 +87,7 @@ impl<T: Transport + 'static, R: RandomSource + 'static> CallbackLogger for Argil
         let payload = Arc::clone(&event.payload);
         let connection = Arc::clone(&self.connection);
         let _spawned = self.tracker.spawn(async move {
-            if let Err(failure) = sync_success(&connection, &payload).await {
+            if let Err(failure) = log(&connection, &payload, ArgillaCall::SyncSuccess).await {
                 tracing::warn!(%failure, "the Argilla sync success event could not be logged");
             }
         });
@@ -87,34 +95,18 @@ impl<T: Transport + 'static, R: RandomSource + 'static> CallbackLogger for Argil
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let logger = self.connection.logger().await?;
-        let kwargs = CallbackKwargs {
-            standard_logging_object: Some(ExtractionPayload {
-                messages: event.payload.messages.clone(),
-                response: event.payload.response.clone(),
-            }),
-        };
-        // no other merged callback implements async_dataset_hook, so LiteLLM's default keeps every item
-        logger.async_log_success_event(&kwargs, &[]).await;
-        Ok(())
+        log(&self.connection, &event.payload, ArgillaCall::AsyncSuccess).await
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let logger = self.connection.logger().await?;
-        let kwargs = CallbackKwargs {
-            standard_logging_object: Some(ExtractionPayload {
-                messages: event.payload.messages.clone(),
-                response: event.payload.response.clone(),
-            }),
-        };
-        logger.async_log_failure_event(&kwargs).await;
-        Ok(())
+        log(&self.connection, &event.payload, ArgillaCall::AsyncFailure).await
     }
 }
 
-async fn sync_success<T, R>(
+async fn log<T, R>(
     connection: &Connection<T, R>,
     payload: &StandardLoggingPayload,
+    call: ArgillaCall,
 ) -> Result<(), LoggerError>
 where
     T: Transport,
@@ -127,6 +119,10 @@ where
             response: payload.response.clone(),
         }),
     };
-    logger.log_success_event(&kwargs).await;
+    match call {
+        ArgillaCall::SyncSuccess => logger.log_success_event(&kwargs).await,
+        ArgillaCall::AsyncSuccess => logger.async_log_success_event(&kwargs, &[]).await,
+        ArgillaCall::AsyncFailure => logger.async_log_failure_event(&kwargs).await,
+    }
     Ok(())
 }

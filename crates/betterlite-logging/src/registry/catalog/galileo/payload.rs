@@ -31,24 +31,20 @@ pub(super) fn response_object(call_type: &str, response: &Json) -> ResponseObj {
 }
 
 fn realtime(response: &Json) -> ResponseObj {
-    match response {
-        Json::List(items) => ResponseObj::RealtimeList {
-            items: items.clone(),
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            ResponseObj::Unknown
-        }
+    let Json::List(items) = response else {
+        return ResponseObj::Unknown;
+    };
+    ResponseObj::RealtimeList {
+        items: items.clone(),
     }
 }
 
 fn pass_through(response: &Json) -> ResponseObj {
-    match response {
-        Json::Object(value) => ResponseObj::PassThroughDict {
-            value: value.clone(),
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            ResponseObj::Unknown
-        }
+    let Json::Object(value) = response else {
+        return ResponseObj::Unknown;
+    };
+    ResponseObj::PassThroughDict {
+        value: value.clone(),
     }
 }
 

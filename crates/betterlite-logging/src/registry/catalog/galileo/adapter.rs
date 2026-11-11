@@ -9,11 +9,10 @@ use super::payload::response_object;
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
-use crate::fields::payload::StandardLoggingPayload;
 use crate::galileo::admission::{self, CallbackKwargs, StandardLoggingObject, SuccessEvent};
 use crate::galileo::delivery::GalileoDelivery;
 use crate::galileo::delivery::transport::{TraceIds, Transport};
-use crate::galileo_payloads::content::GalileoKwargs;
+use crate::galileo_payloads::content::{GalileoKwargs, ResponseObj};
 
 pub(super) struct GalileoAdapter {
     pub(super) delivery: Arc<GalileoDelivery>,
@@ -21,6 +20,12 @@ pub(super) struct GalileoAdapter {
     pub(super) ids: Arc<dyn TraceIds + Send + Sync>,
     pub(super) tracker: TaskTracker,
     pub(super) shutdown: CancellationToken,
+}
+
+#[derive(Clone, Copy)]
+enum GalileoCall {
+    Success,
+    Failure,
 }
 
 fn delivery_error(message: &str) -> LoggerError {
@@ -38,21 +43,16 @@ impl CallbackLogger for GalileoAdapter {
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        if self.shutdown.is_cancelled() {
-            return Ok(());
-        }
-        let delivery = Arc::clone(&self.delivery);
-        let transport = Arc::clone(&self.transport);
-        let ids = Arc::clone(&self.ids);
-        let payload = Arc::clone(&event.payload);
-        let task = self.tracker.spawn_blocking(move || {
-            admit(&delivery, transport.as_ref(), ids.as_ref(), &payload);
-        });
-        task.await
-            .map_err(|error| delivery_error(&error.to_string()))
+        self.dispatch(&event, GalileoCall::Success).await
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        self.dispatch(&event, GalileoCall::Failure).await
+    }
+}
+
+impl GalileoAdapter {
+    async fn dispatch(&self, event: &LoggerEvent, call: GalileoCall) -> Result<(), LoggerError> {
         if self.shutdown.is_cancelled() {
             return Ok(());
         }
@@ -77,48 +77,41 @@ impl CallbackLogger for GalileoAdapter {
                 input: None,
             },
         };
-        admission::async_log_failure_event(&kwargs);
-        Ok(())
+        match call {
+            GalileoCall::Failure => {
+                admission::async_log_failure_event(&kwargs);
+                Ok(())
+            }
+            GalileoCall::Success => {
+                let response = payload
+                    .response
+                    .as_ref()
+                    .map(|response| response_object(&payload.call_type, response));
+                self.admit(kwargs, response).await
+            }
+        }
     }
-}
 
-// The production transport drives the pooled async client, so the synchronous admission and flush run on a blocking thread.
-fn admit(
-    delivery: &GalileoDelivery,
-    transport: &dyn Transport,
-    ids: &dyn TraceIds,
-    payload: &StandardLoggingPayload,
-) {
-    let kwargs = CallbackKwargs {
-        standard_logging_object: Some(StandardLoggingObject {
-            call_type: Some(payload.call_type.clone()),
-            model: Some(payload.model.clone()),
-            prompt_tokens: Some(payload.prompt_tokens),
-            completion_tokens: Some(payload.completion_tokens),
-            total_tokens: Some(payload.total_tokens),
-            response_cost: Some(payload.response_cost),
-            start_time: Some(payload.start_time),
-            end_time: Some(payload.end_time),
-        }),
-        model: Some(payload.model.clone()),
-        content: GalileoKwargs {
-            call_type: Some(payload.call_type.clone()),
-            messages: payload.messages.clone(),
-            functions: payload.model_parameters.get("functions").cloned(),
-            tools: payload.model_parameters.get("tools").cloned(),
-            input: None,
-        },
-    };
-    let response = payload
-        .response
-        .as_ref()
-        .map(|response| response_object(&payload.call_type, response));
-    let event = SuccessEvent {
-        kwargs: &kwargs,
-        response: response.as_ref(),
-        start_time: None,
-        end_time: None,
-        local_offset: Utc.fix(),
-    };
-    admission::async_log_success_event(delivery, transport, ids, &event);
+    // The production transport drives the pooled async client, so the synchronous admission and flush run on a blocking thread.
+    async fn admit(
+        &self,
+        kwargs: CallbackKwargs,
+        response: Option<ResponseObj>,
+    ) -> Result<(), LoggerError> {
+        let delivery = Arc::clone(&self.delivery);
+        let transport = Arc::clone(&self.transport);
+        let ids = Arc::clone(&self.ids);
+        let task = self.tracker.spawn_blocking(move || {
+            let event = SuccessEvent {
+                kwargs: &kwargs,
+                response: response.as_ref(),
+                start_time: None,
+                end_time: None,
+                local_offset: Utc.fix(),
+            };
+            admission::async_log_success_event(&delivery, transport.as_ref(), ids.as_ref(), &event);
+        });
+        task.await
+            .map_err(|error| delivery_error(&error.to_string()))
+    }
 }

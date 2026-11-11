@@ -32,18 +32,7 @@ impl Transport for PooledTransport {
         headers: &[Header],
         form: &[(&str, &str)],
     ) -> Result<HttpResponse, TransportError> {
-        let body = form_urlencoded::Serializer::new(String::new())
-            .extend_pairs(form.iter().copied())
-            .finish();
-        self.exchange(
-            Method::POST,
-            url,
-            headers,
-            RequestBody::Bytes {
-                content_type: HeaderValue::from_static("application/x-www-form-urlencoded"),
-                data: body.into_bytes(),
-            },
-        )
+        self.exchange(Method::POST, url, headers, form_body(form))
     }
 
     fn post_json(
@@ -96,6 +85,17 @@ impl PooledTransport {
             status: response.status,
             body: text,
         })
+    }
+}
+
+// The login request's application/x-www-form-urlencoded body, percent-encoded the way url's serializer does it.
+fn form_body(form: &[(&str, &str)]) -> RequestBody {
+    let body = form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(form.iter().copied())
+        .finish();
+    RequestBody::Bytes {
+        content_type: HeaderValue::from_static("application/x-www-form-urlencoded"),
+        data: body.into_bytes(),
     }
 }
 
