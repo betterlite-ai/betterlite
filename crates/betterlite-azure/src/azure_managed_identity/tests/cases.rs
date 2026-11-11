@@ -456,6 +456,7 @@ fn imds_retry_policy() {
     retry_mixed();
     retry_connection_then_status();
     retry_after_headers();
+    retry_zero_header_backs_off();
     retry_status_codes();
     retry_transport_error();
 }
@@ -541,6 +542,20 @@ fn retry_after_headers() {
             "{status} {name} {value}"
         );
     }
+}
+
+// a zero Retry-After is no wait at all, so the backoff of the second retry applies
+fn retry_zero_header_backs_off() {
+    let fixture = Fixture::new(&[]);
+    fixture.imds.push(Reply::bare(404, "missing"));
+    fixture.imds.push(Reply::Response {
+        status: 429,
+        headers: vec![("Retry-After", "0")],
+        body: "slow".to_owned(),
+    });
+    fixture.imds.push(Reply::ok(TOKEN));
+    fixture.acquire(&[SCOPE]).unwrap();
+    assert_eq!(fixture.scheduler.recorded(), [Duration::from_millis(1600)]);
 }
 
 fn retry_status_codes() {
