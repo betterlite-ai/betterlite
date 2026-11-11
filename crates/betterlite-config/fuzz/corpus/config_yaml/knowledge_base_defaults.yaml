@@ -1,0 +1,4 @@
+model_list:
+  - model_name: bedrock-kb
+    litellm_params:
+      model: bedrock/knowledge-base

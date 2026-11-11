@@ -1,0 +1,1 @@
+{"retrievalResults":[{"content":{"type":"text","text":"first"},"score":0.5,"metadata":{"x-amz-bedrock-kb-source-uri":"s3://bucket/one.txt"}},{"content":{"text":"second"},"score":0.25,"metadata":{}}]}
