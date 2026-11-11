@@ -269,9 +269,30 @@ fn plain_signature_headers() {
     );
 }
 
+fn trace_header_not_signed() {
+    let credentials = fixture_credentials("AKIDEXAMPLE", None);
+    let headers = supplied(&[
+        ("content-type", Some("application/json")),
+        ("x-amzn-trace-id", Some("Root=1-abc")),
+    ]);
+    let signed = test_plain_endpoint(
+        &credentials,
+        &headers,
+        &[],
+        Body::Text(r#"{"inputText":"hello"}"#),
+    );
+    assert_eq!(
+        header_map(&signed.headers)
+            .get("Authorization")
+            .map(String::as_str),
+        Some(AUTH_PLAIN)
+    );
+}
+
 fn session_token_signature() {
     session_token_headers();
     plain_signature_headers();
+    trace_header_not_signed();
 }
 
 fn allowlist_headers() -> BTreeMap<String, String> {

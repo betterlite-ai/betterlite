@@ -169,7 +169,8 @@ fn test_cancelled_signature() {
     let mut context = Context::from_waker(waker);
     assert!(cancelled.as_mut().poll(&mut context).is_pending());
     drop(cancelled);
-    release.send(()).unwrap();
+    // the aborted task may never have started, which drops the receiver
+    release.send(()).unwrap_or_default();
     let after = test_signed_with(&alice, &test_base_headers());
     assert_eq!(
         test_header(&after, "X-Amz-Security-Token").as_deref(),
