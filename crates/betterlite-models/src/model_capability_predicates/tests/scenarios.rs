@@ -433,9 +433,12 @@ const VISION_PROVIDER_SCENARIO: Scenario = Scenario {
     steps: VISION_PROVIDER_STEPS,
 };
 
-// The catalog's openai entry overrides the declared fireworks_ai, the way LiteLLM's model sets do.
-const VISION_OVERRIDE_STEPS: &[(&str, Option<&str>, Expected)] =
-    &[("vision-blocked", Some("fireworks_ai"), Expected::flag(true))];
+// The declared fireworks_ai is prepended and stripped, so the bare openai entry mismatches and no provider info answers.
+const VISION_OVERRIDE_STEPS: &[(&str, Option<&str>, Expected)] = &[(
+    "vision-blocked",
+    Some("fireworks_ai"),
+    Expected::flag(false),
+)];
 
 const VISION_OVERRIDE_SCENARIO: Scenario = Scenario {
     fixture: SUPPORTS_RESOLUTION,
