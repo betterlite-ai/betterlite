@@ -16,7 +16,7 @@ pub const DEFAULT_SQS_BATCH_SIZE: usize = 512;
 pub const DEFAULT_FLUSH_INTERVAL_SECONDS: u64 = 10;
 pub const DEFAULT_STRIP_DEPTH: i64 = 10;
 pub const BATCH_SIZE_VARIABLE: &str = "DEFAULT_SQS_BATCH_SIZE";
-pub const FLUSH_INTERVAL_VARIABLE: &str = "DEFAULT_FLUSH_INTERVAL_SECONDS";
+pub const FLUSH_INTERVAL_VARIABLE: &str = "DEFAULT_SQS_FLUSH_INTERVAL_SECONDS";
 pub const STRIP_DEPTH_VARIABLE: &str = "DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER";
 
 #[derive(Debug, thiserror::Error)]
@@ -53,10 +53,6 @@ pub enum SettingsError {
 pub struct Connection {
     pub queue_url: Option<String>,
     pub region: Option<String>,
-    pub api_version: Option<String>,
-    pub use_ssl: bool,
-    pub verify: Option<bool>,
-    pub endpoint_url: Option<String>,
 }
 
 pub struct Settings {
@@ -65,7 +61,6 @@ pub struct Settings {
     pub strip_base64_files: bool,
     pub strip_max_depth: i64,
     pub encryption: Option<Encryption>,
-    pub config: Option<String>,
     pub batch: BatchSettings,
 }
 
@@ -73,10 +68,6 @@ pub struct Settings {
 pub struct Overrides {
     pub queue_url: Option<String>,
     pub region: Option<String>,
-    pub api_version: Option<String>,
-    pub use_ssl: Option<bool>,
-    pub verify: Option<bool>,
-    pub endpoint_url: Option<String>,
     pub credentials: CredentialParams,
     pub strip_base64_files: Option<bool>,
     pub encryption: Option<EncryptionOverrides>,
@@ -170,19 +161,6 @@ fn read_connection(
         region: values
             .text("sqs_region_name")?
             .or_else(|| overrides.region.take()),
-        api_version: values
-            .text("sqs_api_version")?
-            .or_else(|| overrides.api_version.take()),
-        use_ssl: values
-            .flag("sqs_use_ssl")?
-            .or_else(|| overrides.use_ssl.take())
-            .unwrap_or(true),
-        verify: values
-            .flag("sqs_verify")?
-            .or_else(|| overrides.verify.take()),
-        endpoint_url: values
-            .text("sqs_endpoint_url")?
-            .or_else(|| overrides.endpoint_url.take()),
     })
 }
 
@@ -274,7 +252,6 @@ impl Settings {
             .unwrap_or(false);
         let strip_max_depth =
             environment_number(environment, STRIP_DEPTH_VARIABLE)?.unwrap_or(DEFAULT_STRIP_DEPTH);
-        let config = values.text("sqs_config")?;
         values.finish()?;
         let batch = read_batch(&mut overrides, environment)?;
         Ok(Self {
@@ -283,7 +260,6 @@ impl Settings {
             strip_base64_files,
             strip_max_depth,
             encryption,
-            config,
             batch,
         })
     }

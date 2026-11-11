@@ -47,10 +47,6 @@ fn resolves_the_connection_parameters_from_callback_settings() {
         &[
             ("sqs_queue_url", "https://queue.example.com"),
             ("sqs_region_name", "us-west-2"),
-            ("sqs_api_version", "2012-11-05"),
-            ("sqs_use_ssl", "False"),
-            ("sqs_verify", "True"),
-            ("sqs_endpoint_url", "http://localhost:4566"),
         ],
         Overrides::default(),
         &[],
@@ -61,16 +57,6 @@ fn resolves_the_connection_parameters_from_callback_settings() {
         Some("https://queue.example.com")
     );
     assert_eq!(settings.connection.region.as_deref(), Some("us-west-2"));
-    assert_eq!(
-        settings.connection.api_version.as_deref(),
-        Some("2012-11-05")
-    );
-    assert!(!settings.connection.use_ssl);
-    assert_eq!(settings.connection.verify, Some(true));
-    assert_eq!(
-        settings.connection.endpoint_url.as_deref(),
-        Some("http://localhost:4566")
-    );
 }
 
 #[test]
@@ -78,14 +64,12 @@ fn callback_settings_win_over_supplied_overrides() {
     let overrides = Overrides {
         queue_url: Some("https://override.example.com".to_owned()),
         region: Some("override-region".to_owned()),
-        use_ssl: Some(true),
         ..empty_overrides()
     };
     let settings = resolve(
         &[
             ("sqs_queue_url", "https://queue.example.com"),
             ("sqs_region_name", "us-west-2"),
-            ("sqs_use_ssl", "False"),
         ],
         overrides,
         &[],
@@ -96,7 +80,6 @@ fn callback_settings_win_over_supplied_overrides() {
         Some("https://queue.example.com")
     );
     assert_eq!(settings.connection.region.as_deref(), Some("us-west-2"));
-    assert!(!settings.connection.use_ssl);
 }
 
 #[test]
@@ -104,10 +87,6 @@ fn supplied_overrides_fill_in_missing_callback_settings() {
     let overrides = Overrides {
         queue_url: Some("https://override.example.com".to_owned()),
         region: Some("override-region".to_owned()),
-        api_version: Some("2012-11-05".to_owned()),
-        use_ssl: Some(false),
-        verify: Some(false),
-        endpoint_url: Some("http://localhost:4566".to_owned()),
         ..empty_overrides()
     };
     let settings = resolve(&[], overrides, &[]).expect("the settings resolve");
@@ -119,8 +98,6 @@ fn supplied_overrides_fill_in_missing_callback_settings() {
         settings.connection.region.as_deref(),
         Some("override-region")
     );
-    assert!(!settings.connection.use_ssl);
-    assert_eq!(settings.connection.verify, Some(false));
 }
 
 #[test]
@@ -128,10 +105,6 @@ fn defaults_match_litellm() {
     let settings = resolve(&[], Overrides::default(), &[]).expect("the settings resolve");
     assert!(settings.connection.queue_url.is_none());
     assert!(settings.connection.region.is_none());
-    assert!(settings.connection.api_version.is_none());
-    assert!(settings.connection.verify.is_none());
-    assert!(settings.connection.endpoint_url.is_none());
-    assert!(settings.connection.use_ssl);
     assert!(!settings.strip_base64_files);
     assert!(settings.encryption.is_none());
     assert_eq!(settings.strip_max_depth, DEFAULT_STRIP_DEPTH);
@@ -159,7 +132,7 @@ fn environment_overrides_the_flush_interval() {
     let settings = resolve(
         &[],
         Overrides::default(),
-        &[("DEFAULT_FLUSH_INTERVAL_SECONDS", "2")],
+        &[("DEFAULT_SQS_FLUSH_INTERVAL_SECONDS", "2")],
     )
     .expect("the settings resolve");
     assert_eq!(settings.batch.flush_interval, Duration::from_secs(2));
@@ -172,7 +145,7 @@ fn an_empty_environment_variable_takes_the_default() {
         Overrides::default(),
         &[
             ("DEFAULT_SQS_BATCH_SIZE", ""),
-            ("DEFAULT_FLUSH_INTERVAL_SECONDS", ""),
+            ("DEFAULT_SQS_FLUSH_INTERVAL_SECONDS", ""),
         ],
     )
     .expect("the settings resolve");
@@ -255,13 +228,17 @@ fn an_unknown_callback_setting_is_an_error() {
 
 #[test]
 fn an_invalid_bool_setting_is_an_error() {
-    let error = resolve(&[("sqs_use_ssl", "sometimes")], Overrides::default(), &[])
-        .err()
-        .expect("the setting is not a bool");
+    let error = resolve(
+        &[("sqs_strip_base64_files", "sometimes")],
+        Overrides::default(),
+        &[],
+    )
+    .err()
+    .expect("the setting is not a bool");
     assert!(matches!(
         error,
         SettingsError::Boolean {
-            name: "sqs_use_ssl",
+            name: "sqs_strip_base64_files",
             ..
         }
     ));
@@ -435,13 +412,15 @@ fn batch_overrides_come_from_the_constructor_arguments() {
     assert_eq!(settings.batch.flush_interval, Duration::from_secs(3));
 }
 
-#[test]
-fn the_config_setting_is_kept() {
-    let settings = resolve(
-        &[("sqs_config", "{\"region\":\"local\"}")],
-        Overrides::default(),
-        &[],
-    )
-    .expect("the settings resolve");
-    assert_eq!(settings.config.as_deref(), Some("{\"region\":\"local\"}"));
+#[rstest::rstest]
+#[case::use_ssl("sqs_use_ssl", "False")]
+#[case::verify("sqs_verify", "True")]
+#[case::endpoint_url("sqs_endpoint_url", "http://localhost:4566")]
+#[case::api_version("sqs_api_version", "2012-11-05")]
+#[case::config("sqs_config", "{\"region\":\"local\"}")]
+fn a_setting_the_sender_does_not_apply_is_refused(#[case] name: &str, #[case] value: &str) {
+    let error = resolve(&[(name, value)], Overrides::default(), &[])
+        .err()
+        .expect("the setting has no effect, so it is refused");
+    assert!(matches!(error, SettingsError::UnknownKey { name: refused } if refused == name));
 }
