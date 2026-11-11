@@ -20,7 +20,7 @@ description: >-
   pub kwargs: <B3605's typed kwargs map> }`. HandlerOutcome is B3608's type (optional result plus kwargs map), and the result is B3605's
   response-object enum. url_route and end_time are unused by the logic (LiteLLM only accepts them); keep them in the struct so the
   signature stays LiteLLM's. B3606 builds the adapter and passes the list body as websocket_messages (an empty slice when the body is
-  not a list). B102 builds the logger once.
+  not a list). B8931 builds the logger once.
 
   Types you use and do not define: Usage with its prompt and completion token detail records (B2214), ModelResponse (B031), the
   grounding request counter and its GroundingRequests record (B1322, betterlite-vertex, grounding_requests), CostBreakdown (B1667) and

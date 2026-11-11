@@ -55,13 +55,14 @@ description: >-
   Arc<tokio::sync::Semaphore>)` is the production pricer and calls B3645's `price_transcription_job_live` with those arguments. The
   semaphore is the download semaphore: one permit, shared by every pricing task of the logger, so two tasks never fetch media at once.
 
-  Step 4, the logger. `TranscribeLogger::new(job_pricer: Arc<dyn JobPricer>, rates: Arc<dyn TranscribeRates>, max_pending: usize)` keeps
-  its collaborators. `trait TranscribeRates: Send + Sync { fn cost_per_second(&self) -> Option<Decimal>; }` is the model cost map entry
+  Step 4, the logger. `TranscribeLogger::new(job_pricer: Arc<dyn JobPricer>, rates: Arc<dyn TranscribeRates>, max_pending: usize, tasks: tokio_util::task::TaskTracker)` keeps
+  its collaborators; `tasks` is the server task tracker. `trait TranscribeRates: Send + Sync { fn cost_per_second(&self) -> Option<Decimal>; }` is the model cost map entry
   for "transcribe/StartTranscriptionJob" (its production body calls B3644's `transcribe_cost_per_second` over the catalog; the wiring
-  belongs to B102). `TranscribeLogger::production(deps, rates)` builds a LiveJobPricer with a fresh `Semaphore::new(TRANSCRIBE_MEDIA_DOWNLOAD_CONCURRENCY)`
-  and `max_pending = MAX_PENDING_PRICING_JOBS`. B102 builds the logger once, so the semaphore is shared by the whole process. The logger
-  also holds a `tokio::sync::Semaphore` of `max_pending` permits that counts pricing tasks in flight. The logger needs no set that keeps
-  tasks alive: tokio keeps a spawned task running without a handle (LiteLLM's task set exists only because asyncio holds tasks weakly).
+  belongs to B8931). `TranscribeLogger::production(deps, rates, tasks)` builds a LiveJobPricer with a fresh `Semaphore::new(TRANSCRIBE_MEDIA_DOWNLOAD_CONCURRENCY)`
+  and `max_pending = MAX_PENDING_PRICING_JOBS`. B8931 builds the logger once, so the semaphore is shared by the whole process. The logger
+  also holds a `tokio::sync::Semaphore` of `max_pending` permits that counts pricing tasks in flight. Every pricing task is spawned
+  through the injected server task tracker, so shutdown can drain or cancel it; the logger never discards a task handle and never
+  spawns outside that tracker (LiteLLM's task set exists only because asyncio holds tasks weakly, and the tracker takes its place).
 
   `schedule_priced_job_logging(&self, input: ScheduleInput<'_>) -> tokio::task::JoinHandle<()>` mirrors L603-L634. `ScheduleInput`
   holds what the success path has: the upstream request headers and request URL (`url::Url`), `response_body: Option<serde_json::Map>`
@@ -69,7 +70,7 @@ description: >-
   Arc<dyn PassThroughLogDispatch>` (B3605's trait; do not define another one) and the kwargs map. B3607 calls it only after
   `is_transcribe_route` and `is_priced_job_start` are both true, and returns without logging anything itself. The method copies what the
   task needs out of the borrowed input, parses `started_job` with B3644's `started_transcription_job` (an object body is serialized back to
-  text, None gives no started job) and spawns the task on the current tokio runtime. It returns the JoinHandle so tests can await it.
+  text, None gives no started job) and spawns the task on the injected tracker. It returns the JoinHandle so tests can await it.
 
   Step 5, the task (_price_then_log, L636-L683). In order:
   1. Take the rate from `rates.cost_per_second()`. None logs at error level "transcribe/StartTranscriptionJob left the model cost map,
@@ -219,7 +220,7 @@ out_of_scope:
   - "The PassThroughLogDispatch trait itself (the Protocol at L124-L135) is B3605's PassThroughLogDispatch. This task only takes it as Arc<dyn PassThroughLogDispatch>."
   - "The success path that decides when to call transcribe_passthrough_handler (success_handler.py L323-L336) is B3606 and the early return that calls schedule_priced_job_logging (L461-L476) is B3607."
   - "The Transcribe route in llm_passthrough_endpoints.py (L1612 on) calls the B3644 policy functions and the B3645 job lookup; it is not changed here, and no HTTP oracle case belongs to this task because no route reaches this code yet."
-  - "Building the TranscribeRates implementation over the model cost catalog and the LiveJobPricer dependency bundle is wiring that B102 does when it builds the logger once."
+  - "Building the TranscribeRates implementation over the model cost catalog and the LiveJobPricer dependency bundle is wiring that B8931 does when it builds the logger once, with the server task tracker."
 
 pitfalls:
   - "The operation name comes from the upstream REQUEST header x-amz-target, not from a response header, and the model name is 'transcribe/' plus that name, so a missing header gives the model 'transcribe/' with nothing after it."

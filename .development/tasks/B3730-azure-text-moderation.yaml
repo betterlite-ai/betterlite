@@ -143,8 +143,8 @@ deviations:
 
 out_of_scope:
   - >-
-    Guardrail framework contract (CustomGuardrail.__init__, decorator dispatch, logging):
-    owned by B104 (framework).
+    Guardrail framework contract: CustomGuardrail.__init__ is owned by B5471, invocation
+    logging by B3664 and live class dispatch by B8666.
   - >-
     Base Azure transport (__init__ via super, _post_to_content_safety, split_text_by_words,
     get_user_prompt_from_request, AzureContentSafetyConfigModel): owned by B3728 (base).

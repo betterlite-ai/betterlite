@@ -1,0 +1,132 @@
+id: B9734
+title: Verify access-group pages and show the pinned project-route limitation
+description: >-
+  Keep the access-group and project React trees supplied by B9090. Complete their client
+  acceptance through HTTP cases and component tests, not new route implementations. B821 and
+  B822 already own all five access-group CRUD operations. The four /project calls have no MIT
+  handler at this pin: proxy_server creates an empty enterprise_router when litellm_enterprise
+  cannot import, then includes that empty router. B867/B868 merely mention project paths in
+  permission tables; they do not build them. The project table/repository is not a route.
+
+  AccessGroupsPage/useAccessGroups sends GET /v1/access_group with no query/body and reads a bare
+  array of access_group_id,access_group_name,description,access_model_names,access_mcp_server_ids,
+  access_agent_ids,assigned_team_ids,assigned_key_ids and timestamps. Detail sends GET
+  /v1/access_group/<encodeURIComponent(id)> and reads access_mcp_servers,access_agents,
+  assigned_teams,assigned_keys as arrays of {id,name}, plus created_by/updated_by; null labels
+  fall back to IDs. Both are B821. AccessGroupCreateDialog's typed fetchClient POSTs
+  /v1/access_group (B822) with trimmed access_group_name, optional nonempty description and
+  only nonempty access_model_names/access_mcp_server_ids/access_agent_ids. The form has no
+  assignment fields on create. Read access_group_id and invalidate the list. Edit PUTs
+  /v1/access_group/<encoded-id> (B822) with access_group_name,description and resource arrays
+  only for tabs visited during that edit; unvisited tabs are omitted. Its declared hook type
+  also admits assigned_team_ids/assigned_key_ids, but the modal
+  does not invent assignments. Empty arrays clear resources. DELETE on the same path (B822)
+  has no body and expects 204 without JSON parsing. The read hooks allow admin-view roles;
+  writes remain proxy-admin-only on the server. Test a viewer's actual forbidden save/delete
+  without granting that user extra permissions in the fixture.
+
+  The project call inventory is retained for compatibility evidence even though it cannot
+  succeed without excluded code. useProjects GET /project/list has no query/body and expects
+  a bare ProjectResponse array. useProjectDetails GET /project/info?project_id=<encoded-id>
+  expects one ProjectResponse. The list/detail read project_id,project_alias,description,
+  team_id,models,spend,model_spend,blocked,created_at,created_by and litellm_budget_table
+  (max_budget,budget_duration,rpm_limit,tpm_limit). CreateProjectModal POST /project/new sends
+  team_id,project_alias,description,models,max_budget,blocked,guardrails,metadata and optional
+  model_rpm_limit/model_tpm_limit/model_itpm_limit/model_otpm_limit. Edit POST /project/update
+  adds project_id; cleared max_budget may be null. These are the exact four requests for the
+  no-handler HTTP cases, not invitations to port enterprise logic. ProjectDetailsPage would
+  next GET /team/info (B812), and ProjectKeysSection would GET /key/list with page=1,size=5,
+  project_id,key_alias plus the four true flags (B782). Those dependent views must not mount
+  after the project lookup fails. There is no project-delete control or request at the pin.
+
+  Add 44-project-availability.patch with checked hashes for ProjectsPage/ProjectDetailsPage and
+  the project read hooks only. Preserve HTTP status in the hook error, render "Project management
+  is unavailable in this build" on 404, suppress create/edit and dependent key/team requests
+  for that state, and retain navigation back to the other admin pages. Authentication/403 and
+  transient failures remain their own errors with retry; do not describe every failure as
+  unavailable. This deliberate UI deviation implements the current enterprise-exclusion rule.
+  Do not add a paid CTA, a fake empty success array, an enterprise import or a replacement
+  backend. The architect may later commission a separately specified native project API;
+  this task neither assumes nor designs it. Unchanged project functions remain retained code.
+  Include ProjectsPage.test.tsx and ProjectDetailsPage.test.tsx in the caller-owned
+  tests/access-projects/upstream-tests.json selection, alongside new actual-hook 404/403/500
+  tests. Preserve their successful-response tests even though this MIT server lacks the API.
+
+  The existing corpus contains no HTTP request for access groups or projects. B821's planned
+  viewer-and-admin-read/missing-group and B822's planned unified-write-statuses and
+  update-absent-null-and-empty are absent, so add the actual trimmed create/clear/edit/delete
+  sequences. Use B860 seed users/keys and real steps/captures, with no synthetic database rows
+  beyond its supported seed schema. The resources may use fixed nonexistent IDs where B822
+  allows them; the returned null labels are meaningful. Assignment mirror coverage belongs to
+  B822; B145's browser can demonstrate a key/team assignment using their existing APIs.
+  Compare HTTP 201 create, 200 reads/update, 204 deletion, missing-resource and viewer errors,
+  JSON content type and the complete stable body, ignoring only generated identity/time fields.
+  Project cases send both authenticated and unauthenticated forms and compare the actual
+  stock 404 detail envelope, without adding an authentication middleware to nonexistent paths.
+  Use B8680's existing unmatched-route behavior. About 90 patch lines, 210 component lines and
+  400 HTTP case lines keeps this part bounded.
+scope:
+  paths:
+    - ui/dashboard/patches/44-project-availability.patch
+    - ui/dashboard/patches/44-project-availability.json
+    - ui/dashboard/tests/access-projects/**
+    - tools/oracle/cases/ui/access-projects/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/accessGroups/useAccessGroups.ts#L17-L50
+    why: Bare-list request and admin-view role guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/access-groups/_components/access-group-create/mapper.ts#L7-L21
+    why: Actual create form trims strings and omits empty resources and assignment fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/access-groups/_components/AccessGroupsDetailsPage.tsx#L78-L118
+    why: Detail consumes hydrated resource names and assignment arrays.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/projects/useProjects.ts#L46-L81
+    why: Project list request and response assumptions despite absent MIT routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/projects/useCreateProject.ts#L9-L48
+    why: Exact create-project body and POST path retained for no-handler evidence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/projects/useUpdateProject.ts#L9-L53
+    why: Project update adds project_id and permits null max_budget.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L508-L813
+    why: B821/B822 own all five decorated paths and their 201/204 contracts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L950-L971
+    why: Enterprise import failure leaves an empty router; no project implementation exists in the permitted checkout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19989-L20006
+    why: The enterprise router is included separately from the MIT management routes.
+dod:
+  - text: The access-group create/edit/read/delete workflow preserves resource labels, clear-array semantics, write permissions and 204 handling.
+    proof: [access-project-cases, oracle, access-project-components]
+  - text: The four unsupported project requests retain stock 404 behavior and the retained pages show a useful unavailable state without cascading requests or a fake success.
+    proof: [oracle, access-project-components]
+checks:
+  optional: []
+  commands:
+    - id: access-project-cases
+      why: Access-group form requests or the project route-absence evidence was never added.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/access-projects)"
+    - id: access-project-components
+      why: The actual page still offers project writes on a missing API or parses a 204 as JSON.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/access-projects
+oracle_cases:
+  - tools/oracle/cases/ui/access-projects/access-group-create-trimmed-form.yaml
+  - tools/oracle/cases/ui/access-projects/access-group-list-and-detail-labels.yaml
+  - tools/oracle/cases/ui/access-projects/access-group-put-clear-and-delete.yaml
+  - tools/oracle/cases/ui/access-projects/access-group-viewer-denied-write.yaml
+  - tools/oracle/cases/ui/access-projects/project-list-unavailable.yaml
+  - tools/oracle/cases/ui/access-projects/project-info-unavailable.yaml
+  - tools/oracle/cases/ui/access-projects/project-create-form-unavailable.yaml
+  - tools/oracle/cases/ui/access-projects/project-update-form-unavailable.yaml
+deviations:
+  - what: Project pages show an unavailable-build state on the absent API's HTTP 404 and suppress create/edit and dependent detail fetches; the four API paths remain 404 with detail Not Found.
+    why: Project route implementations exist only in excluded enterprise code. A native project API needs a separate product decision and specification.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L950-L971
+out_of_scope:
+  - B9090 takes in all access-group/project functions unchanged except the reviewed availability patch; B821/B822 alone implement access-group handlers.
+  - B867/B868 project strings classify routes for authorization; they are not builders, and no enterprise project handler is reimplemented.
+  - B9735 tests model, agent and MCP option catalogs; B9730/B9731 own key/team HTTP contracts and B145 browser navigation.
+pitfalls:
+  - Access-group DELETE is 204, so awaiting response.json() changes success into a client error.
+  - The access-group create form omits empty resource arrays while an edit may deliberately send them.
+  - A project table in Postgres does not imply that /project/new is mounted.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

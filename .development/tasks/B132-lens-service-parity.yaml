@@ -1,0 +1,205 @@
+id: B132
+title: Lens worker HTTP parity and operating guide
+description: >-
+  Finish the Lens umbrella with the operating guide and the HTTP proof of worker execution
+  through the composed proxy. B8232 already builds the worker and image, B4500-B4509 own the
+  records, repositories, routes and analysis, and B8682 mounts the administration and worker
+  routers with their production ports. Do not register routes or rebuild those functions.
+  B9030 supplies the missing Lens fixture tables and administration flows; use those fixtures
+  with B1630's multi-step kind: http cases and B5076's database-capable LiteLLM process.
+  The only production paths left exclusively claimed by this umbrella are deploy/lens/README.md
+  and an empty __init__.py, which requires no Rust counterpart. No unowned executable Python
+  logic remains in those paths. Keep this final part to the guide and three focused HTTP flows;
+  the fixture/administration work was split into B9030 to keep their combined case text within
+  worker budgets.
+
+  The three cases in tools/oracle/cases/http/lens-service/ boot the real betterlite binary
+  and LiteLLM without enterprise code on independent Postgres fixtures. Seed one ordinary
+  billing key, configure general_settings.master_key and the model alias lens-review backed
+  by openai/gpt-4o at {{upstream}}, and leave tracing off. Use a distinct master_key per case
+  to prevent the runner from grouping these flows onto the same fixture database. Each flow registers its own worker
+  through POST /lens/workers/register using the seeded key's lowercase SHA-256 identifier,
+  captures its id and secret token, creates an enabled=false lens with nonempty context,
+  captures the lens and initial job ids, then claims with protocol_version=2. Reuse B9030's
+  fixture conventions, not its mutable database or captured values. Use explicit query
+  encoding in path captures and raw encoding only for the bearer value. Compare every
+  status, content-type and applicable WWW-Authenticate header. Ignore individual generated
+  ids, tokens and timestamps with reasons, never cost, coverage, settings, status, revision,
+  attempts, errors or entire job objects. Lens errors have detail; exclude only /detail for
+  their wording and preserve the absence of OpenAI error fields. When the shared auth layer
+  returns an OpenAI envelope, compare type/param/code and ignore /error/message for wording.
+
+  worker-lease-cancel.yaml proves a second claim of the same running job returns 200 null,
+  POST /lens/worker/{lens_id}/{job_id}/progress with stage Reading executions and explicit
+  coverage returns true, and POST /lens/worker/{lens_id}/{job_id}/heartbeat returns true.
+  GET /lens/{lens_id}/runs/{job_id} shows the running job, attempts=1 and the submitted stage
+  and coverage. DELETE /lens/workers/{worker_id} while it owns the running job returns 409.
+  POST /lens/{lens_id}/cancel makes subsequent progress return 409; revoking that worker now
+  returns true. This proves the worker router is outside virtual-key auth but still observes
+  the same repository and cancellation state as the admin router.
+
+  worker-result-validation.yaml claims a fresh job, then GET
+  /lens/worker/{lens_id}/{job_id}/sample returns 501 without tracing and GET
+  /lens/worker/{lens_id}/{job_id}/content?execution_id=outside returns 404 before asking for
+  storage. POST /lens/worker/{lens_id}/{job_id}/result with two RunAssessment records naming
+  the same outside execution returns 422 for duplication; with one it returns 422 for an
+  execution outside the empty sample. Both bodies carry coverage and otherwise valid typed
+  records. Report progress with screened=1, then submit an error result with empty findings,
+  assessments and coverage. The job becomes failed, retains screened=1 and keeps last_scan_at
+  null. Retry result with a different, otherwise valid body and no error: the already failed
+  job is returned unchanged, not completed. Read the full run and its list entry to compare
+  failed status, stage, error, retained coverage and stripped list payload. No trace backend
+  or forged evidence is necessary to reach these paths.
+
+  worker-model-budget.yaml exercises B4504's previously helper-only billing path. Configure
+  both custom per-token prices on the single deployment: input_cost_per_token
+  0.00000095367431640625 and output_cost_per_token 0.0000019073486328125, exactly representable
+  binary fractions. Give the lens monthly_budget=1. POST /lens/worker/{lens_id}/{job_id}/model
+  with purpose extract and a short prompt returns ModelResult from one fixed mock completion
+  with content "{}" and explicit usage. Compare the model request's messages, max_tokens=4096,
+  stream=false and response_format=json_object in the provider transcript, and the response
+  cost without an ignored cost pointer. GET /lens/{lens_id} proves the settled spent and
+  job.cost, not the conservative reservation, persist. PUT the saved LensSettings with
+  monthly_budget=0.000001 while retaining its model and enabled=false; another model request
+  returns 402 with no second provider request because reservation uses the current lens's
+  budget even though the job keeps its original settings. Finally post an empty successful
+  result with coverage, read the completed run, and repeat the result to exercise completed
+  idempotence, capturing last_scan_at to require a timestamp instead of silently ignoring a
+  null value. The empty sample and findings make storage unnecessary. No case sleeps until
+  lease expiry or calls a live provider. This task does not change pricing, auth or routes
+  to make a failing case pass; report an owning-task defect with the failing HTTP case.
+
+  Write packaging/lens/README.md in betterlite's voice, carrying the information in the
+  pinned deployment guide: starting a worker, configuring a lens, interpreting findings,
+  scan mechanics, operating limits, API access, evaluation and upgrades. Document the actual
+  B8232 files beside it. LITELLM_URL and LENS_WORKER_TOKEN are required with no defaults;
+  Compose additionally requires LENS_WORKER_IMAGE and defaults LENS_WORKER_TMP_SIZE to 1g.
+  Show a private environment-file example with placeholder values, a Compose start command
+  from the repository root using packaging/lens/compose.yaml, and a local build command
+  using both Compose files and LENS_WORKER_IMAGE=betterlite-lens-worker:local. Keep wire
+  names LITELLM_*, /lens and Authorization unchanged. Do not advertise a published image,
+  digest, supported architecture or dashboard-generated betterlite image that no release
+  task has supplied. The worker runs betterlite-lens-worker, has a read-only filesystem and
+  writable temporary storage, needs outbound access to the proxy and no database/provider
+  credential, and keeps the selected billing key on the proxy.
+
+  Begin with a Deployment status section explaining the current tracing limitation in
+  plain operational terms: PostgreSQL and a model are not sufficient for activity analysis;
+  B8682 currently supplies no Lens ClickHouse store even with CLICKHOUSE_URL and
+  general_settings.tracing configured. With no store, availability is false, agents is
+  empty, and preview/sample or evidence reads that reach storage return HTTP 501 detail
+  JSON, with no OpenAI type/param/code fields; earlier auth, missing database or sample
+  membership failures still win. Name CLICKHOUSE_URL and a separate SELECT-only
+  CLICKHOUSE_READER_URL as the upstream requirements, not as a promise that setting them
+  alone fixes this limitation. Explain missing Postgres as 503 and a mismatched authenticated
+  worker protocol as 409. Describe the dashboard workflow as available when that UI is
+  installed; provide API instructions independent of B147's unbuilt page integration.
+
+  Keep the configuration semantics accurate: the API defaults source=traces, lookback_hours=24,
+  interval_minutes=15, sample_percent=100, sample_size=null, concurrency=8,
+  monthly_budget=100 and enabled=true; the dashboard's one-shot setup is not the API default.
+  Creation queues a run even when enabled=false. Cover the two-minute settling window,
+  immutable job settings, 10-second worker polling, 30-second heartbeats, five-minute leases,
+  at most three claim attempts, cancellation versus pause, bounded context windows and
+  temporary storage cleanup. Explain exact evidence, limitations and counterexamples,
+  expected-behavior feedback, reopening only for new supporting executions, 50-run history
+  pages and conservative budget reservations retained after interrupted model calls.
+  Document administrator writes/viewer reads, separate worker credentials, allowed_ips and
+  the trusted forwarding settings use_x_forwarded_for, mcp_trusted_proxy_ranges and
+  mcp_xff_num_trusted_hops. All trace content sent for analysis reaches the configured model.
+
+  API examples show POST /lens, POST /lens/{lens_id}/runs, GET /lens/{lens_id}/runs?offset=0,
+  GET /lens/{lens_id}/runs/{job_id} and PATCH /lens/{lens_id}/findings/{finding_id}, with
+  private credentials and valid complete settings where required. Explain jobs[0].id,
+  settings overrides and opaque execution_ids from preview, plus offset/as_of paging;
+  there are no /v1 or provider aliases. Evaluation may link the pinned upstream evaluator
+  as an external tool that makes paid calls; do not present tests.proxy_behavior.lens.evaluate
+  as shipped by betterlite. Upgrades retain /lens, lenses and lens_id rather than /engine,
+  require stopping workers before mixed proxy/schema versions, and link the pinned rename
+  migration; do not tell users to run Python Prisma commands inside the Rust worker image.
+
+  Add packaging/lens/tests/guide.sh, a small offline consistency check in the style of the
+  existing files.sh. Require the named guide sections, the four worker environment names,
+  both Compose paths and the local image tag; require the Deployment status section to name
+  CLICKHOUSE_URL, CLICKHOUSE_READER_URL, unavailable storage and the 501, 503 and 409 outcomes,
+  and require the evaluation section to identify its tooling as external. Check referenced Compose files exist and
+  match the documented required-variable/default declarations. Extract fenced bash examples
+  for bash -n without executing them. Reject a runnable ghcr.io/berriai worker image or
+  python -m lens.worker command. No Docker socket, real token or network call is used by
+  this check. The HTTP cases are the behavior proof; the guide check only prevents broken
+  commands and stale packaging claims.
+scope:
+  paths:
+    - packaging/lens/README.md
+    - packaging/lens/tests/guide.sh
+    - tools/oracle/cases/http/lens-service/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/deploy/lens/README.md#L1-L117
+    why: Owned deployment and operations guide, adapted to the shipped Rust worker and explicitly documented integration limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/deploy/lens/compose.yaml#L1-L12
+    why: Packaging context for the guide; B8232 owns the Compose implementation and its required-image deviation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L18-L150
+    why: Worker operational contract documented here; every function, nested callback and entry point is implemented by B8232.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/models.py#L28-L69
+    why: API settings and defaults for the guide and typed HTTP inputs; B4500 owns their implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L184-L254
+    why: Saved settings, run reads and cancellation exercised by the new HTTP flows, implemented by B4503.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L305-L528
+    why: Decorators and worker protocol, progress, sample/content, model, result and heartbeat composition; B4503/B4505 retain every handler and nested transform.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L19-L98
+    why: The stored-key authorization and completion path reached by the model HTTP flow, owned by B4504.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L63-L184
+    why: Reservation, settlement, custom pricing and model-call contract observed over HTTP, not reimplemented here.
+dod:
+  - text: A worker credential reaches the mounted worker routes, advances the shared job, cannot revoke an active worker, and loses job access after administrator cancellation.
+    proof: [service-cases, oracle]
+  - text: Missing storage and invalid result membership retain their distinct statuses, failed-result retries preserve the prior run, and completed-result retries remain idempotent.
+    proof: [service-cases, oracle]
+  - text: Worker model calls use the selected stored billing key and configured model, persist actual cost, and refuse a reservation beyond the current Lens budget before another provider call.
+    proof: [service-cases, oracle]
+  - text: The guide covers setup, settings, results, scan mechanics, limits, API use, evaluation and upgrades, using the actual worker environment, image selection and Compose files with valid shell examples.
+    proof: [guide-check]
+  - text: The guide distinguishes the current unavailable ClickHouse store from a working Lens deployment and documents the 501, 503 and protocol 409 conditions without claiming an unsupported image or bundled evaluator.
+    proof: [guide-check]
+checks:
+  optional: []
+  commands:
+    - id: service-cases
+      why: A worker lifecycle or billing proof is missing or no new service cases were added.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/lens-service)" &&
+        test -f tools/oracle/cases/http/lens-service/worker-lease-cancel.yaml &&
+        test -f tools/oracle/cases/http/lens-service/worker-result-validation.yaml &&
+        test -f tools/oracle/cases/http/lens-service/worker-model-budget.yaml
+    - id: guide-check
+      why: The operating guide is missing, its commands disagree with the worker packaging or its deployment limitations are absent.
+      run: >-
+        test -f packaging/lens/README.md &&
+        bash -n packaging/lens/tests/guide.sh &&
+        bash packaging/lens/tests/guide.sh
+oracle_cases:
+  - tools/oracle/cases/http/lens-service/worker-lease-cancel.yaml
+  - tools/oracle/cases/http/lens-service/worker-result-validation.yaml
+  - tools/oracle/cases/http/lens-service/worker-model-budget.yaml
+deviations: []
+out_of_scope:
+  - litellm/proxy/lens/__init__.py is empty at the pin and has no executable behavior to port; retain its coverage without manufacturing a module or a test.
+  - B8232 owns failure_message, LensWorker.__init__, model_request, run_once and its model/read/progress/heartbeat callbacks, main and __main__ startup, plus Dockerfile, Dockerfile.dockerignore and both Compose files.
+  - B4500 owns models/state; B4501 repository; B4502 sources; B4503/B4505 endpoints including every nested transform; B4504 billing/inference; B4506 analysis primitives and trace_store; B4507 extraction; B4508 investigation; B4509 coordination.
+  - B8682 owns Lens production adapters and both mounts as well as its 26 no-database HTTP cases; B8610 owns the composition root, and the MCP area mounts do not participate in Lens.
+  - B9030 owns the supplemental fixture schema and administration HTTP flows; B860, B1630 and B5076 own database provisioning, captures and database-capable process boot.
+  - Concrete ClickHouse lens_availability/lens_agents/lens_sample/lens_content/lens_evidence queries remain unassigned outside this umbrella's claimed files; B3867 owns provide_storage, B110/B8911 own receiver integration/lifetime, and B8682 retains the explicit unavailable Lens-store behavior until a backend owner is assigned.
+  - Successful source sampling, content pagination and quote-verification HTTP cases need that real ClickHouse backend; B4502/B4505 retain their native tests, and these new cases do not present an in-memory substitute as production success.
+  - B147 owns the Lens dashboard pages, B709 owns database migrations and B8232 leaves publication to the release workflow; this guide neither implements a UI nor publishes an image.
+pitfalls:
+  - The API's enabled default is true even though the dashboard describes new investigations as one-shot, so the guide must distinguish the two entry points.
+  - A failed Result preserves the job's last progress coverage, whereas a successful Result replaces it with the supplied coverage.
+  - Lowering the saved monthly_budget affects the next reservation even when the running job's settings still show the old budget.
+  - Compose interpolates the base file before applying a build override, so the local build example must also set LENS_WORKER_IMAGE.
+  - The worker calls protocol_version=2 while the server defaults an omitted value to 1 and rejects it after authenticating the worker.
+  - Fixed custom rates avoid the pinned catalog's null tier-price defect and make the billing case exercise a working LiteLLM setup.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

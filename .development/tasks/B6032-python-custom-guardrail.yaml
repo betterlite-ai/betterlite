@@ -26,7 +26,7 @@ description: >-
   object across calls: the per-request suppressed set (pass it to `should_run_guardrail` as an argument), the pre-call
   markers, and the session de-duplication cache. Port the session and marker code as the source writes it, with a plain
   attribute or a small class and no ContextVar. Read `custom_guardrail.py` from the top and cover every method. Proxy-only
-  hooks that need a deployment or the proxy server, such as the scan of `logging_only` guardrails, belong to B165 and B124.
+  hooks that need a deployment or the proxy server, such as the scan of `logging_only` guardrails, belong to B3666, B8399 and B8666.
   If the class defines such a method, port the method with the same signature and have it use only the arguments it
   receives.
 
@@ -95,7 +95,7 @@ deviations:
   why: B5471, B3665 and B3664 already own that logic, and a second copy would drift.
 out_of_scope:
 - The Rust logic (B5471, B3665, B3664) and the native bridge (B6031).
-- Proxy hooks that need a deployment or the server, such as the `logging_only` scan, are B165 and B124.
+- Proxy hooks that need a deployment or the server, such as the `logging_only` scan, are B3666, B8399 and B8666. Python custom guardrail limits stay with B3682.
 - The `__init__.py` files outside `_integrations` and any star line in `betterlite/__init__.py` are written by the architect.
 - Provider guardrails that inherit from this class belong to their own entries.
 pitfalls:

@@ -15,7 +15,7 @@ description: >-
   input parameter, build request fields and dispatch through the shared pipeline.
 
   Both modules are pure operation wrappers with no route registration; routes
-  live in B099 and call these functions via the @client decorator through
+  live in B8276 (mounted by B8634) and call these functions via the @client decorator through
   B014's existing call-lifecycle executor.
 
   Functions to port:
@@ -183,7 +183,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py
 
 out_of_scope:
-  - Route registration and HTTP parameter extraction, owned by B099.
+  - Route registration and HTTP parameter extraction, owned by B8276. B8634 mounts the routes.
   - Request field type construction, owned by B3513.
   - Call preparation and response formatting, owned by B3513 and B3514.
   - Request/response validation, owned by B3510.

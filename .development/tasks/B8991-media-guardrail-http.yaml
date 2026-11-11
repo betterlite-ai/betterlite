@@ -1,0 +1,121 @@
+id: B8991
+title: Media and rerank guardrail HTTP parity
+description: >-
+  Close B3680's explicit HTTP deferral for speech, transcription, video and rerank.
+  Add only booted-proxy oracle cases in guardrails/media-http; the registered
+  handlers, adapters and mounts already belong to the dependencies. About 650 lines
+  of fixtures exercise their composition; this task reimplements no LiteLLM function.
+  Use general_settings.master_key, real model_list entries and a configured
+  generic_guardrail_api with api_base pointing at the mock upstream, a dummy api_key
+  and mode pre_call or post_call as appropriate. Use OpenAI models for media and a
+  Cohere rerank model. Copy a working endpoint fixture's provider setup, never add a
+  test-only guardrail name or route. Responses from the guardrail use action NONE,
+  GUARDRAIL_INTERVENED with texts, or BLOCKED with blocked_reason.
+
+  Speech cases send JSON to both POST /v1/audio/speech and /audio/speech. A pre-call
+  rewrite must reach the provider as input, a block must prevent the speech request,
+  and a configured post-call guardrail must not turn binary audio into scannable
+  text. Keep the audio fixture tiny and compare content-type and bytes. Transcription
+  uses POST /v1/audio/transcriptions and /audio/transcriptions with the existing
+  multipart body format, a short local audio fixture and response_format json.
+  Its pre-call translation performs no scan. For the output case put guardrails on
+  the deployment's litellm_params, as a root SDK guardrails list, to reach B3666's
+  post-deployment hook: the audio route itself does not run a proxy post-success
+  hook. Verify a transcript rewrite and an output block, and that the captured
+  scanner input is the transcript, not the uploaded file or prompt. An empty
+  transcript is still a text input to the translation.
+
+  Cover video generation at POST /v1/videos and /videos, remix at
+  /v1/videos/{video_id}/remix and /videos/{video_id}/remix, edits at /v1/videos/edits
+  and /videos/edits, and extensions at /v1/videos/extensions and /videos/extensions.
+  Use an encoded provider video id from the existing video cases for remix/edit/
+  extension and the existing request shape for video references. One multi-step
+  case per operation checks both aliases and a changed prompt in the upstream
+  capture; add a generation block with no video upstream call. Keep model and
+  video-id normalization visible to the comparison. Post-call video translation
+  never submits a generated URL or job record for scanning.
+
+  Rerank uses POST /v2/rerank, /v1/rerank and /rerank. Send query, instruction and
+  documents with distinct sentinel text. The guardrail sees query then instruction,
+  including an empty instruction, but does not see documents. Return two rewritten
+  texts and compare the forwarded query and instruction while documents are
+  unchanged; a second case returns just the query replacement and checks the
+  untouched instruction. Add a block that reaches none of the rerank provider
+  calls. No response scan is expected for scores or document text.
+
+  Use multi-step cases for aliases so the same configuration is exercised without
+  restarting for each path. Compare the real HTTP status and complete error fields
+  type, param, code and message, response content-type, provider path/method/body,
+  and configured upstream credentials. Ignore only nondeterministic call ids,
+  durations and generated ids already normalized by that endpoint's oracle cases.
+  The upstream capture count distinguishes a skipped scan from a passing scan.
+  A missing guardrail dispatch must fail a rewrite/block case even when the route
+  itself returns 200. Run the task's ordinary oracle check against betterlite, never
+  replace it with --self-check. These cases use the existing HTTP, multipart and
+  capture decoders; no parser, fuzz target or helper adapter is introduced.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/media-http/**
+    - tools/oracle/fixtures/guardrail-media/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12510-L12803
+    why: Audio route decorators and their pre-call processing without a proxy post-success hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/speech/guardrail_translation/handler.py#L31-L106
+    why: Speech text input and binary output no-op.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/guardrail_translation/handler.py#L31-L120
+    why: Input no-op and transcript output rewrite, including an empty transcript.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L905-L938
+    why: Deployment post-call scanning requires the root guardrails list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L33-L119
+    why: Generation route aliases and processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L413-L514
+    why: Remix decorators and encoded video id handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L725-L923
+    why: Edit and extension route aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/guardrail_translation/handler.py#L12-L48
+    why: Only prompt text is rewritten and video output is untouched.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L136
+    why: All three rerank aliases and their pre-call dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/rerank/guardrail_translation/handler.py#L42-L121
+    why: Query and instruction positional rewrite; documents and results are not scanned.
+dod:
+  - text: Speech request rewrites and blocks, transcription input skips and deployment output scans match the running reference over both aliases.
+    proof: [oracle]
+  - text: All four video operations send the scanned prompt through both aliases, and blocked generation never reaches its provider.
+    proof: [oracle]
+  - text: Rerank scans query then instruction on every alias, preserves documents and handles a short replacement list without inventing an output scan.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/media-http/speech-rewrite-aliases.yaml
+  - tools/oracle/cases/guardrails/media-http/speech-block.yaml
+  - tools/oracle/cases/guardrails/media-http/speech-output-no-scan.yaml
+  - tools/oracle/cases/guardrails/media-http/transcription-input-no-scan.yaml
+  - tools/oracle/cases/guardrails/media-http/transcription-output-aliases.yaml
+  - tools/oracle/cases/guardrails/media-http/transcription-output-block.yaml
+  - tools/oracle/cases/guardrails/media-http/video-create-aliases.yaml
+  - tools/oracle/cases/guardrails/media-http/video-remix-aliases.yaml
+  - tools/oracle/cases/guardrails/media-http/video-edit-aliases.yaml
+  - tools/oracle/cases/guardrails/media-http/video-extension-aliases.yaml
+  - tools/oracle/cases/guardrails/media-http/video-block.yaml
+  - tools/oracle/cases/guardrails/media-http/rerank-aliases.yaml
+  - tools/oracle/cases/guardrails/media-http/rerank-short-rewrite.yaml
+  - tools/oracle/cases/guardrails/media-http/rerank-block.yaml
+deviations: []
+out_of_scope:
+  - B3677 owns media translation; B1419 owns the rerank handler and B3680 its concrete adapter and registry entry.
+  - B083 and B085 own audio and rerank routes; B3343, B3344 and B6360 own the video handlers and their registered route stubs.
+  - B8804 supplies production precall processing, B8636 supplies the rerank route ports, and B3666 owns deployment hooks.
+  - Existing image, embedding and text-completion HTTP cases remain B3680; this task does not duplicate them.
+pitfalls:
+  - A transcription test that assumes a proxy post-success hook would prove behavior the pinned audio route does not have.
+  - The video registry includes edit and extension call types as well as generation and remix.
+  - Rerank documents are deliberately absent from the scanner input even when they contain the sentinel query text.
+  - The generic API's intervention token is GUARDRAIL_INTERVENED, not MASK or SANITIZED.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,7 +2,7 @@ id: B3030
 milestone: M4 keys, spend and management
 title: Proxy rate-limit errors and provider attribution
 status: todo
-depends_on: [B184, B174, B3031, B846]
+depends_on: [B184, B2327, B3031, B846]
 file: tasks/B3030-proxy-rate-limit-errors.yaml
 covers:
   - "litellm/proxy/common_utils/proxy_rate_limit_error.py"

@@ -1,0 +1,10 @@
+kind: helper
+name: missing-standard-logging-object
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      model: gpt-4o
+      optional_params: {stream: true}
+env: {}
+compare: {ignore: []}

@@ -152,8 +152,8 @@ out_of_scope:
   - "Per-target access and budget checks for fallback targets (_is_fallback_target_authorized and _is_fallback_target_within_budget): B310."
   - "send_llm_exception_alert: not built, since `router_settings.alerting_config` is refused at config load and the router never has an alerting logger."
   - "Loading search tools from config and the database at startup and the periodic reload (_init_search_tools_in_db, reload_search_tools_from_db): B8384, over B3271."
-  - "The router constructor argument search_tools and the Router.search_tools field: B016 owns Router state; the umbrella B091 wires SearchToolList into it."
-  - "HTTP routes and their error mapping for ValueError from this module: B3274, B3275 and B091."
+  - "The router constructor argument search_tools and the Router.search_tools field: B016 owns Router state. B8611 holds the shared SearchToolList in ProxyRouter and B8613 fills it at startup."
+  - "HTTP routes and their error mapping for ValueError from this module: B8275 and B3275. HTTP proof through the booted proxy: B091, B8634 and B8673."
 
 pitfalls:
   - "`kwargs.get('search_tool_name', kwargs.get('model'))` falls back to `model` only when the key is missing; `search_tool_name=None` is an error, not a fallback."

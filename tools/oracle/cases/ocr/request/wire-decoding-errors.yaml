@@ -1,0 +1,24 @@
+kind: helper
+name: wire_decoding_errors
+call:
+  b6809:
+    decode:
+      - name: negative_timeout
+        model: mistral-ocr-latest
+        document: {type: document_url, document_url: "https://example.com/a.pdf"}
+        timeout_seconds: -1.0
+      - name: non_string_header
+        model: mistral-ocr-latest
+        document: {type: document_url, document_url: "https://example.com/a.pdf"}
+        extra_headers: {"x-a": 1}
+      - name: document_url_missing
+        model: mistral-ocr-latest
+        document: {type: document_url}
+      - name: image_url_missing
+        model: mistral-ocr-latest
+        document: {type: image_url}
+      - name: unsupported_provider
+        model: anthropic/claude
+        document: {type: document_url, document_url: "https://example.com/a.pdf"}
+env: {}
+compare: {ignore: []}

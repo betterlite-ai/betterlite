@@ -1,0 +1,11 @@
+kind: helper
+name: finish-reason-object-choice
+call:
+  b3795:
+    finish_reason_object:
+      response:
+        choices:
+          - finish_reason: tool_calls
+            message: {role: assistant, content: done}
+env: {}
+compare: {ignore: []}

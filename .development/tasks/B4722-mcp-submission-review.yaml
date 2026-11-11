@@ -64,6 +64,8 @@ references:
     why: The router prefix /v1/mcp, the only mount point of these routes.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L981-L991
     why: get_prisma_client_or_throw, the source of the 500 text every route uses (the function itself is B4711's).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1373-L1447
+    why: Route 6, register, from its decorator through the pending_review row and the redacted response.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1508-L1537
     why: Route 1 from its decorator, the two-role check, the redact step and the non-full-admin sanitize step.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1538-L1578

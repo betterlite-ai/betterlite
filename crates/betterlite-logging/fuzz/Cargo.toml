@@ -121,3 +121,10 @@ path = "fuzz_targets/passthrough_upstream_usage.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "legacy_raw_response"
+path = "fuzz_targets/legacy_raw_response.rs"
+test = false
+doc = false
+bench = false

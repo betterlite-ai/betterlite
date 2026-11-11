@@ -152,7 +152,7 @@ oracle_cases:
   - tools/oracle/cases/auth/reservation-cost/multimodal-vision-input-gate.yaml
 deviations: []
 out_of_scope:
-  - B3000 owns _to_float, _to_int and _get_value; this task calls betterlite-auth::budget_values's versions directly.
+  - B3000 owns _to_float, _to_int and _get_value; this task calls betterlite-auth::budget_counter's versions directly.
   - B746 owns get_model_from_request and route parsing.
   - B844/B845/B846 own Router.get_model_list and cached_deployment_model_info, and B8351 builds `CatalogQueries::cached_model_group_info`
     over B847's cached group info; this task reads them only through its `RouterModelInfo` port and does not rebuild them.

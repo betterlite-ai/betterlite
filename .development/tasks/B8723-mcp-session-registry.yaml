@@ -32,7 +32,7 @@ description: >-
 
   10. group_counts(sessions, label) is _group_session_counts: one entry per label (None is its own label), sorted by count descending, then labels before None, then label text ascending.
 
-  11. terminate_sessions(prefix: Option<&str>, user_id: Option<&str>) is terminate_mcp_gateway_sessions: forget expired admin ids; targets are auth contexts on live ids that match (a prefix must be a start of the id; with a user_id, the key auth must exist and its user_id must equal it; with neither, everything matches); build their MCPGatewaySession rows first; then for each target record the id as admin terminated at now, terminate the transport, remove tracking and log the warning "MCP session '{id}' terminated by an administrator."; answer MCPGatewaySessionsTerminateResponse with worker_pid, terminated_sessions and the rows.
+  11. terminate_sessions(prefix: Option<&str>, user_id: Option<&str>) is terminate_mcp_gateway_sessions: forget expired admin ids; targets are auth contexts on live ids that match (a prefix must be a start of the id; with a user_id, the key auth must exist and its user_id must equal it; with neither, everything matches); build their MCPGatewaySession rows first; then for each target record the id as admin terminated at now, remove the transport from the live map, remove tracking, then await its termination (server.py L1369-L1374), and log the warning "MCP session '{id}' terminated by an administrator."; answer MCPGatewaySessionsTerminateResponse with worker_pid, terminated_sessions and the rows.
 
   12. SessionRegistry implements the session report and terminate ports that B4725 declares, so its routes report live sessions.
 

@@ -1,0 +1,31 @@
+task: B4123
+deviations:
+  - what: >-
+      An os.environ/ reference in litellm_settings.anthropic_prompt_caching_ttl
+      is resolved by betterlite's config loader, so a reference naming "1h"
+      selects the one-hour cache. LiteLLM stores the literal reference string,
+      which is not a valid ttl and falls back to the 5-minute cache.
+    why: >-
+      A config that names an environment variable for the ttl means that
+      value; betterlite resolves every os.environ/ reference in one place
+      instead of leaving this key as the one that silently ignores it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L642-L645
+  - what: >-
+      An api_base without a URL scheme, such as the scheme-relative
+      "//api.openai.com/v1", is not read as OpenAI's host. betterlite parses
+      the value with a URL parser that rejects it, so the host check answers
+      false, while Python's urlparse finds the host and answers true.
+    why: >-
+      api_base is a provider endpoint, and no working setup sends a
+      scheme-relative value there; the standard URL parser replaces a
+      hand-written urlparse stand-in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L120
+  - what: >-
+      A model name whose GPT version digits do not fit in u64, like
+      "gpt-99999999999999999999", is not treated as a supported OpenAI prompt
+      cache breakpoint model; Python's unbounded ints would compare it above
+      the minimum version.
+    why: >-
+      The version parser reads the digits into a fixed-width integer, and no
+      real model id carries a 20-digit version.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L99
