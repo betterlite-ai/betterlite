@@ -1913,6 +1913,9 @@ name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
@@ -1923,6 +1926,7 @@ dependencies = [
  "betterlite-privacy-openai",
  "betterlite-prometheus",
  "betterlite-redact",
+ "betterlite-secrets",
  "chrono",
  "csv",
  "flate2",
@@ -2835,6 +2839,7 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-postgres-fixture",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-router",
  "betterlite-semantic",
