@@ -107,7 +107,7 @@ async fn passed() -> &'static str {
     "passed"
 }
 
-fn redirect_target(scalar_root: &str) -> Router {
+fn redirecting(scalar_root: &str) -> Router {
     let paths = RootPaths::from_settings(&settings(scalar_root, &[])).unwrap();
     let plain = Router::new().fallback(passed);
     paths.wrap(plain.layer(from_fn(redirect_root_slash)))
