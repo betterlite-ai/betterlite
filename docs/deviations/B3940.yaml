@@ -1,0 +1,47 @@
+task: B3940
+deviations:
+  - what: >-
+      A failed periodic flush keeps the batch queued instead of dropping it, and events queued while an upload is in
+      flight survive the flush.
+    why: >-
+      LiteLLM's inherited flush_queue clears the whole log queue after async_send_batch returns, and async_send_batch
+      swallows its own exception after putting the batch back, so the periodic path silently loses every record of a
+      failed upload and any record appended during a successful one. Betterlite's batch queue requeues only the
+      undelivered records, so neither path loses data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L54-L89
+  - what: >-
+      The cost log queue keeps at most 50,000 records and drops the oldest past that with a warning.
+    why: >-
+      LiteLLM's DatadogCostManagementLogger appends to log_queue without a bound, so an unreachable Datadog intake
+      grows memory until the process dies. The base class names the same 50,000 cap, and betterlite's shared batch
+      queue applies it on every enqueue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L24
+  - what: >-
+      cost_tag_keys in callback_settings is read from a comma-separated text value; a YAML list under the
+      datadog_cost_management callback settings entry is rejected by the config loader.
+    why: >-
+      Betterlite's callback settings section carries scalar values, so a list value is reported as an unsupported key
+      before any logger is built. Extending that section belongs to the config tasks; the comma-separated text is the
+      only shape this task's scope can carry into the logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L50
+  - what: >-
+      The model_group cost tag comes from the top-level model_group field of StandardLoggingPayload, not from the
+      metadata mapping.
+    why: >-
+      LiteLLM reads metadata["model_group"], but StandardLoggingMetadata declares no model_group key, while
+      StandardLoggingPayload declares a top-level model_group field that the proxy fills with the same router value.
+      Betterlite's typed metadata refuses undeclared keys, so the declared field is the compatible source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L198
+  - what: >-
+      A callback setting the cost logger does not declare fails initialization with an error that names the key.
+    why: >-
+      LiteLLM passes arbitrary callback settings through CustomLogger's **kwargs and ignores them. Betterlite keeps
+      no-silent-drops, so a misspelled cost_tag_keys or batch_size is reported at startup instead of silently ignored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L87-L100
+  - what: >-
+      The periodic flush ends when the server shuts down or its task tracker closes, instead of running until the
+      process ends.
+    why: >-
+      LiteLLM starts periodic_flush with asyncio.create_task in the constructor and never cancels it. Betterlite
+      spawns it on the server's task tracker and stops it on the shutdown token, so a shutdown or a closed tracker ends the timer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_cost_management.py#L66
