@@ -129,7 +129,8 @@ fn call_systemone_to_request(call: &SystemOneToRequestCall) -> Value {
 }
 
 fn call_request_roundtrip(call: &RequestRoundtripCall) -> Value {
-    let Ok(body) = serde_json::from_value::<openai::DecisionRequestBody>(call.request.clone()) else {
+    let Ok(body) = serde_json::from_value::<openai::DecisionRequestBody>(call.request.clone())
+    else {
         return json!({"ok": false});
     };
     let request = openai_request_to_ir(&body);
