@@ -332,6 +332,20 @@ async fn postgres_lock_contention_is_typed() {
 }
 
 #[tokio::test]
+async fn postgres_released_lock_reads_not_held() {
+    with_schema(|database| async move {
+        let jitter = FakeJitter(0);
+        let steps = database.steps(&[], &jitter);
+        let held = steps
+            .deploy_lock_held()
+            .await
+            .expect("the lock state reads");
+        assert!(!held, "no session holds the Prisma migration lock");
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn postgres_slow_statement_is_a_deploy_timeout() {
     with_schema(|database| async move {
         let catalog = [migration("20240101000000_slow", "SELECT pg_sleep(30)")];

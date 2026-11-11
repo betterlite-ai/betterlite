@@ -126,7 +126,9 @@ impl PgSteps<'_> {
     }
 
     // A deadline with a released lock means this deploy held it and ran out of time; a held one means it waited
-    async fn deploy_lock_held(&self) -> Result<bool, RecoveryError> {
+    pub(in crate::migration_recovery) async fn deploy_lock_held(
+        &self,
+    ) -> Result<bool, RecoveryError> {
         let client = connect(&self.deploy_url).await?;
         let held: bool = client
             .query_one(
