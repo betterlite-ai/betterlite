@@ -88,7 +88,7 @@ fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[case::global_is_used(Some(""), None, Some("https://api.openai.com"), &[], true)]
 #[case::environment_base_url(Some(""), None, None, &[("OPENAI_BASE_URL", "https://api.openai.com")], true)]
 #[case::environment_api_base(Some(""), None, None, &[("OPENAI_API_BASE", "https://proxy.api.openai.com")], true)]
-#[case::base_url_precedes_environment(Some(""), None, None, &[("OPENAI_BASE_URL", "https://api.openai.com"), ("OPENAI_API_BASE", "https://gateway.example")], false)]
+#[case::environment_base_url_precedes_api_base(Some(""), None, None, &[("OPENAI_BASE_URL", "https://api.openai.com"), ("OPENAI_API_BASE", "https://gateway.example")], true)]
 #[case::environment_base_url_before_api_base(Some(""), None, None, &[("OPENAI_BASE_URL", "https://gateway.example"), ("OPENAI_API_BASE", "https://api.openai.com")], false)]
 #[case::nothing_configured_targets_openai(Some(""), None, None, &[], true)]
 fn targets_openai_api_follows_the_base_chain(

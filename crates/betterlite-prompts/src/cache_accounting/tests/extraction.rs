@@ -37,7 +37,7 @@ fn request_user_agent_reads_the_first_matching_header(
 #[case::text(r#"{"system": "a system prompt"}"#, Some(r#""a system prompt""#))]
 #[case::block_list(
     r#"{"system": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]}"#,
-    Some(r#"[{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]"#)
+    Some(r#"[{"type":"text","text":"a"},{"type":"text","text":"b"}]"#)
 )]
 #[case::empty_list(r#"{"system": []}"#, Some("[]"))]
 #[case::null(r#"{"system": null}"#, None)]

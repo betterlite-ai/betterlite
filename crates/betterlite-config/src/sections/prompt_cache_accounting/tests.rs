@@ -92,12 +92,9 @@ fn a_missing_environment_reference_is_a_load_error() {
 }
 
 #[test]
-fn a_non_text_value_is_rejected() {
-    let lookup: BTreeMap<String, String> = BTreeMap::new();
-    let error = ConfigLoader { lookup }
-        .load(&source("true"))
-        .expect_err("a boolean is not a ttl");
-    assert_eq!(error.category(), "yaml");
+fn a_non_text_scalar_leaves_the_default() {
+    let loaded = settings(&source("true"), &[]);
+    assert_eq!(loaded.ttl, None);
 }
 
 #[test]
