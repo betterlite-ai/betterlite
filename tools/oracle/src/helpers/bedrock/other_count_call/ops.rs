@@ -44,7 +44,7 @@ pub(super) fn run_call(call: &Call, factory: bool) -> Result<Value, Box<HelperEr
         "selected": selected,
         "result": outcome.as_ref().map(result_json),
         "request": transport.observed(),
-        "debug": debug_events(&captured),
+        "debug": events(&captured, "DEBUG", &["subject", "value"]),
         "errors": events(&captured, "ERROR", &["subject"]),
         "warnings": events(&captured, "WARN", &["subject", "status"]),
         "resolved": resolved.load(Ordering::Relaxed),
@@ -63,18 +63,10 @@ async fn count(
         resolved: Arc::clone(resolved),
     };
     match &call.handler {
-        Handler::None => {
+        Handler::None | Handler::EmptyObject => {
+            let result = matches!(call.handler, Handler::EmptyObject).then(CountResponse::new);
             BedrockTokenCounter {
-                handler: FixedHandler { result: None },
-            }
-            .count_tokens(request)
-            .await
-        }
-        Handler::EmptyObject => {
-            BedrockTokenCounter {
-                handler: FixedHandler {
-                    result: Some(CountResponse::new()),
-                },
+                handler: FixedHandler { result },
             }
             .count_tokens(request)
             .await
@@ -141,21 +133,15 @@ fn events(captured: &Captured, level: &str, keys: &[&str]) -> Vec<Value> {
         .iter()
         .map(|fields| {
             keys.iter()
-                .map(|key| (*key, fields[*key].clone()))
+                .map(|key| {
+                    let field = fields.get(*key).cloned().unwrap_or(Value::Null);
+                    let parsed = field
+                        .as_str()
+                        .filter(|_| *key == "value")
+                        .and_then(|text| serde_json::from_str(text).ok());
+                    (*key, parsed.unwrap_or(field))
+                })
                 .collect()
-        })
-        .collect()
-}
-
-fn debug_events(captured: &Captured) -> Vec<Value> {
-    captured
-        .fields("DEBUG")
-        .iter()
-        .map(|fields| {
-            let value: Option<Value> = fields["value"]
-                .as_str()
-                .and_then(|text| serde_json::from_str(text).ok());
-            json!({"subject": fields["subject"], "value": value})
         })
         .collect()
 }

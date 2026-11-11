@@ -5,34 +5,6 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Input {
-    CountTokenHttpRequest(Calls),
-    NativeCountSelection(Calls),
-    CountApiFailureWarning(Calls),
-    CountCredentials(Calls),
-    CountTimeout(Calls),
-    CounterFactory(Calls),
-    CountResultOrNone(Calls),
-    CountDebugEvents(Calls),
-}
-
-impl Input {
-    pub(crate) const fn calls(&self) -> &Calls {
-        match self {
-            Self::CountTokenHttpRequest(calls)
-            | Self::NativeCountSelection(calls)
-            | Self::CountApiFailureWarning(calls)
-            | Self::CountCredentials(calls)
-            | Self::CountTimeout(calls)
-            | Self::CounterFactory(calls)
-            | Self::CountResultOrNone(calls)
-            | Self::CountDebugEvents(calls) => calls,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Calls {
     #[serde(default)]

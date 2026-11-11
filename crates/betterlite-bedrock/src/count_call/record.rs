@@ -38,12 +38,8 @@ pub(super) fn transformed_body(
         .map_err(CountCallError::Encode)?;
     let body: IndexMap<String, Json> =
         serde_json::from_str(&text).map_err(CountCallError::Encode)?;
-    tracing::debug!(
-        subject = "transformed",
-        value = %dumps_object(&body),
-        "Transformed request: {}",
-        dumps_object(&body)
-    );
+    let value = dumps_object(&body);
+    tracing::debug!(subject = "transformed", %value, "Transformed request: {value}");
     Ok(body)
 }
 
@@ -51,36 +47,26 @@ pub(super) fn reply_fields(
     response: &UpstreamResponse,
 ) -> Result<Option<CountResponse>, CountCallError> {
     let reply = decode_bedrock_count_reply(&response.body)?;
-    tracing::debug!(
-        subject = "reply",
-        value = %dumps_object(&reply),
-        "Bedrock response: {}",
-        dumps_object(&reply)
-    );
+    let value = dumps_object(&reply);
+    tracing::debug!(subject = "reply", %value, "Bedrock response: {value}");
     let transformed = transform_response(&reply);
     let fields = IndexMap::from([("input_tokens".to_owned(), transformed.input_tokens)]);
-    tracing::debug!(
-        subject = "final",
-        value = %dumps_object(&fields),
-        "Final response: {}",
-        dumps_object(&fields)
-    );
+    let finished = dumps_object(&fields);
+    tracing::debug!(subject = "final", value = %finished, "Final response: {finished}");
     Ok(Some(fields))
 }
 
 pub(super) fn header_map(headers: &[(String, String)]) -> Result<HeaderMap, CountCallError> {
     let mut map = HeaderMap::with_capacity(headers.len());
     for (name, value) in headers {
+        let invalid = |source: http::Error| CountCallError::Header {
+            name: name.clone(),
+            source,
+        };
         let header_name =
-            HeaderName::from_str(name).map_err(|source| CountCallError::HeaderName {
-                name: name.clone(),
-                source,
-            })?;
+            HeaderName::from_str(name).map_err(|source| invalid(http::Error::from(source)))?;
         let mut header_value =
-            HeaderValue::from_str(value).map_err(|source| CountCallError::HeaderValue {
-                name: name.clone(),
-                source,
-            })?;
+            HeaderValue::from_str(value).map_err(|source| invalid(http::Error::from(source)))?;
         if header_name == AUTHORIZATION {
             header_value.set_sensitive(true);
         }

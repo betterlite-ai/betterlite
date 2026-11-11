@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -198,16 +198,6 @@ def result_json(result: TokenCountResponse) -> Json:
     )
 
 
-def environment_value(environment: EnvironmentModel, name: str) -> str | None:
-    values: Final[dict[str, str | None]] = {
-        "AWS_REGION_NAME": environment.region_name,
-        "AWS_REGION": environment.region,
-        "AWS_BEDROCK_RUNTIME_ENDPOINT": environment.runtime_endpoint,
-        "AWS_BEARER_TOKEN_BEDROCK": environment.bearer_token,
-    }
-    return values.get(name)
-
-
 @contextmanager
 def clock(epoch: int) -> Generator[None, None, None]:
     frozen = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
@@ -220,18 +210,21 @@ def harness(
     call: CallModel, provider: Provider, resolver: Resolver, events: Events
 ) -> Generator[None, None, None]:
     environment = call.environment
+    values: Final[dict[str, str | None]] = {
+        "AWS_REGION_NAME": environment.region_name,
+        "AWS_REGION": environment.region,
+        "AWS_BEDROCK_RUNTIME_ENDPOINT": environment.runtime_endpoint,
+        "AWS_BEARER_TOKEN_BEDROCK": environment.bearer_token,
+    }
 
     def secret(name: str, default: str | None = None) -> str | None:
-        value = environment_value(environment, name)
+        value = values.get(name)
         return value if value is not None else default
-
-    def secret_str(name: str) -> str | None:
-        return environment_value(environment, name)
 
     with ExitStack() as stack:
         stack.enter_context(mock.patch.dict(os.environ, {}, clear=True))
         stack.enter_context(mock.patch.object(base_aws_llm, "get_secret", secret))
-        stack.enter_context(mock.patch.object(base_aws_llm, "get_secret_str", secret_str))
+        stack.enter_context(mock.patch.object(base_aws_llm, "get_secret_str", values.get))
         stack.enter_context(
             mock.patch(
                 "boto3.Session",
@@ -244,14 +237,6 @@ def harness(
         stack.enter_context(mock.patch(COUNTER_LOGGER, new=events))
         stack.enter_context(clock(call.now))
         yield
-
-
-async def empty_handler(*_args: object, **_kwargs: object) -> None:
-    return None
-
-
-async def empty_object_handler(*_args: object, **_kwargs: object) -> dict[str, Json]:
-    return {}
 
 
 async def count_once(counter: BedrockTokenCounter, call: CallModel) -> TokenCountResponse | None:
@@ -283,9 +268,9 @@ def one_call(call: CallModel, *, factory: bool) -> Json:
     events = Events()
     counter = counter_for(factory=factory)
     selected = counter.should_use_token_counting_api(call.provider)
-    replacement: Callable[..., object] | None = {
-        "none": empty_handler,
-        "empty_object": empty_object_handler,
+    replacement = {
+        "none": mock.AsyncMock(return_value=None),
+        "empty_object": mock.AsyncMock(return_value={}),
     }.get(call.handler)
     with harness(call, provider, resolver, events):
         if replacement is None:

@@ -152,12 +152,9 @@ where
         now: SystemTime,
     ) -> Result<Option<CountResponse>, CountCallError> {
         validate_count_tokens_request(request.request_data)?;
-        tracing::debug!(
-            subject = "processing",
-            value = %dumps(&Json::Text(request.resolved_model.to_owned())),
-            "Processing CountTokens request for resolved model: {}",
-            request.resolved_model
-        );
+        let model = request.resolved_model;
+        let named = dumps(&Json::Text(model.to_owned()));
+        tracing::debug!(subject = "processing", value = %named, "Processing CountTokens request for resolved model: {model}");
         let explicit = read_field::<String>(request.litellm_params, "aws_region_name")?;
         let region = llm_region_name(LlmRegion {
             explicit: explicit.as_deref(),
@@ -167,11 +164,8 @@ where
             environment_region: self.environment.region.as_deref(),
             session_region: self.environment.session_region.as_deref(),
         })?;
-        tracing::debug!(
-            subject = "region",
-            value = %dumps(&Json::Text(region.clone())),
-            "Retrieved AWS region: {region}"
-        );
+        let located = dumps(&Json::Text(region.clone()));
+        tracing::debug!(subject = "region", value = %located, "Retrieved AWS region: {region}");
         let body = transformed_body(request)?;
         let endpoint = self.endpoint(request, &region)?;
         let response = self.signed_response(request, &body, &endpoint, now).await?;
@@ -193,11 +187,8 @@ where
             aws_bedrock_runtime_endpoint: configured.as_deref(),
             environment_endpoint: self.environment.runtime_endpoint.as_deref(),
         });
-        tracing::debug!(
-            subject = "endpoint",
-            value = %dumps(&Json::Text(endpoint.clone())),
-            "Making request to: {endpoint}"
-        );
+        let target = dumps(&Json::Text(endpoint.clone()));
+        tracing::debug!(subject = "endpoint", value = %target, "Making request to: {endpoint}");
         Ok(endpoint)
     }
 
@@ -255,12 +246,8 @@ where
             deadline: REQUEST_TIMEOUT,
         };
         let response = self.transport.send(outbound).await?;
-        tracing::debug!(
-            subject = "status",
-            value = %dumps(&Json::Number(serde_json::Number::from(response.status))),
-            "Response status: {}",
-            response.status
-        );
+        let status = dumps(&Json::Number(serde_json::Number::from(response.status)));
+        tracing::debug!(subject = "status", value = %status, "Response status: {status}");
         if response.status != 200 {
             return Err(CountCallError::Upstream(Box::new(upstream_record(
                 &response, endpoint,

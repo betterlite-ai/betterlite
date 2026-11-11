@@ -1,5 +1,4 @@
 use betterlite_http::proxy::transport_error::TransportError;
-use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 use url::ParseError;
 
@@ -29,17 +28,11 @@ pub enum CountCallError {
         #[source]
         source: ParseError,
     },
-    #[error("the {name} header name is not valid")]
-    HeaderName {
+    #[error("the {name} header is not valid")]
+    Header {
         name: String,
         #[source]
-        source: InvalidHeaderName,
-    },
-    #[error("the {name} header value is not valid")]
-    HeaderValue {
-        name: String,
-        #[source]
-        source: InvalidHeaderValue,
+        source: http::Error,
     },
     #[error("the CountTokens request could not be signed")]
     Signing(#[from] SigningError),
