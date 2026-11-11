@@ -13,7 +13,7 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 from litellm.utils import (
-    _count_characters,  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5383
+    _count_characters,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5383
     get_response_string,
 )
 
