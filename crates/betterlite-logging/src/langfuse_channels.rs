@@ -261,5 +261,9 @@ pub async fn flush_langfuse_tracing(timeout_millis: u64) -> bool {
     }
 }
 
+#[path = "langfuse_channels/tests/delivery.rs"]
+mod delivery;
+#[path = "langfuse_channels/tests/support.rs"]
+mod support;
 #[path = "langfuse_channels/tests.rs"]
 mod tests;
