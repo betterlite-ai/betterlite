@@ -1,7 +1,7 @@
 id: B123
 milestone: M8 platform
 title: OpenAPI schema and Swagger UI
-status: todo
+status: done
 depends_on: [B4230, B7740]
 file: tasks/B123-openapi-document-assembly.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/common_utils/{custom_openapi_spec,openapi_schema_compat,swagger_utils}.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1198

@@ -1,0 +1,10 @@
+kind: helper
+name: provider-api-base-explicit-base-seed
+call:
+  b7320:
+    model: gemini/gemini-pro
+    params:
+      api_base: ""
+      base_url: https://alias.test/v1
+env: {}
+compare: {ignore: []}

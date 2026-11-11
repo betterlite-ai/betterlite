@@ -1,0 +1,10 @@
+kind: helper
+name: provider-api-base-resolver-failure-and-vertex-string
+call:
+  b7320:
+    model: unknown-provider/gemini-pro
+    params:
+      vertex_location: us-central1
+      vertex_project: proj
+env: {}
+compare: {ignore: []}
