@@ -2064,6 +2064,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "mime",
+ "mime_guess",
  "mutants",
  "rstest",
  "secrecy",
@@ -2074,6 +2075,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
  "uuid",
 ]
