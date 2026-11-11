@@ -137,16 +137,15 @@ async fn factory_prompt(
 }
 
 fn cohere_prompt(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError> {
-    let converted = messages
-        .iter()
-        .enumerate()
-        .map(|(index, message)| {
-            let encoded = serde_json::to_string(message)
-                .map_err(|source| ConversionError::Message { index, source })?;
+    let mut converted = Vec::with_capacity(messages.len());
+    for (index, message) in messages.iter().enumerate() {
+        let encoded = serde_json::to_string(message)
+            .map_err(|source| ConversionError::Message { index, source })?;
+        converted.push(
             serde_json::from_str::<ContentMessage>(&encoded)
-                .map_err(|source| ConversionError::Message { index, source })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+                .map_err(|source| ConversionError::Message { index, source })?,
+        );
+    }
     let rendered = cohere_message_pt(&converted)?;
     Ok(ConvertedPrompt {
         prompt: rendered.prompt,
