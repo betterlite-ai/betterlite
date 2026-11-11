@@ -42,3 +42,9 @@ deviations:
     why: The audio file hash is B1001's `get_audio_file_content_hash` and a JSON request can only carry a name; for a
       bare string LiteLLM hashes the text itself, which is the one case betterlite builds.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1229-L1239
+  - what: >-
+      A request `callbacks`, `success_callback` or `failure_callback` list of more than 100 names is rejected with a
+      callback error, where LiteLLM adds names until a global list holds the limit and drops the rest with a warning.
+    why: The request list is untrusted input, so it is bounded before any name is resolved or scanned; the per-list
+      limit of 100 is LiteLLM's default LITELLM_MAX_CALLBACKS, and `CallbackLists::add` still drops overflow with a warning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L150-L165
