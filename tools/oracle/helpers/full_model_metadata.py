@@ -9,11 +9,12 @@ import litellm
 import litellm.utils as litellm_utils
 from litellm.constants import DEFAULT_MAX_LRU_CACHE_SIZE
 from litellm.exceptions import ModelNotMappedError
+from litellm.litellm_core_utils import get_model_cost_map
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.lemonade.chat.transformation import LemonadeChatConfig
 from litellm.llms.ollama.common_utils import OllamaModelInfo
 from litellm.types.utils import ModelInfoBase
-from litellm.utils import _invalidate_model_cost_lowercase_map, get_model_cost_mutation_generation
+from litellm.utils import get_model_cost_mutation_generation
 from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -26,18 +27,41 @@ class ParameterScript(TypedDict):
     body: NotRequired[list[str] | None]
 
 
-class Step(TypedDict):
-    op: Literal["call", "helper_call", "mutate", "invalidate", "replace"]
-    model: NotRequired[str]
+class CallStep(TypedDict):
+    op: Literal["call"]
+    model: str
     custom_llm_provider: NotRequired[str | None]
     api_base: NotRequired[str | None]
     api_key: NotRequired[str | None]
     parameters: NotRequired[ParameterScript]
-    record: NotRequired[int]
-    field: NotRequired[str]
-    value: NotRequired[Json]
-    key: NotRequired[str]
-    entry: NotRequired[Object]
+
+
+class HelperCallStep(TypedDict):
+    op: Literal["helper_call"]
+    model: str
+    custom_llm_provider: NotRequired[str | None]
+    api_base: NotRequired[str | None]
+
+
+class MutateStep(TypedDict):
+    op: Literal["mutate"]
+    record: int
+    field: str
+    value: Json
+
+
+class InvalidateStep(TypedDict):
+    op: Literal["invalidate"]
+
+
+class ReplaceStep(TypedDict):
+    op: Literal["replace"]
+    key: str
+    entry: Object
+
+
+Step: TypeAlias = CallStep | HelperCallStep | MutateStep | InvalidateStep | ReplaceStep
+LookupStep: TypeAlias = CallStep | HelperCallStep
 
 
 class Fixture(TypedDict):
@@ -126,18 +150,17 @@ def install(driver: Driver, maxsize: int) -> None:
     OllamaModelInfo.get_model_info = partial(driver.dynamic_info, "ollama")  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9321
     LemonadeChatConfig.get_model_info = partial(driver.dynamic_info, "lemonade")  # type: ignore[method-assign, assignment, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9329
     litellm.get_supported_openai_params = driver.probe
-    litellm_utils._model_cost_lowercase_map = None  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5563
-    litellm_utils._model_cost_mutation_generation = 0  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5569
     litellm.vertex_llama3_models = set()
     litellm.vertex_mistral_models = set()
     litellm.vertex_ai_ai21_models = set()
-    litellm.add_known_models(driver.costs)
+    add_known = litellm.add_known_models  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1009
+    add_known(driver.costs)
     cache = lru_cache(maxsize=maxsize)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5870
     litellm_utils._cached_get_model_info_helper = cache(litellm_utils._get_model_info_helper)  # type: ignore[misc]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5870
     litellm_utils._cached_get_model_info = cache(litellm_utils._build_model_info)  # type: ignore[misc]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6407
 
 
-def lookup(step: Step) -> ModelInfoBase:
+def lookup(step: LookupStep) -> ModelInfoBase:
     model = step["model"]
     provider = step.get("custom_llm_provider")
     api_base = step.get("api_base")
@@ -146,7 +169,7 @@ def lookup(step: Step) -> ModelInfoBase:
     return litellm_utils.get_model_info(model, provider, api_base, step.get("api_key"))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6416
 
 
-def outcome(step: Step) -> Outcome:
+def outcome(step: LookupStep) -> Outcome:
     try:
         found = lookup(step)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L271
     except ParameterQueryError:
@@ -177,7 +200,7 @@ def caches_json() -> Json:
     return {"full": cache_json(full), "helper": cache_json(helper)}
 
 
-def lookup_step(driver: Driver, step: Step) -> Json:
+def lookup_step(driver: Driver, step: LookupStep) -> Json:
     if step["op"] == "call":
         driver.script = step.get("parameters")
     start = len(driver.calls)
@@ -198,22 +221,21 @@ def lookup_step(driver: Driver, step: Step) -> Json:
 
 
 def apply_step(driver: Driver, step: Step) -> Json:
-    match step["op"]:
-        case "call" | "helper_call":
-            return lookup_step(driver, step)
-        case "mutate":
-            driver.records[step["record"]][step["field"]] = step["value"]
-            return {"op": "mutate", "record": step["record"], "field": step["field"]}
-        case "invalidate":
-            _invalidate_model_cost_lowercase_map()
-            return {
-                "op": "invalidate",
-                "generation": get_model_cost_mutation_generation(),
-                "caches": caches_json(),
-            }
-        case "replace":
-            driver.costs[step["key"]] = step["entry"]
-            return {"op": "replace", "key": step["key"]}
+    if step["op"] == "call" or step["op"] == "helper_call":
+        return lookup_step(driver, step)
+    if step["op"] == "mutate":
+        driver.records[step["record"]][step["field"]] = step["value"]
+        return {"op": "mutate", "record": step["record"], "field": step["field"]}
+    if step["op"] == "invalidate":
+        adopt = get_model_cost_map.adopt_model_cost_map  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L556
+        adopt(driver.costs)
+        return {
+            "op": "invalidate",
+            "generation": get_model_cost_mutation_generation(),
+            "caches": caches_json(),
+        }
+    driver.costs[step["key"]] = step["entry"]
+    return {"op": "replace", "key": step["key"]}
 
 
 def run(input_value: Input) -> Json:
