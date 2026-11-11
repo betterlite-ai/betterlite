@@ -160,6 +160,36 @@ fn llm_cache_without_a_running_loop_keeps_the_plain_key() {
 }
 
 #[test]
+fn llm_cache_keeps_two_live_clients_under_different_keys() {
+    let fixture = fixture();
+    fixture
+        .cache
+        .set_cache("first", ProbeClient::sync(), None, false);
+    fixture
+        .cache
+        .set_cache("second", ProbeClient::sync(), None, false);
+
+    assert!(fixture.cache.get_cache("first").is_some());
+    assert!(fixture.cache.get_cache("second").is_some());
+}
+
+#[test]
+fn llm_cache_set_evicts_and_schedules_an_expired_client() {
+    let fixture = fixture();
+    fixture
+        .cache
+        .set_cache("expired", ProbeClient::sync(), Some(1.0_f64), true);
+
+    advance(&fixture.time, 2.0_f64);
+    fixture
+        .cache
+        .set_cache("fresh", ProbeClient::sync(), None, false);
+
+    assert_eq!(fixture.closer.pending_count(), 1);
+    assert!(fixture.cache.get_cache("expired").is_none());
+}
+
+#[test]
 fn llm_cache_default_ttl_is_six_hundred_seconds() {
     let fixture = fixture();
     fixture

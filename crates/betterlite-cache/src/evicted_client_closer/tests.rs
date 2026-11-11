@@ -93,6 +93,32 @@ fn async_close_count(client: &ProbeClient) -> usize {
     client.async_closes.load(Ordering::SeqCst)
 }
 
+fn owned_count(closer: &EvictedClientCloser<ProbeClient>) -> usize {
+    closer
+        .owned
+        .lock()
+        .expect("fixture owned lock is not poisoned")
+        .len()
+}
+
+#[test]
+fn owning_a_collected_client_does_not_keep_it_in_the_owned_list() {
+    let time = test_time();
+    let closer = EvictedClientCloser::new(fake_clock(&time));
+    let collected = ProbeClient::new(Some(CloseMethod::Sync));
+    closer.mark_owned(&collected);
+    assert_eq!(owned_count(&closer), 1);
+
+    drop(collected);
+    let live = ProbeClient::new(Some(CloseMethod::Sync));
+    closer.mark_owned(&live);
+    assert_eq!(owned_count(&closer), 1);
+
+    let other = ProbeClient::new(Some(CloseMethod::Sync));
+    closer.mark_owned(&other);
+    assert_eq!(owned_count(&closer), 2);
+}
+
 #[test]
 fn ownership_is_required_before_a_client_is_scheduled() {
     let time = test_time();

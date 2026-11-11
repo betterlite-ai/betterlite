@@ -120,10 +120,11 @@ impl<Client: EvictableClient> LlmClientCache<Client> {
             let mut evicted = Vec::new();
             evict_expired(&mut entries, now, &mut evicted);
             evict_over_capacity(&mut entries, self.capacity, &mut evicted);
-            let expiry = match entries.get(&decorated) {
-                Some(entry) if entry.expiry > now => entry.expiry,
-                _ => now.mul_add(1.0_f64, ttl.unwrap_or(self.default_ttl)),
-            };
+            // whatever survived the expiry sweep is live, and a live entry keeps its own deadline
+            let expiry = entries.get(&decorated).map_or_else(
+                || now.mul_add(1.0_f64, ttl.unwrap_or(self.default_ttl)),
+                |entry| entry.expiry,
+            );
             entries.insert(decorated, Entry { client, expiry });
             evicted
         };
