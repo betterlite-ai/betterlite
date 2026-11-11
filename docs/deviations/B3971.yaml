@@ -1,0 +1,11 @@
+task: B3971
+deviations:
+  - what: POSTHOG_MOCK answers a PostHog-hosted URL with a 200 response without a network call instead of patching LiteLLM's process-wide httpx clients.
+    why: betterlite injects its HTTP client per logger, so the posthog_mock_client factory has no global client to patch, and a custom host stays live exactly as LiteLLM's URL matcher leaves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog_mock_client.py#L18-L35
+  - what: The exit flush runs from the server's shutdown token and clears the events it read when every batch succeeds.
+    why: betterlite has no process atexit registry, and LiteLLM's whole-list clear would drop an event appended during the await.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L88
+  - what: A request-selected posthog_api_url still overrides the configured endpoint, which B188 forbids for export destinations.
+    why: _get_credentials_for_request reads standard_callback_dynamic_params.posthog_api_url first, and this task requires that routing decision, so it is recorded here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L315-L339
