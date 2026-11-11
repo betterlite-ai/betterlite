@@ -2,19 +2,24 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use futures_util::stream;
+use http::header::{HeaderMap, HeaderValue};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use secrecy::SecretString;
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
-use crate::live::exchange::{BodyStream, HttpAnswer, HttpMethod, HttpTransport, OutboundHttp};
+use crate::live::exchange::{
+    BodyStream, HttpAnswer, HttpMethod, HttpTransport, OutboundHttp, header_pairs, signed_headers,
+};
 use crate::live::probe::download_and_measure;
-use crate::live::signing::AwsSigner;
+use crate::live::signing::{AwsSigner, signed_get};
 use crate::live::{ProbeError, S3MediaProbe, TranscribeJobLookup, price_fail_closed};
 use crate::media_pricing::{JobPricing, MediaDurationProbe, PricingError};
 use crate::media_source::MediaSizeGuard;
@@ -332,6 +337,31 @@ async fn lookup_reads_a_body_up_to_one_mebibyte(#[case] length: usize, #[case] a
     }
 }
 
+#[test]
+fn lookup_header_pairs_keep_each_name_and_value_text() {
+    let mut headers = HeaderMap::new();
+    headers.insert("content-type", HeaderValue::from_static("application/json"));
+    headers.insert("x-opaque", HeaderValue::from_bytes(&[0xFF]).unwrap());
+    let pairs = header_pairs(&headers);
+    assert_eq!(pairs.len(), 2);
+    assert!(pairs.contains(&("content-type".to_owned(), "application/json".to_owned())));
+    assert!(pairs.contains(&("x-opaque".to_owned(), String::new())));
+}
+
+#[test]
+fn lookup_signed_headers_reject_an_invalid_name_or_value() {
+    let valid = signed_headers(vec![("X-Amz-Target".to_owned(), "target".to_owned())]).unwrap();
+    assert_eq!(valid.get("x-amz-target").unwrap(), "target");
+    assert!(matches!(
+        signed_headers(vec![("bad name".to_owned(), "value".to_owned())]),
+        Err(ProbeError::HeaderName { .. })
+    ));
+    assert!(matches!(
+        signed_headers(vec![("name".to_owned(), "a\nb".to_owned())]),
+        Err(ProbeError::HeaderValue { .. })
+    ));
+}
+
 #[tokio::test]
 async fn lookup_maps_a_transport_failure_to_unavailable() {
     let (signing, _log) = signer();
@@ -390,6 +420,36 @@ async fn probe_signs_the_s3_get_and_measures_the_object() {
             "Authorization".to_owned(),
             "AWS4-HMAC-SHA256 signed".to_owned()
         )]
+    );
+}
+
+#[test]
+fn probe_signed_get_signs_the_url_for_the_s3_service() {
+    let credentials = Credentials {
+        access_key_id: SecretString::from("AKIDEXAMPLE"),
+        secret_access_key: SecretString::from("secret"),
+        session_token: None,
+    };
+    let url = "https://audio.s3.us-east-1.amazonaws.com/a.wav";
+    let now = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let signed = signed_get(&credentials, "us-east-1", url, now).unwrap();
+    assert_eq!(signed.method, "GET");
+    assert_eq!(signed.url, url);
+    assert!(signed.body.is_empty());
+    assert!(
+        signed
+            .headers
+            .contains(&("X-Amz-Date".to_owned(), "20231114T221320Z".to_owned()))
+    );
+    let authorization = signed
+        .headers
+        .iter()
+        .find(|(name, _)| name == "Authorization")
+        .unwrap();
+    assert!(
+        authorization.1.starts_with(
+            "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20231114/us-east-1/s3/aws4_request"
+        )
     );
 }
 

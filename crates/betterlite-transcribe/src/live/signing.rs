@@ -32,7 +32,7 @@ pub struct ResolverSigner<'deps> {
     pub(super) now: SystemTime,
 }
 
-fn signed_get(
+pub(super) fn signed_get(
     credentials: &Credentials,
     region: &str,
     url: &str,
@@ -58,6 +58,8 @@ fn signed_get(
 }
 
 impl ResolverSigner<'_> {
+    // the resolver reaches AWS credential sources, which no unit test can stand in for
+    #[cfg_attr(test, mutants::skip)]
     async fn credentials(&self, region: &str) -> Result<Credentials, ProbeError> {
         self.resolver
             .resolve_credentials(&AwsSettings::default(), Some(region))
@@ -68,6 +70,8 @@ impl ResolverSigner<'_> {
 
 #[async_trait]
 impl AwsSigner for ResolverSigner<'_> {
+    // resolves live credentials first, like the helper above
+    #[cfg_attr(test, mutants::skip)]
     async fn sign_json_post(
         &self,
         region: &str,
@@ -88,6 +92,8 @@ impl AwsSigner for ResolverSigner<'_> {
         .map_err(ProbeError::Signing)
     }
 
+    // resolves live credentials first, like the helpers above
+    #[cfg_attr(test, mutants::skip)]
     async fn sign_s3_get(&self, region: &str, url: &str) -> Result<AwsSignedRequest, ProbeError> {
         let credentials = self.credentials(region).await?;
         signed_get(&credentials, region, url, self.now)

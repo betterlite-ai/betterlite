@@ -87,6 +87,8 @@ pub enum ProbeError {
     TaskClosed,
 }
 
+// it only wires the real adapters, and price_fail_closed carries every decision it makes
+#[cfg_attr(test, mutants::skip)]
 pub async fn price_transcription_job_live(
     job_name: &str,
     cost_per_second: Decimal,

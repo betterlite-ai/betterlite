@@ -45,6 +45,8 @@ pub struct PooledHttp {
 
 #[async_trait]
 impl HttpTransport for PooledHttp {
+    // the pooled client only reaches a live host, so no unit test can observe this method
+    #[cfg_attr(test, mutants::skip)]
     async fn send(&self, request: OutboundHttp) -> Result<HttpAnswer, ProbeError> {
         let url = Url::parse(&request.url).map_err(ProbeError::Url)?;
         let method = match request.method {
@@ -83,7 +85,7 @@ impl HttpTransport for PooledHttp {
     }
 }
 
-fn signed_headers(pairs: Vec<(String, String)>) -> Result<HeaderMap, ProbeError> {
+pub(super) fn signed_headers(pairs: Vec<(String, String)>) -> Result<HeaderMap, ProbeError> {
     let mut headers = HeaderMap::new();
     for (name, value) in pairs {
         let header_name =
@@ -101,7 +103,7 @@ fn signed_headers(pairs: Vec<(String, String)>) -> Result<HeaderMap, ProbeError>
     Ok(headers)
 }
 
-fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
+pub(super) fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     for (name, value) in headers {
         pairs.push((

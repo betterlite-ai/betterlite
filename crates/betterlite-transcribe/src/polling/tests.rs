@@ -275,7 +275,7 @@ async fn await_stops_at_the_attempt_limit() {
 }
 
 #[tokio::test]
-async fn tokio_sleeper_waits_for_the_requested_seconds() {
+async fn await_tokio_sleeper_waits_for_the_requested_seconds() {
     let started = Instant::now();
     TokioSleeper.sleep(0.05_f64).await;
     assert!(started.elapsed() >= Duration::from_millis(50));
@@ -285,7 +285,7 @@ async fn tokio_sleeper_waits_for_the_requested_seconds() {
 #[case::negative(-1.0_f64)]
 #[case::not_a_number(f64::NAN)]
 #[tokio::test]
-async fn tokio_sleeper_returns_at_once_for_a_delay_asyncio_would_skip(#[case] seconds: f64) {
+async fn await_tokio_sleeper_returns_at_once_for_a_delay_asyncio_would_skip(#[case] seconds: f64) {
     let outcome = timeout(Duration::from_secs(5), TokioSleeper.sleep(seconds)).await;
     outcome.unwrap();
 }
