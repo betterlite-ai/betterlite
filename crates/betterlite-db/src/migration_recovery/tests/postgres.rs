@@ -191,10 +191,11 @@ async fn postgres_partial_ddl_not_undone() {
             .deploy(DEPLOY_TIMEOUT)
             .await
             .expect("a typed deploy outcome");
-        assert!(
-            matches!(outcome, DeployOutcome::FailedStep(_)),
-            "{outcome:?}"
-        );
+        let DeployOutcome::FailedStep(step) = outcome else {
+            panic!("a broken migration is a typed step failure: {outcome:?}");
+        };
+        assert_eq!(step.name.as_deref(), Some("20240101000001_break"));
+        assert_eq!(step.sqlstate.as_deref(), Some("22012"), "{step:?}");
         assert!(relation_exists(&database, "survivor").await);
         steps
             .roll_back(&catalog[1].name)
@@ -210,6 +211,80 @@ async fn postgres_partial_ddl_not_undone() {
         let kept = stored_row(&database, &catalog[0].name).await;
         assert!(kept.finished);
         assert!(!kept.rolled_back);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn postgres_ahead_history_reports_names() {
+    with_schema(|database| async move {
+        create_ledger(&database).await;
+        insert_row(
+            &database,
+            &LedgerRow {
+                id: "00000000-0000-0000-0000-000000000008",
+                name: "20990101000000_future",
+                checksum: "eeee",
+                steps: 1,
+                logs: None,
+                finished: true,
+                rolled_back: false,
+                started_at: "2024-01-02 03:04:05+00",
+            },
+        )
+        .await;
+        let jitter = FakeJitter(0);
+        let steps = database.steps(&[], &jitter);
+        let ahead = steps.warn_ahead().await;
+        assert!(
+            ahead.iter().any(|name| name == "20990101000000_future"),
+            "{ahead:?}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn postgres_database_failure_is_manual() {
+    with_schema(|database| async move {
+        execute(&database, "CREATE TABLE _prisma_migrations (bogus text)").await;
+        let catalog = [migration("20240101000000_a", "SELECT 1;")];
+        let jitter = FakeJitter(0);
+        let steps = database.steps(&catalog, &jitter);
+        let outcome = steps
+            .deploy(DEPLOY_TIMEOUT)
+            .await
+            .expect("a typed deploy outcome");
+        let DeployOutcome::Failed { detail } = outcome else {
+            panic!("a raw database failure is a manual outcome: {outcome:?}");
+        };
+        assert!(detail.contains("does not exist"), "{detail}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn postgres_failed_ledger_write_reports_both_errors() {
+    with_schema(|database| async move {
+        create_ledger(&database).await;
+        let catalog = [migration(
+            "20240101000000_drop",
+            "DROP TABLE _prisma_migrations; SELECT 1 / 0;",
+        )];
+        let jitter = FakeJitter(0);
+        let steps = database.steps(&catalog, &jitter);
+        let outcome = steps
+            .deploy(DEPLOY_TIMEOUT)
+            .await
+            .expect("a typed deploy outcome");
+        let DeployOutcome::Failed { detail } = outcome else {
+            panic!("a failed ledger write is a manual outcome: {outcome:?}");
+        };
+        assert!(detail.contains("20240101000000_drop"), "{detail}");
+        assert!(
+            detail.contains("recording the failure in the migration ledger also failed"),
+            "{detail}"
+        );
     })
     .await;
 }

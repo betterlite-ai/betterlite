@@ -120,19 +120,6 @@ pub enum RecoveryError {
     AttemptsExhausted { message: String },
 }
 
-impl RecoveryError {
-    // resolve failures and timeouts are swallowed so the next pass reads the real ledger state
-    const fn is_ignorable_rollback(&self) -> bool {
-        matches!(
-            self,
-            Self::Database { .. }
-                | Self::Connection {
-                    source: ConnectionError::Open { .. }
-                }
-        )
-    }
-}
-
 // Mirrors extras/utils.py::str_to_bool: case-insensitive without trimming, and "on" reads false
 #[must_use]
 pub fn extras_boolean(value: Option<&str>) -> bool {

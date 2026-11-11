@@ -10,7 +10,7 @@ use tracing::subscriber::set_default;
 use crate::migration_deploy::catalog::Migration;
 use crate::migration_recovery::outcome::{DeployOutcome, FailedIdentity, FailedStep};
 use crate::migration_recovery::policy::{PassSettings, RecoverySteps as _, run_passes};
-use crate::migration_recovery::steps::{PgSteps, PgStepsInputs};
+use crate::migration_recovery::steps::{PgSteps, PgStepsInputs, recoverable_name};
 use crate::migration_recovery::tests::database::{
     COMMAND_TIMEOUT, LOCK_TIMEOUT, LedgerRow, create_ledger, insert_row, migration, next_id,
     relation_exists, stored_row, with_schema,
@@ -161,6 +161,47 @@ async fn recovery_rejects_path_and_unknown_name(#[case] rejected: &str) {
     assert!(matches!(error, RecoveryError::Connection { .. }), "{error}");
 }
 
+#[rstest]
+#[case::plain("plain", true)]
+#[case::slash("a/b", false)]
+#[case::backslash("a\\b", false)]
+#[case::dot(".", false)]
+#[case::dotdot("..", false)]
+#[case::empty("", false)]
+fn recoverable_name_rejects_hostile_names(#[case] name: &str, #[case] recoverable: bool) {
+    assert_eq!(recoverable_name(name), recoverable);
+}
+
+#[tokio::test]
+async fn baseline_connection_failure_propagates() {
+    let catalog = [migration(
+        "20240101000000_known",
+        "CREATE TABLE known_probe (id integer)",
+    )];
+    let jitter = FakeJitter(0);
+    let steps = PgSteps::new(PgStepsInputs {
+        schema: "public".to_owned(),
+        catalog: &catalog,
+        prisma_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        deploy_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        lock_url: SecretString::from("not a database url"),
+        database_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        direct_url: None,
+        schema_prisma: &[],
+        current_build: None,
+        command_timeout: COMMAND_TIMEOUT,
+        lock_timeout: LOCK_TIMEOUT,
+        jitter: &jitter,
+        next_id,
+    })
+    .expect("an offline deploy pool builds");
+    let error = steps
+        .baseline()
+        .await
+        .expect_err("a baseline failure stops startup");
+    assert!(matches!(error, RecoveryError::Connection { .. }), "{error}");
+}
+
 #[tokio::test]
 async fn completion_before_inert_rollback() {
     with_schema(|database| async move {
@@ -290,6 +331,25 @@ async fn ahead_history_warning_is_nonfatal() {
     assert_eq!(steps.ahead_checks(), 1);
     assert!(
         logs.contents().contains("startup continues"),
+        "{}",
+        logs.contents()
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_warning_without_ahead_history() {
+    let steps = ScriptedSteps::default();
+    steps.deploying(DeployOutcome::Complete);
+    let jitter = FakeJitter(0);
+    let pause = RecordingPause::default();
+    let (logs, subscriber) = capture_logs();
+    let guard = set_default(subscriber);
+    run_passes(&steps, settings(42, 77), &jitter, &pause)
+        .await
+        .expect("a clean history deploys without warnings");
+    drop(guard);
+    assert!(
+        !logs.contents().contains("startup continues"),
         "{}",
         logs.contents()
     );

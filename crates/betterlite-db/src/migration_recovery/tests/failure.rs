@@ -375,6 +375,32 @@ fn native_diagnostics_carry_sqlstate_and_ledger_identity() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn rollback_failure_propagates() {
+    let steps = ScriptedSteps::default();
+    let reported = identity();
+    steps.deploying(DeployOutcome::UnfinishedHistory {
+        identity: Some(reported.clone()),
+    });
+    steps.history(&reported, found("deadlock detected", false));
+    steps.rollback_fails(RecoveryError::ManualIntervention {
+        message: "rollback broke".to_owned(),
+    });
+    let jitter = FakeJitter(0);
+    let pause = RecordingPause::default();
+    let error = run_database_v2(
+        &steps,
+        MigrateAttemptBudget::default(),
+        DEPLOY_TIMEOUT,
+        &jitter,
+        &pause,
+    )
+    .await
+    .expect_err("a rollback failure outside the silent set stops startup");
+    assert!(error.to_string().contains("rollback broke"), "{error}");
+    assert!(pause.delays().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
 async fn rollback_cancel_propagates() {
     let steps = Arc::new(ScriptedSteps::default());
     let reported = identity();

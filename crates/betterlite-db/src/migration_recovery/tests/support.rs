@@ -50,6 +50,7 @@ pub(super) struct ScriptedSteps {
     deploys: Mutex<VecDeque<(DeployOutcome, Duration)>>,
     recoveries: Mutex<VecDeque<Result<bool, RecoveryError>>>,
     baselines: Mutex<VecDeque<Result<(), RecoveryError>>>,
+    rollbacks: Mutex<VecDeque<Result<(), RecoveryError>>>,
     history: Mutex<BTreeMap<String, FailedLookup>>,
     timeouts: Mutex<Vec<Duration>>,
     events: Mutex<Vec<String>>,
@@ -81,6 +82,10 @@ impl ScriptedSteps {
 
     pub(super) fn report_hostile(&self, count: usize) {
         self.hostile.store(count, Ordering::SeqCst);
+    }
+
+    pub(super) fn rollback_fails(&self, error: RecoveryError) {
+        lock(&self.rollbacks).push_back(Err(error));
     }
 
     pub(super) fn block_rollback(&self) {
@@ -155,6 +160,10 @@ impl RecoverySteps for ScriptedSteps {
         name: &'step str,
     ) -> StepFuture<'step, Result<(), RecoveryError>> {
         self.record(format!("rollback:{name}"));
+        let scripted_result = lock(&self.rollbacks).pop_front();
+        if let Some(scripted) = scripted_result {
+            return Box::pin(ready(scripted));
+        }
         if self.rollback_blocked.load(Ordering::SeqCst) {
             return Box::pin(pending());
         }

@@ -11,7 +11,7 @@ use crate::migration_deploy::catalog::Migration;
 use crate::migration_drift::MigrationDriftCheck;
 use crate::migration_drift::ahead::warn_if_db_ahead_of_head;
 use crate::migration_ledger::baseline::{BaselineInputs, baseline_current_schema};
-use crate::migration_ledger::connection::{CONNECT_TIMEOUT, connect};
+use crate::migration_ledger::connection::{CONNECT_TIMEOUT, ConnectionError, connect};
 use crate::migration_ledger::inert::rollback_inert_migration;
 use crate::migration_ledger::ledger_reads::{FailedLookup, look_up_failed_migration};
 use crate::migration_ledger::lock::{JitterSource, MigrationCoordinator};
@@ -168,9 +168,16 @@ impl<'input> PgSteps<'input> {
 
     async fn roll_back_once(&self, name: &str) -> Result<(), RecoveryError> {
         match timeout(self.command_timeout, self.roll_back_marker(name)).await {
-            Err(_elapsed) => Ok(()),
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) if error.is_ignorable_rollback() => Ok(()),
+            Err(_)
+            | Ok(
+                Ok(())
+                | Err(
+                    RecoveryError::Database { .. }
+                    | RecoveryError::Connection {
+                        source: ConnectionError::Open { .. },
+                    },
+                ),
+            ) => Ok(()),
             Ok(Err(error)) => Err(error),
         }
     }
@@ -224,7 +231,7 @@ impl RecoverySteps for PgSteps<'_> {
 }
 
 // Mirrors the P3009/P3018 name guard: one path component, no backslash, and present in this build's catalog
-fn recoverable_name(name: &str) -> bool {
+pub(super) fn recoverable_name(name: &str) -> bool {
     if name.is_empty() || name == "." || name == ".." {
         return false;
     }
