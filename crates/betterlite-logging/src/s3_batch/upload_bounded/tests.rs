@@ -7,7 +7,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, SystemTime};
 
+use betterlite_config::loader::EnvironmentLookup;
+use futures_util::future::join_all;
 use secrecy::SecretString;
+use tokio::task::yield_now;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -150,14 +153,14 @@ fn element(key: &str) -> Element {
 }
 
 fn logger(
-    source: Source<()>,
+    source: &Source<()>,
     client: Arc<ScriptedClient>,
     observer: Option<Arc<RecordingSink>>,
 ) -> Arc<S3BatchLogger> {
-    let environment: Arc<dyn betterlite_config::loader::EnvironmentLookup + Send + Sync> =
+    let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
         Arc::new(BTreeMap::<String, String>::new());
     let parameters =
-        resolve_s3_parameters::<()>(&Source::default(), &source, None, environment.as_ref());
+        resolve_s3_parameters::<()>(&Source::default(), source, None, environment.as_ref());
     let throttle_observer = observer.map(|sink| {
         let shared: Arc<dyn ThrottleSink> = sink;
         shared
@@ -191,24 +194,27 @@ async fn bounded_by_limit() {
     let limiter = Arc::new(UploadLimiter::new(2, None).expect("the bounds hold"));
     let active = Arc::new(AtomicUsize::new(0));
     let peak = Arc::new(AtomicUsize::new(0));
-    let uploads = (0..6).map(|_| {
-        let limiter = Arc::clone(&limiter);
-        let active = Arc::clone(&active);
-        let peak = Arc::clone(&peak);
+    let uploads = std::iter::repeat_with(|| {
+        let limiter_handle = Arc::clone(&limiter);
+        let active_handle = Arc::clone(&active);
+        let peak_handle = Arc::clone(&peak);
         async move {
-            let permit = limiter
+            let permit = limiter_handle
                 .acquire(deadline(5_000))
                 .await
                 .expect("a permit arrives");
-            let running = active.fetch_add(1, Ordering::SeqCst).saturating_add(1);
-            peak.fetch_max(running, Ordering::SeqCst);
-            tokio::task::yield_now().await;
-            tokio::task::yield_now().await;
-            active.fetch_sub(1, Ordering::SeqCst);
+            let running = active_handle
+                .fetch_add(1, Ordering::SeqCst)
+                .saturating_add(1);
+            peak_handle.fetch_max(running, Ordering::SeqCst);
+            yield_now().await;
+            yield_now().await;
+            active_handle.fetch_sub(1, Ordering::SeqCst);
             drop(permit);
         }
-    });
-    futures_util::future::join_all(uploads).await;
+    })
+    .take(6);
+    join_all(uploads).await;
     assert_eq!(peak.load(Ordering::SeqCst), 2);
     assert_eq!(limiter.snapshot().in_flight, 0);
 }
@@ -238,12 +244,13 @@ async fn permit_wait_is_bounded_by_its_deadline() {
     let blocked = limiter.acquire(deadline(5)).await;
     assert_eq!(blocked.err(), Some(AcquireError::DeadlineExceeded));
     drop(permit);
+    drop(limiter);
 }
 
 #[tokio::test]
 async fn context_var_set() {
     let client = ScriptedClient::with_replies(&[(200, "")]);
-    let logger = logger(source(""), Arc::clone(&client), None);
+    let logger = logger(&source(""), Arc::clone(&client), None);
     client.watch(&logger);
     assert_eq!(logger.in_flight_flushes.load(Ordering::SeqCst), 0);
     logger.queue.enqueue(element("a.json"));
@@ -257,7 +264,7 @@ async fn adaptive_samples_record() {
     let observer = Arc::new(RecordingSink::default());
     let client = ScriptedClient::with_replies(&[(429, ""), (200, "")]);
     let logger = logger(
-        source(
+        &source(
             r#","s3_adaptive_concurrency":true,"s3_max_concurrent_uploads":1,"s3_max_adaptive_concurrency":3"#,
         ),
         Arc::clone(&client),
@@ -265,7 +272,7 @@ async fn adaptive_samples_record() {
     );
     logger.queue.enqueue(element("a.json"));
     let error = logger.flush_queue().await;
-    assert!(error.is_err(), "a 429 keeps the upload for the next flush");
+    error.expect_err("a 429 keeps the upload for the next flush");
     logger.flush_queue().await.expect("the retry is delivered");
     assert_eq!(observer.samples(), vec![true, false]);
     assert_eq!(logger.uploads.snapshot().limit, 2);
@@ -274,6 +281,7 @@ async fn adaptive_samples_record() {
         0,
         "the delivered upload left the queue"
     );
+    drop(logger);
 }
 
 #[tokio::test]
@@ -297,7 +305,7 @@ fn fixed_limiter_has_a_semaphore_limit() {
 
 #[test]
 fn adaptive_bounds_are_validated() {
-    assert!(UploadLimiter::new(0, Some(3)).is_err());
-    assert!(UploadLimiter::new(4, Some(3)).is_err());
-    assert!(UploadLimiter::new(1, Some(1)).is_ok());
+    UploadLimiter::new(0, Some(3)).expect_err("a zero window has no permits");
+    UploadLimiter::new(4, Some(3)).expect_err("the window exceeds the ceiling");
+    UploadLimiter::new(1, Some(1)).expect("the bounds hold");
 }

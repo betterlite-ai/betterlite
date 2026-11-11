@@ -107,19 +107,20 @@ fn combines_payloads_to_ndjson() {
 #[test]
 fn earliest_retrying_since() {
     let batch = [
-        element("logs/a.json", r#"{"a":1}"#, Some(30.0)),
-        element("logs/b.json", r#"{"b":2}"#, Some(10.0)),
+        element("logs/a.json", r#"{"a":1}"#, Some(30.0_f64)),
+        element("logs/b.json", r#"{"b":2}"#, Some(10.0_f64)),
         element("logs/c.json", r#"{"c":3}"#, None),
     ];
     let files = batch_file_elements(&batch, "12-00-00", &ids()).expect("the batch files build");
-    assert_eq!(files[0].retrying_since, Some(10.0));
+    assert_eq!(files[0].retrying_since, Some(10.0_f64));
 
     let fresh = [
         element("logs/a.json", r#"{"a":1}"#, None),
         element("logs/b.json", r#"{"b":2}"#, None),
     ];
-    let files = batch_file_elements(&fresh, "12-00-00", &ids()).expect("the batch files build");
-    assert_eq!(files[0].retrying_since, None);
+    let fresh_files =
+        batch_file_elements(&fresh, "12-00-00", &ids()).expect("the batch files build");
+    assert_eq!(fresh_files[0].retrying_since, None);
 }
 
 #[test]
