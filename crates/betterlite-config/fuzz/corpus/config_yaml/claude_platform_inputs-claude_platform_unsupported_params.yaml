@@ -1,0 +1,10 @@
+model_list:
+  - model_name: claude-platform
+    litellm_params:
+      model: bedrock/claude_platform/anthropic.claude-3
+      claude_platform_unsupported_params:
+        - context_management
+        - cache_control
+litellm_settings:
+  claude_platform_unsupported_params:
+    - stop_sequences

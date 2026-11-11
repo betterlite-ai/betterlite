@@ -1,0 +1,37 @@
+kind: helper
+name: claude-platform-workspace-alias-precedence
+call:
+  claude_platform_inputs:
+    workspace_alias_precedence:
+      cases:
+        - optional_params: {workspace_id: optional-workspace}
+        - deployment: {workspace_id: deployment-workspace}
+        - deployment: {workspace_id: deployment-workspace}
+          litellm_settings: {workspace_id: module-workspace}
+        - litellm_settings: {workspace_id: module-workspace}
+        - optional_params: {workspace_id: optional-workspace}
+          deployment: {workspace_id: deployment-workspace}
+        - optional_params: {aws_workspace_id: optional-aws}
+        - optional_params: {aws_workspace_id: optional-aws}
+          deployment: {workspace_id: deployment-workspace}
+        - optional_params: {anthropic-workspace-id: optional-hyphen}
+        - deployment: {anthropic-workspace-id: deployment-hyphen}
+        - optional_params: {anthropic_workspace_id: optional-underscore}
+        - optional_params: {anthropic-workspace-id: '', anthropic_workspace_id: optional-underscore}
+        - optional_params: {anthropic-workspace-id: ''}
+          environment: {ANTHROPIC_AWS_WORKSPACE_ID: env-workspace}
+        - optional_params: {workspace_id: ''}
+        - optional_params: {workspace_id: null}
+          deployment: {workspace_id: deployment-workspace}
+        - environment: {ANTHROPIC_AWS_WORKSPACE_ID: env-workspace}
+        - environment: {ANTHROPIC_WORKSPACE_ID: env-second}
+        - environment: {ANTHROPIC_AWS_WORKSPACE_ID: env-first, ANTHROPIC_WORKSPACE_ID: env-second}
+        - environment: {ANTHROPIC_AWS_WORKSPACE_ID: '', ANTHROPIC_WORKSPACE_ID: env-second}
+        - environment: {ANTHROPIC_AWS_WORKSPACE_ID: ''}
+        - environment: {ANTHROPIC_WORKSPACE_ID: ''}
+        - optional_params: {workspace_id: 0, aws_workspace_id: optional-aws}
+        - optional_params: {anthropic-workspace-id: 0}
+        - optional_params: {anthropic-workspace-id: false}
+        - optional_params: {workspace_id: true}
+env: {}
+compare: {ignore: []}
