@@ -24,7 +24,9 @@ const SUPPORTS_RESOLUTION: &str = r#"{
     "fireworks_ai/pdf-model": {"litellm_provider": "openai", "mode": "chat", "supports_pdf_input": true},
     "fireworks_ai/listed-model": {"litellm_provider": "fireworks_ai", "mode": "chat"},
     "vision-blocked": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true},
-    "mismatch-model": {"litellm_provider": "not-a-provider", "mode": "chat", "supports_vision": true}
+    "mismatch-model": {"litellm_provider": "not-a-provider", "mode": "chat", "supports_vision": true},
+    "fireworks_ai/m": {"litellm_provider": 5, "mode": "chat"},
+    "m": {"litellm_provider": "fireworks_ai", "mode": "chat", "supports_vision": true}
 }"#;
 
 const SUPPORTS_ERROR_FALLBACK: &str = r#"{
@@ -75,7 +77,9 @@ const NATIVE_STREAMING_DEFAULT: &str = r#"{
     "false-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": false},
     "string-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": "sometimes"},
     "true-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": true},
-    "nullish-model": {"litellm_provider": null, "mode": "chat", "supports_native_streaming": "sometimes"}
+    "nullish-model": {"litellm_provider": null, "mode": "chat", "supports_native_streaming": "sometimes"},
+    "deepseek/split-model": {"litellm_provider": "openai", "mode": "chat", "supports_native_streaming": true},
+    "split-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": "sometimes"}
 }"#;
 
 const RESPONSE_SCHEMA_PROVIDER_OVERRIDE: &str = r#"{
@@ -371,6 +375,7 @@ const NATIVE_STREAMING_STEPS: &[(&str, Option<&str>, Expected)] = &[
         Some("deepseek"),
         Expected::text("sometimes"),
     ),
+    ("split-model", Some("deepseek"), Expected::text("sometimes")),
     ("nothing-here", None, Expected::flag(false)),
 ];
 
@@ -451,6 +456,16 @@ const VISION_MISMATCH_SCENARIO: Scenario = Scenario {
     steps: VISION_MISMATCH_STEPS,
 };
 
+// The combined entry's non-text provider stops the lookup, so the bare twin never answers.
+const VISION_NOT_TEXT_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("m", Some("fireworks_ai"), Expected::flag(false))];
+
+const VISION_NOT_TEXT_PROVIDER_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(VISION_KEY),
+    steps: VISION_NOT_TEXT_PROVIDER_STEPS,
+};
+
 const REASONING_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
     &[("reason-model", Some("fireworks_ai"), Expected::flag(true))];
 
@@ -528,6 +543,7 @@ pub(super) async fn supports_resolution() {
     check(&VISION_PROVIDER_SCENARIO).await;
     check(&VISION_OVERRIDE_SCENARIO).await;
     check(&VISION_MISMATCH_SCENARIO).await;
+    check(&VISION_NOT_TEXT_PROVIDER_SCENARIO).await;
     check(&REASONING_PROVIDER_SCENARIO).await;
     check(&PDF_PROVIDER_SCENARIO).await;
     check(&WEB_SEARCH_PROVIDER_SCENARIO).await;

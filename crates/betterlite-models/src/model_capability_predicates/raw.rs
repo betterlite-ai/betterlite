@@ -45,13 +45,15 @@ pub(super) fn raw_metadata<Source, Transport>(
         let Some(raw) = environment.metadata.model_cost.get(&entry_key) else {
             continue;
         };
+        // an unreadable entry stops the lookup, the way B2219's exact entry re-raises it as not-mapped
         let Ok(fields) = from_str::<BTreeMap<String, Box<RawValue>>>(raw.get()) else {
-            continue;
+            return None;
         };
-        if !check_provider_match(entry_provider(&fields), provider.as_deref())
-            .is_ok_and(|matched| matched)
-        {
-            continue;
+        // only a clean provider mismatch skips to the next candidate; a failed check stops like B2219
+        match check_provider_match(entry_provider(&fields), provider.as_deref()) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(_) => return None,
         }
         let Some(value) = fields.get(key).filter(|value| value.get() != "null") else {
             return Some(MetadataValue::Absent);
