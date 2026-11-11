@@ -1,0 +1,201 @@
+id: B9550
+title: Kept-alive HTTP connections, concurrency limit, request recycling and TLS in the server
+description: >-
+  betterlite closes every HTTP connection after one response. crates/betterlite-server/src/server.rs has called
+  `http1.keep_alive(false)` since B003 (commit 526892d20, PR 43) with no recorded reason, so every response carries
+  `connection: close` and a client opens a new TCP connection per request. LiteLLM runs under uvicorn, which keeps a
+  connection open for timeout_keep_alive seconds (default 5) after each response. LiteLLM's run_server also hands uvicorn
+  three more listener settings that nothing in betterlite applies yet: limit_concurrency (answer 503 past a limit),
+  limit_max_requests with its jitter (stop the process after that many requests) and ssl_certfile/ssl_keyfile (serve
+  HTTPS). This task makes the server take all four as one typed value and apply them the way uvicorn 0.54.0 (the
+  version LiteLLM's lock installs) does. It changes only the server; B121 turns the CLI flags into the value and B131
+  does the same for the gateway binary.
+
+
+  Types. Module crates/betterlite-server/src/server/listener.rs (declared in server.rs by the skeleton; private code may
+  go in server/listener/), with its own thiserror enum ListenerError that ServerError wraps with one #[from] variant.
+  `pub struct ListenerOptions { pub keep_alive_seconds: i64, pub limit_concurrency: Option<NonZeroUsize>, pub
+  max_requests: Option<RequestLimit>, pub tls: Option<TlsFiles> }`, `pub struct RequestLimit { pub limit: i64, pub
+  jitter: u64 }` and `pub struct TlsFiles { pub certfile: PathBuf, pub keyfile: PathBuf }`. ListenerOptions::default()
+  is keep_alive_seconds 5 and everything else None, uvicorn's defaults. keep_alive_seconds stays an i64 because click
+  and uvicorn take any int; the server reads a value of 0 or less as "close after each response". `pub enum
+  RequestScheme { Http, Https }` is the request extension described below. Add `pub listener: ListenerOptions` to
+  B8610's ServerInputs in server/inputs.rs and set it to ListenerOptions::default() wherever ServerInputs is built
+  (B8610's run_proxy in crates/betterlite/src/lifespan.rs, main.rs if it still builds one, and server/tests.rs), so the
+  binary keeps alive for 5 seconds from this task on.
+
+
+  Keep-alive. configure_connection_builder takes the options and calls `http1.keep_alive(keep_alive_seconds > 0)`
+  instead of the fixed `keep_alive(false)`. For keep_alive_seconds above 0, set `header_read_timeout` to that many
+  seconds. In hyper 1.12 that timer restarts each time a kept-alive
+  connection goes idle (proto/h1/conn.rs L1155-L1161), so it is the idle timeout uvicorn arms in on_response_complete,
+  and it also bounds reading the first request's headers, which the fixed 1 second HEADER_READ_TIMEOUT does today.
+  hyper has no separate idle setting. For keep_alive_seconds of 0 or less, keep-alive is off and the header timeout stays
+  the 1 second HEADER_READ_TIMEOUT. A client that sends `Connection: close` or speaks HTTP/1.0 without keep-alive still gets one response
+  and a closed socket, as hyper and h11 both do.
+
+
+  Shutdown. uvicorn's Server.shutdown calls shutdown() on every connection: an idle one closes at once, a busy one
+  finishes its response with `connection: close` and then closes. Do the same with hyper-util's GracefulShutdown
+  (feature server-graceful, added to the hyper-util line in crates/betterlite-server/Cargo.toml): watch every connection
+  and trigger it when run's accept loop stops, then wait at most CONNECTION_DRAIN_TIMEOUT as drain_connections does today.
+  Without it an idle kept-alive connection holds the drain until its idle timer or the 5 second abort.
+
+
+  Concurrency limit. When limit_concurrency is set, every non-WebSocket request is checked as its headers arrive, before
+  routing and before B022's admission: when the number of open connections (this one included, idle kept-alive ones too)
+  is at or above the limit, or the in-flight request count is, the request gets uvicorn's service_unavailable response
+  instead of the application and the server logs the warning "Exceeded concurrency limit.". The response is status 503,
+  headers content-type "text/plain; charset=utf-8", content-length 19 and connection close, body "Service
+  Unavailable". The in-flight count is B022's InFlightRequests.current from `inputs.startup.in_flight` (B8610), the
+  counter that already lasts until a response body ends; the open-connection count is a new counter run keeps,
+  incremented when a connection is accepted and decremented when its task ends. WebSocket upgrades skip the check (use
+  the same upgrade test B022's track_in_flight uses), since uvicorn hands an upgrade off before it checks.
+
+
+  Request recycling. When max_requests is set, run draws the effective limit once at start, `limit +
+  random_range(0..=jitter)`, as uvicorn's cached limit_max_requests property does. A response counts when its body has
+  been sent or dropped (uvicorn counts in on_response_complete, 503 answers included). The accept loop already wakes
+  every ACCEPT_POLL_INTERVAL (100 ms, uvicorn's tick); when the count is at or above the drawn limit it logs at info
+  "Maximum request limit of {limit} exceeded. Terminating process." and stops exactly as the shutdown signal does (the
+  local flag and start_shutdown on B8610's ShutdownState), so run drains and returns Ok and the process exits 0 after the
+  lifespan's stop steps. A limit of 0 or less stops at the first tick, as uvicorn does.
+
+
+  TLS. When tls is set, run reads both PEM files after it builds the application and before it binds, with
+  rustls-pki-types' PemObject (CertificateDer::pem_file_iter for the chain, PrivateKeyDer::from_pem_file for a PKCS#8,
+  PKCS#1 or SEC1 key), and builds a rustls ServerConfig with no client auth, the aws-lc-rs provider the crate's
+  tokio-rustls line already uses and rustls' default TLS 1.2 and 1.3 versions. Move rustls and tokio-rustls from
+  dev-dependencies to dependencies. A missing, unreadable or empty file, a file with no certificate or no key, or an
+  encrypted key fails run with a ListenerError naming the path, so the binary exits 1 before it listens, the way
+  uvicorn's Config.load raises from load_cert_chain. Each accepted connection does the handshake inside its own task with
+  a 60 second timeout (asyncio's default ssl_handshake_timeout); a failed handshake logs at debug and drops the
+  connection. No ALPN is advertised, since uvicorn sets none and the builder stays HTTP/1 only.
+
+
+  Scheme. serve_connection puts `RequestScheme::Https` or `RequestScheme::Http` on every request of a connection as an
+  axum Extension, next to the ConnectInfo B100 adds there, so code that builds absolute URLs can tell what Starlette's
+  request.url.scheme would say. No reader exists yet.
+
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/listener/, in the format of
+  tools/oracle/cases/health/liveliness.yaml: keep-alive-no-close-header.yaml sends GET /health/liveliness and compares
+  the `connection` response header (absent on both sides once this task lands; betterlite sends "close" today);
+  client-asks-close.yaml sends the same request with the request header `Connection: close` and compares `connection`
+  ("close" on both). The other settings can't be reached through a case, since a limit or recycling setting stops the
+  oracle's readiness probe; Rust tests cover them.
+
+
+  Tests in crates/betterlite-server/src/server/listener/tests.rs (names start with server::listener::tests::) bind a
+  real TcpListener on 127.0.0.1:0 and serve a small axum Router through the same accept and serve code run uses. Cover:
+  two requests answered on one TCP connection with no connection header; an idle connection closed by the server within
+  3 seconds at keep_alive_seconds 1 and still open after 0.5 seconds; keep_alive_seconds 0 answers with `connection:
+  close` and closes; a request with Connection: close is answered and closed; stopping the loop closes an idle kept-alive
+  connection at once while a slow in-flight request still gets its response with `connection: close`; limit 1 answers
+  every request with the exact 503 response above; limit 2 with one slow request in flight answers a second connection
+  503; a WebSocket upgrade request is not limited; max_requests limit 2 jitter 0 makes run return after two responses;
+  the drawn limit stays within limit..=limit+jitter; a self-signed rcgen certificate in a tempdir serves HTTPS that a
+  tokio-rustls client trusting it can call, and the handler sees RequestScheme::Https; a plain connection sees
+  RequestScheme::Http; a missing key file and a key file whose PEM label is ENCRYPTED PRIVATE KEY each fail with
+  ListenerError naming the path. Idle-timeout tests run on real time, because a paused clock auto-advances while the
+  test waits on a socket and fires the idle timer early.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/listener.rs
+    - crates/betterlite-server/src/server/listener/**
+    - crates/betterlite-server/src/server/inputs.rs
+    - crates/betterlite-server/src/server/tests.rs
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite/src/lifespan/**
+    - crates/betterlite/src/main.rs
+    - tools/oracle/cases/listener/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1509-L1548
+    why: The uvicorn arguments LiteLLM builds (timeout_keep_alive, limit_max_requests, limit_concurrency, jitter, ssl files) and the uvicorn.run call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L283-L325
+    why: _get_default_unvicorn_init_args sets timeout_keep_alive only when --keepalive_timeout is given, so uvicorn's default 5 applies otherwise.
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/config.py#L230-L245
+    why: uvicorn's defaults, timeout_keep_alive 5, limit_concurrency and limit_max_requests None, jitter 0, the ssl options.
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/config.py#L119-L138
+    why: create_ssl_context loads the cert chain and key with load_cert_chain and no client auth.
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/protocols/http/h11_impl.py#L227-L235
+    why: The concurrency check, which counts open connections including the current one and running request tasks.
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/protocols/http/h11_impl.py#L317-L367
+    why: on_response_complete counts the request and arms the keep-alive timer; shutdown closes an idle connection and marks a busy one keep_alive False; the timer handler closes the connection.
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/protocols/http/flow_control.py#L42-L54
+    why: The exact 503 response for the concurrency limit.
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/server.py#L79-L83
+    why: The request limit plus a jitter drawn once with random.randint(0, jitter).
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/server.py#L274-L295
+    why: The limit check on each tick, its info log line, and shutdown asking every connection to close.
+  - url: https://github.com/betterlite-ai/betterlite/blob/526892d206d5ee265f105318f5684da0d6b34e8e/crates/betterlite-server/src/server.rs#L88-L93
+    why: Where B003 turned keep-alive off next to the 1 second header read timeout.
+  - url: https://docs.rs/hyper/1.12.0/hyper/server/conn/http1/struct.Builder.html#method.header_read_timeout
+    why: header_read_timeout, which hyper restarts when a kept-alive connection goes idle.
+  - url: https://docs.rs/hyper-util/0.1.21/hyper_util/server/graceful/struct.GracefulShutdown.html
+    why: The graceful shutdown watcher for hyper-util's auto connections.
+  - url: https://docs.rs/rustls-pki-types/1.15.1/rustls_pki_types/pem/trait.PemObject.html
+    why: PEM reading for the certificate chain and the private key.
+  - url: https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.create_server
+    why: ssl_handshake_timeout defaults to 60 seconds.
+dod:
+  - text: A connection stays open for keep_alive_seconds after each response with no connection header, closes when idle that long, and a value of 0 or less closes after each response with connection close; ListenerOptions::default() keeps 5 seconds and the booted proxy no longer answers with connection close.
+    proof: [listener-tests, server-tests, oracle]
+  - text: Stopping the server closes idle kept-alive connections at once and lets in-flight responses finish with connection close.
+    proof: [listener-tests]
+  - text: With limit_concurrency set, a request arriving while open connections or in-flight requests are at the limit gets the exact 503 text response and the warning, and WebSocket upgrades are not limited.
+    proof: [listener-tests]
+  - text: With max_requests set, the server draws limit plus a jitter in 0..=jitter once and stops like a shutdown signal once that many responses completed.
+    proof: [listener-tests]
+  - text: With tls set, the server serves HTTPS from the PEM files, refuses to start with an error naming the path for a missing, empty or encrypted key, and tags each request with its RequestScheme.
+    proof: [listener-tests]
+checks:
+  optional: []
+  commands:
+    - id: listener-tests
+      why: Keep-alive, graceful close, the concurrency limit, request recycling, TLS or the scheme extension is missing or differs from uvicorn
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::listener::/)'
+    - id: server-tests
+      why: The server still turns keep-alive off unconditionally, or the existing server tests broke under the new inputs
+      run: >-
+        ! grep -q 'keep_alive(false);' crates/betterlite-server/src/server.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::tests::/)'
+oracle_cases:
+  - tools/oracle/cases/listener/keep-alive-no-close-header.yaml
+  - tools/oracle/cases/listener/client-asks-close.yaml
+deviations:
+  - what: "A keep-alive timeout of 0 or less answers each response with `connection: close` and closes, where uvicorn closes the idle connection right after the response without that header."
+    why: hyper's header_read_timeout of zero would also cut the first request's headers, so betterlite turns keep-alive off for that value and hyper says so in the header.
+    link: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/protocols/http/h11_impl.py#L317-L326
+  - what: The keep-alive timeout also limits how long a client may take to send a request's headers, the first request's included; uvicorn has no header read timeout.
+    why: hyper 1.12 has one timer for both, and an unbounded header read lets a slow client hold one of the 1024 connection slots forever (bounded-inputs).
+    link: https://docs.rs/hyper/1.12.0/hyper/server/conn/http1/struct.Builder.html#method.header_read_timeout
+  - what: Over TLS betterlite offers rustls' cipher suites (TLS 1.3 and TLS 1.2 ECDHE with AEAD), so a client that only speaks OpenSSL's older TLS 1.2 suites fails the handshake.
+    why: rustls implements only those suites; uvicorn uses the OpenSSL defaults of the Python build.
+    link: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/config.py#L119-L138
+  - what: An encrypted private key stops startup with an error naming the key file, where uvicorn's load_cert_chain asks for the passphrase on the terminal.
+    why: LiteLLM passes no ssl_keyfile_password, and a server started by a supervisor has no terminal to answer the prompt.
+    link: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/config.py#L119-L138
+  - what: A certificate or key file error reads from rustls-pki-types and std::io, not from Python's ssl module.
+    why: Python exception wording is not part of the contract; the exit happens at the same point, before the server listens.
+out_of_scope:
+  - "Reading --keepalive_timeout, KEEPALIVE_TIMEOUT, --limit_concurrency, the max requests flags and the SSL flags, and choosing per launcher: B121 builds ListenerOptions from them."
+  - "--timeout-keep-alive and KEEPALIVE_TIMEOUT for the gateway binary: B131 passes its resolved value into ListenerOptions."
+  - "The 'Using SSL with certfile' line and the other launch messages: B8375 and B4177."
+  - "Reading RequestScheme where an absolute URL is built (docs redirects, request base URLs): the tasks that build those URLs."
+  - "uvicorn's proxy_headers and forwarded_allow_ips handling of X-Forwarded-Proto: not part of this task's settings."
+pitfalls:
+  - uvicorn counts the current connection in `len(self.connections) >= limit`, so a limit of 1 answers every request 503, and an idle kept-alive connection takes a slot.
+  - The 503 for the limit must not go through the application or the error envelope; it is plain text with exactly content-type, content-length 19 and connection close.
+  - The jitter is drawn once per process, never per check, or the limit moves while requests are counted.
+  - Never set header_read_timeout to zero; hyper polls that timer while it waits for the first request's headers too.
+  - GracefulShutdown::shutdown takes the value by self, so hand each connection task a Watcher from it and call shutdown only after the accept loop has stopped.
+  - Every kept-alive connection holds one of the MAX_CONNECTIONS (1024) slots while it is idle, so the cap check must count it like any other connection.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

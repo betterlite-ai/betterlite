@@ -1,0 +1,64 @@
+id: B9654
+title: Gateway MCP runtime with upstream error capture in the MCP area state
+description: >-
+  B9653's SdkRuntime is the production MCP runtime, but it needs B9651's ErrorCapture port, and the capture lives in betterlite-server as B8194's capture_error_response (mcp_debug.py L579-L598). betterlite-mcp cannot depend on betterlite-server without a crate cycle, so the server implements the port and hands it to the runtime's constructor. B8461's UpstreamClients is the manager's one entry for connected clients (listing B8462 and B8463, tool calls B8465, the connection preview B4730, the health probes B6592), and no task builds it yet. This task builds the capture adapter, the runtime and UpstreamClients once per process and keeps them in B8620's McpState, the way B8621 to B8623 add their fields, so every MCP part reads the same instance. It mounts no route.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/upstream.rs and app/mcp/upstream/ (capture.rs, failure.rs, a tests.rs beside each), plus one field and one line in B8620's McpState::build (crates/betterlite-server/src/app/mcp/state.rs).
+
+
+  capture.rs. `ServerErrorCapture { redactor: Arc<Redactor> }` implements B9651's ErrorCapture. It builds B8194's UpstreamResponse from the exchange (status, response headers, body NotRead, captured None, and an UpstreamRequest with the method, the URL as betterlite-http's HttpxUrl, the request headers as sent and the request body as Read), runs capture_error_response with the chunk stream, and returns the body bytes it read as `retained` and its captured text as `preview`. The redactor is `Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)`, the value the chat setup already uses.
+
+
+  failure.rs. B8194's describe_upstream_http_failure walks a chain of `UpstreamFailure` values to print what the upstream answered. Implement UpstreamFailure for B9651's McpHttpError (a status error answers its response head with the capture record as an UpstreamResponse, anything else answers None) and for B9652's SdkError (the HTTP variant forwards to its McpHttpError, the others have no response and no cause), so a refused MCP request logs the same masked line LiteLLM logs. Both traits are local to betterlite-server or the types are, so the orphan rule allows both impls here.
+
+
+  upstream.rs. `McpUpstream { runtime: Arc<SdkRuntime>, clients: Arc<UpstreamClients<SdkRuntime>> }` and `McpUpstream::build(core: &McpCore, tokens: &McpTokens, shared: &Shared, config: &Config) -> Result<McpUpstream, UpstreamBuildError>`. The runtime gets B9651's HttpBase from the proxy policy of `shared.http` (B173's ProxiedClient) and the TLS policy TlsPolicy::resolve gives for the loaded config and environment with no per-call ssl_verify (MCPClient's ssl_verify defaults to None, so LiteLLM's get_ssl_configuration falls back to SSL_VERIFY, SSL_CERT_FILE, then the bundled roots), the ServerErrorCapture, and the task tracker of `shared.http`, the server's tracker that shutdown drains. UpstreamClients gets its constructor inputs as B8461's text names them: the credential resolver in McpTokens (B8622), the discovery slots in `shared.mcp_registry` (B6762), the per-user env var reader, a system clock, the JwtSignerSlot (B8254) and this runtime. Add `pub(crate) upstream: McpUpstream` to McpState and build it in McpState::build after `tokens`. A build failure (the TLS policy or a CA file) stops startup with UpstreamBuildError, as an unreadable CA file stops LiteLLM's first MCP call.
+
+
+  Tests in app::mcp::upstream:: : the capture adapter keeps the first 16384 bytes plus one and masks the request's bearer token in the preview; a timed-out body read gives "(unavailable: error body read failed)" and an empty body; describe_upstream_http_failure over a refused POST names the method, the masked URL and the status; McpState::shared(state).upstream is the same Arc on two calls; and UpstreamClients from a built McpState lists the tools of a local rmcp test server over streamable HTTP, which proves the runtime is the real one and not a fake.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/app/mcp/state.rs
+    - crates/betterlite-server/src/app/mcp/upstream.rs
+    - crates/betterlite-server/src/app/mcp/upstream/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L787-L815
+    why: The client the factory builds carries capture_upstream_error_response as its response hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_debug.py#L558-L626
+    why: capture_upstream_error_response, describe_upstream_response and describe_upstream_http_failure, already built by B8194.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4216-L4424
+    why: _create_mcp_client, the one place the manager builds an MCPClient; B8461 ports it and this task gives it its runtime.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L787-L796
+    why: The client's TLS comes from get_ssl_configuration(self.ssl_verify), with ssl_verify None unless a caller passes it.
+dod:
+  - text: The capture adapter retains the captured prefix and returns B8194's preview, and the failure walk describes a refused MCP request.
+    proof: [upstream-tests]
+  - text: McpState builds one SdkRuntime and one UpstreamClients with the server's capture, proxy policy, TLS policy and tracker, and every caller reads that instance.
+    proof: [upstream-tests]
+  - text: A client made by UpstreamClients reaches a real MCP server through the runtime.
+    proof: [upstream-tests]
+checks:
+  optional: []
+  commands:
+    - id: upstream-tests
+      why: The capture, the failure walk, the McpState field or the runtime handoff is missing or wrong.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::upstream::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "capture_error_response, the previews and describe_upstream_http_failure: B8194 (done)."
+  - "UpstreamClients and create_client: B8461. The runtime: B9651 to B9653."
+  - "Reading McpState.upstream from the routes: B8626 (REST tools), B8728 (transport ports) and B4730 (connection preview) through their ports."
+  - "HTTP cases that reach an upstream: B136 and B140 run them once the MCP routes are mounted."
+pitfalls:
+  - "Build the runtime once in McpState::build; a runtime built per request would open a new connection pool per tool call and lose the shared shutdown tracker."
+  - "The capture runs inside the transport's send, so it must not block: capture_error_response already bounds the read to one second and 16 KiB plus one byte, and the adapter adds no wait of its own."
+  - "The retained bytes replace the body the client reads afterwards, so a 401's WWW-Authenticate challenge parser still sees the body; return them even when the preview says the read failed (then they are empty)."
+  - "McpState::build is synchronous; building the runtime must not touch the network."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

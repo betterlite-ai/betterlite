@@ -134,3 +134,10 @@ path = "fuzz_targets/blog_feed.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "first_chunk_error"
+path = "fuzz_targets/first_chunk_error.rs"
+test = false
+doc = false
+bench = false
