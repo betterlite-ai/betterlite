@@ -1,193 +1,31 @@
-use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use betterlite_logging::s3_transport::batch_element::{ContentType, S3BatchLoggingElement};
+use betterlite_logging::s3_transport::batch_element::S3BatchLoggingElement;
 use betterlite_logging::s3_transport::encryption::{
     ServerSideEncryption, resolve_server_side_encryption,
 };
-use betterlite_logging::s3_transport::error::S3TransportError;
 use betterlite_logging::s3_transport::option_value::OptionValue;
 use betterlite_logging::s3_transport::signing::{
     Clock, CredentialSource, Credentials, StaticCredentials,
 };
 use betterlite_logging::s3_transport::transport::{
-    S3HttpClient, S3Request, S3Response, S3Transport, ThrottleSink, UploadOutcome,
+    S3HttpClient, S3Transport, ThrottleSink, UploadOutcome,
 };
 use betterlite_logging::s3_transport::url_construction::S3Endpoint;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
+use input::{Input, Operation};
+use recording::{FixedClock, Recorded, RecordingSink, ScriptedS3};
+
+mod input;
+mod recording;
+
 pub(crate) struct Op;
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    operation: Operation,
-    settings: Settings,
-    credentials: Keys,
-    now: u64,
-    #[serde(default)]
-    element: Option<Element>,
-    #[serde(default)]
-    object_key: Option<String>,
-    responses: Vec<Reply>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Operation {
-    Put,
-    Get,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Settings {
-    bucket_name: String,
-    region_name: String,
-    #[serde(default)]
-    endpoint_url: Option<String>,
-    #[serde(default)]
-    use_virtual_hosted_style: bool,
-    #[serde(default)]
-    server_side_encryption: Option<String>,
-    #[serde(default)]
-    sse_kms_key_id: Option<String>,
-    #[serde(default = "default_drop_on_terminal_error")]
-    drop_on_terminal_error: bool,
-    #[serde(default)]
-    adaptive_concurrency: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Keys {
-    access_key_id: String,
-    secret_access_key: String,
-    #[serde(default)]
-    session_token: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Element {
-    s3_object_key: String,
-    s3_object_download_filename: String,
-    #[serde(default)]
-    body: Option<String>,
-    #[serde(default)]
-    content_type: ContentType,
-    #[serde(default)]
-    payload: Option<Json>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Reply {
-    status: u16,
-    #[serde(default)]
-    body: String,
-}
-
-#[derive(Debug, Default)]
-struct ScriptedS3 {
-    replies: Mutex<VecDeque<Reply>>,
-    sent: Mutex<Vec<S3Request>>,
-}
-
-impl ScriptedS3 {
-    fn new(replies: Vec<Reply>) -> Self {
-        Self {
-            replies: Mutex::new(VecDeque::from(replies)),
-            sent: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn sent(&self) -> Vec<S3Request> {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl S3HttpClient for ScriptedS3 {
-    fn send(
-        &self,
-        request: S3Request,
-    ) -> Pin<Box<dyn Future<Output = Result<S3Response, S3TransportError>> + Send + '_>> {
-        Box::pin(async move {
-            self.sent
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(request);
-            let reply = self
-                .replies
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .pop_front()
-                .unwrap_or(Reply {
-                    status: 200,
-                    body: String::new(),
-                });
-            Ok(S3Response {
-                status: reply.status,
-                body: reply.body.into_bytes(),
-            })
-        })
-    }
-}
-
-#[derive(Debug, Default)]
-struct RecordingSink {
-    samples: Mutex<Vec<bool>>,
-}
-
-impl RecordingSink {
-    fn samples(&self) -> Vec<bool> {
-        self.samples
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl ThrottleSink for RecordingSink {
-    fn record(&self, throttled: bool) {
-        self.samples
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(throttled);
-    }
-}
-
-#[derive(Debug)]
-struct FixedClock(SystemTime);
-
-impl Clock for FixedClock {
-    fn now(&self) -> SystemTime {
-        self.0
-    }
-}
-
-#[derive(Serialize)]
-struct Recorded {
-    method: String,
-    url: String,
-    body: Option<String>,
-    headers: BTreeMap<String, String>,
-}
-
-const fn default_drop_on_terminal_error() -> bool {
-    true
-}
 
 fn failure(class: &str, message: &str) -> Box<HelperError> {
     Box::new(HelperError {
@@ -234,11 +72,15 @@ async fn execute(input: &Input) -> HelperResult {
                 .map(|token| SecretString::from(token.clone())),
         },
     });
+    let now = SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(input.now))
+        .ok_or_else(|| failure("ValueError", "now is too large"))?;
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now));
     let transport = S3Transport {
         client,
         endpoint: S3Endpoint {
             bucket: input.settings.bucket_name.clone(),
-            region: input.settings.region_name.clone(),
+            region_name: input.settings.region_name.clone(),
             endpoint_url: input.settings.endpoint_url.clone(),
             virtual_hosted_style: input.settings.use_virtual_hosted_style,
         },
@@ -246,11 +88,7 @@ async fn execute(input: &Input) -> HelperResult {
         encryption: encryption(input),
         drop_on_terminal_error: input.settings.drop_on_terminal_error,
         throttle,
-        clock: Arc::new(FixedClock(
-            SystemTime::UNIX_EPOCH
-                .checked_add(Duration::from_secs(input.now))
-                .ok_or_else(|| failure("ValueError", "now is too large"))?,
-        )),
+        clock,
     };
     let mut outcome = None;
     let mut samples = None;

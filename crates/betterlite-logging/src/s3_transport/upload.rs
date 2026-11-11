@@ -129,38 +129,54 @@ impl S3Transport {
     where
         Payload: Serialize,
     {
-        let body = match &element.body {
-            Some(body) => body.clone().into_bytes(),
-            None => serde_json::to_vec(&element.payload)?,
-        };
+        let body = element_body(element)?;
         let content_sha256 = hex::encode(Sha256::digest(&body));
-        let mut headers = vec![
-            (
-                "Content-Type".to_owned(),
-                content_type_name(element.content_type).to_owned(),
-            ),
-            (
-                "Content-MD5".to_owned(),
-                STANDARD.encode(Md5::digest(&body)),
-            ),
-            ("x-amz-content-sha256".to_owned(), content_sha256.clone()),
-            ("Content-Language".to_owned(), CONTENT_LANGUAGE.to_owned()),
-            (
-                "Content-Disposition".to_owned(),
-                format!(
-                    "inline; filename=\"{}\"",
-                    element.s3_object_download_filename
-                ),
-            ),
-            ("Cache-Control".to_owned(), CACHE_CONTROL.to_owned()),
-        ];
-        headers.extend(encryption_headers(self.encryption.as_ref()));
+        let headers = put_headers(element, &body, &content_sha256, self.encryption.as_ref());
         Ok(PreparedPut {
             body,
             content_sha256,
             headers,
         })
     }
+}
+
+fn element_body<Payload>(
+    element: &S3BatchLoggingElement<Payload>,
+) -> Result<Vec<u8>, S3TransportError>
+where
+    Payload: Serialize,
+{
+    match &element.body {
+        Some(body) => Ok(body.clone().into_bytes()),
+        None => Ok(serde_json::to_vec(&element.payload)?),
+    }
+}
+
+fn put_headers<Payload>(
+    element: &S3BatchLoggingElement<Payload>,
+    body: &[u8],
+    content_sha256: &str,
+    encryption: Option<&ServerSideEncryption>,
+) -> Vec<(String, String)> {
+    let mut headers = vec![
+        (
+            "Content-Type".to_owned(),
+            content_type_name(element.content_type).to_owned(),
+        ),
+        ("Content-MD5".to_owned(), STANDARD.encode(Md5::digest(body))),
+        ("x-amz-content-sha256".to_owned(), content_sha256.to_owned()),
+        ("Content-Language".to_owned(), CONTENT_LANGUAGE.to_owned()),
+        (
+            "Content-Disposition".to_owned(),
+            format!(
+                "inline; filename=\"{}\"",
+                element.s3_object_download_filename
+            ),
+        ),
+        ("Cache-Control".to_owned(), CACHE_CONTROL.to_owned()),
+    ];
+    headers.extend(encryption_headers(encryption));
+    headers
 }
 
 fn encryption_headers(encryption: Option<&ServerSideEncryption>) -> Vec<(String, String)> {
