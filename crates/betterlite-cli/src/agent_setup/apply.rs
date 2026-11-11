@@ -31,6 +31,13 @@ pub struct ApplyRequest<'request> {
     pub stderr: &'request mut (dyn Write + Send),
 }
 
+const fn target_name(target: Target) -> &'static str {
+    match target {
+        Target::Claude => "Claude",
+        Target::Codex => "Codex",
+    }
+}
+
 pub async fn apply_setup(request: &mut ApplyRequest<'_>) -> Result<(), AgentSetupError> {
     save_setup(request.saved, request.environment).await?;
     let target = request.saved.target;
@@ -42,10 +49,7 @@ pub async fn apply_setup(request: &mut ApplyRequest<'_>) -> Result<(), AgentSetu
         },
     };
     applied.map_err(|source| AgentSetupError::Apply {
-        name: match target {
-            Target::Claude => "Claude",
-            Target::Codex => "Codex",
-        },
+        name: target_name(target),
         target,
         source: Box::new(source),
     })?;
@@ -53,6 +57,33 @@ pub async fn apply_setup(request: &mut ApplyRequest<'_>) -> Result<(), AgentSetu
         request.stdout,
         "Setup saved. Edit with `lite reconfigure {target}`; remove saved settings and key with `lite unconfigure {target} --forget`."
     )?;
+    Ok(())
+}
+
+fn write_symlink_note(
+    request: &mut ApplyRequest<'_>,
+    settings_path: &Path,
+    target: Target,
+) -> Result<(), AgentSetupError> {
+    if !settings_path.is_symlink() {
+        return Ok(());
+    }
+    let resolved = soft_canonicalize(settings_path).map_err(|source| AgentSetupError::Resolve {
+        path: settings_path.to_owned(),
+        source,
+    })?;
+    let note = match target {
+        Target::Claude => format!(
+            "Note: {} is a symlink to {}, so your key now lives in that file; keep it out of version control.",
+            settings_path.display(),
+            resolved.display()
+        ),
+        Target::Codex => format!(
+            "Note: your key now lives in {}; keep it out of version control.",
+            resolved.display()
+        ),
+    };
+    writeln!(request.stderr, "{note}")?;
     Ok(())
 }
 
@@ -66,7 +97,7 @@ async fn apply_claude(request: &mut ApplyRequest<'_>) -> Result<(), AgentSetupEr
     let pattern =
         Regex::new(CLAUDE_PICKER_PATTERN).map_err(|source| AgentSetupError::Pattern { source })?;
     print_claude(request, starting, &settings_path, &pattern)?;
-    note_claude_symlink(request, &settings_path)
+    write_symlink_note(request, &settings_path, Target::Claude)
 }
 
 async fn configure_claude(
@@ -152,22 +183,24 @@ fn picker_line(listed: usize, in_picker: usize) -> String {
     )
 }
 
-fn note_claude_symlink(
+fn print_codex(
     request: &mut ApplyRequest<'_>,
+    model: &str,
     settings_path: &Path,
 ) -> Result<(), AgentSetupError> {
-    if !settings_path.is_symlink() {
-        return Ok(());
-    }
-    let resolved = soft_canonicalize(settings_path).map_err(|source| AgentSetupError::Resolve {
-        path: settings_path.to_owned(),
-        source,
-    })?;
     writeln!(
-        request.stderr,
-        "Note: {} is a symlink to {}, so your key now lives in that file; keep it out of version control.",
+        request.stdout,
+        "Configured Codex: {} now routes through {}.",
         settings_path.display(),
-        resolved.display()
+        request.saved.base_url
+    )?;
+    writeln!(
+        request.stdout,
+        "Starting model: {model}. Credential: your virtual key, stored in the private provider settings."
+    )?;
+    writeln!(
+        request.stdout,
+        "Start `codex` from any terminal. Undo with `lite unconfigure codex`."
     )?;
     Ok(())
 }
@@ -185,38 +218,6 @@ async fn apply_codex(request: &mut ApplyRequest<'_>, model: &str) -> Result<(), 
         version: request.codex_version,
     };
     configure_codex_settings(&configure, &PrivateFiles::default()).await?;
-    writeln!(
-        request.stdout,
-        "Configured Codex: {} now routes through {}.",
-        settings_path.display(),
-        request.saved.base_url
-    )?;
-    writeln!(
-        request.stdout,
-        "Starting model: {model}. Credential: your virtual key, stored in the private provider settings."
-    )?;
-    writeln!(
-        request.stdout,
-        "Start `codex` from any terminal. Undo with `lite unconfigure codex`."
-    )?;
-    note_codex_symlink(request, &settings_path)
-}
-
-fn note_codex_symlink(
-    request: &mut ApplyRequest<'_>,
-    settings_path: &Path,
-) -> Result<(), AgentSetupError> {
-    if !settings_path.is_symlink() {
-        return Ok(());
-    }
-    let resolved = soft_canonicalize(settings_path).map_err(|source| AgentSetupError::Resolve {
-        path: settings_path.to_owned(),
-        source,
-    })?;
-    writeln!(
-        request.stderr,
-        "Note: your key now lives in {}; keep it out of version control.",
-        resolved.display()
-    )?;
-    Ok(())
+    print_codex(request, model, &settings_path)?;
+    write_symlink_note(request, &settings_path, Target::Codex)
 }

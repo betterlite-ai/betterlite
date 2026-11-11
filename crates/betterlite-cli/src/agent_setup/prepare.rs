@@ -63,11 +63,13 @@ fn default_model(request: &Preparation<'_>) -> Option<String> {
 }
 
 fn connect(request: &mut Preparation<'_>) -> Result<(String, StaticToken), AgentSetupError> {
-    if request.mode.edit_connection {
-        prompt_connection(request)
-    } else {
-        connection(request)
+    if !request.mode.edit_connection {
+        return connection(request);
     }
+    let base_url = prompt_url(request)?;
+    let key = prompt_key(request, &base_url)?;
+    let credential = resolve_credential(request.context, key.as_ref())?;
+    Ok((base_url, credential))
 }
 
 async fn listed_setup(
@@ -148,12 +150,16 @@ fn choose_model(
     )?))
 }
 
-fn connection(request: &Preparation<'_>) -> Result<(String, StaticToken), AgentSetupError> {
-    let record = request.saved.as_ref();
-    let base_url = match record {
+fn offered_url(request: &Preparation<'_>) -> String {
+    match request.saved.as_ref() {
         Some(saved) if !request.context.base_url_explicit => saved.base_url.clone(),
         _ => request.context.base_url.clone(),
-    };
+    }
+}
+
+fn connection(request: &Preparation<'_>) -> Result<(String, StaticToken), AgentSetupError> {
+    let record = request.saved.as_ref();
+    let base_url = offered_url(request);
     let supplied = if request.context.api_key_from_token_file {
         None
     } else {
@@ -176,20 +182,8 @@ fn connection(request: &Preparation<'_>) -> Result<(String, StaticToken), AgentS
     Ok((base_url, credential))
 }
 
-fn prompt_connection(
-    request: &mut Preparation<'_>,
-) -> Result<(String, StaticToken), AgentSetupError> {
-    let base_url = prompt_url(request)?;
-    let key = prompt_key(request, &base_url)?;
-    let credential = resolve_credential(request.context, key.as_ref())?;
-    Ok((base_url, credential))
-}
-
 fn prompt_url(request: &mut Preparation<'_>) -> Result<String, AgentSetupError> {
-    let default_url = match request.saved.as_ref() {
-        Some(saved) if !request.context.base_url_explicit => saved.base_url.clone(),
-        _ => request.context.base_url.clone(),
-    };
+    let default_url = offered_url(request);
     let message = match request.target {
         Target::Claude => "Claude gateway URL",
         Target::Codex => "Codex gateway URL",

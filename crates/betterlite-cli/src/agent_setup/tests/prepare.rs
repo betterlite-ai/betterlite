@@ -16,16 +16,9 @@ fn claude_run<'run>(
 }
 
 fn codex_run<'run>(ctx: &'run CliContext, environment: &'run FakeEnvironment) -> Run<'run> {
-    Run {
-        context: ctx,
-        targets: vec![Target::Codex],
-        model: None,
-        default_model: false,
-        mode: APPLY,
-        environment,
-        stdin_is_terminal: false,
-        codex_version: CodexVersion::Reported(Some(SAFE_CODEX)),
-    }
+    let mut run = claude_run(ctx, environment, None);
+    run.targets = vec![Target::Codex];
+    run
 }
 
 async fn execute(

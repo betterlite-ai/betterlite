@@ -60,21 +60,15 @@ pub(crate) fn context(base_url: &str, key: Option<&str>) -> CliContext {
 }
 
 pub(crate) fn implicit_context(base_url: &str, key: Option<&str>) -> CliContext {
-    CliContext {
-        base_url: base_url.to_owned(),
-        base_url_explicit: false,
-        api_key: key.map(secret),
-        api_key_from_token_file: false,
-    }
+    let mut result = context(base_url, key);
+    result.base_url_explicit = false;
+    result
 }
 
 pub(crate) fn token_file_context(base_url: &str, key: Option<&str>) -> CliContext {
-    CliContext {
-        base_url: base_url.to_owned(),
-        base_url_explicit: true,
-        api_key: key.map(secret),
-        api_key_from_token_file: true,
-    }
+    let mut result = context(base_url, key);
+    result.api_key_from_token_file = true;
+    result
 }
 
 pub(crate) struct FakeEnvironment {
@@ -204,17 +198,18 @@ struct ModelBody {
     source_model: Option<String>,
 }
 
+impl From<ListedModel> for ModelBody {
+    fn from(model: ListedModel) -> Self {
+        Self {
+            id: model.id,
+            source_model: model.source_model,
+        }
+    }
+}
+
 pub(crate) fn listing(models: &[(&str, Option<&str>)]) -> String {
-    let body = ListingBody {
-        data: models
-            .iter()
-            .map(|(id, source)| ModelBody {
-                id: (*id).to_owned(),
-                source_model: (*source).map(str::to_owned),
-            })
-            .collect(),
-    };
-    serde_json::to_string(&body).unwrap()
+    let data: Vec<ModelBody> = listed(models).into_iter().map(ModelBody::from).collect();
+    serde_json::to_string(&ListingBody { data }).unwrap()
 }
 
 pub(crate) fn listed(models: &[(&str, Option<&str>)]) -> Vec<ListedModel> {
@@ -269,6 +264,21 @@ impl ScriptedPrompter {
             after_url: None,
         }
     }
+
+    fn answer(&mut self, call: Call) -> Result<Reply, AgentSetupError> {
+        self.calls.push(call);
+        self.replies
+            .pop_front()
+            .ok_or(AgentSetupError::ListingTaskStopped)
+    }
+}
+
+fn model_call(message: &str, choices: &[String], selected: usize) -> Call {
+    Call::Model {
+        message: message.to_owned(),
+        choices: choices.to_vec(),
+        selected,
+    }
 }
 
 impl Prompter for ScriptedPrompter {
@@ -278,14 +288,16 @@ impl Prompter for ScriptedPrompter {
         defaults: &[Target],
         on_empty: &str,
     ) -> Result<Vec<Target>, AgentSetupError> {
-        self.calls.push(Call::Targets {
+        let call = Call::Targets {
             message: message.to_owned(),
             defaults: defaults.to_vec(),
             on_empty: on_empty.to_owned(),
-        });
-        match self.replies.pop_front() {
-            Some(Reply::Targets(targets)) => Ok(targets),
-            _other => Err(AgentSetupError::ListingTaskStopped),
+        };
+        match self.answer(call)? {
+            Reply::Targets(targets) => Ok(targets),
+            _unused @ (Reply::Model(_) | Reply::Url(_) | Reply::Secret(_)) => {
+                Err(AgentSetupError::ListingTaskStopped)
+            }
         }
     }
 
@@ -295,38 +307,41 @@ impl Prompter for ScriptedPrompter {
         choices: &[String],
         selected: usize,
     ) -> Result<String, AgentSetupError> {
-        self.calls.push(Call::Model {
-            message: message.to_owned(),
-            choices: choices.to_vec(),
-            selected,
-        });
-        match self.replies.pop_front() {
-            Some(Reply::Model(model)) => Ok(model),
-            _other => Err(AgentSetupError::ListingTaskStopped),
+        let call = model_call(message, choices, selected);
+        match self.answer(call)? {
+            Reply::Model(model) => Ok(model),
+            _unused @ (Reply::Targets(_) | Reply::Url(_) | Reply::Secret(_)) => {
+                Err(AgentSetupError::ListingTaskStopped)
+            }
         }
     }
 
     fn prompt_url(&mut self, message: &str, default: &str) -> Result<String, AgentSetupError> {
-        self.calls.push(Call::Url {
+        let call = Call::Url {
             message: message.to_owned(),
             default: default.to_owned(),
-        });
+        };
+        let reply = self.answer(call);
         if let Some(callback) = self.after_url.as_mut() {
             callback();
         }
-        match self.replies.pop_front() {
-            Some(Reply::Url(url)) => Ok(url),
-            _other => Err(AgentSetupError::ListingTaskStopped),
+        match reply? {
+            Reply::Url(url) => Ok(url),
+            _unused @ (Reply::Targets(_) | Reply::Model(_) | Reply::Secret(_)) => {
+                Err(AgentSetupError::ListingTaskStopped)
+            }
         }
     }
 
     fn prompt_secret(&mut self, message: &str) -> Result<String, AgentSetupError> {
-        self.calls.push(Call::Secret {
+        let call = Call::Secret {
             message: message.to_owned(),
-        });
-        match self.replies.pop_front() {
-            Some(Reply::Secret(value)) => Ok(value),
-            _other => Err(AgentSetupError::ListingTaskStopped),
+        };
+        match self.answer(call)? {
+            Reply::Secret(value) => Ok(value),
+            _unused @ (Reply::Targets(_) | Reply::Model(_) | Reply::Url(_)) => {
+                Err(AgentSetupError::ListingTaskStopped)
+            }
         }
     }
 }
