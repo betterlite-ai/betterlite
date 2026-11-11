@@ -120,7 +120,7 @@ def filter_outcome(config: BedrockVectorStoreConfig, value: Json, *, nested: boo
 def url_outcome(config: BedrockVectorStoreConfig, scenario: UrlScenario) -> Json:
     with environment(scenario.environment):
         try:
-            url = config.get_complete_url(
+            url = config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L191
                 api_base=scenario.api_base, litellm_params=scenario.litellm_params
             )
         except ValueError:
@@ -129,7 +129,7 @@ def url_outcome(config: BedrockVectorStoreConfig, scenario: UrlScenario) -> Json
 
 
 def retrieve_url(config: BedrockVectorStoreConfig, supplied: Input) -> Json:
-    headers: Object = config.validate_environment(
+    headers: Object = config.validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L186
         headers=dict(supplied.headers), litellm_params=None  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L186
     )
     return {
@@ -199,7 +199,7 @@ def decoded_responses(config: BedrockVectorStoreConfig, supplied: Input) -> Json
 def unsupported_create(config: BedrockVectorStoreConfig) -> Json:
     request_failed = False
     try:
-        config.transform_create_vector_store_request(
+        config.transform_create_vector_store_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L370
             vector_store_create_optional_params={},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L370
             api_base=ENDPOINT,
         )
@@ -222,7 +222,7 @@ def option_mapping(config: BedrockVectorStoreConfig, supplied: Input) -> Json:
     for scenario in supplied.options:
         optional_params: Object = dict(scenario.optional_params)
         try:
-            mapped: Object = config.map_openai_params(
+            mapped: Object = config.map_openai_params(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L155
                 non_default_params=scenario.non_default_params,
                 optional_params=optional_params,
                 drop_params=False,
