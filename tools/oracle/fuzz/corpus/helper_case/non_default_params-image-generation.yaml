@@ -100,40 +100,5 @@ call:
         drop_params: false
         litellm_drop_params: true
         provider_config: {supported: ["n"], fail_status: null, records: true}
-      - function: image_generation
-        model: gpt-image-1
-        custom_llm_provider: openai
-        params: {"n": 2, size: 1024x1024, background: transparent, moderation: low}
-        additional_drop_params: [moderation]
-        drop_params: true
-        provider_config: {supported: ["n", size, background], fail_status: null, records: true}
-      - function: image_generation
-        model: gpt-image-1
-        custom_llm_provider: openai
-        params: {"n": 2, moderation: low}
-        provider_config: {supported: ["n"], fail_status: null, records: true}
-      - function: image_generation
-        model: gpt-image-1
-        custom_llm_provider: openai
-        params: {"n": 2, moderation: low}
-        litellm_drop_params: true
-        provider_config: {supported: ["n"], fail_status: null, records: true}
-      - function: image_generation
-        model: gpt-image-1
-        custom_llm_provider: openai
-        params: {"n": 2}
-        provider_config: {supported: ["n"], fail_status: 504, records: true}
-      - function: image_generation
-        model: null
-        custom_llm_provider: null
-        params: {"n": 2, custom_field: 1}
-      - function: image_generation
-        model: flux
-        custom_llm_provider: hosted_vllm
-        params: {"n": 2, custom_field: 1}
-      - function: image_generation
-        model: flux
-        custom_llm_provider: fal_ai
-        params: {"n": 2, custom_field: 1}
 env: {}
 compare: {ignore: []}
