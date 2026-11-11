@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use tokio::time::timeout;
 
-use super::support::{
-    Reply, Rig, audit_ids, audit_payload, log_models, model_ids, model_payload, rig,
-};
+use super::support::{Reply, Rig, audit_payload, log_models, model_payload, pending_ids, rig};
 
 const GIVE_UP: Duration = Duration::from_secs(1);
 
@@ -20,7 +18,7 @@ async fn a_cancelled_flush_keeps_the_records_and_marks_the_queue_for_retry() {
     let rig = rig(vec![Reply::token(), Reply::Pending], 3, 50_000);
     log_models(&rig, &["e1", "e2"]).await;
     cancel_flush(&rig).await;
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e1", "e2"]);
     assert!(rig.logger.model.awaiting_retry.load(Ordering::SeqCst));
 }
 
@@ -45,7 +43,7 @@ async fn delivered_halves_are_not_resubmitted_after_a_cancel() {
     )
     .await
     .expect_err("the send never finishes");
-    assert_eq!(model_ids(&rig.logger), ["e3", "e4"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e3", "e4"]);
     assert!(rig.logger.model.awaiting_retry.load(Ordering::SeqCst));
 
     rig.logger.flush_queue().await;
@@ -58,7 +56,7 @@ async fn delivered_halves_are_not_resubmitted_after_a_cancel() {
             vec!["e3", "e4"]
         ]
     );
-    assert!(model_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.model.queue).is_empty());
     assert!(!rig.logger.model.awaiting_retry.load(Ordering::SeqCst));
 }
 
@@ -77,7 +75,10 @@ async fn a_cancel_in_the_left_half_keeps_both_halves() {
     )
     .await
     .expect_err("the send never finishes");
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2", "e3", "e4"]);
+    assert_eq!(
+        pending_ids(&rig.logger.model.queue),
+        ["e1", "e2", "e3", "e4"]
+    );
     assert!(rig.logger.model.awaiting_retry.load(Ordering::SeqCst));
 }
 
@@ -92,7 +93,7 @@ async fn a_cancel_while_fetching_the_token_keeps_the_batch() {
     )
     .await
     .expect_err("the token request never finishes");
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e1", "e2"]);
     assert!(rig.logger.model.awaiting_retry.load(Ordering::SeqCst));
 }
 
@@ -109,9 +110,9 @@ async fn a_cancel_in_the_audit_send_keeps_the_audit_batch_and_the_flush_time() {
         .await;
     rig.clock.advance(30);
     cancel_flush(&rig).await;
-    assert!(model_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.model.queue).is_empty());
     assert!(!rig.logger.model.awaiting_retry.load(Ordering::SeqCst));
-    assert_eq!(audit_ids(&rig.logger), ["a1"]);
+    assert_eq!(pending_ids(&rig.logger.audit.queue), ["a1"]);
     assert!(rig.logger.audit.awaiting_retry.load(Ordering::SeqCst));
     assert_eq!(
         *rig.logger

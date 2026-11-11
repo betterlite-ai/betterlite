@@ -5,7 +5,7 @@ use rstest::rstest;
 
 use super::support::{
     AUDIT_URL, MODEL_URL, Reply, Rig, TOKEN_URL, audit_payload, capture_logs, log_models,
-    model_ids, padded_payload, rig,
+    padded_payload, pending_ids, rig,
 };
 use crate::fields::payload::StandardLoggingPayload;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
@@ -45,7 +45,7 @@ async fn a_413_splits_the_batch_in_halves() {
             .count(),
         1
     );
-    assert!(model_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.model.queue).is_empty());
     assert!(!awaiting(&rig));
 }
 
@@ -55,7 +55,7 @@ async fn a_413_on_a_single_record_drops_it_with_an_error() {
     let rig = rig(vec![Reply::token(), Reply::status(413)], 1, 50_000);
     log_models(&rig, &["e1"]).await;
     assert_eq!(rig.transport.batch_ids(), [["e1"]]);
-    assert!(model_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.model.queue).is_empty());
     assert!(!awaiting(&rig));
     assert_eq!(
         logs.count_containing("Azure Sentinel API Error - Payload too large for a single record"),
@@ -77,7 +77,7 @@ async fn a_batch_over_a_million_bytes_splits_before_any_request() {
         .async_log_model_event(Some(&padded_payload("e2", 600_000)))
         .await;
     assert_eq!(rig.transport.batch_ids(), [["e1"], ["e2"]]);
-    assert!(model_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.model.queue).is_empty());
 }
 
 fn encoded_len(first_padding: usize) -> usize {
@@ -123,13 +123,13 @@ async fn a_queue_longer_than_the_batch_size_splits_by_count() {
         50_000,
     );
     log_models(&rig, &["e1", "e2", "e3"]).await;
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2", "e3"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e1", "e2", "e3"]);
     rig.logger.flush_queue().await;
     assert_eq!(
         rig.transport.batch_ids(),
         [vec!["e1", "e2"], vec!["e1"], vec!["e2", "e3"]]
     );
-    assert!(model_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.model.queue).is_empty());
     assert!(!awaiting(&rig));
 }
 
@@ -141,7 +141,7 @@ async fn a_queue_longer_than_the_batch_size_splits_by_count() {
 async fn only_200_and_204_count_as_delivered(#[case] status: u16, #[case] delivered: bool) {
     let rig = rig(vec![Reply::token(), Reply::status(status)], 1, 50_000);
     log_models(&rig, &["e1"]).await;
-    assert_eq!(model_ids(&rig.logger).is_empty(), delivered);
+    assert_eq!(pending_ids(&rig.logger.model.queue).is_empty(), delivered);
     assert_eq!(awaiting(&rig), !delivered);
 }
 
@@ -160,7 +160,7 @@ async fn a_rejected_batch_is_kept_only_when_a_retry_can_help(
     let rig = rig(vec![Reply::token(), Reply::status(status)], 2, 50_000);
     log_models(&rig, &["e1", "e2"]).await;
     assert_eq!(
-        model_ids(&rig.logger),
+        pending_ids(&rig.logger.model.queue),
         if kept {
             vec!["e1", "e2"]
         } else {
@@ -183,7 +183,7 @@ async fn a_failed_right_half_is_requeued_and_the_delivered_left_half_is_not() {
         50_000,
     );
     log_models(&rig, &["e1", "e2", "e3", "e4"]).await;
-    assert_eq!(model_ids(&rig.logger), ["e3", "e4"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e3", "e4"]);
     assert!(awaiting(&rig));
 }
 
@@ -199,7 +199,10 @@ async fn a_failed_left_half_requeues_the_right_half_unsent() {
         rig.transport.batch_ids(),
         [vec!["e1", "e2", "e3", "e4"], vec!["e1", "e2"]]
     );
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2", "e3", "e4"]);
+    assert_eq!(
+        pending_ids(&rig.logger.model.queue),
+        ["e1", "e2", "e3", "e4"]
+    );
 }
 
 #[tokio::test]
@@ -207,7 +210,7 @@ async fn a_network_failure_keeps_the_whole_batch() {
     let (_guard, logs) = capture_logs();
     let rig = rig(vec![Reply::token(), Reply::Network], 2, 50_000);
     log_models(&rig, &["e1", "e2"]).await;
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e1", "e2"]);
     assert!(awaiting(&rig));
     assert_eq!(logs.count_containing("the batch delivery send failed"), 1);
 }
@@ -224,7 +227,10 @@ async fn a_refused_token_keeps_the_batch_only_when_a_retry_can_help(
     let rig = rig(vec![Reply::status(status)], 2, 50_000);
     log_models(&rig, &["e1", "e2"]).await;
     assert_eq!(rig.transport.urls(), [TOKEN_URL]);
-    assert_eq!(model_ids(&rig.logger).len(), if kept { 2 } else { 0 });
+    assert_eq!(
+        pending_ids(&rig.logger.model.queue).len(),
+        if kept { 2 } else { 0 }
+    );
     assert_eq!(awaiting(&rig), kept);
 }
 
@@ -233,7 +239,7 @@ async fn an_unreachable_token_endpoint_keeps_the_batch() {
     let (_guard, logs) = capture_logs();
     let rig = rig(vec![Reply::Network], 2, 50_000);
     log_models(&rig, &["e1", "e2"]).await;
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e1", "e2"]);
     assert!(awaiting(&rig));
     assert_eq!(
         logs.count_containing("Azure Sentinel Error getting OAuth token"),
@@ -245,7 +251,7 @@ async fn an_unreachable_token_endpoint_keeps_the_batch() {
 async fn a_token_without_an_access_token_keeps_the_batch() {
     let rig = rig(vec![Reply::body(200, "{}")], 2, 50_000);
     log_models(&rig, &["e1", "e2"]).await;
-    assert_eq!(model_ids(&rig.logger), ["e1", "e2"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["e1", "e2"]);
     assert!(awaiting(&rig));
 }
 
@@ -259,7 +265,7 @@ async fn a_successful_flush_clears_the_retry_flag() {
     log_models(&rig, &["e1", "e2"]).await;
     assert!(awaiting(&rig));
     rig.logger.flush_queue().await;
-    assert!(model_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.model.queue).is_empty());
     assert!(!awaiting(&rig));
 }
 

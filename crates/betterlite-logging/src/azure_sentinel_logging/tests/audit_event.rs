@@ -2,9 +2,7 @@ use std::sync::atomic::Ordering;
 
 use betterlite_models::decisions::Json;
 
-use super::support::{
-    AUDIT_URL, Reply, TOKEN_URL, audit_ids, audit_payload, model_ids, model_payload, rig,
-};
+use super::support::{AUDIT_URL, Reply, TOKEN_URL, audit_payload, model_payload, pending_ids, rig};
 
 #[tokio::test]
 async fn audit_events_queue_apart_from_model_events() {
@@ -15,8 +13,8 @@ async fn audit_events_queue_apart_from_model_events() {
     rig.logger
         .async_log_model_event(Some(&model_payload("m1", false)))
         .await;
-    assert_eq!(audit_ids(&rig.logger), ["a1"]);
-    assert_eq!(model_ids(&rig.logger), ["m1"]);
+    assert_eq!(pending_ids(&rig.logger.audit.queue), ["a1"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["m1"]);
 }
 
 #[tokio::test]
@@ -29,7 +27,7 @@ async fn audit_events_send_at_the_batch_size_to_the_audit_stream() {
     rig.logger
         .async_log_audit_log_event(audit_payload("a2"))
         .await;
-    assert!(audit_ids(&rig.logger).is_empty());
+    assert!(pending_ids(&rig.logger.audit.queue).is_empty());
     assert_eq!(rig.transport.urls(), [TOKEN_URL, AUDIT_URL]);
     assert_eq!(rig.transport.batch_ids(), [["a1", "a2"]]);
 }
@@ -72,5 +70,5 @@ async fn audit_events_wait_for_a_retry_independently_of_model_events() {
         .async_log_audit_log_event(audit_payload("a2"))
         .await;
     assert_eq!(rig.transport.calls().len(), 2);
-    assert_eq!(audit_ids(&rig.logger), ["a1", "a2"]);
+    assert_eq!(pending_ids(&rig.logger.audit.queue), ["a1", "a2"]);
 }

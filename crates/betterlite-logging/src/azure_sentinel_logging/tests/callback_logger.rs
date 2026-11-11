@@ -5,7 +5,7 @@ use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    MODEL_URL, Reply, TOKEN_URL, event, model_ids, model_payload, rig, timed_rig,
+    MODEL_URL, Reply, TOKEN_URL, event, model_payload, pending_ids, rig, timed_rig,
 };
 use crate::batch::logger::BatchSettings;
 use crate::callback_logger::CallbackLogger;
@@ -29,7 +29,7 @@ async fn callback_logger_reaches_the_async_events() {
         .async_log_failure_event(event(model_payload("two", true)))
         .await
         .expect("the failure event is accepted");
-    assert_eq!(model_ids(&rig.logger), ["one", "two"]);
+    assert_eq!(pending_ids(&rig.logger.model.queue), ["one", "two"]);
 }
 
 #[tokio::test]

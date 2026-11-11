@@ -17,7 +17,12 @@ use super::error::SentinelError;
 use super::logger::AzureSentinelLogger;
 
 pub const MAX_PAYLOAD_SIZE_BYTES: usize = 1_000_000;
-const SUCCESS_STATUS_CODES: [u16; 2] = [200, 204];
+const DELIVERY: DeliverySettings<'static> = DeliverySettings {
+    success_status_codes: &[200, 204],
+    policy: RequeuePolicy::Undelivered,
+    integration_name: "Azure Sentinel",
+    drop_error_message: "Azure Sentinel API Error - Payload too large for a single record",
+};
 
 pub(crate) struct SentinelBatch<'logger> {
     pub(crate) logger: &'logger AzureSentinelLogger,
@@ -131,18 +136,6 @@ impl<E: Serialize + Clone + Send + Sync> BatchDelivery<E> for SentinelBatch<'_> 
             batch: self,
             headers,
         };
-        send_batch_with_413_split(
-            &sender,
-            batch,
-            DeliverySettings {
-                success_status_codes: &SUCCESS_STATUS_CODES,
-                policy: RequeuePolicy::Undelivered,
-                integration_name: "Azure Sentinel",
-                drop_error_message:
-                    "Azure Sentinel API Error - Payload too large for a single record",
-            },
-            settled,
-        )
-        .await
+        send_batch_with_413_split(&sender, batch, DELIVERY, settled).await
     }
 }

@@ -19,7 +19,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use crate::azure_sentinel_logging::audit::StandardAuditLogPayload;
 use crate::azure_sentinel_logging::logger::{AzureSentinelLogger, SentinelDeps};
 use crate::azure_sentinel_logging::settings::{SentinelInit, SentinelSettings};
-use crate::batch::logger::BatchSettings;
+use crate::batch::logger::{BatchQueue, BatchSettings};
 use crate::callback_logger::event::LoggerEvent;
 use crate::datadog_logging::clock::Clock;
 use crate::datadog_logging::transport::{
@@ -379,43 +379,47 @@ pub(super) async fn log_audits(rig: &Rig, ids: &[&str]) {
     }
 }
 
-pub(super) fn arrive_models_during_the_next_send(rig: &Rig, ids: &[&str]) {
-    let queue = rig.logger.model.queue.clone();
+pub(super) fn arrive_during_the_next_send<E>(
+    rig: &Rig,
+    queue: &BatchQueue<E>,
+    ids: &[&str],
+    record: fn(&str) -> E,
+) where
+    E: Send + 'static,
+{
+    let arrivals = queue.clone();
     let arriving: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
     rig.transport.on_next_batch(Box::new(move || {
         for id in &arriving {
-            let _depth = queue.enqueue(model_payload(id, false));
+            let _depth = arrivals.enqueue(record(id));
         }
     }));
 }
 
-pub(super) fn arrive_audits_during_the_next_send(rig: &Rig, ids: &[&str]) {
-    let queue = rig.logger.audit.queue.clone();
-    let arriving: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
-    rig.transport.on_next_batch(Box::new(move || {
-        for id in &arriving {
-            let _depth = queue.enqueue(audit_payload(id));
-        }
-    }));
+pub(super) trait HasId {
+    fn id(&self) -> &str;
 }
 
-pub(super) fn model_ids(logger: &AzureSentinelLogger) -> Vec<String> {
-    logger
-        .model
-        .queue
-        .pending()
-        .into_iter()
-        .map(|payload| payload.id)
-        .collect()
+impl HasId for StandardLoggingPayload {
+    fn id(&self) -> &str {
+        &self.id
+    }
 }
 
-pub(super) fn audit_ids(logger: &AzureSentinelLogger) -> Vec<String> {
-    logger
-        .audit
-        .queue
+impl HasId for StandardAuditLogPayload {
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+pub(super) fn pending_ids<E>(queue: &BatchQueue<E>) -> Vec<String>
+where
+    E: Clone + HasId,
+{
+    queue
         .pending()
-        .into_iter()
-        .map(|payload| payload.id)
+        .iter()
+        .map(|record| record.id().to_owned())
         .collect()
 }
 
