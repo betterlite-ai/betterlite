@@ -170,3 +170,13 @@ fn no_warning_is_logged_while_the_budget_lasts() {
     assert_eq!(apply(input, r#"[{"role": "user"}]"#, 4, false), expected);
     assert!(events.lock().unwrap().is_empty());
 }
+
+#[test]
+fn a_full_budget_warns_even_when_the_point_targets_nothing() {
+    let (events, _captured) = capture_warnings();
+    assert_eq!(
+        apply(FOUR_MARKS, r#"[{"role": "system"}]"#, 4, false),
+        json(FOUR_MARKS)
+    );
+    assert_eq!(events.lock().unwrap().len(), 1);
+}
