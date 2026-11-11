@@ -1,0 +1,27 @@
+kind: helper
+name: cache-accounting-request-extraction
+call:
+  b4123:
+    operation: request_extraction
+    probes:
+      - {request_kwargs: {model: gpt-5.6}}
+      - {request_kwargs: []}
+      - {request_kwargs: null}
+      - {request_kwargs: {model: null}}
+      - {request_kwargs: {proxy_server_request: {headers: {user-agent: claude-cli/2.0}}}}
+      - {request_kwargs: {proxy_server_request: {headers: {User-Agent: claude-cli/2.0}}}}
+      - {request_kwargs: {proxy_server_request: {headers: {USER-AGENT: first, user-agent: second}}}}
+      - {request_kwargs: {proxy_server_request: {headers: {x-api-key: k, user-agent: ua}}}}
+      - {request_kwargs: {proxy_server_request: {headers: {user-agent: 7}}}}
+      - {request_kwargs: {proxy_server_request: {}}}
+      - {request_kwargs: {proxy_server_request: {headers: x}}}
+      - {request_kwargs: {proxy_server_request: 5}}
+      - {request_kwargs: {}}
+      - {request_kwargs: {system: a system prompt}}
+      - {request_kwargs: {system: [{type: text, text: a}, {type: text, text: b}]}}
+      - {request_kwargs: {system: []}}
+      - {request_kwargs: {system: null}}
+      - {request_kwargs: {system: {text: a}}}
+      - {request_kwargs: {system: 5}}
+env: {}
+compare: {ignore: []}
