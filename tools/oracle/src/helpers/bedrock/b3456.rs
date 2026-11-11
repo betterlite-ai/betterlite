@@ -92,8 +92,7 @@ fn detect(
 fn bucket(runtime: &Runtime, cases: &[Bucket]) -> HelperResult {
     let mut buckets: Vec<Value> = Vec::with_capacity(cases.len());
     for case in cases {
-        let harness =
-            Harness::build(&case.vector, &case.environment, vec![answer(String::new())])?;
+        let harness = Harness::build(&case.vector, &case.environment, vec![answer(String::new())])?;
         let clients = harness.clients();
         let mut state = harness.state;
         let name = runtime
@@ -116,7 +115,9 @@ fn create_knowledge_base(runtime: &Runtime, case: &KnowledgeBase) -> HelperResul
         &case.environment,
         vec![
             answer(json!({"knowledgeBase": {"knowledgeBaseId": id}}).to_string()),
-            answer(json!({"knowledgeBase": {"knowledgeBaseId": id, "status": "ACTIVE"}}).to_string()),
+            answer(
+                json!({"knowledgeBase": {"knowledgeBaseId": id, "status": "ACTIVE"}}).to_string(),
+            ),
         ],
     )?;
     let clients = harness.clients();
@@ -181,7 +182,10 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = Builder::new_current_thread().enable_all().build().or_value_error()?;
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .or_value_error()?;
         match input {
             Input::Principal { cases } => Ok(principals(cases)),
             Input::Detect {
