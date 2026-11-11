@@ -147,6 +147,7 @@ fn rejects_negative_timeout(result: &Result<Deployment, DeploymentError>) {
 #[case::bad_api_base(params(&[("model", text("m")), ("api_base", text("not a url"))]), rejects_bad_api_base)]
 #[case::bad_timeout(params(&[("model", text("m")), ("timeout", text("60"))]), rejects_bad_timeout)]
 #[case::negative_timeout(params(&[("model", text("m")), ("timeout", number(-1))]), rejects_negative_timeout)]
+#[case::string_flag_drop_params(params(&[("model", text("m")), ("drop_params", text("true"))]), keeps_flag_drop_params)]
 fn provider_framework_tests_behavior(
     #[case] given: IndexMap<String, JsonValue>,
     #[case] check: fn(&Result<Deployment, DeploymentError>),
