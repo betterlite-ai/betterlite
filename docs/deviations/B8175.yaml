@@ -1,0 +1,8 @@
+task: B8175
+deviations:
+  - what: An embedding reply that is not JSON, or has a field of the wrong type, fails with a typed VolcEngineError, status 500.
+    why: LiteLLM raises a raw ValueError there. 500 is its generic status for an unclassified exception (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/embedding/transformation.py
+  - what: A reply whose model is null or not a string, whose data entries are not complete embedding records, or whose token counters fall outside u32 fails with VolcEngineError status 500 instead of being forwarded.
+    why: LiteLLM keeps the data list as the raw JSON it received, reports a null model as null, and accepts any Python int for a counter. betterlite's shared EmbeddingResponse types those fields, and no working provider reply needs the loose shape, so the typed error names the offending field instead of returning a body its own type cannot hold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/embedding/transformation.py#L170-L182
