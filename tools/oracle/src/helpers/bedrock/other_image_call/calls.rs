@@ -51,7 +51,7 @@ pub(crate) struct Probe {
     pub(crate) model: String,
     pub(crate) prompt: String,
     pub(crate) optional_params: Map<String, Value>,
-    pub(crate) extra_headers: Option<Vec<(String, String)>>,
+    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
     pub(crate) api_base: Option<String>,
     pub(crate) api_key: Option<String>,
     pub(crate) configured_bearer_token: Option<String>,
@@ -85,10 +85,4 @@ impl Default for Probe {
             created: 42,
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Probes {
-    pub(crate) probes: Vec<Probe>,
 }

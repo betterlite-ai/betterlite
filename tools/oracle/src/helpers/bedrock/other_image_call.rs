@@ -19,22 +19,29 @@ mod fixtures;
 mod handlers;
 mod tests;
 
-use calls::{Probe, Probes, Supplied};
+use calls::{Probe, Supplied};
 use fixtures::{Client, Factory, Source};
 use handlers::{Shape, observe};
 
 pub(crate) struct Op;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Input {
-    ImageFamilyDispatch(Probes),
-    ImageRuntimeUrl(Probes),
-    SignedJsonBody(Probes),
-    ExtraHeadersOutsideBody(Probes),
-    Base64ImageResult(Probes),
-    ImageHttpError(Probes),
-    ImageTransportSelection(Probes),
+pub(crate) enum Function {
+    ImageFamilyDispatch,
+    ImageRuntimeUrl,
+    SignedJsonBody,
+    ExtraHeadersOutsideBody,
+    Base64ImageResult,
+    ImageHttpError,
+    ImageTransportSelection,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    function: Function,
+    probes: Vec<Probe>,
 }
 
 #[derive(Debug, Error)]
@@ -61,18 +68,16 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let (probes, shape) = match input {
-            Input::ImageFamilyDispatch(probes) => (probes, Shape::Dispatch),
-            Input::ImageRuntimeUrl(probes) => (probes, Shape::Runtime),
-            Input::SignedJsonBody(probes) | Input::ExtraHeadersOutsideBody(probes) => {
-                (probes, Shape::Prepare)
-            }
-            Input::Base64ImageResult(probes) => (probes, Shape::Result),
-            Input::ImageHttpError(probes) => (probes, Shape::Error),
-            Input::ImageTransportSelection(probes) => (probes, Shape::Selection),
+        let shape = match input.function {
+            Function::ImageFamilyDispatch => Shape::Dispatch,
+            Function::ImageRuntimeUrl => Shape::Runtime,
+            Function::SignedJsonBody | Function::ExtraHeadersOutsideBody => Shape::Prepare,
+            Function::Base64ImageResult => Shape::Result,
+            Function::ImageHttpError => Shape::Error,
+            Function::ImageTransportSelection => Shape::Selection,
         };
-        let mut results = Vec::with_capacity(probes.probes.len());
-        for probe in &probes.probes {
+        let mut results = Vec::with_capacity(input.probes.len());
+        for probe in &input.probes {
             results.push(observe(probe, &shape)?);
         }
         Ok::<Value, Failure>(Value::Array(results)).map_err(Box::<HelperError>::from)
@@ -85,6 +90,7 @@ pub(crate) struct Harness<'probe> {
     api_key: Option<SecretString>,
     bearer: Option<SecretString>,
     now: SystemTime,
+    extra_headers: Option<Vec<(String, String)>>,
     pub(crate) source: Source,
     pub(crate) factory: Factory,
     supplied: Option<Client>,
@@ -113,6 +119,12 @@ impl<'probe> Harness<'probe> {
             now: UNIX_EPOCH
                 .checked_add(Duration::from_secs(probe.now))
                 .ok_or(Failure::Shape)?,
+            extra_headers: probe.extra_headers.as_ref().map(|headers| {
+                headers
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect()
+            }),
             source: Source::new(probe),
             factory: Factory::new(&probe.reply),
             supplied: (probe.supplied != Supplied::None).then(|| Client::new(&probe.reply)),
@@ -125,7 +137,7 @@ impl<'probe> Harness<'probe> {
             prompt: &self.probe.prompt,
             optional_params: self.params.clone(),
             api_base: self.probe.api_base.as_deref(),
-            extra_headers: self.probe.extra_headers.as_deref(),
+            extra_headers: self.extra_headers.as_deref(),
             api_key: self.api_key.as_ref(),
             timeout: self.probe.timeout_ms.map(Duration::from_millis),
             aimg_generation: self.probe.aimg_generation,

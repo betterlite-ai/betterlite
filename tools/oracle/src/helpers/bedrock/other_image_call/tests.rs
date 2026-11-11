@@ -38,7 +38,7 @@ fn helper_seeds_select_bedrock_other_image_call() {
 #[test]
 fn a_provider_status_reaches_the_error_value() {
     let input: Input = serde_json::from_str(
-        r#"{"image_http_error":{"probes":[{"credentials":{"access_key_id":"AKIDEXAMPLE","secret_access_key":"secret"},"optional_params":{"aws_region_name":"us-east-1"},"reply":{"status":429,"body":"{\"message\":\"slow down\"}"}}]}}"#,
+        r#"{"function":"image_http_error","probes":[{"credentials":{"access_key_id":"AKIDEXAMPLE","secret_access_key":"secret"},"optional_params":{"aws_region_name":"us-east-1"},"reply":{"status":429,"body":"{\"message\":\"slow down\"}"}}]}"#,
     )
     .unwrap();
     let value = Op::run(&input).unwrap();

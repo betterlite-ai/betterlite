@@ -205,6 +205,7 @@ fn image_call_cases(#[case] name: &str) {
         }
         "signed_json_body" => {
             signed_body_and_log();
+            pre_call_log();
             bearer_authorization();
             signed_authorization_precedence();
         }
@@ -269,10 +270,10 @@ fn family_reply_records() {
     assert_eq!(stability1.response().data[0].b64_json, "czE=");
     assert_eq!(
         field(&stability1.body(), "text_prompts"),
-        &Field::from(params(vec![
+        &Field::List(vec![Field::from(params(vec![
             ("text", Field::from("a cat")),
             ("weight", Field::Int(1)),
-        ]))
+        ]))])
     );
 }
 
@@ -404,16 +405,33 @@ fn signed_body_and_log() {
         signed.text(),
         r#"{"taskType": "TEXT_IMAGE", "textToImageParams": {"text": "a cat"}, "imageGenerationConfig": {}}"#
     );
-    let details = &signed.state.model_call_details;
+}
+
+fn pre_call_log() {
+    let signed = run(
+        call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
+        Reply::ok(r#"{"images": []}"#),
+        Some(ClientKind::Sync),
+    );
+    // a failed status skips post_call, so the details still hold what pre_call recorded
+    let logged = run(
+        call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
+        Reply::status(500, &[], "{}"),
+        Some(ClientKind::Sync),
+    );
+    let details = &logged.state.model_call_details;
     assert_eq!(details.get("input"), Some(&Json::Text("a cat".to_owned())));
     let Some(Json::Object(arguments)) = details.get("additional_args") else {
         panic!("pre_call records its additional arguments");
     };
     assert_eq!(
         arguments.get("api_base"),
-        Some(&Json::Text(signed.posted().url.clone()))
+        Some(&Json::Text(logged.posted().url.clone()))
     );
-    assert!(arguments.get("headers").is_some());
+    assert!(matches!(
+        arguments.get("headers"),
+        Some(Json::Object(logged_headers)) if logged_headers.contains_key("Content-Type")
+    ));
     assert_eq!(
         arguments
             .get("complete_input_dict")
