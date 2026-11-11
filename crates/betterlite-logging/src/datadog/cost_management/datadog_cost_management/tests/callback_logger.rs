@@ -60,6 +60,31 @@ async fn callback_logger_failure_events_do_not_queue() {
 }
 
 #[tokio::test]
+async fn callback_logger_drops_the_oldest_record_past_the_queue_cap() {
+    let mut init = support::init(&[]);
+    init.max_queue_size = Some(1);
+    let fixture = Fixture::new(&[]).with_init(init);
+    let logger = fixture.build();
+    logger
+        .async_log_success_event(event(support::default_payload().build()))
+        .await
+        .expect("the first event is recorded");
+    let second = support::default_payload()
+        .set("/id", support::text("chatcmpl-2"))
+        .build();
+    logger
+        .async_log_success_event(event(second))
+        .await
+        .expect("the second event is recorded");
+    assert_eq!(logger.queue_length(), 1);
+    let pending = logger.queue.pending();
+    assert_eq!(
+        pending.first().map(|payload| payload.id.as_str()),
+        Some("chatcmpl-2")
+    );
+}
+
+#[tokio::test]
 async fn callback_logger_success_events_flush_at_the_batch_size() {
     let mut init = support::init(&[]);
     init.batch_size = Some(1);

@@ -60,6 +60,18 @@ async fn callback_logger_refuses_an_invalid_batch_size() {
     assert!(matches!(error, CatalogError::Init { message } if message.contains("batch_size")));
 }
 
+#[test]
+fn callback_logger_rejects_a_cost_tag_keys_yaml_list() {
+    let source =
+        "callback_settings:\n  datadog_cost_management:\n    cost_tag_keys:\n      - capability\n";
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect_err("a list is not a scalar callback setting");
+    assert!(error.to_string().contains("cost_tag_keys"));
+}
+
 #[tokio::test(start_paused = true)]
 async fn callback_logger_flush_loop_stops_on_shutdown() {
     let inputs = inputs("");

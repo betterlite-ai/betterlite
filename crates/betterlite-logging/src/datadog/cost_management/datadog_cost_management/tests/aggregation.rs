@@ -82,6 +82,13 @@ fn aggregation_names_a_missing_provider_unknown() {
 }
 
 #[test]
+fn aggregation_skips_an_undatable_record() {
+    let late = support::default_payload().set("/startTime", support::number(9.3e18));
+    let found = entries(&[&late]);
+    assert!(found.is_empty());
+}
+
+#[test]
 fn aggregation_formats_the_period_in_the_injected_timezone() {
     let late = support::default_payload().set("/startTime", support::number(1_704_065_400.0));
     let settings = support::settings(&support::init(&[]));
