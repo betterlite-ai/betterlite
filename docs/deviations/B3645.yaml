@@ -1,0 +1,17 @@
+task: B3645
+deviations:
+  - what: Media length is read from the container headers (WAV fmt/data, FLAC STREAMINFO, the Ogg last page granule, MP3 Xing/Info or VBRI frame count) with Rust crates instead of libsndfile; an MP3 with no Xing/Info or VBRI header has its duration estimated from the average length of its first frames and the byte length. Ogg Opus files, which libsndfile 1.2 can read, give None and are charged the maximum.
+    why: libsndfile has no maintained pure-Rust equivalent, so betterlite uses hound, claxon, ogg with lewton, and symphonia's MP3 demuxer; an Opus file is billed high rather than free.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L512-L518
+  - what: The longest-media charge uses B3644's transcribe_max_job_cost at LiteLLM's 28800 seconds, and the media length is exact Decimal arithmetic (frames divided by sample rate, then rounded up) instead of a float.
+    why: Money is Decimal in betterlite, and an exact quotient never rounds a whole number of seconds up by float error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1653
+  - what: The Last-Modified header is parsed with chrono's RFC 2822 parser, so a "-0000" zone is read as UTC.
+    why: Python's parsedate_to_datetime returns a naive datetime there and `.timestamp()` then uses the machine's local zone, so LiteLLM's result depends on where the proxy runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L494-L499
+  - what: The GetTranscriptionJob body is serialized compactly, and the media download carries a total deadline of two hours on top of the pooled client's connect and read timeouts.
+    why: docs/compatibility.md leaves json.dumps spacing open, and B173's client requires a total deadline where httpx has none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L458-L472
+  - what: A media URI that is not a URL is returned as an error and retried three times, whereas LiteLLM's httpx.URL accepts a relative string and s3_media_url returns None for it.
+    why: The task requires the unparsable case to be an error so the caller retries it; both paths end in the maximum charge, so only the retry count differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L477-L491

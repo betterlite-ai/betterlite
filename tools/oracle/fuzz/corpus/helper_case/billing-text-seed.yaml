@@ -1,0 +1,17 @@
+kind: helper
+name: billing-text-seed
+call:
+  billing_text:
+    calls:
+      - function: count_characters
+        text: "a b"
+      - function: formatted_prompt
+        call_type: completion
+        data:
+          messages: [{content: kept}]
+      - function: response_string
+        response:
+          choices:
+            - delta: tail
+env: {}
+compare: {ignore: []}

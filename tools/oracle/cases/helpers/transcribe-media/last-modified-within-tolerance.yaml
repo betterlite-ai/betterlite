@@ -1,0 +1,9 @@
+kind: helper
+name: last-modified-within-tolerance
+call:
+  b3645:
+    function: predates
+    headers: {Last-Modified: 'Wed, 21 Oct 2015 07:28:01 GMT'}
+    job_created_at: 1445412480.0
+env: {}
+compare: {ignore: []}

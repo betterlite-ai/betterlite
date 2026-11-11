@@ -1,0 +1,9 @@
+kind: helper
+name: call-setup-request-flags
+call:
+  b5367:
+    action: request_flags
+    call_type: completion
+    request: {aembedding: true, stream: true}
+env: {}
+compare: {ignore: []}
