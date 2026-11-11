@@ -440,6 +440,10 @@ fn legacy_cli_flag_precedence() {
     assert!(!resolve_v2_migration_resolver(false, Some("false")));
     assert!(!resolve_v2_migration_resolver(false, Some("")));
     assert!(!resolve_v2_migration_resolver(false, Some("on")));
+    assert!(resolve_v2_migration_resolver(false, Some("1")));
+    assert!(resolve_v2_migration_resolver(false, Some("t")));
+    assert!(resolve_v2_migration_resolver(false, Some("y")));
+    assert!(resolve_v2_migration_resolver(false, Some("yes")));
 }
 
 #[tokio::test]

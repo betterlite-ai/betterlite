@@ -247,8 +247,9 @@ async fn postgres_slow_statement_is_a_deploy_timeout() {
         let catalog = [migration("20240101000000_slow", "SELECT pg_sleep(30)")];
         let jitter = FakeJitter(0);
         let steps = database.steps(&catalog, &jitter);
+        // A generous budget lets the statement start and be canceled by statement_timeout (57014).
         let outcome = steps
-            .deploy(Duration::from_millis(250))
+            .deploy(Duration::from_secs(2))
             .await
             .expect("a typed deploy outcome");
         assert!(matches!(outcome, DeployOutcome::TimedOut));
