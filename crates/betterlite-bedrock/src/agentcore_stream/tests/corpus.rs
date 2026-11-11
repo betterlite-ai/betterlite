@@ -21,7 +21,9 @@ fn replays_the_bedrock_services_agentcore_stream_corpus() {
             let expected_ok = !name.starts_with("invalid-");
             assert_eq!(outcome.is_ok(), expected_ok, "{name}");
             if expected_ok {
-                let silent = name.starts_with("malformed-") || name.starts_with("truncated-");
+                let silent = name.starts_with("malformed-")
+                    || name.starts_with("truncated-")
+                    || matches!(name.as_str(), "boundary-empty" | "boundary-partial");
                 assert_eq!(events.is_empty(), silent, "{name}");
                 if name.starts_with("valid-") {
                     assert!(!events.is_empty(), "{name} emits an event");

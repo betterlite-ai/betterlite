@@ -10,12 +10,15 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 from unittest import mock
 
 import httpx
+import litellm
 from litellm.llms.bedrock.chat.agentcore import transformation
 from litellm.llms.bedrock.chat.agentcore.transformation import AmazonAgentCoreConfig
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import LlmProviders, ModelResponseStream, Usage
 from pydantic import BaseModel, ConfigDict
+
+litellm.suppress_debug_info = True
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
