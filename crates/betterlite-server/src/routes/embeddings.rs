@@ -7,7 +7,7 @@ use axum::{Json, Router};
 use betterlite_config::sections::mock_response::selection::resolve_mock;
 use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
-use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, provider_failure};
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
@@ -100,10 +100,7 @@ async fn embeddings(
             );
             (response_headers, Json(response)).into_response()
         }
-        Err(CallError::Route(error)) => {
-            failure(&error, &call_id, Some(deployment), &executor.redactor)
-        }
-        Err(error) => internal_failure(&error, &call_id, Some(deployment), &executor.redactor),
+        Err(error) => call_failure(&error, &call_id, Some(deployment), &executor.redactor),
     }
 }
 
@@ -141,20 +138,29 @@ fn embedding_mocks_resolve(
 }
 
 // a provider call that ends without a route error is the server's own fault, so the client sees a 500
-fn internal_failure(
+fn call_failure(
     error: &CallError<EmbeddingError>,
     call_id: &str,
     deployment: Option<&ChatDeployment>,
     redactor: &Redactor,
 ) -> Response {
-    let internal = ProviderFailure {
-        status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-        error_type: String::from("internal_server_error"),
-        param: None,
+    if let CallError::Route(route) = error {
+        return failure(route, call_id, deployment, redactor);
+    }
+    let body = ErrorBody {
+        error: ErrorObject {
+            message: redactor.redact_internal_details(&error.to_string()),
+            error_type: String::from("internal_server_error"),
+            param: None,
+            code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
+        },
     };
-    let message = redactor.redact_internal_details(&error.to_string());
-    let headers = failure_headers(None, None, call_id, deployment);
-    respond(internal, message, headers)
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        failure_headers(None, None, call_id, deployment),
+        Json(body),
+    )
+        .into_response()
 }
 
 fn failure(
@@ -239,10 +245,8 @@ fn failure_headers_for_embedding(
     call_id: &str,
     deployment: Option<&ChatDeployment>,
 ) -> HeaderMap {
-    match error {
-        EmbeddingError::Provider { response } => {
-            failure_headers(None, Some(&response.headers), call_id, deployment)
-        }
+    let upstream = match error {
+        EmbeddingError::Provider { response } => Some(&response.headers),
         EmbeddingError::Body { .. }
         | EmbeddingError::Unsupported { .. }
         | EmbeddingError::Encode { .. }
@@ -252,13 +256,9 @@ fn failure_headers_for_embedding(
         | EmbeddingError::UnsupportedProvider { .. }
         | EmbeddingError::MissingApiKey
         | EmbeddingError::Endpoint { .. }
-        | EmbeddingError::Mock { .. } => {
-            let chat_error = ChatError::UnknownModel {
-                model: String::new(),
-            };
-            failure_headers(Some(&chat_error), None, call_id, deployment)
-        }
-    }
+        | EmbeddingError::Mock { .. } => None,
+    };
+    failure_headers(None, upstream, call_id, deployment)
 }
 
 fn provider_message(status: u16, body: &[u8], fallback: &EmbeddingError) -> String {

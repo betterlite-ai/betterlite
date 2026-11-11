@@ -19,7 +19,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tower::ServiceExt as _;
 
-use super::{EmbeddingError, embedding_routes, failure, internal_failure};
+use super::{EmbeddingError, call_failure, embedding_routes, failure};
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
 
@@ -30,6 +30,7 @@ struct ErrorEnvelope {
 
 #[derive(serde::Deserialize)]
 struct ErrorFields {
+    message: String,
     #[serde(rename = "type")]
     error_type: String,
     param: Option<String>,
@@ -352,17 +353,35 @@ async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
 }
 
 #[rstest]
-#[case::mismatched_operation(CallError::Mismatched)]
-#[case::transform_retry(CallError::Operation {
-    source: OperationError::TransformRetry(TransformRetryError::Attempts { max_attempts: 0 }),
-})]
+#[case::mismatched_operation(CallError::Mismatched, 500, "internal_server_error")]
+#[case::transform_retry(
+    CallError::Operation {
+        source: OperationError::TransformRetry(TransformRetryError::Attempts { max_attempts: 0 }),
+    },
+    500,
+    "internal_server_error"
+)]
+#[case::route_error_keeps_its_own_status(
+    CallError::Route(EmbeddingError::MissingApiKey),
+    401,
+    "authentication_error"
+)]
 #[tokio::test]
-async fn provider_framework_tests_behavior(#[case] error: CallError<EmbeddingError>) {
+async fn provider_framework_tests_behavior(
+    #[case] error: CallError<EmbeddingError>,
+    #[case] status: u16,
+    #[case] error_type: &str,
+) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let response = internal_failure(&error, "call-7", None, &redactor);
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let response = call_failure(&error, "call-7", None, &redactor);
+    assert_eq!(response.status().as_u16(), status);
+    assert_eq!(
+        response.headers().get("x-litellm-call-id").unwrap(),
+        "call-7"
+    );
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let reply: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
-    assert_eq!(reply.error.error_type, "internal_server_error");
-    assert_eq!(reply.error.code, "500");
+    assert_eq!(reply.error.error_type, error_type);
+    assert_eq!(reply.error.code, status.to_string());
+    assert!(reply.error.message.contains(&error.to_string()));
 }
