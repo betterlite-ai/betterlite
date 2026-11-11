@@ -307,24 +307,17 @@ impl Logs {
     }
 }
 
-fn capture<T, F>(run: F) -> (T, Logs)
+fn capture<T, F>(level: Option<LevelFilter>, run: F) -> (T, Logs)
 where
     F: FnOnce() -> T,
 {
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
-    (with_default(subscriber, run), logs)
-}
-
-fn capture_at<T, F>(level: LevelFilter, run: F) -> (T, Logs)
-where
-    F: FnOnce() -> T,
-{
-    let logs = Logs::default();
-    let subscriber = tracing_subscriber::registry()
-        .with(level)
-        .with(logs.clone());
-    (with_default(subscriber, run), logs)
+    let value = match level {
+        Some(filter) => with_default(subscriber.with(filter), run),
+        None => with_default(subscriber, run),
+    };
+    (value, logs)
 }
 
 #[test]
@@ -450,7 +443,7 @@ async fn otel_sdk_disabled_warns_and_still_builds_the_provider(
 ) {
     let exporter = Recording::default();
     let environment = lookup(&[("OTEL_SDK_DISABLED", value)]);
-    let (tracing, logs) = capture(|| {
+    let (tracing, logs) = capture(None, || {
         build_langfuse_tracing(exporter.clone(), &Handle::current(), &spec(), &environment)
     });
     let warnings = logs.messages(Level::WARN);
@@ -468,7 +461,7 @@ async fn otel_sdk_disabled_warns_and_still_builds_the_provider(
 
 #[tokio::test]
 async fn langfuse_debug_raises_the_debug_logging_when_the_filter_allows_it() {
-    let (tracing, logs) = capture(|| {
+    let (tracing, logs) = capture(None, || {
         acquire_langfuse_tracing(
             &settings(&[("LANGFUSE_DEBUG", "true")]),
             &lookup(&[]),
@@ -488,7 +481,7 @@ async fn langfuse_debug_raises_the_debug_logging_when_the_filter_allows_it() {
 
 #[tokio::test]
 async fn langfuse_debug_reports_when_the_filter_hides_the_output() {
-    let (tracing, logs) = capture_at(LevelFilter::INFO, || {
+    let (tracing, logs) = capture(Some(LevelFilter::INFO), || {
         acquire_langfuse_tracing(
             &settings(&[("LANGFUSE_DEBUG", "true")]),
             &lookup(&[]),
