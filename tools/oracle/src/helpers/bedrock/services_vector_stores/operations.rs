@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_bedrock::vector_stores::config::{capabilities, validate_environment};
 use betterlite_bedrock::vector_stores::endpoint::{CompleteUrl, complete_url};
+use betterlite_bedrock::vector_stores::error::VectorStoreError;
 use betterlite_bedrock::vector_stores::filters::{
     map_and_or_filters, map_operator_filter, map_operator_to_aws,
 };
@@ -13,22 +14,23 @@ use serde_json::{Value, json};
 use super::responses::{
     DecodeShape, decode_responses, option_mapping, retrieval_configuration, unsupported_create,
 };
-use super::signed::sign_outcome;
 use super::{Input, Operation, UrlScenario};
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::HelperError;
 
-pub(super) fn run(input: &Input) -> HelperResult {
+pub(super) fn run(input: &Input) -> Value {
     match input.operation {
-        Operation::FilterOperatorMap => Ok(filter_operator_map(input)),
-        Operation::NestedAndOrFilters => Ok(nested_and_or_filters(input)),
+        Operation::FilterOperatorMap => filter_operator_map(input),
+        Operation::NestedAndOrFilters => {
+            json!({"filters": mapped_filters(input, map_and_or_filters)})
+        }
         Operation::KnowledgeBaseRetrieveUrl => knowledge_base_retrieve_url(input),
-        Operation::UserContext => Ok(user_context_outcome(input)),
-        Operation::LocationFileIdName => Ok(location_file_id_name(input)),
-        Operation::AttributesAndScores => Ok(decode_responses(input, DecodeShape::Full)),
-        Operation::UnsupportedCreate => Ok(unsupported_create()),
-        Operation::OptionMapping => Ok(option_mapping(input)),
-        Operation::RetrievalConfiguration => Ok(retrieval_configuration(input)),
-        Operation::KnowledgeBaseResponseError => Ok(decode_responses(input, DecodeShape::Summary)),
+        Operation::UserContext => user_context_outcome(input),
+        Operation::LocationFileIdName => location_file_id_name(input),
+        Operation::AttributesAndScores => decode_responses(input, DecodeShape::Full),
+        Operation::UnsupportedCreate => unsupported_create(),
+        Operation::OptionMapping => option_mapping(input),
+        Operation::RetrievalConfiguration => retrieval_configuration(input),
+        Operation::KnowledgeBaseResponseError => decode_responses(input, DecodeShape::Summary),
     }
 }
 
@@ -38,38 +40,29 @@ fn filter_operator_map(input: &Input) -> Value {
         .iter()
         .map(|operator| json!(map_operator_to_aws(operator)))
         .collect::<Vec<_>>();
-    let filters = input
+    json!({"operators": operators, "filters": mapped_filters(input, map_operator_filter)})
+}
+
+fn mapped_filters(
+    input: &Input,
+    mapper: fn(&Json) -> Result<Json, VectorStoreError>,
+) -> Vec<Value> {
+    input
         .filters
         .iter()
         .map(|filter| {
-            map_operator_filter(filter).map_or_else(
+            mapper(filter).map_or_else(
                 |_error| json!({"failed": true}),
                 |value| json!({"value": value}),
             )
         })
-        .collect::<Vec<_>>();
-    json!({"operators": operators, "filters": filters})
+        .collect()
 }
 
-fn nested_and_or_filters(input: &Input) -> Value {
-    let filters = input
-        .filters
-        .iter()
-        .map(|filter| {
-            map_and_or_filters(filter).map_or_else(
-                |_error| json!({"failed": true}),
-                |value| json!({"value": value}),
-            )
-        })
-        .collect::<Vec<_>>();
-    json!({"filters": filters})
-}
-
-fn knowledge_base_retrieve_url(input: &Input) -> HelperResult {
+fn knowledge_base_retrieve_url(input: &Input) -> Value {
     let urls = input.urls.iter().map(url_outcome).collect::<Vec<_>>();
-    let signed = input.sign.as_ref().map_or(Ok(Value::Null), sign_outcome)?;
     let capabilities = capabilities();
-    Ok(json!({
+    json!({
         "endpoints": capabilities.endpoints,
         "credentials": capabilities.credentials,
         "supported": capabilities.supported_params,
@@ -77,8 +70,7 @@ fn knowledge_base_retrieve_url(input: &Input) -> HelperResult {
             input.headers.iter().cloned().collect::<BTreeMap<_, _>>(),
         ),
         "urls": urls,
-        "signed": signed,
-    }))
+    })
 }
 
 fn url_outcome(scenario: &UrlScenario) -> Value {

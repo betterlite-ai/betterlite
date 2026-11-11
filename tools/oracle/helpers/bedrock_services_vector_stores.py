@@ -4,15 +4,11 @@ os.environ["LITELLM_RUST"] = "false"
 
 import json
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, TypeAlias, cast
 from unittest import mock
 
-import botocore.auth
 import httpx
 import litellm
-from botocore.credentials import Credentials
-from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.vector_stores.transformation import BedrockVectorStoreConfig
 
@@ -86,36 +82,39 @@ def to_json(value: object) -> Json:
     return cast(Json, json.loads(json.dumps(value)))
 
 
+def mapped_filters(
+    params: dict[str, Json],
+    mapper: Callable[[dict[str, object]], object],
+) -> list[Json]:
+    filters: list[Json] = []
+    for value in objects_of(params, "filters"):
+        try:
+            mapped = mapper(cast(dict[str, object], value))
+        except (KeyError, TypeError):
+            filters.append({"failed": True})
+            continue
+        filters.append({"value": to_json(mapped)})
+    return filters
+
+
 def filter_operator_map(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
     operators = [
         config._map_operator_to_aws(operator)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         for operator in texts_of(params, "operators")
     ]
-    filters: list[Json] = []
-    for value in objects_of(params, "filters"):
-        try:
-            mapped = config._map_operator_filter(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-                cast(dict[str, object], value)
-            )
-        except (KeyError, TypeError):
-            filters.append({"failed": True})
-            continue
-        filters.append({"value": to_json(cast(object, mapped))})
-    return {"operators": cast(Json, operators), "filters": filters}
+    mapper = cast(
+        Callable[[dict[str, object]], object],
+        config._map_operator_filter,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    )
+    return {"operators": cast(Json, operators), "filters": mapped_filters(params, mapper)}
 
 
 def nested_and_or_filters(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
-    filters: list[Json] = []
-    for value in objects_of(params, "filters"):
-        try:
-            mapped = config._map_and_or_filters(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-                cast(dict[str, object], value)
-            )
-        except (KeyError, TypeError):
-            filters.append({"failed": True})
-            continue
-        filters.append({"value": to_json(cast(object, mapped))})
-    return {"filters": filters}
+    mapper = cast(
+        Callable[[dict[str, object]], object],
+        config._map_and_or_filters,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    )
+    return {"filters": mapped_filters(params, mapper)}
 
 
 def url_outcome(config: BedrockVectorStoreConfig, scenario: Json) -> Json:
@@ -141,47 +140,8 @@ def headers_outcome(config: BedrockVectorStoreConfig, params: dict[str, Json]) -
     return to_json(cast(object, resolved))
 
 
-def sign_outcome(config: BedrockVectorStoreConfig, scenario: Json) -> Json:
-    fields = object_of(scenario, "sign")
-    headers = pairs_of(fields.get("headers") or [], "headers")
-    optional_params = object_of(fields.get("optional_params") or {}, "optional_params")
-    request_data = object_of(fields.get("request_data") or {}, "request_data")
-    api_base = text_of(fields.get("api_base"), "api_base")
-    api_key = optional_text(fields.get("api_key"), "api_key")
-    keys = object_of(fields.get("credentials"), "credentials")
-    credentials = Credentials(
-        access_key=text_of(keys.get("access_key_id"), "access_key_id"),
-        secret_key=text_of(keys.get("secret_access_key"), "secret_access_key"),
-        token=optional_text(keys.get("session_token"), "session_token"),
-    )
-    frozen = datetime.fromtimestamp(
-        integer_of(fields.get("now"), "now"), tz=UTC
-    ).replace(tzinfo=None)
-    try:
-        with (
-            mock.patch.dict(os.environ, {}, clear=True),
-            mock.patch.object(botocore.auth, "get_current_datetime", return_value=frozen),
-            mock.patch.object(BaseAWSLLM, "resolve_credentials", return_value=credentials),
-        ):
-            signed_headers, body = config.sign_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-                headers=cast(dict[str, object], headers),
-                optional_params=cast(dict[str, object], optional_params),
-                request_data=cast(dict[str, object], request_data),
-                api_base=api_base,
-                api_key=api_key,
-            )
-    except Exception:  # noqa: BLE001 - a case compares the failure category, not the Python class
-        return {"failed": True}
-    text = body.decode() if isinstance(body, bytes) else body
-    signed = cast(dict[str, str], signed_headers)
-    pairs = sorted([[name.lower(), value] for name, value in signed.items()])
-    return {"url": api_base, "headers": cast(Json, pairs), "body": text}
-
-
 def knowledge_base_retrieve_url(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
     urls = [url_outcome(config, scenario) for scenario in objects_of(params, "urls")]
-    sign = params.get("sign")
-    signed = None if sign is None else sign_outcome(config, sign)
     return {
         "endpoints": to_json(config.get_vector_store_endpoints_by_type()),
         "credentials": to_json(
@@ -192,7 +152,6 @@ def knowledge_base_retrieve_url(config: BedrockVectorStoreConfig, params: dict[s
         "supported": to_json(config.get_supported_openai_params(model="")),
         "headers": headers_outcome(config, params),
         "urls": urls,
-        "signed": signed,
     }
 
 

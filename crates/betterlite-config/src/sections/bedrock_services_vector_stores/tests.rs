@@ -77,13 +77,6 @@ fn deployed(settings: &Settings) -> UserContext {
     Some(r#"{"userId":"referenced-user"}"#),
     None
 )]
-#[case::loads_usercontext_list_reference(
-    &[("userContext", "{userId: [os.environ/USER_CONTEXT_ID, fixed]}")],
-    &[],
-    &[("USER_CONTEXT_ID", "referenced-user")],
-    Some(r#"{"userId":["referenced-user","fixed"]}"#),
-    None
-)]
 #[case::loads_both_forms_without_merging(
     &[
         ("userContext", "{userId: camel-user}"),

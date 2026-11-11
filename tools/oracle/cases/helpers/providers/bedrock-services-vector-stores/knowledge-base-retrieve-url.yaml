@@ -14,13 +14,5 @@ call:
       - {litellm_params: {aws_region_name: us-east-1, aws_bedrock_runtime_endpoint: "https://configured.example/"}, environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: "https://environment.example"}}
       - {litellm_params: {aws_region_name: "US-EAST-1"}}
       - {litellm_params: {aws_region_name: us-east-1}, environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: "https://environment.example/"}}
-    sign:
-      headers:
-        - [Content-Type, application/json]
-      optional_params: {aws_region_name: us-east-1}
-      request_data: {retrievalQuery: {text: hello}}
-      api_base: "https://bedrock-agent-runtime.us-east-1.amazonaws.com/knowledgebases/kb-1/retrieve"
-      credentials: {access_key_id: AKIAFIXTUREACCESS0001, secret_access_key: fixture-secret-access-key}
-      now: 1700000000
 env: {}
 compare: {ignore: []}

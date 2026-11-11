@@ -88,14 +88,6 @@ where
 {
     match value {
         JsonValue::String(text) => resolve_string(text, path, lookup).map(JsonValue::String),
-        JsonValue::Array(items) => {
-            let resolved = items
-                .into_iter()
-                .enumerate()
-                .map(|(index, item)| resolve_value(item, &format!("{path}.{index}"), lookup))
-                .collect::<Result<_, _>>()?;
-            Ok(JsonValue::Array(resolved))
-        }
         JsonValue::Object(fields) => {
             let resolved = fields
                 .into_iter()
@@ -106,7 +98,10 @@ where
                 .collect::<Result<_, _>>()?;
             Ok(JsonValue::Object(resolved))
         }
-        other @ (JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_)) => Ok(other),
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)) => Ok(other),
     }
 }
 

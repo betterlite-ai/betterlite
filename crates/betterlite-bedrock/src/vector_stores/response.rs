@@ -39,26 +39,21 @@ pub fn decode_knowledge_base_reply(
     body: &[u8],
     search_query: &str,
 ) -> Result<VectorStoreSearchResponse, VectorStoreError> {
+    let reply = Reply { status, headers };
     let parsed = serde_json::from_slice::<Json>(body)
-        .map_err(|source| provider_error(status, headers, &ReplyError::Json { source }))?;
+        .map_err(|source| reply.error(&ReplyError::Json { source }))?;
     let Json::Object(response) = parsed else {
-        return Err(provider_error(status, headers, &ReplyError::NotObject));
+        return Err(reply.error(&ReplyError::NotObject));
     };
     let items: &[Json] = match response.get("retrievalResults") {
         None | Some(Json::Null) => &[],
         Some(Json::List(items)) => items.as_slice(),
         Some(other) if !non_empty(other) => &[],
-        Some(_) => {
-            return Err(provider_error(
-                status,
-                headers,
-                &ReplyError::ResultsNotArray,
-            ));
-        }
+        Some(_) => return Err(reply.error(&ReplyError::ResultsNotArray)),
     };
     let mut results = Vec::with_capacity(items.len());
     for (index, item) in items.iter().enumerate() {
-        if let Some(result) = search_result(status, headers, index, item)? {
+        if let Some(result) = search_result(&reply, index, item)? {
             results.push(result);
         }
     }
@@ -71,23 +66,18 @@ pub fn decode_knowledge_base_reply(
 }
 
 fn search_result(
-    status: u16,
-    headers: &[(String, String)],
+    reply: &Reply<'_>,
     index: usize,
     item: &Json,
 ) -> Result<Option<VectorStoreSearchResult>, VectorStoreError> {
     let Json::Object(fields) = item else {
-        return Err(provider_error(
-            status,
-            headers,
-            &ReplyError::ResultNotObject { index },
-        ));
+        return Err(reply.error(&ReplyError::ResultNotObject { index }));
     };
-    let Some(text) = content_text(status, headers, index, fields)? else {
+    let Some(text) = content_text(reply, index, fields)? else {
         return Ok(None);
     };
     let empty = IndexMap::new();
-    let metadata = metadata_of(status, headers, index, fields)?.unwrap_or(&empty);
+    let metadata = metadata_of(reply, index, fields)?.unwrap_or(&empty);
     let content = build_content(text)?;
     let mut result = build_result(metadata, content)?;
     apply_score(&mut result, fields.get("score"))?;
@@ -95,8 +85,7 @@ fn search_result(
 }
 
 fn content_text<'item>(
-    status: u16,
-    headers: &[(String, String)],
+    reply: &Reply<'_>,
     index: usize,
     item: &'item IndexMap<String, Json>,
 ) -> Result<Option<&'item Json>, VectorStoreError> {
@@ -107,11 +96,7 @@ fn content_text<'item>(
         return Ok(None);
     }
     let Json::Object(content_fields) = content else {
-        return Err(provider_error(
-            status,
-            headers,
-            &ReplyError::ContentNotObject { index },
-        ));
+        return Err(reply.error(&ReplyError::ContentNotObject { index }));
     };
     Ok(content_fields
         .get("text")
@@ -119,18 +104,15 @@ fn content_text<'item>(
 }
 
 fn metadata_of<'item>(
-    status: u16,
-    headers: &[(String, String)],
+    reply: &Reply<'_>,
     index: usize,
     item: &'item IndexMap<String, Json>,
 ) -> Result<Option<&'item IndexMap<String, Json>>, VectorStoreError> {
     match item.get("metadata") {
         Some(Json::Object(metadata)) => Ok(Some(metadata)),
-        Some(other) if non_empty(other) => Err(provider_error(
-            status,
-            headers,
-            &ReplyError::MetadataNotObject { index },
-        )),
+        Some(other) if non_empty(other) => {
+            Err(reply.error(&ReplyError::MetadataNotObject { index }))
+        }
         None | Some(_) => Ok(None),
     }
 }
@@ -207,27 +189,30 @@ fn apply_score(
     Ok(())
 }
 
-fn provider_error(
+struct Reply<'headers> {
     status: u16,
-    headers: &[(String, String)],
-    cause: &ReplyError,
-) -> VectorStoreError {
-    let input = ErrorInput {
-        status_code: status,
-        message: cause.to_string(),
-        request: None,
-        body: None,
-        status_code_is_synthesized: false,
-        headers: Some(ErrorHeaders::Http(headers.to_vec())),
-        response: None,
-    };
-    match BedrockError::try_from(input) {
-        Ok(error) => VectorStoreError::Provider {
-            status,
-            error: BedrockFailure {
-                cause: Box::new(error),
+    headers: &'headers [(String, String)],
+}
+
+impl Reply<'_> {
+    fn error(&self, cause: &ReplyError) -> VectorStoreError {
+        let input = ErrorInput {
+            status_code: self.status,
+            message: cause.to_string(),
+            request: None,
+            body: None,
+            status_code_is_synthesized: false,
+            headers: Some(ErrorHeaders::Http(self.headers.to_vec())),
+            response: None,
+        };
+        match BedrockError::try_from(input) {
+            Ok(error) => VectorStoreError::Provider {
+                status: self.status,
+                error: BedrockFailure {
+                    cause: Box::new(error),
+                },
             },
-        },
-        Err(source) => VectorStoreError::Headers { source },
+            Err(source) => VectorStoreError::Headers { source },
+        }
     }
 }

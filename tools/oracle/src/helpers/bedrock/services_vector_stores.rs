@@ -8,7 +8,6 @@ use crate::helpers::{Helper, HelperResult};
 
 mod operations;
 mod responses;
-mod signed;
 mod tests;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -38,8 +37,6 @@ pub(crate) struct Input {
     urls: Vec<UrlScenario>,
     #[serde(default)]
     headers: Vec<(String, Option<String>)>,
-    #[serde(default)]
-    sign: Option<SignScenario>,
     #[serde(default)]
     metadata: Vec<Option<IndexMap<String, Json>>>,
     #[serde(default)]
@@ -83,30 +80,6 @@ struct UrlScenario {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SignScenario {
-    headers: Vec<(String, Option<String>)>,
-    optional_params: IndexMap<String, Json>,
-    request_data: IndexMap<String, Json>,
-    api_base: String,
-    #[serde(default)]
-    api_key: Option<String>,
-    #[serde(default)]
-    configured_bearer: Option<String>,
-    credentials: SignCredentials,
-    now: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SignCredentials {
-    access_key_id: String,
-    secret_access_key: String,
-    #[serde(default)]
-    session_token: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ResponseScenario {
     status: u16,
     #[serde(default)]
@@ -136,6 +109,6 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        operations::run(input)
+        Ok(operations::run(input))
     }
 }
