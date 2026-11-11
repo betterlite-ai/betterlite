@@ -30,10 +30,6 @@ fn user_message() -> Vec<ContractJson> {
     messages(r#"[{"role": "user", "content": "hi"}]"#)
 }
 
-fn placed_messages(text: &str) -> Vec<ContractJson> {
-    messages(text)
-}
-
 #[tokio::test]
 async fn the_sync_hook_places_cache_control_at_the_configured_point() {
     let dynamic = dynamic_params();
@@ -49,9 +45,7 @@ async fn the_sync_hook_places_cache_control_at_the_configured_point() {
     assert_eq!(placed.model, "claude-sonnet-4-5");
     assert_eq!(
         placed.messages,
-        placed_messages(
-            r#"[{"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}]"#
-        )
+        messages(r#"[{"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}]"#)
     );
     assert!(placed.non_default_params.is_empty());
 }
@@ -115,7 +109,7 @@ async fn the_hook_reads_the_injected_model_facts_for_the_dialect() {
         .expect("the placement succeeds");
     assert_eq!(
         placed.messages,
-        placed_messages(
+        messages(
             r#"[{"role": "user", "content": [{"type": "text", "text": "hi", "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#
         )
     );
@@ -141,9 +135,7 @@ async fn the_hook_reads_the_injected_api_base_for_the_dialect() {
         .expect("the delegation succeeds");
     assert_eq!(
         placed.messages,
-        placed_messages(
-            r#"[{"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}]"#
-        )
+        messages(r#"[{"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}]"#)
     );
 }
 
@@ -166,9 +158,7 @@ async fn the_hook_reads_the_injected_environment_for_the_dialect() {
         .expect("the delegation succeeds");
     assert_eq!(
         placed.messages,
-        placed_messages(
-            r#"[{"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}]"#
-        )
+        messages(r#"[{"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}]"#)
     );
 }
 
