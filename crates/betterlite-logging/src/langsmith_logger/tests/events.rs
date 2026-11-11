@@ -21,13 +21,17 @@ async fn a_sampled_out_event_never_queues() {
         redact: false,
     };
     let built = harness(&options, FakeDelivery::answering(200));
+    let (captured, guard) = super::support::capture_logs();
     built
         .logger
         .async_log_success_event(Arc::new(event(dynamic(&[]))))
         .await
         .expect("a skipped event is not an error");
+    drop(guard);
     assert!(built.logger.queue.pending().is_empty());
     assert!(built.delivery.posts().is_empty());
+    assert!(captured.contents().contains("Skipping Langsmith logging"));
+    assert!(captured.contents().contains("Sampling rate=0"));
 }
 
 #[tokio::test]
