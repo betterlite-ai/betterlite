@@ -15,6 +15,7 @@ call:
         prefixed-model: {litellm_provider: openai, mode: chat, supports_function_calling: true}
         github_copilot/gpt-4o: {litellm_provider: github_copilot, mode: chat, supports_function_calling: true}
         fireworks_ai/listed-model: {litellm_provider: fireworks_ai, mode: chat}
+        vision-blocked: {litellm_provider: openai, mode: chat, supports_vision: true}
     steps:
       - {function: supports_factory, model: gpt-4o, key: supports_function_calling}
       - {function: supports_factory, model: openai/gpt-4o, key: supports_function_calling}
@@ -27,5 +28,6 @@ call:
       - {function: supports_factory, model: xai/mystery-two, custom_llm_provider: xai, key: supports_function_calling}
       - {function: supports_factory, model: nothing-here, key: supports_function_calling}
       - {function: supports_factory, model: listed-model, custom_llm_provider: fireworks_ai, key: supports_prompt_caching}
+      - {function: supports_factory, model: vision-blocked, custom_llm_provider: fireworks_ai, key: supports_vision}
 env: {}
 compare: {ignore: []}

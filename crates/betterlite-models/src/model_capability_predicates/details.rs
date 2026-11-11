@@ -7,11 +7,14 @@ use serde_json::value::RawValue;
 use crate::decisions::Json;
 use crate::identity::declared::authenticating_provider;
 use crate::lemonade_model_metadata::ModelInfoClient;
-use crate::model_catalog_keys::ModelCostKeys;
+use crate::model_catalog_keys::{EntryProvider, ModelCostKeys, check_provider_match};
 use crate::model_metadata_resolution::MetadataRequest;
 use crate::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use crate::model_metadata_resolution::error::ModelMetadataError;
 use crate::model_metadata_resolution::get_model_info_helper;
+use crate::model_metadata_resolution::names::{
+    PotentialNamesInput, apply_aliases, potential_model_names,
+};
 use crate::provider_metadata_factory::selection::{MetadataQuery, get_provider_info};
 use crate::resolution::{ResolutionError, ResolutionRequest, resolve};
 
@@ -191,19 +194,85 @@ where
         api_base: None,
         api_key: None,
     };
-    let metadata = get_model_info_helper(
+    let metadata = match get_model_info_helper(
         &request,
         &environment.metadata,
         &mut *environment.keys,
         environment.dynamic,
         environment.hf,
     )
-    .await?;
+    .await
+    {
+        Ok(value) => value,
+        // B2219's projection types capability flags as bool, so a string value fails its parse even though LiteLLM's dict read returns it
+        Err(error) => match raw_metadata(target, key, environment) {
+            Some(value) => return Ok(value),
+            None => return Err(CapabilityError::Metadata(error)),
+        },
+    };
     let fields: BTreeMap<String, Box<RawValue>> = from_str(metadata.get())?;
     let Some(value) = fields.get(key).filter(|value| value.get() != "null") else {
         return Ok(MetadataValue::Absent);
     };
     Ok(MetadataValue::Value(from_str::<Json>(value.get())?))
+}
+
+// The same exact-entry candidates B2219's helper matches, read raw so a wrongly typed flag stays a value.
+fn raw_metadata<Source, Transport>(
+    target: &Target,
+    key: &str,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Option<MetadataValue> {
+    let mut model = target.model.clone();
+    let mut provider = Some(target.provider.clone());
+    apply_aliases(&mut model, &mut provider, environment.metadata.vertex);
+    let names = potential_model_names(&PotentialNamesInput {
+        model: &model,
+        custom_llm_provider: provider.as_deref(),
+        resolution: environment.metadata.resolution,
+        normalizers: environment.metadata.normalizers,
+    });
+    for candidate in [
+        names.combined_model_name.as_str(),
+        model.as_str(),
+        names.split_model.as_str(),
+        names.combined_stripped_model_name.as_str(),
+        names.stripped_model_name.as_str(),
+        names.provider_prefixed_model_name.as_str(),
+    ] {
+        let Some(entry_key) = environment
+            .keys
+            .get_model_cost_key(environment.metadata.model_cost, candidate)
+        else {
+            continue;
+        };
+        let Some(raw) = environment.metadata.model_cost.get(&entry_key) else {
+            continue;
+        };
+        let Ok(fields) = from_str::<BTreeMap<String, Box<RawValue>>>(raw.get()) else {
+            continue;
+        };
+        if !check_provider_match(entry_provider(&fields), provider.as_deref())
+            .is_ok_and(|matched| matched)
+        {
+            continue;
+        }
+        let Some(value) = fields.get(key).filter(|value| value.get() != "null") else {
+            return Some(MetadataValue::Absent);
+        };
+        return from_str::<Json>(value.get()).ok().map(MetadataValue::Value);
+    }
+    None
+}
+
+fn entry_provider(fields: &BTreeMap<String, Box<RawValue>>) -> EntryProvider<'_> {
+    match fields.get("litellm_provider") {
+        None => EntryProvider::Unconstrained,
+        Some(value) if value.get() == "null" => EntryProvider::Unconstrained,
+        Some(value) => {
+            from_str::<&str>(value.get()).map_or(EntryProvider::NotText, EntryProvider::Text)
+        }
+    }
 }
 
 // The unprefixed twin of a provider-prefixed entry, which the map may declare instead (#20885).

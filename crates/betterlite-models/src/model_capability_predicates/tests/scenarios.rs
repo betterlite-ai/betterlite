@@ -22,7 +22,8 @@ const SUPPORTS_RESOLUTION: &str = r#"{
     "fireworks_ai/vision-model": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true},
     "fireworks_ai/reason-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": true},
     "fireworks_ai/pdf-model": {"litellm_provider": "openai", "mode": "chat", "supports_pdf_input": true},
-    "fireworks_ai/listed-model": {"litellm_provider": "fireworks_ai", "mode": "chat"}
+    "fireworks_ai/listed-model": {"litellm_provider": "fireworks_ai", "mode": "chat"},
+    "vision-blocked": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true}
 }"#;
 
 const SUPPORTS_ERROR_FALLBACK: &str = r#"{
@@ -72,7 +73,8 @@ const NATIVE_STREAMING_DEFAULT: &str = r#"{
     "null-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": null},
     "false-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": false},
     "string-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": "sometimes"},
-    "true-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": true}
+    "true-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_native_streaming": true},
+    "nullish-model": {"litellm_provider": null, "mode": "chat", "supports_native_streaming": "sometimes"}
 }"#;
 
 const RESPONSE_SCHEMA_PROVIDER_OVERRIDE: &str = r#"{
@@ -363,6 +365,11 @@ const NATIVE_STREAMING_STEPS: &[(&str, Option<&str>, Expected)] = &[
         Expected::text("sometimes"),
     ),
     ("true-model", Some("deepseek"), Expected::flag(true)),
+    (
+        "nullish-model",
+        Some("deepseek"),
+        Expected::text("sometimes"),
+    ),
     ("nothing-here", None, Expected::flag(false)),
 ];
 
@@ -418,6 +425,19 @@ const VISION_PROVIDER_SCENARIO: Scenario = Scenario {
     fixture: SUPPORTS_RESOLUTION,
     reader: Reader::Supports(VISION_KEY),
     steps: VISION_PROVIDER_STEPS,
+};
+
+// The bare entry names openai, so a fireworks_ai request rejects it and no provider info answers.
+const VISION_MISMATCH_STEPS: &[(&str, Option<&str>, Expected)] = &[(
+    "vision-blocked",
+    Some("fireworks_ai"),
+    Expected::flag(false),
+)];
+
+const VISION_MISMATCH_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(VISION_KEY),
+    steps: VISION_MISMATCH_STEPS,
 };
 
 const REASONING_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
@@ -495,6 +515,7 @@ const RESPONSE_SCHEMA_SCENARIO: Scenario = Scenario {
 pub(super) async fn supports_resolution() {
     check(&SUPPORTS_RESOLUTION_SCENARIO).await;
     check(&VISION_PROVIDER_SCENARIO).await;
+    check(&VISION_MISMATCH_SCENARIO).await;
     check(&REASONING_PROVIDER_SCENARIO).await;
     check(&PDF_PROVIDER_SCENARIO).await;
     check(&WEB_SEARCH_PROVIDER_SCENARIO).await;
