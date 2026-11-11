@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-cache-callbacks-compile-result-empty
+call:
+  b4126:
+    operation: compile_result_empty
+    probes:
+      - prompt_id: greeting
+      - prompt_id: null
+      - prompt_id: ""
+        prompt_spec:
+          prompt_id: greeting
+          litellm_params: {prompt_integration: custom}
+          prompt_info: {prompt_type: config}
+        prompt_variables: {name: Ada}
+        dynamic_callback_params: {user_id: user-1}
+        prompt_label: production
+        prompt_version: 3
+env: {}
+compare: {ignore: []}
