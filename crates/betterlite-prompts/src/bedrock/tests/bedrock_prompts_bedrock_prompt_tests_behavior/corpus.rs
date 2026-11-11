@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use rstest::rstest;
 use tokio::runtime::Builder;
 
+use crate::bedrock::assembly::AssistantContinue;
 use crate::bedrock::flags::{CachePointCapability, MessageCachePoints, PromptCapabilities};
 use crate::bedrock::input::{MAX_PROMPT_INPUT_BYTES, PromptInputError, parse_prompt_bedrock_input};
 use crate::bedrock_tools::capabilities::{BedrockToolCapabilities, CachePointSupport};
@@ -25,6 +26,33 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_parses_the_fuzz_input(
 ) {
     let input = parse_prompt_bedrock_input(raw.as_bytes()).expect("the input parses");
     assert_eq!(input.modify_params, modify_params);
+}
+
+#[test]
+fn bedrock_prompts_bedrock_prompt_tests_behavior_reads_the_continue_messages() {
+    let input = parse_prompt_bedrock_input(
+        br#"{"messages":[],"user_continue_message":{"role":"user","content":"carry on"},"assistant_continue_message":{"role":"assistant","content":"go on"}}"#,
+    )
+    .expect("the input parses");
+    let user_continue = input
+        .user_continue_message
+        .expect("the user message parses");
+    assert_eq!(user_continue.role, "user");
+    assert!(matches!(
+        input.assistant_continue_message,
+        Some(AssistantContinue::Message(_))
+    ));
+}
+
+#[test]
+fn bedrock_prompts_bedrock_prompt_tests_behavior_reads_a_string_assistant_continue_message() {
+    let input =
+        parse_prompt_bedrock_input(br#"{"messages":[],"assistant_continue_message":"go on"}"#)
+            .expect("the input parses");
+    assert!(matches!(
+        input.assistant_continue_message,
+        Some(AssistantContinue::Text(text)) if text == "go on"
+    ));
 }
 
 #[test]
