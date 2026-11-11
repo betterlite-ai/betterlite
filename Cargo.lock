@@ -1598,7 +1598,6 @@ dependencies = [
  "betterlite-postgres-fixture",
  "chrono",
  "clap",
- "deadpool-postgres",
  "rstest",
  "rust_decimal",
  "secrecy",
