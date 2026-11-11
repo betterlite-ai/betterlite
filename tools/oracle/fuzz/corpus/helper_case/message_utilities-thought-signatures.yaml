@@ -1,0 +1,10 @@
+kind: helper
+name: message_utilities-thought-signatures-seed
+call:
+  b5366:
+    calls:
+      - {function: is_gemini_model, model: gemini-pro, custom_llm_provider: vertex_ai}
+      - {function: strip_signature_from_id, tool_call_id: "c1__thought__s1", separator: __thought__}
+      - {function: strip_signatures_from_messages, separator: __thought__, messages: [{role: assistant, tool_calls: [{id: "c1__thought__s1"}]}]}
+env: {}
+compare: {ignore: []}
