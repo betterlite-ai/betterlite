@@ -1,0 +1,8 @@
+task: B1300
+deviations:
+  - what: The STS token exchange and the impersonation call do not send the x-goog-api-client metrics header that google-auth adds (gl-python, auth version, google-byoid-sdk, sa-impersonation, config-lifetime and source/aws).
+    why: The header reports the Python client version and has no effect on the exchange result. betterlite is not a Python client.
+    link: https://github.com/googleapis/google-auth-library-python/blob/main/google/auth/external_account.py
+  - what: The exchange covers the AWS subject-token flow only. Workforce pools, client authentication, mTLS and regional access boundary lookups of google-auth are not run.
+    why: LiteLLM passes only an AWS credential with audience, token_url and an optional impersonation URL, so none of those options can be set through it.
+    link: ""
