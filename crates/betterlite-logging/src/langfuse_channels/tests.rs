@@ -168,6 +168,7 @@ fn retire_id(tracing: &LangfuseTracing) -> Option<u64> {
 struct Recording {
     spans: Arc<Mutex<Vec<SpanData>>>,
     resource: Arc<Mutex<Option<Resource>>>,
+    shut_down: Arc<AtomicUsize>,
 }
 
 impl Recording {
@@ -191,6 +192,10 @@ impl Recording {
             .unwrap_or_else(PoisonError::into_inner)
             .len()
     }
+
+    fn shut_down(&self) -> bool {
+        self.shut_down.load(Ordering::Acquire) > 0
+    }
 }
 
 impl SpanExporter for Recording {
@@ -200,6 +205,11 @@ impl SpanExporter for Recording {
             .unwrap_or_else(PoisonError::into_inner)
             .extend(batch);
         ready(Ok(()))
+    }
+
+    fn shutdown_with_timeout(&self, _timeout: Duration) -> OTelSdkResult {
+        self.shut_down.fetch_add(1, Ordering::AcqRel);
+        Ok(())
     }
 
     fn set_resource(&mut self, resource: &Resource) {
@@ -558,6 +568,27 @@ async fn reacquisition_before_the_deadline_cancels_the_retirement() {
     assert_eq!(cached(&first), Some(1));
 }
 
+#[tokio::test]
+async fn the_retirement_timer_shuts_the_provider_down() {
+    let exporter = Recording::default();
+    let mut request = request("pk-retire-shutdown");
+    request.mock_mode = false;
+    let tracing = acquire_with(&request, exporter.clone());
+    release_langfuse_tracing(&tracing, Some(Duration::from_millis(20))).await;
+    wait_until(|| exporter.shut_down()).await;
+    assert_eq!(cached(&tracing), None);
+}
+
+#[tokio::test]
+async fn a_stale_retirement_does_not_remove_a_reacquired_channel() {
+    let request = request("pk-stale-retire");
+    let tracing = acquire_mock(&request);
+    let spec = super::key::channel_spec(&settings(&[]), &request);
+    let key = super::key::tracing_key(&request, &spec);
+    super::cache::retire_unless_reacquired(key, 99, tracing.clone(), Duration::ZERO).await;
+    assert!(cached(&tracing).is_some());
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_release_while_retirement_is_pending_changes_nothing() {
     let tracing = acquire_mock(&request("pk-double-release"));
@@ -872,6 +903,41 @@ async fn a_zero_sample_rate_exports_no_spans() {
     end_span(&tracing, "dropped");
     assert!(tracing.flush(5_000).await);
     assert!(exporter.spans().is_empty());
+    tracing.shutdown();
+}
+
+#[rstest]
+#[case::sampled("22222222222222222222222222222222", 1)]
+#[case::dropped("11111111111111111111111111111111", 0)]
+#[tokio::test]
+async fn a_partial_sample_rate_keeps_the_hash_sampler_in_charge(
+    #[case] trace: &str,
+    #[case] exported: usize,
+) {
+    let exporter = Recording::default();
+    let sampling = ChannelSpec {
+        environment: None,
+        release: None,
+        sample_rate: 0.5,
+        flush_interval_millis: 60_000,
+        flush_at: 512,
+    };
+    let tracing = build_langfuse_tracing(
+        exporter.clone(),
+        &Handle::current(),
+        &sampling,
+        &lookup(&[]),
+    );
+    let trace_id = TraceId::from_hex(trace).expect("a trace id");
+    let requested = RequestedIds::enter(Some(trace_id), None);
+    let mut span = tracing
+        .tracer
+        .span_builder("sampled")
+        .start(&tracing.tracer);
+    span.end();
+    drop(requested);
+    assert!(tracing.flush(5_000).await);
+    assert_eq!(exporter.span_count(), exported);
     tracing.shutdown();
 }
 

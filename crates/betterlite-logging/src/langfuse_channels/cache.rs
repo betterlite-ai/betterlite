@@ -112,7 +112,7 @@ fn schedule_retirement(state: &mut CacheState, key: TracingKey, grace: Duration)
     lease.retire = Some(Retirement { id, task });
 }
 
-async fn retire_unless_reacquired(
+pub(super) async fn retire_unless_reacquired(
     key: TracingKey,
     id: u64,
     tracing: LangfuseTracing,
