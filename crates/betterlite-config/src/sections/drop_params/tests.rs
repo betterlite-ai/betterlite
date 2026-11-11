@@ -27,13 +27,13 @@ fn deployment(drop_params: Option<bool>, additional: &[&str]) -> DeploymentDropP
 
 fn absent_config_has_no_drop_policy() {
     let settings = settings("model_list: []", &[]).unwrap();
-    assert!(!settings.global_drop_params);
-    assert!(settings.deployments.is_empty());
+    assert!(!settings.policy.global_drop_params);
+    assert!(settings.policy.deployments.is_empty());
 }
 
 fn litellm_settings_enables_the_global_flag() {
     let settings = settings("litellm_settings:\n  drop_params: true", &[]).unwrap();
-    assert!(settings.global_drop_params);
+    assert!(settings.policy.global_drop_params);
 }
 
 fn an_explicit_false_overrides_the_environment() {
@@ -42,17 +42,17 @@ fn an_explicit_false_overrides_the_environment() {
         &[("LITELLM_DROP_PARAMS", "true")],
     )
     .unwrap();
-    assert!(!settings.global_drop_params);
+    assert!(!settings.policy.global_drop_params);
 }
 
 fn the_environment_enables_the_global_flag() {
     let settings = settings("model_list: []", &[("LITELLM_DROP_PARAMS", "yes")]).unwrap();
-    assert!(settings.global_drop_params);
+    assert!(settings.policy.global_drop_params);
 }
 
 fn an_empty_environment_is_unset() {
     let settings = settings("model_list: []", &[("LITELLM_DROP_PARAMS", "")]).unwrap();
-    assert!(!settings.global_drop_params);
+    assert!(!settings.policy.global_drop_params);
 }
 
 fn a_non_flag_environment_fails() {
@@ -70,7 +70,7 @@ fn deployment_policies_stay_aligned_with_model_list() {
     let source = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      drop_params: true\n      additional_drop_params: [temperature, logprobs]\n  - model_name: b\n    litellm_params:\n      model: openai/gpt-4o\n";
     let settings = settings(source, &[]).unwrap();
     assert_eq!(
-        settings.deployments.as_ref(),
+        settings.policy.deployments.as_ref(),
         [
             deployment(Some(true), &["temperature", "logprobs"]),
             deployment(None, &[]),
@@ -81,7 +81,10 @@ fn deployment_policies_stay_aligned_with_model_list() {
 fn a_null_deployment_flag_is_unset() {
     let source = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      drop_params: null\n      additional_drop_params: []\n";
     let settings = settings(source, &[]).unwrap();
-    assert_eq!(settings.deployments.as_ref(), [deployment(None, &[])]);
+    assert_eq!(
+        settings.policy.deployments.as_ref(),
+        [deployment(None, &[])]
+    );
 }
 
 fn a_nested_drop_path_is_rejected() {

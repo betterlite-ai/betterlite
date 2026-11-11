@@ -36,9 +36,14 @@ pub struct DeploymentDropPolicy {
     pub additional_drop_params: Vec<String>,
 }
 
-// deployments stay index-aligned with model_list, which the router keeps in config order
+// the policy lives behind a box so Sections stays small; betterlite-db-admin holds a Config across an await
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
+    pub policy: Box<DropPolicySettings>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DropPolicySettings {
     pub global_drop_params: bool,
     pub deployments: Box<[DeploymentDropPolicy]>,
 }
@@ -77,12 +82,14 @@ impl Section for Raw {
             return Err(ConfigError::Unsupported { paths });
         }
         Ok(Settings {
-            global_drop_params: self
-                .litellm_settings
-                .drop_params
-                .or(environment)
-                .unwrap_or(false),
-            deployments: deployments.into_boxed_slice(),
+            policy: Box::new(DropPolicySettings {
+                global_drop_params: self
+                    .litellm_settings
+                    .drop_params
+                    .or(environment)
+                    .unwrap_or(false),
+                deployments: deployments.into_boxed_slice(),
+            }),
         })
     }
 }
