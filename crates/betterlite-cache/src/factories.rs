@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Duration;
 
 use thiserror::Error;
 
@@ -87,12 +88,15 @@ impl Cache {
     }
 }
 
-// the native handle's duration conversion refuses a zero, negative or non-finite ttl
+// the native handle accepts a ttl only when Duration::try_from_secs_f64 yields a non-zero duration
 fn checked_ttl<HandleError>(ttl: f64) -> Result<(), FactoryError<HandleError>>
 where
     HandleError: Error + 'static,
 {
-    if !ttl.is_finite() || ttl <= 0.0_f64 {
+    let Ok(duration) = Duration::try_from_secs_f64(ttl) else {
+        return Err(FactoryError::Ttl { value: ttl });
+    };
+    if duration.is_zero() {
         return Err(FactoryError::Ttl { value: ttl });
     }
     Ok(())

@@ -340,6 +340,10 @@ enum FactoryKind {
 #[case::redis_nan(FactoryKind::Redis, f64::NAN)]
 #[case::redis_positive_infinity(FactoryKind::Redis, f64::INFINITY)]
 #[case::redis_negative_infinity(FactoryKind::Redis, f64::NEG_INFINITY)]
+#[case::memory_sub_nanosecond(FactoryKind::Memory, 1e-10_f64)]
+#[case::redis_sub_nanosecond(FactoryKind::Redis, 1e-10_f64)]
+#[case::memory_overflow(FactoryKind::Memory, 1e20_f64)]
+#[case::redis_overflow(FactoryKind::Redis, 1e20_f64)]
 fn an_invalid_ttl_is_rejected_before_the_handle_is_created(
     #[case] factory: FactoryKind,
     #[case] ttl: f64,
@@ -378,6 +382,32 @@ fn an_invalid_ttl_is_rejected_before_the_handle_is_created(
     assert!(host.state().memory.is_empty());
     assert!(host.state().redis.is_empty());
     assert!(host.state().handles.is_empty());
+}
+
+#[rstest]
+#[case::one_nanosecond(1e-9_f64)]
+#[case::one_billion_seconds(1e9_f64)]
+fn a_representable_positive_ttl_reaches_the_handle(#[case] ttl: f64) {
+    let host = RecordingHost::default();
+    let facade = Cache::memory(
+        &host,
+        &mut CacheCallbacks::default(),
+        MemoryHandleOptions {
+            ttl,
+            capacity: 200,
+            max_entry_bytes: 0x0040_0000,
+        },
+    )
+    .unwrap();
+    assert_eq!(facade.ttl, Some(ttl));
+    assert_eq!(
+        host.state().memory,
+        [MemoryHandleOptions {
+            ttl,
+            capacity: 200,
+            max_entry_bytes: 0x0040_0000,
+        }]
+    );
 }
 
 #[rstest]

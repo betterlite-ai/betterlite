@@ -28,16 +28,17 @@ deviations:
       "cache" once, as Cache.__init__ does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L59-L68
   - what: >-
-      A handle ttl that is not finite and positive, a memory capacity of 0, a max_entry_bytes of 0
-      and an empty redis namespace are refused by the factory with a typed error before the handle
-      factory is called. LiteLLM forwards the same values to NativeCacheHandle.memory or
-      NativeCacheHandle.redis, which raises ValueError from its duration conversion or its positive
-      limits check.
+      A handle ttl that the native duration conversion refuses (zero, negative, non-finite, below one
+      nanosecond so it rounds to zero, or too large for a Duration), a memory capacity of 0, a
+      max_entry_bytes of 0 and an empty redis namespace are refused by the factory with a typed error
+      before the handle factory is called. LiteLLM forwards the same values to
+      NativeCacheHandle.memory or NativeCacheHandle.redis, which raises ValueError from its duration
+      conversion or its positive limits check.
     why: >-
-      The native handle's duration conversion filters out zero, negative and non-finite durations, and
-      its constructors require a positive capacity and max_entry_bytes and a non-empty namespace, so
-      the factory applies those rules before a handle exists. The error names the rejected ttl and no
-      handle is constructed.
+      The native handle accepts a ttl only when Duration::try_from_secs_f64 yields a non-zero
+      duration, and its constructors require a positive capacity and max_entry_bytes and a non-empty
+      namespace, so the factory applies exactly those rules before a handle exists. The error names
+      the rejected ttl and no handle is constructed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/python-bridge/src/cache/native/v2.rs#L263-L268
   - what: >-
       A facade the v2 factories return does not answer ping or delete_cache_keys through the native
