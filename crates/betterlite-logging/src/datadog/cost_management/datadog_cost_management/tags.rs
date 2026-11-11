@@ -79,8 +79,17 @@ fn apply_allowlist(
         }
     }
     let metadata = &payload.metadata;
-    let text = serde_json::to_string(metadata).unwrap_or_default();
-    if let Json::Object(fields) = serde_json::from_str(&text).unwrap_or(Json::Null) {
+    let decoded = match metadata_fields(metadata) {
+        Ok(decoded) => decoded,
+        Err(error) => {
+            tracing::error!(
+                %error,
+                "Datadog Cost Management: the request metadata could not be read; allowlisted metadata tags are skipped"
+            );
+            return;
+        }
+    };
+    if let Json::Object(fields) = decoded {
         for (key, value) in &fields {
             add_metadata_tag(tags, allow, key, value);
         }
@@ -90,6 +99,12 @@ fn apply_allowlist(
             set_custom_tag(tags, key, &value);
         }
     }
+}
+
+fn metadata_fields(metadata: &StandardLoggingMetadata) -> Result<Json, serde_json::Error> {
+    let text = serde_json::to_string(metadata)?;
+    let fields = serde_json::from_str(&text)?;
+    Ok(fields)
 }
 
 fn add_metadata_tag(

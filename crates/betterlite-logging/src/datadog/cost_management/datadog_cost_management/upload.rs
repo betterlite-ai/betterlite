@@ -5,7 +5,8 @@ use super::error::UploadError;
 use super::settings::CostManagementSettings;
 use super::transport::{PutRequest, Transport};
 
-const CLIENT_ERROR_STATUS: u16 = 400;
+const SUCCESS_MIN: u16 = 200;
+const SUCCESS_MAX: u16 = 299;
 
 pub async fn upload<T>(
     settings: &CostManagementSettings,
@@ -30,7 +31,8 @@ where
         .put(PutRequest { url, headers, body })
         .await
         .map_err(UploadError::Transport)?;
-    if response.status >= CLIENT_ERROR_STATUS {
+    // httpx raise_for_status accepts only a 2xx answer, so any redirect left unfollowed requeues the batch
+    if !(SUCCESS_MIN..=SUCCESS_MAX).contains(&response.status) {
         return Err(UploadError::Status {
             status: response.status,
         });

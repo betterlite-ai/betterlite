@@ -51,9 +51,11 @@ impl Transport for PooledTransport {
             deadline: UPLOAD_DEADLINE,
         };
         async move {
-            let response = self.client.send_buffered(outbound).await?;
+            // LiteLLM's logging client follows redirects, so a moved endpoint still receives the cost entries
+            let response = self.client.send_following(outbound).await?;
+            let buffered = response.buffered(self.client.limits.body_bytes).await?;
             Ok(PutResponse {
-                status: response.status,
+                status: buffered.status,
             })
         }
     }
