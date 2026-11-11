@@ -33,15 +33,15 @@ fn runtime_step(case: &RuntimeStep) -> Value {
     let complete_url = config.get_complete_url(&case.api_base, "m");
     let invoked = invoked_runtime(&complete_url);
     json!({
-        "runtime": runtime.map(|runtime| json!({
-            "arn": runtime.arn,
-            "region": runtime.region,
-            "url": runtime.invocations_url(),
-            "default_session_id": runtime.default_session_id(),
+        "runtime": runtime.map(|parsed| json!({
+            "arn": parsed.arn,
+            "region": parsed.region,
+            "url": parsed.invocations_url(),
+            "default_session_id": parsed.default_session_id(),
         })),
         "signs_with_aws": config.signs_with_aws(&case.api_base),
         "complete_url": complete_url,
-        "invoked_region": invoked.map(|runtime| runtime.region),
+        "invoked_region": invoked.map(|called| called.region),
     })
 }
 

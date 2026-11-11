@@ -41,7 +41,6 @@ pub(crate) struct SignStep {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct TransformStep {
-    pub(crate) api_base: String,
     pub(crate) body: String,
     pub(crate) model: String,
     pub(crate) state: String,
