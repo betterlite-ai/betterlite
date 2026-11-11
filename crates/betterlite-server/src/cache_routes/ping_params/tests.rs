@@ -4,12 +4,12 @@ use betterlite_cache::configuration::cache::Cache;
 use betterlite_cache::types::cache_type::CacheMode;
 use betterlite_models::decisions::Json;
 use betterlite_redact::structured::SensitiveDataMasker;
-use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
-use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use secrecy::SecretString;
 use serde_json::Number;
 
-use super::super::redis_support::{local_cache, overrides, redis_cache_from};
+use super::super::redis_support::{
+    local_cache, overrides, redis_cache_from, unreachable_overrides,
+};
 use super::super::support_tests::parsed_cache_params;
 use super::{health_check_params, masked_cache_params};
 
@@ -79,13 +79,6 @@ fn a_local_cache_has_empty_health_params() {
     assert_eq!(health.redis_kwargs, None);
     assert_eq!(health.namespace, None);
     assert_eq!(health.redis_version, None);
-}
-
-fn unreachable_overrides() -> RedisOverrides {
-    let mut settings = overrides();
-    settings.host = Some("127.0.0.1".to_owned());
-    settings.port = Some(IntOrText::Value(1_i64));
-    settings
 }
 
 #[tokio::test]

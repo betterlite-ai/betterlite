@@ -163,10 +163,14 @@ pub(crate) fn overrides() -> RedisOverrides {
 
 // A cache that opens without a server: every operation fails, which is the Redis-failure path the routes answer.
 pub(crate) async fn unreachable_redis_cache() -> Cache {
+    redis_cache_from(unreachable_overrides()).await
+}
+
+pub(crate) fn unreachable_overrides() -> RedisOverrides {
     let mut settings = overrides();
     settings.host = Some("127.0.0.1".to_owned());
     settings.port = Some(IntOrText::Value(1_i64));
-    redis_cache_from(settings).await
+    settings
 }
 
 pub(crate) async fn redis_cache_from(overrides: RedisOverrides) -> Cache {
@@ -175,7 +179,7 @@ pub(crate) async fn redis_cache_from(overrides: RedisOverrides) -> Cache {
 
 // A cache whose breaker refuses every operation, so a write returns an error instead of being swallowed as a connection failure.
 pub(crate) async fn breaker_open_redis_cache() -> Cache {
-    redis_cache_gated(overrides(), Arc::new(OpenGate)).await
+    redis_cache_gated(unreachable_overrides(), Arc::new(OpenGate)).await
 }
 
 async fn redis_cache_gated(overrides: RedisOverrides, gate: Arc<dyn BreakerGate>) -> Cache {
