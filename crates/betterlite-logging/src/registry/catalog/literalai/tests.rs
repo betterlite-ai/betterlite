@@ -362,6 +362,27 @@ async fn the_request_tags_supply_the_step_tags() {
 }
 
 #[tokio::test]
+async fn the_requester_tags_win_over_the_request_tags() {
+    let (adapter, capture, tracker) = fixture();
+    let with_own_tags = event_from(
+        &PAYLOAD
+            .replace(
+                r#""literalai_tags": ["tier", "prod"]"#,
+                r#""tags": ["own"]"#,
+            )
+            .replace(r#""request_tags": []"#, r#""request_tags": ["prod"]"#),
+    );
+    adapter
+        .log_success_event(&with_own_tags)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_request(&requests);
+    assert_eq!(field(&requests[0].body, "tags_0"), &json(r#"["own"]"#));
+}
+
+#[tokio::test]
 async fn a_failure_event_posts_the_error() {
     let (adapter, capture, tracker) = fixture();
     let failed =
