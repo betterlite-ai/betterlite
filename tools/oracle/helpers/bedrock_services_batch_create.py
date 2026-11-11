@@ -69,11 +69,6 @@ class SignedRequest:
     data: str
 
 
-class MetadataConfig(BedrockBatchesConfig):
-    def sanitize(self, value: JsonValue) -> JsonValue:
-        return JSON.validate_python(self._get_openai_compatible_batch_metadata(value))
-
-
 class FixedUuid:
     def __init__(self, value: str) -> None:
         self.value = UUID(value)
@@ -127,7 +122,7 @@ def _transform(scenario: Scenario) -> SignedRequest:
     if scenario.completion_window is not None:
         batch_request["completion_window"] = scenario.completion_window  # type: ignore[typeddict-item]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L522
     config = BedrockBatchesConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L104
-    result = config.transform_create_batch_request(  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L188
+    result = config.transform_create_batch_request(
         model=scenario.model,
         create_batch_data=batch_request,
         optional_params=scenario.optional_params,
@@ -168,7 +163,7 @@ def _reply_call(scenario: Scenario) -> JsonValue:
     config = BedrockBatchesConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L104
     time.time = Clock(scenario.clock)
     try:
-        reply = config.transform_create_batch_response(  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L301
+        reply = config.transform_create_batch_response(
             model=None,
             raw_response=response,
             logging_obj=MagicMock(),
@@ -214,8 +209,12 @@ def run(argument: JsonValue) -> JsonValue:
     input_value = TypeAdapter(Input).validate_python(argument)
     match input_value.operation:
         case "metadata_sanitization":
-            config = MetadataConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L104
-            return {"values": [config.sanitize(value) for value in input_value.values]}
+            return {
+                "values": [
+                    JSON.validate_python(BedrockBatchesConfig._get_openai_compatible_batch_metadata(value))  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L376
+                    for value in input_value.values
+                ]
+            }
         case "titan_batch_token_usage":
             return {"values": [_titan_value(value) for value in input_value.values]}
         case _:
