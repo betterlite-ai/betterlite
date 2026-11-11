@@ -1,0 +1,8 @@
+task: B676
+deviations:
+  - what: The workload credential re-reads AZURE_FEDERATED_TOKEN_FILE on every token request; the SDK caches the file text in memory for 600 seconds.
+    why: betterlite's credential holds no mutable state, so a rotated service-account token is used on the next request instead of after the cache window. No working setup relies on a stale assertion.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/workload_identity.py#L21-L36
+  - what: The credential runs the IMDS availability probe on every token request instead of remembering a successful probe on the credential object.
+    why: betterlite's credential is a value object built per configured identity, and remembering availability would add mutable state shared between requests.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/imds.py#L90-L122
