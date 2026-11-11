@@ -1,0 +1,46 @@
+kind: helper
+name: sap-chat-request-fallback-modules
+call:
+  b5845:
+    operation: requests
+    calls:
+      - model: anthropic--claude-3.5-sonnet
+        messages: [{role: user, content: hi}]
+        optional_params:
+          temperature: 0.4
+          fallback_sap_modules:
+            - model: sap/gpt-4o
+              model_version: '2024-05-13'
+              messages: [{role: user, content: fb}]
+              temperature: 0.1
+              strict: true
+              tools:
+                - type: function
+                  function: {name: f}
+            - model: other-model
+              response_format: {type: json_object}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          fallback_sap_modules:
+            - model: other
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          fallback_sap_modules:
+            - messages: [{role: user, content: fb}]
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          fallback_sap_modules:
+            - model: null
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          fallback_sap_modules: [not-an-object]
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          fallback_sap_modules: {model: x}
+env: {}
+compare: {ignore: []}
