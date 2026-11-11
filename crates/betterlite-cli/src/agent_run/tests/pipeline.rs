@@ -342,6 +342,23 @@ fn run_agent_selects_preparers_by_the_command_basename() {
     assert_eq!(installer.calls(), 1_usize);
     assert!(preparers.get("pi").is_some());
     assert!(preparers.get("/opt/codex").is_none());
+    assert!(preparers.get("codex.cmd").is_none());
+}
+
+#[test]
+fn run_agent_prepares_a_command_given_by_path() {
+    let mut harness = Harness::codex();
+    harness.command = command(&["/opt/bin/codex", "--full-auto"]);
+    harness.binary = Some("/opt/bin/codex".to_owned());
+    harness.preparer = PreparerScript::Returning(command(&["-c", "hooks.Stop=[]"]));
+    let (result, observations) = harness.run();
+    assert_eq!(result.unwrap(), 0_i32);
+    assert_eq!(observations.preparer_calls.len(), 1_usize);
+    assert!(
+        observations.launches[0]
+            .args
+            .contains(&"hooks.Stop=[]".to_owned())
+    );
 }
 
 #[test]

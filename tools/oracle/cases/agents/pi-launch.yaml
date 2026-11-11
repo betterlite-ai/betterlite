@@ -16,6 +16,12 @@ call:
         binary: /usr/bin/pi
         models:
           - {id: gpt-4o}
+      - agent: pi
+        scenario: launch
+        command: ["/usr/local/bin/pi", "--version"]
+        binary: /usr/local/bin/pi
+        models:
+          - {id: gpt-4o}
 env: {}
 compare:
   ignore: []

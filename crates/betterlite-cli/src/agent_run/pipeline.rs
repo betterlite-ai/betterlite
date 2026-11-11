@@ -81,7 +81,7 @@ fn run_preparer(
     request: &PrepareRequest<'_>,
     messages: &mut dyn Messages,
 ) -> Result<Vec<String>, AgentRunError> {
-    preparers.get(program).map_or_else(
+    preparers.get(binary_name(program)).map_or_else(
         || Ok(Vec::new()),
         |preparer| preparer.prepare(request, messages),
     )
