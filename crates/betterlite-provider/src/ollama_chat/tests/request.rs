@@ -1,5 +1,4 @@
 use betterlite_prompts::arguments::json::Json;
-use betterlite_prompts::message_content::Message;
 use rstest::rstest;
 
 use super::super::config::OllamaChatConfig;
@@ -217,11 +216,30 @@ fn a_stream_option_that_is_not_a_bool_is_a_client_error() {
 }
 
 #[test]
-fn a_message_without_a_tool_call_name_cannot_be_decoded() {
-    serde_json::from_str::<Vec<Message>>(
+fn a_tool_call_without_a_name_gets_an_empty_one() {
+    let request = transformed(
+        "llama3",
         r#"[{"role": "assistant", "content": "x", "tool_calls": [{"id": "c1", "type": "function", "function": {"arguments": "{}"}}]}]"#,
+        "{}",
+    )
+    .unwrap();
+    assert_eq!(
+        body(&request),
+        expected(
+            r#"{"model": "llama3", "messages": [{"role": "assistant", "content": "x", "images": [], "tool_calls": [{"function": {"name": "", "arguments": {}}}]}], "options": {}, "stream": false}"#
+        )
+    );
+}
+
+#[test]
+fn a_tool_call_without_arguments_is_a_client_error() {
+    let error = transformed(
+        "llama3",
+        r#"[{"role": "assistant", "content": "x", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f"}}]}]"#,
+        "{}",
     )
     .unwrap_err();
+    assert_eq!(error.status(), Some(400));
 }
 
 #[test]
