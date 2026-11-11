@@ -2,9 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_core::api::genai_chat_input::{
-    GenerateContentRequest, TranslationContext, translate_generate_content,
-};
+use betterlite_core::api::genai_chat_input::input::GenerateContentRequest;
+use betterlite_core::api::genai_chat_input::{TranslationContext, translate_generate_content};
 use betterlite_core::schema::SchemaLimits;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
