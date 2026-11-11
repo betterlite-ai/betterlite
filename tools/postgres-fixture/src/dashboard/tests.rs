@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::path::Path;
+
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
@@ -274,7 +276,22 @@ async fn assert_current_schema(client: &Client) {
     );
 }
 
+fn assert_confined_filenames() {
+    let sql_root = Path::new("/pinned/sql");
+    super::schema::confined_path(sql_root, "20250326162113_baseline.sql").unwrap();
+    for name in ["../escape.sql", "nested/file.sql", "/absolute.sql", ".."] {
+        assert!(
+            matches!(
+                super::schema::confined_path(sql_root, name),
+                Err(DashboardFixtureError::UnsafeFilename { .. })
+            ),
+            "{name} must stay outside the pinned sql directory"
+        );
+    }
+}
+
 async fn assert_schema_selection(admin_url: &SecretString) {
+    assert_confined_filenames();
     let baseline = provision(admin_url, &FixtureSeed::default()).await;
     let (baseline_client, baseline_driver) = connect(&baseline.options.url).await;
     assert_historical_schema(&baseline_client).await;

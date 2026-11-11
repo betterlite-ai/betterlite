@@ -65,7 +65,7 @@ async fn verified_statement(
     Ok(text.to_owned())
 }
 
-fn confined_path(sql_root: &Path, file: &str) -> Result<PathBuf, DashboardFixtureError> {
+pub(super) fn confined_path(sql_root: &Path, file: &str) -> Result<PathBuf, DashboardFixtureError> {
     let mut components = Path::new(file).components();
     let confined =
         matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
