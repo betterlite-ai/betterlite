@@ -164,6 +164,10 @@ fn settings(overrides: &[(&str, &str)]) -> OpenMeterSettings {
 }
 
 fn inputs(environment: &[(&str, &str)]) -> CatalogInputs {
+    inputs_with_config(environment, "")
+}
+
+fn inputs_with_config(environment: &[(&str, &str)], config: &str) -> CatalogInputs {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("valid proxy policy"),
     );
@@ -172,7 +176,7 @@ fn inputs(environment: &[(&str, &str)]) -> CatalogInputs {
             ConfigLoader {
                 lookup: BTreeMap::new(),
             }
-            .load("")
+            .load(config)
             .expect("valid config"),
         ),
         http: ProxiedClient::outbound(&policy).expect("http client"),
@@ -271,6 +275,15 @@ fn a_missing_key_gives_init() {
         Err(CatalogError::Init { message })
             if message == "Missing keys=['OPENMETER_API_KEY'] in environment."
     ));
+}
+
+#[test]
+fn an_invalid_request_timeout_gives_init() {
+    let inputs = inputs_with_config(
+        &[("OPENMETER_API_KEY", "openmeter-key")],
+        "litellm_settings:\n  request_timeout: -1.0\n",
+    );
+    assert!(matches!(build(&inputs), Err(CatalogError::Init { .. })));
 }
 
 #[tokio::test]

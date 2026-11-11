@@ -18,6 +18,7 @@ use tokio_util::task::TaskTracker;
 use super::Lookup;
 use super::adapter::GreenscaleAdapter;
 use crate::callback_logger::CallbackLogger as _;
+use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::http_analytics_loggers::clock::WallClock;
 use crate::http_analytics_loggers::delivery::{Delivery, PostRequest, PostResponse};
@@ -300,5 +301,8 @@ fn an_invalid_start_time_is_reported() {
         tracker: TaskTracker::new(),
     };
     let broken = event_from(&PAYLOAD.replace("1704067200.0", "1000000000000000000000000000000"));
-    assert!(adapter.log_success_event(&broken).is_err());
+    let error = adapter
+        .log_success_event(&broken)
+        .expect_err("the event is rejected");
+    assert!(matches!(error, LoggerError::Delivery { callback, .. } if callback == "greenscale"));
 }

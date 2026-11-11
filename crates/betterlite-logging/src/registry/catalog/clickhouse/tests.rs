@@ -491,6 +491,12 @@ async fn an_unknown_table_is_rejected() {
 }
 
 #[tokio::test]
+async fn a_zero_retention_schema_is_rejected() {
+    let storage = http_storage("http://127.0.0.1:1");
+    assert!(storage.ensure_schema(7, 0).await.is_err());
+}
+
+#[tokio::test]
 async fn schema_setup_posts_the_database_table_and_ttl() {
     let (base, served) = serve_many(3, 200).await;
     let storage = http_storage(&base);

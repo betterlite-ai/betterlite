@@ -17,6 +17,7 @@ use tokio_util::task::TaskTracker;
 use super::Lookup;
 use super::adapter::AthinaAdapter;
 use crate::callback_logger::CallbackLogger as _;
+use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::http_analytics_loggers::athina::{AthinaLogger, AthinaSettings};
 use crate::http_analytics_loggers::delivery::{Delivery, PostRequest, PostResponse};
@@ -239,6 +240,16 @@ fn assert_request_fields(body: &Json) {
     let request = field(body, "request");
     assert_eq!(field(request, "model"), &Json::Text("gpt-4o".to_owned()));
     assert_eq!(field(request, "stream"), &Json::Bool(false));
+    let Json::Object(request_fields) = request else {
+        panic!("the request is a JSON object");
+    };
+    // LiteLLM only adds the buffered response to the kwargs of a streamed call
+    assert!(!request_fields.contains_key("complete_streaming_response"));
+    assert_request_metadata(body);
+}
+
+fn assert_request_metadata(body: &Json) {
+    let request = field(body, "request");
     assert_eq!(
         field(field(request, "litellm_params"), "metadata"),
         &Json::Object(IndexMap::from([
@@ -347,7 +358,10 @@ fn an_invalid_start_time_is_reported() {
         &PAYLOAD.replace("1704067200.0", "1000000000000000000000000000000"),
         false,
     );
-    assert!(adapter.log_success_event(&broken).is_err());
+    let error = adapter
+        .log_success_event(&broken)
+        .expect_err("the event is rejected");
+    assert!(matches!(error, LoggerError::Delivery { callback, .. } if callback == "athina"));
 }
 
 #[tokio::test]

@@ -17,6 +17,7 @@ use tokio_util::task::TaskTracker;
 use super::Lookup;
 use super::adapter::PromptLayerAdapter;
 use crate::callback_logger::CallbackLogger as _;
+use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::http_analytics_loggers::delivery::{Delivery, PostRequest, PostResponse};
 use crate::http_analytics_loggers::promptlayer::{PromptLayerLogger, PromptLayerSettings};
@@ -373,5 +374,8 @@ fn an_invalid_start_time_is_reported() {
         &PAYLOAD.replace("1704067200.0", "1000000000000000000000000000000"),
         false,
     );
-    assert!(adapter.log_success_event(&broken).is_err());
+    let error = adapter
+        .log_success_event(&broken)
+        .expect_err("the event is rejected");
+    assert!(matches!(error, LoggerError::Delivery { callback, .. } if callback == "promptlayer"));
 }
