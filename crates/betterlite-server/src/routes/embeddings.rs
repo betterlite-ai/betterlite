@@ -197,16 +197,25 @@ fn call_failure(
 ) -> Response {
     match error {
         CallError::Route(route) => failure(route, call_id, deployment, redactor),
-        CallError::Operation { .. } | CallError::Mismatched => failure_response(
-            redactor.redact_internal_details(&error.to_string()),
-            ProviderFailure {
-                status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                error_type: String::from("internal_server_error"),
-                param: None,
-            },
-            failure_headers(None, None, call_id, deployment),
-        ),
+        CallError::Operation { .. } | CallError::Mismatched => {
+            let message = redactor.redact_internal_details(&error.to_string());
+            internal_failure(message, call_id, deployment)
+        }
     }
+}
+
+fn internal_failure(
+    message: String,
+    call_id: &str,
+    deployment: Option<&ChatDeployment>,
+) -> Response {
+    let internal = ProviderFailure {
+        status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+        error_type: String::from("internal_server_error"),
+        param: None,
+    };
+    let headers = failure_headers(None, None, call_id, deployment);
+    failure_response(message, internal, headers)
 }
 
 fn failure(
