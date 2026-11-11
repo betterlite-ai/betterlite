@@ -45,6 +45,10 @@ deviations:
   - what: >-
       A request `callbacks`, `success_callback` or `failure_callback` list of more than 100 names is rejected with a
       callback error, where LiteLLM adds names until a global list holds the limit and drops the rest with a warning.
-    why: The request list is untrusted input, so it is bounded before any name is resolved or scanned; the per-list
-      limit of 100 is LiteLLM's default LITELLM_MAX_CALLBACKS, and `CallbackLists::add` still drops overflow with a warning.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L150-L165
+      The limit is fixed at LiteLLM's default of 100, so a LITELLM_MAX_CALLBACKS above 100 is not honored here and a
+      request list that LiteLLM accepts under the raised limit fails.
+    why: The request list is untrusted input, so it is bounded before any name is resolved or scanned. The env
+      override is read by the config crate (callback_settings, B8741), and carrying that value into the SDK call
+      belongs to the caller that builds the call setup (B5368), which this task does not touch.
+      `CallbackLists::add` still drops overflow with a warning at the same 100.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L246-L247
