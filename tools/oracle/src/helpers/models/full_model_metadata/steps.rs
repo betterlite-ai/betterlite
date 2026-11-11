@@ -37,12 +37,12 @@ pub(super) async fn call_step_for(
     else {
         return Err(error_box("ValueError", "step is not a call".to_owned()));
     };
-    let api_key = api_key.as_ref().map(|key| SecretString::from(key.clone()));
+    let credential = api_key.as_ref().map(|key| SecretString::from(key.clone()));
     let request = MetadataRequest {
         model,
         custom_llm_provider: custom_llm_provider.as_deref(),
         api_base: api_base.as_deref(),
-        api_key: api_key.as_ref(),
+        api_key: credential.as_ref(),
     };
     let source = ScriptedSource {
         script: parameters.clone().unwrap_or(ParameterScript::Absent),
@@ -99,10 +99,9 @@ pub(super) async fn helper_step_for(
             .await;
             Ok(observation(state, answer, start, "helper_call"))
         }
-        _ => Err(error_box(
-            "ValueError",
-            "step is not a helper call".to_owned(),
-        )),
+        Step::Call { .. } | Step::Mutate { .. } | Step::Invalidate | Step::Replace { .. } => Err(
+            error_box("ValueError", "step is not a helper call".to_owned()),
+        ),
     }
 }
 
@@ -153,6 +152,7 @@ pub(super) fn mutate_step(state: &State, record: usize, field: &str, value: &Val
         .map_err(|error| error_box("ValueError", error.to_string()))?;
     let mut info = handle.lock().unwrap_or_else(PoisonError::into_inner);
     drop(info.fields.insert(field.to_owned(), converted));
+    drop(info);
     Ok(json!({"op": "mutate", "record": record, "field": field}))
 }
 
