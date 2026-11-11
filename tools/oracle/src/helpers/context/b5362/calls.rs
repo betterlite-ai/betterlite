@@ -7,10 +7,10 @@ use betterlite_context::media_optional_params::transcription::{
     TranscriptionRequest, transcription_optional_params,
 };
 use betterlite_context::non_default_params::function_fallback::pre_process_optional_params;
-use betterlite_context::non_default_params::reasoning_aliases::peek_reasoning_summary_aliases;
-use betterlite_context::non_default_params::{
-    extra_body, filters, mapper, pre_process, reasoning_aliases,
+use betterlite_context::non_default_params::reasoning_aliases::{
+    peek_reasoning_summary_aliases, strip_reasoning_aliases,
 };
+use betterlite_context::non_default_params::{extra_body, filters, mapper, pre_process};
 use serde::Serialize;
 use serde_json::{Value, json, to_value};
 
@@ -114,18 +114,13 @@ pub(super) fn run(call: &Call) -> Result<Value, Failure> {
         Function::SelectNonDefault => {
             let names: Vec<&str> = call.default_names.iter().map(String::as_str).collect();
             let drops = call.additional_drop_params.as_deref().unwrap_or_default();
-            Ok(to_value(filters::select_non_default_params(
-                &call.passed_params,
-                &names,
-                drops,
-            ))?)
+            let selected = filters::select_non_default_params(&call.passed_params, &names, drops);
+            Ok(to_value(selected)?)
         }
         Function::FilterOutLitellm => {
             let excluding: Vec<&str> = call.excluding.iter().map(String::as_str).collect();
-            Ok(to_value(filters::filter_out_litellm_params(
-                &call.kwargs,
-                &excluding,
-            ))?)
+            let kept = filters::filter_out_litellm_params(&call.kwargs, &excluding);
+            Ok(to_value(kept)?)
         }
         Function::RemoveSensitiveKeys => {
             let mut params = call.params.clone();
@@ -136,8 +131,7 @@ pub(super) fn run(call: &Call) -> Result<Value, Failure> {
             &call.optional_params,
         ))?),
         Function::StripAliases => {
-            let (stripped, summary) =
-                reasoning_aliases::strip_reasoning_aliases(&call.optional_params);
+            let (stripped, summary) = strip_reasoning_aliases(&call.optional_params);
             Ok(json!({ "params": stripped, "summary": summary }))
         }
         Function::BedrockRoute => route_for_request(call),
