@@ -109,34 +109,34 @@ fn expected_key_usage() -> FinOpsUsageRow {
 }
 
 fn expected_orphan_usage() -> FinOpsUsageRow {
-    FinOpsUsageRow {
-        id: "row-orphan".to_owned(),
-        user_id: None,
-        date: "2025-01-02".to_owned(),
-        api_key: UsageApiKey::OrphanHash(ORPHAN_HASH.to_owned()),
-        model: None,
-        model_group: None,
-        custom_llm_provider: None,
-        mcp_namespaced_tool_name: None,
-        endpoint: None,
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
-        compression_saved_tokens: 0,
-        compression_savings_spend: Decimal::ZERO,
-        prompt_caching_savings_spend: Decimal::ZERO,
-        gateway_injected_savings: Decimal::ZERO,
-        autorouter_savings_spend: Decimal::ZERO,
-        spend: Decimal::ZERO,
-        api_requests: 0,
-        successful_requests: 0,
-        failed_requests: 0,
-        total_response_time_ms: 0,
-        timed_requests: 0,
-        created_at: "2025-01-02T00:00:00".to_owned(),
-        updated_at: "2025-01-02T00:00:00".to_owned(),
-    }
+    let mut row = expected_key_usage();
+    row.id = "row-orphan".to_owned();
+    row.user_id = None;
+    row.date = "2025-01-02".to_owned();
+    row.api_key = UsageApiKey::OrphanHash(ORPHAN_HASH.to_owned());
+    row.model = None;
+    row.model_group = None;
+    row.custom_llm_provider = None;
+    row.mcp_namespaced_tool_name = None;
+    row.endpoint = None;
+    row.prompt_tokens = 0;
+    row.completion_tokens = 0;
+    row.cache_read_input_tokens = 0;
+    row.cache_creation_input_tokens = 0;
+    row.compression_saved_tokens = 0;
+    row.compression_savings_spend = Decimal::ZERO;
+    row.prompt_caching_savings_spend = Decimal::ZERO;
+    row.gateway_injected_savings = Decimal::ZERO;
+    row.autorouter_savings_spend = Decimal::ZERO;
+    row.spend = Decimal::ZERO;
+    row.api_requests = 0;
+    row.successful_requests = 0;
+    row.failed_requests = 0;
+    row.total_response_time_ms = 0;
+    row.timed_requests = 0;
+    row.created_at = "2025-01-02T00:00:00".to_owned();
+    row.updated_at = "2025-01-02T00:00:00".to_owned();
+    row
 }
 
 fn expected_finops() -> FinOpsSeed {

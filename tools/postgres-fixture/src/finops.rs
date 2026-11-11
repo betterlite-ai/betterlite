@@ -78,20 +78,8 @@ pub enum FinOpsFixtureError {
 }
 
 pub async fn seed(client: &Client, finops: &FinOpsSeed) -> Result<(), FinOpsFixtureError> {
-    for organization in &finops.organizations {
-        insert::organization(client, organization).await?;
-    }
-    for metadata in &finops.key_metadata {
-        insert::key_metadata(client, metadata).await?;
-        if let Some(organization_id) = &metadata.team_organization_id {
-            insert::team_metadata(client, metadata, organization_id).await?;
-        }
-    }
-    for row in &finops.daily_usage {
-        insert::daily_usage(client, row).await?;
-    }
-    for row in &finops.config_rows {
-        insert::config(client, row).await?;
-    }
-    Ok(())
+    insert::organizations(client, &finops.organizations).await?;
+    insert::key_metadata(client, &finops.key_metadata).await?;
+    insert::daily_usage(client, &finops.daily_usage).await?;
+    insert::config_rows(client, &finops.config_rows).await
 }
