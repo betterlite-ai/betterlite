@@ -99,6 +99,7 @@ fn keeps_at_most_512_entries() {
 
     fill(&cache, &context, 513);
 
+    assert!(!cache.is_empty());
     assert_eq!(cache.len(), 512);
     assert_eq!(
         cache.qualified("openai/model-0", &context),

@@ -123,6 +123,8 @@ def _dispatch_value(router: _FakeRouter | None, dispatch: DispatchInput) -> Json
 def run(input_value: Input) -> Json:
     if input_value["check"] == "parse":
         return cast(Json, parse_json_verdict(input_value["raw"]))
+    # an unmapped model name makes get_llm_provider print to stdout, where the answer goes
+    litellm.suppress_debug_info = True
     router_input = input_value.get("router")
     router = _FakeRouter(router_input["served"]) if router_input is not None else None
     queries: list[Json] = [
