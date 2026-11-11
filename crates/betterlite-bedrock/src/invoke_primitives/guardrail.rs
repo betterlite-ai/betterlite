@@ -48,12 +48,10 @@ pub fn guardrail_headers(raw: &RawValue) -> Result<Vec<(String, String)>, Guardr
     // a struct derive reads a JSON array positionally; a map rejects every non-object up front
     let config: BTreeMap<String, Box<RawValue>> =
         serde_json::from_str(raw.get()).map_err(invalid(raw))?;
-    let identifier_field: Option<String> =
+    let identifier_field =
         parse_field::<String>(&config, "guardrailIdentifier").map_err(invalid(raw))?;
-    let version_field: Option<String> =
-        parse_field::<String>(&config, "guardrailVersion").map_err(invalid(raw))?;
-    let trace_field: Option<Trace> =
-        parse_field::<Trace>(&config, "trace").map_err(invalid(raw))?;
+    let version_field = parse_field::<String>(&config, "guardrailVersion").map_err(invalid(raw))?;
+    let trace_field = parse_field::<Trace>(&config, "trace").map_err(invalid(raw))?;
     let Some(identifier) = identifier_field else {
         return Err(GuardrailError::MissingIdentifier {
             raw: raw.get().to_owned(),
