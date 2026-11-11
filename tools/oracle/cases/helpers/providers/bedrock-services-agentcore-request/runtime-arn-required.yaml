@@ -1,0 +1,15 @@
+kind: helper
+name: runtime-arn-required
+call:
+  bedrock_services_agentcore_request:
+    scenario: runtime_arn_required
+    models:
+      - agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+      - agentcore
+      - bedrock/agentcore/arn:aws
+      - 'agentcore/arn:aws:bedrock-agentcore:us-west-2:1:runtime/a/b'
+      - 'agentcore/arn:aws:bedrock-agentcore:'
+      - agentcore/arn:aws
+      - 'agentcore/not:an:arn:anywhere'
+env: {}
+compare: {ignore: []}

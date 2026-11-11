@@ -1,0 +1,38 @@
+kind: helper
+name: runtime-session-id
+call:
+  bedrock_services_agentcore_request:
+    scenario: runtime_session_id
+    runs:
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: hi}]
+        optional_params: {}
+        litellm_params: {}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: hi}]
+        optional_params: {runtimeSessionId: short}
+        litellm_params: {}
+        headers: [[X-Amzn-Bedrock-AgentCore-Runtime-Session-Id, caller-session]]
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: hi}]
+        optional_params: {runtimeSessionId: ''}
+        litellm_params: {}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: hi}]
+        optional_params: {runtimeSessionId: null}
+        litellm_params: {}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime
+        messages: [{role: user, content: hi}]
+        optional_params: {runtimeSessionId: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+        litellm_params: {}
+        headers: []
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare: {ignore: []}

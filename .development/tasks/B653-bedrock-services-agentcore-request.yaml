@@ -118,6 +118,9 @@ description: >-
   wiring lines; 770 planned, 775 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers/b3993.py"
+  - "tools/oracle/helpers"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/agentcore_request.rs
   - crates/betterlite-bedrock/src/agentcore_request/**

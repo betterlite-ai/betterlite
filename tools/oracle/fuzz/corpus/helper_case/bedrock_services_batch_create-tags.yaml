@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-batch-create-tags-seed
+call:
+  bedrock_services_batch_create:
+    operation: tags_validation
+    scenarios:
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags: []
+        optional_params:
+          bedrock_tags:
+            - key: env
+              value: prod
+env: {}
+compare: {ignore: []}

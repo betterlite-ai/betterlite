@@ -1,0 +1,11 @@
+model_list:
+  - model_name: agentcore
+    litellm_params:
+      model: bedrock/agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent
+      forward_multimodal_content: true
+      runtimeSessionId: session-from-deployment
+      runtimeUserId: user-from-deployment
+      qualifier: production
+litellm_settings:
+  forward_multimodal_content: os.environ/AGENTCORE_FORWARD
+  qualifier: global

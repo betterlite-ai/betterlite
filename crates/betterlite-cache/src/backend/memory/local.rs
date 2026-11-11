@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -6,18 +7,22 @@ use serde_json::Number;
 
 use super::MemoryCacheOps;
 use crate::backend::{BackendError, CacheResult, Ttl};
+use crate::dual_cache::MemoryMaxSize;
+use crate::llm_client_cache::DEFAULT_MAX_SIZE_IN_MEMORY;
 
 type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
 pub struct LocalMemoryOps {
     cache: Mutex<LocalTtlCache>,
     default_ttl_seconds: i64,
+    max_size: AtomicUsize,
 }
 
 impl LocalMemoryOps {
-    // capacity 200 and default ttl 600 seconds are the shared cache's own defaults
+    // the shared cache gets no size cap of its own: store enforces the live max size, 200 until resized
     pub fn new(max_size_per_item_kib: i64, clock: Clock) -> CacheResult<Self> {
-        let cache = LocalTtlCache::with_clock(None, None, None, max_size_per_item_kib, clock)?;
+        let cache =
+            LocalTtlCache::with_clock(Some(i64::MAX), None, None, max_size_per_item_kib, clock)?;
         let default_ttl = cache.as_ref().default_ttl;
         let whole = Duration::try_from_secs_f64(default_ttl).map_err(|source| {
             BackendError::InvalidDefaultDuration {
@@ -34,7 +39,35 @@ impl LocalMemoryOps {
         Ok(Self {
             cache: Mutex::new(cache),
             default_ttl_seconds,
+            max_size: AtomicUsize::new(DEFAULT_MAX_SIZE_IN_MEMORY),
         })
+    }
+
+    // LiteLLM's evict_cache: the earliest expiries go until one slot is free, and expired ones sort first
+    fn store(
+        &self,
+        cache: &mut LocalTtlCache,
+        key: &str,
+        value: CacheValue,
+        ttl: Ttl,
+    ) -> CacheResult<()> {
+        let max_size = self.max_size.load(Ordering::Relaxed);
+        if max_size == 0 {
+            return Ok(());
+        }
+        let mut entries = cache.ttl_entries();
+        entries.sort_by(|(_first, left), (_second, right)| left.total_cmp(right));
+        let surplus = entries.len().saturating_add(1).saturating_sub(max_size);
+        for (name, _expiry) in entries.iter().take(surplus) {
+            cache.delete(name);
+        }
+        Ok(cache.set(key, value, ttl)?)
+    }
+}
+
+impl MemoryMaxSize for LocalMemoryOps {
+    fn set_max_size(&self, max_size: usize) {
+        self.max_size.store(max_size, Ordering::Relaxed);
     }
 }
 
@@ -50,7 +83,7 @@ impl MemoryCacheOps for LocalMemoryOps {
 
     fn set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(cache.set(key, value, ttl)?)
+        self.store(&mut cache, key, value, ttl)
     }
 
     fn delete_cache(&self, key: &str) -> CacheResult<()> {
@@ -84,7 +117,7 @@ impl MemoryCacheOps for LocalMemoryOps {
                 key: key.to_owned(),
             });
         }
-        cache.set(key, CacheValue::Float(next), ttl)?;
+        self.store(&mut cache, key, CacheValue::Float(next), ttl)?;
         drop(cache);
         Ok(next)
     }
