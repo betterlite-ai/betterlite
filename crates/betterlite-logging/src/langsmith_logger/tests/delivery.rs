@@ -150,20 +150,20 @@ async fn two_tenants_share_a_key_but_post_separately() {
 #[tokio::test]
 async fn two_base_urls_share_credentials_but_post_separately() {
     let options = Options {
-        environment: &[("LANGSMITH_API_KEY", "shared-key")],
+        environment: &[],
         batch_size: Some(2),
         draws: &[0.0_f64, 0.0_f64],
         redact: false,
     };
     let built = harness(&options, FakeDelivery::answering(200));
-    let first = event(dynamic(&[(
-        "langsmith_base_url",
-        text("https://a.example"),
-    )]));
-    let second = event(dynamic(&[(
-        "langsmith_base_url",
-        text("https://b.example"),
-    )]));
+    let first = event(dynamic(&[
+        ("langsmith_api_key", text("shared-key")),
+        ("langsmith_base_url", text("https://a.example")),
+    ]));
+    let second = event(dynamic(&[
+        ("langsmith_api_key", text("shared-key")),
+        ("langsmith_base_url", text("https://b.example")),
+    ]));
     built
         .logger
         .async_log_success_event(Arc::new(first))
