@@ -100,6 +100,8 @@ pub enum RecoveryError {
     },
     #[error("the migration deploy timeout is too large to schedule")]
     DeployTimeout,
+    #[error("a migration recovery database query exceeded its {seconds}s command timeout")]
+    QueryTimeout { seconds: u64 },
     #[error(transparent)]
     Lock(#[from] LockError),
     #[error(transparent)]
@@ -113,9 +115,17 @@ pub enum RecoveryError {
     #[error("{message}")]
     UnverifiedCompletion { message: String },
     #[error("{message}")]
-    InsufficientPrivileges { message: String },
+    InsufficientPrivileges {
+        message: String,
+        #[source]
+        source: Option<PostgresError>,
+    },
     #[error("{message}")]
-    ManualIntervention { message: String },
+    ManualIntervention {
+        message: String,
+        #[source]
+        source: Option<PostgresError>,
+    },
     #[error("{message}")]
     AttemptsExhausted { message: String },
 }

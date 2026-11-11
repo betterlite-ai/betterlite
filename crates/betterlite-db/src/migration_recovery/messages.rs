@@ -1,6 +1,6 @@
 use crate::migration_ledger::budget::MAX_MIGRATE_DEPLOY_ATTEMPTS;
 
-use super::outcome::{FailedIdentity, FailedStep};
+use super::outcome::{DeployFailure, FailedIdentity, FailedStep, database_detail, sqlstate_of};
 
 const UNVERIFIED_LEAD: &str =
     "Migration completion could not be verified. LiteLLM startup has stopped.";
@@ -35,15 +35,49 @@ resolve this state."
 pub(super) fn insufficient_privileges(step: &FailedStep) -> String {
     format!(
         "{PERMISSION_LEAD}\n\n{}",
-        describe(step.name.as_deref(), step.sqlstate.as_deref(), &step.detail)
+        describe(Some(&step.name), step.sqlstate().as_deref(), &step.detail())
     )
 }
 
 pub(super) fn manual_for_step(step: &FailedStep) -> String {
     format!(
         "{MANUAL_LEAD}\n\n{}",
-        describe(step.name.as_deref(), step.sqlstate.as_deref(), &step.detail)
+        describe(Some(&step.name), step.sqlstate().as_deref(), &step.detail())
     )
+}
+
+pub(super) fn manual_for_failure(failure: &DeployFailure) -> String {
+    let detail = match failure {
+        DeployFailure::Database(source) => describe(
+            None,
+            sqlstate_of(source).as_deref(),
+            &database_detail(source),
+        ),
+        DeployFailure::MigrationLog {
+            name,
+            source,
+            ledger,
+        } => describe(
+            None,
+            sqlstate_of(source).as_deref(),
+            &format!(
+                "migration {name} failed ({}) and recording the failure in the migration ledger also failed: {ledger}",
+                database_detail(source)
+            ),
+        ),
+        DeployFailure::InvalidSqlLog {
+            name,
+            source,
+            ledger,
+        } => describe(
+            None,
+            None,
+            &format!(
+                "migration {name} has SQL that is not UTF-8 ({source}) and recording the failure also failed: {ledger}"
+            ),
+        ),
+    };
+    format!("{MANUAL_LEAD}\n\n{detail}")
 }
 
 pub(super) fn attempts_exhausted() -> String {

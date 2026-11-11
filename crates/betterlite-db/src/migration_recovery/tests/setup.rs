@@ -8,12 +8,12 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
 
 use crate::migration_deploy::catalog::Migration;
-use crate::migration_recovery::outcome::{DeployOutcome, FailedIdentity, FailedStep};
+use crate::migration_recovery::outcome::{DeployOutcome, FailedIdentity, FailedStep, StepSource};
 use crate::migration_recovery::policy::{PassSettings, RecoverySteps as _, run_passes};
 use crate::migration_recovery::steps::{PgSteps, PgStepsInputs, recoverable_name};
 use crate::migration_recovery::tests::database::{
     COMMAND_TIMEOUT, LOCK_TIMEOUT, LedgerRow, create_ledger, insert_row, migration, next_id,
-    relation_exists, stored_row, with_schema,
+    raised_database_error, relation_exists, stored_row, with_schema,
 };
 use crate::migration_recovery::tests::support::{
     FakeJitter, RecordingPause, ScriptedSteps, capture_logs,
@@ -291,6 +291,7 @@ async fn callback_failure_propagates() {
     steps.deploying(DeployOutcome::SchemaNotBaselined);
     steps.baselining(Err(RecoveryError::ManualIntervention {
         message: "baseline broke".to_owned(),
+        source: None,
     }));
     let jitter = FakeJitter(0);
     let pause = RecordingPause::default();
@@ -305,6 +306,7 @@ async fn callback_failure_propagates() {
     });
     recovery.recovering(Err(RecoveryError::ManualIntervention {
         message: "recovery broke".to_owned(),
+        source: None,
     }));
     let recovery_error = run_passes(&recovery, settings(42, 77), &jitter, &pause)
         .await
@@ -355,31 +357,34 @@ async fn no_warning_without_ahead_history() {
     );
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn completion_evidence_before_permission_classification() {
-    let steps = ScriptedSteps::default();
-    steps.deploying(DeployOutcome::FailedStep(FailedStep {
-        name: Some("20240101000000_a".to_owned()),
-        sqlstate: Some("42501".to_owned()),
-        detail: "permission denied for table x".to_owned(),
-    }));
-    steps.recovering(Ok(true));
-    steps.deploying(DeployOutcome::Complete);
-    let jitter = FakeJitter(0);
-    let pause = RecordingPause::default();
-    run_passes(&steps, settings(42, 77), &jitter, &pause)
-        .await
-        .expect("verified completion outranks the permission rejection");
-    assert_eq!(
-        steps.events(),
-        vec![
-            "ahead",
-            "deploy",
-            "recover:20240101000000_a",
-            "ahead",
-            "deploy"
-        ]
-    );
+    with_schema(|database| async move {
+        let source = raised_database_error(&database, "permission denied for table x").await;
+        let steps = ScriptedSteps::default();
+        steps.deploying(DeployOutcome::FailedStep(FailedStep {
+            name: "20240101000000_a".to_owned(),
+            source: StepSource::Database(source),
+        }));
+        steps.recovering(Ok(true));
+        steps.deploying(DeployOutcome::Complete);
+        let jitter = FakeJitter(0);
+        let pause = RecordingPause::default();
+        run_passes(&steps, settings(42, 77), &jitter, &pause)
+            .await
+            .expect("verified completion outranks the permission rejection");
+        assert_eq!(
+            steps.events(),
+            vec![
+                "ahead",
+                "deploy",
+                "recover:20240101000000_a",
+                "ahead",
+                "deploy"
+            ]
+        );
+    })
+    .await;
 }
 
 #[test]

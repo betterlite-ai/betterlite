@@ -9,7 +9,7 @@ use crate::migration_ledger::ledger_reads::{FailedLookup, FailedMigration};
 use crate::migration_ledger::lock::JitterSource;
 
 use super::RecoveryError;
-use super::messages::{self, MANUAL_LEAD, describe};
+use super::messages;
 use super::outcome::{
     DEADLOCK_MARKER, DeployOutcome, FailedIdentity, FailedStep, is_deadlock, is_permission_error,
 };
@@ -158,15 +158,19 @@ async fn next_step(
             unfinished_history_budget(steps, identity, budget).await?,
         )),
         DeployOutcome::FailedStep(step) => Ok(PassStep::Retry(
-            failed_step_budget(steps, &step, budget).await?,
+            failed_step_budget(steps, step, budget).await?,
         )),
-        DeployOutcome::Deadlock { .. } => Ok(PassStep::Retry(deadlock_attempt(budget))),
+        DeployOutcome::Deadlock => Ok(PassStep::Retry(deadlock_attempt(budget))),
         DeployOutcome::Contention { detail } => Ok(PassStep::Retry(contention_attempt(
             budget, elapsed, &detail,
         )?)),
-        DeployOutcome::Failed { detail } => Err(RecoveryError::ManualIntervention {
-            message: format!("{MANUAL_LEAD}\n\n{}", describe(None, None, &detail)),
-        }),
+        DeployOutcome::Failed(failure) => {
+            let message = messages::manual_for_failure(&failure);
+            Err(RecoveryError::ManualIntervention {
+                message,
+                source: Some(failure.database_error()),
+            })
+        }
     }
 }
 
@@ -175,13 +179,13 @@ fn checkpoint_name(outcome: &DeployOutcome) -> Option<&str> {
         DeployOutcome::UnfinishedHistory { identity } => {
             identity.as_ref().map(|found| found.name.as_str())
         }
-        DeployOutcome::FailedStep(step) => step.name.as_deref(),
+        DeployOutcome::FailedStep(step) => Some(step.name.as_str()),
         DeployOutcome::Complete
         | DeployOutcome::TimedOut
         | DeployOutcome::SchemaNotBaselined
-        | DeployOutcome::Deadlock { .. }
+        | DeployOutcome::Deadlock
         | DeployOutcome::Contention { .. }
-        | DeployOutcome::Failed { .. } => None,
+        | DeployOutcome::Failed(_) => None,
     }
 }
 
@@ -258,24 +262,27 @@ async fn unfinished_history_budget(
 
 async fn failed_step_budget(
     steps: &dyn RecoverySteps,
-    step: &FailedStep,
+    step: FailedStep,
     budget: MigrateAttemptBudget,
 ) -> Result<MigrateAttemptBudget, RecoveryError> {
-    if is_permission_error(step.sqlstate.as_deref(), &step.detail) {
+    let sqlstate = step.sqlstate();
+    let detail = step.detail();
+    if is_permission_error(sqlstate.as_deref(), &detail) {
         return Err(RecoveryError::InsufficientPrivileges {
-            message: messages::insufficient_privileges(step),
+            message: messages::insufficient_privileges(&step),
+            source: step.source.database_error(),
         });
     }
-    if let Some(name) = step.name.as_deref()
-        && is_deadlock(step.sqlstate.as_deref(), &step.detail)
-    {
+    if is_deadlock(sqlstate.as_deref(), &detail) {
         tracing::info!(
-            "migration {name} deadlocked against a concurrent migrate deploy, rolling its ledger row back and retrying"
+            "migration {} deadlocked against a concurrent migrate deploy, rolling its ledger row back and retrying",
+            step.name
         );
-        steps.roll_back(name).await?;
+        steps.roll_back(&step.name).await?;
         return Ok(budget.spend());
     }
     Err(RecoveryError::ManualIntervention {
-        message: messages::manual_for_step(step),
+        message: messages::manual_for_step(&step),
+        source: step.source.database_error(),
     })
 }

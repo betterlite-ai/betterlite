@@ -7,12 +7,14 @@ use crate::migration_ledger::ledger_reads::FailedLookup;
 
 use crate::migration_ledger::lock::PRISMA_LOCK_KEY;
 use crate::migration_recovery::RecoveryError;
-use crate::migration_recovery::outcome::{DeployOutcome, FailedIdentity, FailedStep};
+use crate::migration_recovery::outcome::{
+    DeployFailure, DeployOutcome, FailedIdentity, FailedStep, StepSource,
+};
 use crate::migration_recovery::policy::{PassSettings, RecoverySteps, StepFuture, run_passes};
 use crate::migration_recovery::steps::PgSteps;
 use crate::migration_recovery::tests::database::{
     LedgerRow, create_ledger, execute, insert_history, insert_row, ledger_table, migration,
-    relation_exists, stored_row, with_schema,
+    raised_database_error, relation_exists, stored_row, with_schema,
 };
 use crate::migration_recovery::tests::support::{
     FakeJitter, RecordingPause, ScriptedSteps, capture_logs,
@@ -143,6 +145,7 @@ impl RecoverySteps for HybridSteps<'_> {
 #[tokio::test]
 async fn postgres_failed_marker_write_is_silent() {
     with_schema(|database| async move {
+        let deadlock = raised_database_error(&database, "deadlock detected").await;
         let catalog = [migration("20240101000000_a", "SELECT 1;")];
         let jitter = FakeJitter(0);
         let hybrid = HybridSteps {
@@ -152,9 +155,8 @@ async fn postgres_failed_marker_write_is_silent() {
         hybrid
             .scripted
             .deploying(DeployOutcome::FailedStep(FailedStep {
-                name: Some("20240101000000_a".to_owned()),
-                sqlstate: Some("40P01".to_owned()),
-                detail: "deadlock detected".to_owned(),
+                name: "20240101000000_a".to_owned(),
+                source: StepSource::Database(deadlock),
             }));
         hybrid.scripted.deploying(DeployOutcome::Complete);
         let pause = RecordingPause::default();
@@ -194,8 +196,8 @@ async fn postgres_partial_ddl_not_undone() {
         let DeployOutcome::FailedStep(step) = outcome else {
             panic!("a broken migration is a typed step failure: {outcome:?}");
         };
-        assert_eq!(step.name.as_deref(), Some("20240101000001_break"));
-        assert_eq!(step.sqlstate.as_deref(), Some("22012"), "{step:?}");
+        assert_eq!(step.name, "20240101000001_break");
+        assert_eq!(step.sqlstate().as_deref(), Some("22012"), "{step:?}");
         assert!(relation_exists(&database, "survivor").await);
         steps
             .roll_back(&catalog[1].name)
@@ -255,10 +257,20 @@ async fn postgres_database_failure_is_manual() {
             .deploy(DEPLOY_TIMEOUT)
             .await
             .expect("a typed deploy outcome");
-        let DeployOutcome::Failed { detail } = outcome else {
+        let DeployOutcome::Failed(failure) = outcome else {
             panic!("a raw database failure is a manual outcome: {outcome:?}");
         };
-        assert!(detail.contains("does not exist"), "{detail}");
+        let DeployFailure::Database(source) = failure else {
+            panic!("the raw failure keeps its database error: {failure:?}");
+        };
+        assert!(
+            source
+                .as_db_error()
+                .expect("a database error")
+                .message()
+                .contains("does not exist"),
+            "{source}"
+        );
     })
     .await;
 }
@@ -277,13 +289,30 @@ async fn postgres_failed_ledger_write_reports_both_errors() {
             .deploy(DEPLOY_TIMEOUT)
             .await
             .expect("a typed deploy outcome");
-        let DeployOutcome::Failed { detail } = outcome else {
+        let DeployOutcome::Failed(failure) = outcome else {
             panic!("a failed ledger write is a manual outcome: {outcome:?}");
         };
-        assert!(detail.contains("20240101000000_drop"), "{detail}");
+        let DeployFailure::MigrationLog {
+            name,
+            source,
+            ledger,
+        } = failure
+        else {
+            panic!("the failure keeps the migration and ledger errors: {failure:?}");
+        };
+        assert_eq!(name, "20240101000000_drop");
         assert!(
-            detail.contains("recording the failure in the migration ledger also failed"),
-            "{detail}"
+            source
+                .as_db_error()
+                .expect("a database error")
+                .message()
+                .contains("division by zero")
+                && ledger
+                    .as_db_error()
+                    .expect("a database error")
+                    .message()
+                    .contains("does not exist"),
+            "{source} {ledger}"
         );
     })
     .await;
@@ -299,7 +328,7 @@ async fn postgres_nonempty_schema_needs_baseline() {
             .deploy(DEPLOY_TIMEOUT)
             .await
             .expect("a typed deploy outcome");
-        assert_eq!(outcome, DeployOutcome::SchemaNotBaselined);
+        assert!(matches!(outcome, DeployOutcome::SchemaNotBaselined));
         assert!(!relation_exists(&database, "_prisma_migrations").await);
     })
     .await;
@@ -355,7 +384,7 @@ async fn postgres_slow_statement_is_a_deploy_timeout() {
             .deploy(Duration::from_millis(250))
             .await
             .expect("a typed deploy outcome");
-        assert_eq!(outcome, DeployOutcome::TimedOut);
+        assert!(matches!(outcome, DeployOutcome::TimedOut));
     })
     .await;
 }
@@ -373,7 +402,7 @@ async fn postgres_unbaselined_with_empty_schema_deploys() {
             .deploy(DEPLOY_TIMEOUT)
             .await
             .expect("a typed deploy outcome");
-        assert_eq!(outcome, DeployOutcome::Complete);
+        assert!(matches!(outcome, DeployOutcome::Complete));
         assert!(relation_exists(&database, "first_migration").await);
         let row = stored_row(&database, &catalog[0].name).await;
         assert!(row.finished);
@@ -483,6 +512,41 @@ async fn postgres_unfinished_identity_reads_started_at() {
         let found = identity.expect("the exact ledger identity");
         assert_eq!(found.name, "20240101000000_pending");
         assert_eq!(found.started_at, "2024-05-06 07:08:09+00");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn postgres_identity_survives_concurrent_rollback() {
+    with_schema(|database| async move {
+        create_ledger(&database).await;
+        let failed = migration("20240101000000_a", "SELECT 1;");
+        insert_history(
+            &database,
+            &failed,
+            "00000000-0000-0000-0000-000000000009",
+            "2024-01-02 03:04:05+00",
+            false,
+        )
+        .await;
+        let jitter = FakeJitter(0);
+        let steps = database.steps(from_ref(&failed), &jitter);
+        steps
+            .roll_back(&failed.name)
+            .await
+            .expect("a concurrent replica rolls the row back");
+        let identity = steps
+            .unfinished_identity(&failed.name)
+            .await
+            .expect("the identity read")
+            .expect("the newest row still carries its identity");
+        assert_eq!(identity.name, failed.name);
+        assert_eq!(identity.started_at, "2024-01-02 03:04:05+00");
+        let lookup = steps.failed_history(&identity).await;
+        let FailedLookup::Found(recovered) = lookup else {
+            panic!("the recovered row is still found by its exact identity: {lookup:?}");
+        };
+        assert!(recovered.recovered);
     })
     .await;
 }

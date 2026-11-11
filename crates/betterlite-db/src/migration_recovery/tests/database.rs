@@ -275,3 +275,17 @@ pub(super) async fn execute(database: &TestDatabase, statement: &str) {
         .await
         .expect("the statement runs");
 }
+
+pub(super) async fn raised_database_error(
+    database: &TestDatabase,
+    message: &str,
+) -> tokio_postgres::Error {
+    database
+        .pool
+        .get()
+        .await
+        .expect("a fixture connection")
+        .batch_execute(&format!("DO $$ BEGIN RAISE EXCEPTION '{message}'; END $$;"))
+        .await
+        .expect_err("the fixture raises the scripted error")
+}

@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,9 +12,10 @@ use crate::migration_ledger::ledger_reads::{FailedLookup, FailedMigration};
 use crate::migration_recovery::RecoveryError;
 use crate::migration_recovery::messages;
 use crate::migration_recovery::outcome::{
-    DeployOutcome, FailedIdentity, FailedStep, is_permission_error,
+    DeployFailure, DeployOutcome, FailedIdentity, FailedStep, StepSource, is_permission_error,
 };
 use crate::migration_recovery::policy::{PassSettings, run_database_v2, run_passes};
+use crate::migration_recovery::tests::database::{raised_database_error, with_schema};
 use crate::migration_recovery::tests::support::{FakeJitter, RecordingPause, ScriptedSteps};
 
 const DEPLOY_TIMEOUT: Duration = Duration::from_secs(42);
@@ -37,6 +39,20 @@ fn found(logs: &str, recovered: bool) -> FailedLookup {
         logs: logs.to_owned(),
         recovered,
     })
+}
+
+fn database_cause(error: &RecoveryError, message: &str) {
+    let cause = StdError::source(error).expect("the database error is the cause");
+    assert!(
+        cause
+            .downcast_ref::<tokio_postgres::Error>()
+            .expect("a Postgres error")
+            .as_db_error()
+            .expect("a database error")
+            .message()
+            .contains(message),
+        "{cause}"
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -203,58 +219,69 @@ fn permission_patterns_and_sqlstate(
     assert_eq!(is_permission_error(sqlstate, detail), expected);
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn permission_before_deadlock() {
-    let steps = ScriptedSteps::default();
-    steps.deploying(DeployOutcome::FailedStep(FailedStep {
-        name: Some("20240101000000_a".to_owned()),
-        sqlstate: Some("42501".to_owned()),
-        detail: "permission denied for table users; deadlock detected".to_owned(),
-    }));
-    let jitter = FakeJitter(0);
-    let pause = RecordingPause::default();
-    let error = run_database_v2(
-        &steps,
-        MigrateAttemptBudget::default(),
-        DEPLOY_TIMEOUT,
-        &jitter,
-        &pause,
-    )
-    .await
-    .expect_err("the permission rejection outranks the deadlock retry");
-    assert!(matches!(
-        error,
-        RecoveryError::InsufficientPrivileges { .. }
-    ));
-    assert!(
-        !steps
-            .events()
-            .iter()
-            .any(|event| event.starts_with("rollback:"))
-    );
-    assert!(pause.delays().is_empty());
+    with_schema(|database| async move {
+        let source = raised_database_error(
+            &database,
+            "permission denied for table users; deadlock detected",
+        )
+        .await;
+        let steps = ScriptedSteps::default();
+        steps.deploying(DeployOutcome::FailedStep(FailedStep {
+            name: "20240101000000_a".to_owned(),
+            source: StepSource::Database(source),
+        }));
+        let jitter = FakeJitter(0);
+        let pause = RecordingPause::default();
+        let error = run_database_v2(
+            &steps,
+            MigrateAttemptBudget::default(),
+            DEPLOY_TIMEOUT,
+            &jitter,
+            &pause,
+        )
+        .await
+        .expect_err("the permission rejection outranks the deadlock retry");
+        assert!(matches!(
+            error,
+            RecoveryError::InsufficientPrivileges { .. }
+        ));
+        database_cause(&error, "permission denied for table users");
+        assert!(pause.delays().is_empty());
+        assert!(
+            !steps
+                .events()
+                .iter()
+                .any(|event| event.starts_with("rollback:"))
+        );
+    })
+    .await;
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn named_step_deadlock() {
-    let steps = ScriptedSteps::default();
-    steps.deploying(DeployOutcome::FailedStep(FailedStep {
-        name: Some("20240101000000_a".to_owned()),
-        sqlstate: Some("40P01".to_owned()),
-        detail: "deadlock detected".to_owned(),
-    }));
-    steps.deploying(DeployOutcome::Complete);
-    let jitter = FakeJitter(0);
-    let pause = RecordingPause::default();
-    run_passes(&steps, settings(), &jitter, &pause)
-        .await
-        .expect("the named deadlock rolls its history back and retries");
-    assert!(
-        steps
-            .events()
-            .contains(&"rollback:20240101000000_a".to_owned())
-    );
-    assert_eq!(pause.delays(), vec![Duration::from_secs(5)]);
+    with_schema(|database| async move {
+        let source = raised_database_error(&database, "deadlock detected").await;
+        let steps = ScriptedSteps::default();
+        steps.deploying(DeployOutcome::FailedStep(FailedStep {
+            name: "20240101000000_a".to_owned(),
+            source: StepSource::Database(source),
+        }));
+        steps.deploying(DeployOutcome::Complete);
+        let jitter = FakeJitter(0);
+        let pause = RecordingPause::default();
+        run_passes(&steps, settings(), &jitter, &pause)
+            .await
+            .expect("the named deadlock rolls its history back and retries");
+        assert!(
+            steps
+                .events()
+                .contains(&"rollback:20240101000000_a".to_owned())
+        );
+        assert_eq!(pause.delays(), vec![Duration::from_secs(5)]);
+    })
+    .await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -279,42 +306,42 @@ async fn bare_deadlock_before_contention() {
     assert_eq!(pause.delays(), vec![Duration::from_secs(5)]);
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn unknown_failure_manual_intervention() {
-    let steps = ScriptedSteps::default();
-    steps.deploying(DeployOutcome::Failed {
-        detail: "the database returned an unexpected error".to_owned(),
-    });
-    let jitter = FakeJitter(0);
-    let pause = RecordingPause::default();
-    let error = run_database_v2(
-        &steps,
-        MigrateAttemptBudget::default(),
-        DEPLOY_TIMEOUT,
-        &jitter,
-        &pause,
-    )
-    .await
-    .expect_err("an unrecognized failure stops startup");
-    assert!(matches!(error, RecoveryError::ManualIntervention { .. }));
-    let message = error.to_string();
-    assert!(
-        message.contains(
-            "Database migration failed and cannot be auto-recovered. Manual intervention required."
-        ),
-        "{message}"
-    );
-    assert!(message.contains("unexpected error"), "{message}");
+    with_schema(|database| async move {
+        let source =
+            raised_database_error(&database, "the database returned an unexpected error").await;
+        let steps = ScriptedSteps::default();
+        steps.deploying(DeployOutcome::Failed(DeployFailure::Database(source)));
+        let jitter = FakeJitter(0);
+        let pause = RecordingPause::default();
+        let error = run_database_v2(
+            &steps,
+            MigrateAttemptBudget::default(),
+            DEPLOY_TIMEOUT,
+            &jitter,
+            &pause,
+        )
+        .await
+        .expect_err("an unrecognized failure stops startup");
+        assert!(matches!(error, RecoveryError::ManualIntervention { .. }));
+        let message = error.to_string();
+        assert!(
+            message.contains(
+                "Database migration failed and cannot be auto-recovered. Manual intervention required."
+            ),
+            "{message}"
+        );
+        assert!(message.contains("unexpected error"), "{message}");
+        database_cause(&error, "unexpected error");
+    })
+    .await;
 }
 
 #[tokio::test(start_paused = true)]
 async fn exhaustion_full_message() {
     let steps = ScriptedSteps::default();
-    (0_u32..4).for_each(|_| {
-        steps.deploying(DeployOutcome::Deadlock {
-            detail: "deadlock detected".to_owned(),
-        });
-    });
+    (0_u32..4).for_each(|_| steps.deploying(DeployOutcome::Deadlock));
     let jitter = FakeJitter(0);
     let pause = RecordingPause::default();
     let error = run_database_v2(
@@ -340,32 +367,35 @@ async fn exhaustion_full_message() {
     assert_eq!(pause.delays().len(), 4);
 }
 
-#[test]
-fn native_diagnostics_carry_sqlstate_and_ledger_identity() {
-    let step = FailedStep {
-        name: Some("20240101000000_a".to_owned()),
-        sqlstate: Some("42501".to_owned()),
-        detail: "permission denied for table users".to_owned(),
-    };
-    let permission = messages::insufficient_privileges(&step);
-    assert!(
-        permission.contains(
-            "Database migration failed due to insufficient permissions. Please grant the required privileges and retry."
-        ),
-        "{permission}"
-    );
-    assert!(
-        permission.contains("Migration: 20240101000000_a"),
-        "{permission}"
-    );
-    assert!(permission.contains("SQLSTATE: 42501"), "{permission}");
-    assert!(
-        permission.contains("permission denied for table users"),
-        "{permission}"
-    );
-    let manual = messages::manual_for_step(&step);
-    assert!(manual.contains("SQLSTATE: 42501"), "{manual}");
-    assert!(manual.contains("Migration: 20240101000000_a"), "{manual}");
+#[tokio::test]
+async fn native_diagnostics_carry_sqlstate_and_ledger_identity() {
+    with_schema(|database| async move {
+        let source = raised_database_error(&database, "permission denied for table users").await;
+        let step = FailedStep {
+            name: "20240101000000_a".to_owned(),
+            source: StepSource::Database(source),
+        };
+        let permission = messages::insufficient_privileges(&step);
+        assert!(
+            permission.contains(
+                "Database migration failed due to insufficient permissions. Please grant the required privileges and retry."
+            ),
+            "{permission}"
+        );
+        assert!(
+            permission.contains("Migration: 20240101000000_a"),
+            "{permission}"
+        );
+        assert!(permission.contains("SQLSTATE: P0001"), "{permission}");
+        assert!(
+            permission.contains("permission denied for table users"),
+            "{permission}"
+        );
+        let manual = messages::manual_for_step(&step);
+        assert!(manual.contains("SQLSTATE: P0001"), "{manual}");
+        assert!(manual.contains("Migration: 20240101000000_a"), "{manual}");
+    })
+    .await;
     let reported = identity();
     let unverified = messages::unverified_completion(Some(&reported), "");
     assert!(
@@ -384,6 +414,7 @@ async fn rollback_failure_propagates() {
     steps.history(&reported, found("deadlock detected", false));
     steps.rollback_fails(RecoveryError::ManualIntervention {
         message: "rollback broke".to_owned(),
+        source: None,
     });
     let jitter = FakeJitter(0);
     let pause = RecordingPause::default();

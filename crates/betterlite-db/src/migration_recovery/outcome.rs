@@ -1,3 +1,7 @@
+use std::str::Utf8Error;
+
+use tokio_postgres::Error as PostgresError;
+
 pub(super) const DEADLOCK_MARKER: &str = "deadlock detected";
 pub(super) const DEADLOCK_SQLSTATE: &str = "40P01";
 pub(super) const CANCELED_SQLSTATE: &str = "57014";
@@ -17,23 +21,83 @@ pub(super) struct FailedIdentity {
     pub started_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(super) struct FailedStep {
-    pub name: Option<String>,
-    pub sqlstate: Option<String>,
-    pub detail: String,
+    pub name: String,
+    pub source: StepSource,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl FailedStep {
+    #[must_use]
+    pub(super) fn sqlstate(&self) -> Option<String> {
+        match &self.source {
+            StepSource::Database(source) => sqlstate_of(source),
+            StepSource::Utf8(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub(super) fn detail(&self) -> String {
+        match &self.source {
+            StepSource::Database(source) => database_detail(source),
+            StepSource::Utf8(source) => source.to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) enum StepSource {
+    Database(PostgresError),
+    Utf8(Utf8Error),
+}
+
+impl StepSource {
+    // The database error enters the cause chain; a UTF-8-only failure has no Error to chain
+    #[must_use]
+    pub(super) fn database_error(self) -> Option<PostgresError> {
+        match self {
+            Self::Database(source) => Some(source),
+            Self::Utf8(_) => None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(super) enum DeployOutcome {
     Complete,
     TimedOut,
     SchemaNotBaselined,
     UnfinishedHistory { identity: Option<FailedIdentity> },
     FailedStep(FailedStep),
-    Deadlock { detail: String },
+    Deadlock,
     Contention { detail: String },
-    Failed { detail: String },
+    Failed(DeployFailure),
+}
+
+#[derive(Debug)]
+pub(super) enum DeployFailure {
+    Database(PostgresError),
+    MigrationLog {
+        name: String,
+        source: PostgresError,
+        ledger: PostgresError,
+    },
+    InvalidSqlLog {
+        name: String,
+        source: Utf8Error,
+        ledger: PostgresError,
+    },
+}
+
+impl DeployFailure {
+    // For the dual failures the primary error enters the cause chain; the message keeps both
+    #[must_use]
+    pub(super) fn database_error(self) -> PostgresError {
+        match self {
+            Self::Database(source) | Self::MigrationLog { source, .. } => source,
+            Self::InvalidSqlLog { ledger, .. } => ledger,
+        }
+    }
 }
 
 // Mirrors _is_permission_error: the five case-insensitive patterns, plus the native SQLSTATE for them
@@ -55,4 +119,17 @@ pub(super) fn is_deadlock(sqlstate: Option<&str>, detail: &str) -> bool {
         return true;
     }
     detail.contains(DEADLOCK_MARKER)
+}
+
+pub(super) fn sqlstate_of(source: &PostgresError) -> Option<String> {
+    source
+        .as_db_error()
+        .map(|error| error.code().code().to_owned())
+}
+
+// The DbError Display carries the severity, message, detail and hint that Error's "db error" leaves out
+pub(super) fn database_detail(source: &PostgresError) -> String {
+    source
+        .as_db_error()
+        .map_or_else(|| source.to_string(), ToString::to_string)
 }
