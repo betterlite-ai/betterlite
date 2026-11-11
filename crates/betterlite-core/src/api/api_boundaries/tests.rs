@@ -45,6 +45,27 @@ fn items(known_count: usize) -> ApiBoundariesInput {
     ApiBoundariesInput::Items(ItemsBoundary { known_count })
 }
 
+fn json_rejection(observed: usize) -> ApiLimitError {
+    ApiLimitError::JsonTooLarge {
+        observed,
+        limit: JSON_CAP,
+    }
+}
+
+fn event_rejection(observed: usize) -> ApiLimitError {
+    ApiLimitError::EventTooLarge {
+        observed,
+        limit: EVENT_CAP,
+    }
+}
+
+fn items_rejection(observed: usize) -> ApiLimitError {
+    ApiLimitError::TooManyItems {
+        observed,
+        limit: ITEMS_CAP,
+    }
+}
+
 #[rstest]
 #[case::empty(0)]
 #[case::one_byte(1)]
@@ -66,13 +87,7 @@ fn json_over_cap(#[case] known_bytes: usize) {
     let error = ApiLimits::default()
         .check(json(known_bytes))
         .expect_err("rejected");
-    assert_eq!(
-        error,
-        ApiLimitError::JsonTooLarge {
-            observed: known_bytes,
-            limit: JSON_CAP
-        }
-    );
+    assert_eq!(error, json_rejection(known_bytes));
     assert_eq!(error.fields(), JSON_FIELDS);
 }
 
@@ -97,13 +112,7 @@ fn event_over_cap(#[case] known_bytes: usize) {
     let error = ApiLimits::default()
         .check(event(known_bytes))
         .expect_err("rejected");
-    assert_eq!(
-        error,
-        ApiLimitError::EventTooLarge {
-            observed: known_bytes,
-            limit: EVENT_CAP
-        }
-    );
+    assert_eq!(error, event_rejection(known_bytes));
     assert_eq!(error.fields(), EVENT_FIELDS);
 }
 
@@ -128,13 +137,7 @@ fn items_over_cap(#[case] known_count: usize) {
     let error = ApiLimits::default()
         .check(items(known_count))
         .expect_err("rejected");
-    assert_eq!(
-        error,
-        ApiLimitError::TooManyItems {
-            observed: known_count,
-            limit: ITEMS_CAP
-        }
-    );
+    assert_eq!(error, items_rejection(known_count));
     assert_eq!(error.fields(), ITEMS_FIELDS);
 }
 
