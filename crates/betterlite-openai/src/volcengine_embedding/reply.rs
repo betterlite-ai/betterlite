@@ -11,6 +11,18 @@ use crate::volcengine_common::VolcEngineError;
 // LiteLLM raises a bare exception on a reply it cannot read, which its proxy answers with a 500
 const FAILURE_STATUS: u16 = 500;
 
+const NOT_OBJECT: &str = "the Volcengine embedding reply is not a JSON object";
+const MODEL_NOT_STRING: &str = "the Volcengine embedding reply has a model that is not a string";
+
+// the two optional parts are read as a typed record, where an absent or null part takes its default
+#[derive(Debug, Deserialize)]
+struct WireReply {
+    #[serde(default)]
+    data: Option<Vec<EmbeddingRecord>>,
+    #[serde(default)]
+    usage: Option<WireUsage>,
+}
+
 // the counters default to zero and the two detail records stay absent, as LiteLLM's Usage() does
 #[derive(Debug, Default, Deserialize)]
 struct WireUsage {
@@ -41,12 +53,30 @@ impl WireUsage {
 // the reply's id and object are dropped, and a missing model falls back to the requested one
 pub fn decode_reply(raw: &[u8], model: &str) -> Result<EmbeddingResponse, VolcEngineError> {
     let fields = reply_fields(raw)?;
+    let model_name = reply_model(&fields, model)?;
+    let reply = serde_json::from_value::<WireReply>(Value::Object(fields)).map_err(|source| {
+        malformed(format!(
+            "the Volcengine embedding reply is malformed: {source}"
+        ))
+    })?;
     Ok(EmbeddingResponse {
         object: String::from("list"),
-        data: reply_data(&fields)?,
-        model: reply_model(&fields, model)?,
-        usage: reply_usage(&fields)?,
+        data: reply.data.unwrap_or_default(),
+        model: model_name,
+        usage: reply.usage.unwrap_or_default().into_usage(),
     })
+}
+
+fn reply_fields(raw: &[u8]) -> Result<Object, VolcEngineError> {
+    let parsed: Value = serde_json::from_slice(raw).map_err(|source| {
+        malformed(format!(
+            "the Volcengine embedding reply is malformed: {source}"
+        ))
+    })?;
+    let Value::Object(fields) = parsed else {
+        return Err(malformed(String::from(NOT_OBJECT)));
+    };
+    Ok(fields)
 }
 
 fn reply_model(fields: &Object, model: &str) -> Result<String, VolcEngineError> {
@@ -55,59 +85,7 @@ fn reply_model(fields: &Object, model: &str) -> Result<String, VolcEngineError> 
         Some(Value::String(text)) => Ok(text.clone()),
         Some(
             Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_),
-        ) => Err(malformed(String::from(
-            "the Volcengine embedding reply has a model that is not a string",
-        ))),
-    }
-}
-
-fn reply_data(fields: &Object) -> Result<Vec<EmbeddingRecord>, VolcEngineError> {
-    match fields.get("data") {
-        None | Some(Value::Null) => Ok(Vec::new()),
-        Some(Value::Array(items)) => {
-            serde_json::from_value(Value::Array(items.clone())).map_err(|source| {
-                malformed(format!(
-                    "the Volcengine embedding reply has a malformed data list: {source}"
-                ))
-            })
-        }
-        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => {
-            Err(malformed(String::from(
-                "the Volcengine embedding reply has a data field that is not a list",
-            )))
-        }
-    }
-}
-
-fn reply_usage(fields: &Object) -> Result<EmbeddingUsage, VolcEngineError> {
-    match fields.get("usage") {
-        None | Some(Value::Null) => Ok(WireUsage::default().into_usage()),
-        Some(value @ Value::Object(_)) => serde_json::from_value(value.clone())
-            .map(WireUsage::into_usage)
-            .map_err(|source| {
-                malformed(format!(
-                    "the Volcengine embedding reply has a malformed usage: {source}"
-                ))
-            }),
-        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
-            Err(malformed(String::from(
-                "the Volcengine embedding reply has a usage that is not an object",
-            )))
-        }
-    }
-}
-
-fn reply_fields(raw: &[u8]) -> Result<Object, VolcEngineError> {
-    match serde_json::from_slice::<Value>(raw) {
-        Ok(Value::Object(fields)) => Ok(fields),
-        Ok(
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_),
-        ) => Err(malformed(String::from(
-            "the Volcengine embedding reply is not a JSON object",
-        ))),
-        Err(source) => Err(malformed(format!(
-            "the Volcengine embedding reply is malformed: {source}"
-        ))),
+        ) => Err(malformed(String::from(MODEL_NOT_STRING))),
     }
 }
 
