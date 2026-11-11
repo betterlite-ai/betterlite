@@ -1,0 +1,23 @@
+task: B3994
+deviations:
+  - what: The S3 v2 parameter bag is read from callback_settings.s3_v2; litellm_settings.s3_callback_params loading stays with B002.
+    why: The config loader has no litellm_settings.s3_callback_params section, and callback_settings is the project's per-callback parameter surface (B3995 reads aws_sqs the same way). The keys keep LiteLLM's s3_ names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256-L391
+  - what: Only configured s3_aws_access_key_id/s3_aws_secret_access_key/s3_aws_session_token or the AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN variables sign uploads; s3_aws_profile_name, s3_aws_role_name, s3_aws_web_identity_token and s3_aws_sts_endpoint fail the logger build.
+    why: Those flows need the boto profile, AssumeRole and web-identity chain, which no logging task implements. Refusing at startup tells the operator instead of signing with the wrong identity or failing every upload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L346
+  - what: The per-flush in-call retry counter and its warning line are not built.
+    why: The retries and their logging live inside B3993's transport, which reports only the final delivered, retry or dropped outcome and no attempt count. The failure count S3BatchUploadError reports is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L626-L651
+  - what: The adaptive concurrency limiter is a local additive-increase gate with B347's transitions and waiter cap instead of B347's AdaptiveConcurrencyLimiter type.
+    why: betterlite-router already depends on betterlite-logging through betterlite-tokenizer and betterlite-prompts, so betterlite-logging cannot depend on betterlite-router; the gate keeps the floor, ceiling, clean-streak growth, throttled halving, 1,024-waiter cap and deadline, and the upload path reports every throttled sample through its record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L18-L78
+  - what: The `_in_flush` context variable is an in-flight flush upload counter on the logger, not a task-local.
+    why: tokio's task_local expands to a RefCell, which the repository denies. Every betterlite S3 upload runs through the bounded flush path, so the counter answers the same "is this upload inside a flush" question.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L715-L721
+  - what: A malformed DEFAULT_S3_BATCH_SIZE or DEFAULT_S3_FLUSH_INTERVAL_SECONDS falls back to 512 or 10 with a warning.
+    why: LiteLLM reads both with int(os.getenv(...)) at import, so a bad value stops the whole process; no running deployment can rely on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L61-L62
+  - what: A non-empty s3_config fails the logger build instead of being handed to boto3.
+    why: betterlite's signed transport does not apply a boto client config, and dropping the setting silently would hide that. B3995 refuses the unused sqs_config the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L337
