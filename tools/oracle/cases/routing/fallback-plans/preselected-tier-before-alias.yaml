@@ -73,3 +73,24 @@ probes:
             - {tier-b: [from-tier]}
           max_fallbacks: 5
         request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: requested
+          lookup_model_group: requested
+          metadata:
+            present: true
+            model_group: requested
+        snapshot:
+          metadata:
+            present: true
+            pre_routing_selected_model: stale-selection
+        config:
+          fallbacks:
+            - {recorded-tier: [from-record]}
+            - {requested: [from-requested]}
+          max_fallbacks: 5
+        request: {}
+        record_selection: recorded-tier
