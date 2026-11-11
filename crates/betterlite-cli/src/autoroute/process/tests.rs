@@ -6,9 +6,12 @@ use std::cell::Cell;
 use std::fmt::Write as _;
 use std::fs;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process as std_process;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::sync_channel;
+use std::thread::Builder;
 use std::time::{Duration, Instant};
 
 use rstest::rstest;
@@ -28,7 +31,10 @@ use super::liveliness::poll_liveliness;
 use super::log_tail::stream_log;
 use super::pid_record::{PidRecord, read_pid_record, write_pid_record};
 use super::port::{LoopbackPortProbe, PortProbe as _};
-use super::runtime::{GATEWAY_INSTALL_STEP, gateway_runtime_available};
+use super::runtime::{
+    GATEWAY_EXECUTABLE, GATEWAY_INSTALL_STEP, GatewayRuntime as _, InstalledGateway,
+    gateway_runtime_available,
+};
 
 #[test]
 fn gateway_runtime_available_returns_an_executable_that_runs() {
@@ -406,4 +412,96 @@ fn stream_log_returns_without_output_when_stopped_before_the_file_appears() {
     let mut output = Vec::new();
     stream_log(&log_path, &stop, &RealClock, &mut output);
     assert!(output.is_empty());
+}
+
+#[test]
+fn stream_log_prints_nothing_when_already_stopped() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let log_path = directory.path().join("proxy.log");
+    fs::write(&log_path, "first\n").unwrap();
+    let stop = AtomicBool::new(true);
+    let mut output = Vec::new();
+    stream_log(&log_path, &stop, &RealClock, &mut output);
+    assert!(output.is_empty());
+}
+
+#[test]
+fn real_clock_sleeps_for_at_least_the_requested_time() {
+    let clock = RealClock;
+    let started = Instant::now();
+    clock.sleep(Duration::from_millis(20));
+    assert!(started.elapsed() >= Duration::from_millis(20));
+}
+
+#[cfg(unix)]
+#[test]
+fn path_signals_sends_sigterm_to_a_real_process() {
+    let mut child = std_process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let (sender, receiver) = sync_channel(1);
+    let waiter = Builder::new()
+        .name("sigterm-waiter".to_owned())
+        .spawn(move || {
+            let status = child.wait();
+            let _sent = sender.send(status.is_ok());
+        })
+        .unwrap();
+    PathSignals.send(pid, TermSignal::Term);
+    let exited = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("the child did not exit after SIGTERM");
+    assert!(exited);
+    waiter.join().unwrap();
+    assert!(!PathSignals.is_running(pid));
+}
+
+#[cfg(unix)]
+fn executable_script(directory: &Path, body: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let path = directory.join(GATEWAY_EXECUTABLE);
+    fs::write(&path, body).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[cfg(unix)]
+fn gateway_on_path(directory: &Path) -> InstalledGateway {
+    InstalledGateway {
+        search_path: Some(directory.as_os_str().to_owned()),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_gateway_finds_an_executable_on_the_given_path() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let expected = executable_script(directory.path(), "#!/bin/sh\nexit 0\n");
+    assert_eq!(gateway_on_path(directory.path()).find(), Some(expected));
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_gateway_finds_nothing_on_a_path_without_it() {
+    let directory = tempfile::TempDir::new().unwrap();
+    assert_eq!(gateway_on_path(directory.path()).find(), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_gateway_runs_an_executable_that_answers_version() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let executable = executable_script(directory.path(), "#!/bin/sh\nexit 0\n");
+    assert!(InstalledGateway::default().runs(&executable));
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_gateway_rejects_an_executable_that_fails_version() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let executable = executable_script(directory.path(), "#!/bin/sh\nexit 1\n");
+    assert!(!InstalledGateway::default().runs(&executable));
 }

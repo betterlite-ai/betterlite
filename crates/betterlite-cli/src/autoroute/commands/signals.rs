@@ -24,7 +24,7 @@ pub trait StopSignals {
 }
 
 pub struct StopSignal {
-    requested: AtomicBool,
+    pub(crate) requested: AtomicBool,
 }
 
 impl Default for StopSignal {

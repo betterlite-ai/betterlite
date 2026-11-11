@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process as std_process;
 use std::process::Stdio;
@@ -14,11 +15,17 @@ pub trait GatewayRuntime {
     fn runs(&self, executable: &Path) -> bool;
 }
 
-pub struct InstalledGateway;
+#[derive(Default)]
+pub struct InstalledGateway {
+    pub search_path: Option<OsString>,
+}
 
 impl GatewayRuntime for InstalledGateway {
     fn find(&self) -> Option<PathBuf> {
-        which::which(GATEWAY_EXECUTABLE).ok()
+        self.search_path.as_ref().map_or_else(
+            || which::which(GATEWAY_EXECUTABLE).ok(),
+            |path| which::which_in(GATEWAY_EXECUTABLE, Some(path), ".").ok(),
+        )
     }
 
     fn runs(&self, executable: &Path) -> bool {

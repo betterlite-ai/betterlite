@@ -3,11 +3,22 @@
 mod support;
 
 use std::collections::VecDeque;
+#[cfg(unix)]
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::{Builder, park_timeout};
+use std::time::Duration;
+
+#[cfg(unix)]
+use signal_hook::consts::SIGTERM;
+#[cfg(unix)]
+use signal_hook::low_level::raise;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -21,7 +32,9 @@ use self::support::{
 };
 use super::args::{AutorouteCommand, StartArgs};
 use super::deprecation_notice;
+use super::entropy::{Entropy as _, OsEntropy};
 use super::error::CommandsError;
+use super::signals::{OsSignals, StopSignal, StopSignals as _};
 use super::teardown::{TeardownRequest, run_teardown};
 use crate::autoroute::commands::liveliness::{HttpLiveliness, LIVELINESS_TIMEOUT_SECONDS};
 use crate::autoroute::config::model::RawModelListing;
@@ -543,4 +556,103 @@ fn configure_refuses_a_non_interactive_terminal() {
         error,
         CommandsError::Wizard(WizardError::NotInteractive)
     ));
+}
+
+#[test]
+fn start_ignores_a_stale_pid_record() {
+    let mut fixture = default_fixture();
+    write_pid_record(&fixture.pid_record_path(), &record(999)).unwrap();
+    fixture.start(PORT).unwrap();
+    let recorded = fixture.launcher.requests.lock().unwrap().clone();
+    assert_eq!(recorded.len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn start_terminates_the_proxy_when_patching_settings_fails() {
+    let mut fixture = default_fixture();
+    fixture.binary_path = PathBuf::from(OsStr::from_bytes(b"/usr/local/bin/lite\xff"));
+    let error = fixture.start(PORT).unwrap_err();
+    assert!(error.to_string().contains("not valid UTF-8"), "{error}");
+    assert_eq!(fixture.signals.sent(), [(LAUNCHED_PID, TermSignal::Term)]);
+    assert!(!fixture.pid_record_path().exists());
+}
+
+#[test]
+fn stop_reports_removed_settings_when_none_existed() {
+    let mut fixture = default_fixture();
+    write_backup(
+        &BackupRecord {
+            existed: false,
+            content: None,
+        },
+        &fixture.backup_path(),
+        &fixture.files,
+    )
+    .unwrap();
+    fixture.stop().unwrap();
+    let stdout = fixture.stdout_text();
+    assert!(stdout.contains("Removed"), "{stdout}");
+    assert!(
+        stdout.contains("it did not exist before `lite autoroute start`"),
+        "{stdout}"
+    );
+    assert!(!fixture.settings_path().exists());
+}
+
+#[test]
+fn master_key_provisioning_keeps_other_general_settings_keys() {
+    let mut fixture = default_fixture();
+    fixture.write_config("model_list: []\ngeneral_settings:\n  database_url: postgres://local\n");
+    fixture.start(PORT).unwrap();
+    let text = fs::read_to_string(fixture.config_path()).unwrap();
+    let document: IndexMap<String, JsonValue> = serde_saphyr::from_str(&text).unwrap();
+    assert_eq!(
+        document["general_settings"]["database_url"].as_str(),
+        Some("postgres://local")
+    );
+    assert!(
+        document["general_settings"]["master_key"]
+            .as_str()
+            .is_some()
+    );
+}
+
+#[test]
+fn stop_signal_wait_blocks_until_requested() {
+    let signal = Arc::new(StopSignal::default());
+    let waiter = {
+        let waiter_signal = Arc::clone(&signal);
+        Builder::new()
+            .name("stop-signal-waiter".to_owned())
+            .spawn(move || waiter_signal.wait())
+            .unwrap()
+    };
+    park_timeout(Duration::from_millis(100));
+    assert!(!waiter.is_finished());
+    signal.requested.store(true, Ordering::SeqCst);
+    waiter.join().unwrap();
+}
+
+#[test]
+fn os_entropy_fills_the_buffer_with_random_bytes() {
+    let mut entropy = OsEntropy;
+    let mut bytes = [0_u8; 32];
+    entropy.fill(&mut bytes).unwrap();
+    assert_ne!(bytes, [0_u8; 32]);
+}
+
+#[cfg(unix)]
+#[test]
+fn os_signals_wakes_the_wait_on_sigterm() {
+    let guard = OsSignals.watch().unwrap();
+    let raiser = Builder::new()
+        .name("signal-raiser".to_owned())
+        .spawn(|| {
+            park_timeout(Duration::from_millis(100));
+            let _raised = raise(SIGTERM);
+        })
+        .unwrap();
+    guard.wait();
+    raiser.join().unwrap();
 }
