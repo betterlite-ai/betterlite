@@ -66,6 +66,61 @@ call:
           additional_drop_params: null
         remove_sensitive_keys: false
         add_provider_specific_params: false
+      - function: pre_process
+        request:
+          passed_params:
+            temperature: 0.5
+            response_format:
+              type: json_schema
+              json_schema:
+                name: Order
+                strict: true
+                schema:
+                  type: object
+                  properties:
+                    item: {$ref: "#/$defs/Item"}
+                    tags: {type: array, items: {$ref: "#/definitions/deep/Tag"}}
+                  $defs:
+                    Item: {type: object, properties: {part: {$ref: "#/$defs/Part"}}}
+                    Part: {type: string}
+          special_params: {}
+          custom_llm_provider: anthropic
+          additional_drop_params: null
+        provider_config: {supported: [], rewrite_refs: true}
+        remove_sensitive_keys: false
+        add_provider_specific_params: false
+      - function: pre_process
+        request:
+          passed_params:
+            temperature: 0.5
+            response_format:
+              type: json_schema
+              json_schema:
+                name: Order
+                strict: true
+                schema:
+                  type: object
+                  properties:
+                    item: {$ref: "#/$defs/Item"}
+                    tags: {type: array, items: {$ref: "#/definitions/deep/Tag"}}
+                  $defs:
+                    Item: {type: object, properties: {part: {$ref: "#/$defs/Part"}}}
+                    Part: {type: string}
+          special_params: {}
+          custom_llm_provider: openai
+          additional_drop_params: null
+        provider_config: {supported: [], rewrite_refs: false}
+        remove_sensitive_keys: false
+        add_provider_specific_params: false
+      - function: pre_process
+        request:
+          passed_params: {temperature: 0.5, response_format: {type: json_object}}
+          special_params: {}
+          custom_llm_provider: anthropic
+          additional_drop_params: null
+        provider_config: {supported: [], rewrite_refs: true}
+        remove_sensitive_keys: false
+        add_provider_specific_params: false
       - function: remove_sensitive_keys
         params: {api_key: sk-1, authorization: Bearer x, temperature: 0.5, nested: {api_key: sk-2}, AccessToken: t, client_secret: s, Credentials: c, user: u}
       - function: remove_sensitive_keys

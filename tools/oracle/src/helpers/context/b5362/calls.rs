@@ -52,6 +52,10 @@ fn pre_process_call(call: &Call) -> Result<Value, Failure> {
         special_params: &fields.special_params,
         custom_llm_provider: &fields.custom_llm_provider,
         additional_drop_params: fields.additional_drop_params.as_deref().unwrap_or_default(),
+        provider_config: call
+            .provider_config
+            .as_ref()
+            .map(|fixture| -> &dyn mapper::OptionalParamsMapper { fixture }),
     };
     let options = pre_process::PreProcessOptions {
         remove_sensitive_keys: call.remove_sensitive_keys.unwrap_or(false),

@@ -4,6 +4,7 @@ use super::Params;
 use super::error::NonDefaultParamsError;
 use super::extra_body::{ProviderSpecificRequest, add_provider_specific_params};
 use super::filters::select_non_default_params;
+use super::mapper::OptionalParamsMapper;
 use super::names::DEFAULT_CHAT_COMPLETION_PARAMS;
 
 const NEVER_NON_DEFAULT: &[&str] = &[
@@ -22,6 +23,7 @@ pub struct PreProcessRequest<'request> {
     pub special_params: &'request Params,
     pub custom_llm_provider: &'request str,
     pub additional_drop_params: &'request [String],
+    pub provider_config: Option<&'request dyn OptionalParamsMapper>,
 }
 
 #[derive(Clone, Copy)]
@@ -91,6 +93,14 @@ pub fn pre_process_non_default_params(
             "response_format",
             "an object",
         ));
+    }
+    if let Some(config) = request.provider_config
+        && let Some(format) = non_default_params.remove("response_format")
+    {
+        non_default_params.insert(
+            "response_format".to_owned(),
+            config.map_response_format(format),
+        );
     }
     if options.add_provider_specific_params {
         let openai_params: Vec<&str> = DEFAULT_CHAT_COMPLETION_PARAMS.split_whitespace().collect();

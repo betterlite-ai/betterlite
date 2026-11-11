@@ -13,7 +13,7 @@ use crate::non_default_params::names::{
     OPENAI_CHAT_COMPLETION_PARAMS, OPENAI_TRANSCRIPTION_PARAMS,
 };
 use crate::non_default_params::schema_cleanup::{
-    remove_additional_properties, remove_strict_from_schema,
+    point_refs_at_root_defs, remove_additional_properties, remove_strict_from_schema,
 };
 
 #[rstest]
@@ -199,5 +199,34 @@ fn schema_filter_removes_additional_properties_false_only(
 fn schema_filter_removes_strict_everywhere(#[case] input: &str, #[case] expected: &str) {
     let mut value = schema(input);
     remove_strict_from_schema(&mut value);
+    assert_eq!(value, schema(expected));
+}
+
+#[rstest]
+#[case::nested_and_listed(
+    r##"{"type": "json_schema", "json_schema": {"name": "n", "schema": {"$ref": "#/$defs/A", "properties": {"b": {"$ref": "#/definitions/B/C"}}, "anyOf": [{"$ref": "x"}]}}}"##,
+    r#"{"type": "json_schema", "json_schema": {"name": "n", "schema": {"$ref": "/$defs/A", "properties": {"b": {"$ref": "/$defs/C"}}, "anyOf": [{"$ref": "/$defs/x"}]}}}"#
+)]
+#[case::other_format_types_stay(
+    r##"{"type": "json_object", "json_schema": {"schema": {"$ref": "#/$defs/A"}}}"##,
+    r##"{"type": "json_object", "json_schema": {"schema": {"$ref": "#/$defs/A"}}}"##
+)]
+#[case::refs_outside_the_schema_stay(
+    r##"{"type": "json_schema", "json_schema": {"$ref": "#/$defs/A", "schema": {}}, "$ref": "#/$defs/B"}"##,
+    r##"{"type": "json_schema", "json_schema": {"$ref": "#/$defs/A", "schema": {}}, "$ref": "#/$defs/B"}"##
+)]
+#[case::missing_json_schema(r#"{"type": "json_schema"}"#, r#"{"type": "json_schema"}"#)]
+#[case::missing_schema(
+    r#"{"type": "json_schema", "json_schema": {"name": "n"}}"#,
+    r#"{"type": "json_schema", "json_schema": {"name": "n"}}"#
+)]
+#[case::non_text_ref_stays(
+    r#"{"type": "json_schema", "json_schema": {"schema": {"$ref": 1}}}"#,
+    r#"{"type": "json_schema", "json_schema": {"schema": {"$ref": 1}}}"#
+)]
+#[case::not_an_object(r#""json_schema""#, r#""json_schema""#)]
+fn schema_filter_points_refs_at_the_root_defs(#[case] input: &str, #[case] expected: &str) {
+    let mut value = schema(input);
+    point_refs_at_root_defs(&mut value);
     assert_eq!(value, schema(expected));
 }

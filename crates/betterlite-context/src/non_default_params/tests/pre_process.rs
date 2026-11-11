@@ -1,15 +1,18 @@
 #![cfg(test)]
 
+use betterlite_models::controls::json_value::JsonValue;
 use rstest::rstest;
 
 use super::params;
 use crate::non_default_params::Params;
-use crate::non_default_params::error::NonDefaultParamsError;
+use crate::non_default_params::error::{MapperError, NonDefaultParamsError};
+use crate::non_default_params::mapper::OptionalParamsMapper;
 use crate::non_default_params::names::{DEFAULT_CHAT_COMPLETION_PARAMS, OPENAI_EMBEDDING_PARAMS};
 use crate::non_default_params::pre_process::{
     PreProcessOptions, PreProcessRequest, base_pre_process_params, pre_process_non_default_params,
     remove_sensitive_keys,
 };
+use crate::non_default_params::schema_cleanup::point_refs_at_root_defs;
 
 const PLAIN: PreProcessOptions = PreProcessOptions {
     remove_sensitive_keys: false,
@@ -27,6 +30,30 @@ fn request<'request>(
         special_params: special,
         custom_llm_provider: provider,
         additional_drop_params: drops,
+        provider_config: None,
+    }
+}
+
+struct RootDefsConfig;
+
+impl OptionalParamsMapper for RootDefsConfig {
+    fn supported_openai_params(&self, _model: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn map_openai_params(
+        &self,
+        _non_default_params: &Params,
+        optional_params: Params,
+        _model: &str,
+        _drop_params: bool,
+    ) -> Result<Params, MapperError> {
+        Ok(optional_params)
+    }
+
+    fn map_response_format(&self, mut response_format: JsonValue) -> JsonValue {
+        point_refs_at_root_defs(&mut response_format);
+        response_format
     }
 }
 
@@ -167,4 +194,33 @@ fn sensitive_keys_are_removed_by_phrase(#[case] input: &str, #[case] expected: &
     let mut values = params(input);
     remove_sensitive_keys(&mut values);
     assert_eq!(values, params(expected));
+}
+
+const REF_FORMAT: &str = r##"{"response_format": {"type": "json_schema", "json_schema": {"schema": {"$ref": "#/$defs/Item"}}}}"##;
+
+#[rstest]
+#[case::config_rewrites_the_refs(true, r#"{"response_format": {"type": "json_schema", "json_schema": {"schema": {"$ref": "/$defs/Item"}}}}"#)]
+#[case::no_config_keeps_the_refs(false, REF_FORMAT)]
+fn pre_process_response_format_goes_through_the_provider_config(
+    #[case] with_config: bool,
+    #[case] expected: &str,
+) {
+    let passed = params(REF_FORMAT);
+    let special = params("{}");
+    let mut processed = request(&passed, &special, "anthropic", &[]);
+    if with_config {
+        processed.provider_config = Some(&RootDefsConfig);
+    }
+    let result = pre_process_non_default_params(&processed, PLAIN).unwrap();
+    assert_eq!(result, params(expected));
+}
+
+#[test]
+fn pre_process_provider_config_adds_no_response_format() {
+    let passed = params(r#"{"temperature": 1}"#);
+    let special = params("{}");
+    let mut processed = request(&passed, &special, "anthropic", &[]);
+    processed.provider_config = Some(&RootDefsConfig);
+    let result = pre_process_non_default_params(&processed, PLAIN).unwrap();
+    assert_eq!(result, passed);
 }

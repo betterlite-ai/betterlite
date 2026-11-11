@@ -1,3 +1,5 @@
+use betterlite_models::controls::json_value::JsonValue;
+
 use super::Params;
 use super::error::MapperError;
 
@@ -12,6 +14,11 @@ pub trait OptionalParamsMapper {
         model: &str,
         drop_params: bool,
     ) -> Result<Params, MapperError>;
+
+    // LiteLLM's get_json_schema_from_pydantic_object; most configs return the response_format as it came.
+    fn map_response_format(&self, response_format: JsonValue) -> JsonValue {
+        response_format
+    }
 }
 
 // LiteLLM drops an unsupported param when the call's drop_params or the global litellm.drop_params is true.

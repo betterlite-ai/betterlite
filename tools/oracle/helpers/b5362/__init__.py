@@ -5,6 +5,7 @@ from unittest.mock import patch
 import litellm
 import litellm.utils
 from litellm.exceptions import UnsupportedParamsError
+from litellm.llms.base_llm import base_utils
 from litellm.llms.bedrock.common_utils import BedrockModelInfo
 from litellm.llms.bedrock.image_generation.image_handler import BedrockImageGeneration
 from litellm.utils import ProviderConfigManager
@@ -28,7 +29,12 @@ class Utils(Protocol):
     strip_reasoning_summary_aliases_from_optional_params: Callable[..., tuple[Fields, Json]]
 
 
+class BaseUtils(Protocol):
+    type_to_response_format_param: Callable[..., Json]
+
+
 _UTILS: Final = cast(Utils, litellm.utils)
+_BASE_UTILS: Final = cast(BaseUtils, base_utils)
 
 
 def _obj(fields: Fields, name: str) -> Fields:
@@ -71,6 +77,7 @@ class Mapper:
         self.supported: Final = _strs(spec, "supported")
         self.fail_status: Final = cast("int | None", spec.get("fail_status"))
         self.records: Final = _flag(spec, "records")
+        self.rewrite_refs: Final = _flag(spec, "rewrite_refs")
 
     def get_supported_openai_params(self, model: str = "") -> list[str]:
         del model
@@ -91,6 +98,13 @@ class Mapper:
             mapped["seen_drop"] = drop_params
             mapped["seen_model"] = model
         return mapped
+
+    def get_json_schema_from_pydantic_object(self, response_format: Fields) -> Json:
+        if self.rewrite_refs:
+            return _BASE_UTILS.type_to_response_format_param(
+                response_format, ref_template="/$defs/{model}"
+            )
+        return _BASE_UTILS.type_to_response_format_param(response_format)
 
     get_supported_openai_params_stt = get_supported_openai_params
     map_openai_params_stt = map_openai_params
@@ -139,6 +153,7 @@ def _pre_process(fields: Fields) -> Json:
         model="model",
         remove_sensitive_keys=_flag(fields, "remove_sensitive_keys"),
         add_provider_specific_params=_flag(fields, "add_provider_specific_params"),
+        provider_config=_mapper(fields, "provider_config"),
     )
 
 

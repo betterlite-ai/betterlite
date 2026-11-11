@@ -1,6 +1,7 @@
 use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::error::MapperError;
 use betterlite_context::non_default_params::mapper::OptionalParamsMapper;
+use betterlite_context::non_default_params::schema_cleanup::point_refs_at_root_defs;
 use betterlite_models::controls::json_value::JsonValue;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -81,6 +82,8 @@ struct MapperSpec {
     fail_status: Option<u16>,
     #[serde(default)]
     records: bool,
+    #[serde(default)]
+    rewrite_refs: bool,
 }
 
 // The Python helper builds the same mapper, so both sides copy the params and fail with the same status.
@@ -108,6 +111,13 @@ impl OptionalParamsMapper for MapperSpec {
             optional_params.insert("seen_model".to_owned(), JsonValue::Text(model.to_owned()));
         }
         Ok(optional_params)
+    }
+
+    fn map_response_format(&self, mut response_format: JsonValue) -> JsonValue {
+        if self.rewrite_refs {
+            point_refs_at_root_defs(&mut response_format);
+        }
+        response_format
     }
 }
 
