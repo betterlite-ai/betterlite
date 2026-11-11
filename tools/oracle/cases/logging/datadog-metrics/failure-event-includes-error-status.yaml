@@ -1,0 +1,40 @@
+kind: helper
+name: datadog-metrics-failure-event-includes-error-status
+call:
+  b3939:
+    operation: failure_event
+    environment:
+      DD_API_KEY: test-key
+      DD_SITE: datadoghq.com
+    payload:
+      id: chatcmpl-2
+      trace_id: trace-2
+      session_id: session-2
+      call_type: completion
+      response_cost: 0.0
+      status: failure
+      status_fields: {llm_api_status: failure, guardrail_status: not_run}
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      startTime: 1704067200.0
+      endTime: 1704067202.0
+      completionStartTime: 1704067202.0
+      response_time: 2.0
+      model_map_information: {}
+      model: gpt-4o
+      model_group: production
+      custom_llm_provider: openai
+      api_base: "https://api.openai.com"
+      metadata: {}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+      error_information: {error_code: "429"}
+    start_time: 1704067200.0
+    end_time: 1704067202.0
+    api_call_start_time: 1704067200.5
+    clock: 1704067202.0
+env: {}
+compare: {ignore: []}

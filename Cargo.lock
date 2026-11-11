@@ -1696,6 +1696,7 @@ dependencies = [
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
@@ -1918,6 +1919,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -1940,6 +1942,7 @@ dependencies = [
  "jiff",
  "lettre",
  "mail-builder",
+ "md-5",
  "minijinja",
  "minijinja-contrib",
  "nix",
@@ -2359,6 +2362,7 @@ dependencies = [
 name = "betterlite-postgres-fixture"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "hex",
  "rcgen",
