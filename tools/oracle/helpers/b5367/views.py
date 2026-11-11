@@ -1,5 +1,5 @@
 import datetime as dt
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
+from typing import Final, Literal, Protocol, Required, TypeAlias, TypedDict, Unpack, cast
 
 import litellm
 from litellm import utils as litellm_utils
@@ -38,12 +38,9 @@ class CredentialSpec(TypedDict):
     credential_values: dict[str, str]
 
 
-class Required(TypedDict):
-    action: Literal["setup", "credentials", "request_flags"]
-    request: dict[str, Json]
-
-
-class Input(Required, total=False):
+class Input(TypedDict, total=False):
+    action: Required[Literal["setup", "credentials", "request_flags"]]
+    request: Required[dict[str, Json]]
     call_type: str
     is_async_call: bool
     is_pass_through: bool
