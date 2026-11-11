@@ -1,0 +1,15 @@
+kind: helper
+name: logging-mcp-tool-hook-live-rewrite-keeps-structured
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+      structured_content: {answer: 42}
+    dynamic_success: []
+    global_success:
+      - name: guardrail
+        behavior: rewrite_live
+        content: [{type: text, text: rewritten}]
+        structured_content: {blocked: true}
+env: {}
+compare: {ignore: []}
