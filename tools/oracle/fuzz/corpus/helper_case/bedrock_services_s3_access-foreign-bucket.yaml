@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-s3-access-foreign-bucket
+call:
+  bedrock_services_s3_access:
+    operation: foreign_bucket_rejected
+    file_id: "s3://foreign/litellm-bedrock-files-x"
+    trusted:
+      - [s3_bucket_name, configured]
+    environment: {}
+env: {}
+compare: {ignore: []}

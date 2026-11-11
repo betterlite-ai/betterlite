@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock_signing_off_loop
+call:
+  bedrock_signing:
+    calls:
+      - off_loop:
+          context: seed-context
+          value: seed-value
+          failure: seed-failure
+env: {}
+compare: {ignore: []}
