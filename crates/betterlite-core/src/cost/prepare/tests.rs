@@ -217,17 +217,21 @@ async fn null_candidates_stay_as_attempts_that_require_a_model() {
 }
 
 #[rstest]
-#[case::image(CallType::ImageGeneration, Some("dall-e-2"))]
-#[case::async_image(CallType::AimageGeneration, Some("dall-e-2"))]
-#[case::completion(CallType::Completion, Some(""))]
+#[case::image(CallType::ImageGeneration, "", "azure", "dall-e-2")]
+#[case::async_image(CallType::AimageGeneration, "", "azure", "dall-e-2")]
+#[case::completion(CallType::Completion, "", "azure", "")]
+#[case::other_provider(CallType::ImageGeneration, "", "openai", "")]
+#[case::named_model(CallType::ImageGeneration, "dall-e-3", "azure", "dall-e-3")]
 #[tokio::test]
 async fn azure_empty_image_models_become_dall_e_2(
     #[case] call_type: CallType,
-    #[case] expected: Option<&str>,
+    #[case] model: &str,
+    #[case] provider: &str,
+    #[case] expected: &str,
 ) {
     let mut input = base_input(None);
-    input.model = Some("");
-    input.custom_llm_provider = Some("azure");
+    input.model = Some(model);
+    input.custom_llm_provider = Some(provider);
     input.call_type = Some(call_type);
     let prepared = prepare_attempts(&input).await;
 
@@ -236,7 +240,7 @@ async fn azure_empty_image_models_become_dall_e_2(
             .attempts
             .last()
             .and_then(|attempt| attempt.model.as_deref()),
-        expected
+        Some(expected)
     );
 }
 
@@ -256,6 +260,10 @@ async fn azure_empty_image_models_become_dall_e_2(
 #[case::null_counters_read_as_zero(
     r#"{"prompt_tokens":null,"completion_tokens":null,"cache_read_input_tokens":null}"#,
     (0, 0, 0, 0)
+)]
+#[case::anthropic_without_output_tokens(
+    r#"{"input_tokens":10,"cache_read_input_tokens":3}"#,
+    (13, 0, 0, 3)
 )]
 #[case::output_only_cache_stays_raw(
     r#"{"output_tokens":6,"cache_read_input_tokens":3}"#,
@@ -487,6 +495,30 @@ async fn resolves_the_billable_tier(
     let prepared = prepare_attempts(&input).await;
 
     assert_eq!(prepared.service_tier.as_deref(), expected);
+}
+
+#[tokio::test]
+async fn hidden_params_choose_the_model_and_the_served_tier() {
+    let usage = chat_usage(10, 5, None);
+    let hidden = map(
+        r#"{"provider_response_model":"gpt-4o-mini","provider_specific_fields":{"traffic_type":"ON_DEMAND_PRIORITY"}}"#,
+    );
+    let view = ResponseView::Typed(TypedResponse {
+        kind: ResponseKind::Chat,
+        model: Some("gpt-4o-2024"),
+        usage: BillingUsage::Chat(&usage),
+        service_tier: None,
+        hidden_params: Some(&hidden),
+    });
+    let mut input = base_input(Some(&view));
+    input.model = Some("gpt-4o");
+    let prepared = prepare_attempts(&input).await;
+
+    assert_eq!(
+        prepared.selected_model.as_deref(),
+        Some("openai/gpt-4o-mini")
+    );
+    assert_eq!(prepared.service_tier.as_deref(), Some("priority"));
 }
 
 #[tokio::test]
