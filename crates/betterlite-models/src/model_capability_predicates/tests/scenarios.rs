@@ -18,7 +18,10 @@ const SUPPORTS_RESOLUTION: &str = r#"{
     "string-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_function_calling": true},
     "deepseek/prefixed-model": {"litellm_provider": "deepseek", "mode": "chat"},
     "prefixed-model": {"litellm_provider": "openai", "mode": "chat", "supports_function_calling": true},
-    "github_copilot/gpt-4o": {"litellm_provider": "github_copilot", "mode": "chat", "supports_function_calling": true}
+    "github_copilot/gpt-4o": {"litellm_provider": "github_copilot", "mode": "chat", "supports_function_calling": true},
+    "fireworks_ai/vision-model": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true},
+    "fireworks_ai/reason-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": true},
+    "fireworks_ai/pdf-model": {"litellm_provider": "openai", "mode": "chat", "supports_pdf_input": true}
 }"#;
 
 const SUPPORTS_ERROR_FALLBACK: &str = r#"{
@@ -362,6 +365,8 @@ const FUNCTION_CALLING_KEY: &str = "supports_function_calling";
 const REASONING_KEY: &str = "supports_reasoning";
 const CUSTOM_KEY: &str = "supports_custom";
 const VISION_KEY: &str = "supports_vision";
+const PDF_INPUT_KEY: &str = "supports_pdf_input";
+const WEB_SEARCH_KEY: &str = "supports_web_search";
 
 const REASONING_DECLARATION_STEPS: &[(&str, Option<&str>, Expected)] = &[(
     "reasoning-model",
@@ -373,6 +378,43 @@ const SUPPORTS_RESOLUTION_SCENARIO: Scenario = Scenario {
     fixture: SUPPORTS_RESOLUTION,
     reader: Reader::Supports(FUNCTION_CALLING_KEY),
     steps: SUPPORTS_RESOLUTION_STEPS,
+};
+
+// These declarations carry another provider's name, so only the provider info answers them.
+const VISION_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("vision-model", Some("fireworks_ai"), Expected::flag(true))];
+
+const VISION_PROVIDER_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(VISION_KEY),
+    steps: VISION_PROVIDER_STEPS,
+};
+
+const REASONING_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("reason-model", Some("fireworks_ai"), Expected::flag(true))];
+
+const REASONING_PROVIDER_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(REASONING_KEY),
+    steps: REASONING_PROVIDER_STEPS,
+};
+
+const PDF_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("pdf-model", Some("fireworks_ai"), Expected::flag(true))];
+
+const PDF_PROVIDER_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(PDF_INPUT_KEY),
+    steps: PDF_PROVIDER_STEPS,
+};
+
+const WEB_SEARCH_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("xai/mystery-two", Some("xai"), Expected::flag(true))];
+
+const WEB_SEARCH_PROVIDER_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(WEB_SEARCH_KEY),
+    steps: WEB_SEARCH_PROVIDER_STEPS,
 };
 
 const REASONING_DECLARATION_SCENARIO: Scenario = Scenario {
@@ -412,6 +454,10 @@ const RESPONSE_SCHEMA_SCENARIO: Scenario = Scenario {
 
 pub(super) async fn supports_resolution() {
     check(&SUPPORTS_RESOLUTION_SCENARIO).await;
+    check(&VISION_PROVIDER_SCENARIO).await;
+    check(&REASONING_PROVIDER_SCENARIO).await;
+    check(&PDF_PROVIDER_SCENARIO).await;
+    check(&WEB_SEARCH_PROVIDER_SCENARIO).await;
 }
 
 pub(super) async fn declared_string_value() {

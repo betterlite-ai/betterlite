@@ -14,6 +14,9 @@ call:
         deepseek/prefixed-model: {litellm_provider: deepseek, mode: chat}
         prefixed-model: {litellm_provider: openai, mode: chat, supports_function_calling: true}
         github_copilot/gpt-4o: {litellm_provider: github_copilot, mode: chat, supports_function_calling: true}
+        fireworks_ai/vision-model: {litellm_provider: openai, mode: chat, supports_vision: true}
+        fireworks_ai/reason-model: {litellm_provider: deepseek, mode: chat, supports_reasoning: true}
+        fireworks_ai/pdf-model: {litellm_provider: openai, mode: chat, supports_pdf_input: true}
     steps:
       - {function: supports_factory, model: gpt-4o, key: supports_function_calling}
       - {function: supports_factory, model: openai/gpt-4o, key: supports_function_calling}
@@ -25,5 +28,9 @@ call:
       - {function: supports_factory, model: fireworks_ai/mystery, custom_llm_provider: fireworks_ai, key: supports_function_calling}
       - {function: supports_factory, model: xai/mystery-two, custom_llm_provider: xai, key: supports_function_calling}
       - {function: supports_factory, model: nothing-here, key: supports_function_calling}
+      - {function: supports_factory, model: vision-model, custom_llm_provider: fireworks_ai, key: supports_vision}
+      - {function: supports_factory, model: reason-model, custom_llm_provider: fireworks_ai, key: supports_reasoning}
+      - {function: supports_factory, model: pdf-model, custom_llm_provider: fireworks_ai, key: supports_pdf_input}
+      - {function: supports_factory, model: xai/mystery-two, custom_llm_provider: xai, key: supports_web_search}
 env: {}
 compare: {ignore: []}
