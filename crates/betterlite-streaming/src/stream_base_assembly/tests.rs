@@ -274,6 +274,11 @@ fn finish_reason_boundaries() {
 }
 
 fn hidden_params_boundaries() {
+    provider_model_boundaries();
+    hidden_update_boundaries();
+}
+
+fn provider_model_boundaries() {
     // the first hidden string differing from the original model wins
     let provider = base_for(
         r#"[{"object":"chat.completion.chunk","created":1,"model":"orig","_hidden_params":{"provider_response_model":"real-1"}},
@@ -298,6 +303,16 @@ fn hidden_params_boundaries() {
         Some(&JsonValue::String("orig".to_owned()))
     );
 
+    // a later candidate equal to the original model never wins over an earlier differing one
+    let mixed = base_for(
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"orig","_hidden_params":{"provider_response_model":"real-1"}},
+            {"created":1,"model":"orig","_hidden_params":{"provider_response_model":"orig"}}]"#,
+    );
+    assert_eq!(
+        mixed.hidden_params.get("provider_response_model"),
+        Some(&JsonValue::String("real-1".to_owned()))
+    );
+
     // the last chunk's hidden map is copied whole; only the overlay is skipped for an empty value
     let absent = base_for(
         r#"[{"object":"chat.completion.chunk","created":1,"model":"m","_hidden_params":{"provider_response_model":""}}]"#,
@@ -306,7 +321,9 @@ fn hidden_params_boundaries() {
         absent.hidden_params,
         object(r#"{"provider_response_model":""}"#)
     );
+}
 
+fn hidden_update_boundaries() {
     let mut updated = base_for(
         r#"[{"object":"chat.completion.chunk","created":1,"model":"m","_hidden_params":{"keep":1}}]"#,
     );
