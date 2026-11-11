@@ -21,12 +21,14 @@ use crate::credentials::notice::{
 use crate::keyring::KeyringUnusable;
 use crate::token_records::secret::decode_secret;
 
-use super::auth_command::{AuthCommand, run_auth_command};
+use super::auth_command::{
+    AUTH_ABOUT, AuthCommand, PRINT_TOKEN_ABOUT, PRINT_TOKEN_LONG_ABOUT, run_auth_command,
+};
 use super::configure::{ConfigureClaudeRequest, configure_claude_code};
 use super::error::SessionError;
-use super::logout::{LogoutRequest, logout};
+use super::logout::{LOGOUT_ABOUT, LogoutRequest, logout};
 use super::print_token::{PrintTokenRequest, print_token};
-use super::whoami::{WhoamiRequest, whoami};
+use super::whoami::{WHOAMI_ABOUT, WhoamiRequest, whoami};
 
 mod support;
 
@@ -42,6 +44,11 @@ fn text(bytes: &[u8]) -> &str {
 
 fn token_path() -> &'static Path {
     Path::new("/home/tester/.litellm/token.json")
+}
+
+#[test]
+fn logout_help_text_matches_litellm() {
+    assert_eq!(LOGOUT_ABOUT, "Logout and clear stored authentication");
 }
 
 #[test]
@@ -309,6 +316,19 @@ impl PrintFixture {
 }
 
 #[test]
+fn print_token_help_texts_match_litellm() {
+    assert_eq!(
+        AUTH_ABOUT,
+        "Manage CLI authentication (apiKeyHelper support, etc.)"
+    );
+    assert_eq!(PRINT_TOKEN_ABOUT, "Print a valid API token for this proxy.");
+    assert_eq!(
+        PRINT_TOKEN_LONG_ABOUT,
+        "Print a valid API token for this proxy.\n\nDesigned to be used as Claude Code's `apiKeyHelper` (https://docs.claude.com/en/docs/claude-code/settings): stdout must contain only the token, so all diagnostics go to stderr. The token expires after `LITELLM_CLI_JWT_EXPIRATION_HOURS` (default 24h); a `lite login --pkce` token renews itself here first, and once a token has expired for good, run the same `lite login` command again."
+    );
+}
+
+#[test]
 fn print_token_auth_command_runs_the_print_token_command() {
     let mut fixture = PrintFixture::new(FakeFiles::holding(record()), Vec::new());
     let mut request = PrintTokenRequest {
@@ -536,6 +556,11 @@ fn print_token_rejects_a_missing_context_key_for_this_server() {
         matches!(error, SessionError::UnusableKey { login_command } if login_command == "lite login --pkce")
     );
     assert!(fixture.stdout().is_empty());
+}
+
+#[test]
+fn whoami_help_text_matches_litellm() {
+    assert_eq!(WHOAMI_ABOUT, "Show current authentication status");
 }
 
 #[test]

@@ -20,7 +20,7 @@ use crate::cli_context::CliContext;
 use crate::credential_lifecycle::files::ManagedTokenFile;
 use crate::keyring::KeyringUnusable;
 
-use super::down::down;
+use super::down::{DOWN_ABOUT, DOWN_LONG_ABOUT, down};
 use super::error::BackupError;
 use super::probes::{
     KeyResolvedRequest, key_resolved_on_the_way_in, stored_login_is_pkce, usable_login,
@@ -315,6 +315,18 @@ fn restore_keeps_the_backup_when_the_settings_cannot_be_removed() {
     let error = restore_claude_settings(&settings, &backup, &files).expect_err("fails");
     assert!(matches!(error, BackupError::RemoveSettings { .. }));
     assert!(backup.exists());
+}
+
+#[test]
+fn down_help_text_matches_litellm() {
+    assert_eq!(
+        DOWN_ABOUT,
+        "Restore ~/.claude/settings.json if a `lite up` session left it patched"
+    );
+    assert_eq!(
+        DOWN_LONG_ABOUT,
+        "Restore ~/.claude/settings.json if a `lite up` session left it patched.\n\nUse this after a `lite up` process was killed uncleanly (e.g. `kill -9`) instead of stopped with Ctrl-C."
+    );
 }
 
 #[test]
