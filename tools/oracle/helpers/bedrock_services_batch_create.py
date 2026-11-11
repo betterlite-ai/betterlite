@@ -122,7 +122,7 @@ def _transform(scenario: Scenario) -> SignedRequest:
     if scenario.completion_window is not None:
         batch_request["completion_window"] = scenario.completion_window  # type: ignore[typeddict-item]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L522
     config = BedrockBatchesConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L104
-    result = config.transform_create_batch_request(
+    result = config.transform_create_batch_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L188
         model=scenario.model,
         create_batch_data=batch_request,
         optional_params=scenario.optional_params,
@@ -163,7 +163,7 @@ def _reply_call(scenario: Scenario) -> JsonValue:
     config = BedrockBatchesConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L104
     time.time = Clock(scenario.clock)
     try:
-        reply = config.transform_create_batch_response(
+        reply = config.transform_create_batch_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L301
             model=None,
             raw_response=response,
             logging_obj=MagicMock(),
@@ -211,7 +211,7 @@ def run(argument: JsonValue) -> JsonValue:
         case "metadata_sanitization":
             return {
                 "values": [
-                    JSON.validate_python(BedrockBatchesConfig._get_openai_compatible_batch_metadata(value))  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L376
+                    JSON.validate_python(BedrockBatchesConfig._get_openai_compatible_batch_metadata(value))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L376
                     for value in input_value.values
                 ]
             }
