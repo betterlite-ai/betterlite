@@ -1,0 +1,45 @@
+kind: helper
+name: response-headers
+call:
+  call_helpers:
+    function: response_headers
+    steps:
+      - function: project
+        headers:
+          x-ratelimit-limit-requests: "100"
+          x-request-id: abc
+          llm_provider-x-vendor: kept
+      - function: project
+        headers:
+          content-type: application/json
+          content-length: "2"
+          content-security-policy: "default-src 'none'"
+          retry-after: "3"
+          x-vendor-trace: t
+      - function: set_hidden
+        headers:
+          x-ratelimit-limit-requests: "5"
+          x-request-id: id
+        existing:
+          llm_provider-x-ratelimit-limit-requests: existing
+          llm_provider-x-litellm-response-cost: 0.25
+      - function: get_hidden
+        hidden: {headers: {x-a: "1"}}
+      - function: get_hidden
+        hidden: {headers: {}}
+      - function: get_hidden
+        hidden: {headers: null}
+      - function: get_hidden
+        hidden: {}
+      - function: get_hidden
+        hidden: null
+      - function: get_hidden
+        hidden: {headers: {x-a: 1}}
+      - function: get_hidden
+        hidden: {headers: []}
+      - function: get_hidden
+        hidden: 5
+      - function: get_hidden
+        hidden: {headers: text}
+env: {}
+compare: {ignore: []}

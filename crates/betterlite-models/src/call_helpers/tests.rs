@@ -52,62 +52,53 @@ fn decimal(source: &str) -> Decimal {
     Decimal::from_str(source).unwrap()
 }
 
-fn finish_reasons_normalize_to_openai_values() {
-    let expected = [
-        ("stop_sequence", FinishReason::Stop),
-        ("end_turn", FinishReason::Stop),
-        ("COMPLETE", FinishReason::Stop),
-        ("ERROR", FinishReason::Stop),
-        ("eos_token", FinishReason::Stop),
-        ("eos", FinishReason::Stop),
-        ("STOP", FinishReason::Stop),
-        ("FINISH_REASON_UNSPECIFIED", FinishReason::Stop),
-        ("MALFORMED_FUNCTION_CALL", FinishReason::Stop),
-        ("TOO_MANY_TOOL_CALLS", FinishReason::Stop),
-        ("MALFORMED_RESPONSE", FinishReason::Stop),
-        ("UNEXPECTED_TOOL_CALL", FinishReason::Stop),
-        ("MISSING_THOUGHT_SIGNATURE", FinishReason::Stop),
-        ("network_error", FinishReason::Stop),
-        ("stop", FinishReason::Stop),
-        ("error", FinishReason::Stop),
-        ("max_tokens", FinishReason::Length),
-        ("compaction", FinishReason::Length),
-        ("MAX_TOKENS", FinishReason::Length),
-        ("length", FinishReason::Length),
-        ("tool_use", FinishReason::ToolCalls),
-        ("tool_calls", FinishReason::ToolCalls),
-        ("function_call", FinishReason::FunctionCall),
-    ];
-    for (raw, reason) in expected {
-        let mapped = map_finish_reason(raw);
-        assert_eq!(mapped.reason, reason, "{raw}");
-        assert!(mapped.recognized, "{raw}");
-    }
-}
+const FINISH_REASON_CASES: [(&str, FinishReason); 42] = [
+    ("stop_sequence", FinishReason::Stop),
+    ("end_turn", FinishReason::Stop),
+    ("COMPLETE", FinishReason::Stop),
+    ("ERROR", FinishReason::Stop),
+    ("eos_token", FinishReason::Stop),
+    ("eos", FinishReason::Stop),
+    ("STOP", FinishReason::Stop),
+    ("FINISH_REASON_UNSPECIFIED", FinishReason::Stop),
+    ("MALFORMED_FUNCTION_CALL", FinishReason::Stop),
+    ("TOO_MANY_TOOL_CALLS", FinishReason::Stop),
+    ("MALFORMED_RESPONSE", FinishReason::Stop),
+    ("UNEXPECTED_TOOL_CALL", FinishReason::Stop),
+    ("MISSING_THOUGHT_SIGNATURE", FinishReason::Stop),
+    ("network_error", FinishReason::Stop),
+    ("stop", FinishReason::Stop),
+    ("error", FinishReason::Stop),
+    ("max_tokens", FinishReason::Length),
+    ("compaction", FinishReason::Length),
+    ("MAX_TOKENS", FinishReason::Length),
+    ("length", FinishReason::Length),
+    ("tool_use", FinishReason::ToolCalls),
+    ("tool_calls", FinishReason::ToolCalls),
+    ("function_call", FinishReason::FunctionCall),
+    ("refusal", FinishReason::ContentFilter),
+    ("ERROR_TOXIC", FinishReason::ContentFilter),
+    ("SAFETY", FinishReason::ContentFilter),
+    ("RECITATION", FinishReason::ContentFilter),
+    ("LANGUAGE", FinishReason::ContentFilter),
+    ("OTHER", FinishReason::ContentFilter),
+    ("BLOCKLIST", FinishReason::ContentFilter),
+    ("PROHIBITED_CONTENT", FinishReason::ContentFilter),
+    ("SPII", FinishReason::ContentFilter),
+    ("IMAGE_SAFETY", FinishReason::ContentFilter),
+    ("IMAGE_PROHIBITED_CONTENT", FinishReason::ContentFilter),
+    ("NO_IMAGE", FinishReason::ContentFilter),
+    ("IMAGE_RECITATION", FinishReason::ContentFilter),
+    ("IMAGE_OTHER", FinishReason::ContentFilter),
+    ("ESCALATION", FinishReason::ContentFilter),
+    ("sensitive", FinishReason::ContentFilter),
+    ("guardrail_intervened", FinishReason::ContentFilter),
+    ("content_filter", FinishReason::ContentFilter),
+    ("content_filtered", FinishReason::ContentFilter),
+];
 
-fn content_filter_finish_reasons_normalize() {
-    let expected = [
-        ("refusal", FinishReason::ContentFilter),
-        ("ERROR_TOXIC", FinishReason::ContentFilter),
-        ("SAFETY", FinishReason::ContentFilter),
-        ("RECITATION", FinishReason::ContentFilter),
-        ("LANGUAGE", FinishReason::ContentFilter),
-        ("OTHER", FinishReason::ContentFilter),
-        ("BLOCKLIST", FinishReason::ContentFilter),
-        ("PROHIBITED_CONTENT", FinishReason::ContentFilter),
-        ("SPII", FinishReason::ContentFilter),
-        ("IMAGE_SAFETY", FinishReason::ContentFilter),
-        ("IMAGE_PROHIBITED_CONTENT", FinishReason::ContentFilter),
-        ("NO_IMAGE", FinishReason::ContentFilter),
-        ("IMAGE_RECITATION", FinishReason::ContentFilter),
-        ("IMAGE_OTHER", FinishReason::ContentFilter),
-        ("ESCALATION", FinishReason::ContentFilter),
-        ("sensitive", FinishReason::ContentFilter),
-        ("guardrail_intervened", FinishReason::ContentFilter),
-        ("content_filter", FinishReason::ContentFilter),
-        ("content_filtered", FinishReason::ContentFilter),
-    ];
-    for (raw, reason) in expected {
+fn finish_reasons_normalize_to_openai_values() {
+    for (raw, reason) in FINISH_REASON_CASES {
         let mapped = map_finish_reason(raw);
         assert_eq!(mapped.reason, reason, "{raw}");
         assert!(mapped.recognized, "{raw}");
@@ -581,7 +572,12 @@ fn normalize_drop_params_accepts_text_flag_forms() {
     assert_eq!(normalize_drop_params(Some(&value("\" NO \""))), Some(false));
     assert_eq!(normalize_drop_params(Some(&value("\"1\""))), Some(true));
     assert_eq!(normalize_drop_params(Some(&value("\"0\""))), Some(false));
-    assert_eq!(normalize_drop_params(Some(&value("\"maybe\""))), None);
+    assert_eq!(normalize_drop_params(Some(&value("\"t\""))), Some(true));
+    assert_eq!(normalize_drop_params(Some(&value("\"F\""))), Some(false));
+    assert_eq!(normalize_drop_params(Some(&value("\"y\""))), Some(true));
+    assert_eq!(normalize_drop_params(Some(&value("\"n\""))), Some(false));
+    assert_eq!(normalize_drop_params(Some(&value("\"on\""))), Some(true));
+    assert_eq!(normalize_drop_params(Some(&value("\" maybe \""))), None);
     assert_eq!(normalize_drop_params(Some(&value("\"\""))), None);
 }
 
@@ -613,24 +609,25 @@ fn drop_request_flags_warn_and_default_off() {
     let disabled = drop_params_flag(Some(&value("false")));
     assert!(!disabled.enabled);
     assert!(!disabled.warned);
+    let short = drop_params_flag(Some(&value("\"Y\"")));
+    assert!(short.enabled);
+    assert!(!short.warned);
 }
 
 fn drop_env_flags_warn_and_default_on() {
-    let unset = drop_params_env_flag(None);
-    assert!(!unset.enabled);
-    assert!(!unset.warned);
-    let blank = drop_params_env_flag(Some("   "));
-    assert!(!blank.enabled);
-    assert!(!blank.warned);
-    let enabled = drop_params_env_flag(Some(" yes "));
-    assert!(enabled.enabled);
-    assert!(!enabled.warned);
-    let disabled = drop_params_env_flag(Some("0"));
-    assert!(!disabled.enabled);
-    assert!(!disabled.warned);
-    let malformed = drop_params_env_flag(Some("always"));
-    assert!(malformed.enabled);
-    assert!(malformed.warned);
+    let expected = [
+        (None, false, false),
+        (Some("   "), false, false),
+        (Some(" yes "), true, false),
+        (Some("0"), false, false),
+        (Some("t"), true, false),
+        (Some("always"), true, true),
+    ];
+    for (given, enabled, warned) in expected {
+        let flag = drop_params_env_flag(given);
+        assert_eq!(flag.enabled, enabled, "{given:?}");
+        assert_eq!(flag.warned, warned, "{given:?}");
+    }
 }
 
 fn safe_divide_keeps_the_zero_denominator_default() {
@@ -747,7 +744,6 @@ fn independent_snapshots_and_unforgeable_trusted_flags() {
 
 #[rstest]
 #[case::finish_reasons_normalize_to_openai_values(finish_reasons_normalize_to_openai_values)]
-#[case::content_filter_finish_reasons_normalize(content_filter_finish_reasons_normalize)]
 #[case::an_unknown_finish_reason_defaults_to_stop_without_recognizing_it(
     an_unknown_finish_reason_defaults_to_stop_without_recognizing_it
 )]
