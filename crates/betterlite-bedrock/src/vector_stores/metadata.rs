@@ -1,3 +1,5 @@
+use std::net::Ipv6Addr;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -47,9 +49,10 @@ struct UriParts {
     path: String,
 }
 
-// urlparse splits syntactically, and only an unbalanced IPv6 bracket makes it raise
+// urlparse splits syntactically; it raises only on a bad bracketed host
 fn split_uri(value: &str) -> Option<UriParts> {
     let stripped: String = value
+        .trim_start_matches(|character| character <= ' ')
         .chars()
         .filter(|character| !matches!(character, '\t' | '\r' | '\n'))
         .collect();
@@ -65,13 +68,42 @@ fn split_uri(value: &str) -> Option<UriParts> {
     let (netloc, path) = authority
         .find('/')
         .map_or((authority, ""), |index| authority.split_at(index));
-    if netloc.contains('[') != netloc.contains(']') {
+    let opens = netloc.contains('[');
+    if opens != netloc.contains(']') || (opens && !bracketed_netloc_is_valid(netloc)) {
         return None;
     }
     Some(UriParts {
         netloc: netloc.to_owned(),
         path: path.to_owned(),
     })
+}
+
+fn bracketed_netloc_is_valid(netloc: &str) -> bool {
+    let host_and_port = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
+    let hostname = match host_and_port.split_once('[') {
+        Some((before, _)) if !before.is_empty() => return false,
+        Some((_, bracketed)) => {
+            let (hostname, port) = bracketed.split_once(']').unwrap_or((bracketed, ""));
+            if !port.is_empty() && !port.starts_with(':') {
+                return false;
+            }
+            hostname
+        }
+        None => host_and_port.split(':').next().unwrap_or_default(),
+    };
+    if let Some(future) = hostname.strip_prefix('v') {
+        let after_digits =
+            future.trim_start_matches(|character: char| character.is_ascii_hexdigit());
+        return after_digits.len() < future.len()
+            && after_digits
+                .strip_prefix('.')
+                .is_some_and(|tail| !tail.is_empty());
+    }
+    let (address, scope) = hostname
+        .split_once('%')
+        .map_or((hostname, None), |(address, scope)| (address, Some(scope)));
+    scope.is_none_or(|id| !id.is_empty() && !id.contains('%'))
+        && address.parse::<Ipv6Addr>().is_ok()
 }
 
 fn split_scheme(value: &str) -> &str {

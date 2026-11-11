@@ -42,10 +42,7 @@ fn decode_outcome(scenario: &ResponseScenario, shape: DecodeShape) -> Value {
                 json!({"ok": true, "count": response.data.map_or(0, |data| data.len())})
             }
         },
-        Err(VectorStoreError::Provider { status, .. }) => match shape {
-            DecodeShape::Full => json!({"error": {"status_code": status}}),
-            DecodeShape::Summary => json!({"ok": false, "status_code": status}),
-        },
+        Err(VectorStoreError::Provider { status, .. }) => json!({"error": {"status_code": status}}),
         Err(_) => json!({"failed": true}),
     }
 }
