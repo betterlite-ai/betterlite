@@ -70,14 +70,7 @@ impl KeyProbe for Probe {
     }
 }
 pub(crate) struct Debug {
-    answers: Mutex<VecDeque<DebugScript>>,
-}
-impl Debug {
-    pub(crate) fn new(answers: Vec<DebugScript>) -> Self {
-        Self {
-            answers: Mutex::new(VecDeque::from(answers)),
-        }
-    }
+    pub(crate) answers: Mutex<VecDeque<DebugScript>>,
 }
 impl DebugModels for Debug {
     fn run(&self, invocation: &DebugInvocation) -> Result<DebugOutput, DebugFailure> {
@@ -143,13 +136,7 @@ pub(crate) struct LaunchCall {
 pub(crate) struct Launcher {
     pub(crate) calls: Mutex<Vec<LaunchCall>>,
 }
-impl Launcher {
-    pub(crate) const fn new() -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-}
+
 impl ProcessLauncher for Launcher {
     fn replace(&self, path: &str, args: &[String], env: &EnvVars) -> io::Result<i32> {
         self.calls

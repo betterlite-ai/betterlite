@@ -68,20 +68,27 @@ impl Preparer for PiPreparer<'_> {
         request: &PrepareRequest<'_>,
         messages: &mut dyn Messages,
     ) -> Result<Vec<String>, AgentRunError> {
-        let mut notice = NoticeBuffer {
-            messages,
-            text: String::new(),
-        };
-        let mut context = PreparePiContext {
-            environment: request.environment,
-            get: self.get,
-            files: self.files,
-            notice: &mut notice,
-        };
-        let result = prepare_pi(request.base_url, request.api_key, &mut context);
-        notice.finish();
-        result.map_err(AgentRunError::Pi)
+        prepare_pi_models(self, request, messages)
     }
+}
+fn prepare_pi_models(
+    pi: &PiPreparer<'_>,
+    request: &PrepareRequest<'_>,
+    messages: &mut dyn Messages,
+) -> Result<Vec<String>, AgentRunError> {
+    let mut notice = NoticeBuffer {
+        messages,
+        text: String::new(),
+    };
+    let mut context = PreparePiContext {
+        environment: request.environment,
+        get: pi.get,
+        files: pi.files,
+        notice: &mut notice,
+    };
+    let result = prepare_pi(request.base_url, request.api_key, &mut context);
+    notice.finish();
+    result.map_err(AgentRunError::Pi)
 }
 pub struct Preparers<'preparers> {
     pub pi: &'preparers dyn Preparer,

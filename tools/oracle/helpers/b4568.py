@@ -34,7 +34,6 @@ class Step(TypedDict, total=False):
     binary: str | None
     models: list[dict[str, JsonValue]]
     stock: str
-    instructions: str
 
 
 class _Response:
@@ -168,7 +167,7 @@ def _run_step(step: Step) -> dict[str, JsonValue]:
             _ = (codex_home / "config.toml").write_text("hooks.Stop = []\n", encoding="utf-8")
         instructions_path = root / "instructions.md"
         _ = instructions_path.write_text(
-            step.get("instructions", DEFAULT_INSTRUCTIONS), encoding="utf-8"
+            DEFAULT_INSTRUCTIONS, encoding="utf-8"
         )
         http = _Http(step.get("models", []))
         debug = _Debug(_debug_answers(step))

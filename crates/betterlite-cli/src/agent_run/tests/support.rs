@@ -206,8 +206,8 @@ impl ProxyGet for ScriptedHttp {
         headers: &[(String, SecretString)],
         timeout: Duration,
     ) -> io::Result<ProxyResponse> {
-        let (status, body) = self.answer(url, authorization(headers), timeout)?;
-        Ok(ProxyResponse { status, body })
+        self.answer(url, authorization(headers), timeout)
+            .map(|(status, body)| ProxyResponse { status, body })
     }
 }
 
