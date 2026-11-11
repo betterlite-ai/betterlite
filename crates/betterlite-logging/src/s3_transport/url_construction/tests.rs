@@ -76,7 +76,7 @@ fn the_default_host_uses_the_partition_dns_suffix() {
 
 #[rstest]
 #[case::space("a b", "a%20b")]
-#[case::plus_and_ampersand("a+b&c", "a%2B%26c")]
+#[case::plus_and_ampersand("a+b&c", "a%2Bb%26c")]
 #[case::fragment_and_query("a#b?c", "a%23b%3Fc")]
 #[case::percent("a%b", "a%25b")]
 #[case::equals("a=b", "a%3Db")]

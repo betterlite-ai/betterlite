@@ -117,7 +117,9 @@ async fn the_http_client_returns_a_rejection_body() {
     assert_eq!(status, 503);
     assert_eq!(body, b"err".to_vec());
     assert!(
-        received.starts_with("get /logs/2026-01-02/id.json http/1.1"),
+        received
+            .to_ascii_lowercase()
+            .starts_with("get /logs/2026-01-02/id.json http/1.1"),
         "{received}"
     );
 }
