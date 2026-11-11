@@ -8,10 +8,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret as Secret;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::agent_tracing::{
-    DATABASE_VARIABLE, DEFAULT_DATABASE, READER_URL_VARIABLE, Settings, URL_VARIABLE,
-    decode_agent_tracing,
-};
+use crate::sections::agent_tracing::{Settings, decode_agent_tracing};
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
     let lookup: BTreeMap<String, String> = variables
@@ -50,23 +47,23 @@ fn loads_store(#[case] source: &str, #[case] enabled: bool) {
 #[rstest]
 #[case::every_variable(
     &[
-        (URL_VARIABLE, "http://clickhouse:8123"),
-        (READER_URL_VARIABLE, "http://reader:8123"),
-        (DATABASE_VARIABLE, "traces"),
+        ("CLICKHOUSE_URL", "http://clickhouse:8123"),
+        ("CLICKHOUSE_READER_URL", "http://reader:8123"),
+        ("CLICKHOUSE_DATABASE", "traces"),
     ],
     Some("http://clickhouse:8123"),
     Some("http://reader:8123"),
     "traces"
 )]
-#[case::absent_defaults(&[], None, None, DEFAULT_DATABASE)]
+#[case::absent_defaults(&[], None, None, "litellm")]
 #[case::reader_defaults_to_url(
-    &[(URL_VARIABLE, "http://clickhouse:8123")],
+    &[("CLICKHOUSE_URL", "http://clickhouse:8123")],
     Some("http://clickhouse:8123"),
     Some("http://clickhouse:8123"),
-    DEFAULT_DATABASE
+    "litellm"
 )]
 #[case::explicit_empty_values(
-    &[(URL_VARIABLE, ""), (READER_URL_VARIABLE, ""), (DATABASE_VARIABLE, "")],
+    &[("CLICKHOUSE_URL", ""), ("CLICKHOUSE_READER_URL", ""), ("CLICKHOUSE_DATABASE", "")],
     Some(""),
     Some(""),
     ""
