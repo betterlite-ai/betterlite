@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use rstest::rstest;
 use tokio::time::Instant;
 use uuid::Uuid;
 
@@ -24,6 +25,9 @@ const DETAIL_PREFIXES: &str = r#"{"dataSource":{"dataSourceConfiguration":{"s3Co
 const DETAIL_EMPTY_ARN: &str =
     r#"{"dataSource":{"dataSourceConfiguration":{"s3Configuration":{"bucketArn":""}}}}"#;
 const DETAIL_NO_CONFIG: &str = r#"{"dataSource":{"dataSourceId":"DS1"}}"#;
+const DETAIL_NULL_CONFIG: &str = r#"{"dataSource":{"dataSourceConfiguration":null}}"#;
+const DETAIL_NULL_S3: &str =
+    r#"{"dataSource":{"dataSourceConfiguration":{"s3Configuration":null}}}"#;
 const KB_CREATE: &str = r#"{"knowledgeBase":{"knowledgeBaseId":"KB-NEW"}}"#;
 const DS_CREATE: &str = r#"{"dataSource":{"dataSourceId":"DS-NEW"}}"#;
 const EMPTY_BODY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -169,6 +173,42 @@ async fn detect_missing_s3_configuration_falls_back_to_the_configured_bucket() {
         .expect("the data source is detected");
     assert_eq!(state.s3_bucket.as_deref(), Some("configured-bucket"));
     assert_eq!(state.s3_prefix, "data/");
+}
+
+#[rstest]
+#[case::null_configuration(DETAIL_NULL_CONFIG)]
+#[case::null_s3_configuration(DETAIL_NULL_S3)]
+#[tokio::test]
+async fn detect_null_configuration_falls_back_to_the_configured_bucket(#[case] detail: &str) {
+    let (built, _transport, mut state) = setup(
+        r#"{"vector_store_id": "KB123", "s3_bucket": "configured-bucket"}"#,
+        vec![json_response(LIST_ONE), json_response(detail)],
+    );
+    state
+        .auto_detect_config(&built)
+        .await
+        .expect("the configured bucket is used");
+    assert_eq!(state.s3_bucket.as_deref(), Some("configured-bucket"));
+    assert_eq!(state.s3_prefix, "data/");
+}
+
+#[rstest]
+#[case::null_configuration(DETAIL_NULL_CONFIG)]
+#[case::null_s3_configuration(DETAIL_NULL_S3)]
+#[tokio::test]
+async fn detect_null_configuration_without_a_bucket_names_litellms_message(#[case] detail: &str) {
+    let (built, _transport, mut state) = setup(
+        r#"{"vector_store_id": "KB123"}"#,
+        vec![json_response(LIST_ONE), json_response(detail)],
+    );
+    let error = state
+        .auto_detect_config(&built)
+        .await
+        .expect_err("there is no bucket");
+    assert_eq!(
+        error.to_string(),
+        "Could not auto-detect S3 bucket for data source DS1. Please provide s3_bucket in config."
+    );
 }
 
 #[tokio::test]

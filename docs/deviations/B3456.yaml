@@ -21,3 +21,6 @@ deviations:
   - what: An AWS error body that is not UTF-8 is reported as a placeholder instead of its bytes.
     why: Error messages are Strings; the first 1024 bytes of a JSON error body are always UTF-8 in practice.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L587-L616
+  - what: A GetDataSource answer whose dataSourceConfiguration or s3Configuration is null is treated as absent, so the configured s3_bucket is used or the NoS3Bucket error is returned. Python crashes with an AttributeError there.
+    why: A null in the declared optional fields is a valid answer, and an unhandled internal error serves no working setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L170-L172
