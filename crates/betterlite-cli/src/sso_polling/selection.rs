@@ -19,6 +19,13 @@ const TABLE_COLUMNS: &str = "Index  Team Name  Team ID";
 enum Picked {
     Team(CliTeam),
     Skipped,
+    Ended,
+}
+
+#[derive(Clone, Copy)]
+enum PromptKind {
+    Fallback,
+    Login,
 }
 
 #[must_use]
@@ -55,7 +62,7 @@ pub fn prompt_team_selection(
                     return prompt_team_selection_fallback(teams, input, echo);
                 };
                 echo(CLEAR_SCREEN);
-                echo(&selected_team_message(team));
+                echo(&selected_team_message(team, PromptKind::Fallback));
                 return Some(team.clone());
             }
             Some(KeyPress::Escape | KeyPress::Quit) => {
@@ -68,38 +75,48 @@ pub fn prompt_team_selection(
     }
 }
 
+impl Picked {
+    fn announced(
+        self,
+        kind: PromptKind,
+        teams: &[CliTeam],
+        echo: MessageSink<'_>,
+    ) -> Option<CliTeam> {
+        match self {
+            Self::Team(team) => {
+                echo(&selected_team_message(&team, kind));
+                Some(team)
+            }
+            Self::Skipped => match kind {
+                PromptKind::Fallback => None,
+                PromptKind::Login => teams.first().cloned(),
+            },
+            Self::Ended => None,
+        }
+    }
+}
+
 #[must_use]
 pub fn prompt_team_selection_fallback(
     teams: &[CliTeam],
     input: &mut dyn SelectionInput,
     echo: MessageSink<'_>,
 ) -> Option<CliTeam> {
-    ask_for_choice(teams, input, echo, FALLBACK_PROMPT)
-        .and_then(|picked| announce_team(picked, echo))
-}
-
-fn announce_team(picked: Option<Picked>, echo: MessageSink<'_>) -> Option<CliTeam> {
-    let Picked::Team(team) = picked? else {
+    if teams.is_empty() {
         return None;
-    };
-    echo(&selected_team_message(&team));
-    Some(team)
+    }
+    ask_for_choice(teams, input, echo, FALLBACK_PROMPT).announced(PromptKind::Fallback, teams, echo)
 }
 
 #[must_use]
 pub fn prompt_team_id(
-    teams: &[CliTeam],
-    input: &mut dyn SelectionInput,
-    echo: MessageSink<'_>,
+    choices: &[CliTeam],
+    terminal: &mut dyn SelectionInput,
+    sink: MessageSink<'_>,
 ) -> Option<String> {
-    display_team_table(teams, echo);
-    match ask_for_choice(teams, input, echo, LOGIN_TEAM_PROMPT)? {
-        Picked::Skipped => teams.first()?.team_id.clone(),
-        Picked::Team(team) => {
-            echo(&selected_login_team_message(&team));
-            team.team_id
-        }
-    }
+    display_team_table(choices, sink);
+    let picked = ask_for_choice(choices, terminal, sink, LOGIN_TEAM_PROMPT);
+    picked.announced(PromptKind::Login, choices, sink)?.team_id
 }
 
 fn ask_for_choice(
@@ -107,15 +124,16 @@ fn ask_for_choice(
     input: &mut dyn SelectionInput,
     echo: MessageSink<'_>,
     prompt: &str,
-) -> Option<Picked> {
+) -> Picked {
     if teams.is_empty() {
-        return None;
+        return Picked::Ended;
     }
     from_fn(|| {
         echo(prompt);
         input.read_line()
     })
     .find_map(|answer| interpret(teams, answer.trim(), echo))
+    .unwrap_or(Picked::Ended)
 }
 
 fn interpret(teams: &[CliTeam], answer: &str, echo: MessageSink<'_>) -> Option<Picked> {
@@ -153,14 +171,11 @@ fn display_team_table(teams: &[CliTeam], echo: MessageSink<'_>) {
     }
 }
 
-fn selected_team_message(team: &CliTeam) -> String {
-    let alias = team.team_alias.as_deref().unwrap_or("N/A");
+fn selected_team_message(team: &CliTeam, kind: PromptKind) -> String {
     let team_id = team.team_id.as_deref().unwrap_or("N/A");
-    format!("\nSelected team: {alias} ({team_id})")
-}
-
-fn selected_login_team_message(team: &CliTeam) -> String {
-    let team_id = team.team_id.as_deref().unwrap_or("N/A");
-    let alias = team.team_alias.as_deref().unwrap_or(team_id);
+    let alias = match kind {
+        PromptKind::Fallback => team.team_alias.as_deref().unwrap_or("N/A"),
+        PromptKind::Login => team.team_alias.as_deref().unwrap_or(team_id),
+    };
     format!("\nSelected team: {alias} ({team_id})")
 }

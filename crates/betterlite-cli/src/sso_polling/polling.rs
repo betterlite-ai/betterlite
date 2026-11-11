@@ -35,6 +35,7 @@ pub trait Sleeper {
 pub struct ThreadSleeper;
 
 impl Sleeper for ThreadSleeper {
+    #[cfg_attr(test, mutants::skip)]
     fn sleep(&self, interval: Duration) {
         // std::thread::sleep is a disallowed method; parking this CLI thread is the same wait.
         let started = Instant::now();

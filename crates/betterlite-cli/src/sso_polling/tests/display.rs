@@ -49,6 +49,26 @@ fn display_renders_aliases_models_and_budgets_with_the_selected_marker() {
 }
 
 #[test]
+fn display_lists_exactly_three_models_without_a_remainder() {
+    let echo = Echo::default();
+    let sink = echo.sink();
+    let exactly_three = vec![CliTeam {
+        team_id: Some(String::from("team-1")),
+        team_alias: Some(String::from("Alpha")),
+        models: vec![
+            String::from("gpt-4o"),
+            String::from("claude"),
+            String::from("gemini"),
+        ],
+        max_budget: None,
+    }];
+
+    display_team_selection(&exactly_three, 0, false, &sink);
+
+    assert_eq!(echo.recorded()[2], "   Models: gpt-4o, claude, gemini");
+}
+
+#[test]
 fn display_emits_no_escape_codes_when_styling_is_off() {
     let echo = Echo::default();
     let sink = echo.sink();

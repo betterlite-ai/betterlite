@@ -76,6 +76,23 @@ fn fallback_reprompts_after_an_out_of_range_number() {
 }
 
 #[test]
+fn fallback_reprompts_when_the_index_is_one_past_the_end() {
+    let echo = Echo::default();
+    let sink = echo.sink();
+    let mut input = piped_input(vec!["3", "1"]);
+
+    let selected =
+        prompt_team_selection_fallback(&teams(), &mut input, &sink).expect("the selected team");
+
+    assert_eq!(selected.team_id.as_deref(), Some("team-1"));
+    assert!(
+        echo.recorded()
+            .iter()
+            .any(|message| message.contains("between 1 and 2"))
+    );
+}
+
+#[test]
 fn fallback_treats_a_negative_number_as_out_of_range() {
     let echo = Echo::default();
     let sink = echo.sink();

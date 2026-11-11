@@ -30,14 +30,17 @@ impl Default for Terminal {
 }
 
 impl SelectionInput for Terminal {
+    #[cfg_attr(test, mutants::skip)]
     fn is_interactive(&self) -> bool {
         io::stdin().is_terminal()
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn read_key(&mut self) -> Option<Key> {
         self.term.read_key().ok()
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn read_line(&mut self) -> Option<String> {
         let mut line = String::new();
         let read = io::stdin().lock().read_line(&mut line).ok()?;
