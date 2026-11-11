@@ -143,12 +143,7 @@ where
         tracing::warn!("Transcribe media does not start with a measurable container");
         return None;
     };
-    let seconds = match container {
-        decoders::Container::Wav => decoders::wav_seconds(media),
-        decoders::Container::Flac => decoders::flac_seconds(media),
-        decoders::Container::Ogg => decoders::ogg_seconds(media),
-        decoders::Container::Mp3 => decoders::mp3_seconds(media),
-    };
+    let seconds = decoders::container_seconds(container, media);
     if seconds.is_none() {
         tracing::warn!("Transcribe media could not be decoded for its duration");
     }

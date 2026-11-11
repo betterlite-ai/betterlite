@@ -32,6 +32,31 @@ pub struct ResolverSigner<'deps> {
     pub(super) now: SystemTime,
 }
 
+fn signed_get(
+    credentials: &Credentials,
+    region: &str,
+    url: &str,
+    now: SystemTime,
+) -> Result<AwsSignedRequest, ProbeError> {
+    let headers = sign_request(&Signable {
+        method: "GET",
+        url,
+        headers: &[],
+        body: &[],
+        service: S3_SERVICE,
+        region,
+        credentials,
+        now,
+    })
+    .map_err(ProbeError::Signing)?;
+    Ok(AwsSignedRequest {
+        method: "GET".to_owned(),
+        url: url.to_owned(),
+        headers,
+        body: Vec::new(),
+    })
+}
+
 impl ResolverSigner<'_> {
     async fn credentials(&self, region: &str) -> Result<Credentials, ProbeError> {
         self.resolver
@@ -65,22 +90,6 @@ impl AwsSigner for ResolverSigner<'_> {
 
     async fn sign_s3_get(&self, region: &str, url: &str) -> Result<AwsSignedRequest, ProbeError> {
         let credentials = self.credentials(region).await?;
-        let headers = sign_request(&Signable {
-            method: "GET",
-            url,
-            headers: &[],
-            body: &[],
-            service: S3_SERVICE,
-            region,
-            credentials: &credentials,
-            now: self.now,
-        })
-        .map_err(ProbeError::Signing)?;
-        Ok(AwsSignedRequest {
-            method: "GET".to_owned(),
-            url: url.to_owned(),
-            headers,
-            body: Vec::new(),
-        })
+        signed_get(&credentials, region, url, self.now)
     }
 }

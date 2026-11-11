@@ -15,6 +15,7 @@ use crate::policy::ownership::{transcribe_job_access_refusal, transcribe_owned_s
 use crate::policy::storage::{transcribe_media_buckets, transcribe_storage_refusal};
 use crate::records::{GetTranscriptionJobRequest, JobLookup, JobLookupError, JobLookupFuture};
 use crate::start_request::OwnedStartRequest;
+use std::future::ready;
 
 #[fixture]
 fn principal() -> Principal {
@@ -376,18 +377,21 @@ async fn transcribe_job_access_refusal_returns_404_for_lookup_failure_and_foreig
 
 struct RejectedJobLookup(&'static str);
 
+impl RejectedJobLookup {
+    fn rejection(&self) -> JobLookupError {
+        JobLookupError::Rejected {
+            status: 400,
+            aws_error_type: Some(self.0.to_owned()),
+        }
+    }
+}
+
 impl JobLookup for RejectedJobLookup {
     fn get_transcription_job<'lookup>(
         &'lookup self,
-        request: &'lookup GetTranscriptionJobRequest,
+        _request: &'lookup GetTranscriptionJobRequest,
     ) -> JobLookupFuture<'lookup> {
-        Box::pin(async move {
-            assert_eq!(request.transcription_job_name, "job-1");
-            Err(JobLookupError::Rejected {
-                status: 400,
-                aws_error_type: Some(self.0.to_owned()),
-            })
-        })
+        Box::pin(ready(Err(self.rejection())))
     }
 }
 

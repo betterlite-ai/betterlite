@@ -31,16 +31,24 @@ impl Container {
     }
 }
 
-pub(super) fn wav_seconds<R>(media: R) -> Option<Decimal>
+pub(super) fn container_seconds<R>(container: Container, mut media: R) -> Option<Decimal>
 where
-    R: Read,
+    R: Read + Seek,
 {
-    let reader = hound::WavReader::new(media).ok()?;
-    let spec = reader.spec();
-    exact_seconds(u64::from(reader.duration()), spec.sample_rate)
+    match container {
+        Container::Wav => hound::WavReader::new(media).ok().and_then(|reader| {
+            exact_seconds(u64::from(reader.duration()), reader.spec().sample_rate)
+        }),
+        Container::Flac => flac_seconds(media),
+        Container::Ogg => ogg_sample_rate(&mut media)
+            .and_then(|rate| exact_seconds(last_ogg_granule(&mut media)?, rate)),
+        Container::Mp3 => mp3_duration::from_read(&mut media)
+            .ok()
+            .and_then(duration_seconds),
+    }
 }
 
-pub(super) fn flac_seconds<R>(media: R) -> Option<Decimal>
+fn flac_seconds<R>(media: R) -> Option<Decimal>
 where
     R: Read,
 {
@@ -51,25 +59,6 @@ where
     let reader = claxon::FlacReader::new_ext(media, options).ok()?;
     let stream = reader.streaminfo();
     exact_seconds(stream.samples?, stream.sample_rate)
-}
-
-pub(super) fn ogg_seconds<R>(mut media: R) -> Option<Decimal>
-where
-    R: Read + Seek,
-{
-    let sample_rate = ogg_sample_rate(&mut media)?;
-    let frames = last_ogg_granule(&mut media)?;
-    exact_seconds(frames, sample_rate)
-}
-
-pub(super) fn mp3_seconds<R>(mut media: R) -> Option<Decimal>
-where
-    R: Read,
-{
-    let Ok(duration) = mp3_duration::from_read(&mut media) else {
-        return None;
-    };
-    duration_seconds(duration)
 }
 
 fn ogg_sample_rate<R>(media: &mut R) -> Option<u32>

@@ -82,6 +82,20 @@ impl SignerLog {
     }
 }
 
+fn signed_request(
+    method: &str,
+    url: &str,
+    headers: Vec<(String, String)>,
+    body: &[u8],
+) -> AwsSignedRequest {
+    AwsSignedRequest {
+        method: method.to_owned(),
+        url: url.to_owned(),
+        headers,
+        body: body.to_vec(),
+    }
+}
+
 struct RecordingSigner {
     log: SignerLog,
     fail: bool,
@@ -105,12 +119,12 @@ impl AwsSigner for RecordingSigner {
             body: body.to_owned(),
             headers: headers.to_vec(),
         });
-        Ok(AwsSignedRequest {
-            method: "POST".to_owned(),
-            url: url.to_owned(),
-            headers: headers.to_vec(),
-            body: body.as_bytes().to_vec(),
-        })
+        Ok(signed_request(
+            "POST",
+            url,
+            headers.to_vec(),
+            body.as_bytes(),
+        ))
     }
 
     async fn sign_s3_get(&self, region: &str, url: &str) -> Result<AwsSignedRequest, ProbeError> {
@@ -121,15 +135,11 @@ impl AwsSigner for RecordingSigner {
             region: region.to_owned(),
             url: url.to_owned(),
         });
-        Ok(AwsSignedRequest {
-            method: "GET".to_owned(),
-            url: url.to_owned(),
-            headers: vec![(
-                "Authorization".to_owned(),
-                "AWS4-HMAC-SHA256 signed".to_owned(),
-            )],
-            body: Vec::new(),
-        })
+        let authorization = (
+            "Authorization".to_owned(),
+            "AWS4-HMAC-SHA256 signed".to_owned(),
+        );
+        Ok(signed_request("GET", url, vec![authorization], b""))
     }
 }
 
