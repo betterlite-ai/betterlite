@@ -52,11 +52,11 @@ impl BedrockRagState {
             .knowledge_base_id
             .clone()
             .ok_or(BedrockIngestionError::MissingKnowledgeBaseId)?;
-        let data_source_id = self.detect_data_source(clients, &knowledge_base_id).await?;
+        let data_source_id = detect_data_source(self, clients, &knowledge_base_id).await?;
         let details = clients
             .get_data_source(&knowledge_base_id, &data_source_id)
             .await?;
-        self.apply_s3_configuration(clients, &data_source_id, &details)
+        apply_s3_configuration(self, clients, &data_source_id, &details)
     }
 
     pub async fn create_s3_bucket<Transport>(
@@ -68,25 +68,7 @@ impl BedrockRagState {
         Transport: AwsRagTransport,
     {
         let bucket_name = format!("litellm-kb-{unique_id}");
-        let region = clients.settings.aws_region_name.clone();
-        let body = create_bucket_body(&region);
-        let bytes = body.as_deref().unwrap_or_default().as_bytes();
-        let headers = vec![(
-            "x-amz-content-sha256".to_owned(),
-            hex::encode(Sha256::digest(bytes)),
-        )];
-        let url = format!("{}/", s3_bucket_host(&bucket_name, &region));
-        let response = clients
-            .signed_request_with(SignedRequest {
-                service: S3_SERVICE,
-                signing_region: region.as_str(),
-                method: "PUT",
-                url: &url,
-                headers: &headers,
-                body: bytes,
-            })
-            .await?;
-        response.require_success("CreateBucket")?;
+        create_bucket(clients, &bucket_name).await?;
         self.created_resources.s3_bucket = Some(bucket_name.clone());
         Ok(bucket_name)
     }
@@ -139,88 +121,134 @@ impl BedrockRagState {
             .s3_bucket
             .clone()
             .ok_or(BedrockIngestionError::MissingS3Bucket)?;
-        let arn_prefix = get_aws_partition(Some(&clients.settings.aws_region_name)).arn_prefix;
-        let request = CreateDataSourceRequest {
-            client_token: Uuid::new_v4().to_string(),
+        let request = data_source_request(
+            &clients.settings.aws_region_name,
             knowledge_base_id,
-            name: format!("{kb_name}-s3-source"),
-            data_source_configuration: NewDataSourceConfiguration {
-                data_source_type: DataSourceType::S3,
-                s3_configuration: NewS3DataSourceConfiguration {
-                    bucket_arn: format!("{arn_prefix}s3:::{bucket}"),
-                    inclusion_prefixes: vec![self.s3_prefix.clone()],
-                },
-            },
-        };
+            kb_name,
+            &bucket,
+            &self.s3_prefix,
+        );
         let created = clients.create_data_source(&request).await?;
         let data_source_id = created.data_source.data_source_id;
         self.created_resources.data_source = Some(data_source_id.clone());
         Ok(data_source_id)
     }
+}
 
-    async fn detect_data_source<Transport>(
-        &mut self,
-        clients: &BedrockRagClients<'_, Transport>,
-        knowledge_base_id: &str,
-    ) -> Result<String, BedrockIngestionError<Transport::Error>>
-    where
-        Transport: AwsRagTransport,
-    {
-        let listed = clients.list_data_sources(knowledge_base_id).await?;
-        let first = listed.data_source_summaries.first().ok_or_else(|| {
-            BedrockIngestionError::NoDataSources {
-                knowledge_base_id: knowledge_base_id.to_owned(),
+async fn detect_data_source<Transport>(
+    state: &mut BedrockRagState,
+    clients: &BedrockRagClients<'_, Transport>,
+    knowledge_base_id: &str,
+) -> Result<String, BedrockIngestionError<Transport::Error>>
+where
+    Transport: AwsRagTransport,
+{
+    let listed = clients.list_data_sources(knowledge_base_id).await?;
+    let first = listed.data_source_summaries.first().ok_or_else(|| {
+        BedrockIngestionError::NoDataSources {
+            knowledge_base_id: knowledge_base_id.to_owned(),
+        }
+    })?;
+    let data_source_id = clients
+        .settings
+        .data_source_id
+        .clone()
+        .unwrap_or_else(|| first.data_source_id.clone());
+    state.data_source_id = Some(data_source_id.clone());
+    Ok(data_source_id)
+}
+
+fn apply_s3_configuration<Transport>(
+    state: &mut BedrockRagState,
+    clients: &BedrockRagClients<'_, Transport>,
+    data_source_id: &str,
+    details: &GetDataSourceResponse,
+) -> Result<(), BedrockIngestionError<Transport::Error>>
+where
+    Transport: AwsRagTransport,
+{
+    let s3 = details
+        .data_source
+        .data_source_configuration
+        .as_ref()
+        .and_then(|configuration| configuration.s3_configuration.as_ref());
+    let bucket_arn = s3
+        .and_then(|configuration| configuration.bucket_arn.clone())
+        .unwrap_or_default();
+    if bucket_arn.is_empty() {
+        let configured = clients.settings.s3_bucket.clone().ok_or_else(|| {
+            BedrockIngestionError::NoS3Bucket {
+                data_source_id: data_source_id.to_owned(),
             }
         })?;
-        let data_source_id = clients
-            .settings
-            .data_source_id
-            .clone()
-            .unwrap_or_else(|| first.data_source_id.clone());
-        self.data_source_id = Some(data_source_id.clone());
-        Ok(data_source_id)
+        state.s3_bucket = Some(configured);
+        return Ok(());
     }
-
-    fn apply_s3_configuration<Transport>(
-        &mut self,
-        clients: &BedrockRagClients<'_, Transport>,
-        data_source_id: &str,
-        details: &GetDataSourceResponse,
-    ) -> Result<(), BedrockIngestionError<Transport::Error>>
-    where
-        Transport: AwsRagTransport,
+    let arn_bucket = bucket_arn.rsplit(':').next().unwrap_or_default();
+    state.s3_bucket = Some(
+        clients
+            .settings
+            .s3_bucket
+            .clone()
+            .unwrap_or_else(|| arn_bucket.to_owned()),
+    );
+    let prefixes = s3.and_then(|configuration| configuration.inclusion_prefixes.as_ref());
+    if clients.settings.s3_prefix.is_none()
+        && let Some(prefix) = prefixes.and_then(|values| values.first())
     {
-        let s3 = details
-            .data_source
-            .data_source_configuration
-            .as_ref()
-            .and_then(|configuration| configuration.s3_configuration.as_ref());
-        let bucket_arn = s3
-            .and_then(|configuration| configuration.bucket_arn.clone())
-            .unwrap_or_default();
-        if bucket_arn.is_empty() {
-            let configured = clients.settings.s3_bucket.clone().ok_or_else(|| {
-                BedrockIngestionError::NoS3Bucket {
-                    data_source_id: data_source_id.to_owned(),
-                }
-            })?;
-            self.s3_bucket = Some(configured);
-            return Ok(());
-        }
-        let arn_bucket = bucket_arn.rsplit(':').next().unwrap_or_default();
-        self.s3_bucket = Some(
-            clients
-                .settings
-                .s3_bucket
-                .clone()
-                .unwrap_or_else(|| arn_bucket.to_owned()),
-        );
-        let prefixes = s3.and_then(|configuration| configuration.inclusion_prefixes.as_ref());
-        if clients.settings.s3_prefix.is_none()
-            && let Some(prefix) = prefixes.and_then(|values| values.first())
-        {
-            self.s3_prefix.clone_from(prefix);
-        }
-        Ok(())
+        state.s3_prefix.clone_from(prefix);
+    }
+    Ok(())
+}
+
+async fn create_bucket<Transport>(
+    clients: &BedrockRagClients<'_, Transport>,
+    bucket_name: &str,
+) -> Result<(), BedrockIngestionError<Transport::Error>>
+where
+    Transport: AwsRagTransport,
+{
+    let region = clients.settings.aws_region_name.clone();
+    let body = create_bucket_body(&region);
+    let bytes = body.as_deref().unwrap_or_default().as_bytes();
+    let headers = vec![(
+        "x-amz-content-sha256".to_owned(),
+        hex::encode(Sha256::digest(bytes)),
+    )];
+    let url = format!("{}/", s3_bucket_host(bucket_name, &region));
+    let request = SignedRequest {
+        service: S3_SERVICE,
+        signing_region: region.as_str(),
+        method: "PUT",
+        url: &url,
+        headers: &headers,
+        body: bytes,
+    };
+    clients
+        .signed_request_with(request)
+        .await?
+        .require_success("CreateBucket")?;
+    Ok(())
+}
+
+fn data_source_request(
+    region: &str,
+    knowledge_base_id: String,
+    kb_name: &str,
+    bucket: &str,
+    prefix: &str,
+) -> CreateDataSourceRequest {
+    let arn_prefix = get_aws_partition(Some(region)).arn_prefix;
+    CreateDataSourceRequest {
+        client_token: Uuid::new_v4().to_string(),
+        knowledge_base_id,
+        name: format!("{kb_name}-s3-source"),
+        data_source_configuration: NewDataSourceConfiguration {
+            data_source_type: DataSourceType::S3,
+            s3_configuration: NewS3DataSourceConfiguration {
+                bucket_arn: format!("{arn_prefix}s3:::{bucket}"),
+                inclusion_prefixes: vec![prefix.to_owned()],
+            },
+        },
     }
 }

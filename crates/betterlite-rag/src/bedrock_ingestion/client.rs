@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use betterlite_bedrock::signing::headers::{merge_computed, prepare, without_computed};
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use betterlite_bedrock::signing::sigv4::{Signable, sign_request};
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use serde::de::DeserializeOwned;
 
 use super::error::BedrockIngestionError;
 use super::settings::BedrockRagSettings;
@@ -15,8 +15,8 @@ use super::wire::{
 };
 use clock::Clock;
 use credentials::RagCredentialResolver;
-use endpoints::bedrock_agent_endpoint;
-use request::{aws_settings, parse_response};
+use endpoints::{data_source_url, data_sources_url, knowledge_base_url, knowledge_bases_url};
+use request::{aws_settings, json_headers, parse_response};
 
 pub mod clock;
 pub mod credentials;
@@ -26,20 +26,6 @@ mod tests;
 
 pub const BEDROCK_AGENT_SERVICE: &str = "bedrock";
 pub const S3_SERVICE: &str = "s3";
-
-const JSON_CONTENT_TYPE: &str = "application/json";
-const PATH_SEGMENT: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'"')
-    .add(b'#')
-    .add(b'<')
-    .add(b'>')
-    .add(b'?')
-    .add(b'`')
-    .add(b'{')
-    .add(b'}')
-    .add(b'/')
-    .add(b'\\');
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AwsRagResponse {
@@ -83,11 +69,11 @@ pub struct SignedRequest<'request> {
     pub body: &'request [u8],
 }
 
-#[derive(Debug, Clone, Copy)]
-struct JsonRequest<'request> {
-    method: &'request str,
-    url: &'request str,
-    body: Option<&'request [u8]>,
+enum Payload<'request> {
+    Empty,
+    Raw(&'request [u8]),
+    KnowledgeBase(&'request CreateKnowledgeBaseRequest),
+    DataSource(&'request CreateDataSourceRequest),
 }
 
 pub struct BedrockRagClients<'deps, Transport> {
@@ -95,6 +81,21 @@ pub struct BedrockRagClients<'deps, Transport> {
     pub resolver: Box<dyn RagCredentialResolver + 'deps>,
     pub clock: Box<dyn Clock + 'deps>,
     pub transport: Transport,
+}
+
+macro_rules! json_operations {
+    ($clients:ident; $($name:ident($($argument:ident: $kind:ty),*) -> $response:ty => $operation:literal, $method:literal, $url:expr, $payload:expr;)*) => {
+        $(
+            pub async fn $name(
+                &self,
+                $($argument: $kind),*
+            ) -> Result<$response, BedrockIngestionError<Transport::Error>> {
+                let $clients = self;
+                let url = $url;
+                $clients.send_json($operation, $method, url, $payload).await
+            }
+        )*
+    };
 }
 
 impl<Transport> BedrockRagClients<'_, Transport>
@@ -108,9 +109,10 @@ where
         url: &str,
         body: &[u8],
     ) -> Result<AwsRagResponse, BedrockIngestionError<Transport::Error>> {
+        let signing_region = self.settings.aws_region_name.as_str();
         let request = SignedRequest {
             service,
-            signing_region: &self.settings.aws_region_name,
+            signing_region,
             method,
             url,
             headers: &[],
@@ -161,128 +163,59 @@ where
             .map_err(|source| BedrockIngestionError::Transport { source })
     }
 
-    pub async fn list_data_sources(
-        &self,
-        knowledge_base_id: &str,
-    ) -> Result<ListDataSourcesResponse, BedrockIngestionError<Transport::Error>> {
-        let url = format!(
-            "{}/knowledgebases/{}/datasources/",
-            bedrock_agent_endpoint(&self.settings.aws_region_name),
-            utf8_percent_encode(knowledge_base_id, PATH_SEGMENT)
-        );
-        let request = JsonRequest {
-            method: "POST",
-            url: &url,
-            body: Some(b"{}"),
-        };
-        let response = self.json_request("ListDataSources", request).await?;
-        parse_response("ListDataSources", &response.body)
+    json_operations! {
+        clients;
+        list_data_sources(knowledge_base_id: &str) -> ListDataSourcesResponse =>
+            "ListDataSources", "POST",
+            data_sources_url(&clients.settings.aws_region_name, knowledge_base_id),
+            Payload::Raw(b"{}");
+        get_data_source(knowledge_base_id: &str, data_source_id: &str) -> GetDataSourceResponse =>
+            "GetDataSource", "GET",
+            data_source_url(&clients.settings.aws_region_name, knowledge_base_id, data_source_id),
+            Payload::Empty;
+        create_knowledge_base(request: &CreateKnowledgeBaseRequest) -> CreateKnowledgeBaseResponse =>
+            "CreateKnowledgeBase", "PUT",
+            knowledge_bases_url(&clients.settings.aws_region_name),
+            Payload::KnowledgeBase(request);
+        get_knowledge_base(knowledge_base_id: &str) -> GetKnowledgeBaseResponse =>
+            "GetKnowledgeBase", "GET",
+            knowledge_base_url(&clients.settings.aws_region_name, knowledge_base_id),
+            Payload::Empty;
+        create_data_source(request: &CreateDataSourceRequest) -> CreateDataSourceResponse =>
+            "CreateDataSource", "PUT",
+            data_sources_url(&clients.settings.aws_region_name, &request.knowledge_base_id),
+            Payload::DataSource(request);
     }
 
-    pub async fn get_data_source(
-        &self,
-        knowledge_base_id: &str,
-        data_source_id: &str,
-    ) -> Result<GetDataSourceResponse, BedrockIngestionError<Transport::Error>> {
-        let url = format!(
-            "{}/knowledgebases/{}/datasources/{}",
-            bedrock_agent_endpoint(&self.settings.aws_region_name),
-            utf8_percent_encode(knowledge_base_id, PATH_SEGMENT),
-            utf8_percent_encode(data_source_id, PATH_SEGMENT)
-        );
-        let request = JsonRequest {
-            method: "GET",
-            url: &url,
-            body: None,
-        };
-        let response = self.json_request("GetDataSource", request).await?;
-        parse_response("GetDataSource", &response.body)
-    }
-
-    pub async fn create_knowledge_base(
-        &self,
-        request: &CreateKnowledgeBaseRequest,
-    ) -> Result<CreateKnowledgeBaseResponse, BedrockIngestionError<Transport::Error>> {
-        let body =
-            serde_json::to_vec(request).map_err(|source| BedrockIngestionError::Serialize {
-                operation: "CreateKnowledgeBase",
-                source,
-            })?;
-        let url = format!(
-            "{}/knowledgebases/",
-            bedrock_agent_endpoint(&self.settings.aws_region_name)
-        );
-        let outgoing = JsonRequest {
-            method: "PUT",
-            url: &url,
-            body: Some(&body),
-        };
-        let response = self.json_request("CreateKnowledgeBase", outgoing).await?;
-        parse_response("CreateKnowledgeBase", &response.body)
-    }
-
-    pub async fn get_knowledge_base(
-        &self,
-        knowledge_base_id: &str,
-    ) -> Result<GetKnowledgeBaseResponse, BedrockIngestionError<Transport::Error>> {
-        let url = format!(
-            "{}/knowledgebases/{}",
-            bedrock_agent_endpoint(&self.settings.aws_region_name),
-            utf8_percent_encode(knowledge_base_id, PATH_SEGMENT)
-        );
-        let request = JsonRequest {
-            method: "GET",
-            url: &url,
-            body: None,
-        };
-        let response = self.json_request("GetKnowledgeBase", request).await?;
-        parse_response("GetKnowledgeBase", &response.body)
-    }
-
-    pub async fn create_data_source(
-        &self,
-        request: &CreateDataSourceRequest,
-    ) -> Result<CreateDataSourceResponse, BedrockIngestionError<Transport::Error>> {
-        let body =
-            serde_json::to_vec(request).map_err(|source| BedrockIngestionError::Serialize {
-                operation: "CreateDataSource",
-                source,
-            })?;
-        let url = format!(
-            "{}/knowledgebases/{}/datasources/",
-            bedrock_agent_endpoint(&self.settings.aws_region_name),
-            utf8_percent_encode(&request.knowledge_base_id, PATH_SEGMENT)
-        );
-        let outgoing = JsonRequest {
-            method: "PUT",
-            url: &url,
-            body: Some(&body),
-        };
-        let response = self.json_request("CreateDataSource", outgoing).await?;
-        parse_response("CreateDataSource", &response.body)
-    }
-
-    async fn json_request(
+    async fn send_json<Response>(
         &self,
         operation: &'static str,
-        request: JsonRequest<'_>,
-    ) -> Result<AwsRagResponse, BedrockIngestionError<Transport::Error>> {
-        let headers = if request.body.is_some() {
-            vec![("Content-Type".to_owned(), JSON_CONTENT_TYPE.to_owned())]
-        } else {
-            Vec::new()
+        method: &'static str,
+        url: String,
+        payload: Payload<'_>,
+    ) -> Result<Response, BedrockIngestionError<Transport::Error>>
+    where
+        Response: DeserializeOwned,
+    {
+        let body = match payload {
+            Payload::Empty => Vec::new(),
+            Payload::Raw(bytes) => bytes.to_vec(),
+            Payload::KnowledgeBase(request) => serde_json::to_vec(request)
+                .map_err(|source| BedrockIngestionError::Serialize { operation, source })?,
+            Payload::DataSource(request) => serde_json::to_vec(request)
+                .map_err(|source| BedrockIngestionError::Serialize { operation, source })?,
         };
-        let region = self.settings.aws_region_name.as_str();
-        let response = self
-            .signed_request_with(SignedRequest {
-                service: BEDROCK_AGENT_SERVICE,
-                signing_region: region,
-                method: request.method,
-                url: request.url,
-                headers: &headers,
-                body: request.body.unwrap_or_default(),
-            })
-            .await?;
-        response.require_success(operation)
+        let headers = json_headers(!body.is_empty());
+        let signing_region = self.settings.aws_region_name.as_str();
+        let outbound = SignedRequest {
+            service: BEDROCK_AGENT_SERVICE,
+            signing_region,
+            method,
+            url: &url,
+            headers: &headers,
+            body: &body,
+        };
+        let response = self.signed_request_with(outbound).await?;
+        parse_response(operation, &response.require_success(operation)?.body)
     }
 }

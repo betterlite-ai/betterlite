@@ -6,6 +6,15 @@ use serde::de::DeserializeOwned;
 use crate::bedrock_ingestion::error::BedrockIngestionError;
 use crate::bedrock_ingestion::settings::BedrockRagSettings;
 
+const JSON_CONTENT_TYPE: &str = "application/json";
+
+pub(super) fn json_headers(has_body: bool) -> Vec<(String, String)> {
+    if !has_body {
+        return Vec::new();
+    }
+    vec![("Content-Type".to_owned(), JSON_CONTENT_TYPE.to_owned())]
+}
+
 // the ten BaseAWSLLM.get_credentials keys, plus the region every call resolves them with
 pub(super) fn aws_settings(settings: &BedrockRagSettings) -> AwsSettings {
     AwsSettings {
