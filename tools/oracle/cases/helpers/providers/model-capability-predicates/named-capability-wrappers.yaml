@@ -1,0 +1,29 @@
+kind: helper
+name: model-capability-predicates-named-capability-wrappers
+call:
+  model_capability_predicates:
+    fixture:
+      model_cost:
+        system-model: {litellm_provider: deepseek, mode: chat, supports_system_messages: true}
+        parallel-model: {litellm_provider: deepseek, mode: chat, supports_parallel_function_calling: true}
+        function-model: {litellm_provider: deepseek, mode: chat, supports_function_calling: true}
+        tool-choice-model: {litellm_provider: deepseek, mode: chat, supports_tool_choice: true}
+        caching-model: {litellm_provider: deepseek, mode: chat, supports_prompt_caching: true}
+        reasoning-model: {litellm_provider: deepseek, mode: chat, supports_reasoning: true}
+        none-effort-model: {litellm_provider: deepseek, mode: chat, supports_none_reasoning_effort: true}
+        mid-system-model: {litellm_provider: deepseek, mode: chat, supports_mid_conversation_system: true}
+        structured-model: {litellm_provider: deepseek, mode: chat, supports_native_structured_output: true}
+        silent-model: {litellm_provider: deepseek, mode: chat}
+    steps:
+      - {function: supports_system_messages, model: system-model, custom_llm_provider: deepseek}
+      - {function: supports_parallel_function_calling, model: parallel-model, custom_llm_provider: deepseek}
+      - {function: supports_function_calling, model: function-model, custom_llm_provider: deepseek}
+      - {function: supports_tool_choice, model: tool-choice-model, custom_llm_provider: deepseek}
+      - {function: supports_prompt_caching, model: caching-model, custom_llm_provider: deepseek}
+      - {function: supports_reasoning, model: reasoning-model, custom_llm_provider: deepseek}
+      - {function: supports_none_reasoning_effort, model: none-effort-model, custom_llm_provider: deepseek}
+      - {function: supports_mid_conversation_system, model: mid-system-model, custom_llm_provider: deepseek}
+      - {function: supports_native_structured_output, model: structured-model, custom_llm_provider: deepseek}
+      - {function: supports_system_messages, model: silent-model, custom_llm_provider: deepseek}
+env: {}
+compare: {ignore: []}

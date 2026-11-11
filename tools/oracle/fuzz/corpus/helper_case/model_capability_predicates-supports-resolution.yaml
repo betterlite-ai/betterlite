@@ -1,0 +1,39 @@
+kind: helper
+name: model-capability-predicates-supports-resolution
+call:
+  model_capability_predicates:
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai, mode: chat, supports_function_calling: true}
+        openai/gpt-4o-flags: {litellm_provider: openai, mode: chat, supports_function_calling: false}
+        gpt-4o-flags: {litellm_provider: openai, mode: chat, supports_function_calling: true}
+        deepseek/deepseek-chat: {litellm_provider: deepseek, mode: chat, supports_function_calling: 0}
+        deepseek-chat: {litellm_provider: deepseek, mode: chat, supports_function_calling: true}
+        deepseek/string-model: {litellm_provider: deepseek, mode: chat, supports_function_calling: "yes"}
+        string-model: {litellm_provider: deepseek, mode: chat, supports_function_calling: true}
+        deepseek/prefixed-model: {litellm_provider: deepseek, mode: chat}
+        prefixed-model: {litellm_provider: openai, mode: chat, supports_function_calling: true}
+        github_copilot/gpt-4o: {litellm_provider: github_copilot, mode: chat, supports_function_calling: true}
+        fireworks_ai/listed-model: {litellm_provider: fireworks_ai, mode: chat}
+        vision-blocked: {litellm_provider: openai, mode: chat, supports_vision: true}
+        mismatch-model: {litellm_provider: not-a-provider, mode: chat, supports_vision: true}
+        fireworks_ai/m: {litellm_provider: 5, mode: chat}
+        m: {litellm_provider: fireworks_ai, mode: chat, supports_vision: true, supports_web_search: true}
+    steps:
+      - {function: supports_factory, model: gpt-4o, key: supports_function_calling}
+      - {function: supports_factory, model: openai/gpt-4o, key: supports_function_calling}
+      - {function: supports_factory, model: github_copilot/gpt-4o, key: supports_function_calling}
+      - {function: supports_factory, model: openai/gpt-4o-flags, key: supports_function_calling}
+      - {function: supports_factory, model: deepseek/deepseek-chat, custom_llm_provider: deepseek, key: supports_function_calling}
+      - {function: supports_factory, model: deepseek/string-model, custom_llm_provider: deepseek, key: supports_function_calling}
+      - {function: supports_factory, model: deepseek/prefixed-model, custom_llm_provider: deepseek, key: supports_function_calling}
+      - {function: supports_factory, model: fireworks_ai/mystery, custom_llm_provider: fireworks_ai, key: supports_function_calling}
+      - {function: supports_factory, model: xai/mystery-two, custom_llm_provider: xai, key: supports_function_calling}
+      - {function: supports_factory, model: nothing-here, key: supports_function_calling}
+      - {function: supports_factory, model: listed-model, custom_llm_provider: fireworks_ai, key: supports_prompt_caching}
+      - {function: supports_factory, model: vision-blocked, custom_llm_provider: fireworks_ai, key: supports_vision}
+      - {function: supports_factory, model: mismatch-model, custom_llm_provider: fireworks_ai, key: supports_vision}
+      - {function: supports_factory, model: m, custom_llm_provider: fireworks_ai, key: supports_vision}
+      - {function: supports_factory, model: m, custom_llm_provider: fireworks_ai, key: supports_web_search}
+env: {}
+compare: {ignore: []}
