@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -148,35 +147,44 @@ async fn check(scenario: &Scenario) {
             model,
             custom_llm_provider: *provider,
         };
-        let answer = match scenario.reader {
-            Reader::Supports(key) => {
-                Json::Bool(session.environment().supports_factory(&request, key).await)
-            }
-            Reader::Declared(key) => session
-                .environment()
-                .declared_value_factory(&request, key)
-                .await
-                .map_or(Json::Null, Json::Text),
-            Reader::Disabled(key) => Json::Bool(
-                session
-                    .environment()
-                    .is_explicitly_disabled_factory(&request, key)
-                    .await,
-            ),
-            Reader::Streaming => {
-                session
-                    .environment()
-                    .supports_native_streaming(&request)
-                    .await
-            }
-            Reader::ResponseSchema => Json::Bool(
-                session
-                    .environment()
-                    .supports_response_schema(&request)
-                    .await,
-            ),
-        };
+        let answer = answer_json(&mut session, &request, scenario.reader).await;
         assert_eq!(answer, expected.json(), "{model}");
+    }
+}
+
+// One reader call as JSON, so a step and a failure-line assertion share the dispatch.
+async fn answer_json(
+    session: &mut Session<'_>,
+    request: &CapabilityRequest<'_>,
+    reader: Reader,
+) -> Json {
+    match reader {
+        Reader::Supports(key) => {
+            Json::Bool(session.environment().supports_factory(request, key).await)
+        }
+        Reader::Declared(key) => session
+            .environment()
+            .declared_value_factory(request, key)
+            .await
+            .map_or(Json::Null, Json::Text),
+        Reader::Disabled(key) => Json::Bool(
+            session
+                .environment()
+                .is_explicitly_disabled_factory(request, key)
+                .await,
+        ),
+        Reader::Streaming => {
+            session
+                .environment()
+                .supports_native_streaming(request)
+                .await
+        }
+        Reader::ResponseSchema => Json::Bool(
+            session
+                .environment()
+                .supports_response_schema(request)
+                .await,
+        ),
     }
 }
 
@@ -491,52 +499,35 @@ pub(super) async fn supports_resolution() {
 pub(super) async fn declared_string_value() {
     check(&REASONING_DECLARATION_SCENARIO).await;
     check(&DECLARED_CUSTOM_SCENARIO).await;
-    let fixture = Fixture::new(DECLARED_STRING_VALUE);
-    let mut session = Session::new(&fixture);
-    let prefixed = CapabilityRequest {
-        model: "fireworks_ai/nothing-known",
-        custom_llm_provider: Some("fireworks_ai"),
-    };
-    let (answer, log) = log_of(async {
-        session
-            .environment()
-            .declared_value_factory(&prefixed, CUSTOM_KEY)
-            .await
-    })
+    // declared_value_factory never rebinds its pair, so this failure line names the caller's model
+    failure_line(
+        DECLARED_STRING_VALUE,
+        CapabilityRequest {
+            model: "fireworks_ai/nothing-known",
+            custom_llm_provider: Some("fireworks_ai"),
+        },
+        Reader::Declared(CUSTOM_KEY),
+        "Model not found or error in reading supports_custom. \
+         You passed model=fireworks_ai/nothing-known, custom_llm_provider=fireworks_ai. Error: ",
+        Json::Null,
+    )
     .await;
-    assert_eq!(answer, None);
-    assert!(
-        log.contains(
-            "Model not found or error in reading supports_custom. \
-             You passed model=fireworks_ai/nothing-known, custom_llm_provider=fireworks_ai. Error: "
-        ),
-        "{log}"
-    );
 }
 
 pub(super) async fn explicit_disabled() {
     check(&EXPLICIT_DISABLED_SCENARIO).await;
-    let fixture = Fixture::new(EXPLICIT_DISABLED);
-    let mut session = Session::new(&fixture);
-    let unmapped = CapabilityRequest {
-        model: "fireworks_ai/nothing-known",
-        custom_llm_provider: Some("fireworks_ai"),
-    };
-    let (answer, log) = log_of(async {
-        session
-            .environment()
-            .is_explicitly_disabled_factory(&unmapped, VISION_KEY)
-            .await
-    })
+    failure_line(
+        EXPLICIT_DISABLED,
+        CapabilityRequest {
+            model: "fireworks_ai/nothing-known",
+            custom_llm_provider: Some("fireworks_ai"),
+        },
+        Reader::Disabled(VISION_KEY),
+        "Model not found or error in checking supports_vision disabled state. \
+         You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: ",
+        Json::Bool(false),
+    )
     .await;
-    assert!(!answer);
-    assert!(
-        log.contains(
-            "Model not found or error in checking supports_vision disabled state. \
-             You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: "
-        ),
-        "{log}"
-    );
 }
 
 pub(super) async fn named_capability_wrappers() {
@@ -545,96 +536,70 @@ pub(super) async fn named_capability_wrappers() {
 
 pub(super) async fn native_streaming_default() {
     check(&NATIVE_STREAMING_SCENARIO).await;
-    let fixture = Fixture::new(NATIVE_STREAMING_DEFAULT);
-    let mut session = Session::new(&fixture);
-    let unmapped = CapabilityRequest {
-        model: "fireworks_ai/nothing-known",
-        custom_llm_provider: Some("fireworks_ai"),
-    };
-    let (answer, log) = log_of(async {
-        session
-            .environment()
-            .supports_native_streaming(&unmapped)
-            .await
-    })
+    failure_line(
+        NATIVE_STREAMING_DEFAULT,
+        CapabilityRequest {
+            model: "fireworks_ai/nothing-known",
+            custom_llm_provider: Some("fireworks_ai"),
+        },
+        Reader::Streaming,
+        "Model not found or error in checking supports_native_streaming support. \
+         You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: ",
+        Json::Bool(false),
+    )
     .await;
-    assert_eq!(answer, Json::Bool(false));
-    assert!(
-        log.contains(
-            "Model not found or error in checking supports_native_streaming support. \
-             You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: "
-        ),
-        "{log}"
-    );
 }
 
 pub(super) async fn response_schema_provider_override() {
     check(&RESPONSE_SCHEMA_SCENARIO).await;
-    let fixture = Fixture::new(RESPONSE_SCHEMA_PROVIDER_OVERRIDE);
-    let mut session = Session::new(&fixture);
-    let unresolved = CapabilityRequest {
-        model: "nothing-here",
-        custom_llm_provider: None,
-    };
-    let (answer, log) = log_of(async {
-        session
-            .environment()
-            .supports_response_schema(&unresolved)
-            .await
-    })
+    failure_line(
+        RESPONSE_SCHEMA_PROVIDER_OVERRIDE,
+        CapabilityRequest {
+            model: "nothing-here",
+            custom_llm_provider: None,
+        },
+        Reader::ResponseSchema,
+        "Model not found or error in checking response schema support. \
+         You passed model=nothing-here, custom_llm_provider=None. Error: ",
+        Json::Bool(false),
+    )
     .await;
-    assert!(!answer);
-    assert!(
-        log.contains(
-            "Model not found or error in checking response schema support. \
-             You passed model=nothing-here, custom_llm_provider=None. Error: "
-        ),
-        "{log}"
-    );
 }
 
 pub(super) async fn supports_error_fallback() {
-    let fixture = Fixture::new(SUPPORTS_ERROR_FALLBACK);
-    let mut session = Session::new(&fixture);
-    let unresolved = CapabilityRequest {
-        model: "nothing-here",
-        custom_llm_provider: None,
-    };
-    let (answer, log) = log_of(async {
-        session
-            .environment()
-            .supports_factory(&unresolved, FUNCTION_CALLING_KEY)
-            .await
-    })
+    failure_line(
+        SUPPORTS_ERROR_FALLBACK,
+        CapabilityRequest {
+            model: "nothing-here",
+            custom_llm_provider: None,
+        },
+        Reader::Supports(FUNCTION_CALLING_KEY),
+        "Model not found or error in checking supports_function_calling support. \
+         You passed model=nothing-here, custom_llm_provider=None. Error: ",
+        Json::Bool(false),
+    )
     .await;
-    assert!(!answer);
-    assert!(
-        log.contains(
-            "Model not found or error in checking supports_function_calling support. \
-             You passed model=nothing-here, custom_llm_provider=None. Error: "
-        ),
-        "{log}"
-    );
-    unmatched_failure_falls_back(&mut session).await;
+    failure_line(
+        SUPPORTS_ERROR_FALLBACK,
+        CapabilityRequest {
+            model: "fireworks_ai/nothing-known",
+            custom_llm_provider: Some("fireworks_ai"),
+        },
+        Reader::Supports(FUNCTION_CALLING_KEY),
+        "You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: ",
+        Json::Bool(true),
+    )
+    .await;
+    stateless_provider_fallbacks().await;
 }
 
-async fn unmatched_failure_falls_back(session: &mut Session<'_>) {
+async fn stateless_provider_fallbacks() {
+    let fixture = Fixture::new(SUPPORTS_ERROR_FALLBACK);
+    let mut session = Session::new(&fixture);
     let unmatched = CapabilityRequest {
         model: "fireworks_ai/nothing-known",
         custom_llm_provider: Some("fireworks_ai"),
     };
-    let (supported, log) = log_of(async {
-        session
-            .environment()
-            .supports_factory(&unmatched, FUNCTION_CALLING_KEY)
-            .await
-    })
-    .await;
-    assert!(supported, "{log}");
-    assert!(
-        log.contains("You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: "),
-        "{log}"
-    );
     let caching = session
         .environment()
         .supports_factory(&unmatched, "supports_prompt_caching")
@@ -651,11 +616,16 @@ async fn unmatched_failure_falls_back(session: &mut Session<'_>) {
     assert!(!stateless_answer);
 }
 
-// The subscriber must wrap only the reader call, so the capture holds that call's debug line.
-async fn log_of<F, T>(call: F) -> (T, String)
-where
-    F: Future<Output = T>,
-{
+// One reader call under the debug subscriber, checking the failure line LiteLLM logs for it.
+async fn failure_line(
+    fixture_source: &'static str,
+    request: CapabilityRequest<'static>,
+    reader: Reader,
+    expected_log: &'static str,
+    expected_answer: Json,
+) {
+    let fixture = Fixture::new(fixture_source);
+    let mut session = Session::new(&fixture);
     let bytes = Arc::new(Mutex::new(Vec::new()));
     let writer = LogCapture(Arc::clone(&bytes));
     let subscriber = tracing_subscriber::fmt()
@@ -667,10 +637,11 @@ where
         .finish();
     let answer = {
         let _guard = set_default(subscriber);
-        call.await
+        answer_json(&mut session, &request, reader).await
     };
     let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
-    (answer, log)
+    assert_eq!(answer, expected_answer, "{log}");
+    assert!(log.contains(expected_log), "{log}");
 }
 
 #[derive(Clone)]
