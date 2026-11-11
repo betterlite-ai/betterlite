@@ -1,0 +1,16 @@
+kind: helper
+name: user-context
+call:
+  bedrock_services_vector_stores:
+    operation: user_context
+    contexts:
+      - {extra_body: {userContext: {userId: extra}}, litellm_params: {userContext: {userId: camel}, user_context: {userId: snake}}}
+      - {litellm_params: {userContext: {userId: camel}, user_context: {userId: snake}}}
+      - {extra_body: {userContext: null}, litellm_params: {user_context: {userId: snake}}}
+      - {extra_body: {userContext: {}}, litellm_params: {userContext: {userId: ignored}}}
+      - {extra_body: {userContext: false}, litellm_params: {}}
+      - {extra_body: {userContext: ""}, litellm_params: {}}
+      - {litellm_params: {user_context: null}}
+      - {litellm_params: {}}
+env: {}
+compare: {ignore: []}

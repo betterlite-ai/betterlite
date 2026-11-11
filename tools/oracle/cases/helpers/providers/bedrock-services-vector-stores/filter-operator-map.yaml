@@ -1,0 +1,34 @@
+kind: helper
+name: filter-operator-map
+call:
+  bedrock_services_vector_stores:
+    operation: filter_operator_map
+    operators:
+      - eq
+      - ne
+      - gt
+      - gte
+      - lt
+      - lte
+      - in
+      - nin
+      - equals
+      - notEquals
+      - greaterThan
+      - greaterThanOrEquals
+      - lessThan
+      - lessThanOrEquals
+      - notIn
+      - startsWith
+      - listContains
+      - stringContains
+      - custom
+    filters:
+      - {operator: eq, key: genre, value: fiction, extra: true}
+      - {operator: nin, key: year, value: [2020, 2021]}
+      - {operator: startsWith, key: title, value: "The "}
+      - {operator: eq, key: genre}
+      - {key: genre, value: fiction}
+      - [not, an, object]
+env: {}
+compare: {ignore: []}

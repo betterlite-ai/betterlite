@@ -1,0 +1,39 @@
+kind: helper
+name: retrieval-configuration
+call:
+  bedrock_services_vector_stores:
+    operation: retrieval_configuration
+    requests:
+      - vector_store_id: kb-1
+        query: a question
+        api_base: "https://host/knowledgebases"
+        optional_params: {max_num_results: 5}
+        litellm_params: {userContext: {userId: reader}}
+        extra_body: {retrievalConfiguration: {vectorSearchConfiguration: {numberOfResults: 9, filter: {equals: {key: k, value: old}}}}}
+      - vector_store_id: kb-1
+        query: [one, two]
+        api_base: "https://host/knowledgebases"
+        extra_body: {retrievalConfiguration: {}, retrieval_configuration: {vectorSearchConfiguration: {numberOfResults: 2, custom: true}}}
+      - vector_store_id: kb-1
+        query: ""
+        api_base: "https://host/knowledgebases"
+        extra_body: {retrievalConfiguration: {}}
+      - vector_store_id: "kb/two"
+        query: q
+        api_base: "https://host/knowledgebases/"
+        optional_params: {filters: {equals: {key: k, value: v}}}
+      - vector_store_id: kb-1
+        query: bad
+        api_base: "https://host/knowledgebases"
+        optional_params: {max_num_results: 1}
+        extra_body: {retrievalConfiguration: "raw"}
+      - vector_store_id: kb-1
+        query: bad
+        api_base: "https://host/knowledgebases"
+        optional_params: {filters: {equals: {key: k, value: v}}}
+        extra_body: {retrievalConfiguration: {vectorSearchConfiguration: null}}
+      - vector_store_id: ""
+        query: q
+        api_base: "https://host/knowledgebases"
+env: {}
+compare: {ignore: []}

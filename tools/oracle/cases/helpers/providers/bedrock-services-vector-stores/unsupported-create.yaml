@@ -1,0 +1,7 @@
+kind: helper
+name: unsupported-create
+call:
+  bedrock_services_vector_stores:
+    operation: unsupported_create
+env: {}
+compare: {ignore: []}

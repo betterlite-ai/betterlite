@@ -1,0 +1,21 @@
+kind: helper
+name: location-file-id-name
+call:
+  bedrock_services_vector_stores:
+    operation: location_file_id_name
+    metadata:
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/dir/report.txt"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/dir/"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket"}
+      - {x-amz-bedrock-kb-source-uri: "https://example.com/a/b.pdf"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/a%20b.txt"}
+      - {x-amz-bedrock-kb-source-uri: "a/b"}
+      - {x-amz-bedrock-kb-source-uri: "http://[::1/box.txt"}
+      - {x-amz-bedrock-kb-chunk-id: chunk-1}
+      - {x-amz-bedrock-kb-chunk-id: null}
+      - {x-amz-bedrock-kb-source-uri: ""}
+      - {x-amz-bedrock-kb-data-source-id: ds-1}
+      - {}
+      - null
+env: {}
+compare: {ignore: []}
