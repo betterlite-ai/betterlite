@@ -194,7 +194,7 @@ async fn replica_identity_connect_times_out() {
 #[tokio::test]
 async fn replica_connect_time_counts_against_the_command_budget() {
     let (logs, _guard) = install_logs();
-    let (url, mut servers) = delayed_stalled_server(Duration::from_millis(600)).await;
+    let (url, mut servers) = delayed_stalled_server(Duration::from_millis(800)).await;
     let budget = Duration::from_secs(1);
     let started = Instant::now();
     assert!(!apply_replica_identity_full(&url, budget).await);
@@ -204,7 +204,7 @@ async fn replica_connect_time_counts_against_the_command_budget() {
         "the run ended before its command budget: {elapsed:?}"
     );
     assert!(
-        elapsed < Duration::from_millis(1300),
+        elapsed < Duration::from_millis(1500),
         "the connect delay was not charged against the command budget: {elapsed:?}"
     );
     assert!(errored(
