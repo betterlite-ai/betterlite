@@ -53,7 +53,7 @@ impl SyncFixture {
         Self::new(get, debug, ScriptedFiles::working())
     }
 
-    fn run(&self, instructions: Option<&str>) -> Result<ModelSyncResult, AgentRunError> {
+    fn run(&self) -> Result<ModelSyncResult, AgentRunError> {
         let api_key = key();
         let request = CodexSyncRequest {
             base_env: &self.case.base_env,
@@ -66,7 +66,7 @@ impl SyncFixture {
             debug: &self.debug,
             files: &self.files,
             home: self.home.as_deref(),
-            instructions,
+            instructions: "You are Codex.",
         };
         codex_model_sync_args(&request, &context)
     }
@@ -85,7 +85,7 @@ impl SyncFixture {
             debug: &self.debug,
             files: &self.files,
             home: self.home.as_deref(),
-            instructions: Some("You are Codex."),
+            instructions: "You are Codex.",
         };
         agent_model_sync_env(&request, &context)
     }
@@ -118,7 +118,7 @@ fn expect_env(result: ModelSyncResult) -> EnvVars {
 #[test]
 fn codex_model_sync_args_returns_the_catalog_override() {
     let fixture = SyncFixture::happy();
-    let args = expect_args(fixture.run(Some("You are Codex.")).unwrap());
+    let args = expect_args(fixture.run().unwrap());
     let path = fixture.case.catalog_path();
     let override_arg = format!(
         "model_catalog_json={}",
@@ -157,7 +157,7 @@ fn codex_model_sync_args_returns_the_catalog_override() {
 #[test]
 fn codex_model_sync_args_merges_stock_and_fallback_models() {
     let fixture = SyncFixture::happy();
-    let _unused = expect_args(fixture.run(Some("You are Codex.")).unwrap());
+    let _unused = expect_args(fixture.run().unwrap());
     let catalog = read_catalog(&fixture.case.catalog_path());
     assert_eq!(
         catalog
@@ -198,7 +198,7 @@ fn codex_model_sync_args_skips_when_the_listing_fails() {
         ScriptedDebug::new(Vec::new()),
         ScriptedFiles::working(),
     );
-    let reason = expect_skipped(fixture.run(None).unwrap());
+    let reason = expect_skipped(fixture.run().unwrap());
     assert_eq!(
         reason,
         "http://gateway.test:4000/v1/models returned HTTP 404"
@@ -215,7 +215,7 @@ fn codex_model_sync_args_skips_when_the_listing_is_unreachable() {
         ScriptedDebug::new(Vec::new()),
         ScriptedFiles::working(),
     );
-    let reason = expect_skipped(fixture.run(None).unwrap());
+    let reason = expect_skipped(fixture.run().unwrap());
     assert!(reason.starts_with("could not reach http://gateway.test:4000/v1/models: "));
     assert!(fixture.debug.calls().is_empty());
 }
@@ -232,7 +232,7 @@ fn codex_model_sync_args_skips_when_no_chat_models_are_served() {
         ScriptedDebug::new(vec![ScriptedDebug::printed(&stock_catalog(&[]))]),
         ScriptedFiles::working(),
     );
-    let reason = expect_skipped(fixture.run(None).unwrap());
+    let reason = expect_skipped(fixture.run().unwrap());
     assert_eq!(
         reason,
         "http://gateway.test:4000/v1/models lists no chat models"
@@ -262,7 +262,7 @@ fn codex_model_sync_args_skips_without_a_home_directory() {
         debug: &debug,
         files: &files,
         home: None,
-        instructions: None,
+        instructions: "You are Codex.",
     };
     let reason = expect_skipped(codex_model_sync_args(&request, &context).unwrap());
     assert_eq!(
@@ -283,7 +283,7 @@ fn codex_model_sync_args_skips_when_the_catalog_directory_cannot_be_created() {
         ScriptedDebug::new(Vec::new()),
         ScriptedFiles::failing(FileFailure::Parents),
     );
-    let reason = expect_skipped(fixture.run(None).unwrap());
+    let reason = expect_skipped(fixture.run().unwrap());
     assert!(reason.starts_with("could not write "));
     assert!(reason.ends_with("scripted filesystem failure"));
     assert!(fixture.debug.calls().is_empty());
@@ -299,7 +299,7 @@ fn codex_model_sync_args_skips_when_the_catalog_cannot_be_replaced() {
         ScriptedDebug::new(vec![ScriptedDebug::printed(&stock_catalog(&[]))]),
         ScriptedFiles::failing(FileFailure::Replace),
     );
-    let reason = expect_skipped(fixture.run(None).unwrap());
+    let reason = expect_skipped(fixture.run().unwrap());
     assert!(reason.starts_with("could not write "));
     assert!(!fixture.case.catalog_path().exists());
     assert!(
@@ -324,7 +324,7 @@ fn codex_model_sync_args_keeps_the_catalog_when_the_read_back_fails() {
         ]),
         ScriptedFiles::working(),
     );
-    let reason = expect_skipped(fixture.run(Some("You are Codex.")).unwrap());
+    let reason = expect_skipped(fixture.run().unwrap());
     assert_eq!(
         reason,
         "`codex debug models` exited 2: error: invalid catalog"
@@ -333,27 +333,6 @@ fn codex_model_sync_args_keeps_the_catalog_when_the_read_back_fails() {
     assert_eq!(catalog.models.len(), 1);
     assert_eq!(catalog.models[0].slug, "gpt-4o");
     assert_eq!(fixture.debug.calls().len(), 2);
-}
-
-#[test]
-fn codex_model_sync_args_falls_back_to_the_bundled_instructions() {
-    let fixture = SyncFixture::new(
-        ScriptedHttp::new(vec![ScriptedHttp::body(
-            200,
-            &models_body(r#"[{"id":"gpt-unknown","mode":"chat"}]"#),
-        )]),
-        ScriptedDebug::new(vec![
-            ScriptedDebug::printed(&stock_catalog(&[])),
-            ScriptedDebug::printed("{}"),
-        ]),
-        ScriptedFiles::working(),
-    );
-    let _unused = expect_args(fixture.run(None).unwrap());
-    let catalog = read_catalog(&fixture.case.catalog_path());
-    assert_eq!(
-        catalog.models[0].base_instructions.as_deref(),
-        Some(CODEX_BASE_INSTRUCTIONS)
-    );
 }
 
 #[test]
@@ -373,7 +352,7 @@ fn codex_model_sync_args_uses_the_home_catalog_when_codex_home_is_unset() {
     );
     fixture.case.base_env = EnvVars::new();
     fixture.home = Some(home.clone());
-    let _unused = expect_args(fixture.run(Some("You are Codex.")).unwrap());
+    let _unused = expect_args(fixture.run().unwrap());
     assert!(home.join(".codex").join("litellm-models.json").exists());
 }
 
@@ -394,7 +373,7 @@ fn codex_model_sync_args_skips_a_home_that_is_not_utf8() {
     );
     fixture.case.base_env = EnvVars::new();
     fixture.home = Some(home);
-    let reason = expect_skipped(fixture.run(Some("You are Codex.")).unwrap());
+    let reason = expect_skipped(fixture.run().unwrap());
     assert!(reason.starts_with("the Codex model catalog path "));
     assert!(reason.ends_with(" is not valid UTF-8"));
     assert_eq!(fixture.debug.calls().len(), 1);
@@ -508,7 +487,7 @@ fn the_model_sync_trait_delegates_to_the_dispatch() {
             debug: &fixture.debug,
             files: &fixture.files,
             home: None,
-            instructions: Some("You are Codex."),
+            instructions: "You are Codex.",
         },
     };
     let args = expect_args(sync.sync(&request).unwrap());

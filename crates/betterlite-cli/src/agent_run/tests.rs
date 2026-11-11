@@ -40,7 +40,6 @@ use crate::agent_run::sync::{
     agent_model_sync_env, codex_model_sync_args,
 };
 use crate::claude_settings::statusline_install::statusline_command;
-use crate::codex_catalog::CODEX_BASE_INSTRUCTIONS;
 use crate::opencode::{ModelSyncArgs, ModelSyncResult, ModelSyncSkipped};
 use crate::pi::PiSyncError;
 

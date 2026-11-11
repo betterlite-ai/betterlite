@@ -167,7 +167,7 @@ fn execute(
             debug: &fakes.debug,
             files: &files,
             home: None,
-            instructions: Some(DEFAULT_INSTRUCTIONS),
+            instructions: DEFAULT_INSTRUCTIONS,
         },
     };
     let controlling: &dyn Terminal = fakes.terminal.as_ref();

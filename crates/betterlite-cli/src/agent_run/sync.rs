@@ -4,7 +4,7 @@ use super::codex::{
 };
 use super::error::AgentRunError;
 use crate::agent_launch::EnvVars;
-use crate::codex_catalog::{CODEX_BASE_INSTRUCTIONS, codex_model_catalog};
+use crate::codex_catalog::codex_model_catalog;
 use crate::opencode::{
     ModelListingTransport, ModelSyncArgs, ModelSyncResult, ModelSyncSkipped, fetch_model_listing,
     opencode_model_sync_env,
@@ -27,7 +27,7 @@ pub struct SyncContext<'context> {
     pub debug: &'context dyn DebugModels,
     pub files: &'context dyn FileAccess,
     pub home: Option<&'context Path>,
-    pub instructions: Option<&'context str>,
+    pub instructions: &'context str,
 }
 pub struct CodexSyncRequest<'request> {
     pub base_env: &'request EnvVars,
@@ -87,26 +87,44 @@ pub fn codex_model_sync_args(
         Err(skipped) => return Ok(ModelSyncResult::Skipped(skipped)),
     };
     let Some(path) = codex_model_catalog_path(request.base_env, context.home) else {
-        return Ok(ModelSyncResult::Skipped(no_home_skip()));
+        return Ok(ModelSyncResult::Skipped(ModelSyncSkipped {
+            reason: "could not locate a home directory for the Codex model catalog; set CODEX_HOME"
+                .to_owned(),
+        }));
     };
     if let Err(source) = create_catalog_parent(&path, context.files) {
-        return Ok(ModelSyncResult::Skipped(write_skip(&path, &source)));
+        return Ok(ModelSyncResult::Skipped(ModelSyncSkipped {
+            reason: format!("could not write {}: {source}", path.display()),
+        }));
     }
     let stock = match stock_codex_models(request.binary, request.base_env, context.debug)? {
         StockModels::Models(models) => models,
         StockModels::Skipped(skipped) => return Ok(ModelSyncResult::Skipped(skipped)),
     };
-    let instructions = context.instructions.unwrap_or(CODEX_BASE_INSTRUCTIONS);
-    let Some(catalog) = codex_model_catalog(&listing, &stock, instructions) else {
+    let Some(catalog) = codex_model_catalog(&listing, &stock, context.instructions) else {
         return Ok(ModelSyncResult::Skipped(no_chat_models_skip(
             request.base_url,
         )));
     };
     if let Err(source) = replace_file(&path, &catalog, context.files) {
-        return Ok(ModelSyncResult::Skipped(write_skip(&path, &source)));
+        return Ok(ModelSyncResult::Skipped(ModelSyncSkipped {
+            reason: format!("could not write {}: {source}", path.display()),
+        }));
     }
+    read_back_catalog(request, context, &path)
+}
+fn read_back_catalog(
+    request: &CodexSyncRequest<'_>,
+    context: &SyncContext<'_>,
+    path: &Path,
+) -> Result<ModelSyncResult, AgentRunError> {
     let Some(path_text) = path.to_str() else {
-        return Ok(ModelSyncResult::Skipped(non_utf8_path_skip(&path)));
+        return Ok(ModelSyncResult::Skipped(ModelSyncSkipped {
+            reason: format!(
+                "the Codex model catalog path {} is not valid UTF-8",
+                path.display()
+            ),
+        }));
     };
     let override_arg = format!("model_catalog_json={}", serde_json::json!(path_text));
     let read_back_args = ["-c".to_owned(), override_arg];
@@ -129,28 +147,9 @@ fn create_catalog_parent(path: &Path, files: &dyn FileAccess) -> io::Result<()> 
         .unwrap_or_else(|| Path::new("."));
     files.create_parents(directory)
 }
-fn write_skip(path: &Path, source: &io::Error) -> ModelSyncSkipped {
-    ModelSyncSkipped {
-        reason: format!("could not write {}: {source}", path.display()),
-    }
-}
-fn no_home_skip() -> ModelSyncSkipped {
-    ModelSyncSkipped {
-        reason: "could not locate a home directory for the Codex model catalog; set CODEX_HOME"
-            .to_owned(),
-    }
-}
 fn no_chat_models_skip(base_url: &str) -> ModelSyncSkipped {
     let root = base_url.trim_end_matches('/');
     ModelSyncSkipped {
         reason: format!("{root}/v1/models lists no chat models"),
-    }
-}
-fn non_utf8_path_skip(path: &Path) -> ModelSyncSkipped {
-    ModelSyncSkipped {
-        reason: format!(
-            "the Codex model catalog path {} is not valid UTF-8",
-            path.display()
-        ),
     }
 }
