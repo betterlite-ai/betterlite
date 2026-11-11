@@ -72,32 +72,38 @@ pub(super) async fn helper_step_for(
     step: &Step,
     start: usize,
 ) -> StepResult {
-    let Step::HelperCall {
-        model,
-        custom_llm_provider,
-        api_base,
-    } = step
-    else {
-        return Err(error_box(
+    match step {
+        Step::HelperCall {
+            model,
+            custom_llm_provider,
+            api_base,
+        } => {
+            let query = HelperQuery {
+                model,
+                custom_llm_provider: custom_llm_provider.as_deref(),
+                api_base: api_base.as_deref(),
+            };
+            let harness = fixture.harness();
+            let environment = harness.environment();
+            let sources = HelperSources {
+                environment: &environment,
+                dynamic: &state.dynamic,
+                hf: &state.hf,
+            };
+            let answer = get_model_info_helper_cached(
+                &query,
+                &sources,
+                &mut state.keys,
+                &state.caches.helper,
+            )
+            .await;
+            Ok(observation(state, answer, start, "helper_call"))
+        }
+        _ => Err(error_box(
             "ValueError",
             "step is not a helper call".to_owned(),
-        ));
-    };
-    let query = HelperQuery {
-        model,
-        custom_llm_provider: custom_llm_provider.as_deref(),
-        api_base: api_base.as_deref(),
-    };
-    let harness = fixture.harness();
-    let environment = harness.environment();
-    let sources = HelperSources {
-        environment: &environment,
-        dynamic: &state.dynamic,
-        hf: &state.hf,
-    };
-    let answer =
-        get_model_info_helper_cached(&query, &sources, &mut state.keys, &state.caches.helper).await;
-    Ok(observation(state, answer, start, "helper_call"))
+        )),
+    }
 }
 
 fn observation<ParameterError>(

@@ -21,15 +21,15 @@ use super::{
     request, set_field, text,
 };
 
-pub(super) async fn full_query_order_case() {
+pub(super) async fn test_full_query_order_case() {
     let fixture = Fixture::new(OPENAI_MODELS);
     let harness = fixture.harness();
-    real_parameter_case(&harness).await;
-    inferred_provider_case(&harness).await;
-    failing_parameter_case(&harness).await;
-    dynamic_answer_case(&harness).await;
-    absent_parameter_case(&harness).await;
-    duplicate_parameter_case(&harness).await;
+    test_real_parameter_case(&harness).await;
+    test_inferred_provider_case(&harness).await;
+    test_failing_parameter_case(&harness).await;
+    test_dynamic_answer_case(&harness).await;
+    test_absent_parameter_case(&harness).await;
+    test_duplicate_parameter_case(&harness).await;
 }
 
 fn openai_source<'source>(
@@ -65,7 +65,7 @@ fn expected_parameters(model: &str, capabilities: &BTreeSet<OpenAiCapability>) -
     }
 }
 
-async fn real_parameter_case(harness: &Harness<'_>) {
+async fn test_real_parameter_case(harness: &Harness<'_>) {
     let capabilities = openai_capabilities();
     let source = openai_source(harness, &capabilities);
     let mut state = State::new(8, ScriptedDynamic::default());
@@ -83,7 +83,7 @@ async fn real_parameter_case(harness: &Harness<'_>) {
     );
 }
 
-async fn inferred_provider_case(harness: &Harness<'_>) {
+async fn test_inferred_provider_case(harness: &Harness<'_>) {
     let capabilities = openai_capabilities();
     let source = openai_source(harness, &capabilities);
     let mut state = State::new(8, ScriptedDynamic::default());
@@ -101,7 +101,7 @@ async fn inferred_provider_case(harness: &Harness<'_>) {
     );
 }
 
-async fn failing_parameter_case(harness: &Harness<'_>) {
+async fn test_failing_parameter_case(harness: &Harness<'_>) {
     let parameters = ScriptedParameters::new(vec![ParameterAnswer::Failure]);
     let mut state = State::new(8, ScriptedDynamic::new(vec![Reply::Value(raw("{}"))]));
     let failure = full_call(
@@ -122,7 +122,7 @@ async fn failing_parameter_case(harness: &Harness<'_>) {
     assert_eq!(state.caches.full.cache_info().currsize, 0);
 }
 
-async fn dynamic_answer_case(harness: &Harness<'_>) {
+async fn test_dynamic_answer_case(harness: &Harness<'_>) {
     let parameters = ScriptedParameters::new(vec![ParameterAnswer::Answer(Some(vec![
         "temperature".to_owned(),
     ]))]);
@@ -151,7 +151,7 @@ async fn dynamic_answer_case(harness: &Harness<'_>) {
     assert!(!call.authenticated);
 }
 
-async fn absent_parameter_case(harness: &Harness<'_>) {
+async fn test_absent_parameter_case(harness: &Harness<'_>) {
     let parameters = ScriptedParameters::new(vec![ParameterAnswer::Answer(None)]);
     let mut state = State::new(
         8,
@@ -168,7 +168,7 @@ async fn absent_parameter_case(harness: &Harness<'_>) {
     assert_eq!(field(&handle, "supported_openai_params"), Some(Json::Null));
 }
 
-async fn duplicate_parameter_case(harness: &Harness<'_>) {
+async fn test_duplicate_parameter_case(harness: &Harness<'_>) {
     let parameters = ScriptedParameters::new(vec![ParameterAnswer::Answer(Some(Vec::new()))]);
     let mut state = State::new(
         8,
@@ -190,7 +190,7 @@ async fn duplicate_parameter_case(harness: &Harness<'_>) {
     ));
 }
 
-pub(super) async fn provider_overlay_case() {
+pub(super) async fn test_provider_overlay_case() {
     let fixture = Fixture::new(
         r#"{
         "xai/grok-2": {"litellm_provider": "xai", "mode": "chat", "supports_web_search": false},
@@ -199,12 +199,12 @@ pub(super) async fn provider_overlay_case() {
     }"#,
     );
     let harness = fixture.harness();
-    xai_overlay_case(&harness).await;
-    fireworks_overlay_case(&harness).await;
-    overlay_after_helper_case(&harness).await;
+    test_xai_overlay_case(&harness).await;
+    test_fireworks_overlay_case(&harness).await;
+    test_overlay_after_helper_case(&harness).await;
 }
 
-async fn xai_overlay_case(harness: &Harness<'_>) {
+async fn test_xai_overlay_case(harness: &Harness<'_>) {
     let parameters = ScriptedParameters::default();
     let mut state = State::new(8, ScriptedDynamic::default());
     let full = full_call(
@@ -233,7 +233,7 @@ async fn xai_overlay_case(harness: &Harness<'_>) {
     );
 }
 
-async fn fireworks_overlay_case(harness: &Harness<'_>) {
+async fn test_fireworks_overlay_case(harness: &Harness<'_>) {
     let parameters = ScriptedParameters::default();
     let mut state = State::new(8, ScriptedDynamic::default());
     let full = full_call(
@@ -270,7 +270,7 @@ async fn fireworks_overlay_case(harness: &Harness<'_>) {
 }
 
 // the overlay happens after a successful helper lookup, never instead of it
-async fn overlay_after_helper_case(harness: &Harness<'_>) {
+async fn test_overlay_after_helper_case(harness: &Harness<'_>) {
     let parameters = ScriptedParameters::default();
     let mut state = State::new(
         8,
@@ -292,19 +292,19 @@ async fn overlay_after_helper_case(harness: &Harness<'_>) {
     ));
 }
 
-pub(super) async fn credential_cache_bypass_case() {
+pub(super) async fn test_credential_cache_bypass_case() {
     let fixture = Fixture::new(OPENAI_MODELS);
     let harness = fixture.harness();
     let parameters = ScriptedParameters::default();
     let mut state = State::new(8, ScriptedDynamic::default());
-    let cached = cache_fill_case(&harness, &mut state, &parameters).await;
-    cache_hit_case(&harness, &mut state, &parameters, &cached).await;
-    empty_key_case(&harness, &mut state, &parameters, &cached).await;
-    named_key_case(&harness, &mut state, &parameters, &cached).await;
-    api_base_key_case(&harness, &mut state, &parameters, &cached).await;
+    let cached = test_cache_fill_case(&harness, &mut state, &parameters).await;
+    test_cache_hit_case(&harness, &mut state, &parameters, &cached).await;
+    test_empty_key_case(&harness, &mut state, &parameters, &cached).await;
+    test_named_key_case(&harness, &mut state, &parameters, &cached).await;
+    test_api_base_key_case(&harness, &mut state, &parameters, &cached).await;
 }
 
-async fn cache_fill_case(
+async fn test_cache_fill_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -322,7 +322,7 @@ async fn cache_fill_case(
     handle
 }
 
-async fn cache_hit_case(
+async fn test_cache_hit_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -341,7 +341,7 @@ async fn cache_hit_case(
 }
 
 // an empty explicit key still takes the uncached build path
-async fn empty_key_case(
+async fn test_empty_key_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -362,7 +362,7 @@ async fn empty_key_case(
     assert_eq!(parameters.calls().len(), 3);
 }
 
-async fn named_key_case(
+async fn test_named_key_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -382,7 +382,7 @@ async fn named_key_case(
 }
 
 // None and the empty string stay distinct cache keys
-async fn api_base_key_case(
+async fn test_api_base_key_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -410,21 +410,21 @@ async fn api_base_key_case(
     assert_eq!(state.caches.full.cache_info().hits, 2);
 }
 
-pub(super) async fn helper_and_full_caches_case() {
+pub(super) async fn test_helper_and_full_caches_case() {
     let fixture = Fixture::new(OPENAI_MODELS);
     let harness = fixture.harness();
     let parameters = ScriptedParameters::default();
     let mut state = State::new(2, ScriptedDynamic::default());
-    helper_hit_case(&harness, &mut state).await;
-    helper_eviction_case(&harness, &mut state).await;
-    separate_full_cache_case(&harness, &mut state, &parameters).await;
+    test_helper_hit_case(&harness, &mut state).await;
+    test_helper_eviction_case(&harness, &mut state).await;
+    test_separate_full_cache_case(&harness, &mut state, &parameters).await;
     for maxsize in [0_i64, -3] {
-        zero_capacity_case(&harness, maxsize, &parameters).await;
+        test_zero_capacity_case(&harness, maxsize, &parameters).await;
     }
-    failed_build_case(&harness).await;
+    test_failed_build_case(&harness).await;
 }
 
-async fn helper_hit_case(harness: &Harness<'_>, state: &mut State) {
+async fn test_helper_hit_case(harness: &Harness<'_>, state: &mut State) {
     let first = helper_call(
         harness,
         state,
@@ -453,7 +453,7 @@ async fn helper_hit_case(harness: &Harness<'_>, state: &mut State) {
     assert_eq!(state.caches.helper.cache_info().hits, 1);
 }
 
-async fn helper_eviction_case(harness: &Harness<'_>, state: &mut State) {
+async fn test_helper_eviction_case(harness: &Harness<'_>, state: &mut State) {
     for model in ["gpt-4", "gpt-3.5-turbo"] {
         drop(
             helper_call(
@@ -488,7 +488,7 @@ async fn helper_eviction_case(harness: &Harness<'_>, state: &mut State) {
     assert_eq!(state.caches.helper.cache_info().misses, 4);
 }
 
-async fn separate_full_cache_case(
+async fn test_separate_full_cache_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -519,7 +519,11 @@ async fn separate_full_cache_case(
     assert_eq!(state.caches.helper.cache_info().misses, 4);
 }
 
-async fn zero_capacity_case(harness: &Harness<'_>, maxsize: i64, parameters: &ScriptedParameters) {
+async fn test_zero_capacity_case(
+    harness: &Harness<'_>,
+    maxsize: i64,
+    parameters: &ScriptedParameters,
+) {
     let mut state = State::new(maxsize, ScriptedDynamic::default());
     for _attempt in 0_u8..2 {
         drop(
@@ -541,7 +545,7 @@ async fn zero_capacity_case(harness: &Harness<'_>, maxsize: i64, parameters: &Sc
 }
 
 // a failed build is never cached
-async fn failed_build_case(harness: &Harness<'_>) {
+async fn test_failed_build_case(harness: &Harness<'_>) {
     let mut state = State::new(2, ScriptedDynamic::default());
     let failures = ScriptedParameters::new(vec![
         ParameterAnswer::Failure,
@@ -576,7 +580,7 @@ async fn failed_build_case(harness: &Harness<'_>) {
     assert_eq!(state.caches.full.cache_info().currsize, 1);
 }
 
-pub(super) async fn invalidation_generation_case() {
+pub(super) async fn test_invalidation_generation_case() {
     let mut fixture = Fixture::new(
         r#"{"gpt-4o": {"litellm_provider": "openai", "mode": "chat", "max_tokens": 100}}"#,
     );
@@ -588,7 +592,7 @@ pub(super) async fn invalidation_generation_case() {
         api_base: None,
     };
     let first_harness = fixture.harness();
-    let original = first_lookup_case(&first_harness, &mut state, &parameters, &key).await;
+    let original = test_first_lookup_case(&first_harness, &mut state, &parameters, &key).await;
     drop(first_harness);
 
     // an in-place value replacement keeps the catalog length and identity
@@ -597,16 +601,16 @@ pub(super) async fn invalidation_generation_case() {
         r#"{"litellm_provider": "openai", "mode": "chat", "max_tokens": 200}"#,
     );
     let second_harness = fixture.harness();
-    stable_before_invalidation_case(&second_harness, &mut state, &parameters, &key, &original)
+    test_stable_before_invalidation_case(&second_harness, &mut state, &parameters, &key, &original)
         .await;
     drop(second_harness);
-    invalidate_case(&mut state);
+    test_invalidate_case(&mut state);
     let third_harness = fixture.harness();
-    fresh_after_invalidation_case(&third_harness, &mut state, &parameters, &key).await;
-    reload_instance_case(&third_harness, &parameters).await;
+    test_fresh_after_invalidation_case(&third_harness, &mut state, &parameters, &key).await;
+    test_reload_instance_case(&third_harness, &parameters).await;
 }
 
-async fn first_lookup_case(
+async fn test_first_lookup_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -626,7 +630,7 @@ async fn first_lookup_case(
     original
 }
 
-async fn stable_before_invalidation_case(
+async fn test_stable_before_invalidation_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -651,7 +655,7 @@ async fn stable_before_invalidation_case(
     assert_eq!(state.caches.helper.cache_info().hits, 1);
 }
 
-fn invalidate_case(state: &mut State) {
+fn test_invalidate_case(state: &mut State) {
     state
         .keys
         .invalidate(&mut state.caches.full, &mut state.caches.helper);
@@ -662,7 +666,7 @@ fn invalidate_case(state: &mut State) {
     assert_eq!(state.caches.helper.cache_info().hits, 0);
 }
 
-async fn fresh_after_invalidation_case(
+async fn test_fresh_after_invalidation_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -688,7 +692,7 @@ async fn fresh_after_invalidation_case(
 }
 
 // a reload builds a fresh cache instance instead of reusing the old one
-async fn reload_instance_case(harness: &Harness<'_>, parameters: &ScriptedParameters) {
+async fn test_reload_instance_case(harness: &Harness<'_>, parameters: &ScriptedParameters) {
     let mut reloaded = State::new(8, ScriptedDynamic::default());
     drop(
         full_call(
@@ -705,7 +709,7 @@ async fn reload_instance_case(harness: &Harness<'_>, parameters: &ScriptedParame
     assert_eq!(reloaded.keys.generation, 0);
 }
 
-pub(super) async fn cached_record_mutation_case() {
+pub(super) async fn test_cached_record_mutation_case() {
     let mut fixture = Fixture::new(
         r#"{"gpt-4o": {"litellm_provider": "openai", "mode": "chat", "max_tokens": 100}}"#,
     );
@@ -717,11 +721,11 @@ pub(super) async fn cached_record_mutation_case() {
         api_base: None,
     };
     let first_harness = fixture.harness();
-    let record = mutated_first_record_case(&first_harness, &mut state, &parameters).await;
-    mutation_hit_case(&first_harness, &mut state, &parameters, &record).await;
-    explicit_record_case(&first_harness, &mut state, &parameters, &record).await;
-    rebuilt_record_case(&first_harness, &mut state, &parameters, &record).await;
-    let helper = helper_mutation_case(&first_harness, &mut state, &key).await;
+    let record = test_mutated_first_record_case(&first_harness, &mut state, &parameters).await;
+    test_mutation_hit_case(&first_harness, &mut state, &parameters, &record).await;
+    test_explicit_record_case(&first_harness, &mut state, &parameters, &record).await;
+    test_rebuilt_record_case(&first_harness, &mut state, &parameters, &record).await;
+    let helper = test_helper_mutation_case(&first_harness, &mut state, &key).await;
     drop(first_harness);
 
     fixture.replace(
@@ -732,10 +736,10 @@ pub(super) async fn cached_record_mutation_case() {
         .keys
         .invalidate(&mut state.caches.full, &mut state.caches.helper);
     let second_harness = fixture.harness();
-    fresh_helper_case(&second_harness, &mut state, &key, &helper).await;
+    test_fresh_helper_case(&second_harness, &mut state, &key, &helper).await;
 }
 
-async fn mutated_first_record_case(
+async fn test_mutated_first_record_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -752,7 +756,7 @@ async fn mutated_first_record_case(
     record
 }
 
-async fn mutation_hit_case(
+async fn test_mutation_hit_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -771,7 +775,7 @@ async fn mutation_hit_case(
 }
 
 // an explicit-key call builds a fresh record and never touches the cached one
-async fn explicit_record_case(
+async fn test_explicit_record_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -792,7 +796,7 @@ async fn explicit_record_case(
     assert_eq!(field(record, "max_tokens"), Some(number(123)));
 }
 
-async fn rebuilt_record_case(
+async fn test_rebuilt_record_case(
     harness: &Harness<'_>,
     state: &mut State,
     parameters: &ScriptedParameters,
@@ -812,7 +816,7 @@ async fn rebuilt_record_case(
 }
 
 // the helper cache shares its record the same way
-async fn helper_mutation_case(
+async fn test_helper_mutation_case(
     harness: &Harness<'_>,
     state: &mut State,
     key: &HelperQuery<'_>,
@@ -827,7 +831,7 @@ async fn helper_mutation_case(
     helper
 }
 
-async fn fresh_helper_case(
+async fn test_fresh_helper_case(
     harness: &Harness<'_>,
     state: &mut State,
     key: &HelperQuery<'_>,

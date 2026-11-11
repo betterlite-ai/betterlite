@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use lru::LruCache;
 
 use crate::model_catalog_keys::ClearableCache;
+use crate::model_metadata_resolution::MetadataRequest;
 
 use super::record::ModelInfoHandle;
 
@@ -13,6 +14,16 @@ pub(crate) struct CacheKey {
     pub(crate) model: String,
     pub(crate) custom_llm_provider: Option<String>,
     pub(crate) api_base: Option<String>,
+}
+
+impl CacheKey {
+    pub(crate) fn for_request(request: &MetadataRequest<'_>) -> Self {
+        Self {
+            model: request.model.to_owned(),
+            custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
+            api_base: request.api_base.map(str::to_owned),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

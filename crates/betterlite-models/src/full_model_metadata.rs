@@ -52,70 +52,16 @@ where
     Transport: ModelInfoClient,
     Parameters: SupportedParameterSource,
 {
-    if request.api_key.is_some() {
-        return build_model_info(request, sources, keys).await;
-    }
-    let key = CacheKey {
-        model: request.model.to_owned(),
-        custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
-        api_base: request.api_base.map(str::to_owned),
+    let key = CacheKey::for_request(request);
+    let existing = if request.api_key.is_some() {
+        None
+    } else {
+        caches.full.get(&key)
     };
-    if let Some(handle) = caches.full.get(&key) {
+    if let Some(handle) = existing {
         return Ok(handle);
     }
-    let handle = build_model_info(request, sources, keys).await?;
-    caches.full.put(key, Arc::clone(&handle));
-    Ok(handle)
-}
-
-pub async fn get_model_info_helper_cached<Source, Transport>(
-    query: &HelperQuery<'_>,
-    sources: &HelperSources<'_, '_, Source, Transport>,
-    keys: &mut ModelCostKeys,
-    cache: &ModelInfoCache,
-) -> Result<ModelInfoHandle, FullMetadataError<Infallible>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
-    let key = CacheKey {
-        model: query.model.to_owned(),
-        custom_llm_provider: query.custom_llm_provider.map(str::to_owned),
-        api_base: query.api_base.map(str::to_owned),
-    };
-    if let Some(handle) = cache.get(&key) {
-        return Ok(handle);
-    }
-    let request = MetadataRequest {
-        model: query.model,
-        custom_llm_provider: query.custom_llm_provider,
-        api_base: query.api_base,
-        api_key: None,
-    };
-    let metadata = get_model_info_helper(
-        &request,
-        sources.environment,
-        keys,
-        sources.dynamic,
-        sources.hf,
-    )
-    .await?;
-    let handle = Arc::new(Mutex::new(ModelInfo::parse(&metadata)?));
-    cache.put(key, Arc::clone(&handle));
-    Ok(handle)
-}
-
-// The source calls the parameter query first, so its failure skips the helper and its metadata HTTP.
-async fn build_model_info<Source, Transport, Parameters>(
-    request: &MetadataRequest<'_>,
-    sources: &FullMetadataSources<'_, '_, Source, Transport, Parameters>,
-    keys: &mut ModelCostKeys,
-) -> Result<ModelInfoHandle, FullMetadataError<Parameters::Error>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Parameters: SupportedParameterSource,
-{
+    // the parameter query runs first, so its failure skips the helper and its metadata HTTP
     let supported = sources
         .parameters
         .supported_openai_params(request.model, request.custom_llm_provider)
@@ -133,6 +79,46 @@ where
         request.custom_llm_provider,
         sources.provider_query,
     );
-    let info = record::build(&metadata, overlay.as_ref(), supported)?;
-    Ok(Arc::new(Mutex::new(info)))
+    let handle = Arc::new(Mutex::new(record::build(
+        &metadata,
+        overlay.as_ref(),
+        supported,
+    )?));
+    if request.api_key.is_none() {
+        caches.full.put(key, Arc::clone(&handle));
+    }
+    Ok(handle)
+}
+
+pub async fn get_model_info_helper_cached<Source, Transport>(
+    query: &HelperQuery<'_>,
+    sources: &HelperSources<'_, '_, Source, Transport>,
+    keys: &mut ModelCostKeys,
+    cache: &ModelInfoCache,
+) -> Result<ModelInfoHandle, FullMetadataError<Infallible>>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    let request = MetadataRequest {
+        model: query.model,
+        custom_llm_provider: query.custom_llm_provider,
+        api_base: query.api_base,
+        api_key: None,
+    };
+    let key = CacheKey::for_request(&request);
+    if let Some(handle) = cache.get(&key) {
+        return Ok(handle);
+    }
+    let metadata = get_model_info_helper(
+        &request,
+        sources.environment,
+        keys,
+        sources.dynamic,
+        sources.hf,
+    )
+    .await?;
+    let handle = Arc::new(Mutex::new(ModelInfo::parse(&metadata)?));
+    cache.put(key, Arc::clone(&handle));
+    Ok(handle)
 }

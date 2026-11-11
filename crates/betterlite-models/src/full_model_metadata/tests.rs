@@ -401,11 +401,11 @@ enum Case {
 #[tokio::test]
 async fn full_model_metadata_cases(#[case] case: Case) {
     match case {
-        Case::FullQueryOrder => cases::full_query_order_case().await,
-        Case::ProviderOverlay => cases::provider_overlay_case().await,
-        Case::CredentialCacheBypass => cases::credential_cache_bypass_case().await,
-        Case::HelperAndFullCaches => cases::helper_and_full_caches_case().await,
-        Case::InvalidationGeneration => cases::invalidation_generation_case().await,
-        Case::CachedRecordMutation => cases::cached_record_mutation_case().await,
+        Case::FullQueryOrder => cases::test_full_query_order_case().await,
+        Case::ProviderOverlay => cases::test_provider_overlay_case().await,
+        Case::CredentialCacheBypass => cases::test_credential_cache_bypass_case().await,
+        Case::HelperAndFullCaches => cases::test_helper_and_full_caches_case().await,
+        Case::InvalidationGeneration => cases::test_invalidation_generation_case().await,
+        Case::CachedRecordMutation => cases::test_cached_record_mutation_case().await,
     }
 }
