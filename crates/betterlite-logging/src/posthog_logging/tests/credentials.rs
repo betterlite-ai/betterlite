@@ -3,7 +3,9 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::posthog_logging::credentials::{CredentialError, credentials_for_request};
-use crate::posthog_logging::tests::support::{default_settings, dynamic, object, text};
+use crate::posthog_logging::tests::support::{
+    capture_logs, default_settings, dynamic, object, text,
+};
 
 fn resolve(dynamic_params: &Json) -> Result<(String, String, bool), CredentialError> {
     let credentials = credentials_for_request(&default_settings(), dynamic_params)?;
@@ -102,4 +104,21 @@ fn posthog_credentials_reject_a_non_text_field(#[case] field: &'static str) {
         error,
         CredentialError::FieldType { field: rejected } if rejected == field
     ));
+}
+
+#[rstest]
+#[case::url_only(&[("posthog_api_url", "https://request.example")], true)]
+#[case::empty_key(&[("posthog_api_key", ""), ("posthog_api_url", "https://request.example")], true)]
+#[case::key_only(&[("posthog_api_key", "request-key")], false)]
+#[case::both(&[("posthog_api_key", "request-key"), ("posthog_api_url", "https://request.example")], false)]
+#[case::empty_url(&[("posthog_api_key", "request-key"), ("posthog_api_url", "")], false)]
+fn posthog_credentials_warn_when_a_request_url_comes_without_a_key(
+    #[case] pairs: &[(&str, &str)],
+    #[case] warned: bool,
+) {
+    let (_guard, logs) = capture_logs();
+    resolve(&dynamic(pairs)).expect("the credentials resolve");
+    let output = logs.contents();
+    assert_eq!(output.contains("ignored posthog_api_url"), warned);
+    assert_eq!(output.contains("its own posthog_api_key"), warned);
 }

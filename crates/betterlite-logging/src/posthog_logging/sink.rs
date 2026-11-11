@@ -7,13 +7,13 @@ use super::batch::{
     group_events, send_group,
 };
 use super::delivery::Transport;
-use super::url_check::UrlCheck;
+use crate::finops::pointfive::upload::url_check::UploadUrlCheck;
 
 #[derive(Clone)]
 pub struct PostHogSink {
     pub queue: BatchQueue<QueuedEvent>,
     pub transport: Arc<dyn Transport>,
-    pub url_check: Arc<dyn UrlCheck>,
+    pub url_check: Arc<dyn UploadUrlCheck>,
     pub mock_mode: bool,
 }
 
@@ -49,7 +49,9 @@ impl PostHogSink {
         .await
         {
             Ok(OK_STATUS) => tracing::debug!("PostHog: Sync event successfully sent"),
-            Err(PostHogSendError::RefusedUrl) => {}
+            Err(PostHogSendError::RefusedUrl(refused)) => {
+                tracing::warn!(error = %refused, "PostHog: refused a request-supplied PostHog URL");
+            }
             Ok(status) => tracing::error!(status, "PostHog Sync Layer Error"),
             Err(error) => tracing::error!(%error, "PostHog Sync Layer Error"),
         }
@@ -72,7 +74,10 @@ impl PostHogSink {
             )
             .await
             {
-                Ok(OK_STATUS) | Err(PostHogSendError::RefusedUrl) => {}
+                Ok(OK_STATUS) => {}
+                Err(PostHogSendError::RefusedUrl(refused)) => {
+                    tracing::warn!(error = %refused, "PostHog: refused a request-supplied PostHog URL");
+                }
                 // LiteLLM's raise_for_status ignores a status under 400, so the flush goes on
                 Ok(status) if status < FAILURE_STATUS => {
                     tracing::error!(status, "PostHog: Failed to flush on exit");
@@ -87,6 +92,11 @@ impl PostHogSink {
                 }
             }
         }
+        self.drain_flushed(queued);
+        tracing::debug!("PostHog: Successfully flushed events on exit");
+    }
+
+    fn drain_flushed(&self, queued: usize) {
         let mut entries = self
             .queue
             .queue
@@ -94,7 +104,5 @@ impl PostHogSink {
             .unwrap_or_else(PoisonError::into_inner);
         let flushed = queued.min(entries.len());
         entries.drain(..flushed).for_each(drop);
-        drop(entries);
-        tracing::debug!("PostHog: Successfully flushed events on exit");
     }
 }

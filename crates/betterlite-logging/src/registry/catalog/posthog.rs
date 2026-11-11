@@ -5,10 +5,10 @@ use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
 
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
+use crate::finops::pointfive::upload::url_check::UploadUrlCheck;
 use crate::posthog_logging::delivery::PooledTransport;
 use crate::posthog_logging::logger::{PostHogDeps, PostHogLogger};
 use crate::posthog_logging::settings::resolve;
-use crate::posthog_logging::url_check::UrlCheck;
 
 mod tests;
 
@@ -21,7 +21,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         .sections
         .user_url_policy
         .user_url_allowed_hosts;
-    let url_check: Arc<dyn UrlCheck> = Arc::new(UrlValidator::new(
+    let url_check: Arc<dyn UploadUrlCheck> = Arc::new(UrlValidator::new(
         SystemResolver,
         allowed_hosts,
         &Verification::Enabled,

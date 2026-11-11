@@ -50,6 +50,12 @@ pub fn credentials_for_request(
     );
     let (api_url, request_url) = match (&request_key, &requested_url) {
         (Some(_), Some(url)) => (url.clone(), true),
+        (None, Some(_)) => {
+            tracing::warn!(
+                "PostHog: ignored {API_URL_FIELD}, the request must also bring its own {API_KEY_FIELD}"
+            );
+            (settings.api_url.clone(), false)
+        }
         _ => (settings.api_url.clone(), false),
     };
     Ok(Credentials {

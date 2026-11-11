@@ -18,7 +18,7 @@ use super::event::{self, IdGenerator, PostHogEventError};
 use super::exit::spawn_exit_flush;
 use super::settings::PostHogSettings;
 use super::sink::PostHogSink;
-use super::url_check::UrlCheck;
+use crate::finops::pointfive::upload::url_check::UploadUrlCheck;
 
 #[derive(Debug, Error)]
 pub enum PostHogLayerError {
@@ -30,7 +30,7 @@ pub enum PostHogLayerError {
 
 pub struct PostHogDeps {
     pub transport: Arc<dyn Transport>,
-    pub url_check: Arc<dyn UrlCheck>,
+    pub url_check: Arc<dyn UploadUrlCheck>,
     pub ids: IdGenerator,
     pub tasks: TaskTracker,
     // the server's shutdown token; a logger built without one runs no exit flush

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::io;
+use std::io::{self, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -16,16 +16,19 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::status::{GuardrailStatus, LoggingStatus, StatusFields};
+use crate::finops::pointfive::upload::url_check::{UploadUrlCheck, ValidatedUpload};
 use crate::posthog_logging::batch::QueuedEvent;
 use crate::posthog_logging::delivery::{PostFailure, PostRequest, Transport};
 use crate::posthog_logging::event::{IdGenerator, create_event_payload};
 use crate::posthog_logging::logger::{PostHogDeps, PostHogLogger};
 use crate::posthog_logging::settings::{PostHogSettings, resolve};
-use crate::posthog_logging::url_check::UrlCheck;
 
 pub(super) const API_KEY: &str = "phk-test";
 pub(super) const API_URL: &str = "https://us.i.posthog.com";
@@ -151,9 +154,12 @@ pub(super) fn fixed_id() -> String {
 pub(super) struct AllowAllUrlCheck;
 
 #[async_trait]
-impl UrlCheck for AllowAllUrlCheck {
-    async fn check(&self, _url: &str) -> Result<(), UserUrlError> {
-        Ok(())
+impl UploadUrlCheck for AllowAllUrlCheck {
+    async fn check(&self, url: &str) -> Result<ValidatedUpload, UserUrlError> {
+        Ok(ValidatedUpload {
+            url: url.to_owned(),
+            host_header: None,
+        })
     }
 }
 
@@ -171,14 +177,14 @@ impl Resolve for TestResolver {
     }
 }
 
-pub(super) fn validating_check() -> Arc<dyn UrlCheck> {
+pub(super) fn validating_check() -> Arc<dyn UploadUrlCheck> {
     Arc::new(UrlValidator::new(TestResolver, &[], &Verification::Enabled))
 }
 
 fn build(
     settings: PostHogSettings,
     transport: &Arc<ScriptedTransport>,
-    url_check: Arc<dyn UrlCheck>,
+    url_check: Arc<dyn UploadUrlCheck>,
     ids: IdGenerator,
     shutdown: Option<CancellationToken>,
 ) -> (Arc<PostHogLogger>, TaskTracker) {
@@ -209,7 +215,7 @@ pub(super) fn logger_with(
 pub(super) fn logger_with_check(
     settings: PostHogSettings,
     transport: &Arc<ScriptedTransport>,
-    url_check: Arc<dyn UrlCheck>,
+    url_check: Arc<dyn UploadUrlCheck>,
     ids: IdGenerator,
 ) -> (Arc<PostHogLogger>, TaskTracker) {
     build(settings, transport, url_check, ids, None)
@@ -366,4 +372,47 @@ pub(super) fn dynamic(pairs: &[(&str, &str)]) -> Json {
             .map(|(key, value)| ((*key).to_owned(), Json::Text((*value).to_owned())))
             .collect::<IndexMap<String, Json>>(),
     )
+}
+
+#[derive(Clone, Default)]
+pub(super) struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl LogBuffer {
+    pub(super) fn contents(&self) -> String {
+        let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        String::from_utf8(bytes.clone()).expect("the log output is UTF-8")
+    }
+}
+
+impl Write for LogBuffer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for LogBuffer {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(super) fn capture_logs() -> (DefaultGuard, LogBuffer) {
+    let buffer = LogBuffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::DEBUG)
+        .with_writer(buffer.clone())
+        .finish();
+    (set_default(subscriber), buffer)
 }

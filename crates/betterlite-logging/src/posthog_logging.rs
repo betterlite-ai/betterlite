@@ -6,6 +6,5 @@ pub mod exit;
 pub mod logger;
 pub mod settings;
 pub mod sink;
-pub mod url_check;
 
 mod tests;
