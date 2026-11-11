@@ -91,8 +91,6 @@ impl AzureSentinelLogger {
         if let Some(tasks) = deps.tasks {
             let periodic = Arc::clone(&logger);
             let _task = tasks.spawn(async move { periodic.periodic_flush().await });
-        } else {
-            tracing::debug!("Azure Sentinel: no task tracker, the periodic flush did not start");
         }
         logger
     }
@@ -108,12 +106,6 @@ impl AzureSentinelLogger {
     }
 
     pub async fn async_log_audit_log_event(&self, audit_log: StandardAuditLogPayload) {
-        tracing::debug!(
-            id = audit_log.id.as_str(),
-            action = audit_log.action.as_str(),
-            table = audit_log.table_name.as_str(),
-            "Azure Sentinel: Logging audit event"
-        );
         self.enqueue(&self.audit, &self.settings.audit_url, audit_log)
             .await;
     }
@@ -165,7 +157,6 @@ impl AzureSentinelLogger {
             .await
             .is_err()
         {
-            tracing::debug!("CustomLogger periodic flush");
             self.flush_queue().await;
         }
     }

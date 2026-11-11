@@ -16,7 +16,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
                 message: error.to_string(),
             }
         })?;
-    let logger = AzureSentinelLogger::new(
+    Ok(AzureSentinelLogger::new(
         settings,
         SentinelDeps {
             transport: Arc::new(PooledTransport {
@@ -26,6 +26,5 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
             stopped: inputs.shutdown.clone(),
             tasks: Some(inputs.tracker.clone()),
         },
-    );
-    Ok(logger)
+    ))
 }
