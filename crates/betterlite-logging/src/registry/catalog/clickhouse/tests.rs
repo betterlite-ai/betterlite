@@ -268,7 +268,7 @@ fn assert_spend_trace(row: &SpendLogRecord) {
 
 #[rstest]
 #[case::the_payload_session_wins(r#""session_id": "session-1","#, "session-1")]
-#[case::the_request_metadata_session_fills_in("", "request-session")]
+#[case::the_request_metadata_session_fills_in(r#""session_id": "","#, "request-session")]
 #[tokio::test]
 async fn the_request_metadata_supplies_the_session_id(
     #[case] payload_session: &str,
