@@ -1,0 +1,10 @@
+kind: helper
+name: call-helpers-safe-divide-seconds
+call:
+  call_helpers:
+    function: safe_divide_seconds
+    values:
+      - {seconds: 10, denominator: 4}
+      - {seconds: 10, denominator: -2, default: 3.5}
+env: {}
+compare: {ignore: []}

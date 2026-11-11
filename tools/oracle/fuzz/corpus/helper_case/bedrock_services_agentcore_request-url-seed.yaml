@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-services-agentcore-request-url-seed
+call:
+  bedrock_services_agentcore_request:
+    scenario: arn_region
+    runs:
+      - model: 'agentcore/arn:aws:bedrock-agentcore:us-west-2:1:runtime/agent'
+        optional_params: {aws_bedrock_runtime_endpoint: 'https://vpce.example/'}
+env: {}
+compare: {ignore: []}

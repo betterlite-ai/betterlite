@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-invoke-primitives-signing-forwarding-seed
+call:
+  bedrock_invoke_primitives:
+    signing_forwarding:
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: secret}
+      headers: {content-type: application/json}
+      optional_params: {aws_region_name: us-west-2}
+      request_data: {inputText: hello}
+      api_base: https://bedrock-runtime.us-west-2.amazonaws.com/model/x/invoke
+      now: 1767225600
+env: {}
+compare: {ignore: []}

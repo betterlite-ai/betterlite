@@ -19,6 +19,7 @@ betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
+num-traits = "0.2.19"
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 secrecy.workspace = true
 serde.workspace = true

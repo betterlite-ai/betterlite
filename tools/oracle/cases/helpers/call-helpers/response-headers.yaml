@@ -1,0 +1,78 @@
+kind: helper
+name: response-headers
+call:
+  call_helpers:
+    function: response_headers
+    steps:
+      - function: project
+        headers:
+          x-ratelimit-limit-requests: "100"
+          x-request-id: abc
+          llm_provider-x-vendor: kept
+      - function: project
+        headers:
+          content-type: application/json
+          content-length: "2"
+          content-security-policy: "default-src 'none'"
+          retry-after: "3"
+          x-vendor-trace: t
+      - function: set_hidden
+        headers:
+          x-ratelimit-limit-requests: "5"
+          x-request-id: id
+        existing:
+          llm_provider-x-ratelimit-limit-requests: existing
+          llm_provider-x-litellm-response-cost: 0.25
+      - function: get_hidden
+        hidden: {headers: {x-a: "1"}}
+      - function: get_hidden
+        hidden: {headers: {}}
+      - function: get_hidden
+        hidden: {headers: null}
+      - function: get_hidden
+        hidden: {}
+      - function: get_hidden
+        hidden: null
+      - function: get_hidden
+        hidden: {headers: {x-a: 1}}
+      - function: get_hidden
+        hidden: {headers: []}
+      - function: get_hidden
+        hidden: 5
+      - function: get_hidden
+        hidden: {headers: text}
+      - function: stream_attributes
+        response:
+          id: chunk
+          created: 1
+          object: chat.completion.chunk
+          model: groq/llama
+          choices: []
+        original_chunk:
+          id: upstream
+          created: 2
+          object: chat.completion.chunk
+          model: llama
+          system_fingerprint: fp
+          choices: []
+          provider_specific_fields: {a: 1}
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+          x_groq: {id: req, usage: {queue_time: 0.25}}
+      - function: stream_attributes
+        response:
+          id: chunk
+          created: 1
+          object: chat.completion.chunk
+          choices: []
+          citations: [a]
+          kept: 1
+        original_chunk:
+          id: upstream
+          created: 2
+          object: chat.completion.chunk
+          choices: []
+          citations: [b]
+          trace: null
+          kept: 1
+env: {}
+compare: {ignore: []}

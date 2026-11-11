@@ -1,0 +1,63 @@
+kind: helper
+name: non-default-params-function-fallback-seed
+call:
+  b5362:
+    calls:
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {temperature: 0.5}
+        custom_llm_provider: openai
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {tools: [{type: function, function: {name: lookup}}], tool_choice: auto, temperature: 0.5}
+        custom_llm_provider: ollama
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {functions: [{name: lookup}], function_call: auto}
+        custom_llm_provider: ollama
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {function_call: auto}
+        custom_llm_provider: ollama
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {tools: [{type: function, function: {name: lookup}}], tool_choice: auto}
+        custom_llm_provider: openai
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {tools: [{type: function, function: {name: lookup}}]}
+        custom_llm_provider: anthropic
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {tools: [{type: function, function: {name: lookup}}]}
+        custom_llm_provider: unknown_provider
+      - function: function_fallback
+        passed_params: {}
+        non_default_params: {tools: [{type: function, function: {name: lookup}}], tool_choice: auto}
+        custom_llm_provider: ollama_chat
+      - function: function_fallback
+        passed_params: {project: proj, region_name: europe-west1, token: t}
+        non_default_params: {temperature: 0.5}
+        custom_llm_provider: vertex_ai
+      - function: function_fallback
+        passed_params: {project: proj, region_name: eu-west-1, token: t}
+        non_default_params: {temperature: 0.5}
+        custom_llm_provider: bedrock
+      - function: function_fallback
+        passed_params: {project: p, region_name: r, token: t}
+        non_default_params: {temperature: 0.5}
+        custom_llm_provider: watsonx
+      - function: function_fallback
+        passed_params: {project: p, region_name: r, token: t}
+        non_default_params: {temperature: 0.5}
+        custom_llm_provider: azure
+      - function: function_fallback
+        passed_params: {response_format: {type: json_object}}
+        non_default_params: {response_format: {type: json_object}}
+        custom_llm_provider: ollama
+      - function: function_fallback
+        passed_params: {response_format: {type: text}}
+        non_default_params: {response_format: {type: text}}
+        custom_llm_provider: ollama
+env: {}
+compare: {ignore: []}
