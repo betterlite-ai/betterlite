@@ -1,0 +1,1 @@
+{"kind":"helper","name":"a2a_stream_accounting_usage","call":{"b4810":{"function":"set_usage","instances":[{"prompt_tokens":3,"completion_tokens":4,"details":{"litellm_params":{"cost_per_query":0.5}}},{"prompt_tokens":1,"completion_tokens":1,"logging":false,"details":{}}]}},"env":{},"compare":{"ignore":[]}}

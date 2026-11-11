@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use betterlite_http::error::HttpError;
-use betterlite_openai::chat::deployment::OpenAiDefaults;
+use betterlite_models::resolution::ResolutionError;
+use betterlite_openai::chat::deployment::{DeploymentError, OpenAiDefaults};
 use betterlite_openai::embedding::{EmbeddingError, EmbeddingResponse};
 use betterlite_provider::api::vector_store_contracts::config::{
     EmbeddingEntry, Params, VectorStoreEmbeddingExecutor as _,
@@ -296,8 +297,10 @@ async fn direct_executor_refuses_a_model_no_provider_serves_before_any_request()
         .expect_err("provider");
     assert!(matches!(
         error,
-        VectorStoreEmbeddingError::Embedding {
-            source: EmbeddingError::UnsupportedProvider { .. }
+        VectorStoreEmbeddingError::Deployment {
+            source: DeploymentError::Resolution {
+                source: ResolutionError::MissingProvider { .. }
+            }
         }
     ));
 }

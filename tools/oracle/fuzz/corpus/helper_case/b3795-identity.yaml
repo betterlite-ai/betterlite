@@ -1,0 +1,11 @@
+# straiker_webhook_records: identity precedence across merged metadata
+kind: helper
+name: b3795-identity-seed
+call:
+  b3795:
+    identity:
+      request_data:
+        metadata: {user_api_key_hash: hash-1, user_api_key_token: token-1}
+        litellm_metadata: {user_api_key_alias: key-alias}
+env: {}
+compare: {ignore: []}

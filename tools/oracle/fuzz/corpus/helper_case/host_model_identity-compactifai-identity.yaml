@@ -1,0 +1,15 @@
+kind: helper
+name: host-model-identity-seed-compactifai
+call:
+  host_model_identity:
+    calls:
+      - {kind: identity, host: compactifai, env: {COMPACTIFAI_API_KEY: env-key}, api_base: "", api_key: ""}
+      - kind: reply
+        host: compactifai
+        status: 200
+        body: '{"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"x"}}]},"finish_reason":"tool_calls"}]}'
+        model: user.app.model
+        messages: []
+        json_mode: true
+env: {}
+compare: {ignore: []}

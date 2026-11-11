@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-processor-assistant-blocks
+call:
+  bedrock_processor:
+    function: convert
+    messages:
+      - {role: user, content: hi}
+      - role: assistant
+        content:
+          - {type: text, text: answer}
+          - {type: text, text: "   "}
+          - {type: image_url, image_url: "data:image/png;base64,BBBB"}
+          - {type: thinking, thinking: step, signature: sig}
+        thinking_blocks:
+          - {thinking: earlier, signature: sig2}
+        tool_calls:
+          - id: call_1
+            type: function
+            function: {name: get_weather, arguments: '{"city":"Paris"}'}
+      - {role: assistant, content: second}
+    modify_params: false
+env: {}
+compare: {ignore: []}

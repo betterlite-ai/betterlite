@@ -145,7 +145,7 @@ out_of_scope:
   - "B4711 owns _get_prisma_client_or_none, get_prisma_client_or_throw and get_mcp_server; this task calls them."
   - "B4712 owns create_draft_mcp_server, _prune_expired_draft_mcp_servers and get_draft_mcp_server (db.py L1013-L1100); this task calls them."
   - "B4716 owns validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow and NewMCPServerRequest; B4717 owns _redact_mcp_credentials and _inherit_credentials_from_existing_server."
-  - "B4731 owns resolve_mcp_server, authorize_mcp_server and get_mcp_server_by_id (server_resolution.py and the registry reads); B6592 owns build_mcp_server_from_table."
+  - "B4731 owns resolve_mcp_server, authorize_mcp_server and get_mcp_server_by_id (server_resolution.py and the registry reads); B6763 owns build_mcp_server_from_table."
   - "B4719 owns _mcp_oauth_user_api_key_auth (cookie and delegate_auth_to_upstream fallbacks) and the three routes mcp_authorize, mcp_token and mcp_register that call cached_temporary_server_or_404."
   - "B4729 and B4730 own the connection preview and test routes; they use their own staging, not this store."
   - "B865 owns management_endpoint_wrapper, B743 owns IPAddressUtils.get_mcp_client_ip, B2314 owns UserAPIKeyAuth and user_api_key_has_admin_view, B1600 owns encrypt_value_helper and decrypt_value_helper."
