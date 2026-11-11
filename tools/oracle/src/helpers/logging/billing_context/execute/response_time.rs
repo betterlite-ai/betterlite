@@ -4,10 +4,11 @@ use serde_json::Value;
 
 use super::super::model::{cost_response, moment};
 use super::super::{Call, Failure, TimingInput, failure};
-use super::required;
 
 pub(super) fn response_time(call: &Call) -> Result<Value, Failure> {
-    let input = required(call.response_time.as_ref(), "response_time")?;
+    let Some(input) = call.response_time.as_ref() else {
+        return Err(failure("response_time is required"));
+    };
     let moments = moment_values(input.timing.as_ref())?;
     let timing = moments.as_ref().map(|(start, end, now)| ResponseTiming {
         start_time: Some(start),

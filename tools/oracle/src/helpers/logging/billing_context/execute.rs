@@ -2,7 +2,7 @@ use betterlite_core::cost::context::ProviderInference;
 use betterlite_models::resolution::ProviderIdentity;
 use serde_json::{Value, json};
 
-use super::{Call, Failure, Function, failure};
+use super::{Call, Failure, Function};
 
 mod breakdown;
 mod identity;
@@ -31,14 +31,4 @@ impl ProviderInference for NoInference {
     fn inferred_provider(&self, _model: &str) -> Result<ProviderIdentity, Self::Failure> {
         Err("the case supplies the provider")
     }
-}
-
-fn required<'value, Item>(
-    value: Option<&'value Item>,
-    field: &str,
-) -> Result<&'value Item, Failure> {
-    let Some(found) = value else {
-        return Err(failure(format!("{field} is required")));
-    };
-    Ok(found)
 }

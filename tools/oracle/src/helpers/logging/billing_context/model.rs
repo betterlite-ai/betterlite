@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_core::cost::context::CostResponse;
-use betterlite_logging::cost_breakdown::CostBreakdownInput;
 use betterlite_logging::fields::timestamps::Moment;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -11,15 +10,12 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_models::billed_tokens::BilledTokenRates;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
 
-use super::{
-    BreakdownInput, CatalogEntry, Failure, RatesInput, ResponseInput, ResponseKind, failure,
-};
+use super::{CatalogEntry, Failure, ResponseInput, ResponseKind, failure};
 
 pub(super) struct CaseLookup {
     raw: BTreeMap<String, PriceRecord>,
@@ -111,39 +107,4 @@ pub(super) fn moment(text: &str) -> Result<Moment, Failure> {
     DateTime::parse_from_rfc3339(text)
         .map(Moment::DateTime)
         .map_err(failure)
-}
-
-pub(super) fn breakdown_input(input: &BreakdownInput) -> CostBreakdownInput {
-    CostBreakdownInput {
-        input_cost: input.input_cost,
-        output_cost: input.output_cost,
-        total_cost: input.total_cost,
-        tool_usage_cost: input.tool_usage_cost,
-        additional_costs: input.additional_costs.clone(),
-        original_cost: input.original_cost,
-        discount_percent: input.discount_percent,
-        discount_amount: input.discount_amount,
-        margin_percent: input.margin_percent,
-        margin_fixed_amount: input.margin_fixed_amount,
-        margin_total_amount: input.margin_total_amount,
-        cache_read_cost: input.cache_read_cost,
-        cache_creation_cost: input.cache_creation_cost,
-        reasoning_cost: input.reasoning_cost,
-        service_tier: input.service_tier.clone(),
-        data_residency: input.data_residency.clone(),
-        vertex_location: input.vertex_location.clone(),
-        billed_token_rates: input.billed_token_rates.map(rates),
-    }
-}
-
-const fn rates(input: RatesInput) -> BilledTokenRates {
-    BilledTokenRates {
-        input_cost_per_token: input.input_cost_per_token,
-        output_cost_per_token: input.output_cost_per_token,
-        cache_read_input_token_cost: input.cache_read_input_token_cost,
-        audio_read: input.audio_read,
-        cache_write: input.cache_write,
-        cache_write_1h: input.cache_write_1h,
-        reasoning: input.reasoning,
-    }
 }

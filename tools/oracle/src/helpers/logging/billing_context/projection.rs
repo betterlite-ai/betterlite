@@ -10,13 +10,6 @@ pub(super) fn optional_decimal(value: Option<Decimal>) -> Value {
     Value::from(amount.normalize().to_string())
 }
 
-pub(super) fn optional_text(value: Option<&str>) -> Value {
-    let Some(text) = value else {
-        return Value::Null;
-    };
-    Value::from(text)
-}
-
 pub(super) fn optional_costs(costs: Option<&BTreeMap<String, Decimal>>) -> Value {
     let Some(amounts) = costs else {
         return Value::Null;
