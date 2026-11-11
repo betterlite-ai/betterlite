@@ -1,6 +1,65 @@
 use betterlite_models::decisions::openai;
 use betterlite_models::decisions::{DecisionsJson, Extra, ir};
 
+macro_rules! ir_decision_answer {
+    ($fn_name:ident, $question:ident: $Question:ty, $Answer:ident { $($field:ident),+ }, $build:expr) => {
+        fn $fn_name(
+            $question: &$Question,
+            answer: Option<&openai::DecisionAnswer>,
+        ) -> ir::DecisionAnswer {
+            let Some(openai::DecisionAnswer::$Answer { $($field),+ , .. }) = answer else {
+                return ir::DecisionAnswer::Refusal;
+            };
+            $build
+        }
+    };
+}
+
+ir_decision_answer!(
+    ir_predicate_answer,
+    _question: ir::PredicateQuestion,
+    Predicate { probability },
+    ir::DecisionAnswer::Predicate {
+        probability: probability.clone(),
+        extra: Extra::default(),
+    }
+);
+ir_decision_answer!(
+    ir_choice_answer,
+    _question: ir::ChoiceQuestion,
+    Choice { choice, confidence, probabilities },
+    ir::DecisionAnswer::Choice {
+        choice: choice.clone(),
+        confidence: confidence.clone(),
+        probabilities: probabilities
+            .iter()
+            .map(|item| ir::ChoiceProbability {
+                value: item.value.clone(),
+                probability: item.probability.clone(),
+            })
+            .collect(),
+        extra: Extra::default(),
+    }
+);
+ir_decision_answer!(
+    ir_score_answer,
+    question: ir::ScoreQuestion,
+    Score { score, confidence, probabilities },
+    ir::DecisionAnswer::Score {
+        score: score.clone(),
+        confidence: confidence.clone(),
+        probabilities: probabilities
+            .iter()
+            .map(|item| ir::ScoreProbability {
+                value: item.value.clone(),
+                label: level_label(question, item),
+                probability: item.probability.clone(),
+            })
+            .collect(),
+        extra: Extra::default(),
+    }
+);
+
 #[must_use]
 pub fn openai_response_to_ir(
     response: &openai::DecisionResponse,
@@ -39,86 +98,9 @@ fn ir_answer(
     answer: Option<&openai::DecisionAnswer>,
 ) -> ir::DecisionAnswer {
     match question {
-        ir::DecisionQuestion::Predicate(_) => ir_predicate_answer(answer),
-        ir::DecisionQuestion::Choice(_) => ir_choice_answer(answer),
+        ir::DecisionQuestion::Predicate(predicate) => ir_predicate_answer(predicate, answer),
+        ir::DecisionQuestion::Choice(choice) => ir_choice_answer(choice, answer),
         ir::DecisionQuestion::Score(score) => ir_score_answer(score, answer),
-    }
-}
-
-fn ir_predicate_answer(answer: Option<&openai::DecisionAnswer>) -> ir::DecisionAnswer {
-    match answer {
-        Some(openai::DecisionAnswer::Predicate { probability, .. }) => {
-            ir::DecisionAnswer::Predicate {
-                probability: probability.clone(),
-                extra: Extra::default(),
-            }
-        }
-        Some(
-            openai::DecisionAnswer::Choice { .. }
-            | openai::DecisionAnswer::Score { .. }
-            | openai::DecisionAnswer::Refusal { .. },
-        )
-        | None => ir::DecisionAnswer::Refusal,
-    }
-}
-
-fn ir_choice_answer(answer: Option<&openai::DecisionAnswer>) -> ir::DecisionAnswer {
-    match answer {
-        Some(openai::DecisionAnswer::Choice {
-            choice,
-            confidence,
-            probabilities,
-            ..
-        }) => ir::DecisionAnswer::Choice {
-            choice: choice.clone(),
-            confidence: confidence.clone(),
-            probabilities: probabilities
-                .iter()
-                .map(|item| ir::ChoiceProbability {
-                    value: item.value.clone(),
-                    probability: item.probability.clone(),
-                })
-                .collect(),
-            extra: Extra::default(),
-        },
-        Some(
-            openai::DecisionAnswer::Predicate { .. }
-            | openai::DecisionAnswer::Score { .. }
-            | openai::DecisionAnswer::Refusal { .. },
-        )
-        | None => ir::DecisionAnswer::Refusal,
-    }
-}
-
-fn ir_score_answer(
-    question: &ir::ScoreQuestion,
-    answer: Option<&openai::DecisionAnswer>,
-) -> ir::DecisionAnswer {
-    match answer {
-        Some(openai::DecisionAnswer::Score {
-            score,
-            confidence,
-            probabilities,
-            ..
-        }) => ir::DecisionAnswer::Score {
-            score: score.clone(),
-            confidence: confidence.clone(),
-            probabilities: probabilities
-                .iter()
-                .map(|item| ir::ScoreProbability {
-                    value: item.value.clone(),
-                    label: level_label(question, item),
-                    probability: item.probability.clone(),
-                })
-                .collect(),
-            extra: Extra::default(),
-        },
-        Some(
-            openai::DecisionAnswer::Predicate { .. }
-            | openai::DecisionAnswer::Choice { .. }
-            | openai::DecisionAnswer::Refusal { .. },
-        )
-        | None => ir::DecisionAnswer::Refusal,
     }
 }
 

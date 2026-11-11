@@ -69,63 +69,74 @@ fn openai_answer(
     answer: &ir::DecisionAnswer,
 ) -> Result<openai::DecisionAnswer, ResponseConversionError> {
     match question {
-        ir::DecisionQuestion::Predicate(predicate) => Ok(predicate_answer(predicate, answer)),
+        ir::DecisionQuestion::Predicate(predicate) => match answer {
+            ir::DecisionAnswer::Predicate { probability, .. } => {
+                Ok(openai::DecisionAnswer::Predicate {
+                    name: predicate.name.clone(),
+                    probability: probability.clone(),
+                })
+            }
+            ir::DecisionAnswer::Choice { .. }
+            | ir::DecisionAnswer::Score { .. }
+            | ir::DecisionAnswer::Refusal => Ok(openai::DecisionAnswer::Refusal {
+                name: predicate.name.clone(),
+            }),
+        },
         ir::DecisionQuestion::Choice(choice) => choice_answer(choice, answer),
         ir::DecisionQuestion::Score(score) => score_answer(score, answer),
     }
 }
 
-fn predicate_answer(
-    question: &ir::PredicateQuestion,
-    answer: &ir::DecisionAnswer,
-) -> openai::DecisionAnswer {
-    match answer {
-        ir::DecisionAnswer::Predicate { probability, .. } => openai::DecisionAnswer::Predicate {
-            name: question.name.clone(),
-            probability: probability.clone(),
-        },
-        ir::DecisionAnswer::Choice { .. }
-        | ir::DecisionAnswer::Score { .. }
-        | ir::DecisionAnswer::Refusal => openai::DecisionAnswer::Refusal {
-            name: question.name.clone(),
-        },
-    }
+fn probability_or_zero(value: Option<&Number>) -> Result<Number, ResponseConversionError> {
+    value.map_or_else(
+        || Number::from_f64(0.0).ok_or(ResponseConversionError::Probability),
+        |probability| Ok(probability.clone()),
+    )
+}
+
+macro_rules! answer_fields {
+    ($answer:expr, $Variant:ident { $($field:ident),+ }, $name:expr) => {
+        let ir::DecisionAnswer::$Variant { $($field),+ , .. } = $answer else {
+            return Ok(openai::DecisionAnswer::Refusal {
+                name: $name.clone(),
+            });
+        };
+    };
 }
 
 fn choice_answer(
     question: &ir::ChoiceQuestion,
     answer: &ir::DecisionAnswer,
 ) -> Result<openai::DecisionAnswer, ResponseConversionError> {
-    let ir::DecisionAnswer::Choice {
-        choice,
-        confidence,
-        probabilities,
-        ..
-    } = answer
-    else {
-        return Ok(openai::DecisionAnswer::Refusal {
-            name: question.name.clone(),
-        });
-    };
+    answer_fields!(
+        answer,
+        Choice {
+            choice,
+            confidence,
+            probabilities
+        },
+        question.name
+    );
     let mut keyed: IndexMap<&str, &Number> = IndexMap::new();
     for item in probabilities {
         keyed.insert(item.value.systemone_key(), &item.probability);
     }
-    let mut output = Vec::with_capacity(question.choices.len());
-    for option in &question.choices {
-        let probability = match keyed.get(option.value.systemone_key()) {
-            Some(probability) => (*probability).clone(),
-            None => Number::from_f64(0.0).ok_or(ResponseConversionError::Probability)?,
-        };
-        output.push(openai::ChoiceProbability {
-            value: option.value.clone(),
-            probability,
-        });
-    }
+    let mapped = question
+        .choices
+        .iter()
+        .map(|option| {
+            let probability =
+                probability_or_zero(keyed.get(option.value.systemone_key()).copied())?;
+            Ok(openai::ChoiceProbability {
+                value: option.value.clone(),
+                probability,
+            })
+        })
+        .collect::<Result<Vec<_>, ResponseConversionError>>()?;
     Ok(openai::DecisionAnswer::Choice {
         name: question.name.clone(),
         choice: choice.clone(),
-        probabilities: output,
+        probabilities: mapped,
         confidence: confidence.clone(),
     })
 }
@@ -134,38 +145,36 @@ fn score_answer(
     question: &ir::ScoreQuestion,
     answer: &ir::DecisionAnswer,
 ) -> Result<openai::DecisionAnswer, ResponseConversionError> {
-    let ir::DecisionAnswer::Score {
-        score,
-        confidence,
-        probabilities,
-        ..
-    } = answer
-    else {
-        return Ok(openai::DecisionAnswer::Refusal {
-            name: question.name.clone(),
-        });
-    };
-    let mut keyed: IndexMap<i64, &Number> = IndexMap::new();
+    answer_fields!(
+        answer,
+        Score {
+            score,
+            confidence,
+            probabilities
+        },
+        question.name
+    );
+    let mut by_level: Vec<Option<&Number>> = vec![None; question.levels.len()];
     for item in probabilities {
-        let value = item
+        let index = item
             .value
             .as_i64()
             .ok_or(ResponseConversionError::LevelIndex)?;
-        keyed.insert(value, &item.probability);
+        let Ok(level_slot) = usize::try_from(index) else {
+            continue;
+        };
+        let Some(slot) = by_level.get_mut(level_slot) else {
+            continue;
+        };
+        *slot = Some(&item.probability);
     }
     let mut output = Vec::with_capacity(question.levels.len());
     for (index, level) in question.levels.iter().enumerate() {
-        let Ok(level_index) = i64::try_from(index) else {
-            return Err(ResponseConversionError::LevelOverflow);
-        };
-        let probability = match keyed.get(&level_index) {
-            Some(probability) => (*probability).clone(),
-            None => Number::from_f64(0.0).ok_or(ResponseConversionError::Probability)?,
-        };
+        let slot = by_level.get(index).copied().flatten();
         output.push(openai::ScoreProbability {
             value: Number::from(index),
             label: decisions_text(&level.label)?,
-            probability,
+            probability: probability_or_zero(slot)?,
         });
     }
     Ok(openai::DecisionAnswer::Score {

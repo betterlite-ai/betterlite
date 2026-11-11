@@ -18,6 +18,12 @@ pub struct OpenAiDecisionsConfig {
     pub globals: LiteLlmGlobals,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Resolution {
+    Base,
+    Key,
+}
+
 impl OpenAiDecisionsConfig {
     #[must_use]
     pub fn resolve_api_base_with(
@@ -25,11 +31,7 @@ impl OpenAiDecisionsConfig {
         api_base: Option<&str>,
         get_secret_str: &dyn Fn(&str) -> String,
     ) -> Option<String> {
-        api_base
-            .map(str::to_owned)
-            .or_else(|| self.globals.api_base.clone())
-            .or_else(|| first_secret(&BASE_ENV, get_secret_str))
-            .or_else(|| self.get_default_api_base())
+        self.resolve(api_base, Resolution::Base, get_secret_str)
     }
 
     #[must_use]
@@ -38,21 +40,36 @@ impl OpenAiDecisionsConfig {
         api_key: Option<&str>,
         get_secret_str: &dyn Fn(&str) -> String,
     ) -> Option<String> {
-        api_key
-            .map(str::to_owned)
-            .or_else(|| {
-                self.globals
-                    .api_key
-                    .as_ref()
-                    .map(|key| key.expose_secret().to_owned())
-            })
-            .or_else(|| {
-                self.globals
-                    .openai_key
-                    .as_ref()
-                    .map(|key| key.expose_secret().to_owned())
-            })
-            .or_else(|| first_secret(&KEY_ENV, get_secret_str))
+        self.resolve(api_key, Resolution::Key, get_secret_str)
+    }
+
+    fn resolve(
+        &self,
+        explicit: Option<&str>,
+        resolution: Resolution,
+        get_secret_str: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        if let Some(given) = explicit {
+            return Some(given.to_owned());
+        }
+        match resolution {
+            Resolution::Base => self
+                .globals
+                .api_base
+                .clone()
+                .or_else(|| first_secret(&BASE_ENV, get_secret_str))
+                .or_else(|| self.get_default_api_base()),
+            Resolution::Key => {
+                let secrets = [
+                    self.globals.api_key.as_ref(),
+                    self.globals.openai_key.as_ref(),
+                ];
+                secrets.into_iter().flatten().next().map_or_else(
+                    || first_secret(&KEY_ENV, get_secret_str),
+                    |secret| Some(secret.expose_secret().to_owned()),
+                )
+            }
+        }
     }
 }
 

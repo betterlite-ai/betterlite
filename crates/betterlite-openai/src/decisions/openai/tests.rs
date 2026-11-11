@@ -71,45 +71,6 @@ fn choice(text_option: &str) -> ChoiceValue {
     ChoiceValue::Text(text_option.to_owned())
 }
 
-fn choice_question(
-    name: Option<&str>,
-    instructions: Option<DecisionsJson>,
-    choices: Vec<ir::ChoiceOption>,
-) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Choice(ir::ChoiceQuestion {
-        name: name.map(str::to_owned),
-        instructions,
-        choices,
-        extra: Extra::default(),
-    })
-}
-
-fn score_question(
-    name: Option<&str>,
-    instructions: Option<DecisionsJson>,
-    levels: Vec<ir::ScoreLevel>,
-) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Score(ir::ScoreQuestion {
-        name: name.map(str::to_owned),
-        instructions,
-        levels,
-        extra: Extra::default(),
-    })
-}
-
-fn predicate_question(
-    name: Option<&str>,
-    instructions: Option<DecisionsJson>,
-    criteria: Option<IndexMap<NoulLabel, Option<DecisionsJson>>>,
-) -> ir::DecisionQuestion {
-    ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
-        name: name.map(str::to_owned),
-        instructions,
-        criteria,
-        extra: Extra::default(),
-    })
-}
-
 fn level(label: DecisionsJson, description: Option<&str>) -> ir::ScoreLevel {
     ir::ScoreLevel {
         label,
@@ -117,15 +78,54 @@ fn level(label: DecisionsJson, description: Option<&str>) -> ir::ScoreLevel {
     }
 }
 
-fn wire_json(request: &ir::DecisionRequest, model: &str) -> Value {
-    serde_json::to_value(ir_to_openai_request(model, request).unwrap()).unwrap()
+macro_rules! question_fn {
+    ($fn_name:ident, $Variant:ident, $Struct:ident, $field:ident, $ValueType:ty) => {
+        fn $fn_name(
+            name: Option<&str>,
+            instructions: Option<DecisionsJson>,
+            value: $ValueType,
+        ) -> ir::DecisionQuestion {
+            ir::DecisionQuestion::$Variant(ir::$Struct {
+                name: name.map(str::to_owned),
+                instructions,
+                $field: value,
+                extra: Extra::default(),
+            })
+        }
+    };
 }
+
+question_fn!(
+    choice_question,
+    Choice,
+    ChoiceQuestion,
+    choices,
+    Vec<ir::ChoiceOption>
+);
+question_fn!(
+    score_question,
+    Score,
+    ScoreQuestion,
+    levels,
+    Vec<ir::ScoreLevel>
+);
+question_fn!(
+    predicate_question,
+    Predicate,
+    PredicateQuestion,
+    criteria,
+    Option<IndexMap<NoulLabel, Option<DecisionsJson>>>
+);
 
 fn two_plain_choices() -> Vec<ir::ChoiceOption> {
     vec![
         choice_option(choice("a"), None),
         choice_option(choice("b"), None),
     ]
+}
+
+fn wire_json(request: &ir::DecisionRequest, model: &str) -> Value {
+    serde_json::to_value(ir_to_openai_request(model, request).unwrap()).unwrap()
 }
 
 fn choice_question_roundtrip() {
@@ -297,7 +297,7 @@ fn the_ir_score_labels_take_the_question_level() {
     )]);
     let response: openai::DecisionResponse = serde_json::from_value(value(
         r#"{"model": "gpt-4o",
-            "answers": [{"type": "score", "name": "rate", "score": 1, "confidence": 0.8,
+            "answers": [{"type": "score", "name": "rate", "score": 1.0, "confidence": 0.8,
                 "probabilities": [
                     {"value": 1, "label": "returned", "probability": 0.3},
                     {"value": 9, "label": "out-of-range", "probability": 0.4},
@@ -368,47 +368,35 @@ fn empty_predicate_text_takes_the_default() {
 }
 
 fn single_option() {
-    fewer_than_two_options_are_unsupported();
+    one_option_is_unsupported();
+    zero_options_are_unsupported();
     predicates_do_not_trigger_the_rule();
 }
 
-fn fewer_than_two_options_are_unsupported() {
-    one_choice_is_unsupported();
-    zero_choices_are_unsupported();
-    one_level_is_unsupported();
-    zero_levels_are_unsupported();
-}
-
-fn one_choice_is_unsupported() {
-    let request = request_with(vec![choice_question(
+fn one_option_is_unsupported() {
+    let choice_request = request_with(vec![choice_question(
         None,
         None,
         vec![choice_option(choice("only"), None)],
     )]);
-    let error = ir_to_openai_request("gpt-4o", &request).unwrap_err();
-    assert_eq!(error.to_string(), SINGLE_OPTION_REASON);
-}
-
-fn zero_choices_are_unsupported() {
-    let request = request_with(vec![choice_question(None, None, Vec::new())]);
-    let error = ir_to_openai_request("gpt-4o", &request).unwrap_err();
-    assert_eq!(error.to_string(), SINGLE_OPTION_REASON);
-}
-
-fn one_level_is_unsupported() {
-    let request = request_with(vec![score_question(
+    let choice_error = ir_to_openai_request("gpt-4o", &choice_request).unwrap_err();
+    assert_eq!(choice_error.to_string(), SINGLE_OPTION_REASON);
+    let score_request = request_with(vec![score_question(
         None,
         None,
         vec![level(text("only"), None)],
     )]);
-    let error = ir_to_openai_request("gpt-4o", &request).unwrap_err();
-    assert_eq!(error.to_string(), SINGLE_OPTION_REASON);
+    let score_error = ir_to_openai_request("gpt-4o", &score_request).unwrap_err();
+    assert_eq!(score_error.to_string(), SINGLE_OPTION_REASON);
 }
 
-fn zero_levels_are_unsupported() {
-    let request = request_with(vec![score_question(None, None, Vec::new())]);
-    let error = ir_to_openai_request("gpt-4o", &request).unwrap_err();
-    assert_eq!(error.to_string(), SINGLE_OPTION_REASON);
+fn zero_options_are_unsupported() {
+    let choice_request = request_with(vec![choice_question(None, None, Vec::new())]);
+    let choice_error = ir_to_openai_request("gpt-4o", &choice_request).unwrap_err();
+    assert_eq!(choice_error.to_string(), SINGLE_OPTION_REASON);
+    let score_request = request_with(vec![score_question(None, None, Vec::new())]);
+    let score_error = ir_to_openai_request("gpt-4o", &score_request).unwrap_err();
+    assert_eq!(score_error.to_string(), SINGLE_OPTION_REASON);
 }
 
 fn predicates_do_not_trigger_the_rule() {
@@ -610,51 +598,121 @@ fn mismatched_variants_are_refusals() {
     );
 }
 
+macro_rules! ordering_request {
+    () => {
+        request_with(vec![
+            choice_question(
+                Some("pick"),
+                None,
+                vec![
+                    choice_option(ChoiceValue::Flag(true), None),
+                    choice_option(choice("b"), None),
+                    choice_option(choice("c"), None),
+                    choice_option(choice("d"), None),
+                ],
+            ),
+            score_question(
+                Some("rate"),
+                None,
+                vec![
+                    level(text("low"), None),
+                    level(text("mid"), None),
+                    level(text("high"), None),
+                ],
+            ),
+        ])
+    };
+}
+
+macro_rules! ordering_choice_answer {
+    () => {
+        ir::DecisionAnswer::Choice {
+            choice: ChoiceValue::Flag(true),
+            confidence: number(1),
+            probabilities: vec![
+                ir::ChoiceProbability {
+                    value: choice("c"),
+                    probability: decimal(0.5_f64),
+                },
+                ir::ChoiceProbability {
+                    value: choice("true"),
+                    probability: decimal(0.1_f64),
+                },
+                ir::ChoiceProbability {
+                    value: choice("b"),
+                    probability: decimal(0.2_f64),
+                },
+                ir::ChoiceProbability {
+                    value: ChoiceValue::Flag(true),
+                    probability: decimal(0.9_f64),
+                },
+            ],
+            extra: Extra::default(),
+        }
+    };
+}
+
+macro_rules! ordering_score_answer {
+    () => {
+        ir::DecisionAnswer::Score {
+            score: number(2),
+            confidence: number(1),
+            probabilities: vec![
+                ir::ScoreProbability {
+                    value: number(2),
+                    label: text("high"),
+                    probability: decimal(0.3_f64),
+                },
+                ir::ScoreProbability {
+                    value: number(0),
+                    label: text("low"),
+                    probability: decimal(0.4_f64),
+                },
+                ir::ScoreProbability {
+                    value: number(0),
+                    label: text("low"),
+                    probability: decimal(0.5_f64),
+                },
+                ir::ScoreProbability {
+                    value: number(7),
+                    label: text("beyond"),
+                    probability: decimal(0.9_f64),
+                },
+            ],
+            extra: Extra::default(),
+        }
+    };
+}
+
+macro_rules! ordering_response {
+    () => {
+        ir::DecisionResponse {
+            model: Some("gpt-4o".to_owned()),
+            answers: vec![ordering_choice_answer!(), ordering_score_answer!()],
+            usage: ir::DecisionUsage::default(),
+            extra: Extra::default(),
+        }
+    };
+}
+
 fn decision_probability_order() {
-    let response = ordering_response();
-    let converted = ir_to_openai_response(&response, &ordering_request(), "requested").unwrap();
+    let request = ordering_request!();
+    let response = ordering_response!();
+    let converted = ir_to_openai_response(&response, &request, "requested").unwrap();
     let payload = serde_json::to_value(&converted).unwrap();
-    choice_probabilities_follow_the_options(&payload);
-    score_probabilities_follow_the_levels(&payload);
-}
-
-fn ordering_request() -> ir::DecisionRequest {
-    request_with(vec![
-        choice_question(
-            Some("pick"),
-            None,
-            vec![
-                choice_option(ChoiceValue::Flag(true), None),
-                choice_option(choice("b"), None),
-                choice_option(choice("c"), None),
-            ],
-        ),
-        score_question(
-            Some("rate"),
-            None,
-            vec![
-                level(text("low"), None),
-                level(text("mid"), None),
-                level(text("high"), None),
-            ],
-        ),
-    ])
-}
-
-fn choice_probabilities_follow_the_options(payload: &Value) {
-    // option order, the last duplicate wins, and a text "true" answers the boolean option
+    // choice probabilities follow the option order, the last duplicate wins, and a text
+    // "true" answers the boolean option
     assert_eq!(
         payload["answers"][0]["probabilities"],
         value(
             r#"[{"value": true, "probability": 0.9},
                 {"value": "b", "probability": 0.2},
-                {"value": "c", "probability": 0.5}]"#
+                {"value": "c", "probability": 0.5},
+                {"value": "d", "probability": 0.0}]"#
         )
     );
-}
-
-fn score_probabilities_follow_the_levels(payload: &Value) {
-    // level index order, the last duplicate wins, and a missing level answers 0.0
+    // score probabilities follow the level index order, the last duplicate wins, and a
+    // missing level answers 0.0
     assert_eq!(
         payload["answers"][1]["probabilities"],
         value(
@@ -663,66 +721,6 @@ fn score_probabilities_follow_the_levels(payload: &Value) {
                 {"value": 2, "label": "high", "probability": 0.3}]"#
         )
     );
-}
-
-fn ordering_response() -> ir::DecisionResponse {
-    ir::DecisionResponse {
-        model: Some("gpt-4o".to_owned()),
-        answers: vec![ordering_choice_answer(), ordering_score_answer()],
-        usage: ir::DecisionUsage::default(),
-        extra: Extra::default(),
-    }
-}
-
-fn ordering_choice_answer() -> ir::DecisionAnswer {
-    ir::DecisionAnswer::Choice {
-        choice: ChoiceValue::Flag(true),
-        confidence: number(1),
-        probabilities: vec![
-            ir::ChoiceProbability {
-                value: choice("c"),
-                probability: decimal(0.5),
-            },
-            ir::ChoiceProbability {
-                value: choice("true"),
-                probability: decimal(0.1),
-            },
-            ir::ChoiceProbability {
-                value: choice("b"),
-                probability: decimal(0.2),
-            },
-            ir::ChoiceProbability {
-                value: ChoiceValue::Flag(true),
-                probability: decimal(0.9),
-            },
-        ],
-        extra: Extra::default(),
-    }
-}
-
-fn ordering_score_answer() -> ir::DecisionAnswer {
-    ir::DecisionAnswer::Score {
-        score: number(2),
-        confidence: number(1),
-        probabilities: vec![
-            ir::ScoreProbability {
-                value: number(2),
-                label: text("high"),
-                probability: decimal(0.3),
-            },
-            ir::ScoreProbability {
-                value: number(0),
-                label: text("low"),
-                probability: decimal(0.4),
-            },
-            ir::ScoreProbability {
-                value: number(0),
-                label: text("low"),
-                probability: decimal(0.5),
-            },
-        ],
-        extra: Extra::default(),
-    }
 }
 
 fn decision_usage_model() {
@@ -845,11 +843,11 @@ fn message_sequences_keep_their_order() {
 
 fn decision_settings() {
     provider_defaults();
-    api_base_resolution();
-    globals_api_base_beats_the_environment();
+    explicit_values_win();
+    environment_values_answer();
     empty_environment_names_fall_through();
-    api_key_resolution();
-    key_globals_beat_the_environment();
+    globals_beat_the_environment();
+    defaults_apply();
     the_provider_body_uses_the_openai_wire();
 }
 
@@ -875,39 +873,31 @@ fn lookup(name: &str) -> String {
     }
 }
 
-fn api_base_resolution() {
+fn explicit_values_win() {
     let config = OpenAiDecisionsConfig::default();
-    assert_eq!(
-        config.resolve_api_base_with(Some("explicit"), &lookup),
-        Some("explicit".to_owned())
-    );
+    let base = config.resolve_api_base_with(Some("explicit"), &lookup);
+    assert_eq!(base, Some("explicit".to_owned()));
+    let key = config.resolve_api_key_with(Some("explicit-key"), &lookup);
+    assert_eq!(key, Some("explicit-key".to_owned()));
+}
+
+fn environment_values_answer() {
+    let config = OpenAiDecisionsConfig::default();
     assert_eq!(
         config.resolve_api_base_with(None, &lookup),
         Some("env-base".to_owned())
     );
-    let empty = |_: &str| String::new();
     assert_eq!(
-        config.resolve_api_base_with(None, &empty),
-        Some("https://api.openai.com".to_owned())
+        config.resolve_api_key_with(None, &lookup),
+        Some("env-key".to_owned())
     );
     assert_eq!(
         config.resolve_api_base(None, lookup),
         Some("env-base".to_owned())
     );
-}
-
-fn globals_api_base_beats_the_environment() {
-    let globals = OpenAiDecisionsConfig {
-        globals: LiteLlmGlobals {
-            api_base: Some("litellm-base".to_owned()),
-            api_key: None,
-            openai_key: None,
-            organization: None,
-        },
-    };
     assert_eq!(
-        globals.resolve_api_base_with(None, &lookup),
-        Some("litellm-base".to_owned())
+        config.resolve_api_key(None, lookup),
+        Some("env-key".to_owned())
     );
 }
 
@@ -924,37 +914,21 @@ fn empty_environment_names_fall_through() {
     );
 }
 
-fn api_key_resolution() {
-    let config = OpenAiDecisionsConfig::default();
-    assert_eq!(
-        config.resolve_api_key_with(Some("explicit-key"), &lookup),
-        Some("explicit-key".to_owned())
-    );
-    assert_eq!(
-        config.resolve_api_key_with(None, &lookup),
-        Some("env-key".to_owned())
-    );
-    assert_eq!(
-        config.resolve_api_key(None, lookup),
-        Some("env-key".to_owned())
-    );
-    assert_eq!(
-        config.resolve_api_key_with(None, &|_: &str| String::new()),
-        None
-    );
-}
-
-fn key_globals_beat_the_environment() {
-    let both = OpenAiDecisionsConfig {
+fn globals_beat_the_environment() {
+    let config = OpenAiDecisionsConfig {
         globals: LiteLlmGlobals {
-            api_base: None,
+            api_base: Some("litellm-base".to_owned()),
             api_key: Some(SecretString::from("litellm-key")),
             openai_key: Some(SecretString::from("openai-key")),
             organization: None,
         },
     };
     assert_eq!(
-        both.resolve_api_key_with(None, &lookup),
+        config.resolve_api_base_with(None, &lookup),
+        Some("litellm-base".to_owned())
+    );
+    assert_eq!(
+        config.resolve_api_key_with(None, &lookup),
         Some("litellm-key".to_owned())
     );
     let only_openai_key = OpenAiDecisionsConfig {
@@ -969,6 +943,16 @@ fn key_globals_beat_the_environment() {
         only_openai_key.resolve_api_key_with(None, &lookup),
         Some("openai-key".to_owned())
     );
+}
+
+fn defaults_apply() {
+    let config = OpenAiDecisionsConfig::default();
+    let empty = |_: &str| String::new();
+    assert_eq!(
+        config.resolve_api_base_with(None, &empty),
+        Some("https://api.openai.com".to_owned())
+    );
+    assert_eq!(config.resolve_api_key_with(None, &empty), None);
 }
 
 fn the_provider_body_uses_the_openai_wire() {

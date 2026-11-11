@@ -3,7 +3,7 @@ pub mod wire;
 use betterlite_models::decisions::openai::{
     self, ContentPart, DecisionInput, InputMessage, MessageContent,
 };
-use betterlite_models::decisions::systemone::NoulLabel;
+use betterlite_models::decisions::systemone::{NoulCriteria, NoulLabel};
 use betterlite_models::decisions::text::{TextError, decisions_text};
 use betterlite_models::decisions::{DecisionsJson, Extra, ir};
 
@@ -18,11 +18,75 @@ const CHOICE_INSTRUCTIONS: &str = "Which choice best fits the input?";
 const SCORE_INSTRUCTIONS: &str = "Which level best fits the input?";
 const PREDICATE_INSTRUCTIONS: &str = "Is this true of the input?";
 
+macro_rules! ir_variant_fn {
+    ($fn_name:ident, $Variant:ident, $Struct:ident, $field:ident, $ValueType:ty) => {
+        const fn $fn_name(
+            name: Option<String>,
+            instructions: Option<DecisionsJson>,
+            value: $ValueType,
+            extra: Extra,
+        ) -> ir::DecisionQuestion {
+            ir::DecisionQuestion::$Variant(ir::$Struct {
+                name,
+                instructions,
+                $field: value,
+                extra,
+            })
+        }
+    };
+}
+
+ir_variant_fn!(
+    ir_predicate,
+    Predicate,
+    PredicateQuestion,
+    criteria,
+    Option<NoulCriteria>
+);
+ir_variant_fn!(
+    ir_choice,
+    Choice,
+    ChoiceQuestion,
+    choices,
+    Vec<ir::ChoiceOption>
+);
+ir_variant_fn!(ir_score, Score, ScoreQuestion, levels, Vec<ir::ScoreLevel>);
+
 #[must_use]
 pub fn openai_request_to_ir(request: &openai::DecisionRequestBody) -> ir::DecisionRequest {
     ir::DecisionRequest {
         input: ir_input(&request.input),
-        questions: request.questions.as_ref().iter().map(ir_question).collect(),
+        questions: request
+            .questions
+            .as_ref()
+            .iter()
+            .map(|question| {
+                let extra = Extra::default();
+                match question {
+                    openai::DecisionQuestion::Predicate(predicate) => ir_predicate(
+                        predicate.name.clone(),
+                        Some(DecisionsJson::Text(predicate.instructions.clone())),
+                        None,
+                        extra,
+                    ),
+                    openai::DecisionQuestion::Choice(checked) => {
+                        let choice = checked.as_ref();
+                        ir_choice(
+                            choice.name.clone(),
+                            Some(DecisionsJson::Text(choice.instructions.clone())),
+                            ir_choices(choice),
+                            extra,
+                        )
+                    }
+                    openai::DecisionQuestion::Score(score) => ir_score(
+                        score.name.clone(),
+                        Some(DecisionsJson::Text(score.instructions.clone())),
+                        ir_levels(score),
+                        extra,
+                    ),
+                }
+            })
+            .collect(),
         safety_identifier: request.safety_identifier.clone(),
     }
 }
@@ -34,59 +98,28 @@ fn ir_input(input: &DecisionInput) -> ir::DecisionInput {
     }
 }
 
-fn ir_question(question: &openai::DecisionQuestion) -> ir::DecisionQuestion {
-    match question {
-        openai::DecisionQuestion::Predicate(predicate) => {
-            ir::DecisionQuestion::Predicate(ir_predicate(predicate))
-        }
-        openai::DecisionQuestion::Choice(checked) => {
-            ir::DecisionQuestion::Choice(ir_choice(checked.as_ref()))
-        }
-        openai::DecisionQuestion::Score(score) => ir::DecisionQuestion::Score(ir_score(score)),
-    }
+fn ir_choices(choice: &openai::ChoiceQuestion) -> Vec<ir::ChoiceOption> {
+    choice
+        .choices
+        .as_ref()
+        .iter()
+        .map(|option| ir::ChoiceOption {
+            value: option.value.clone(),
+            description: option.description.clone().map(DecisionsJson::Text),
+        })
+        .collect()
 }
 
-fn ir_predicate(predicate: &openai::PredicateQuestion) -> ir::PredicateQuestion {
-    ir::PredicateQuestion {
-        name: predicate.name.clone(),
-        instructions: Some(DecisionsJson::Text(predicate.instructions.clone())),
-        criteria: None,
-        extra: Extra::default(),
-    }
-}
-
-fn ir_choice(choice: &openai::ChoiceQuestion) -> ir::ChoiceQuestion {
-    ir::ChoiceQuestion {
-        name: choice.name.clone(),
-        instructions: Some(DecisionsJson::Text(choice.instructions.clone())),
-        choices: choice
-            .choices
-            .as_ref()
-            .iter()
-            .map(|option| ir::ChoiceOption {
-                value: option.value.clone(),
-                description: option.description.clone().map(DecisionsJson::Text),
-            })
-            .collect(),
-        extra: Extra::default(),
-    }
-}
-
-fn ir_score(score: &openai::ScoreQuestion) -> ir::ScoreQuestion {
-    ir::ScoreQuestion {
-        name: score.name.clone(),
-        instructions: Some(DecisionsJson::Text(score.instructions.clone())),
-        levels: score
-            .levels
-            .as_ref()
-            .iter()
-            .map(|level| ir::ScoreLevel {
-                label: DecisionsJson::Text(level.label.clone()),
-                description: level.description.clone(),
-            })
-            .collect(),
-        extra: Extra::default(),
-    }
+fn ir_levels(score: &openai::ScoreQuestion) -> Vec<ir::ScoreLevel> {
+    score
+        .levels
+        .as_ref()
+        .iter()
+        .map(|level| ir::ScoreLevel {
+            label: DecisionsJson::Text(level.label.clone()),
+            description: level.description.clone(),
+        })
+        .collect()
 }
 
 pub fn ir_to_openai_request(
@@ -153,65 +186,59 @@ fn message_wire(message: &InputMessage) -> MessageWire {
 
 fn question_wire(question: &ir::DecisionQuestion) -> Result<QuestionWire, TextError> {
     match question {
-        ir::DecisionQuestion::Predicate(predicate) => predicate_wire(predicate),
-        ir::DecisionQuestion::Choice(choice) => choice_wire(choice),
-        ir::DecisionQuestion::Score(score) => score_wire(score),
+        ir::DecisionQuestion::Choice(choice) => Ok(QuestionWire::Choice {
+            name: choice.name.clone(),
+            instructions: choice
+                .instructions
+                .as_ref()
+                .map_or_else(|| Ok(CHOICE_INSTRUCTIONS.to_owned()), decisions_text)?,
+            choices: choice
+                .choices
+                .iter()
+                .map(option_wire)
+                .collect::<Result<_, _>>()?,
+        }),
+        ir::DecisionQuestion::Score(score) => Ok(QuestionWire::Score {
+            name: score.name.clone(),
+            instructions: score
+                .instructions
+                .as_ref()
+                .map_or_else(|| Ok(SCORE_INSTRUCTIONS.to_owned()), decisions_text)?,
+            levels: score
+                .levels
+                .iter()
+                .map(level_wire)
+                .collect::<Result<_, _>>()?,
+        }),
+        ir::DecisionQuestion::Predicate(predicate) => {
+            let instructions = predicate_instructions(predicate)?;
+            Ok(QuestionWire::Predicate {
+                name: predicate.name.clone(),
+                instructions: if instructions.is_empty() {
+                    PREDICATE_INSTRUCTIONS.to_owned()
+                } else {
+                    instructions
+                },
+            })
+        }
     }
 }
 
-fn predicate_wire(predicate: &ir::PredicateQuestion) -> Result<QuestionWire, TextError> {
-    let instructions = predicate_instructions(predicate)?;
-    Ok(QuestionWire::Predicate {
-        name: predicate.name.clone(),
-        instructions: if instructions.is_empty() {
-            PREDICATE_INSTRUCTIONS.to_owned()
-        } else {
-            instructions
-        },
+fn option_wire(option: &ir::ChoiceOption) -> Result<ChoiceWire, TextError> {
+    Ok(ChoiceWire {
+        value: option.value.clone(),
+        description: option
+            .description
+            .as_ref()
+            .map(decisions_text)
+            .transpose()?,
     })
 }
 
-fn choice_wire(choice: &ir::ChoiceQuestion) -> Result<QuestionWire, TextError> {
-    Ok(QuestionWire::Choice {
-        name: choice.name.clone(),
-        instructions: choice
-            .instructions
-            .as_ref()
-            .map_or_else(|| Ok(CHOICE_INSTRUCTIONS.to_owned()), decisions_text)?,
-        choices: choice
-            .choices
-            .iter()
-            .map(|option| {
-                Ok(ChoiceWire {
-                    value: option.value.clone(),
-                    description: option
-                        .description
-                        .as_ref()
-                        .map(decisions_text)
-                        .transpose()?,
-                })
-            })
-            .collect::<Result<_, TextError>>()?,
-    })
-}
-
-fn score_wire(score: &ir::ScoreQuestion) -> Result<QuestionWire, TextError> {
-    Ok(QuestionWire::Score {
-        name: score.name.clone(),
-        instructions: score
-            .instructions
-            .as_ref()
-            .map_or_else(|| Ok(SCORE_INSTRUCTIONS.to_owned()), decisions_text)?,
-        levels: score
-            .levels
-            .iter()
-            .map(|level| {
-                Ok(LevelWire {
-                    label: decisions_text(&level.label)?,
-                    description: level.description.clone(),
-                })
-            })
-            .collect::<Result<_, TextError>>()?,
+fn level_wire(level: &ir::ScoreLevel) -> Result<LevelWire, TextError> {
+    Ok(LevelWire {
+        label: decisions_text(&level.label)?,
+        description: level.description.clone(),
     })
 }
 
