@@ -163,6 +163,19 @@ def _strip_aliases(fields: Fields) -> Json:
     return {"params": stripped, "summary": summary}
 
 
+def _filter_out(fields: Fields) -> Json:
+    kwargs: Final = _obj(fields, "kwargs")
+    match fields.get("endpoint"):
+        case "completion":
+            return _UTILS.get_non_default_completion_params(kwargs=kwargs)
+        case "transcription":
+            return _UTILS.get_non_default_transcription_params(kwargs=kwargs)
+        case _:
+            return _UTILS.filter_out_litellm_params(
+                kwargs=kwargs, excluding=frozenset(_strs(fields, "excluding"))
+            )
+
+
 def _transcription(fields: Fields) -> Json:
     mapper: Final = _mapper(fields, "mapper")
     with (
@@ -202,16 +215,7 @@ _HANDLERS: Final[dict[str, Callable[[Fields], Json]]] = {
         default_params=dict.fromkeys(_strs(fields, "default_names")),
         additional_drop_params=fields.get("additional_drop_params"),
     ),
-    "filter_out_litellm": lambda fields: _UTILS.filter_out_litellm_params(
-        kwargs=_obj(fields, "kwargs"),
-        excluding=frozenset(_strs(fields, "excluding")),
-    ),
-    "non_default_completion": lambda fields: _UTILS.get_non_default_completion_params(
-        kwargs=_obj(fields, "kwargs")
-    ),
-    "non_default_transcription": lambda fields: _UTILS.get_non_default_transcription_params(
-        kwargs=_obj(fields, "kwargs")
-    ),
+    "filter_out_litellm": _filter_out,
     "bedrock_route": _bedrock_route,
     "pre_process": _pre_process,
     "remove_sensitive_keys": lambda fields: _UTILS.remove_sensitive_keys_from_dict(

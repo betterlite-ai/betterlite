@@ -37,7 +37,6 @@ pub fn remove_strict_from_schema(schema: &mut JsonValue) {
     });
 }
 
-// Anthropic's config rewrites every `$ref` of a json_schema response_format to point at the root `$defs`.
 pub fn point_refs_at_root_defs(response_format: &mut JsonValue) {
     if let JsonValue::Object(format) = response_format
         && format.get("type") == Some(&JsonValue::Text("json_schema".to_owned()))

@@ -23,7 +23,6 @@ pub struct TranscriptionRequest<'request> {
     pub custom_llm_provider: &'request str,
     pub params: &'request Params,
     pub drop_policy: DropPolicy,
-    // The caller passes the GroqSTT mapper for groq and the audio transcription config of any other provider.
     pub mapper: Option<&'request dyn OptionalParamsMapper>,
 }
 

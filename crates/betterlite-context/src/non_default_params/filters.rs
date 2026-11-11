@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use betterlite_models::controls::json_value::JsonValue;
+use serde::Deserialize;
 
 use super::Params;
 use super::names::{
@@ -76,25 +77,22 @@ pub fn filter_out_litellm_params(kwargs: &Params, excluding: &[&str]) -> Params 
     kept
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Endpoint {
     Completion,
     Transcription,
 }
 
-// LiteLLM's get_non_default_completion_params and get_non_default_transcription_params.
 #[must_use]
 pub fn non_default_kwargs(kwargs: &Params, endpoint: Endpoint) -> Params {
+    let chat_names: Vec<&str> = OPENAI_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
     match endpoint {
-        Endpoint::Completion => {
-            let chat_names: Vec<&str> = OPENAI_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
-            filter_out_litellm_params(kwargs, &chat_names)
-        }
+        Endpoint::Completion => filter_out_litellm_params(kwargs, &chat_names),
         Endpoint::Transcription => filter_out_litellm_params(kwargs, OPENAI_TRANSCRIPTION_PARAMS),
     }
 }
 
-// Without a supported list there is nothing to send, so the result is empty.
 #[must_use]
 pub fn remove_unsupported_params(
     mut non_default_params: Params,
@@ -107,7 +105,6 @@ pub fn remove_unsupported_params(
     non_default_params
 }
 
-// A param the caller allowed moves to optional_params only when it was actually sent.
 #[must_use]
 pub fn apply_openai_param_overrides(
     mut optional_params: Params,

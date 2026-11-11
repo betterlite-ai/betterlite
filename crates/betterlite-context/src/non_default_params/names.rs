@@ -12,7 +12,6 @@ pub const OPENAI_CHAT_COMPLETION_PARAMS: &str = "functions function_call tempera
     extra_headers thinking web_search_options include_server_side_tool_invocations service_tier \
     prompt_cache_key prompt_cache_retention safety_identifier verbosity store";
 
-// The keys of DEFAULT_CHAT_COMPLETION_PARAM_VALUES; every default there is null except the ignored custom_llm_provider.
 pub const DEFAULT_CHAT_COMPLETION_PARAMS: &str = "functions function_call temperature top_p n \
     stream stream_options stop max_tokens max_completion_tokens modalities prediction audio \
     presence_penalty frequency_penalty logit_bias user model custom_llm_provider response_format \
@@ -29,7 +28,6 @@ pub const EXTRA_BODY_ROUTING_KEYS: &[&str] = &["model"];
 
 pub const EXTRA_BODY_PROVIDERS: &[&str] = &["openai", "azure", "text-completion-openai"];
 
-// LiteLLM's litellm.openai_compatible_providers at the pin.
 const OPENAI_COMPATIBLE_PROVIDERS: &str = "anyscale groq nvidia_nim cerebras baseten sambanova \
     ai21_chat ai21 volcengine codestral deepseek tencent deepinfra perplexity xinference xai zai \
     together_ai fireworks_ai empower friendliai azure_ai github litellm_proxy hosted_vllm \

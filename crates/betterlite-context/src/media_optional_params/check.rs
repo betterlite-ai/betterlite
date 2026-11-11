@@ -2,7 +2,6 @@ use crate::non_default_params::Params;
 
 pub struct FirstUnsupported(pub String);
 
-// Drops every unsupported param when dropping is on, otherwise names the first one so the caller can raise.
 pub fn drop_unsupported_params(
     non_default_params: &mut Params,
     supported: &[String],

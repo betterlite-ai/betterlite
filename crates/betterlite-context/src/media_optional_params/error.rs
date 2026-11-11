@@ -21,7 +21,6 @@ pub enum MediaParamsError {
 }
 
 impl MediaParamsError {
-    // LiteLLM's UnsupportedParamsError ignores the status it is given and always carries 400.
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {

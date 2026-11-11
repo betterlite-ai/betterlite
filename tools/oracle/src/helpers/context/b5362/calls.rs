@@ -6,7 +6,6 @@ use betterlite_context::media_optional_params::image_generation::{
 use betterlite_context::media_optional_params::transcription::{
     TranscriptionRequest, transcription_optional_params,
 };
-use betterlite_context::non_default_params::filters::Endpoint;
 use betterlite_context::non_default_params::function_fallback::pre_process_optional_params;
 use betterlite_context::non_default_params::mapper::OptionalParamsMapper as Cfg;
 use betterlite_context::non_default_params::reasoning_aliases::{
@@ -102,13 +101,15 @@ fn media_params(call: &Call) -> Result<Value, Failure> {
 }
 
 fn ollama_fallback(call: &Call) -> Result<Value, Failure> {
-    let provider = required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?;
     let mut remaining = call.non_default_params.clone();
-    let processed = pre_process_optional_params(&call.passed_params, &mut remaining, provider);
+    let provider = required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?;
+    let done = pre_process_optional_params(&call.passed_params, &mut remaining, provider);
+    let (optional_params, add_function_to_prompt) =
+        (done.optional_params, done.add_function_to_prompt);
     Ok(json!({
-        "optional_params": processed.optional_params,
+        "optional_params": optional_params,
         "non_default_params": remaining,
-        "add_function_to_prompt": processed.add_function_to_prompt,
+        "add_function_to_prompt": add_function_to_prompt,
     }))
 }
 
@@ -124,15 +125,10 @@ pub(super) fn run(call: &Call) -> Result<Value, Failure> {
         Function::SelectNonDefault => select_non_default(call),
         Function::FilterOutLitellm => {
             let excluding: Vec<&str> = call.excluding.iter().map(String::as_str).collect();
-            let kept = filters::filter_out_litellm_params(&call.kwargs, &excluding);
-            Ok(to_value(kept)?)
-        }
-        Function::NonDefaultCompletion => {
-            let kept = filters::non_default_kwargs(&call.kwargs, Endpoint::Completion);
-            Ok(to_value(kept)?)
-        }
-        Function::NonDefaultTranscription => {
-            let kept = filters::non_default_kwargs(&call.kwargs, Endpoint::Transcription);
+            let kept = call.endpoint.map_or_else(
+                || filters::filter_out_litellm_params(&call.kwargs, &excluding),
+                |endpoint| filters::non_default_kwargs(&call.kwargs, endpoint),
+            );
             Ok(to_value(kept)?)
         }
         Function::RemoveSensitiveKeys => {

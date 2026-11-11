@@ -32,7 +32,6 @@ pub struct ImageGenerationRequest<'request> {
     pub bedrock_config: Option<&'request dyn OptionalParamsMapper>,
 }
 
-// Square is the answer for any size LiteLLM does not know.
 #[must_use]
 pub fn vertex_aspect_ratio(size: Option<&str>) -> &'static str {
     match size {
@@ -42,7 +41,6 @@ pub fn vertex_aspect_ratio(size: Option<&str>) -> &'static str {
     }
 }
 
-// Cloud-init kwargs only travel to the providers that read them.
 fn kwarg_is_dropped(key: &str, custom_llm_provider: Option<&str>) -> bool {
     if key.starts_with("aws_") {
         return !matches!(custom_llm_provider, Some("bedrock" | "sagemaker"));

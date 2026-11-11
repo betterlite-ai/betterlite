@@ -1,5 +1,6 @@
 use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::error::MapperError;
+use betterlite_context::non_default_params::filters::Endpoint;
 use betterlite_context::non_default_params::mapper::OptionalParamsMapper;
 use betterlite_context::non_default_params::schema_cleanup::point_refs_at_root_defs;
 use betterlite_models::controls::json_value::JsonValue;
@@ -21,8 +22,6 @@ pub(crate) struct BatchInput {
 enum Function {
     SelectNonDefault,
     FilterOutLitellm,
-    NonDefaultCompletion,
-    NonDefaultTranscription,
     BedrockRoute,
     PreProcess,
     RemoveSensitiveKeys,
@@ -57,6 +56,7 @@ struct Call {
     kwargs: Params,
     #[serde(default)]
     excluding: Vec<String>,
+    endpoint: Option<Endpoint>,
     #[serde(default)]
     non_default_params: Params,
     #[serde(default)]
