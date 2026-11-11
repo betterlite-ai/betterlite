@@ -85,7 +85,18 @@ fn check(config_files: &BTreeMap<String, String>) -> Result<(), ConfigFixtureErr
             max: MAX_TOTAL_BYTES,
         });
     }
-    check_collisions(config_files)
+    for destination in config_files.keys() {
+        let ancestor = config_files
+            .keys()
+            .find(|other| destination.starts_with(&format!("{other}/")));
+        if let Some(other) = ancestor {
+            return Err(ConfigFixtureError::Collision {
+                destination: destination.clone(),
+                other: other.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn check_destination(destination: &str, body: &str) -> Result<(), ConfigFixtureError> {
@@ -108,21 +119,6 @@ fn check_destination(destination: &str, body: &str) -> Result<(), ConfigFixtureE
             bytes: body.len(),
             max: MAX_BODY_BYTES,
         });
-    }
-    Ok(())
-}
-
-fn check_collisions(config_files: &BTreeMap<String, String>) -> Result<(), ConfigFixtureError> {
-    for destination in config_files.keys() {
-        let ancestor = config_files
-            .keys()
-            .find(|other| destination.starts_with(&format!("{other}/")));
-        if let Some(other) = ancestor {
-            return Err(ConfigFixtureError::Collision {
-                destination: destination.clone(),
-                other: other.clone(),
-            });
-        }
     }
     Ok(())
 }

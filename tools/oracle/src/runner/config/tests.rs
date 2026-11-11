@@ -54,7 +54,7 @@ fn case(config: &str, config_files: BTreeMap<String, String>) -> Case {
 
 fn included_case(config_files: BTreeMap<String, String>) -> Case {
     case(
-        "general_settings:\n  master_key: oracle-master\n",
+        "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: prepared\n    litellm_params: {model: openai/gpt-4o, api_base: \"{{upstream}}\"}\n",
         config_files,
     )
 }
