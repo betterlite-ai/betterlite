@@ -6,7 +6,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use serde::Deserialize;
 
-use super::super::{CallError, EmbeddingError, call_failure};
+use super::super::{CallError, EmbeddingError, internal_failure};
 
 #[derive(Deserialize)]
 struct Reply {
@@ -28,7 +28,7 @@ struct Detail {
 #[tokio::test]
 async fn provider_framework_tests_behavior(#[case] error: CallError<EmbeddingError>) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let response = call_failure(&error, "call-7", None, &redactor);
+    let response = internal_failure(&error, "call-7", None, &redactor);
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let reply: Reply = serde_json::from_slice(&body).unwrap();

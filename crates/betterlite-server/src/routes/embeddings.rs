@@ -91,7 +91,10 @@ async fn embeddings(
             );
             (response_headers, Json(response)).into_response()
         }
-        Err(error) => call_failure(&error, &call_id, Some(deployment), &executor.redactor),
+        Err(CallError::Route(error)) => {
+            failure(&error, &call_id, Some(deployment), &executor.redactor)
+        }
+        Err(error) => internal_failure(&error, &call_id, Some(deployment), &executor.redactor),
     }
 }
 
@@ -189,25 +192,22 @@ fn embedding_error(error: OperationError) -> CallError<EmbeddingError> {
 }
 
 // a provider call that ends without a route error is the server's own fault, so the client sees a 500
-fn call_failure(
+fn internal_failure(
     error: &CallError<EmbeddingError>,
     call_id: &str,
     deployment: Option<&ChatDeployment>,
     redactor: &Redactor,
 ) -> Response {
-    let CallError::Route(route) = error else {
-        let body = ErrorBody {
-            error: ErrorObject {
-                message: redactor.redact_internal_details(&error.to_string()),
-                error_type: String::from("internal_server_error"),
-                param: None,
-                code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
-            },
-        };
-        let headers = failure_headers(None, None, call_id, deployment);
-        return (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(body)).into_response();
+    let body = ErrorBody {
+        error: ErrorObject {
+            message: redactor.redact_internal_details(&error.to_string()),
+            error_type: String::from("internal_server_error"),
+            param: None,
+            code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
+        },
     };
-    failure(route, call_id, deployment, redactor)
+    let headers = failure_headers(None, None, call_id, deployment);
+    (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(body)).into_response()
 }
 
 fn failure(
