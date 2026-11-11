@@ -5,7 +5,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from logging.handlers import BufferingHandler
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias, TypedDict, final
 
 import httpx
 from litellm._logging import verbose_logger
@@ -58,9 +58,15 @@ class Scenario:
     actions: tuple[Action, ...] = ()
 
 
-class SentRecord(TypedDict, total=False):
+@final
+class SentModel(TypedDict):
     id: str
     status: str
+
+
+@final
+class SentAudit(TypedDict):
+    id: str
     updated_at: str
     changed_by: str
     changed_by_api_key: str
@@ -71,6 +77,7 @@ class SentRecord(TypedDict, total=False):
     updated_values: str | None
 
 
+SentRecord: TypeAlias = SentAudit | SentModel
 SENT_BATCH = TypeAdapter(list[SentRecord])
 SCENARIOS = TypeAdapter(list[Scenario])
 
