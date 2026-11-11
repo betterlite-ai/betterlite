@@ -11,8 +11,8 @@ use tokio::runtime::Builder;
 
 use super::{SignRun, error_kind, header_map, optional_headers};
 
-pub(super) fn sign_result(run: &SignRun) -> Value {
-    let credentials = Credentials {
+fn credentials_of(run: &SignRun) -> Credentials {
+    Credentials {
         access_key_id: SecretString::from(run.credentials.access_key_id.clone()),
         secret_access_key: SecretString::from(run.credentials.secret_access_key.clone()),
         session_token: run
@@ -20,7 +20,11 @@ pub(super) fn sign_result(run: &SignRun) -> Value {
             .session_token
             .as_ref()
             .map(|token| SecretString::from(token.clone())),
-    };
+    }
+}
+
+pub(super) fn sign_result(run: &SignRun) -> Value {
+    let credentials = credentials_of(run);
     let api_key = run
         .api_key
         .as_ref()
@@ -37,7 +41,7 @@ pub(super) fn sign_result(run: &SignRun) -> Value {
         Ok(runtime) => runtime,
         Err(error) => return json!({"ok": false, "error": error.to_string()}),
     };
-    let signed = runtime.block_on(sign_request(
+    match runtime.block_on(sign_request(
         SignRequest {
             headers: &headers,
             optional_params: &run.optional_params,
@@ -50,23 +54,23 @@ pub(super) fn sign_result(run: &SignRun) -> Value {
             now,
         },
         move |_settings, _region| ready(Ok(credentials)),
-    ));
-    match signed {
+    )) {
         Ok(signed) => signed_result(&signed),
         Err(error) => json!({"ok": false, "error": error_kind(&error)}),
     }
 }
 
 fn signed_result(signed: &AwsSignedRequest) -> Value {
-    let body = String::from_utf8(signed.body.clone());
-    match body {
-        Ok(body) => json!({
-            "ok": true,
-            "method": signed.method,
-            "url": signed.url,
-            "headers": header_map(&signed.headers),
-            "body": body,
-        }),
-        Err(_) => json!({"ok": false, "error": "non_utf8_body"}),
-    }
+    String::from_utf8(signed.body.clone()).map_or_else(
+        |_| json!({"ok": false, "error": "non_utf8_body"}),
+        |text| {
+            json!({
+                "ok": true,
+                "method": signed.method,
+                "url": signed.url,
+                "headers": header_map(&signed.headers),
+                "body": text,
+            })
+        },
+    )
 }

@@ -169,9 +169,8 @@ fn url_result(run: &UrlRun) -> Value {
 }
 
 fn transform_result(run: &TransformRun) -> Value {
-    let uuid = match Uuid::parse_str(&run.uuid) {
-        Ok(uuid) => uuid,
-        Err(_) => return json!({"ok": false, "error": "invalid_uuid"}),
+    let Ok(uuid) = Uuid::parse_str(&run.uuid) else {
+        return json!({"ok": false, "error": "invalid_uuid"});
     };
     let mut headers = optional_headers(&run.headers);
     match transform_request(

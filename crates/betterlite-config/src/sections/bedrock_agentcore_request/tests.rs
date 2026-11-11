@@ -2,6 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use indexmap::IndexMap;
+use rstest::rstest;
+
 use super::{ForwardingValue, Settings};
 use crate::loader::{ConfigError, ConfigLoader};
 
@@ -42,7 +45,7 @@ fn qualifier(settings: &Settings) -> Option<String> {
 
 type Read = fn(&Settings) -> Option<String>;
 
-#[rstest::rstest]
+#[rstest]
 #[case::loads_forward_multimodal_content(check_forward_multimodal_content)]
 #[case::loads_runtimesessionid(check_runtime_session_id)]
 #[case::loads_runtimeuserid(check_runtime_user_id)]
@@ -181,15 +184,29 @@ fn second_deployment_wins_over_the_first() {
     );
 }
 
-#[test]
-fn forwarding_value_truthiness_matches_litellm() {
-    assert!(ForwardingValue::Text(" ON ".to_owned()).is_enabled());
-    assert!(ForwardingValue::Text("1".to_owned()).is_enabled());
-    assert!(ForwardingValue::Text("True".to_owned()).is_enabled());
-    assert!(!ForwardingValue::Text("off".to_owned()).is_enabled());
-    assert!(!ForwardingValue::Text("garbage".to_owned()).is_enabled());
-    assert!(!ForwardingValue::List(Vec::new()).is_enabled());
-    assert!(ForwardingValue::Integer(2).is_enabled());
-    assert!(!ForwardingValue::Float(0.0).is_enabled());
-    assert!(!ForwardingValue::Null.is_enabled());
+#[rstest]
+#[case::on_padded(ForwardingValue::Text(" ON ".to_owned()), true)]
+#[case::one(ForwardingValue::Text("1".to_owned()), true)]
+#[case::true_mixed_case(ForwardingValue::Text("True".to_owned()), true)]
+#[case::yes(ForwardingValue::Text("yes".to_owned()), true)]
+#[case::off(ForwardingValue::Text("off".to_owned()), false)]
+#[case::garbage(ForwardingValue::Text("garbage".to_owned()), false)]
+#[case::boolean_true(ForwardingValue::Boolean(true), true)]
+#[case::boolean_false(ForwardingValue::Boolean(false), false)]
+#[case::integer(ForwardingValue::Integer(2), true)]
+#[case::integer_zero(ForwardingValue::Integer(0), false)]
+#[case::unsigned(ForwardingValue::Unsigned(u64::MAX), true)]
+#[case::unsigned_zero(ForwardingValue::Unsigned(0), false)]
+#[case::float(ForwardingValue::Float(0.5), true)]
+#[case::float_zero(ForwardingValue::Float(0.0), false)]
+#[case::list(ForwardingValue::List(vec![ForwardingValue::Null]), true)]
+#[case::empty_list(ForwardingValue::List(Vec::new()), false)]
+#[case::mapping(ForwardingValue::Mapping(IndexMap::from([("key".to_owned(), ForwardingValue::Null)])), true)]
+#[case::empty_mapping(ForwardingValue::Mapping(IndexMap::new()), false)]
+#[case::null(ForwardingValue::Null, false)]
+fn forwarding_value_truthiness_matches_litellm(
+    #[case] value: ForwardingValue,
+    #[case] expected: bool,
+) {
+    assert_eq!(value.is_enabled(), expected);
 }
