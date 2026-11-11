@@ -12,7 +12,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
 use betterlite_redact::structured::Payload;
 
-use super::super::redis_support::{local_cache, unreachable_redis_cache};
+use super::super::redis_support::{breaker_open_redis_cache, local_cache, unreachable_redis_cache};
 use super::{ErrorLogger, RedisValues, SilentConsole, add_test_key, test_messages};
 
 fn local_bridge() -> RedisValues {
@@ -56,7 +56,7 @@ async fn the_bridge_refuses_a_cache_without_a_redis_backend() {
 async fn the_bridge_swallows_a_redis_write_failure() {
     let (log, _guard) = capture_logs();
     let bridge = RedisValues {
-        cache: Arc::new(unreachable_redis_cache().await),
+        cache: Arc::new(breaker_open_redis_cache().await),
     };
     bridge
         .async_set_cache("key", CacheValue::Text("value".to_owned()), None)
@@ -67,7 +67,12 @@ async fn the_bridge_swallows_a_redis_write_failure() {
         .await
         .expect("a failed write is logged, not raised");
     let written = fs::read_to_string(log.path()).unwrap();
-    assert!(written.contains("LiteLLM Cache: exception in add_cache"));
+    assert!(written.contains(
+        "LiteLLM Cache: exception in add_cache: Redis circuit breaker is open, skipping async_set_cache"
+    ));
+    assert!(written.contains(
+        "LiteLLM Cache: exception in add_cache: Redis circuit breaker is open, skipping batch_cache_write"
+    ));
 }
 
 #[test]

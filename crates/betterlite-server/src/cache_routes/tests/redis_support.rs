@@ -128,6 +128,20 @@ impl ServiceHooks for SilentHooks {
     fn failure(&self, _event: &ServiceEvent, _error: &(dyn StdError + Send + Sync)) {}
 }
 
+struct OpenGate;
+
+impl BreakerGate for OpenGate {
+    fn enter(&self, name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        Err(BreakerOpen { name })
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn StdError + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
+}
+
 pub(crate) struct ClosedGate;
 
 impl BreakerGate for ClosedGate {
@@ -156,6 +170,15 @@ pub(crate) async fn unreachable_redis_cache() -> Cache {
 }
 
 pub(crate) async fn redis_cache_from(overrides: RedisOverrides) -> Cache {
+    redis_cache_gated(overrides, Arc::new(ClosedGate)).await
+}
+
+// A cache whose breaker refuses every operation, so a write returns an error instead of being swallowed as a connection failure.
+pub(crate) async fn breaker_open_redis_cache() -> Cache {
+    redis_cache_gated(overrides(), Arc::new(OpenGate)).await
+}
+
+async fn redis_cache_gated(overrides: RedisOverrides, gate: Arc<dyn BreakerGate>) -> Cache {
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
@@ -166,7 +189,7 @@ pub(crate) async fn redis_cache_from(overrides: RedisOverrides) -> Cache {
         factory: Arc::new(LiveClientFactory::new(None)),
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(SilentHooks),
-        gate: Arc::new(ClosedGate),
+        gate,
     };
     let environment = BTreeMap::new();
     let redis = connect(options, &environment)
