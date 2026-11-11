@@ -1,0 +1,11 @@
+kind: helper
+name: azure-default-chain-try-boundary-seed
+call:
+  azure_default_chain:
+    try_boundary:
+      steps:
+        - environment: {}
+          scope: https://cognitiveservices.azure.com/.default
+          invoke: true
+env: {}
+compare: {ignore: []}

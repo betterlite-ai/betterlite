@@ -1,0 +1,290 @@
+use std::collections::BTreeMap;
+use std::fmt;
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_azure::azure_default_chain::grant::{
+    CertificateRecord, ChainToken, ClientSecretRecord, Grant, GrantError, Grants, LinkError,
+    ManagedIdentityRecord, UsernamePasswordRecord, WorkloadRecord,
+};
+use secrecy::ExposeSecret as _;
+use secrecy::SecretString;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tracing::field::{Field, Visit};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ScriptStep {
+    credential: String,
+    outcome: OutcomeName,
+    #[serde(default)]
+    token: Option<String>,
+    #[serde(default)]
+    message: String,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum OutcomeName {
+    Token,
+    Unavailable,
+    Authentication,
+}
+
+#[derive(Clone)]
+struct Outcome {
+    name: OutcomeName,
+    token: String,
+    message: String,
+}
+
+pub(super) struct Recorder {
+    records: Mutex<Vec<Value>>,
+    calls: Mutex<Vec<String>>,
+    scripts: BTreeMap<String, Outcome>,
+    errors: BTreeMap<String, String>,
+}
+
+impl Recorder {
+    pub(super) fn new(scripts: &[ScriptStep], errors: &BTreeMap<String, String>) -> Self {
+        let scripted = scripts
+            .iter()
+            .map(|step| {
+                (
+                    step.credential.clone(),
+                    Outcome {
+                        name: step.outcome,
+                        token: step.token.clone().unwrap_or_default(),
+                        message: step.message.clone(),
+                    },
+                )
+            })
+            .collect();
+        Self {
+            records: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
+            scripts: scripted,
+            errors: errors.clone(),
+        }
+    }
+
+    pub(super) fn records(&self) -> Vec<Value> {
+        self.records
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(super) fn calls(&self) -> Vec<String> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn record(&self, credential: &str, fields: Value) -> Result<(), GrantError> {
+        if let Some(message) = self.errors.get(credential) {
+            return Err(GrantError {
+                credential: "fixture",
+                message: message.clone(),
+            });
+        }
+        let mut object = fields;
+        object["credential"] = Value::String(credential.to_owned());
+        self.records
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(object);
+        Ok(())
+    }
+
+    fn outcome(&self, credential: &str) -> Outcome {
+        self.scripts
+            .get(credential)
+            .cloned()
+            .unwrap_or_else(|| Outcome {
+                name: OutcomeName::Token,
+                token: format!("{credential}-token"),
+                message: String::new(),
+            })
+    }
+}
+
+struct Scripted<'recorder> {
+    recorder: &'recorder Recorder,
+    credential: String,
+}
+
+impl Grant for Scripted<'_> {
+    fn token(&self) -> Result<ChainToken, LinkError> {
+        self.recorder
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(self.credential.clone());
+        let outcome = self.recorder.outcome(&self.credential);
+        match outcome.name {
+            OutcomeName::Token => Ok(ChainToken {
+                token: SecretString::from(outcome.token),
+                expires_on: None,
+                token_type: None,
+                refresh_on: None,
+            }),
+            OutcomeName::Unavailable => Err(LinkError::Unavailable(outcome.message)),
+            OutcomeName::Authentication => Err(LinkError::Authentication(outcome.message)),
+        }
+    }
+}
+
+fn managed_name(record: &ManagedIdentityRecord) -> String {
+    match record.client_id.as_deref() {
+        Some(client_id) if !client_id.is_empty() => "user".to_owned(),
+        Some(_) | None => "system".to_owned(),
+    }
+}
+
+impl Grants for Recorder {
+    type Grant<'recorder>
+        = Scripted<'recorder>
+    where
+        Self: 'recorder;
+
+    fn client_secret<'recorder>(
+        &'recorder self,
+        record: &ClientSecretRecord,
+    ) -> Result<Self::Grant<'recorder>, GrantError> {
+        self.record(
+            "ClientSecretCredential",
+            json!({
+                "tenant_id": record.tenant_id,
+                "client_id": record.client_id,
+                "client_secret": record.client_secret.expose_secret().to_owned(),
+            }),
+        )?;
+        Ok(Scripted {
+            recorder: self,
+            credential: "ClientSecretCredential".to_owned(),
+        })
+    }
+
+    fn certificate<'recorder>(
+        &'recorder self,
+        record: &CertificateRecord,
+    ) -> Result<Self::Grant<'recorder>, GrantError> {
+        self.record(
+            "CertificateCredential",
+            json!({
+                "tenant_id": record.tenant_id,
+                "client_id": record.client_id,
+                "certificate_path": record.certificate_path,
+                "password": record
+                    .password
+                    .as_ref()
+                    .map(|secret| secret.expose_secret().to_owned()),
+                "send_certificate_chain": record.send_certificate_chain,
+            }),
+        )?;
+        Ok(Scripted {
+            recorder: self,
+            credential: "CertificateCredential".to_owned(),
+        })
+    }
+
+    fn username_password<'recorder>(
+        &'recorder self,
+        record: &UsernamePasswordRecord,
+    ) -> Result<Self::Grant<'recorder>, GrantError> {
+        self.record(
+            "UsernamePasswordCredential",
+            json!({
+                "tenant_id": record.tenant_id,
+                "client_id": record.client_id,
+                "username": record.username,
+                "password": record.password.expose_secret().to_owned(),
+            }),
+        )?;
+        Ok(Scripted {
+            recorder: self,
+            credential: "UsernamePasswordCredential".to_owned(),
+        })
+    }
+
+    fn workload<'recorder>(
+        &'recorder self,
+        record: &WorkloadRecord,
+    ) -> Result<Self::Grant<'recorder>, GrantError> {
+        self.record(
+            "WorkloadIdentityCredential",
+            json!({
+                "tenant_id": record.tenant_id,
+                "client_id": record.client_id,
+                "token_file": record.token_file,
+            }),
+        )?;
+        Ok(Scripted {
+            recorder: self,
+            credential: "WorkloadIdentityCredential".to_owned(),
+        })
+    }
+
+    fn managed_identity<'recorder>(
+        &'recorder self,
+        record: &ManagedIdentityRecord,
+    ) -> Result<Self::Grant<'recorder>, GrantError> {
+        let name = managed_name(record);
+        self.record(
+            "ManagedIdentityCredential",
+            json!({
+                "client_id": record.client_id,
+                "exclude_workload_identity": record.exclude_workload_identity,
+                "imds_probe": record.imds_probe,
+                "within_credential_chain": record.placement.within_credential_chain(),
+                "within_default_credential": record.placement.within_default_credential(),
+            }),
+        )?;
+        Ok(Scripted {
+            recorder: self,
+            credential: format!("ManagedIdentityCredential:{name}"),
+        })
+    }
+}
+
+#[derive(Clone, Default)]
+struct Messages(Arc<Mutex<Vec<String>>>);
+
+struct RawMessage(String);
+
+impl Visit for RawMessage {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}").trim_matches('"').to_owned();
+        }
+    }
+}
+
+impl<S: tracing::Subscriber> Layer<S> for Messages {
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
+        let mut message = RawMessage(String::new());
+        event.record(&mut message);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(message.0);
+    }
+}
+
+pub(super) fn capture<T, F>(run: F) -> (T, Vec<String>)
+where
+    F: FnOnce() -> T,
+{
+    let messages = Messages::default();
+    let subscriber = tracing_subscriber::registry().with(messages.clone());
+    let result = tracing::subscriber::with_default(subscriber, run);
+    let captured = messages
+        .0
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    (result, captured)
+}

@@ -1,0 +1,36 @@
+kind: helper
+name: deployment-chain-order
+call:
+  azure_default_chain:
+    chain:
+      steps:
+        - environment: {AZURE_CLIENT_ID: wl-client, AZURE_TENANT_ID: wl-tenant, AZURE_FEDERATED_TOKEN_FILE: /var/run/token}
+          credential: DeploymentIdentityCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: WorkloadIdentityCredential, outcome: token, token: wl-token}]
+        - environment: {AZURE_CLIENT_ID: user-client}
+          credential: DeploymentIdentityCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: 'ManagedIdentityCredential:user', outcome: unavailable, message: user-missing}, {credential: 'ManagedIdentityCredential:system', outcome: token, token: sys-token}]
+        - environment: {}
+          credential: DeploymentIdentityCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: 'ManagedIdentityCredential:system', outcome: token, token: sys-token}]
+        - environment: {AZURE_CLIENT_ID: user-client}
+          credential: DeploymentIdentityCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: 'ManagedIdentityCredential:user', outcome: authentication, message: auth-denied}]
+        - environment: {AZURE_CLIENT_ID: c, AZURE_TENANT_ID: t, AZURE_FEDERATED_TOKEN_FILE: /var/run/token}
+          credential: DeploymentIdentityCredential
+          scope: https://cognitiveservices.azure.com/.default
+          construct_errors: {WorkloadIdentityCredential: boom}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/steps/0/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/0/constructed/2/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/1/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/1/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/2/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/3/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/3/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}

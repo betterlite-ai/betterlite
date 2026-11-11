@@ -1,0 +1,10 @@
+kind: helper
+name: azure-default-chain-infer-seed
+call:
+  azure_default_chain:
+    infer:
+      steps:
+        - environment: {AZURE_CLIENT_ID: seed-client, AZURE_CLIENT_SECRET: seed-secret, AZURE_TENANT_ID: seed-tenant}
+        - environment: {AZURE_FEDERATED_TOKEN_FILE: /var/run/seed-token}
+env: {}
+compare: {ignore: []}

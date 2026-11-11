@@ -1,0 +1,33 @@
+kind: helper
+name: default-environment-certificate
+call:
+  azure_default_chain:
+    chain:
+      steps:
+        - environment: {AZURE_CLIENT_CERTIFICATE_PATH: /certs/client.pem, AZURE_CLIENT_ID: cc, AZURE_TENANT_ID: ct}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+        - environment: {AZURE_CLIENT_CERTIFICATE_PATH: /certs/client.pem, AZURE_CLIENT_CERTIFICATE_PASSWORD: pfx-pass, AZURE_CLIENT_ID: cc, AZURE_TENANT_ID: ct}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+        - environment: {AZURE_CLIENT_CERTIFICATE_PATH: /certs/client.pem, AZURE_CLIENT_ID: cc, AZURE_TENANT_ID: ct, AZURE_CLIENT_SEND_CERTIFICATE_CHAIN: "false"}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+        - environment: {AZURE_CLIENT_CERTIFICATE_PATH: /certs/client.pem, AZURE_CLIENT_ID: cc, AZURE_TENANT_ID: ct, AZURE_CLIENT_SEND_CERTIFICATE_CHAIN: ""}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+        - environment: {AZURE_CLIENT_ID: u, AZURE_USERNAME: user@example.com, AZURE_PASSWORD: pw}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+        - environment: {AZURE_CLIENT_ID: u, AZURE_USERNAME: user@example.com, AZURE_PASSWORD: pw, AZURE_TENANT_ID: ut}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/steps/0/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/1/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/2/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/3/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/4/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/5/constructed/1/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
