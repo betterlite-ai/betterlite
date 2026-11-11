@@ -59,8 +59,11 @@ pub struct GetCredential {
 pub enum CredentialsError {
     #[error("the command was aborted")]
     Aborted,
-    #[error("{message}")]
-    Usage { message: String },
+    #[error("Invalid JSON: {source}")]
+    InvalidJson {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error(transparent)]
     Client(#[from] ClientError),
     #[error("the proxy answered HTTP {status}")]

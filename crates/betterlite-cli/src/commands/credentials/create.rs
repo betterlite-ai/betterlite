@@ -26,14 +26,10 @@ pub(super) fn create_credential(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<(), CredentialsError> {
-    let info: &RawValue =
-        serde_json::from_str(&options.info).map_err(|source| CredentialsError::Usage {
-            message: format!("Invalid JSON: {source}"),
-        })?;
-    let values: &RawValue =
-        serde_json::from_str(&options.values).map_err(|source| CredentialsError::Usage {
-            message: format!("Invalid JSON: {source}"),
-        })?;
+    let info: &RawValue = serde_json::from_str(&options.info)
+        .map_err(|source| CredentialsError::InvalidJson { source })?;
+    let values: &RawValue = serde_json::from_str(&options.values)
+        .map_err(|source| CredentialsError::InvalidJson { source })?;
     let body = serde_json::to_vec(&CreateBody {
         name: &options.credential_name,
         info,

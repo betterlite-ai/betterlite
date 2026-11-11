@@ -4,8 +4,7 @@ use std::io::Write;
 use clap::{Args, Subcommand};
 use http::Method;
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::credentials::contracts::CliTeam;
 use crate::credentials::notice::MessageSink;
@@ -16,17 +15,19 @@ use crate::sso_polling::terminal::SelectionInput;
 use super::tables::print_http_error;
 use super::{Client, Payload, Request};
 
+mod assign;
 mod display;
 
+use assign::update_key;
 use display::display_teams;
 
 const LIST_PATH: &str = "/team/list";
 const AVAILABLE_PATH: &str = "/team/available";
-const UPDATE_PATH: &str = "/key/update";
 const NO_TEAMS: &str = "No teams found for your user.";
 const NO_AVAILABLE_TEAMS: &str = "No available teams to join.";
 const NO_API_KEY: &str = "No API key found. Please login first using 'lite login'";
 const OPERATION_CANCELLED: &str = "Operation cancelled.";
+const AUTHENTICATION_FAILED: &str = "Authentication failed. Check your API key.";
 
 #[derive(Debug, Subcommand)]
 #[command(about = "Manage teams and team assignments")]
@@ -74,12 +75,6 @@ struct ListedTeam {
     max_budget: Option<Decimal>,
 }
 
-#[derive(Serialize)]
-struct KeyUpdateBody<'request> {
-    key: &'request str,
-    team_id: &'request str,
-}
-
 pub fn run_teams_command(command: TeamsCommand, ports: TeamsPorts<'_>) -> Result<(), TeamsError> {
     match command {
         TeamsCommand::List(options) => list_teams(&options, ports),
@@ -112,6 +107,9 @@ fn available_teams(_options: &AvailableTeams, ports: TeamsPorts<'_>) -> Result<(
         ..
     } = ports;
     let response = send_list_request(client, AVAILABLE_PATH, stderr)?;
+    if response.status == 401 {
+        return Err(report_failure(stderr, &AUTHENTICATION_FAILED));
+    }
     if response.status >= 400 {
         print_http_error(response.status, &response.body, stdout, stderr);
         return Ok(());
@@ -177,11 +175,11 @@ fn team_id_to_assign(
         return Ok(None);
     }
     let prompt_teams: Vec<CliTeam> = teams
-        .iter()
+        .into_iter()
         .map(|team| CliTeam {
-            team_id: team.team_id.clone(),
-            team_alias: team.team_alias.clone(),
-            models: team.models.clone().unwrap_or_default(),
+            team_id: team.team_id,
+            team_alias: team.team_alias,
+            models: team.models.unwrap_or_default(),
             max_budget: team.max_budget,
         })
         .collect();
@@ -190,43 +188,6 @@ fn team_id_to_assign(
         return Ok(None);
     };
     Ok(selected.team_id)
-}
-
-fn update_key(
-    client: &Client,
-    api_key: &SecretString,
-    team_id: &str,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> Result<(), TeamsError> {
-    let _wrote_assigning = writeln!(stdout, "\nAssigning your key to team: {team_id}");
-    let body = serde_json::to_vec(&KeyUpdateBody {
-        key: api_key.expose_secret(),
-        team_id,
-    });
-    let encoded_body = match body {
-        Ok(encoded) => encoded,
-        Err(source) => return Err(report_failure(stderr, &source)),
-    };
-    let Ok(url) = client.resolve(UPDATE_PATH) else {
-        return Err(report_failure(stderr, &UPDATE_PATH));
-    };
-    let request = Request {
-        method: Method::POST,
-        url,
-        headers: Vec::new(),
-        payload: Payload::Json(encoded_body),
-    };
-    let response = match client.send(request) {
-        Ok(response) => response,
-        Err(source) => return Err(report_failure(stderr, &source)),
-    };
-    if response.status >= 400 {
-        print_http_error(response.status, &response.body, stdout, stderr);
-        return Err(TeamsError::Aborted);
-    }
-    let _wrote_assigned = writeln!(stdout, "Successfully assigned key to team: {team_id}");
-    Ok(())
 }
 
 fn announce_models(teams: &[ListedTeam], team_id: &str, stdout: &mut dyn Write) {
@@ -249,6 +210,9 @@ fn fetch_teams(
     stderr: &mut dyn Write,
 ) -> Result<Vec<ListedTeam>, TeamsError> {
     let response = send_list_request(client, LIST_PATH, stderr)?;
+    if response.status == 401 {
+        return Err(report_failure(stderr, &AUTHENTICATION_FAILED));
+    }
     if response.status >= 400 {
         print_http_error(response.status, &response.body, stdout, stderr);
         return Err(TeamsError::Aborted);

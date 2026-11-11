@@ -160,10 +160,10 @@ fn create_rejects_invalid_json_as_a_usage_error_before_sending() {
         &server,
     );
 
-    let Err(CredentialsError::Usage { message }) = result else {
-        panic!("expected a usage error");
+    let Err(error) = result else {
+        panic!("expected an invalid-json error");
     };
-    assert!(message.starts_with("Invalid JSON: "), "{message}");
+    assert!(error.to_string().starts_with("Invalid JSON: "), "{error}");
     assert!(stdout.is_empty(), "{stdout}");
     assert!(server.finish().is_empty());
 }

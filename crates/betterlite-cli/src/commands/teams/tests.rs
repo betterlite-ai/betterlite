@@ -541,3 +541,66 @@ fn assign_key_error_from_an_unreadable_team_list_prints_one_line_and_aborts() {
     assert!(stdout.is_empty(), "{stdout}");
     assert!(stderr.starts_with("Error: "), "{stderr}");
 }
+
+#[test]
+fn list_error_prints_the_authentication_line_on_a_401() {
+    let server = TestServer::start(vec![Answer::json(401, r#"{"detail":"unauthorized"}"#)]);
+    let mut input = ScriptedInput::quiet();
+    let echoed = Mutex::new(Vec::new());
+
+    let (result, stdout, stderr) = run(TeamsCommand::List(ListTeams), &server, &mut input, &echoed);
+
+    assert!(matches!(result, Err(TeamsError::Aborted)));
+    assert!(stdout.is_empty(), "{stdout}");
+    assert_eq!(
+        stderr,
+        "Error: Authentication failed. Check your API key.\n"
+    );
+}
+
+#[test]
+fn available_error_prints_the_authentication_line_and_aborts_on_a_401() {
+    let server = TestServer::start(vec![Answer::json(401, r#"{"detail":"unauthorized"}"#)]);
+    let mut input = ScriptedInput::quiet();
+    let echoed = Mutex::new(Vec::new());
+
+    let (result, stdout, stderr) = run(
+        TeamsCommand::Available(AvailableTeams),
+        &server,
+        &mut input,
+        &echoed,
+    );
+
+    assert!(matches!(result, Err(TeamsError::Aborted)));
+    assert!(stdout.is_empty(), "{stdout}");
+    assert_eq!(
+        stderr,
+        "Error: Authentication failed. Check your API key.\n"
+    );
+}
+
+#[test]
+fn assign_key_error_prints_the_authentication_line_on_a_401() {
+    let server = TestServer::start(vec![Answer::json(401, r#"{"detail":"unauthorized"}"#)]);
+    let mut input = ScriptedInput::quiet();
+    let echoed = Mutex::new(Vec::new());
+
+    let (result, stdout, stderr) = run(
+        TeamsCommand::AssignKey(AssignKey {
+            team_id: Some(String::from("t1")),
+        }),
+        &server,
+        &mut input,
+        &echoed,
+    );
+
+    assert!(matches!(result, Err(TeamsError::Aborted)));
+    assert!(
+        stdout.contains("Assigning your key to team: t1"),
+        "{stdout}"
+    );
+    assert_eq!(
+        stderr,
+        "Error: Authentication failed. Check your API key.\n"
+    );
+}

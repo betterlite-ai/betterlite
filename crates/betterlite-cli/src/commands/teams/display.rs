@@ -1,7 +1,5 @@
 use std::io::Write;
 
-use rust_decimal::Decimal;
-
 use crate::commands::tables::write_table;
 
 use super::ListedTeam;
@@ -23,7 +21,8 @@ pub(super) fn display_teams(teams: &[ListedTeam], stdout: &mut dyn Write) {
                     .clone()
                     .unwrap_or_else(|| String::from(NOT_AVAILABLE)),
                 models_text(team.models.as_deref().unwrap_or_default()),
-                budget_text(team.max_budget),
+                team.max_budget
+                    .map_or_else(|| String::from("Unlimited"), |amount| format!("${amount}")),
                 String::from(MEMBER),
             ]
         })
@@ -54,11 +53,4 @@ fn models_text(models: &[String]) -> String {
         }
         _ => models.join(", "),
     }
-}
-
-fn budget_text(budget: Option<Decimal>) -> String {
-    let Some(amount) = budget else {
-        return String::from("Unlimited");
-    };
-    format!("${amount}")
 }

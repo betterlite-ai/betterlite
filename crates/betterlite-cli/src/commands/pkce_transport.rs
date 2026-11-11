@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use http::Method;
+use http::header::HeaderMap;
 use url::Url;
 
 use crate::pkce_login::{Http, HttpBody, HttpResponse, models::PkceFailure};
 
-use super::{Client, ClientError, Exchange, Payload, Request};
+use super::{Client, Payload, PreparedRequest, encode_payload};
 
 impl Http for Client {
     fn get(&self, url: &str, timeout_seconds: u64) -> Result<HttpResponse, PkceFailure> {
@@ -31,35 +32,21 @@ impl Http for Client {
 fn exchange_pkce(
     client: &Client,
     method: Method,
-    url: &str,
+    target: &str,
     payload: Payload,
     timeout_seconds: u64,
 ) -> Result<HttpResponse, PkceFailure> {
-    let request = Request {
+    let url = Url::parse(target).map_err(|source| PkceFailure::InvalidBaseUrl { source })?;
+    let mut header_map = HeaderMap::new();
+    let body = encode_payload(payload, &mut header_map);
+    let prepared = PreparedRequest {
         method,
-        url: Url::parse(url).map_err(|source| PkceFailure::InvalidBaseUrl { source })?,
-        headers: Vec::new(),
-        payload,
+        url,
+        headers: header_map,
+        body,
+        timeout: Duration::from_secs(timeout_seconds),
     };
     client
-        .exchange(Exchange {
-            transport: &client.without_redirects,
-            request,
-            timeout: Duration::from_secs(timeout_seconds),
-            authorization: None,
-        })
-        .map_err(pkce_failure)
-}
-
-fn pkce_failure(error: ClientError) -> PkceFailure {
-    match error {
-        ClientError::Url { source, .. } => PkceFailure::InvalidBaseUrl { source },
-        ClientError::Client(source) | ClientError::Transport(source) => {
-            PkceFailure::Transport { source }
-        }
-        ClientError::ProxySettings(source) => PkceFailure::Protocol(source.to_string()),
-        ClientError::Runtime(source) => PkceFailure::Protocol(source.to_string()),
-        ClientError::HeaderName { source, .. } => PkceFailure::Protocol(source.to_string()),
-        ClientError::HeaderValue { source, .. } => PkceFailure::Protocol(source.to_string()),
-    }
+        .send_request(&client.without_redirects, prepared)
+        .map_err(|source| PkceFailure::Transport { source })
 }

@@ -26,7 +26,6 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::buffered::execute_buffered;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::{Builder, Runtime};
@@ -74,6 +73,14 @@ struct Exchange<'request> {
     request: Request,
     timeout: Duration,
     authorization: Option<&'request SecretString>,
+}
+
+struct PreparedRequest {
+    method: Method,
+    url: Url,
+    headers: HeaderMap,
+    body: Vec<u8>,
+    timeout: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -171,23 +178,43 @@ impl Client {
         } = request;
         let mut header_map = build_headers(headers, authorization)?;
         let body = encode_payload(payload, &mut header_map);
+        let prepared = PreparedRequest {
+            method,
+            url,
+            headers: header_map,
+            body,
+            timeout,
+        };
+        self.send_request(transport, prepared)
+            .map_err(ClientError::Transport)
+    }
+
+    fn send_request(
+        &self,
+        transport: &ProxiedClient,
+        prepared: PreparedRequest,
+    ) -> Result<HttpResponse, HttpError> {
+        let PreparedRequest {
+            method,
+            url,
+            headers,
+            body,
+            timeout,
+        } = prepared;
         let builder = transport
             .client
             .request(method, url)
             .timeout(timeout)
-            .headers(header_map);
+            .headers(headers);
         let with_body = if body.is_empty() {
             builder
         } else {
             builder.body(body)
         };
-        let built = with_body
-            .build()
-            .map_err(|source| ClientError::Transport(HttpError::Request(source)))?;
+        let built = with_body.build().map_err(HttpError::Request)?;
         let response = self
             .runtime
-            .block_on(execute_buffered(transport, built, BODY_LIMIT_BYTES))
-            .map_err(ClientError::Transport)?;
+            .block_on(transport.execute_buffered(built, BODY_LIMIT_BYTES))?;
         Ok(reply(response))
     }
 }
