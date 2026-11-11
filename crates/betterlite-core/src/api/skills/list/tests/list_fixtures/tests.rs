@@ -84,58 +84,33 @@ pub(crate) fn params() -> SkillsCallParams {
 }
 
 pub(crate) fn hosted_params() -> SkillsCallParams {
-    SkillsCallParams {
-        api_key: None,
-        api_base: None,
-        extra_headers: HeaderMap::new(),
-        extra_query: None,
-        timeout: None,
-        custom_llm_provider: Some("litellm_proxy".to_owned()),
-    }
+    let mut params = params();
+    params.custom_llm_provider = Some("litellm_proxy".to_owned());
+    params
 }
 
 pub(crate) fn params_with_base(api_base: Option<&str>) -> SkillsCallParams {
-    SkillsCallParams {
-        api_key: None,
-        api_base: api_base.map(str::to_owned),
-        extra_headers: HeaderMap::new(),
-        extra_query: None,
-        timeout: None,
-        custom_llm_provider: None,
-    }
+    let mut params = params();
+    params.api_base = api_base.map(str::to_owned);
+    params
 }
 
 pub(crate) fn params_with_query(extra_query: IndexMap<String, Json>) -> SkillsCallParams {
-    SkillsCallParams {
-        api_key: None,
-        api_base: None,
-        extra_headers: HeaderMap::new(),
-        extra_query: Some(extra_query),
-        timeout: None,
-        custom_llm_provider: None,
-    }
+    let mut params = params();
+    params.extra_query = Some(extra_query);
+    params
 }
 
 pub(crate) fn params_with_timeout(timeout: Option<Duration>) -> SkillsCallParams {
-    SkillsCallParams {
-        api_key: None,
-        api_base: None,
-        extra_headers: HeaderMap::new(),
-        extra_query: None,
-        timeout,
-        custom_llm_provider: None,
-    }
+    let mut params = params();
+    params.timeout = timeout;
+    params
 }
 
 pub(crate) fn params_for(provider: &str) -> SkillsCallParams {
-    SkillsCallParams {
-        api_key: None,
-        api_base: None,
-        extra_headers: HeaderMap::new(),
-        extra_query: None,
-        timeout: None,
-        custom_llm_provider: Some(provider.to_owned()),
-    }
+    let mut params = params();
+    params.custom_llm_provider = Some(provider.to_owned());
+    params
 }
 
 pub(crate) fn call(values: &IndexMap<String, Json>) -> ListSkillsCall<'_> {
@@ -298,11 +273,17 @@ impl HostedSkillsLister for FakeHosted {
         &self,
         request: HostedListSkillsRequest<'_>,
     ) -> impl Future<Output = Result<ListSkillsResponse, SkillsHandlerError>> + Send {
+        self.record(&request);
+        ready(Ok(sample_list_response()))
+    }
+}
+
+impl FakeHosted {
+    fn record(&self, request: &HostedListSkillsRequest<'_>) {
         self.calls
             .lock()
             .expect("the fake records its calls")
-            .push(hosted_call(&request));
-        ready(Ok(sample_list_response()))
+            .push(hosted_call(request));
     }
 }
 

@@ -24,43 +24,42 @@ fn overlay(
 ) -> Result<(), ListSkillsError> {
     for (name, value) in extra_query {
         match name.as_str() {
-            "limit" => params.limit = limit_param(value)?,
-            "page" => params.page = text_param(value, name)?,
-            "source" => params.source = text_param(value, name)?,
+            "limit" => {
+                params.limit = match value {
+                    Json::Null => None,
+                    Json::Number(number) => {
+                        Some(number.as_i64().ok_or_else(|| ListSkillsError::FieldType {
+                            name: "limit".to_owned(),
+                        })?)
+                    }
+                    Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+                        return Err(ListSkillsError::FieldType {
+                            name: "limit".to_owned(),
+                        });
+                    }
+                };
+            }
+            "page" => {
+                params.page = match value {
+                    Json::Null => None,
+                    Json::Text(text) => Some(text.clone()),
+                    Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                        return Err(ListSkillsError::FieldType { name: name.clone() });
+                    }
+                };
+            }
+            "source" => {
+                params.source = match value {
+                    Json::Null => None,
+                    Json::Text(text) => Some(text.clone()),
+                    Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                        return Err(ListSkillsError::FieldType { name: name.clone() });
+                    }
+                };
+            }
             // the transform reads only limit, page and source, so LiteLLM's other extra_query keys never change the request
             _ => {}
         }
     }
     Ok(())
-}
-
-fn limit_param(value: &Json) -> Result<Option<i64>, ListSkillsError> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Number(number) => {
-            number
-                .as_i64()
-                .map(Some)
-                .ok_or_else(|| ListSkillsError::FieldType {
-                    name: "limit".to_owned(),
-                })
-        }
-        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err(ListSkillsError::FieldType {
-                name: "limit".to_owned(),
-            })
-        }
-    }
-}
-
-fn text_param(value: &Json, name: &str) -> Result<Option<String>, ListSkillsError> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Text(text) => Ok(Some(text.clone())),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(ListSkillsError::FieldType {
-                name: name.to_owned(),
-            })
-        }
-    }
 }
