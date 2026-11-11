@@ -3093,6 +3093,7 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-bedrock",
  "betterlite-config",
  "betterlite-error",
  "betterlite-http",
@@ -3101,6 +3102,7 @@ dependencies = [
  "betterlite-prompts",
  "http 1.5.0",
  "jiff",
+ "percent-encoding",
  "regex",
  "rstest",
  "rust_decimal",
