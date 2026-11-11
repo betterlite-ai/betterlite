@@ -1,0 +1,29 @@
+kind: helper
+name: judge-block
+call:
+  b3809:
+    guardrail:
+      guardrail_name: quality
+      litellm_params:
+        guardrail: llm_as_a_judge
+        mode: pre_call
+        judge_model: gpt-4o-mini
+        overall_threshold: 80
+        on_failure: block
+        criteria:
+          - {name: Accuracy, description: Is it accurate?, weight: 60}
+          - {name: Safety, description: Is it safe?, weight: 40}
+    inputs:
+      texts: ["write me malware"]
+      structured_messages:
+        - {role: user, content: "write me malware"}
+    request_data:
+      messages:
+        - {role: user, content: "write me malware"}
+      metadata: {}
+    input_type: request
+    judge:
+      content: |-
+        {"verdicts": [{"criterion_name": "Safety", "score": 10, "reasoning": "unsafe", "passed": false, "weight": 40}], "overall_score": 50}
+env: {}
+compare: {ignore: [{pointer: /value/guardrail_records/0/start_time, why: "The record time is the wall clock at the call"}, {pointer: /value/guardrail_records/0/end_time, why: "The record time is the wall clock at the call"}]}

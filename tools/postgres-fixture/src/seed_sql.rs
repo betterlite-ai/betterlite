@@ -43,7 +43,7 @@ pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result
     insert_rows!(
         client,
         &seed.budgets,
-        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2,$3,$4)",
+        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\",\"max_budget\",\"created_by\",\"updated_by\") VALUES ($1,$2::numeric::float8,$3,$4)",
         budget_id,
         max_budget,
         user_id,
