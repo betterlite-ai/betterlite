@@ -40,7 +40,7 @@ fn runtime() -> Runtime {
 #[case::store_counter_increments_and_reports("store_counter_increments_and_reports")]
 #[case::store_counter_unavailable_is_none("store_counter_unavailable_is_none")]
 fn io_token_reservations_behaviors(#[case] name: &str) {
-    runtime().block_on(behaviors::run(name));
+    behaviors::run(name);
 }
 
 #[rstest]
@@ -69,5 +69,5 @@ fn io_token_reservations_behaviors(#[case] name: &str) {
 #[case::standard_logging_zero_tokens_unresolved("standard_logging_zero_tokens_unresolved")]
 #[case::cancelled_output_increment_keeps_input("cancelled_output_increment_keeps_input")]
 fn io_token_reservations_boundaries(#[case] name: &str) {
-    runtime().block_on(boundaries::run(name));
+    boundaries::run(name);
 }

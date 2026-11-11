@@ -47,6 +47,16 @@ use crate::routing_state_store::{BreakerClock, RedisSettings, RoutingStateStore,
 
 pub(crate) const NOW_SECONDS: u64 = 1_700_000_000;
 
+pub(crate) fn run_case_table(name: &str, cases: &[(&'static str, fn())]) {
+    for (case_name, run) in cases {
+        if *case_name == name {
+            run();
+            return;
+        }
+    }
+    panic!("unknown case {name}");
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Behavior {
     Record,

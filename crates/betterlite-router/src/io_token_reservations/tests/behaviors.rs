@@ -13,60 +13,75 @@ use crate::io_token_reservations::reservation::read_reservation;
 use crate::io_token_reservations::service::DEFAULT_MAX_TOKENS;
 use crate::io_token_reservations::usage::{ReconcileUsage, UsageTokens, resolve_reconcile_usage};
 
-pub(super) async fn run(name: &str) {
-    if reservation_cases(name).await {
-        return;
-    }
-    if remaining_cases(name).await {
-        return;
-    }
-    panic!("unknown case {name}");
+pub(super) fn run(name: &str) {
+    support::run_case_table(name, &CASES);
 }
 
-async fn reservation_cases(name: &str) -> bool {
-    match name {
-        "full_reservation_stashes_both_channels" => full_reservation_stashes_both_channels().await,
-        "estimate_unavailable_reserves_one_token" => reserve_one_token(None).await,
-        "zero_estimate_reserves_one_token" => reserve_one_token(Some(0)).await,
-        "explicit_zero_output_cap_reserves_nothing" => {
-            explicit_zero_output_cap_reserves_nothing().await;
-        }
-        "max_completion_tokens_used_when_max_tokens_absent" => {
-            reserve_output("max_completion_tokens", 7).await;
-        }
-        "max_output_tokens_used_when_other_caps_absent" => {
-            reserve_output("max_output_tokens", 9).await;
-        }
-        "max_tokens_wins_over_later_fields" => max_tokens_wins_over_later_fields().await,
-        "model_cap_used_without_explicit_cap" => model_cap_used_without_explicit_cap().await,
-        "unmapped_model_uses_4096_fallback" => unmapped_model_uses_4096_fallback().await,
-        "counter_unavailable_still_stashes_reservation" => {
-            counter_unavailable_still_stashes_reservation().await;
-        }
-        "messages_and_prompt_estimate_zero" => messages_and_prompt_estimate_zero().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn remaining_cases(name: &str) -> bool {
-    match name {
-        "output_over_limit_rolls_back_input" => rollback_releases(Rollback::Output).await,
-        "input_over_limit_rolls_back_input" => rollback_releases(Rollback::Input).await,
-        "failing_release_still_reports_rate_limit" => {
-            failing_release_still_reports_rate_limit().await;
-        }
-        "usage_excludes_cached_tokens" => usage_excludes_cached_tokens(),
-        "usage_falls_back_to_standard_logging" => usage_falls_back_to_standard_logging(),
-        "usage_missing_keeps_reservation" => usage_missing_keeps_reservation(),
-        "tokenizer_counts_messages" => tokenizer_count_matches(true).await,
-        "tokenizer_counts_text" => tokenizer_count_matches(false).await,
-        "store_counter_increments_and_reports" => store_counter_increments_and_reports().await,
-        "store_counter_unavailable_is_none" => store_counter_unavailable_is_none().await,
-        _ => return false,
-    }
-    true
-}
+const CASES: [(&str, fn()); 21] = [
+    ("full_reservation_stashes_both_channels", || {
+        super::runtime().block_on(full_reservation_stashes_both_channels());
+    }),
+    ("estimate_unavailable_reserves_one_token", || {
+        super::runtime().block_on(reserve_one_token(None));
+    }),
+    ("zero_estimate_reserves_one_token", || {
+        super::runtime().block_on(reserve_one_token(Some(0)));
+    }),
+    ("explicit_zero_output_cap_reserves_nothing", || {
+        super::runtime().block_on(explicit_zero_output_cap_reserves_nothing());
+    }),
+    ("max_completion_tokens_used_when_max_tokens_absent", || {
+        super::runtime().block_on(reserve_output("max_completion_tokens", 7));
+    }),
+    ("max_output_tokens_used_when_other_caps_absent", || {
+        super::runtime().block_on(reserve_output("max_output_tokens", 9));
+    }),
+    ("max_tokens_wins_over_later_fields", || {
+        super::runtime().block_on(max_tokens_wins_over_later_fields());
+    }),
+    ("model_cap_used_without_explicit_cap", || {
+        super::runtime().block_on(model_cap_used_without_explicit_cap());
+    }),
+    ("unmapped_model_uses_4096_fallback", || {
+        super::runtime().block_on(unmapped_model_uses_4096_fallback());
+    }),
+    ("counter_unavailable_still_stashes_reservation", || {
+        super::runtime().block_on(counter_unavailable_still_stashes_reservation());
+    }),
+    ("messages_and_prompt_estimate_zero", || {
+        super::runtime().block_on(messages_and_prompt_estimate_zero());
+    }),
+    ("output_over_limit_rolls_back_input", || {
+        super::runtime().block_on(rollback_releases(Rollback::Output));
+    }),
+    ("input_over_limit_rolls_back_input", || {
+        super::runtime().block_on(rollback_releases(Rollback::Input));
+    }),
+    ("failing_release_still_reports_rate_limit", || {
+        super::runtime().block_on(failing_release_still_reports_rate_limit());
+    }),
+    ("usage_excludes_cached_tokens", usage_excludes_cached_tokens),
+    (
+        "usage_falls_back_to_standard_logging",
+        usage_falls_back_to_standard_logging,
+    ),
+    (
+        "usage_missing_keeps_reservation",
+        usage_missing_keeps_reservation,
+    ),
+    ("tokenizer_counts_messages", || {
+        super::runtime().block_on(tokenizer_count_matches(true));
+    }),
+    ("tokenizer_counts_text", || {
+        super::runtime().block_on(tokenizer_count_matches(false));
+    }),
+    ("store_counter_increments_and_reports", || {
+        super::runtime().block_on(store_counter_increments_and_reports());
+    }),
+    ("store_counter_unavailable_is_none", || {
+        super::runtime().block_on(store_counter_unavailable_is_none());
+    }),
+];
 
 fn rate_limit(error: IoPreCallError) -> (IoChannel, i64, i64) {
     match error {

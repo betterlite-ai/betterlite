@@ -16,59 +16,86 @@ use crate::io_token_reservations::reservation::{
 };
 use crate::io_token_reservations::usage::{UsageTokens, resolve_reconcile_usage};
 
-pub(super) async fn run(name: &str) {
-    if limit_cases(name).await {
-        return;
-    }
-    if metadata_cases(name).await {
-        return;
-    }
-    panic!("unknown case {name}");
+pub(super) fn run(name: &str) {
+    support::run_case_table(name, &CASES);
 }
 
-async fn limit_cases(name: &str) -> bool {
-    match name {
-        "current_equal_to_limit_passes" => current_equal_to_limit_passes().await,
-        "current_over_limit_by_one_fails" => current_over_limit_by_one_fails().await,
-        "zero_limit_one_token_fails" => input_limit_overrun(0, None, 1).await,
-        "negative_limit_always_fails" => input_limit_overrun(-5, Some(10), 10).await,
-        "negative_max_tokens_reserves_nothing" => negative_max_tokens_reserves_nothing().await,
-        "model_cap_equal_to_limit_passes" => model_cap_equal_to_limit_passes().await,
-        "model_cap_over_limit_by_one_fails" => model_cap_over_limit_by_one_fails().await,
-        "missing_model_id_skips_limits" => {
-            skips_without(None, Some("gpt-4o"), Some(100), Some(100)).await;
-        }
-        "missing_model_skips_limits" => {
-            skips_without(Some("dep-a"), None, Some(100), Some(100)).await;
-        }
-        "no_limits_skips_everything" => {
-            skips_without(Some("dep-a"), Some("gpt-4o"), None, None).await;
-        }
-        "empty_model_id_still_builds_keys" => empty_model_id_still_builds_keys().await,
-        _ => return false,
-    }
-    true
-}
-
-async fn metadata_cases(name: &str) -> bool {
-    match name {
-        "minute_labels" => minute_labels(),
-        "float_max_tokens_is_an_error" => float_max_tokens_is_an_error().await,
-        "text_max_tokens_is_an_error" => text_max_tokens_is_an_error().await,
-        "bool_max_tokens_is_an_error" => bool_max_tokens_is_an_error().await,
-        "null_max_tokens_uses_next_field" => null_max_tokens_uses_next_field().await,
-        "reservation_channel_priority" => reservation_channel_priority(),
-        "channel_without_itpm_sentinel_is_skipped" => channel_without_itpm_sentinel_is_skipped(),
-        "clear_removes_forged_sentinels" => clear_removes_forged_sentinels(),
-        "stash_merges_existing_metadata" => stash_merges_existing_metadata(),
-        "stash_replaces_non_object_metadata" => stash_replaces_non_object_metadata(),
-        "billable_input_never_negative" => billable_input_never_negative(),
-        "standard_logging_zero_tokens_unresolved" => standard_logging_zero_tokens_unresolved(),
-        "cancelled_output_increment_keeps_input" => cancelled_output_increment_keeps_input().await,
-        _ => return false,
-    }
-    true
-}
+const CASES: [(&str, fn()); 24] = [
+    ("current_equal_to_limit_passes", || {
+        super::runtime().block_on(current_equal_to_limit_passes());
+    }),
+    ("current_over_limit_by_one_fails", || {
+        super::runtime().block_on(current_over_limit_by_one_fails());
+    }),
+    ("zero_limit_one_token_fails", || {
+        super::runtime().block_on(input_limit_overrun(0, None, 1));
+    }),
+    ("negative_limit_always_fails", || {
+        super::runtime().block_on(input_limit_overrun(-5, Some(10), 10));
+    }),
+    ("negative_max_tokens_reserves_nothing", || {
+        super::runtime().block_on(negative_max_tokens_reserves_nothing());
+    }),
+    ("model_cap_equal_to_limit_passes", || {
+        super::runtime().block_on(model_cap_equal_to_limit_passes());
+    }),
+    ("model_cap_over_limit_by_one_fails", || {
+        super::runtime().block_on(model_cap_over_limit_by_one_fails());
+    }),
+    ("missing_model_id_skips_limits", || {
+        super::runtime().block_on(skips_without(None, Some("gpt-4o"), Some(100), Some(100)));
+    }),
+    ("missing_model_skips_limits", || {
+        super::runtime().block_on(skips_without(Some("dep-a"), None, Some(100), Some(100)));
+    }),
+    ("no_limits_skips_everything", || {
+        super::runtime().block_on(skips_without(Some("dep-a"), Some("gpt-4o"), None, None));
+    }),
+    ("empty_model_id_still_builds_keys", || {
+        super::runtime().block_on(empty_model_id_still_builds_keys());
+    }),
+    ("minute_labels", minute_labels),
+    ("float_max_tokens_is_an_error", || {
+        super::runtime().block_on(float_max_tokens_is_an_error());
+    }),
+    ("text_max_tokens_is_an_error", || {
+        super::runtime().block_on(text_max_tokens_is_an_error());
+    }),
+    ("bool_max_tokens_is_an_error", || {
+        super::runtime().block_on(bool_max_tokens_is_an_error());
+    }),
+    ("null_max_tokens_uses_next_field", || {
+        super::runtime().block_on(null_max_tokens_uses_next_field());
+    }),
+    ("reservation_channel_priority", reservation_channel_priority),
+    (
+        "channel_without_itpm_sentinel_is_skipped",
+        channel_without_itpm_sentinel_is_skipped,
+    ),
+    (
+        "clear_removes_forged_sentinels",
+        clear_removes_forged_sentinels,
+    ),
+    (
+        "stash_merges_existing_metadata",
+        stash_merges_existing_metadata,
+    ),
+    (
+        "stash_replaces_non_object_metadata",
+        stash_replaces_non_object_metadata,
+    ),
+    (
+        "billable_input_never_negative",
+        billable_input_never_negative,
+    ),
+    (
+        "standard_logging_zero_tokens_unresolved",
+        standard_logging_zero_tokens_unresolved,
+    ),
+    ("cancelled_output_increment_keeps_input", || {
+        super::runtime().block_on(cancelled_output_increment_keeps_input());
+    }),
+];
 
 fn rate_limit(error: IoPreCallError) -> (IoChannel, i64, i64) {
     match error {
