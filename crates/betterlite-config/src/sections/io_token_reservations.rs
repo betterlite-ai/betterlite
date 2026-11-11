@@ -51,7 +51,7 @@ pub struct DeploymentIoLimits {
 // deployments stay index-aligned with model_list, like the router's config order
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Settings {
-    pub deployments: Vec<DeploymentIoLimits>,
+    pub deployments: Box<[DeploymentIoLimits]>,
 }
 
 impl Section for Raw {
@@ -65,7 +65,9 @@ impl Section for Raw {
         for (index, deployment) in self.model_list.into_iter().enumerate() {
             deployments.push(deployment_limits(index, deployment, lookup)?);
         }
-        Ok(Settings { deployments })
+        Ok(Settings {
+            deployments: deployments.into_boxed_slice(),
+        })
     }
 }
 

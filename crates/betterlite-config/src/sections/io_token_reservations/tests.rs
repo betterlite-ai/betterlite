@@ -23,9 +23,9 @@ fn deployment(fields: &str) -> String {
 }
 
 fn one_deployment(source: &str) -> DeploymentIoLimits {
-    let mut deployments = settings(source, &[]).unwrap().deployments;
+    let deployments = settings(source, &[]).unwrap().deployments;
     assert_eq!(deployments.len(), 1);
-    deployments.remove(0)
+    deployments[0]
 }
 
 #[test]
@@ -90,8 +90,7 @@ fn an_environ_reference_resolves() {
     let source = deployment("    litellm_params: {itpm: os.environ/ITPM_LIMIT}\n");
     let limits = settings(&source, &[("ITPM_LIMIT", "250")])
         .unwrap()
-        .deployments
-        .remove(0);
+        .deployments[0];
     assert_eq!(limits.itpm, Some(250));
 }
 
@@ -102,8 +101,7 @@ fn an_empty_env_value_counts_as_unset() {
     );
     let limits = settings(&source, &[("ITPM_LIMIT", "")])
         .unwrap()
-        .deployments
-        .remove(0);
+        .deployments[0];
     assert_eq!(limits.itpm, Some(7));
 }
 
@@ -136,8 +134,8 @@ fn deployments_stay_index_aligned() {
     let source = "model_list:\n  - model_name: first\n    itpm: 1\n  - model_name: second\n    otpm: 2\n  - model_name: third\n    litellm_params: {itpm: 3, otpm: 4}\n";
     let resolved = settings(source, &[]).unwrap();
     assert_eq!(
-        resolved.deployments,
-        vec![
+        resolved.deployments.as_ref(),
+        [
             DeploymentIoLimits {
                 itpm: Some(1),
                 otpm: None,
@@ -151,6 +149,7 @@ fn deployments_stay_index_aligned() {
                 otpm: Some(4),
             },
         ]
+        .as_slice()
     );
 }
 

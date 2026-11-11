@@ -21,7 +21,8 @@ fn deployment_limits_stay_index_aligned_and_keep_zero() {
                 itpm: Some(3),
                 otpm: Some(4),
             },
-        ],
+        ]
+        .into_boxed_slice(),
     };
     assert_eq!(
         deployment_limits(&section),
