@@ -173,7 +173,7 @@ async fn interrupted_build_resumes() {
 async fn create_plain_partitions(test: &PostgresTest) {
     test.client
         .batch_execute(&format!(
-            "CREATE TABLE \"{SPEND_LOGS}\" (api_key text, \"startTime\" timestamptz, litellm_call_id text) PARTITION BY RANGE (\"startTime\");
+            "CREATE TABLE \"{SPEND_LOGS}\" (request_id text, api_key text, \"startTime\" timestamptz, litellm_call_id text) PARTITION BY RANGE (\"startTime\");
              CREATE TABLE \"{SPEND_LOGS}_p1\" PARTITION OF \"{SPEND_LOGS}\" FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
              CREATE TABLE \"{SPEND_LOGS}_p2\" PARTITION OF \"{SPEND_LOGS}\" FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');"
         ))

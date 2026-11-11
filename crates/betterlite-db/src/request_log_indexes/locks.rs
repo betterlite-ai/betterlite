@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use super::IndexBuilder;
-use super::database::{DatabaseFailure as _, IndexDatabase};
+use super::database::{DatabaseFailure as _, DatabaseFuture, IndexDatabase};
 
 pub(crate) const LOCK_ATTEMPTS: u32 = 10;
 pub(crate) const RETRY_HALF_BASE_MILLIS: u64 = 125;
@@ -36,7 +36,7 @@ pub(crate) async fn with_bounded_lock<'step, D, S, F>(
 where
     D: IndexDatabase,
     S: Fn() -> F,
-    F: Future<Output = Result<bool, D::Error>> + 'step,
+    F: Future<Output = Result<bool, D::Error>> + Send + 'step,
 {
     for attempt in 0..LOCK_ATTEMPTS {
         if attempt > 0 {
@@ -47,7 +47,8 @@ where
                 .await;
         }
         builder.database.execute(APPLY_LOCK_TIMEOUT).await?;
-        let outcome = under_migration_lock(builder, step()).await;
+        let attempt_step: DatabaseFuture<'step, bool, D::Error> = Box::pin(step());
+        let outcome = builder.database.coordinate(attempt_step).await;
         builder.database.execute(RESET_LOCK_TIMEOUT).await?;
         match outcome {
             Ok(result) => return Ok(result),
@@ -61,28 +62,6 @@ where
         "Could not get the lock for {what} without holding writes back, leaving it for the next index build"
     );
     Ok(false)
-}
-
-pub(crate) async fn under_migration_lock<D, S>(
-    builder: &IndexBuilder<'_, D>,
-    step: S,
-) -> Result<bool, D::Error>
-where
-    D: IndexDatabase,
-    S: Future<Output = Result<bool, D::Error>>,
-{
-    if !builder.database.try_coordinator_lock().await? {
-        tracing::info!(
-            "Another process holds the migration lock, leaving the request-log indexes to the next index build"
-        );
-        return Ok(false);
-    }
-    let outcome = step.await;
-    let released = builder.database.release_coordinator_lock().await;
-    match (outcome, released) {
-        (_, Err(error)) => Err(error),
-        (result, Ok(())) => result,
-    }
 }
 
 // The pause ranges over min(8s, 0.25s * 2**attempt) * uniform(0.5, 1.0) seconds

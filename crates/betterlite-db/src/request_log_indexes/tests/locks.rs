@@ -33,8 +33,10 @@ async fn coordinator_busy_no_retry() {
     let builder = index_builder(&fake, "public", &dependencies);
     let called = AtomicUsize::new(0);
     let outcome = with_bounded_lock(&builder, "creating the parent index idx", || {
-        called.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok::<bool, FakeError>(true) })
+        Box::pin(async {
+            called.fetch_add(1, Ordering::SeqCst);
+            Ok::<bool, FakeError>(true)
+        })
     })
     .await
     .unwrap();

@@ -30,7 +30,7 @@ pub async fn ensure_request_log_indexes(
         pause: &pause,
     };
     match ensure_indexes(
-        connect::connect(database_url),
+        connect::connect(database_url, connect::CONNECT_TIMEOUT),
         schema,
         indexes,
         &dependencies,

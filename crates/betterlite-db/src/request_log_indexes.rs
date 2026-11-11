@@ -21,27 +21,29 @@ use tokio_postgres::error::SqlState;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RequestLogIndexError {
-    #[error("the request-log index database URL has no usable connection options")]
+    #[error("the request-log index database URL has no usable connection options: {source}")]
     ConnectionOptions {
         #[source]
         source: ConnectionOptionsError,
     },
-    #[error("the request-log index connection pool could not be built")]
+    #[error("the request-log index connection pool could not be built: {source}")]
     Pool {
         #[source]
         source: deadpool_postgres::BuildError,
     },
-    #[error("could not open the request-log index database connection")]
+    #[error("could not open the request-log index database connection: {source}")]
     Open {
         #[source]
         source: deadpool_postgres::PoolError,
     },
-    #[error("the request-log index statement failed")]
+    #[error("timed out opening the request-log index database connection")]
+    ConnectTimeout,
+    #[error("the request-log index statement failed: {source}")]
     Statement {
         #[from]
         source: tokio_postgres::Error,
     },
-    #[error("the request-log index catalog query failed")]
+    #[error("the request-log index catalog query failed: {source}")]
     Catalog {
         #[from]
         source: RequestLogIndexCatalogError,
@@ -59,7 +61,10 @@ impl DatabaseFailure for RequestLogIndexError {
             | Self::Catalog {
                 source: RequestLogIndexCatalogError::Query(source),
             } => source.code() == Some(&SqlState::LOCK_NOT_AVAILABLE),
-            Self::ConnectionOptions { .. } | Self::Pool { .. } | Self::Open { .. } => false,
+            Self::ConnectionOptions { .. }
+            | Self::Pool { .. }
+            | Self::Open { .. }
+            | Self::ConnectTimeout => false,
         }
     }
 }

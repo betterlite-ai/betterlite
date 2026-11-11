@@ -5,16 +5,20 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 use tokio_postgres::Client as PgClient;
 use tokio_postgres::NoTls;
 use tokio_postgres::types::{FromSqlOwned, ToSql};
 use tracing::Subscriber;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
+use url::Url;
 use uuid::Uuid;
 
 use crate::migration_ledger::lock::JitterSource;
@@ -42,40 +46,46 @@ fn postgres_test_url() -> Option<SecretString> {
         .map(SecretString::from)
 }
 
+const TEST_SCHEMA: &str = "request_log_indexes";
+
 pub(super) struct PostgresTest {
     pub(super) fixture: PostgresFixture,
     pub(super) schema: String,
+    pub(super) url: SecretString,
     pub(super) client: tokio_postgres::Client,
     drivers: JoinSet<Result<(), tokio_postgres::Error>>,
 }
 
 impl PostgresTest {
+    // Each test owns a database: the coordinator lock is per-database, so parallel tests never share it
     pub(super) async fn new() -> Self {
-        let fixture = PostgresFixture::provision_schema(postgres_test_url().as_ref())
-            .resolve()
+        let mut generator = RandomDatabaseName;
+        let mut task = PostgresFixture::provision_with_name_generator(
+            postgres_test_url().as_ref(),
+            &FixtureSeed::default(),
+            &mut generator,
+        );
+        let fixture = task.resolve().await.unwrap();
+        create_test_schema(&fixture).await;
+        let url = with_test_schema(&fixture.options.url, TEST_SCHEMA);
+        let mut drivers = JoinSet::new();
+        let (client, connection) = tokio_postgres::connect(url.expose_secret(), NoTls)
             .await
             .unwrap();
-        let mut drivers = JoinSet::new();
-        let (client, connection) =
-            tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
-                .await
-                .unwrap();
         drivers.spawn(connection);
-        let schema: String = client
-            .query_one("SELECT current_schema()", &[])
-            .await
-            .unwrap()
-            .get(0);
         Self {
             fixture,
-            schema,
+            schema: TEST_SCHEMA.to_owned(),
+            url,
             client,
             drivers,
         }
     }
 
     pub(super) async fn service(&self) -> PostgresDatabase {
-        connect::connect(&self.fixture.options.url).await.unwrap()
+        connect::connect(&self.url, connect::CONNECT_TIMEOUT)
+            .await
+            .unwrap()
     }
 
     pub(super) async fn another_client(
@@ -84,26 +94,83 @@ impl PostgresTest {
         tokio_postgres::Client,
         JoinSet<Result<(), tokio_postgres::Error>>,
     ) {
-        let (client, connection) =
-            tokio_postgres::connect(self.fixture.options.url.expose_secret(), NoTls)
-                .await
-                .unwrap();
+        let (client, connection) = tokio_postgres::connect(self.url.expose_secret(), NoTls)
+            .await
+            .unwrap();
         let mut drivers = JoinSet::new();
         drivers.spawn(connection);
         (client, drivers)
     }
 
-    pub(super) async fn finish(self) {
-        let Self {
-            fixture,
-            client,
-            drivers,
-            ..
-        } = self;
-        drop(client);
-        drop(drivers);
-        fixture.close_async().await.unwrap();
+    pub(super) fn finish(self) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        Box::pin(async move {
+            let Self {
+                fixture,
+                client,
+                mut drivers,
+                ..
+            } = self;
+            // Connections a test left open would block the fixture's DROP DATABASE
+            terminate_other_backends(&client).await;
+            drop(client);
+            drivers.shutdown().await;
+            fixture.close_async().await.unwrap();
+        })
     }
+}
+
+async fn terminate_other_backends(client: &PgClient) {
+    for _attempt in 0_u32..100_u32 {
+        let remaining: i64 = client
+            .query_one(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()",
+                &[],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        if remaining == 0 {
+            return;
+        }
+        client
+            .batch_execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()",
+            )
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn create_test_schema(fixture: &PostgresFixture) {
+    let (client, connection) = tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
+        .await
+        .unwrap();
+    let mut drivers = JoinSet::new();
+    drivers.spawn(connection);
+    client
+        .batch_execute(&format!("CREATE SCHEMA \"{TEST_SCHEMA}\""))
+        .await
+        .unwrap();
+    drop(client);
+    drivers.shutdown().await;
+}
+
+fn with_test_schema(url: &SecretString, schema: &str) -> SecretString {
+    let mut parsed = Url::parse(url.expose_secret()).unwrap();
+    let parameters: Vec<(String, String)> = parsed
+        .query_pairs()
+        .filter(|(key, _)| key != "options")
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    parsed
+        .query_pairs_mut()
+        .clear()
+        .extend_pairs(parameters)
+        .append_pair("options", &format!("-csearch_path={schema}"));
+    let query = parsed.query().unwrap_or_default().replace('+', "%20");
+    parsed.set_query(Some(&query));
+    SecretString::from(parsed.to_string())
 }
 
 // Wraps the real database and records the DDL a test asserts the order of
@@ -173,12 +240,11 @@ impl IndexDatabase for RecordingDatabase {
         self.inner.execute(statement)
     }
 
-    fn try_coordinator_lock(&self) -> DatabaseFuture<'_, bool, Self::Error> {
-        self.inner.try_coordinator_lock()
-    }
-
-    fn release_coordinator_lock(&self) -> DatabaseFuture<'_, (), Self::Error> {
-        self.inner.release_coordinator_lock()
+    fn coordinate<'database>(
+        &'database self,
+        step: DatabaseFuture<'database, bool, Self::Error>,
+    ) -> DatabaseFuture<'database, bool, Self::Error> {
+        self.inner.coordinate(step)
     }
 }
 
@@ -579,14 +645,20 @@ impl IndexDatabase for FakeDatabase {
         Box::pin(self.answer_execute(statement))
     }
 
-    fn try_coordinator_lock(&self) -> DatabaseFuture<'_, bool, Self::Error> {
-        Box::pin(async move { Ok(self.acquire_coordinator()) })
-    }
-
-    fn release_coordinator_lock(&self) -> DatabaseFuture<'_, (), Self::Error> {
+    fn coordinate<'database>(
+        &'database self,
+        step: DatabaseFuture<'database, bool, Self::Error>,
+    ) -> DatabaseFuture<'database, bool, Self::Error> {
         Box::pin(async move {
+            if !self.acquire_coordinator() {
+                tracing::info!(
+                    "Another process holds the migration lock, leaving the request-log indexes to the next index build"
+                );
+                return Ok(false);
+            }
+            let outcome = step.await;
             self.release_coordinator();
-            Ok(())
+            outcome
         })
     }
 }
@@ -762,6 +834,33 @@ where
     build_on_partitioned_table(builder, index, partition_target(schema))
         .await
         .unwrap()
+}
+
+// A TCP listener that accepts connections and never answers the Postgres startup packet
+pub(super) async fn stalled_database_url() -> (SecretString, JoinSet<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut sockets = JoinSet::new();
+    sockets.spawn(async move {
+        let mut kept = Vec::new();
+        loop {
+            match listener.accept().await {
+                Ok((socket, _)) => keep_socket(&mut kept, socket),
+                Err(_) => return,
+            }
+        }
+    });
+    let url = SecretString::from(format!(
+        "postgresql://stalled:stalled@{address}/betterlite?sslmode=disable"
+    ));
+    (url, sockets)
+}
+
+fn keep_socket(kept: &mut Vec<TcpStream>, socket: TcpStream) {
+    kept.push(socket);
+    if kept.len() > 16 {
+        kept.remove(0);
+    }
 }
 
 pub(super) fn partition_target(schema: &str) -> PartitionTarget<'_> {

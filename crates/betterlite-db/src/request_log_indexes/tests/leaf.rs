@@ -272,7 +272,7 @@ async fn wrong_table_collision_untouched() {
     create_spend_logs(&test).await;
     test.client
         .batch_execute(&format!(
-            "CREATE TABLE LiteLLM_ErrorLogs (request_id text); CREATE INDEX \"{CALL_ID_INDEX}\" ON LiteLLM_ErrorLogs (request_id);"
+            "CREATE TABLE \"LiteLLM_ErrorLogs\" (request_id text); CREATE INDEX \"{CALL_ID_INDEX}\" ON \"LiteLLM_ErrorLogs\" (request_id);"
         ))
         .await
         .unwrap();

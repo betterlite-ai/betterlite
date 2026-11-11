@@ -3,7 +3,7 @@ use crate::request_log_index_catalog::definitions::RequestLogIndex;
 use super::IndexBuilder;
 use super::database::{IndexDatabase, IndexRef};
 use super::leaf_step::leaf_step;
-use super::locks::{HANDOVER, under_migration_lock};
+use super::locks::HANDOVER;
 use super::report::report_second_copies;
 
 // Mirrors _build_leaf_index: CONCURRENTLY so writes keep flowing, the catalog read again under the lock
@@ -23,8 +23,8 @@ where
         .as_ref()
         .is_none_or(|state| !state.valid || state.table != target.table);
     if needs_lock {
-        let locked = under_migration_lock(builder, leaf_step(builder, target, index)).await?;
-        if !locked {
+        let step = Box::pin(leaf_step(builder, target, index));
+        if !builder.database.coordinate(step).await? {
             return Ok(false);
         }
         builder.dependencies.pause.pause(HANDOVER).await;

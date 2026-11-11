@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use deadpool_postgres::Client;
 
-use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
+use crate::migration_ledger::lock::{HeldLockError, held_migration_lock};
 use crate::request_log_index_catalog::catalog::{
     self, EquivalentIndex, IndexState, Relation, RequestLogIndexCatalogError, TableKind,
 };
@@ -58,9 +58,10 @@ pub(crate) trait IndexDatabase: Send + Sync {
         statement: &'database str,
     ) -> DatabaseFuture<'database, (), Self::Error>;
 
-    fn try_coordinator_lock(&self) -> DatabaseFuture<'_, bool, Self::Error>;
-
-    fn release_coordinator_lock(&self) -> DatabaseFuture<'_, (), Self::Error>;
+    fn coordinate<'database>(
+        &'database self,
+        step: DatabaseFuture<'database, bool, Self::Error>,
+    ) -> DatabaseFuture<'database, bool, Self::Error>;
 }
 
 pub(crate) struct PostgresDatabase {
@@ -142,37 +143,42 @@ impl IndexDatabase for PostgresDatabase {
         Box::pin(execute_statement(&self.client, statement))
     }
 
-    fn try_coordinator_lock(&self) -> DatabaseFuture<'_, bool, Self::Error> {
-        Box::pin(probe_coordinator(&self.client))
+    fn coordinate<'database>(
+        &'database self,
+        step: DatabaseFuture<'database, bool, Self::Error>,
+    ) -> DatabaseFuture<'database, bool, Self::Error> {
+        Box::pin(async move {
+            let held = held_migration_lock(&self.client, move |acquired| {
+                coordinated_step(step, acquired)
+            })
+            .await;
+            match held {
+                Ok(value) => Ok(value),
+                Err(HeldLockError::Body(error)) => Err(error),
+                Err(HeldLockError::Acquire { source } | HeldLockError::Unlock { source }) => {
+                    Err(RequestLogIndexError::from(source))
+                }
+            }
+        })
     }
+}
 
-    fn release_coordinator_lock(&self) -> DatabaseFuture<'_, (), Self::Error> {
-        Box::pin(unlock_coordinator(&self.client))
+async fn coordinated_step(
+    step: DatabaseFuture<'_, bool, RequestLogIndexError>,
+    acquired: bool,
+) -> Result<bool, RequestLogIndexError> {
+    if !acquired {
+        tracing::info!(
+            "Another process holds the migration lock, leaving the request-log indexes to the next index build"
+        );
+        return Ok(false);
     }
+    step.await
 }
 
 async fn execute_statement(client: &Client, statement: &str) -> Result<(), RequestLogIndexError> {
     client
         .batch_execute(statement)
         .await
-        .map_err(RequestLogIndexError::from)
-}
-
-async fn probe_coordinator(client: &Client) -> Result<bool, RequestLogIndexError> {
-    client
-        .query_opt(
-            "SELECT pg_try_advisory_lock($1) AS acquired",
-            &[&MIGRATION_LOCK_KEY],
-        )
-        .await
-        .map_err(RequestLogIndexError::from)
-        .map(|found| found.is_some_and(|row| row.get("acquired")))
-}
-
-async fn unlock_coordinator(client: &Client) -> Result<(), RequestLogIndexError> {
-    client
-        .execute("SELECT pg_advisory_unlock($1)", &[&MIGRATION_LOCK_KEY])
-        .await
-        .map(|_affected| ())
         .map_err(RequestLogIndexError::from)
 }

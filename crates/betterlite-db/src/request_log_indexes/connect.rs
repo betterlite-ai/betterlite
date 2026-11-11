@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::timeout;
 
 use crate::database_tls::options::{
     ConnectionOptionsError, NativeConnectionOptions, native_connection_options,
@@ -26,19 +27,20 @@ pub(crate) fn connection_options(
 
 pub(crate) async fn connect(
     database_url: &SecretString,
+    budget: Duration,
 ) -> Result<PostgresDatabase, RequestLogIndexError> {
     let options = connection_options(database_url.expose_secret())?;
     let pool = Pool::builder(Manager::new(options.config, options.tls))
         .max_size(1)
         .build()
         .map_err(|source| RequestLogIndexError::Pool { source })?;
-    let client = pool
-        .get()
+    let client = timeout(budget, pool.get())
         .await
+        .map_err(|_elapsed| RequestLogIndexError::ConnectTimeout)?
         .map_err(|source| RequestLogIndexError::Open { source })?;
-    client
-        .batch_execute(STATEMENT_TIMEOUT_OFF)
+    timeout(budget, client.batch_execute(STATEMENT_TIMEOUT_OFF))
         .await
+        .map_err(|_elapsed| RequestLogIndexError::ConnectTimeout)?
         .map_err(|source| RequestLogIndexError::Statement { source })?;
     Ok(PostgresDatabase { client })
 }

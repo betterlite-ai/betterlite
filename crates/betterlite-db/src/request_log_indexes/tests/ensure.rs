@@ -13,7 +13,7 @@ use super::support::{
 async fn ensure_request_log_indexes_all_in_place_on_empty_list() {
     let (logs, _guard) = install_logs();
     let test = PostgresTest::new().await;
-    assert!(ensure_request_log_indexes(&test.fixture.options.url, &test.schema, &[]).await);
+    assert!(ensure_request_log_indexes(&test.url, &test.schema, &[]).await);
     assert!(informed(
         &logs.contents(),
         "Request-log indexes are all in place"

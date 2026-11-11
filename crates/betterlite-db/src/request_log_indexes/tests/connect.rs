@@ -6,9 +6,18 @@ use tokio::task::JoinSet;
 use tokio_postgres::NoTls;
 use url::Url;
 
+use crate::request_log_indexes::RequestLogIndexError;
 use crate::request_log_indexes::connect::{self, CONNECT_TIMEOUT, connection_options};
 
-use super::support::PostgresTest;
+use super::support::{PostgresTest, stalled_database_url};
+
+#[tokio::test]
+async fn connect_times_out_on_a_stalled_server() {
+    let (url, mut sockets) = stalled_database_url().await;
+    let outcome = connect::connect(&url, Duration::from_millis(200)).await;
+    assert!(matches!(outcome, Err(RequestLogIndexError::ConnectTimeout)));
+    sockets.shutdown().await;
+}
 
 #[tokio::test]
 async fn connect_timeout_ten_autocommit() {
@@ -41,8 +50,8 @@ async fn connect_timeout_ten_autocommit() {
 #[tokio::test]
 async fn statement_timeout_disabled() {
     let test = PostgresTest::new().await;
-    let url = with_statement_timeout(&test.fixture.options.url, "250ms");
-    let database = connect::connect(&url).await.unwrap();
+    let url = with_statement_timeout(&test.url, "250ms");
+    let database = connect::connect(&url, CONNECT_TIMEOUT).await.unwrap();
     let configured: String = database
         .client
         .query_one("SHOW statement_timeout", &[])

@@ -143,7 +143,9 @@ async fn postgres_replica_busy_table_warns_but_succeeds() {
     let (logs, _guard) = install_logs();
     let test = PostgresTest::new().await;
     test.client
-        .batch_execute("CREATE TABLE LiteLLM_Busy (id text); CREATE TABLE LiteLLM_Free (id text);")
+        .batch_execute(
+            "CREATE TABLE \"LiteLLM_Busy\" (id text); CREATE TABLE \"LiteLLM_Free\" (id text);",
+        )
         .await
         .unwrap();
     let (mut busy_client, mut drivers) = test.another_client().await;
@@ -212,12 +214,12 @@ async fn create_blocked_owners(test: &PostgresTest) -> Owners {
              CREATE ROLE \"{}\" NOLOGIN;
              CREATE ROLE \"{}\" NOLOGIN;
              GRANT \"{}\" TO \"{}\";
-             CREATE TABLE LiteLLM_OwnedA (id text);
-             CREATE TABLE LiteLLM_OwnedB (id text);
-             CREATE TABLE LiteLLM_Blocked (id text);
-             ALTER TABLE LiteLLM_OwnedA OWNER TO \"{}\";
-             ALTER TABLE LiteLLM_OwnedB OWNER TO \"{}\";
-             ALTER TABLE LiteLLM_Blocked OWNER TO \"{}\";",
+             CREATE TABLE \"LiteLLM_OwnedA\" (id text);
+             CREATE TABLE \"LiteLLM_OwnedB\" (id text);
+             CREATE TABLE \"LiteLLM_Blocked\" (id text);
+             ALTER TABLE \"LiteLLM_OwnedA\" OWNER TO \"{}\";
+             ALTER TABLE \"LiteLLM_OwnedB\" OWNER TO \"{}\";
+             ALTER TABLE \"LiteLLM_Blocked\" OWNER TO \"{}\";",
             owners.owner,
             owners.blocked,
             owners.viewer,
@@ -242,6 +244,10 @@ const REPLICA_FAILURE: &str = "Failed to set REPLICA IDENTITY FULL. Logical repl
 
 fn assert_replica_failure_logs(logs: &str) {
     assert!(support::errored(logs, REPLICA_FAILURE));
+    assert!(
+        logs.contains("must be owner of table"),
+        "the database cause is missing from the warning: {logs}"
+    );
     assert!(!informed(
         logs,
         "REPLICA IDENTITY FULL applied to LiteLLM tables"
@@ -250,7 +256,7 @@ fn assert_replica_failure_logs(logs: &str) {
 
 async fn drop_blocked_owners(test: &PostgresTest, owners: &Owners) {
     let statement = format!(
-        "DROP TABLE LiteLLM_OwnedA; DROP TABLE LiteLLM_OwnedB; DROP TABLE LiteLLM_Blocked; REVOKE \"{}\" FROM \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\";",
+        "DROP TABLE \"LiteLLM_OwnedA\"; DROP TABLE \"LiteLLM_OwnedB\"; DROP TABLE \"LiteLLM_Blocked\"; REVOKE \"{}\" FROM \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\";",
         owners.owner, owners.viewer, owners.viewer, owners.owner, owners.blocked
     );
     test.client.batch_execute(&statement).await.unwrap();

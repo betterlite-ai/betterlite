@@ -7,20 +7,20 @@ use crate::request_log_indexes::replica_identity::{apply_on, apply_replica_ident
 
 use super::support::{
     FakeDatabase, FakeFault, PostgresTest, errored, informed, install_logs, replica_identity,
-    role_name,
+    role_name, stalled_database_url,
 };
 
 async fn create_replica_relations(test: &PostgresTest, other: &str) {
     test.client
         .batch_execute(&format!(
-            "CREATE TABLE LiteLLM_Plain (id text PRIMARY KEY);
-             CREATE TABLE LiteLLM_Partitioned (id text, day date) PARTITION BY RANGE (day);
-             CREATE TABLE LiteLLM_Partitioned_a PARTITION OF LiteLLM_Partitioned FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
-             CREATE VIEW LiteLLM_View AS SELECT 1 AS one;
-             CREATE TABLE Other_Table (id text);
+            "CREATE TABLE \"LiteLLM_Plain\" (id text PRIMARY KEY);
+             CREATE TABLE \"LiteLLM_Partitioned\" (id text, day date) PARTITION BY RANGE (day);
+             CREATE TABLE \"LiteLLM_Partitioned_a\" PARTITION OF \"LiteLLM_Partitioned\" FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+             CREATE VIEW \"LiteLLM_View\" AS SELECT 1 AS one;
+             CREATE TABLE \"Other_Table\" (id text);
              CREATE TABLE litellm_lower (id text);
              CREATE SCHEMA \"{other}\";
-             CREATE TABLE \"{other}\".LiteLLM_Foreign (id text);"
+             CREATE TABLE \"{other}\".\"LiteLLM_Foreign\" (id text);"
         ))
         .await
         .unwrap();
@@ -83,10 +83,10 @@ async fn replica_identity_selects_plain_visible_litellm_tables() {
 async fn apply_replica_identity_full_applies_on_the_database() {
     let test = PostgresTest::new().await;
     test.client
-        .batch_execute("CREATE TABLE LiteLLM_Applied (id text PRIMARY KEY);")
+        .batch_execute("CREATE TABLE \"LiteLLM_Applied\" (id text PRIMARY KEY);")
         .await
         .unwrap();
-    assert!(apply_replica_identity_full(&test.fixture.options.url, Duration::from_secs(60)).await);
+    assert!(apply_replica_identity_full(&test.url, Duration::from_secs(60)).await);
     assert_eq!(replica_identity(&test.client, "LiteLLM_Applied").await, "f");
     test.finish().await;
 }
@@ -100,9 +100,9 @@ async fn replica_identity_already_full_unchanged() {
         .batch_execute(&format!(
             "CREATE ROLE \"{owner}\" NOLOGIN;
              CREATE ROLE \"{viewer}\" NOLOGIN;
-             CREATE TABLE LiteLLM_Full (id text PRIMARY KEY);
-             ALTER TABLE LiteLLM_Full OWNER TO \"{owner}\";
-             ALTER TABLE LiteLLM_Full REPLICA IDENTITY FULL;"
+             CREATE TABLE \"LiteLLM_Full\" (id text PRIMARY KEY);
+             ALTER TABLE \"LiteLLM_Full\" OWNER TO \"{owner}\";
+             ALTER TABLE \"LiteLLM_Full\" REPLICA IDENTITY FULL;"
         ))
         .await
         .unwrap();
@@ -117,7 +117,7 @@ async fn replica_identity_already_full_unchanged() {
     drop(database);
     test.client
         .batch_execute(&format!(
-            "DROP TABLE LiteLLM_Full; DROP ROLE \"{owner}\"; DROP ROLE \"{viewer}\";"
+            "DROP TABLE \"LiteLLM_Full\"; DROP ROLE \"{owner}\"; DROP ROLE \"{viewer}\";"
         ))
         .await
         .unwrap();
@@ -165,6 +165,27 @@ async fn replica_connection_failure_warns_and_returns_false() {
         &captured,
         "REPLICA IDENTITY FULL applied to LiteLLM tables"
     ));
+}
+
+#[tokio::test]
+async fn replica_identity_connect_times_out() {
+    let (logs, _guard) = install_logs();
+    let (url, mut sockets) = stalled_database_url().await;
+    assert!(!apply_replica_identity_full(&url, Duration::from_millis(200)).await);
+    let captured = logs.contents();
+    assert!(informed(
+        &captured,
+        "Applying REPLICA IDENTITY FULL to LiteLLM tables"
+    ));
+    assert!(errored(
+        &captured,
+        "Could not run the REPLICA IDENTITY FULL statement. Logical replication consumers may reject updates to these tables."
+    ));
+    assert!(!informed(
+        &captured,
+        "REPLICA IDENTITY FULL applied to LiteLLM tables"
+    ));
+    sockets.shutdown().await;
 }
 
 #[tokio::test]
