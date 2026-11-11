@@ -103,7 +103,7 @@ out_of_scope:
   B250, failure B251, stream aggregation B252; payload setup B253/B254.
 - >-
   ClassifierAudit helpers and _autorouter_savings_for_payload are B021; deployment pricing and cost helpers B068/B069;
-  callback setup/get_custom_logger_compatible_class B189 plus exporter branches B110-B118; prompt-management B117,
+  callback setup/get_custom_logger_compatible_class B189 plus exporter branches B110-B118; prompt-management registry B117 and logging prompt methods B8560,
   MCP B140, other endpoint conversions B080-B099.
 - >-
   Complete remaining litellm_logging ownership: _get_cached_prometheus_logger is B111; pricing helpers 417-533,

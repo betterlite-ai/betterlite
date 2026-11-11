@@ -3,10 +3,10 @@ title: Read masked SSO settings and replace their encrypted stored configuration
 description: >-
   Add sso_settings_routes for authenticated GET /get/sso_settings and PATCH
   /update/sso_settings. Reuse B052's route policy without an extra handler role check, B1608's
-  SSOConfig record, B120's resolve_sso_config/descriptor mappings and B1656's schema metadata.
+  SSOConfig record, B4141's resolve_sso_config/descriptor mappings and B1656's schema metadata.
   GET requires DB and reads row sso_config through B726. Resolve scalar fields from decrypted
   stored values, environment and descriptor defaults, including generic_scope="openid email profile";
-  use B120's structured role/team mappings and source labels. Apply B244's masking to the three
+  use B4141's structured role/team mappings and source labels. Apply B244's masking to the three
   client-secret fields only after resolution. GET must not mutate the runtime environment.
   Its schema uses each raw field's type or string fallback without the generic optional-union
   projection, and provenance is exactly the resolver's map, not invented labels for structured
@@ -16,7 +16,7 @@ description: >-
   request and add decode_stored_sso_settings(bytes) for JSON-string before/cleanup rows.
   Capture an existing truthy row, parse it when it is a string, and decrypt dictionary values
   through B8382/B1600 for the audit before-image. Load current config before publishing the
-  full model dump, including null/default fields. For each of B120's sixteen SSO_FIELD_ENV_VARS,
+  full model dump, including null/default fields. For each of B4141's sixteen SSO_FIELD_ENV_VARS,
   truthy values replace the live value and falsey values clear it. Publish this through B1646's
   runtime environment overlay, consumed by the SSO composition's per-request snapshot.
   Encrypt string values with B1600 through B8382's encrypt_env (_encrypt_env_variables) contract, preserving

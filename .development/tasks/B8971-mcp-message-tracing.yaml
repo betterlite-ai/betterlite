@@ -64,6 +64,10 @@ scope:
     - crates/betterlite-server/src/mcp/message_tracing/**
     - tools/oracle/cases/helpers/mcp-trace-carrier/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-trace-carrier-*
+    - tools/oracle/helpers/b8971.py
+    - tools/oracle/helpers/b8971/**
+    - tools/oracle/src/helpers/server/b8971.rs
+    - tools/oracle/src/helpers/server/b8971/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L248-L411

@@ -84,6 +84,10 @@ scope:
     - crates/betterlite-guardrails/src/guardrail_metadata/**
     - tools/oracle/cases/helpers/guardrail-metadata/**
     - tools/oracle/fuzz/corpus/helper_case/guardrail-metadata-*
+    - tools/oracle/helpers/b8994.py
+    - tools/oracle/helpers/b8994/**
+    - tools/oracle/src/helpers/guardrails/b8994.rs
+    - tools/oracle/src/helpers/guardrails/b8994/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L467-L529

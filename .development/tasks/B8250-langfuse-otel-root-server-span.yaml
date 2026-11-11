@@ -106,7 +106,7 @@ deviations:
 out_of_scope:
   - "The axum layer that opens the HTTP server span, extracts traceparent and anchors the root span: B8680 installs the span layer in app::edge::wrap. This task only supplies ServerSpanPolicy and passthrough_span_name."
   - "LangfuseMapper, caller_trace_controls, request_root_span and the three content projections: B3846, B3892, B3847 and B3857 own them; this task calls them."
-  - "Choosing the Langfuse callbacks from the OTel config name: B3853 notes that B110 dispatches to them, and that wiring is not part of this task."
+  - "Choosing the Langfuse callbacks from the OTel config name: B8910's factory dispatches to them, and that wiring is not part of this task."
 pitfalls:
   - >-
     The stamp order in the pre-call hook is trace attributes first, wrapped hook second. In the content stamp the output

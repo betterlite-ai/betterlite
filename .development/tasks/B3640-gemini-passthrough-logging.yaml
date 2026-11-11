@@ -23,7 +23,7 @@ description: >-
 
   Constructors. `GeminiPassthroughLogger::new(cost: Arc<...>)` and `VertexStreamCollector::new(cost: Arc<...>)` each take B068's cost
   service handle (the type B068 exposes for completion_cost) and keep it. No module-level state. Both structs implement
-  CollectedChunksHandler. B102 builds them once and puts them in B3608's ProviderChunkHandlers (gemini and vertex slots).
+  CollectedChunksHandler. B8931 builds them once and puts them in B3608's ProviderChunkHandlers (gemini and vertex slots).
 
   The fixed names B3606 calls. In gemini_passthrough_logging:
   `pub struct GeminiPassthroughInput<'a> { pub logging_obj: &'a <the logging object handle type of CollectedChunksCall>, pub url_route: &'a str,

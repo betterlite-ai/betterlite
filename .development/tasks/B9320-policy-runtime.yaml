@@ -65,10 +65,13 @@ scope:
     - crates/betterlite-server/src/policy_runtime/**
     - crates/betterlite-config/src/sections/policy_engine.rs
     - crates/betterlite-config/src/sections/policy_engine/**
-    - crates/betterlite-config/fuzz/Cargo.toml
     - crates/betterlite-config/fuzz/fuzz_targets/policy_settings.rs
     - crates/betterlite-config/fuzz/corpus/policy_settings/**
     - tools/oracle/cases/helpers/policy-runtime-config/**
+    - tools/oracle/helpers/b9320.py
+    - tools/oracle/helpers/b9320/**
+    - tools/oracle/src/helpers/server/b9320.rs
+    - tools/oracle/src/helpers/server/b9320/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/__init__.py#L1-L58

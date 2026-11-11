@@ -107,6 +107,7 @@ out_of_scope:
   - "The image, transcription and speech calls are B998, B999, B1082 and B1084; their routes are not added here."
   - "Eden AI Messages (B6100's edenai_messages in betterlite-core) is not wired here, because betterlite-provider does not depend on betterlite-core."
   - "litellm/types/llms/openrouter.py only holds TypedDicts; plain Rust records replace them."
+  - "Supplemental Responses and decisions HTTP proofs belong to B9211, and media proofs to B041."
 pitfalls:
   - "OpenRouter header names are HTTP-Referer and X-Title, Vercel's are http-referer and x-title; a test must check the exact case."
   - "The request headers replace the referer headers only when they are not empty; an empty map keeps the defaults."

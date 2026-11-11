@@ -33,6 +33,8 @@ description: >-
 
   e. prompts/get and resources/read: the proxy rejection first, then every error passes through.
 
+  Trace scope: tools/list and tools/call run inside B8971's MessageTraceScope, built from the message snapshot that B8727 captured for that envelope. The prompt, resource and discover methods use no trace scope.
+
   Progress, _capture_host_progress_callback: when the request's _meta has a progressToken, B8199 gets a callback that sends notifications/progress with that token, the progress and the total through the request's Peer. A failed send logs "Failed to forward progress to Host: {err}" and is swallowed. Without a token there is no callback.
 
   Results reach the handler as B8190's wire shapes. Convert them into rmcp's model types through serde_json values, keeping _meta and any field rmcp's model has room for. A field that rmcp drops is a deviation to report, with the method and field name.
@@ -84,7 +86,7 @@ deviations:
 out_of_scope:
   - "The HTTP transports: B8721, B8722 and B8726. The session maps keyed by mcp-session-id: B8723. The order of checks before dispatch: B8727."
   - "_reject_mcp_proxy_operation, prepare_context and GatewayOperations: B8199. _http_detail_message: B8195. GatewayVersionPolicy, configured_versions, build_discovery and wire_compat_for: B8190. McpContext: B8191. McpAuthenticatedUser: B8200."
-  - "_mcp_meta_trace_carrier and the _otel_* carrier functions: not built, since no betterlite task builds LiteLLM's otel_v2 MCP span plumbing they feed, and they are no-ops without it."
+  - "_mcp_meta_trace_carrier and the _otel_* carrier functions: B8971 owns the per-message trace context bridge. This task's handlers run inside the message state it installs."
 pitfalls:
   - "Only tools/list re-raises an MCP error. The prompt and resource list handlers catch every failure, MCP errors included, and answer an empty list."
   - "The proxy rejection in the four prompt and resource handlers runs before the try, so in proxy mode it is an error and never an empty list."

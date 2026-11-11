@@ -115,7 +115,7 @@ deviations:
   - what: The registry is a value passed through constructors, not the module-level global_mcp_tool_registry.
     why: The repository forbids module-level state. The methods and their results are the same.
   - what: A handler is a Rust ToolHandler, resolved by an injected ToolHandlerLoader, not a Python function imported from a dotted path.
-    why: betterlite has no Python interpreter. B165 and B124 supply the real loader. Until then a `handler` string in `mcp_tools` fails startup with the loader's error, never a silent skip.
+    why: betterlite has no Python interpreter. B165 and B8871 supply the real loader. Until B8871 lands a `handler` string in `mcp_tools` fails startup with the loader's error, never a silent skip.
   - what: ToolHandler receives the per-request OpenApiCallContext as an argument, where LiteLLM's OpenAPI handlers read three ContextVars.
     why: Same reason as B4683. The values and their precedence do not change.
   - what: A top-level `mcp_tools` value that is not a list is a config error naming the key.
@@ -125,9 +125,10 @@ deviations:
 out_of_scope:
   - "register_tools_from_openapi and its suffixing of colliding tool names (_2, _3, ...) in openapi_to_mcp_generator.py: B4683 left it out as having no caller, and the registry is not that caller. Only its own file calls it. The manager (mcp_server_manager.py:2745) does its own loop, names tools with openapi_tool_name plus the server prefix, and calls register_tool directly, so a name collision there replaces the earlier tool. This task keeps that replace behavior."
   - "ToolSchema, ListToolsResponse and ContentItem in litellm/types/mcp_server/tool_registry.py: no caller at the pin. CallToolRequest of that file is shadowed by the MCP SDK type that operations.py imports."
-  - "get_instance_fn and the s3:// and gcs:// module loading: B124 and B165 own them and implement ToolHandlerLoader; B4143 owns the module download."
-  - "Calling load_tools_from_config at startup (proxy_server.py:7046): B124 remaining work."
-  - "The call paths that read the registry (operations.py _handle_local_mcp_tool, the managed OpenAPI handler at mcp_server_manager.py:5732), the 404 for an unknown tool, the 'Error: ...' result for a failing handler and handler_outcome (str(value) as text): B136 manager parts. They call get_tool and ToolHandler::call."
+  - "get_instance_fn and the s3:// and gcs:// module loading: B165 and B8871 own them and implement ToolHandlerLoader; B4143 owns the module download."
+  - "Calling load_tools_from_config at startup (proxy_server.py:7046): B8614 calls B8871's load_configured_tools, which calls this loader."
+  - "The managed OpenAPI caller (_call_openapi_tool_handler, mcp_server_manager.py:5732): B8970. The local caller (operations.py _handle_local_mcp_tool): B8198."
+  - "The call paths that read the registry, the 404 for an unknown tool, the 'Error: ...' result for a failing handler and handler_outcome (str(value) as text): B136 manager parts. They call get_tool and ToolHandler::call."
   - "Building OpenApiTool values, prefixed tool names, the registry key and the tool_name_to_mcp_server_name_mapping: B4683 and the B136 manager parts."
 pitfalls:
   - >-

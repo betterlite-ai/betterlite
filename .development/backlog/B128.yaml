@@ -1,7 +1,7 @@
 id: B128
 milestone: M8 platform
 title: Semantic caches
-status: todo
+status: blocked
 depends_on: [B8650, B8651]
 file: tasks/B128-semantic-cache-http.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "waits for a task that wires the inference cache (B8612's ResponseCacheSlot through B4305 lookup and B4304 writes), to be planned with B125"
 pr: null

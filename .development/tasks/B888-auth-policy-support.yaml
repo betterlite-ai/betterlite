@@ -34,7 +34,7 @@ description: >-
   string function.name, returning both in that order. Anthropic flattens these pairs. Ignore wrong
   object shapes and falsey names; retain truthy names after source string conversion, duplicates and
   order. Truthy noniterable tools/declarations propagate the source error rather than becoming an
-  allow-all result. B104 retains dynamic Python discovery and all other translation behavior.
+  allow-all result. B3679 and B3680 retain native registry binding and all other translation behavior, and B6032 owns the Python CustomGuardrail with callable loading in its Python loading tasks.
 
   _safe_fetch debug-logs and rethrows HTTPException, ProxyException and BudgetExceededError;
   other exceptions debug-log 'swallowed' and return None. The reconstructed cached team copies

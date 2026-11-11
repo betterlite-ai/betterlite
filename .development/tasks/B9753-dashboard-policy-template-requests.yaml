@@ -31,7 +31,7 @@ description: >-
   The page reads guardrailDefinitions and competitors, substitutes the form parameters in
   the template and opens the guardrail chooser. Add a competitor-mention-detection case
   with parameters:{brand_name:"Acme"}, explicit competitors, and a selected local model,
-  then use its actual definitions in preview and installation requests. B3252 already plans
+  then use its actual definitions in preview and installation requests. B9324 owns the
   given-competitors, discovery, auth and validation HTTP cases; reuse those paths below
   rather than copying their single-request variants. A second case sends the explicit empty
   competitors list from the form and proves that discovery still occurs, with model omitted
@@ -44,8 +44,8 @@ description: >-
   data events type=competitor supply name, type=status supplies message, type=done supplies
   competitors,competitor_variations,guardrailDefinitions, and type=error supplies message.
   The page consumes no OpenAI choices delta or [DONE] sentinel. Reuse the stream-discovery,
-  stream-given-competitors, stream-refinement and stream-no-router-error cases transferred
-  from B3252 to B9321 before dispatch, comparing
+  stream-given-competitors, stream-refinement and stream-no-router-error cases B9324 owns
+  (moved there from B3252), comparing
   event order, Cache-Control, X-Accel-Buffering and content-type. Add the missing generic
   competitor-template transcript that streams names, refines the current selection and
   previews the resulting definitions. Keep local provider deltas deterministic and exercise

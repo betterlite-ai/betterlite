@@ -36,7 +36,7 @@ description: >-
   idempotence, safe headers and route-attribute conditions. Route its phase and identity hooks
   through B8910's optional runtime and its pre-call failure hook through B3853. B052 retains
   the order: destinations inside auth, identity baggage after auth closes, then deferred body
-  failure. B8870, under B124, supplies the TenantDestinations adapter and its own HTTP cases;
+  failure. B8870, under B124, supplies the TenantDestinations adapter, and B124 owns its HTTP cases;
   it calls B8910's fan_out_provider and is not rebuilt here. B3847 already implements
   _get_parent_otel_span_from_kwargs for provider/cache callers. For management, implement
   B1228's OTel transport using B3858's success/failure hooks; B1228 keeps its early skip when

@@ -3,7 +3,7 @@ title: SlackAlerting logger events, alerting ports and spend report jobs
 description: >-
   The alerting tasks build their logic behind small traits and leave the real implementations and the background jobs
   to the composition root. This part writes those implementations over the shared state, builds SlackAlerting's two log
-  event methods, starts the spend report jobs, and gives B3678's event stream rewrite its post call hook. It mounts no
+  event methods, supplies the ports and events the spend report jobs run on (B8372 registers them), and gives B3678's event stream rewrite its post call hook. It mounts no
   route.
 
 
@@ -48,11 +48,11 @@ description: >-
   `hours_in_a_day` is the `HOURS_IN_A_DAY` env var as an integer, 24 when unset or not a number.
 
 
-  jobs.rs and start. `start(state)` calls B4029's `plan_spend_jobs` with the alerting settings it reads at startup
-  (LiteLLM decides the jobs once, in proxy_server.py initialize_scheduled_background_jobs). For each job it gets, spawn
-  one task on the server TaskTracker (`shared.http`) that waits the job's first-run offset, runs the job, then waits its
-  interval and repeats until the server shuts down (the shutting_down signal B8610 passes to application()). A job error is logged
-  and the loop goes on. With alerting None or spend_reports and the user spend alert types absent, start spawns nothing.
+  jobs.rs. The spend report jobs are registered by B8372's _initialize_slack_alerting_jobs step, once at startup, so
+  `start(state)` spawns no spend job. jobs.rs builds the B4029 ports above and runs one job when B8372 asks: B8372
+  calls B4029's `plan_spend_jobs` with the alerting settings, and for each job it gets spawns one task on the server
+  TaskTracker (`shared.http`) that waits the job's first-run offset, runs the job through these ports, then waits its
+  interval and repeats until the server shuts down. A job error is logged and the loop goes on.
 
 
   post_call.rs. `ProxyPostCallHook` implements B3678's `PostCallSuccessHook` over `shared.proxy_logging`: it calls
@@ -64,8 +64,7 @@ description: >-
   Tests in alerting/tests.rs and post_call/tests.rs use in-memory fakes for ProxyLogging's cache, the router view, the
   sender and the database. Name them after what they prove: success with and without daily_reports; failure with an
   APIError 500 that sends a Minor outage alert on the fifth call and with a non API error that sends nothing; a record
-  written and read back through the cache; a missing router; each spend port; start with spend_reports spawning the
-  weekly and monthly jobs and with no alerting spawning none (tokio paused clock); the post call hook passing the
+  written and read back through the cache; a missing router; each spend port; a planned spend job running through the ports (tokio paused clock); the post call hook passing the
   answer and the error through. No oracle case: no route reaches this code, and alerts go to Slack, which the oracle
   cannot see.
 scope:
@@ -90,7 +89,7 @@ dod:
     proof: [alerting-tests]
   - text: The outage and spend ports read and write ProxyLogging's internal usage cache, the live router, the database and send_alert, and a missing router or database takes LiteLLM's early return.
     proof: [alerting-tests]
-  - text: start spawns each spend report job B4029 plans once, and none without alerting.
+  - text: A spend report job that B8372 plans runs through these ports and repeats at B4029's interval.
     proof: [alerting-tests]
   - text: The post call hook forwards to ProxyLogging's post_call_success_hook and returns its answer or error unchanged.
     proof: [post-call-tests]
@@ -105,12 +104,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::post_call::/)'
 oracle_cases: []
 deviations:
-  - what: Spend report jobs run on the server's task tracker and stop at shutdown, not on APScheduler.
+  - what: Spend report jobs run on the server's task tracker (spawned by B8372's registration) and stop at shutdown, not on APScheduler.
     why: betterlite has no scheduler; the intervals and first-run offsets are B4029's, so the send times match.
 out_of_scope:
   - "Outage detection, daily reports and spend report text: B4026, B4028 and B4029. send_alert: B4024."
   - "Registering SlackAlerting as a callback and the daily report and hanging request loops: B8399."
-  - "Delivering a call's events to SlackAlertingEvents: no task owns the logging dispatch yet (see the report notes)."
+  - "Delivering a call's events to SlackAlertingEvents: B250 and B251 own the logging dispatch, and B8891 owns the concrete adapters."
+  - "Registering the spend report jobs and the fallback statistics cron: B8372."
   - "The pass-through route that calls de_anonymize_event_stream: the LLM pass-through route part."
 pitfalls:
   - The failure event drops errors from the daily report update and from the whole outage branch, so a broken cache or Slack URL never fails the request.

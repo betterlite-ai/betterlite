@@ -3,11 +3,11 @@ title: Build the content filter guardrail class and its apply_guardrail
 description: >-
   LiteLLM's built-in content filter is one class, ContentFilterGuardrail in
   litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py. Its pieces are planned: B3692
-  loads categories and the blocked words file, B3693 compiles and matches patterns, B3694 matches category keywords,
+  loads categories, B3693 loads the blocked words file and compiles and matches patterns, B3694 matches category keywords,
   B3695 filters one text, B3698 counts and logs detections, B3699 scans images and tool arguments and applies the
   competitor intent policy, and B3700 filters streams. Nobody builds the class itself: the constructor (L210-L321),
   `_init_competitor_intent_checker` (L323-L338), `apply_guardrail` (L1874-L1955) and the two class hooks at the end
-  (`get_config_model` L2154-L2160, `get_supported_event_hooks` L2162-L2171). B8219 stops at the argument struct and
+  (`get_config_model` L2156-L2162, `get_supported_event_hooks` L2164-L2172). B8219 stops at the argument struct and
   B8666 needs a class to build from it. This task builds that class.
 
 
@@ -29,9 +29,9 @@ description: >-
   checker; a build error is logged at warning "ContentFilterGuardrail: failed to init competitor intent checker: %s"
   and leaves no checker, never an error. Then categories through B3692 when the list is non-empty; then patterns and
   blocked words, normalized and compiled through B3693; then the during_call warning: when the event hook is
-  during_call and any compiled pattern's action is MASK, log at warning the text at L285-L288 with the guardrail name.
+  during_call and any compiled pattern's action is MASK, log at warning the text at L289-L296 with the guardrail name.
   Blocked words go into a map keyed by the lowercased keyword holding (action, description), the last duplicate wins.
-  Then the blocked words file through B3692 when one is set. A file or category error is the only constructor error.
+  Then the blocked words file through B3693 when one is set. A file or category error is the only constructor error.
 
 
   apply_guardrail(inputs, request_data, input_type, logging) takes the generic guardrail inputs type B5471 uses for
@@ -73,7 +73,7 @@ references:
     why: The class constants, the constructor order and the competitor intent checker switch.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1874-L1955
     why: apply_guardrail, its status values and the finally-block logging.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2154-L2171
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2156-L2172
     why: The config model and the six supported event hooks.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py
     why: What the initializer passes, so the two redaction values always take their defaults.
@@ -97,7 +97,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/content-filter-guard/supported-hooks.yaml
 deviations: []
 out_of_scope:
-  - "The initializer arguments: B8219. Category and blocked words file loading: B3692. Patterns: B3693. Keyword matching: B3694. Single text filtering: B3695. Detection counts and logging: B3698. Images, tool and MCP arguments and the competitor policy: B3699. Streaming: B3700."
+  - "The initializer arguments: B8219. Category loading: B3692. Blocked words file loading and patterns: B3693. Keyword matching: B3694. Single text filtering: B3695. Detection counts and logging: B3698. Images, tool and MCP arguments and the competitor policy: B3699. Streaming: B3700."
   - "Building the class from a guardrail record and dispatching its hooks: B8666."
 pitfalls:
   - "initialize_guardrail never passes pattern_redaction_format or keyword_redaction_tag, so a config value for them is ignored and the defaults always apply."

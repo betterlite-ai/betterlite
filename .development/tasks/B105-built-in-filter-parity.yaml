@@ -150,6 +150,10 @@ scope:
     - tools/oracle/cases/helpers/blocked-word-lookup/**
     - tools/oracle/cases/guardrails/builtin-content-http/**
     - tools/oracle/fuzz/corpus/helper_case/blocked-word-lookup-*
+    - tools/oracle/helpers/b105.py
+    - tools/oracle/helpers/b105/**
+    - tools/oracle/src/helpers/guardrails/b105.rs
+    - tools/oracle/src/helpers/guardrails/b105/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1173-L1207

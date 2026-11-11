@@ -74,6 +74,10 @@ scope:
     - crates/betterlite-logging/src/alert_batching/alert_delivery.rs
     - crates/betterlite-logging/src/alert_batching/alert_delivery/tests.rs
     - tools/oracle/cases/helpers/alert-runtime/**
+    - tools/oracle/helpers/b8890.py
+    - tools/oracle/helpers/b8890/**
+    - tools/oracle/src/helpers/server/b8890.rs
+    - tools/oracle/src/helpers/server/b8890/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L92-L131

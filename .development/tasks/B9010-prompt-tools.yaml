@@ -59,7 +59,7 @@ description: >-
   followed by body bytes). The target calls these exact production decoders and the bounded preview renderer;
   tests replay every seed. No new config key or environment variable is introduced.
 
-  HTTP cases use kind http, master key oracle-master and an openai/gpt-4o-mini model behind the mock upstream.
+  HTTP cases omit kind (any present kind is read as a helper case), use master key oracle-master and an openai/gpt-4o-mini model behind the mock upstream.
   Preview cases cover rendered role messages/autoescape, history retaining system messages, forced streaming over
   metadata stream=false, optional max_tokens, input-schema bypass, missing model, whitespace-only render,
   invalid YAML, Jinja syntax failure, a forbidden api_base in frontmatter, and absent auth. Conversion cases use

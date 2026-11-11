@@ -66,11 +66,14 @@ scope:
     - crates/betterlite-server/src/stream_usage_cost/**
     - crates/betterlite-config/src/sections/stream_usage_cost.rs
     - crates/betterlite-config/src/sections/stream_usage_cost/**
-    - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/stream_usage_cost.rs
     - crates/betterlite-server/fuzz/corpus/stream_usage_cost/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/stream-usage-cost-*
     - tools/oracle/cases/helpers/stream-usage-cost/**
+    - tools/oracle/helpers/b8930.py
+    - tools/oracle/helpers/b8930/**
+    - tools/oracle/src/helpers/server/b8930.rs
+    - tools/oracle/src/helpers/server/b8930/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4056-L4152

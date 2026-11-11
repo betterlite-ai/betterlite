@@ -4,7 +4,8 @@ title: MCP path routes for /mcp, /mcp/proxy, toolsets and named servers
 status: todo
 depends_on: [B4731, B4669, B733, B743, B6592, B8727]
 file: tasks/B8592-mcp-path-routes.yaml
-covers: []
+covers:
+  - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B124
 resolution: null
