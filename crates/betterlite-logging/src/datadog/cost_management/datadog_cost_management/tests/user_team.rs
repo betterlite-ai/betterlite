@@ -33,8 +33,12 @@ fn user_team_tags_are_normalized_for_the_alias_and_team_alias() {
     vec![("team_alias", "Team Alias"), ("team_id", "Team ID")],
     "team_alias"
 )]
-#[case::api_key_team_id_beats_team_alias(
-    vec![("user_api_key_team_id", "Key Team"), ("team_alias", "Team Alias")],
+#[case::team_alias_beats_api_key_team_id(
+    vec![("team_alias", "Team Alias"), ("user_api_key_team_id", "Key Team")],
+    "team_alias"
+)]
+#[case::api_key_team_id_beats_team_id(
+    vec![("user_api_key_team_id", "Key Team"), ("team_id", "Team ID")],
     "key_team"
 )]
 #[case::api_key_team_alias_beats_all(
