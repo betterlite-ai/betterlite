@@ -6,6 +6,6 @@ call: {azure_managed_identity: {steps: [
 ]}}
 env: {}
 compare: {ignore: [
-  {pointer: /steps/0/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
-  {pointer: /steps/1/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"}
+  {pointer: /value/steps/0/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"},
+  {pointer: /value/steps/1/requests/0/headers/x-client-ver, why: "the oracle venv resolves msal 1.39.0; the pinned 1.37.0 value is asserted by the native case"}
 ]}

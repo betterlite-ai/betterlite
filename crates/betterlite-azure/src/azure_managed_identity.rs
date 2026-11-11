@@ -15,7 +15,7 @@ use std::io::Result as IoResult;
 use secrecy::SecretString;
 
 use crate::azure_arc_identity::{
-    ArcAccessToken, ArcHost, ArcIdentity, ArcRequest, ArcResponse, ArcTransport, acquire_arc_token,
+    ArcHost, ArcIdentity, ArcRequest, ArcResponse, ArcTransport, acquire_arc_token,
     select_arc_endpoint,
 };
 use crate::azure_client_secret::token::AccessToken;
@@ -41,17 +41,6 @@ pub struct ManagedIdentityToken {
 
 impl From<AccessToken> for ManagedIdentityToken {
     fn from(token: AccessToken) -> Self {
-        Self {
-            token: token.token,
-            expires_on: Some(token.expires_on),
-            token_type: Some(token.token_type),
-            refresh_on: token.refresh_on,
-        }
-    }
-}
-
-impl From<ArcAccessToken> for ManagedIdentityToken {
-    fn from(token: ArcAccessToken) -> Self {
         Self {
             token: token.token,
             expires_on: Some(token.expires_on),
@@ -123,10 +112,7 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
                 let resource = scope.strip_suffix("/.default").unwrap_or(scope);
                 CloudShellCredential {
                     environment: self.environment.hosted.clone(),
-                    identity: HostedIdentity {
-                        client_id: self.client_id.map(str::to_owned),
-                        identity_config: BTreeMap::new(),
-                    },
+                    identity: self.hosted_identity(),
                     within_default_credential: self.within_default_credential,
                 }
                 .acquire(&io.hosted, resource)
@@ -141,6 +127,13 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
         }
     }
 
+    fn hosted_identity(&self) -> HostedIdentity {
+        HostedIdentity {
+            client_id: self.client_id.map(str::to_owned),
+            identity_config: BTreeMap::new(),
+        }
+    }
+
     // once an MSAL-backed credential is selected, MSAL re-reads the environment by key presence
     fn msal_backed(
         &self,
@@ -148,36 +141,29 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
         scope: &str,
     ) -> Result<ManagedIdentityToken, ManagedIdentityError> {
         let resource = scope.strip_suffix("/.default").unwrap_or(scope);
-        let hosted = HostedCredential {
-            environment: self.environment.hosted.clone(),
-            identity: HostedIdentity {
-                client_id: self.client_id.map(str::to_owned),
-                identity_config: BTreeMap::new(),
-            },
+        let kind = match select_hosted_protocol(&self.environment.hosted, self.host) {
+            HostedProtocol::ServiceFabric => MsalKind::ServiceFabric,
+            HostedProtocol::AppService => MsalKind::AppService,
+            HostedProtocol::AzureMl => MsalKind::AzureMl,
+            HostedProtocol::Arc => return self.arc(io, resource),
+            HostedProtocol::Vm => {
+                return imds::acquire(
+                    self.environment,
+                    &io.imds,
+                    resource,
+                    self.client_id,
+                    self.probe,
+                )
+                .map(ManagedIdentityToken::from);
+            }
         };
-        match select_hosted_protocol(&self.environment.hosted, self.host) {
-            HostedProtocol::ServiceFabric => hosted
-                .acquire(MsalKind::ServiceFabric, &io.hosted, resource)
-                .map(ManagedIdentityToken::from)
-                .map_err(ManagedIdentityError::from),
-            HostedProtocol::AppService => hosted
-                .acquire(MsalKind::AppService, &io.hosted, resource)
-                .map(ManagedIdentityToken::from)
-                .map_err(ManagedIdentityError::from),
-            HostedProtocol::AzureMl => hosted
-                .acquire(MsalKind::AzureMl, &io.hosted, resource)
-                .map(ManagedIdentityToken::from)
-                .map_err(ManagedIdentityError::from),
-            HostedProtocol::Arc => self.arc(io, resource),
-            HostedProtocol::Vm => imds::acquire(
-                self.environment,
-                &io.imds,
-                resource,
-                self.client_id,
-                self.probe,
-            )
-            .map(ManagedIdentityToken::from),
+        HostedCredential {
+            environment: self.environment.hosted.clone(),
+            identity: self.hosted_identity(),
         }
+        .acquire(kind, &io.hosted, resource)
+        .map(ManagedIdentityToken::from)
+        .map_err(ManagedIdentityError::from)
     }
 
     fn arc(
@@ -190,8 +176,12 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
             Some(client_id) if !client_id.is_empty() => ArcIdentity::UserAssigned,
             Some(_) | None => ArcIdentity::SystemAssigned,
         };
-        acquire_arc_token(self.host, &io.arc, &endpoint, resource, identity)
-            .map(ManagedIdentityToken::from)
-            .map_err(ManagedIdentityError::from)
+        let token = acquire_arc_token(self.host, &io.arc, &endpoint, resource, identity)?;
+        Ok(ManagedIdentityToken {
+            token: token.token,
+            expires_on: Some(token.expires_on),
+            token_type: Some(token.token_type),
+            refresh_on: token.refresh_on,
+        })
     }
 }

@@ -50,15 +50,14 @@ impl Scalar {
     }
 
     fn integer(self, field: &'static str) -> Result<i64, ImdsTokenError> {
-        match self {
-            Self::Number(number) => number.as_i64().ok_or(ImdsTokenError::Integer { field }),
-            // MSAL converts a string field with int(), which trims surrounding whitespace
-            Self::Text(text) => text
-                .trim()
-                .parse::<i64>()
-                .map_err(|_error| ImdsTokenError::Integer { field }),
-            Self::Bool(_) | Self::Nested(_) => Err(ImdsTokenError::FieldType { field }),
+        if let Self::Number(number) = self {
+            return number.as_i64().ok_or(ImdsTokenError::Integer { field });
         }
+        // MSAL converts a string field with int(), which trims surrounding whitespace
+        self.text(field)?
+            .trim()
+            .parse::<i64>()
+            .map_err(|_error| ImdsTokenError::Integer { field })
     }
 }
 

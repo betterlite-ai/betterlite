@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_azure::azure_arc_identity::error::ArcIdentityError as Arc;
 use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform};
-use betterlite_azure::azure_hosted_identity::error::HostedIdentityError as Hosted;
 use betterlite_azure::azure_hosted_identity::protocol::HostedProtocol;
 use betterlite_azure::azure_managed_identity::ManagedIdentityToken;
 use betterlite_azure::azure_managed_identity::error::ManagedIdentityError as Identity;
@@ -15,7 +13,8 @@ use serde_json::{Value, json};
 
 use crate::helpers::HelperError;
 
-use self::fixture::{Fixture, Reply, Shared};
+use self::fixture::Fixture;
+use self::fixture::transport::{Reply, Shared};
 
 mod fixture;
 mod tests;
@@ -116,6 +115,7 @@ impl From<Failure> for Box<HelperError> {
     }
 }
 
+// hosted and Arc protocol failures are other tasks' oracle cases; the fixture transport refuses them
 const fn category(error: &Identity) -> &'static str {
     match error {
         Identity::ImdsUnavailable { .. }
@@ -123,60 +123,28 @@ const fn category(error: &Identity) -> &'static str {
         | Identity::ImdsError { .. }
         | Identity::NoEndpoint
         | Identity::NoIdentityAssigned
-        | Identity::AuthenticationUnavailable => "unavailable",
-        Identity::ClientAuthentication { .. } => "client_authentication",
+        | Identity::AuthenticationUnavailable
+        | Identity::Oidc(Oidc::UnresolvedOidcToken) => "unavailable",
+        Identity::ClientAuthentication { .. }
+        | Identity::Oidc(
+            Oidc::MissingClientTenant
+            | Oidc::AccessTokenMissing
+            | Oidc::ExpiresInMissing
+            | Oidc::TokenStatus { .. },
+        ) => "client_authentication",
         Identity::ScopeCount
         | Identity::WorkloadClientId
         | Identity::ImdsReply(_)
         | Identity::ExpiryOverflow => "invalid_value",
-        Identity::TokenFile { .. } | Identity::TokenFileEncoding { .. } | Identity::ArcEndpoint => {
+        Identity::Oidc(Oidc::TokenJson { .. } | Oidc::TokenFieldType { .. }) => "invalid_json",
+        Identity::TokenFile { .. }
+        | Identity::TokenFileEncoding { .. }
+        | Identity::ArcEndpoint
+        | Identity::Hosted(_)
+        | Identity::Arc(_)
+        | Identity::Oidc(Oidc::TokenTransport { .. } | Oidc::Cache { .. } | Oidc::CachePoisoned) => {
             "transport"
         }
-        Identity::Hosted(inner) => hosted_category(inner),
-        Identity::Arc(inner) => arc_category(inner),
-        Identity::Oidc(inner) => oidc_category(inner),
-    }
-}
-
-const fn hosted_category(error: &Hosted) -> &'static str {
-    match error {
-        Hosted::TokenRequest { .. }
-        | Hosted::CloudShellUnavailable
-        | Hosted::UnsupportedContentType { .. } => "unavailable",
-        Hosted::ServiceFabricIdentityConfig
-        | Hosted::NoToken
-        | Hosted::UnexpectedResponse { .. }
-        | Hosted::JsonContentType(_) => "client_authentication",
-        Hosted::CloudShellClientId
-        | Hosted::CloudShellIdentityConfig
-        | Hosted::MissingField { .. }
-        | Hosted::ReplyValue { .. }
-        | Hosted::ExpiryOverflow => "invalid_value",
-        Hosted::ReplyJson(_) => "invalid_json",
-        Hosted::MissingEnvironment { .. } | Hosted::Transport(_) => "transport",
-    }
-}
-
-const fn arc_category(error: &Arc) -> &'static str {
-    match error {
-        Arc::TokenRequest { .. } => "unavailable",
-        Arc::UnrecognizableChallenge { .. }
-        | Arc::UnsupportedPlatform { .. }
-        | Arc::KeyFileTooLarge => "client_authentication",
-        Arc::UserAssignedIdentity | Arc::ReplyValue { .. } => "invalid_value",
-        Arc::Transport(_) | Arc::KeyFile(_) => "transport",
-    }
-}
-
-const fn oidc_category(error: &Oidc) -> &'static str {
-    match error {
-        Oidc::MissingClientTenant
-        | Oidc::AccessTokenMissing
-        | Oidc::ExpiresInMissing
-        | Oidc::TokenStatus { .. } => "client_authentication",
-        Oidc::TokenJson { .. } | Oidc::TokenFieldType { .. } => "invalid_json",
-        Oidc::UnresolvedOidcToken => "unavailable",
-        Oidc::TokenTransport { .. } | Oidc::Cache { .. } | Oidc::CachePoisoned => "transport",
     }
 }
 

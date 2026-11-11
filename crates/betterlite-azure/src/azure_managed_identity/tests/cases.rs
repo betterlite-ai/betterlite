@@ -410,47 +410,22 @@ fn workload_file_is_read_each_time() {
 }
 
 fn imds_retry_policy() {
-    retry_410();
-    retry_404();
+    exhausted_ladder(410, &[5, 10, 20, 40].map(Duration::from_secs));
+    exhausted_ladder(404, &[1600, 3200, 6400, 12800].map(Duration::from_millis));
     retry_mixed();
     retry_after();
     retry_400_not_retried();
     retry_transport_error();
 }
 
-fn retry_410() {
+fn exhausted_ladder(status: u16, expected: &[Duration]) {
     let fixture = Fixture::new(&[]);
     fixture
         .imds
-        .push_all(repeat_n(Reply::json(410, "gone"), 6).collect());
+        .push_all(repeat_n(Reply::json(status, "failing"), 6).collect());
     fixture.acquire(&[SCOPE]).unwrap_err();
     assert_eq!(fixture.imds.recorded().len(), 6);
-    assert_eq!(
-        fixture.scheduler.recorded(),
-        vec![
-            Duration::from_secs(5),
-            Duration::from_secs(10),
-            Duration::from_secs(20),
-            Duration::from_secs(40),
-        ]
-    );
-}
-
-fn retry_404() {
-    let fixture = Fixture::new(&[]);
-    fixture
-        .imds
-        .push_all(repeat_n(Reply::json(404, "nope"), 6).collect());
-    fixture.acquire(&[SCOPE]).unwrap_err();
-    assert_eq!(
-        fixture.scheduler.recorded(),
-        vec![
-            Duration::from_millis(1600),
-            Duration::from_millis(3200),
-            Duration::from_millis(6400),
-            Duration::from_millis(12800),
-        ]
-    );
+    assert_eq!(fixture.scheduler.recorded(), expected);
 }
 
 fn retry_mixed() {

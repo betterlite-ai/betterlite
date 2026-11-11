@@ -78,35 +78,27 @@ fn query(resource: &str, client_id: Option<&str>) -> Vec<(String, String)> {
     query
 }
 
-fn probe_request(
+// the availability probe sends no headers and a shorter timeout than the token request
+fn request(
     environment: &ManagedIdentityEnvironment,
     resource: &str,
     client_id: Option<&str>,
+    request_id: Option<&str>,
 ) -> ImdsRequest {
-    ImdsRequest {
-        url: url(environment),
-        query: query(resource, client_id),
-        headers: Vec::new(),
-        timeout_seconds: Some(PROBE_TIMEOUT_SECONDS),
-    }
-}
-
-fn token_request(
-    environment: &ManagedIdentityEnvironment,
-    resource: &str,
-    client_id: Option<&str>,
-    request_id: &str,
-) -> ImdsRequest {
-    ImdsRequest {
-        url: url(environment),
-        query: query(resource, client_id),
-        headers: vec![
+    let mut headers = Vec::new();
+    if let Some(id) = request_id {
+        headers.extend([
             ("Metadata".to_owned(), "true".to_owned()),
             ("x-client-SKU".to_owned(), CLIENT_SKU.to_owned()),
             ("x-client-Ver".to_owned(), CLIENT_VERSION.to_owned()),
-            ("x-ms-client-request-id".to_owned(), request_id.to_owned()),
-        ],
-        timeout_seconds: None,
+            ("x-ms-client-request-id".to_owned(), id.to_owned()),
+        ]);
+    }
+    ImdsRequest {
+        url: url(environment),
+        query: query(resource, client_id),
+        headers,
+        timeout_seconds: request_id.is_none().then_some(PROBE_TIMEOUT_SECONDS),
     }
 }
 
@@ -130,7 +122,7 @@ fn check_probe(
     resource: &str,
     client_id: Option<&str>,
 ) -> Result<(), ManagedIdentityError> {
-    let request = probe_request(environment, resource, client_id);
+    let request = request(environment, resource, client_id, None);
     let response = io
         .transport
         .get(&request)
@@ -214,7 +206,7 @@ pub fn acquire(
     if probe.active() && !available {
         check_probe(environment, io, resource, client_id)?;
     }
-    let request = token_request(environment, resource, client_id, &io.ids.next_id());
+    let request = request(environment, resource, client_id, Some(&io.ids.next_id()));
     let started = io.clock.now_unix_seconds();
     let response = send(io, &request, TOKEN_BUDGET)?;
     let finished = io.clock.now_unix_seconds();

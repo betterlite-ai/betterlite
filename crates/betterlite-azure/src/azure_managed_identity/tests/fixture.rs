@@ -88,13 +88,23 @@ impl RecordedRequest {
     }
 }
 
-#[derive(Default)]
-pub(super) struct RecordingImds {
+type ReplyParts = (u16, Vec<(String, String)>, String);
+
+pub(super) struct Script<T> {
     replies: Mutex<VecDeque<Reply>>,
-    requests: Mutex<Vec<RecordedRequest>>,
+    requests: Mutex<Vec<T>>,
 }
 
-impl RecordingImds {
+impl<T> Default for Script<T> {
+    fn default() -> Self {
+        Self {
+            replies: Mutex::default(),
+            requests: Mutex::default(),
+        }
+    }
+}
+
+impl<T> Script<T> {
     pub(super) fn push(&self, reply: Reply) {
         self.replies
             .lock()
@@ -109,30 +119,21 @@ impl RecordingImds {
             .extend(replies);
     }
 
-    pub(super) fn recorded(&self) -> Vec<RecordedRequest> {
+    pub(super) fn recorded(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-}
 
-impl ImdsTransport for RecordingImds {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
+    fn exchange(&self, request: T) -> io::Result<ReplyParts> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(RecordedRequest {
-                method: "GET",
-                url: request.url.clone(),
-                query: BTreeMap::from_iter(request.query.iter().cloned()),
-                headers: request
-                    .headers
-                    .iter()
-                    .map(|(name, value)| (name.to_lowercase(), value.clone()))
-                    .collect(),
-                timeout_seconds: request.timeout_seconds,
-            });
+            .push(request);
         let reply = self
             .replies
             .lock()
@@ -145,15 +146,45 @@ impl ImdsTransport for RecordingImds {
                 status,
                 headers,
                 body,
-            } => Ok(ImdsResponse {
-                status,
-                headers: headers
+            } => {
+                let owned = headers
                     .into_iter()
                     .map(|(name, value)| (name.to_owned(), value.to_owned()))
-                    .collect(),
-                body: SecretString::from(body),
-            }),
+                    .collect();
+                Ok((status, owned, body))
+            }
         }
+    }
+}
+
+pub(super) type RecordingImds = Script<RecordedRequest>;
+pub(super) type RecordingHosted = Script<RecordedHosted>;
+pub(super) type RecordingArc = Script<ArcRequest>;
+
+impl From<&ImdsRequest> for RecordedRequest {
+    fn from(request: &ImdsRequest) -> Self {
+        Self {
+            method: "GET",
+            url: request.url.clone(),
+            query: BTreeMap::from_iter(request.query.iter().cloned()),
+            headers: request
+                .headers
+                .iter()
+                .map(|(name, value)| (name.to_lowercase(), value.clone()))
+                .collect(),
+            timeout_seconds: request.timeout_seconds,
+        }
+    }
+}
+
+impl ImdsTransport for RecordingImds {
+    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
+        let (status, headers, body) = self.exchange(RecordedRequest::from(request))?;
+        Ok(ImdsResponse {
+            status,
+            headers,
+            body: SecretString::from(body),
+        })
     }
 }
 
@@ -231,119 +262,41 @@ impl TokenFiles for FixtureFiles {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct RecordedHosted {
     pub(super) url: String,
-    pub(super) query: Vec<(String, String)>,
     pub(super) headers: Vec<(&'static str, SecretString)>,
-    pub(super) form: Vec<(String, String)>,
-}
-
-#[derive(Default)]
-pub(super) struct RecordingHosted {
-    replies: Mutex<VecDeque<Reply>>,
-    requests: Mutex<Vec<RecordedHosted>>,
-}
-
-impl RecordingHosted {
-    pub(super) fn push(&self, reply: Reply) {
-        self.replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push_back(reply);
-    }
-
-    pub(super) fn recorded(&self) -> Vec<RecordedHosted> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|request| RecordedHosted {
-                url: request.url.clone(),
-                query: request.query.clone(),
-                headers: request.headers.clone(),
-                form: request.form.clone(),
-            })
-            .collect()
-    }
 }
 
 impl HostedTransport for RecordingHosted {
     fn send(&self, request: &HostedRequest) -> io::Result<HostedResponse> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(RecordedHosted {
-                url: request.url.clone(),
-                query: request.query.clone(),
-                headers: request.headers.clone(),
-                form: request.form.clone(),
-            });
-        let reply = self
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or_else(|| io::Error::other("no hosted reply queued"))?;
-        match reply {
-            Reply::Failure => Err(io::Error::other("hosted transport down")),
-            Reply::Response { headers, body, .. } => Ok(HostedResponse {
-                content_type: headers
-                    .iter()
-                    .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, value)| (*value).to_owned()),
-                body: SecretString::from(body),
-            }),
-        }
-    }
-}
-
-#[derive(Default)]
-pub(super) struct RecordingArc {
-    replies: Mutex<VecDeque<Reply>>,
-    requests: Mutex<Vec<ArcRequest>>,
-}
-
-impl RecordingArc {
-    pub(super) fn push(&self, reply: Reply) {
-        self.replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push_back(reply);
+        let (_status, headers, body) = self.exchange(RecordedHosted {
+            url: request.url.clone(),
+            headers: request.headers.clone(),
+        })?;
+        let content_type = headers
+            .into_iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+            .map(|(_, value)| value);
+        Ok(HostedResponse {
+            content_type,
+            body: SecretString::from(body),
+        })
     }
 }
 
 impl ArcTransport for RecordingArc {
     fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(ArcRequest {
-                url: request.url.clone(),
-                query: request.query.clone(),
-                headers: request.headers.clone(),
-            });
-        let reply = self
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or_else(|| io::Error::other("no arc reply queued"))?;
-        match reply {
-            Reply::Failure => Err(io::Error::other("arc transport down")),
-            Reply::Response {
-                status,
-                headers,
-                body,
-            } => Ok(ArcResponse {
-                status,
-                headers: headers
-                    .into_iter()
-                    .map(|(name, value)| (name.to_owned(), value.to_owned()))
-                    .collect(),
-                body: SecretString::from(body),
-            }),
-        }
+        let (status, headers, body) = self.exchange(ArcRequest {
+            url: request.url.clone(),
+            query: request.query.clone(),
+            headers: request.headers.clone(),
+        })?;
+        Ok(ArcResponse {
+            status,
+            headers,
+            body: SecretString::from(body),
+        })
     }
 }
 
