@@ -76,7 +76,8 @@ fn limited_size_zero_tracks_nothing() {
 
 #[test]
 fn constructor_resolves_the_defaults() {
-    let cache = DualCache::new(local_memory(1000.0), None, DualCacheSettings::default());
+    let settings = DualCacheSettings::from_environment(&BTreeMap::new());
+    let cache = DualCache::new(local_memory(1000.0), None, settings);
     assert_eq!(
         cache.redis_batch_cache_expiry.to_bits(),
         DEFAULT_BATCH_CACHE_EXPIRY.to_bits()
@@ -157,7 +158,8 @@ fn update_cache_ttl_keeps_a_value_the_call_leaves_out() {
 #[test]
 fn update_in_memory_max_size_restores_the_default_for_none() {
     let memory = ResizableMemory::new();
-    let cache = DualCache::new(Arc::clone(&memory), None, DualCacheSettings::default());
+    let settings = DualCacheSettings::from_environment(&BTreeMap::new());
+    let cache = DualCache::new(Arc::clone(&memory), None, settings);
     cache.update_in_memory_max_size(Some(300));
     assert_eq!(memory.max_size(), 300);
     cache.update_in_memory_max_size(None);

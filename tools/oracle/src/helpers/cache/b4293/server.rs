@@ -21,7 +21,7 @@ use tokio::task::JoinSet;
 
 use crate::helpers::{HelperError, OrHelperError as _};
 
-pub(crate) const DEFAULT_TTL: i64 = 60;
+const DEFAULT_TTL: i64 = 60;
 const SOCKET_TIMEOUT_SECONDS: f64 = 2.0;
 
 #[derive(Clone, Debug)]
@@ -63,13 +63,7 @@ struct State {
 pub(crate) struct FakeRedis {
     pub(crate) addr: SocketAddr,
     state: Arc<Mutex<State>>,
-    tasks: JoinSet<()>,
-}
-
-impl Drop for FakeRedis {
-    fn drop(&mut self) {
-        self.tasks.abort_all();
-    }
+    _tasks: JoinSet<()>,
 }
 
 impl FakeRedis {
@@ -80,7 +74,11 @@ impl FakeRedis {
         let mut tasks = JoinSet::new();
         let accepting = Arc::clone(&state);
         tasks.spawn(async move { accept_loop(listener, accepting).await });
-        Ok(Self { addr, state, tasks })
+        Ok(Self {
+            addr,
+            state,
+            _tasks: tasks,
+        })
     }
 
     pub(crate) fn script(&self, command: &str, frame: Frame) {

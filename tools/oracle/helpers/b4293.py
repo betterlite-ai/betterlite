@@ -1,9 +1,9 @@
 import asyncio
 import json
 from collections.abc import Callable, Coroutine, Sequence
+from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
-from types import TracebackType
-from typing import Self, TypedDict, cast
+from typing import TypedDict, cast
 from unittest.mock import AsyncMock, MagicMock
 
 from litellm.caching.dual_cache import DualCache
@@ -23,7 +23,6 @@ FALLBACKS: dict[str, object] = {
     "INCRBY": 1,
     "INCRBYFLOAT": 1.0,
     "TTL": DEFAULT_TTL,
-    "SET": True,
     "DEL": 1,
     "EXPIRE": 1,
 }
@@ -88,21 +87,13 @@ class FakeSyncRedis:
         return self.commands.record("INCRBY", name, amount)
 
 
-class FakePipeline:
+class FakePipeline(AbstractAsyncContextManager["FakePipeline"]):
     def __init__(self, commands: FakeCommands) -> None:
         self.commands = commands
         self.queued: list[tuple[str, tuple[object, ...]]] = []
 
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        kind: type[BaseException] | None,
-        value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        _ = kind, value, traceback
+    async def __aexit__(self, *_exception: object) -> None:
+        return None
 
     def mget(self, keys: Sequence[str]) -> None:
         self.queued.append(("MGET", tuple(keys)))

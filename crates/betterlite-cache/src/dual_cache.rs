@@ -91,18 +91,6 @@ impl DualCacheSettings {
     }
 }
 
-impl Default for DualCacheSettings {
-    fn default() -> Self {
-        Self {
-            default_in_memory_ttl: None,
-            default_redis_ttl: None,
-            batch_cache_expiry: None,
-            max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
-            redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CacheOptions {
     pub ttl: Option<f64>,

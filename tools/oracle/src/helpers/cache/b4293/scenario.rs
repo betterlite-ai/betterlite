@@ -28,7 +28,6 @@ struct Scenario {
 }
 
 impl Scenario {
-    // every scenario scripts the call's redis_get as the next GET reply
     async fn start(call: &Fields) -> Result<Self, Box<HelperError>> {
         let server = FakeRedis::start().await?;
         let redis = connect_cache(server.addr).await?;
@@ -48,22 +47,11 @@ impl Scenario {
         })
     }
 
-    // the ttl and a second read show what the first read left in memory
     async fn observe(&self, key: &str, read: Option<Json>) -> HelperResult {
         let ttl = self.cache.async_get_ttl(key).await.or_value_error()?;
         let second = self.cache.get_cache(key, false);
         Ok(json!({"read": read, "ttl": ttl, "second": second}))
     }
-}
-
-fn number(value: &Json) -> Result<f64, Box<HelperError>> {
-    let parsed = match value {
-        Json::Number(count) => count.as_f64().ok_or("the increment is out of range"),
-        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err("the increment is not a number")
-        }
-    };
-    parsed.or_value_error()
 }
 
 pub(crate) async fn run(call: &Call) -> HelperResult {
@@ -90,14 +78,12 @@ async fn read(call: &Fields) -> HelperResult {
     scenario.observe(&call.key, read).await
 }
 
-// a read inside a request batch that already missed the key
 async fn scoped_read(scenario: &Scenario, key: &str) -> Option<Json> {
     let redis = Arc::clone(&scenario.redis);
-    let cache = &scenario.cache;
     let (_batches, read) = request_redis_batch_scope(EXPIRY, async {
         let batch = active_request_redis_batch(&redis)?;
         let _misses = batch.mget(&[key.to_owned()]).await;
-        cache.async_get_cache(key, false).await
+        scenario.cache.async_get_cache(key, false).await
     })
     .await;
     read
@@ -121,11 +107,12 @@ async fn set_default_ttl(call: &Fields) -> HelperResult {
     Ok(json!({"memory_ttl": memory_ttl, "sets": set_expiries(&scenario.server)}))
 }
 
-// the first increment scripts a failing Redis command and returns the amount to add
 async fn failing(call: &Fields, command: &str) -> Result<(Scenario, f64), Box<HelperError>> {
     let scenario = Scenario::start(call).await?;
     scenario.server.script(command, Frame::Failure("ERR boom"));
-    Ok((scenario, number(&call.value)?))
+    let wire = serde_json::to_value(&call.value).or_value_error()?;
+    let amount = wire.as_f64().ok_or("the increment is not a number");
+    Ok((scenario, amount.or_value_error()?))
 }
 
 async fn increment_error(call: &Fields) -> HelperResult {
