@@ -2,8 +2,11 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use lewton::header::read_header_ident;
 use rust_decimal::Decimal;
-
-use super::mp3::mp3_seconds;
+use symphonia_bundle_mp3::MpaReader;
+use symphonia_core::formats::probe::{Hint, Probe};
+use symphonia_core::formats::{FormatOptions, TrackType};
+use symphonia_core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
+use symphonia_core::meta::MetadataOptions;
 
 const OGG_HEADER_BYTES: usize = 27;
 const OGG_MAX_SEGMENTS: usize = 255;
@@ -32,7 +35,7 @@ impl Container {
 
 pub(super) fn container_seconds<R>(container: Container, mut media: R) -> Option<Decimal>
 where
-    R: Read + Seek,
+    R: MediaSource,
 {
     match container {
         Container::Wav => {
@@ -64,6 +67,27 @@ where
         }
         Container::Mp3 => mp3_seconds(media),
     }
+}
+
+fn mp3_seconds<R>(media: R) -> Option<Decimal>
+where
+    R: MediaSource,
+{
+    let mss = MediaSourceStream::new(Box::new(media), MediaSourceStreamOptions::default());
+    let mut probe = Probe::new();
+    probe.register_format::<MpaReader<'_>>();
+    let format = probe
+        .probe(
+            &Hint::new(),
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .ok()?;
+    let track = format.default_track(TrackType::Audio)?;
+    let sample_rate = track.codec_params.as_ref()?.audio()?.sample_rate?;
+    let frames = track.num_frames?;
+    exact_seconds(frames, sample_rate)
 }
 
 fn last_ogg_granule<R>(media: &mut R) -> Option<u64>

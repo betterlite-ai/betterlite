@@ -25,6 +25,8 @@ rust_decimal.workspace = true
 serde.workspace = true
 serde_json = "1.0.154"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
+symphonia-bundle-mp3 = { version = "0.6.1", default-features = false, features = ["mp3"] }
+symphonia-core = { version = "0.6.1", default-features = false }
 tempfile = "3.27.0"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }

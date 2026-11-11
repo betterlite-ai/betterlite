@@ -1,10 +1,11 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::num::ParseIntError;
 
 use betterlite_context::aws_partition::get_aws_partition;
 use chrono::DateTime;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_encode};
 use rust_decimal::Decimal;
+use symphonia_core::io::MediaSource;
 use thiserror::Error;
 use url::Url;
 
@@ -125,7 +126,7 @@ impl MediaSizeGuard {
 #[must_use]
 pub fn media_duration_seconds<R>(mut media: R) -> Option<Decimal>
 where
-    R: Read + Seek,
+    R: MediaSource,
 {
     let mut header = [0_u8; 12];
     if media.read_exact(&mut header).is_err() {
@@ -148,5 +149,4 @@ where
 }
 
 mod decoders;
-mod mp3;
 mod tests;
