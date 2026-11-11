@@ -325,7 +325,11 @@ async fn price_charges_the_maximum_when_the_media_is_unmeasurable() {
 #[tokio::test]
 async fn price_charges_the_maximum_after_the_measure_fails_three_times() {
     let lookup = FixedLookup::new(LookupReply::Body(COMPLETED_WITH_MEDIA));
-    let probe = ScriptedProbe::new(Vec::new());
+    let probe = ScriptedProbe::new(vec![
+        Err(probe_failure()),
+        Err(probe_failure()),
+        Err(probe_failure()),
+    ]);
     let sleeper = RecordingSleeper::default();
     let cost = price_transcription_job(pricing("job-1", 1, None), &lookup, &probe, &sleeper)
         .await

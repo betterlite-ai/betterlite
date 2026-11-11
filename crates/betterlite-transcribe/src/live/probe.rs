@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt as _;
 use rust_decimal::Decimal;
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncSeekExt as _, AsyncWriteExt as _};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -109,6 +109,7 @@ pub(super) async fn download_and_measure(
         }
         file.write_all(&chunk).await.map_err(ProbeError::Io)?;
     }
+    file.rewind().await.map_err(ProbeError::Io)?;
     let media = file.into_std().await;
     let mut decode = JoinSet::new();
     decode.spawn_blocking(move || media_duration_seconds(media));
