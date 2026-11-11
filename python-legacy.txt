@@ -266,6 +266,7 @@ tools/oracle/helpers/bedrock_processor.py
 tools/oracle/helpers/bedrock_prompt.py
 tools/oracle/helpers/bedrock_request_policy.py
 tools/oracle/helpers/bedrock_services_agentcore_response.py
+tools/oracle/helpers/bedrock_services_agentcore_stream.py
 tools/oracle/helpers/bedrock_services_file_content.py
 tools/oracle/helpers/bedrock_services_s3_access.py
 tools/oracle/helpers/bedrock_settings.py
