@@ -21,7 +21,7 @@ call:
       - datetime: "2024-01-15T10:30:00.5Z"
       - datetime: "1969-12-31T23:59:59.5Z"
       - text: "5"
-      - null: null
+      - "null": null
       - nonfinite: inf
       - nonfinite: -inf
       - nonfinite: nan
