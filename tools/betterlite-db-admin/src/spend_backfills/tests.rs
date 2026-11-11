@@ -3,15 +3,17 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 
+use betterlite_db::spend_backfills::BackfillError;
 use betterlite_db_admin::command_shell::{
     AdminEnvironment, DbAdminBackend, Diagnostics, ExitStatus, run,
 };
+use betterlite_db_admin::commands::DbAdminError;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::{Client, Config, NoTls};
 
 const SCHEMA_SQL: &str = r#"CREATE TABLE "LiteLLM_BudgetTable" (
     "budget_id" TEXT NOT NULL,
@@ -166,6 +168,22 @@ async fn rejects_bad_arguments() {
     .await;
     rejects(&["key-total-spend", "--bogus"]).await;
     rejects(&["key-total-spend-from-logs", "extra"]).await;
+}
+
+#[test]
+fn maps_statement_failures_to_the_admin_error() {
+    let error = BackfillError::Statement {
+        statement: "the daily insert",
+        source: driver_error(),
+    };
+    let mapped = DbAdminError::from(error);
+    assert!(mapped.to_string().contains("the daily insert failed:"));
+}
+
+fn driver_error() -> tokio_postgres::Error {
+    "unknown_option=on"
+        .parse::<Config>()
+        .expect_err("an unknown connection option")
 }
 
 #[tokio::test]
