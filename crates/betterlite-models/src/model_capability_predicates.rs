@@ -84,12 +84,4 @@ pub trait CapabilityPredicates {
         &mut self,
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send;
-
-    fn supports_named(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-        capability: NamedCapability,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, capability.key())
-    }
 }

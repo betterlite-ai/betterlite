@@ -94,8 +94,16 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let fixture = Fixture::load(&input.fixture)
-            .map_err(|error| helper_error("FixtureError", error.to_string()))?;
+        let fixture = Fixture::load(&input.fixture).map_err(|error| {
+            Box::new(HelperError {
+                class: String::from("FixtureError"),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         let resolution = fixture.resolution();
         let mut keys = ModelCostKeys::default();
         let dynamic = NoDynamicMetadata;
@@ -104,7 +112,14 @@ impl crate::helpers::Helper for Op {
             .enable_all()
             .build()
             .map_err(|source| {
-                helper_error("FixtureError", FixtureError::Runtime { source }.to_string())
+                Box::new(HelperError {
+                    class: String::from("FixtureError"),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: FixtureError::Runtime { source }.to_string(),
+                })
             })?;
         let answers = runtime.block_on(async {
             let mut answers = Vec::with_capacity(input.steps.len());
@@ -117,25 +132,17 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn helper_error(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 // The three keyed readers read the same declaration; a step without one is a malformed call.
 fn key_of(step: &Step) -> Result<&str, Box<HelperError>> {
-    let key = step.key.as_deref();
-    key.ok_or_else(|| {
-        helper_error(
-            "ValueError",
-            format!("the {:?} function needs a key", step.function),
-        )
+    step.key.as_deref().ok_or_else(|| {
+        Box::new(HelperError {
+            class: String::from("ValueError"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: format!("the {:?} function needs a key", step.function),
+        })
     })
 }
 
@@ -164,13 +171,23 @@ where
         ),
         Call::NativeStreaming => {
             let flagged = environment.supports_native_streaming(&request).await;
-            serde_json::to_value(flagged)
-                .map_err(|error| helper_error("SerializationError", error.to_string()))?
+            serde_json::to_value(flagged).map_err(|error| {
+                Box::new(HelperError {
+                    class: String::from("SerializationError"),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?
         }
         Call::ResponseSchema => Value::Bool(environment.supports_response_schema(&request).await),
-        Call::Named(capability) => {
-            Value::Bool(environment.supports_named(&request, capability).await)
-        }
+        Call::Named(capability) => Value::Bool(
+            environment
+                .supports_factory(&request, capability.key())
+                .await,
+        ),
     };
     Ok(value)
 }

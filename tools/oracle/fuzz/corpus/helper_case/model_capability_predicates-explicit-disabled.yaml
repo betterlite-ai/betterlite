@@ -10,6 +10,8 @@ call:
         bare-disabled: {litellm_provider: deepseek, mode: chat, supports_vision: false}
         deepseek/bare-enabled: {litellm_provider: deepseek, mode: chat}
         bare-enabled: {litellm_provider: deepseek, mode: chat, supports_vision: true}
+        deepseek/zero-model: {litellm_provider: deepseek, mode: chat, supports_vision: 0}
+        zero-model: {litellm_provider: deepseek, mode: chat, supports_vision: false}
         deepseek/silent-model: {litellm_provider: deepseek, mode: chat}
         github_copilot/gpt-4o: {litellm_provider: github_copilot, mode: chat, supports_vision: false}
     steps:
@@ -18,6 +20,7 @@ call:
       - {function: is_explicitly_disabled_factory, model: deepseek/bare-disabled, custom_llm_provider: deepseek, key: supports_vision}
       - {function: is_explicitly_disabled_factory, model: deepseek/bare-enabled, custom_llm_provider: deepseek, key: supports_vision}
       - {function: is_explicitly_disabled_factory, model: deepseek/silent-model, custom_llm_provider: deepseek, key: supports_vision}
+      - {function: is_explicitly_disabled_factory, model: deepseek/zero-model, custom_llm_provider: deepseek, key: supports_vision}
       - {function: is_explicitly_disabled_factory, model: github_copilot/gpt-4o, key: supports_vision}
       - {function: is_explicitly_disabled_factory, model: nothing-here, key: supports_vision}
 env: {}

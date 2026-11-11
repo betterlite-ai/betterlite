@@ -14,6 +14,7 @@ call:
         deepseek/prefixed-model: {litellm_provider: deepseek, mode: chat}
         prefixed-model: {litellm_provider: openai, mode: chat, supports_function_calling: true}
         github_copilot/gpt-4o: {litellm_provider: github_copilot, mode: chat, supports_function_calling: true}
+        fireworks_ai/listed-model: {litellm_provider: fireworks_ai, mode: chat}
     steps:
       - {function: supports_factory, model: gpt-4o, key: supports_function_calling}
       - {function: supports_factory, model: openai/gpt-4o, key: supports_function_calling}
@@ -25,5 +26,6 @@ call:
       - {function: supports_factory, model: fireworks_ai/mystery, custom_llm_provider: fireworks_ai, key: supports_function_calling}
       - {function: supports_factory, model: xai/mystery-two, custom_llm_provider: xai, key: supports_function_calling}
       - {function: supports_factory, model: nothing-here, key: supports_function_calling}
+      - {function: supports_factory, model: listed-model, custom_llm_provider: fireworks_ai, key: supports_prompt_caching}
 env: {}
 compare: {ignore: []}

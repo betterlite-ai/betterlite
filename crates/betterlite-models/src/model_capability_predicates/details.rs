@@ -121,7 +121,14 @@ where
     match metadata_field(&target, key, environment).await {
         Ok(value) => Ok((target, value)),
         Err(error) => {
-            log_failure(&what, &target.model, Some(&target.provider), &error);
+            // declared_value_factory never rebinds its pair, so its failure line names the caller's model
+            let (model, provider) = match phrase {
+                Phrase::Reading => (request.model, request.custom_llm_provider),
+                Phrase::Support | Phrase::DisabledState => {
+                    (target.model.as_str(), Some(target.provider.as_str()))
+                }
+            };
+            log_failure(&what, model, provider, &error);
             Err(Failure {
                 model: target.model,
                 provider: Some(target.provider),

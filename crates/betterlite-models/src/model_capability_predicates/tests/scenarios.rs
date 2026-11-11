@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -21,7 +22,8 @@ const SUPPORTS_RESOLUTION: &str = r#"{
     "github_copilot/gpt-4o": {"litellm_provider": "github_copilot", "mode": "chat", "supports_function_calling": true},
     "fireworks_ai/vision-model": {"litellm_provider": "openai", "mode": "chat", "supports_vision": true},
     "fireworks_ai/reason-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": true},
-    "fireworks_ai/pdf-model": {"litellm_provider": "openai", "mode": "chat", "supports_pdf_input": true}
+    "fireworks_ai/pdf-model": {"litellm_provider": "openai", "mode": "chat", "supports_pdf_input": true},
+    "fireworks_ai/listed-model": {"litellm_provider": "fireworks_ai", "mode": "chat"}
 }"#;
 
 const SUPPORTS_ERROR_FALLBACK: &str = r#"{
@@ -45,6 +47,8 @@ const EXPLICIT_DISABLED: &str = r#"{
     "bare-disabled": {"litellm_provider": "deepseek", "mode": "chat", "supports_vision": false},
     "deepseek/bare-enabled": {"litellm_provider": "deepseek", "mode": "chat"},
     "bare-enabled": {"litellm_provider": "deepseek", "mode": "chat", "supports_vision": true},
+    "deepseek/zero-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_vision": 0},
+    "zero-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_vision": false},
     "deepseek/silent-model": {"litellm_provider": "deepseek", "mode": "chat"},
     "github_copilot/gpt-4o": {"litellm_provider": "github_copilot", "mode": "chat", "supports_vision": false}
 }"#;
@@ -184,7 +188,7 @@ async fn check_named(scenario: &NamedScenario) {
         };
         let answer = session
             .environment()
-            .supports_named(&request, *capability)
+            .supports_factory(&request, capability.key())
             .await;
         assert_eq!(answer, *expected, "{model}");
     }
@@ -254,6 +258,11 @@ const EXPLICIT_DISABLED_STEPS: &[(&str, Option<&str>, Expected)] = &[
     ),
     (
         "deepseek/silent-model",
+        Some("deepseek"),
+        Expected::flag(false),
+    ),
+    (
+        "deepseek/zero-model",
         Some("deepseek"),
         Expected::flag(false),
     ),
@@ -362,6 +371,7 @@ const RESPONSE_SCHEMA_STEPS: &[(&str, Option<&str>, Expected)] = &[
 ];
 
 const FUNCTION_CALLING_KEY: &str = "supports_function_calling";
+const PROMPT_CACHING_KEY: &str = "supports_prompt_caching";
 const REASONING_KEY: &str = "supports_reasoning";
 const CUSTOM_KEY: &str = "supports_custom";
 const VISION_KEY: &str = "supports_vision";
@@ -417,6 +427,16 @@ const WEB_SEARCH_PROVIDER_SCENARIO: Scenario = Scenario {
     steps: WEB_SEARCH_PROVIDER_STEPS,
 };
 
+// The mapped entry omits the key and has no bare twin, so only the provider info answers this.
+const PROMPT_CACHING_PROVIDER_STEPS: &[(&str, Option<&str>, Expected)] =
+    &[("listed-model", Some("fireworks_ai"), Expected::flag(true))];
+
+const PROMPT_CACHING_PROVIDER_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(PROMPT_CACHING_KEY),
+    steps: PROMPT_CACHING_PROVIDER_STEPS,
+};
+
 const REASONING_DECLARATION_SCENARIO: Scenario = Scenario {
     fixture: DECLARED_STRING_VALUE,
     reader: Reader::Declared(REASONING_KEY),
@@ -458,15 +478,58 @@ pub(super) async fn supports_resolution() {
     check(&REASONING_PROVIDER_SCENARIO).await;
     check(&PDF_PROVIDER_SCENARIO).await;
     check(&WEB_SEARCH_PROVIDER_SCENARIO).await;
+    check(&PROMPT_CACHING_PROVIDER_SCENARIO).await;
 }
 
 pub(super) async fn declared_string_value() {
     check(&REASONING_DECLARATION_SCENARIO).await;
     check(&DECLARED_CUSTOM_SCENARIO).await;
+    let fixture = Fixture::new(DECLARED_STRING_VALUE);
+    let mut session = Session::new(&fixture);
+    let prefixed = CapabilityRequest {
+        model: "fireworks_ai/nothing-known",
+        custom_llm_provider: Some("fireworks_ai"),
+    };
+    let (answer, log) = log_of(async {
+        session
+            .environment()
+            .declared_value_factory(&prefixed, CUSTOM_KEY)
+            .await
+    })
+    .await;
+    assert_eq!(answer, None);
+    assert!(
+        log.contains(
+            "Model not found or error in reading supports_custom. \
+             You passed model=fireworks_ai/nothing-known, custom_llm_provider=fireworks_ai. Error: "
+        ),
+        "{log}"
+    );
 }
 
 pub(super) async fn explicit_disabled() {
     check(&EXPLICIT_DISABLED_SCENARIO).await;
+    let fixture = Fixture::new(EXPLICIT_DISABLED);
+    let mut session = Session::new(&fixture);
+    let unmapped = CapabilityRequest {
+        model: "fireworks_ai/nothing-known",
+        custom_llm_provider: Some("fireworks_ai"),
+    };
+    let (answer, log) = log_of(async {
+        session
+            .environment()
+            .is_explicitly_disabled_factory(&unmapped, VISION_KEY)
+            .await
+    })
+    .await;
+    assert!(!answer);
+    assert!(
+        log.contains(
+            "Model not found or error in checking supports_vision disabled state. \
+             You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: "
+        ),
+        "{log}"
+    );
 }
 
 pub(super) async fn named_capability_wrappers() {
@@ -475,10 +538,52 @@ pub(super) async fn named_capability_wrappers() {
 
 pub(super) async fn native_streaming_default() {
     check(&NATIVE_STREAMING_SCENARIO).await;
+    let fixture = Fixture::new(NATIVE_STREAMING_DEFAULT);
+    let mut session = Session::new(&fixture);
+    let unmapped = CapabilityRequest {
+        model: "fireworks_ai/nothing-known",
+        custom_llm_provider: Some("fireworks_ai"),
+    };
+    let (answer, log) = log_of(async {
+        session
+            .environment()
+            .supports_native_streaming(&unmapped)
+            .await
+    })
+    .await;
+    assert_eq!(answer, Json::Bool(false));
+    assert!(
+        log.contains(
+            "Model not found or error in checking supports_native_streaming support. \
+             You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: "
+        ),
+        "{log}"
+    );
 }
 
 pub(super) async fn response_schema_provider_override() {
     check(&RESPONSE_SCHEMA_SCENARIO).await;
+    let fixture = Fixture::new(RESPONSE_SCHEMA_PROVIDER_OVERRIDE);
+    let mut session = Session::new(&fixture);
+    let unresolved = CapabilityRequest {
+        model: "nothing-here",
+        custom_llm_provider: None,
+    };
+    let (answer, log) = log_of(async {
+        session
+            .environment()
+            .supports_response_schema(&unresolved)
+            .await
+    })
+    .await;
+    assert!(!answer);
+    assert!(
+        log.contains(
+            "Model not found or error in checking response schema support. \
+             You passed model=nothing-here, custom_llm_provider=None. Error: "
+        ),
+        "{log}"
+    );
 }
 
 pub(super) async fn supports_error_fallback() {
@@ -488,7 +593,13 @@ pub(super) async fn supports_error_fallback() {
         model: "nothing-here",
         custom_llm_provider: None,
     };
-    let (answer, log) = logged_supports(&mut session, &unresolved, FUNCTION_CALLING_KEY).await;
+    let (answer, log) = log_of(async {
+        session
+            .environment()
+            .supports_factory(&unresolved, FUNCTION_CALLING_KEY)
+            .await
+    })
+    .await;
     assert!(!answer);
     assert!(
         log.contains(
@@ -505,7 +616,13 @@ async fn unmatched_failure_falls_back(session: &mut Session<'_>) {
         model: "fireworks_ai/nothing-known",
         custom_llm_provider: Some("fireworks_ai"),
     };
-    let (supported, log) = logged_supports(session, &unmatched, FUNCTION_CALLING_KEY).await;
+    let (supported, log) = log_of(async {
+        session
+            .environment()
+            .supports_factory(&unmatched, FUNCTION_CALLING_KEY)
+            .await
+    })
+    .await;
     assert!(supported, "{log}");
     assert!(
         log.contains("You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: "),
@@ -527,11 +644,11 @@ async fn unmatched_failure_falls_back(session: &mut Session<'_>) {
     assert!(!stateless_answer);
 }
 
-async fn logged_supports(
-    session: &mut Session<'_>,
-    request: &CapabilityRequest<'_>,
-    key: &str,
-) -> (bool, String) {
+// The subscriber must wrap only the reader call, so the capture holds that call's debug line.
+async fn log_of<F, T>(call: F) -> (T, String)
+where
+    F: Future<Output = T>,
+{
     let bytes = Arc::new(Mutex::new(Vec::new()));
     let writer = LogCapture(Arc::clone(&bytes));
     let subscriber = tracing_subscriber::fmt()
@@ -541,12 +658,12 @@ async fn logged_supports(
         .with_max_level(Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    let unknown_answer = {
+    let answer = {
         let _guard = set_default(subscriber);
-        session.environment().supports_factory(request, key).await
+        call.await
     };
     let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
-    (unknown_answer, log)
+    (answer, log)
 }
 
 #[derive(Clone)]
