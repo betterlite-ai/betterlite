@@ -2,8 +2,8 @@ use betterlite_config::sections::claude_platform_inputs::{PlatformEnvironment, P
 use secrecy::ExposeSecret as _;
 
 use super::error::PlatformInputError;
-use super::{Candidate, select_matching};
-use crate::model_routes::{ParamMap, ParamValue};
+use super::{Candidate, optional_candidate, select_matching};
+use crate::model_routes::ParamMap;
 
 pub fn resolve_workspace_id(
     optional_params: &ParamMap,
@@ -25,13 +25,13 @@ fn resolve_alias<'source>(
 ) -> Option<Candidate<'source>> {
     let primary = select_matching(
         [
-            alias(optional_params, "workspace_id"),
+            optional_candidate(optional_params, "workspace_id"),
             configured(deployment, global, |inputs| inputs.workspace_id.as_deref()),
-            alias(optional_params, "aws_workspace_id"),
+            optional_candidate(optional_params, "aws_workspace_id"),
             configured(deployment, global, |inputs| {
                 inputs.aws_workspace_id.as_deref()
             }),
-            alias(optional_params, "anthropic-workspace-id"),
+            optional_candidate(optional_params, "anthropic-workspace-id"),
             configured(deployment, global, |inputs| {
                 inputs.anthropic_hyphen_workspace_id.as_deref()
             }),
@@ -44,7 +44,7 @@ fn resolve_alias<'source>(
     }
     select_matching(
         [
-            alias(optional_params, "anthropic_workspace_id"),
+            optional_candidate(optional_params, "anthropic_workspace_id"),
             configured(deployment, global, |inputs| {
                 inputs.anthropic_workspace_id.as_deref()
             }),
@@ -62,13 +62,6 @@ fn configured<'source>(
     selector(deployment)
         .or_else(|| selector(global))
         .map(Candidate::Text)
-}
-
-fn alias<'source>(params: &'source ParamMap, key: &'static str) -> Option<Candidate<'source>> {
-    params
-        .get(key)
-        .filter(|value| !matches!(value, ParamValue::Null))
-        .map(|value| Candidate::Param { field: key, value })
 }
 
 fn environment_workspace(environment: &PlatformEnvironment) -> Option<String> {

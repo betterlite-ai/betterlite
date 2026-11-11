@@ -2,9 +2,9 @@ use betterlite_config::sections::bedrock_aws_endpoints::Settings as AwsEndpointS
 use betterlite_config::sections::claude_platform_inputs::PlatformEnvironment;
 
 use super::error::PlatformInputError;
-use super::{CLAUDE_PLATFORM_SERVICE_NAME, Candidate, select_matching};
+use super::{CLAUDE_PLATFORM_SERVICE_NAME, Candidate, optional_candidate, select_matching};
 use crate::aws_endpoints::region::validate_region;
-use crate::model_routes::{ParamMap, ParamValue};
+use crate::model_routes::ParamMap;
 
 pub struct UrlInputs<'source> {
     pub api_base: Option<&'source str>,
@@ -18,13 +18,7 @@ pub fn resolve_region(
 ) -> Result<String, PlatformInputError> {
     let selected = select_matching(
         [
-            optional_params
-                .get("aws_region_name")
-                .filter(|value| !matches!(value, ParamValue::Null))
-                .map(|value| Candidate::Param {
-                    field: "aws_region_name",
-                    value,
-                }),
+            optional_candidate(optional_params, "aws_region_name"),
             environment.aws_region_name.as_deref().map(Candidate::Text),
             environment.aws_region.as_deref().map(Candidate::Text),
             environment

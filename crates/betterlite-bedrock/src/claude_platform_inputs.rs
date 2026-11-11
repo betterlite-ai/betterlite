@@ -9,7 +9,7 @@ mod tests;
 
 use std::cmp::Ordering;
 
-use crate::model_routes::ParamValue;
+use crate::model_routes::{ParamMap, ParamValue};
 
 pub const CLAUDE_PLATFORM_SERVICE_NAME: &str = "aws-external-anthropic";
 pub const CLAUDE_PLATFORM_BEDROCK_ROUTE: &str = "claude_platform/";
@@ -61,6 +61,16 @@ fn select_matching<T, const N: usize>(
         selected = operand;
     }
     selected
+}
+
+pub(super) fn optional_candidate<'source>(
+    params: &'source ParamMap,
+    key: &'static str,
+) -> Option<Candidate<'source>> {
+    params
+        .get(key)
+        .filter(|value| !matches!(value, ParamValue::Null))
+        .map(|value| Candidate::Param { field: key, value })
 }
 
 pub(super) fn is_effective(value: &ParamValue) -> bool {
