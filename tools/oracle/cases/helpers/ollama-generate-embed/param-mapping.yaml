@@ -1,0 +1,48 @@
+kind: helper
+name: ollama-generate-param-mapping
+env: {}
+compare: {ignore: []}
+call:
+  b8156:
+    op: params
+    config:
+      mirostat: 0
+      mirostat_eta: 0.1
+      mirostat_tau: 5.0
+      num_ctx: 4096
+      num_gqa: 8
+      num_gpu: 1
+      num_thread: 8
+      repeat_last_n: 64
+      repeat_penalty: 1.1
+      temperature: 0.5
+      seed: 2
+      stop: [a, b]
+      tfs_z: 1.0
+      num_predict: 42
+      top_k: 40
+      top_p: 0.9
+      system: s
+      template: t
+    cases:
+      - {model: llama3, non_default: {max_tokens: 5}}
+      - {model: llama3, non_default: {max_completion_tokens: 7}}
+      - {model: llama3, non_default: {max_tokens: 5, max_completion_tokens: 7}}
+      - {model: llama3, non_default: {stream: true}}
+      - {model: llama3, non_default: {temperature: 0}}
+      - {model: llama3, non_default: {seed: 1}}
+      - {model: llama3, non_default: {top_p: 0.9}}
+      - {model: llama3, non_default: {frequency_penalty: 1.2}}
+      - {model: llama3, non_default: {stop: [x]}}
+      - {model: llama3, non_default: {response_format: {type: json_object}}}
+      - {model: llama3, non_default: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}}
+      - {model: llama3, non_default: {response_format: {type: json_schema, json_schema: {schema: null}}}}
+      - {model: llama3, non_default: {response_format: {type: text}}}
+      - {model: llama3, non_default: {response_format: json}}
+      - {model: llama3, non_default: {reasoning_effort: low}}
+      - {model: llama3, non_default: {reasoning_effort: minimal}}
+      - {model: llama3, non_default: {reasoning_effort: null}}
+      - {model: gpt-oss:20b, non_default: {reasoning_effort: medium}}
+      - {model: llama3, non_default: {max_tokens: 5, other: 3}}
+      - {model: llama3, non_default: {max_tokens: 5}, optional: {num_predict: 9}}
+    urls: [null, "http://h:11434", "http://h:11434/", "http://h:11434/api/generate", "http://h/api/generate/", ""]
