@@ -120,15 +120,15 @@ pub(super) fn jpeg_data_url() -> String {
     format!("data:image/jpeg;base64,{JPEG_BASE64}")
 }
 
-pub(super) fn bmp_base64() -> String {
+fn bmp_bytes(width: i32, height: i32) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"BM");
     bytes.extend_from_slice(&58_u32.to_le_bytes());
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(&54_u32.to_le_bytes());
     bytes.extend_from_slice(&40_u32.to_le_bytes());
-    bytes.extend_from_slice(&1_i32.to_le_bytes());
-    bytes.extend_from_slice(&1_i32.to_le_bytes());
+    bytes.extend_from_slice(&width.to_le_bytes());
+    bytes.extend_from_slice(&height.to_le_bytes());
     bytes.extend_from_slice(&1_u16.to_le_bytes());
     bytes.extend_from_slice(&24_u16.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
@@ -138,7 +138,11 @@ pub(super) fn bmp_base64() -> String {
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(&[0, 0, 255, 0]);
-    STANDARD.encode(bytes)
+    bytes
+}
+
+pub(super) fn bmp_base64() -> String {
+    STANDARD.encode(bmp_bytes(1, 1))
 }
 
 pub(super) fn bmp_data_url() -> String {
@@ -146,24 +150,10 @@ pub(super) fn bmp_data_url() -> String {
 }
 
 pub(super) fn oversized_bmp_data_url() -> String {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"BM");
-    bytes.extend_from_slice(&58_u32.to_le_bytes());
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&54_u32.to_le_bytes());
-    bytes.extend_from_slice(&40_u32.to_le_bytes());
-    bytes.extend_from_slice(&100_000_i32.to_le_bytes());
-    bytes.extend_from_slice(&1_i32.to_le_bytes());
-    bytes.extend_from_slice(&1_u16.to_le_bytes());
-    bytes.extend_from_slice(&24_u16.to_le_bytes());
-    bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend_from_slice(&4_u32.to_le_bytes());
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 255, 0, 0]);
-    format!("data:image/bmp;base64,{}", STANDARD.encode(bytes))
+    format!(
+        "data:image/bmp;base64,{}",
+        STANDARD.encode(bmp_bytes(100_000, 1))
+    )
 }
 
 pub(super) fn text_message(role: &str, content: &str) -> Message {
