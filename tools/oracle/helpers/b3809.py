@@ -20,6 +20,8 @@ RECORD_KEYS = (
     "guardrail_mode",
     "guardrail_response",
     "guardrail_status",
+    "start_time",
+    "end_time",
 )
 JUDGE_CALL_TARGET = (
     "litellm.proxy.guardrails.guardrail_hooks.llm_as_a_judge.judge_acompletion"

@@ -77,14 +77,10 @@ where
     let Some(value) = get_param(params, guardrail, key) else {
         return Ok(None);
     };
-    let encoded = serde_json::to_string(&value).map_err(|source| JudgeError::InvalidParam {
+    let invalid = |source| JudgeError::InvalidParam {
         key: key.name(),
         source,
-    })?;
-    serde_json::from_str(&encoded)
-        .map(Some)
-        .map_err(|source| JudgeError::InvalidParam {
-            key: key.name(),
-            source,
-        })
+    };
+    let encoded = serde_json::to_string(&value).map_err(invalid)?;
+    serde_json::from_str(&encoded).map(Some).map_err(invalid)
 }

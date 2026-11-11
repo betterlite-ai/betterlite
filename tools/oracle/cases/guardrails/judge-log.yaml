@@ -26,4 +26,4 @@ call:
       content: |-
         {"verdicts": [{"criterion_name": "Accuracy", "score": 50, "reasoning": "thin", "passed": false, "weight": 60}], "overall_score": 50}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /value/guardrail_records/0/start_time, why: "The record time is the wall clock at the call"}, {pointer: /value/guardrail_records/0/end_time, why: "The record time is the wall clock at the call"}]}

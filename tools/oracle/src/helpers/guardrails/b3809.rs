@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_judge::JudgeParams;
-use betterlite_guardrails::content_filter::risk_scoring::GuardrailStatus;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::judge::apply::{JudgeInputs, LLMAsAJudgeGuardrail, RequestData};
 use betterlite_guardrails::judge::call::{
@@ -14,11 +13,9 @@ use betterlite_guardrails::judge::call::{
 };
 use betterlite_guardrails::judge::config::{GuardrailEntry, LitellmParamsSource};
 use betterlite_guardrails::judge::error::{JudgeBlockDetail, JudgeError};
-use betterlite_guardrails::judge::hooks::EventHookConfig;
 use betterlite_guardrails::judge::initialize::{CallbackRegistry, initialize_guardrail};
 use betterlite_guardrails::judge::record::JudgeGuardrailRecord;
 use betterlite_guardrails::judge::verdict::EvalInformation;
-use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
 use crate::helpers::{HelperError, HelperResult};
@@ -88,28 +85,13 @@ struct BlockedOutput {
     detail: JudgeBlockDetail,
 }
 
-// The comparison leaves out the record's times because LiteLLM reads the wall clock.
-#[derive(serde::Serialize)]
-struct RecordOutput {
-    #[serde(rename = "guardrail_name")]
-    name: String,
-    #[serde(rename = "guardrail_provider")]
-    provider: String,
-    #[serde(rename = "guardrail_mode")]
-    mode: EventHookConfig,
-    #[serde(rename = "guardrail_response")]
-    response: Json,
-    #[serde(rename = "guardrail_status")]
-    status: GuardrailStatus,
-}
-
 #[derive(serde::Serialize)]
 struct Output {
     judge_call: Option<JudgeCompletionRequest>,
     inputs: Option<JudgeInputs>,
     eval_information: Option<EvalInformation>,
     blocked: Option<BlockedOutput>,
-    guardrail_records: Option<Vec<RecordOutput>>,
+    guardrail_records: Option<Vec<JudgeGuardrailRecord>>,
 }
 
 impl crate::helpers::Helper for Op {
@@ -162,7 +144,7 @@ fn collect(
     eval_information: Option<EvalInformation>,
     records: Vec<JudgeGuardrailRecord>,
 ) -> Result<Output, Box<HelperError>> {
-    let guardrail_records = (!records.is_empty()).then(|| project_records(records));
+    let guardrail_records = (!records.is_empty()).then_some(records);
     match outcome {
         Ok(returned) => Ok(Output {
             judge_call,
@@ -197,19 +179,6 @@ fn collect(
             }
         }
     }
-}
-
-fn project_records(records: Vec<JudgeGuardrailRecord>) -> Vec<RecordOutput> {
-    records
-        .into_iter()
-        .map(|record| RecordOutput {
-            name: record.guardrail_name,
-            provider: record.guardrail_provider,
-            mode: record.guardrail_mode,
-            response: record.guardrail_response,
-            status: record.guardrail_status,
-        })
-        .collect()
 }
 
 fn failure(class: &str, message: String) -> Box<HelperError> {
