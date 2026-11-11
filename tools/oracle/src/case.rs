@@ -227,10 +227,21 @@ pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
 }
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: String| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message,
+    };
     group::validate_common(path, &case.common())?;
-    config_include_fixtures::validate(path, &case.config_files, |document| {
-        config_inspection::requests_license(path, document)
-    })?;
+    config_include_fixtures::validate(&case.config_files)
+        .map_err(|source| invalid(source.to_string()))?;
+    for (destination, document) in &case.config_files {
+        if config_inspection::requests_license(path, document)? {
+            let license = config_include_fixtures::ConfigFixtureError::License {
+                destination: destination.clone(),
+            };
+            return Err(invalid(license.to_string()));
+        }
+    }
     validate_request_or_steps(path, case)
 }
 

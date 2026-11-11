@@ -44,30 +44,7 @@ pub enum ConfigFixtureError {
     License { destination: String },
 }
 
-pub(crate) fn validate<F>(
-    path: &Path,
-    config_files: &BTreeMap<String, String>,
-    license_check: F,
-) -> Result<(), OracleError>
-where
-    F: Fn(&str) -> Result<bool, OracleError>,
-{
-    let invalid = |source: ConfigFixtureError| OracleError::CaseInvalid {
-        path: path.to_owned(),
-        message: source.to_string(),
-    };
-    check(config_files).map_err(invalid)?;
-    for (destination, document) in config_files {
-        if license_check(document)? {
-            return Err(invalid(ConfigFixtureError::License {
-                destination: destination.clone(),
-            }));
-        }
-    }
-    Ok(())
-}
-
-fn check(config_files: &BTreeMap<String, String>) -> Result<(), ConfigFixtureError> {
+pub(crate) fn validate(config_files: &BTreeMap<String, String>) -> Result<(), ConfigFixtureError> {
     if config_files.len() > MAX_FILES {
         return Err(ConfigFixtureError::TooManyFiles {
             count: config_files.len(),
