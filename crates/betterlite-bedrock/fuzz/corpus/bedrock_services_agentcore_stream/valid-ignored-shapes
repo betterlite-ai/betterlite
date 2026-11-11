@@ -1,0 +1,6 @@
+event: ping
+data: 42
+data: null
+data:
+
+data: {"message":{}}

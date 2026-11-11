@@ -76,9 +76,7 @@ jobs:
             parts='["lint","task"]'
           fi
           echo "branch $branch, base $base, task ${task:-none}, parts $parts"
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "task=$task" >> "$GITHUB_OUTPUT"
-          echo "parts=$parts" >> "$GITHUB_OUTPUT"
+          printf 'base=%s\ntask=%s\nparts=%s\n' "$base" "$task" "$parts" >> "$GITHUB_OUTPUT"
 
   checks:
     name: ${{ matrix.part }}
@@ -122,16 +120,20 @@ jobs:
         /usr/local/cargo/bin/typos
         /usr/local/cargo/bin/prek
         /usr/local/cargo/bin/zizmor
+        /usr/local/cargo/bin/shellcheck
+        /usr/local/cargo/bin/shfmt
+        /usr/local/cargo/bin/actionlint
         /usr/local/cargo/bin/uv
         /usr/local/cargo/bin/uvx
         /usr/local/cargo/bin/cargo-shear
         /usr/local/cargo/bin/ast-grep
         /usr/local/cargo/bin/sg
         /usr/local/cargo/bin/similarity-rs
+        /usr/local/cargo/bin/similarity-py
         /usr/local/cargo/.crates.toml
         /usr/local/cargo/.crates2.json
       # names every version the two install steps pin, so a bump misses the cache and installs fresh
-      TOOLS_KEY: tools-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
+      TOOLS_KEY: tools-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-shellcheck-0.11.0-shfmt-3.14.1-actionlint-1.7.12-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0-similarity-py-0.5.0
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
     steps:
@@ -208,11 +210,22 @@ jobs:
         if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
+          tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,shellcheck@0.11.0,shfmt@3.14.1,uv@0.11.14
 
       - name: Install the tools without prebuilt binaries
         if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
-        run: cargo install --locked --force cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
+        run: cargo install --locked --force cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0 similarity-py@0.5.0
+
+      # install-action has no actionlint at this pin, so the release archive comes with its published checksum
+      - name: Install actionlint
+        if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
+        env:
+          ARCHIVE: actionlint_1.7.12_linux_amd64.tar.gz
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/$ARCHIVE" "https://github.com/rhysd/actionlint/releases/download/v1.7.12/$ARCHIVE"
+          echo "$SHA256  $RUNNER_TEMP/$ARCHIVE" | sha256sum -c
+          tar -xzf "$RUNNER_TEMP/$ARCHIVE" -C /usr/local/cargo/bin actionlint
 
       - name: Save the tools
         if: github.ref == 'refs/heads/main' && matrix.part == 'lint' && steps.tools.outputs.cache-hit != 'true'
@@ -256,10 +269,11 @@ jobs:
           case $PART in
             lint) for id in "${lint[@]}"; do selection+=(--only "$id"); done ;;
             tests-*)
-              packages=$(cargo gate affected) || exit 1
-              if [[ -z $packages ]]; then echo "the change affects no package"; exit 0; fi
+              affected=$(cargo gate affected) || exit 1
+              if [[ -z $affected ]]; then echo "the change affects no package"; exit 0; fi
+              read -r -a packages <<< "$affected"
               # the tests use LiteLLM but not its dev tools, about 330 MB
-              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" $packages ;;
+              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" "${packages[@]}" ;;
             task)
               export NEXTEST_PROFILE=task
               for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;

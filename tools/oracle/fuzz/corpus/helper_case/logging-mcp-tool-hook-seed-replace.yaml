@@ -1,0 +1,10 @@
+kind: helper
+name: logging-mcp-tool-hook-seed-replace
+call:
+  b9650:
+    result: {content: [{type: text, text: seed}]}
+    dynamic_success: [seed-name]
+    global_success:
+      - {name: seed-name, behavior: replace, content: [{type: text, text: rewritten}], response_cost: 0.5}
+env: {}
+compare: {ignore: []}
