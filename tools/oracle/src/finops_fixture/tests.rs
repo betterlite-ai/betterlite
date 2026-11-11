@@ -10,6 +10,7 @@ use betterlite_postgres_fixture::finops::FinOpsSeed;
 use betterlite_postgres_fixture::finops::model::{
     ConfigName, ConfigRow, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey,
 };
+use betterlite_postgres_fixture::seed::DatabaseFixture;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -55,90 +56,99 @@ fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
 }
 
+fn expected_organizations() -> Vec<OrganizationRow> {
+    vec![
+        OrganizationRow {
+            organization_id: "org-key".to_owned(),
+            organization_alias: "Key Org".to_owned(),
+            budget_id: "budget-1".to_owned(),
+            created_by: "alice".to_owned(),
+            updated_by: "alice".to_owned(),
+            models: Vec::new(),
+        },
+        OrganizationRow {
+            organization_id: "org-team".to_owned(),
+            organization_alias: "Team Org".to_owned(),
+            budget_id: "budget-1".to_owned(),
+            created_by: "bob".to_owned(),
+            updated_by: "bob".to_owned(),
+            models: vec!["gpt-5".to_owned(), "claude".to_owned()],
+        },
+    ]
+}
+
+fn expected_key_usage() -> FinOpsUsageRow {
+    FinOpsUsageRow {
+        id: "row-key".to_owned(),
+        user_id: Some("alice".to_owned()),
+        date: "2025-01-01".to_owned(),
+        api_key: UsageApiKey::Key(secret("sk-alice-token")),
+        model: Some("openai/gpt-5".to_owned()),
+        model_group: Some("default".to_owned()),
+        custom_llm_provider: Some("openai".to_owned()),
+        mcp_namespaced_tool_name: Some("mcp__tool".to_owned()),
+        endpoint: Some("/v1/chat/completions".to_owned()),
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        cache_read_input_tokens: 3,
+        cache_creation_input_tokens: 4,
+        compression_saved_tokens: 2,
+        compression_savings_spend: Decimal::new(5, 1),
+        prompt_caching_savings_spend: Decimal::new(25, 2),
+        gateway_injected_savings: Decimal::new(125, 3),
+        autorouter_savings_spend: Decimal::new(625, 4),
+        spend: Decimal::new(125, 2),
+        api_requests: 2,
+        successful_requests: 1,
+        failed_requests: 1,
+        total_response_time_ms: 120,
+        timed_requests: 2,
+        created_at: "2025-01-01T00:00:00".to_owned(),
+        updated_at: "2025-01-01T00:00:05".to_owned(),
+    }
+}
+
+fn expected_orphan_usage() -> FinOpsUsageRow {
+    FinOpsUsageRow {
+        id: "row-orphan".to_owned(),
+        user_id: None,
+        date: "2025-01-02".to_owned(),
+        api_key: UsageApiKey::OrphanHash(ORPHAN_HASH.to_owned()),
+        model: None,
+        model_group: None,
+        custom_llm_provider: None,
+        mcp_namespaced_tool_name: None,
+        endpoint: None,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        compression_saved_tokens: 0,
+        compression_savings_spend: Decimal::ZERO,
+        prompt_caching_savings_spend: Decimal::ZERO,
+        gateway_injected_savings: Decimal::ZERO,
+        autorouter_savings_spend: Decimal::ZERO,
+        spend: Decimal::ZERO,
+        api_requests: 0,
+        successful_requests: 0,
+        failed_requests: 0,
+        total_response_time_ms: 0,
+        timed_requests: 0,
+        created_at: "2025-01-02T00:00:00".to_owned(),
+        updated_at: "2025-01-02T00:00:00".to_owned(),
+    }
+}
+
 fn expected_finops() -> FinOpsSeed {
     FinOpsSeed {
-        organizations: vec![
-            OrganizationRow {
-                organization_id: "org-key".to_owned(),
-                organization_alias: "Key Org".to_owned(),
-                budget_id: "budget-1".to_owned(),
-                created_by: "alice".to_owned(),
-                updated_by: "alice".to_owned(),
-                models: Vec::new(),
-            },
-            OrganizationRow {
-                organization_id: "org-team".to_owned(),
-                organization_alias: "Team Org".to_owned(),
-                budget_id: "budget-1".to_owned(),
-                created_by: "bob".to_owned(),
-                updated_by: "bob".to_owned(),
-                models: vec!["gpt-5".to_owned(), "claude".to_owned()],
-            },
-        ],
+        organizations: expected_organizations(),
         key_metadata: vec![KeyMetadataRow {
             token: secret("sk-alice-token"),
             key_alias: Some("alice-key".to_owned()),
             organization_id: Some("org-key".to_owned()),
             team_organization_id: Some("org-team".to_owned()),
         }],
-        daily_usage: vec![
-            FinOpsUsageRow {
-                id: "row-key".to_owned(),
-                user_id: Some("alice".to_owned()),
-                date: "2025-01-01".to_owned(),
-                api_key: UsageApiKey::Key(secret("sk-alice-token")),
-                model: Some("openai/gpt-5".to_owned()),
-                model_group: Some("default".to_owned()),
-                custom_llm_provider: Some("openai".to_owned()),
-                mcp_namespaced_tool_name: Some("mcp__tool".to_owned()),
-                endpoint: Some("/v1/chat/completions".to_owned()),
-                prompt_tokens: 10,
-                completion_tokens: 5,
-                cache_read_input_tokens: 3,
-                cache_creation_input_tokens: 4,
-                compression_saved_tokens: 2,
-                compression_savings_spend: Decimal::new(5, 1),
-                prompt_caching_savings_spend: Decimal::new(25, 2),
-                gateway_injected_savings: Decimal::new(125, 3),
-                autorouter_savings_spend: Decimal::new(625, 4),
-                spend: Decimal::new(125, 2),
-                api_requests: 2,
-                successful_requests: 1,
-                failed_requests: 1,
-                total_response_time_ms: 120,
-                timed_requests: 2,
-                created_at: "2025-01-01T00:00:00".to_owned(),
-                updated_at: "2025-01-01T00:00:05".to_owned(),
-            },
-            FinOpsUsageRow {
-                id: "row-orphan".to_owned(),
-                user_id: None,
-                date: "2025-01-02".to_owned(),
-                api_key: UsageApiKey::OrphanHash(ORPHAN_HASH.to_owned()),
-                model: None,
-                model_group: None,
-                custom_llm_provider: None,
-                mcp_namespaced_tool_name: None,
-                endpoint: None,
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                cache_read_input_tokens: 0,
-                cache_creation_input_tokens: 0,
-                compression_saved_tokens: 0,
-                compression_savings_spend: Decimal::ZERO,
-                prompt_caching_savings_spend: Decimal::ZERO,
-                gateway_injected_savings: Decimal::ZERO,
-                autorouter_savings_spend: Decimal::ZERO,
-                spend: Decimal::ZERO,
-                api_requests: 0,
-                successful_requests: 0,
-                failed_requests: 0,
-                total_response_time_ms: 0,
-                timed_requests: 0,
-                created_at: "2025-01-02T00:00:00".to_owned(),
-                updated_at: "2025-01-02T00:00:00".to_owned(),
-            },
-        ],
+        daily_usage: vec![expected_key_usage(), expected_orphan_usage()],
         config_rows: vec![
             ConfigRow {
                 name: ConfigName::VantageSettings,
@@ -179,14 +189,19 @@ fn assert_fixture_error(outcome: Result<Case, OracleError>, kind: FixtureKind) {
     else {
         panic!("expected a finops fixture error");
     };
-    let matched = match (&source, kind) {
-        (FinOpsFixtureError::DuplicateOrganization { .. }, FixtureKind::DuplicateOrganization) => {
-            true
-        }
-        (FinOpsFixtureError::TooManyRows { .. }, FixtureKind::TooManyRows) => true,
-        (FinOpsFixtureError::MissingBudget { .. }, FixtureKind::MissingBudget) => true,
-        _ => false,
-    };
+    let matched = matches!(
+        (&source, kind),
+        (
+            FinOpsFixtureError::DuplicateOrganization { .. },
+            FixtureKind::DuplicateOrganization
+        ) | (
+            FinOpsFixtureError::TooManyRows { .. },
+            FixtureKind::TooManyRows
+        ) | (
+            FinOpsFixtureError::MissingBudget { .. },
+            FixtureKind::MissingBudget
+        )
+    );
     assert!(matched, "unexpected finops error {source:?}");
 }
 
@@ -220,34 +235,35 @@ async fn fixture_state(fixture: &PostgresFixture) -> (i64, i64, i64) {
     (daily, config, organizations)
 }
 
+fn configured_url() -> Option<SecretString> {
+    let environment =
+        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])
+            .expect("the database environment parses");
+    environment.postgres_test_url
+}
+
+async fn provision_one(
+    admin_url: &SecretString,
+    database: &DatabaseFixture,
+    generator: &mut RandomDatabaseName,
+) -> PostgresFixture {
+    PostgresFixture::provision_with_name_generator(Some(admin_url), &database.seed, generator)
+        .resolve()
+        .await
+        .expect("an independent fixture database provisions")
+}
+
 async fn provision_both(case: &Case) {
     let database = case
         .database
         .as_ref()
         .expect("the case carries a database fixture");
-    let environment =
-        <DatabaseEnvironment as clap::Parser>::try_parse_from([env!("CARGO_PKG_NAME")])
-            .expect("the database environment parses");
-    let Some(admin_url) = environment.postgres_test_url else {
+    let Some(admin_url) = configured_url() else {
         return;
     };
     let mut generator = RandomDatabaseName;
-    let first = PostgresFixture::provision_with_name_generator(
-        Some(&admin_url),
-        &database.seed,
-        &mut generator,
-    )
-    .resolve()
-    .await
-    .expect("the first independent database provisions");
-    let second = PostgresFixture::provision_with_name_generator(
-        Some(&admin_url),
-        &database.seed,
-        &mut generator,
-    )
-    .resolve()
-    .await
-    .expect("the second independent database provisions");
+    let first = provision_one(&admin_url, database, &mut generator).await;
+    let second = provision_one(&admin_url, database, &mut generator).await;
     let first_state = fixture_state(&first).await;
     let second_state = fixture_state(&second).await;
     assert_eq!(first_state, (2, 2, 2));
