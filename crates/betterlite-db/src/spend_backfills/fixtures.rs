@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::{Client, Config, NoTls};
 
 use crate::postgres_store::session::PostgresStore;
 
@@ -215,8 +215,14 @@ impl SpendBackfillCase {
     }
 }
 
+// parse the URL: options.config re-encodes the schema option's leading space as '+', which Postgres rejects
 fn store(fixture: &PostgresFixture, session_time_zone: Option<&str>) -> PostgresStore {
-    let mut configuration = fixture.options.config.clone();
+    let mut configuration: Config = fixture
+        .options
+        .url
+        .expose_secret()
+        .parse()
+        .expect("the fixture URL parses");
     let previous = configuration.get_options().unwrap_or_default().to_owned();
     if let Some(zone) = session_time_zone {
         configuration.options(format!("{previous} -ctimezone={zone}"));
