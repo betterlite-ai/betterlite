@@ -1,0 +1,29 @@
+task: B122
+deviations:
+  - what: With max_request_size_mb unset, betterlite keeps axum's 2 MiB body limit on the Bytes and Json extractors; LiteLLM has no limit.
+    why: Rule bounded-inputs asks for a cap on every inbound body, and the admin JSON routes already rely on the 2 MiB. Setting max_request_size_mb replaces it for all routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/request_size_limit_middleware.py#L81-L87
+  - what: max_request_size_mb is enforced without a license.
+    why: README Decisions enables the MIT premium_user branches, and B744 did the same for its own size check. No oracle case can cover the 413, because the oracle's LiteLLM runs unlicensed and skips the check; unit tests cover it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20014-L20018
+  - what: A max_request_size_mb of .inf or .nan fails config load naming general_settings.max_request_size_mb, where LiteLLM loads the config and raises on every request.
+    why: The byte count has no integer form then, and an error at load names the field instead of failing each request the way int(inf) does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/request_size_limit_middleware.py#L81-L87
+  - what: A Content-Length that is not a plain decimal integer counts as absent, so a value Python's int() accepts, such as " 5 " or "+5", is counted as the body streams instead.
+    why: The task states the plain decimal rule, and a length that needs Python's int() quirks is not a value a working client sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/request_size_limit_middleware.py#L89-L99
+  - what: LITELLM_ENABLE_HSTS is read once at startup, not on every response.
+    why: Environment reads belong to the config crate, and the value cannot change in a running process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/security_headers_middleware.py#L29-L30
+  - what: Gzip output bytes differ from Python's gzip.compress (header mtime and compressor), though the decoded body, Content-Encoding, Content-Length semantics and Vary are the same.
+    why: The Rust compressor writes mtime 0 and its own deflate stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/gzip_middleware.py#L31-L35
+  - what: Gzip applies to a response whose body size is known in advance, where LiteLLM looks at whether the first ASGI body message is the last.
+    why: axum has no body message boundary; a known exact size is the same set of responses (JSON and text replies) and streams stay untouched.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/gzip_middleware.py#L53-L76
+  - what: A request body that goes over the limit while the handler is already streaming its response cannot be turned into a 413 or abort the response.
+    why: The 413 replaces the response only when the inner service has not yet returned one, as in LiteLLM when response start was already sent the error is re-raised; axum cannot abort after the head is sent without a special error path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/request_size_limit_middleware.py#L78-L84
+  - what: The exact-root redirect's Location always uses the http scheme, where Starlette takes the request's scheme, so over TLS or behind a proxy that sets X-Forwarded-Proto LiteLLM answers with an https Location.
+    why: It reuses docs_routes' redirect_location, and B7740 recorded the same limit for the docs slash redirects; the server does not carry the scheme into the router.
+    link: https://github.com/encode/starlette/blob/1.3.1/starlette/routing.py#L694-L709

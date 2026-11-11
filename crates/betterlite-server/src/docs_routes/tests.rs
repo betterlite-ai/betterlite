@@ -428,9 +428,19 @@ async fn a_docs_page_on_the_swagger_directory_keeps_the_assets_served() {
     );
 }
 
+fn under_server_root_path(urls: DocsUrls, server_root_path: &str) -> Router {
+    let settings = Settings {
+        server_root_path: server_root_path.to_owned(),
+        server_root_paths: Vec::new(),
+    };
+    RootPaths::from_settings(&settings)
+        .unwrap()
+        .wrap(router(urls, server_root_path))
+}
+
 #[tokio::test]
 async fn the_docs_are_served_under_the_server_root_path() {
-    let router = router(default_urls(), "/api");
+    let router = under_server_root_path(default_urls(), "/api");
     let (root_status, _, root_body) = send(&router, Method::GET, "/api/", None).await;
     assert_eq!(root_status, StatusCode::OK);
     assert_eq!(root_body, expected_swagger_page("/api").into_bytes());
@@ -458,14 +468,13 @@ async fn the_docs_are_served_under_the_server_root_path() {
 }
 
 #[tokio::test]
-async fn the_prefixed_root_redirects_to_its_slash() {
-    let router = router(default_urls(), "/api");
-    let (status, headers, _) = send(&router, Method::GET, "/api", Some("proxy.example")).await;
-    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
-    assert_eq!(
-        header_value(&headers, &header::LOCATION),
-        "http://proxy.example/api/"
-    );
+async fn a_doubled_root_path_is_not_found() {
+    let router = under_server_root_path(default_urls(), "/api");
+    let (doubled, _, _) = send(&router, Method::GET, "/api/api/redoc", None).await;
+    assert_eq!(doubled, StatusCode::NOT_FOUND);
+    let trailing_slash_router = under_server_root_path(default_urls(), "/api/");
+    let (trailing, _, _) = send(&trailing_slash_router, Method::GET, "/api/redoc", None).await;
+    assert_eq!(trailing, StatusCode::NOT_FOUND);
 }
 
 #[rstest]

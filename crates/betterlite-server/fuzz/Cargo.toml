@@ -141,3 +141,10 @@ path = "fuzz_targets/first_chunk_error.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "accept_encoding"
+path = "fuzz_targets/accept_encoding.rs"
+test = false
+doc = false
+bench = false
