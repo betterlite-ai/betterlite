@@ -319,7 +319,7 @@ async fn finops_http_fixture_decode_contract(#[case] yaml: String, #[case] expec
     }
 }
 
-fn assert_corpus_outcome(name: &str, path: &Path, result: Result<Case, OracleError>) {
+fn assert_corpus_outcome(name: &str, path: &Path, result: &Result<Case, OracleError>) {
     match name {
         "finops-valid-empty.yaml" | "finops-valid-populated.yaml" => {
             assert!(result.is_ok(), "{} should be accepted", path.display());
@@ -371,7 +371,7 @@ fn replays_the_finops_http_fixture_corpus() {
                 .file_name()
                 .and_then(|value| value.to_str())
                 .expect("the corpus seed is named");
-            assert_corpus_outcome(name, &path, result);
+            assert_corpus_outcome(name, &path, &result);
             Ok::<(), ()>(())
         })
         .expect("every corpus seed replays");
