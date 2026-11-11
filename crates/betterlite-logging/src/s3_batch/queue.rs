@@ -16,10 +16,6 @@ pub struct Snapshot {
     pub entries: Vec<Element>,
     pub requeued_count: usize,
 }
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Restored {
-    pub dropped_oldest: usize,
-}
 fn lock(state: &Mutex<QueueState>) -> MutexGuard<'_, QueueState> {
     match state.lock() {
         Ok(guard) => guard,
@@ -27,10 +23,11 @@ fn lock(state: &Mutex<QueueState>) -> MutexGuard<'_, QueueState> {
     }
 }
 impl BatchQueue {
-    pub fn enqueue(&self, element: Element) -> usize {
-        let mut state = lock(&self.state);
-        state.entries.push_back(element);
-        state.entries.len()
+    pub fn enqueue(&self, element: Element) {
+        match self.state.lock() {
+            Ok(mut state) => state.entries.push_back(element),
+            Err(poisoned) => poisoned.into_inner().entries.push_back(element),
+        }
     }
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
@@ -46,7 +43,7 @@ impl BatchQueue {
         state.entries.drain(..settled);
         state.requeued_count = 0;
     }
-    pub fn restore_after_failure(&self, batch_len: usize, requeued: Vec<Element>) -> Restored {
+    pub fn restore_after_failure(&self, batch_len: usize, requeued: Vec<Element>) -> usize {
         let mut state = lock(&self.state);
         let arrivals: Vec<Element> = state.entries.iter().skip(batch_len).cloned().collect();
         let requeued_len = requeued.len();
@@ -59,20 +56,18 @@ impl BatchQueue {
         drop(state);
         restored
     }
-    pub fn trim_overflow(&self) -> Restored {
+    pub fn trim_overflow(&self) -> usize {
         let mut state = lock(&self.state);
         let restored = self.trim_locked(&mut state);
         drop(state);
         restored
     }
-    fn trim_locked(&self, state: &mut QueueState) -> Restored {
+    fn trim_locked(&self, state: &mut QueueState) -> usize {
         let dropped = state.entries.len().saturating_sub(self.max_queue_size);
         state.entries.drain(..dropped);
         let requeued_count = state.requeued_count.saturating_sub(dropped);
         state.requeued_count = requeued_count;
-        Restored {
-            dropped_oldest: dropped,
-        }
+        dropped
     }
 }
 mod tests;

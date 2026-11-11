@@ -19,16 +19,29 @@ use crate::s3_transport::transport::UploadOutcome;
 use betterlite_models::decisions::Json;
 
 #[derive(Debug, Default)]
-struct ScriptedUpload {
+struct ScriptedUpload<'queue> {
     outcomes: Mutex<VecDeque<UploadOutcome>>,
     uploaded: Mutex<Vec<String>>,
+    arrival: Option<(&'queue BatchQueue, Element)>,
+    arrived: Mutex<bool>,
 }
 
-impl ScriptedUpload {
+impl<'queue> ScriptedUpload<'queue> {
     fn with(outcomes: &[UploadOutcome]) -> Self {
         Self {
             outcomes: Mutex::new(outcomes.iter().copied().collect()),
             uploaded: Mutex::new(Vec::new()),
+            arrival: None,
+            arrived: Mutex::new(false),
+        }
+    }
+
+    fn arriving(queue: &'queue BatchQueue, arrival: Element, outcomes: &[UploadOutcome]) -> Self {
+        Self {
+            outcomes: Mutex::new(outcomes.iter().copied().collect()),
+            uploaded: Mutex::new(Vec::new()),
+            arrival: Some((queue, arrival)),
+            arrived: Mutex::new(false),
         }
     }
 
@@ -43,63 +56,38 @@ impl ScriptedUpload {
         let mut uploaded = self.uploaded.lock().unwrap_or_else(PoisonError::into_inner);
         take(&mut *uploaded)
     }
-}
 
-impl UploadOperation for ScriptedUpload {
-    fn upload<'operation>(
-        &'operation self,
-        element: &'operation Element,
-    ) -> Pin<Box<dyn Future<Output = UploadOutcome> + Send + 'operation>> {
+    fn record(&self, element: &Element) {
         self.uploaded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(element.s3_object_key.clone());
-        let outcome = self
-            .outcomes
+    }
+
+    fn next(&self) -> UploadOutcome {
+        self.outcomes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .unwrap_or(UploadOutcome::Delivered);
-        Box::pin(async move { outcome })
+            .unwrap_or(UploadOutcome::Delivered)
     }
 }
 
-// the first upload appends an event, standing in for an event logged while the flush awaits S3
-struct ArrivingUpload<'queue> {
-    queue: &'queue BatchQueue,
-    arrival: Element,
-    outcomes: Mutex<VecDeque<UploadOutcome>>,
-    arrived: Mutex<bool>,
-}
-
-impl<'queue> ArrivingUpload<'queue> {
-    fn new(queue: &'queue BatchQueue, arrival: Element, outcomes: &[UploadOutcome]) -> Self {
-        Self {
-            queue,
-            arrival,
-            outcomes: Mutex::new(outcomes.iter().copied().collect()),
-            arrived: Mutex::new(false),
-        }
-    }
-}
-
-impl UploadOperation for ArrivingUpload<'_> {
+impl UploadOperation for ScriptedUpload<'_> {
     fn upload<'operation>(
         &'operation self,
-        _element: &'operation Element,
+        element: &'operation Element,
     ) -> Pin<Box<dyn Future<Output = UploadOutcome> + Send + 'operation>> {
-        let mut arrived = self.arrived.lock().unwrap_or_else(PoisonError::into_inner);
-        if !*arrived {
-            *arrived = true;
-            self.queue.enqueue(self.arrival.clone());
+        self.record(element);
+        if let Some((queue, arrival)) = &self.arrival {
+            let mut arrived = self.arrived.lock().unwrap_or_else(PoisonError::into_inner);
+            if !*arrived {
+                *arrived = true;
+                queue.enqueue(arrival.clone());
+            }
+            drop(arrived);
         }
-        drop(arrived);
-        let outcome = self
-            .outcomes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or(UploadOutcome::Delivered);
+        let outcome = self.next();
         Box::pin(async move { outcome })
     }
 }
@@ -356,7 +344,7 @@ async fn preserve_events_added_during_flush() {
     queue.enqueue(element("b", "b"));
     let settings = settings(Some(Duration::from_secs(3_600)), 10);
 
-    let success = ArrivingUpload::new(
+    let success = ScriptedUpload::arriving(
         &queue,
         element("arrival", "arrival"),
         &[UploadOutcome::Delivered, UploadOutcome::Delivered],
@@ -370,7 +358,7 @@ async fn preserve_events_added_during_flush() {
     queue.finish_success(queue.snapshot().entries.len());
     queue.enqueue(element("c", "c"));
     queue.enqueue(element("d", "d"));
-    let failure = ArrivingUpload::new(
+    let failure = ScriptedUpload::arriving(
         &queue,
         element("late", "late"),
         &[UploadOutcome::Retry, UploadOutcome::Retry],

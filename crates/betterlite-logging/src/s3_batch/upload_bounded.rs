@@ -45,7 +45,6 @@ struct GateState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimiterSnapshot {
     pub limit: usize,
-    pub waiters: usize,
 }
 pub enum UploadPermit<'limiter> {
     Fixed(SemaphorePermit<'limiter>),
@@ -94,14 +93,10 @@ impl UploadLimiter {
         match &self.kind {
             Kind::Fixed(semaphore) => LimiterSnapshot {
                 limit: semaphore.available_permits(),
-                waiters: 0,
             },
             Kind::Adaptive { state, .. } => {
                 let gate = lock(state);
-                LimiterSnapshot {
-                    limit: gate.limit,
-                    waiters: gate.waiters,
-                }
+                LimiterSnapshot { limit: gate.limit }
             }
         }
     }
@@ -113,7 +108,11 @@ async fn adaptive_acquire(
 ) -> Result<OwnedSemaphorePermit, AcquireError> {
     let waiting = Waiting::register(state)?;
     loop {
-        let permit = acquire_permit(permits, deadline).await?;
+        let permit = match timeout_at(deadline, Arc::clone(permits).acquire_owned()).await {
+            Ok(Ok(permit)) => permit,
+            Ok(Err(_closed)) => return Err(AcquireError::Closed),
+            Err(_elapsed) => return Err(AcquireError::DeadlineExceeded),
+        };
         let mut gate = lock(state);
         if gate.owed > 0 {
             gate.owed = gate.owed.saturating_sub(1);
@@ -124,16 +123,6 @@ async fn adaptive_acquire(
         drop(gate);
         drop(waiting);
         return Ok(permit);
-    }
-}
-async fn acquire_permit(
-    permits: &Arc<Semaphore>,
-    deadline: Instant,
-) -> Result<OwnedSemaphorePermit, AcquireError> {
-    match timeout_at(deadline, Arc::clone(permits).acquire_owned()).await {
-        Ok(Ok(permit)) => Ok(permit),
-        Ok(Err(_closed)) => Err(AcquireError::Closed),
-        Err(_elapsed) => Err(AcquireError::DeadlineExceeded),
     }
 }
 fn adaptive_limiter(initial: usize, ceiling: usize) -> Result<UploadLimiter, BoundsError> {

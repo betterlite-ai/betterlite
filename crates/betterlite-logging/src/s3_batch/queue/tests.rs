@@ -53,7 +53,7 @@ fn restore_puts_requeued_ahead_of_arrivals() {
     queue.enqueue(element("a"));
     queue.enqueue(element("arrival"));
     let restored = queue.restore_after_failure(1, vec![element("b")]);
-    assert_eq!(restored.dropped_oldest, 0);
+    assert_eq!(restored, 0);
     assert_eq!(keys(&queue), vec!["b", "arrival"]);
     assert_eq!(queue.snapshot().requeued_count, 1);
 }
@@ -64,7 +64,7 @@ fn restore_trims_the_oldest_and_adjusts_the_requeued_count() {
     queue.enqueue(element("a"));
     queue.enqueue(element("arrival"));
     let restored = queue.restore_after_failure(1, vec![element("b"), element("c")]);
-    assert_eq!(restored.dropped_oldest, 1);
+    assert_eq!(restored, 1);
     assert_eq!(keys(&queue), vec!["c", "arrival"]);
     assert_eq!(queue.snapshot().requeued_count, 1);
 }
@@ -76,6 +76,6 @@ fn trim_overflow_drops_the_oldest_entries() {
     queue.enqueue(element("b"));
     queue.enqueue(element("c"));
     let trimmed = queue.trim_overflow();
-    assert_eq!(trimmed.dropped_oldest, 1);
+    assert_eq!(trimmed, 1);
     assert_eq!(keys(&queue), vec!["b", "c"]);
 }

@@ -59,12 +59,7 @@ pub(super) fn enqueue_event(
         );
         return Ok(());
     };
-    let depth = logger.queue.enqueue(record);
-    tracing::debug!(
-        depth,
-        batch_size = logger.batch_size,
-        "s3 logging: queue length after a model event"
-    );
+    logger.queue.enqueue(record);
     Ok(())
 }
 #[async_trait]

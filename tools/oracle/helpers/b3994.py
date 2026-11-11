@@ -156,7 +156,7 @@ async def execute(input_value: Input) -> dict[str, Json]:
                 }
                 for item in logger.log_queue
             ]
-            limit = limiter.limit if limiter is not None else logger.s3_max_concurrent_uploads
+            fallback = logger.s3_max_concurrent_uploads
             requests: list[Json] = [
                 {"url": re.sub(r"[0-9a-f]{32}", "ID", url), "body": body}
                 for url, body in sorted(client.requests)
@@ -166,7 +166,7 @@ async def execute(input_value: Input) -> dict[str, Json]:
                     "requests": requests,
                     "queue": remaining,
                     "requeued_count": logger._requeued_count,  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L246
-                    "limit": limit,
+                    "limit": (fallback if limiter is None else limiter.limit),
                 }
             )
     finally:

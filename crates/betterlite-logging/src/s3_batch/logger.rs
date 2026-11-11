@@ -126,10 +126,10 @@ impl S3BatchLogger {
                 Ok(())
             }
             Err(error) => {
-                let restored = self.queue.trim_overflow();
+                let dropped = self.queue.trim_overflow();
                 tracing::error!(
                     %error,
-                    dropped = restored.dropped_oldest,
+                    dropped,
                     "CustomLogger: async_send_batch raised; preserving events in queue for retry"
                 );
                 Err(error)

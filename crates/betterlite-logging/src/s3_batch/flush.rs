@@ -143,11 +143,11 @@ fn reconcile(
     if requeued.is_empty() {
         return Ok(());
     }
-    let restored = context.queue.restore_after_failure(batch_len, requeued);
-    if restored.dropped_oldest > 0 {
+    let trimmed = context.queue.restore_after_failure(batch_len, requeued);
+    if trimmed > 0 {
         tracing::warn!(
             max_queue_size = context.settings.max_queue_size,
-            dropped = restored.dropped_oldest,
+            dropped = trimmed,
             "s3 logging: queue exceeded max_queue_size; dropped the oldest events"
         );
     }

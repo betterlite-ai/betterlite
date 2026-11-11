@@ -12,7 +12,7 @@ use secrecy::SecretString;
 use std::sync::Arc;
 use std::time::Duration;
 const BATCH_SIZE_VARIABLE: &str = "DEFAULT_S3_BATCH_SIZE";
-const FLUSH_INTERVAL_VARIABLE: &str = "DEFAULT_S3_FLUSH_INTERVAL_SECONDS";
+const FLUSH_VARIABLE: &str = "DEFAULT_S3_FLUSH_INTERVAL_SECONDS";
 const DEFAULT_BATCH_SIZE: usize = 512;
 const DEFAULT_FLUSH_INTERVAL_SECONDS: usize = 10;
 #[derive(Debug)]
@@ -100,11 +100,7 @@ fn endpoint(
 }
 pub(super) fn schedule(environment: &dyn EnvironmentLookup) -> (usize, Duration) {
     let batch_size = positive_setting(environment, BATCH_SIZE_VARIABLE, DEFAULT_BATCH_SIZE);
-    let seconds = positive_setting(
-        environment,
-        FLUSH_INTERVAL_VARIABLE,
-        DEFAULT_FLUSH_INTERVAL_SECONDS,
-    );
+    let seconds = positive_setting(environment, FLUSH_VARIABLE, DEFAULT_FLUSH_INTERVAL_SECONDS);
     (
         batch_size,
         Duration::from_secs(u64::try_from(seconds).unwrap_or(10)),
