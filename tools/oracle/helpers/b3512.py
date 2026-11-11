@@ -30,7 +30,6 @@ PROVIDER: Final = "strands_decider"
 MODEL: Final = "m"
 DROPPED_MARKER: Final = "header(s) "
 NAMES: Final = TypeAdapter(list[str])
-STUB_URL: Final = "https://strands.invalid/invocations"
 
 Object: TypeAlias = dict[str, JsonValue]
 
@@ -59,6 +58,7 @@ class SignStep(TypedDict):
 
 class TransformStep(TypedDict):
     kind: Literal["transform"]
+    api_base: str
     body: str
     model: str
     state: str
@@ -191,7 +191,8 @@ def project_response(response: DecisionsIRResponse) -> Object:
 
 def transform_step(step: TransformStep) -> Object:
     config = StrandsDeciderDecisionsConfig()
-    request = httpx.Request("POST", STUB_URL)
+    url = config.get_complete_url(api_base=step["api_base"], model=step["model"])
+    request = httpx.Request("POST", url)
     response = httpx.Response(200, content=step["body"].encode(), request=request)
     answered = ir_request(step)
     result = config.transform_decisions_response(step["model"], PROVIDER, response, answered)
