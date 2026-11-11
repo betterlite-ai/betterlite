@@ -2416,6 +2416,9 @@ dependencies = [
 name = "betterlite-prompts-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
  "chrono",
  "indexmap 2.14.2",
