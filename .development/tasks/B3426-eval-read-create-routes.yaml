@@ -92,8 +92,8 @@ deviations:
     why: "LiteLLM returns 500 Internal Server Error for malformed JSON because orjson.loads() raises an exception caught by the global exception handler. Betterlite explicitly decodes before the route handler's try block and returns 400 for malformed JSON, providing more specific error information and failing fast on parse errors."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L76-L77"
 out_of_scope:
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; the pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)), the rest is owned by the handler/transport owner identified by B096's external-calls table."
-  - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; owned by the handler/transport owner identified by B096's external-calls table."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; the pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)), the call path after pre-call (eval call routing and the deployment credential merge) is B9372's, the rest is B004's."
+  - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; B004's."
   - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
   - "The concrete operation implementations (acreate_eval, alist_evals, aget_eval) owned by B3421 and B3422; routes only dispatch to them."
 pitfalls:

@@ -1,0 +1,13 @@
+id: B9850
+milestone: M3 providers
+title: Upstream request selectors in the oracle comparison and the mock's address in answers
+status: done
+depends_on: [B900, B1139]
+file: tasks/B9850-upstream-request-selectors.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1271

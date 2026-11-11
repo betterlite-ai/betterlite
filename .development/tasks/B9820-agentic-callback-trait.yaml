@@ -1,0 +1,114 @@
+id: B9820
+title: Agentic loop callback trait shared by the chat, Responses and Messages loops
+description: >-
+  LiteLLM runs its server side tool loops through five methods every CustomLogger has (custom_logger.py L606-L790):
+  async_should_run_agentic_loop, async_run_agentic_loop, async_build_agentic_loop_plan,
+  async_post_agentic_loop_response_hook and async_agentic_loop_cleanup_hook. The chat loop (B8294), the Responses and
+  Anthropic Messages continuation (B2415) and its policy helpers (B2419) call them on every callback in litellm.callbacks,
+  and the web search, code interpreter and compression interceptions implement them. Each of those tasks says the
+  callback type comes "from B189", but B189 built a closed enum of logging sinks and no task defines it. This task does,
+  next to B4119's AgenticLoopPlan in betterlite-context, a crate core, openai and websearch already depend on, so the
+  loops and the server adapters that register the interceptions (B9822, B9823, B9824) share one trait.
+
+
+  Code goes in crates/betterlite-context/src/agentic_callback.rs and agentic_callback/ (error.rs, tests.rs). The skeleton
+  creates the module and declares it in lib.rs. Add `async-trait = "0.1.92"` (the version betterlite-logging already
+  uses) to crates/betterlite-context/Cargo.toml, and `tokio` (workspace, features macros and rt) as a dev-dependency.
+  Every name stays at 30 characters or fewer.
+
+
+  `AgenticCallback` is an object safe `#[async_trait]` trait, `Send + Sync`, held as `Arc<dyn AgenticCallback>`:
+
+  - `fn callback_name(&self) -> &str`, the name the callback was configured under, used in log lines.
+
+  - `fn overrides(&self) -> AgenticOverrides`. `AgenticOverrides` is a Copy struct of five bools, one per method below
+    (should_run, run_loop, build_plan, post_response, cleanup), with Default all false. LiteLLM decides whether a callback
+    takes part by comparing the class attribute with CustomLogger's (`type(cb).async_should_run_agentic_loop is not
+    CustomLogger.async_should_run_agentic_loop`, llm_http_handler.py L5256, L5799, and `_post_hook_overridden`,
+    chat_completion_agentic_loop.py L54). Rust can't compare a default method body, so an implementation states what it
+    overrides and every loop reads this instead. A flag that is true for a method the type does not override is a bug
+    in that implementation, not something the loop checks.
+
+  - `async fn should_run_agentic_loop(&self, call: &AgenticCall<'_>) -> Result<AgenticGate, AgenticHookError>`. Default
+    `AgenticGate { run: false, tools: JsonMap::new() }`, LiteLLM's `(False, {})`. `AgenticCall` holds `response: &RawValue`
+    (the provider answer as JSON: a chat ModelResponse, a Responses object or an Anthropic message), `model: &str`,
+    `messages: &[FollowupMessage]`, `tools: Option<&[FollowupMessage]>`, `stream: bool`, `custom_llm_provider: &str` and
+    `kwargs: &JsonMap`. `AgenticGate.tools` is the dict the gate returns, kept as B4119's `JsonMap`.
+
+  - `async fn build_agentic_loop_plan(&self, call: &AgenticLoopCall<'_>) -> Result<AgenticLoopPlan, AgenticHookError>`.
+    Default `AgenticLoopPlan::default()`, which has run_agentic_loop false like LiteLLM's
+    `AgenticLoopPlan(run_agentic_loop=False)`. `AgenticLoopCall` holds `tools: &JsonMap` (the gate's dict), `model`,
+    `messages`, `response: &RawValue`, `optional_params: &JsonMap` (LiteLLM's anthropic_messages_optional_request_params),
+    `logging: Option<&AgenticLogging>`, `stream: bool` and `kwargs: &JsonMap`. `AgenticLogging` is the part of the logging
+    object the interceptions read: `call_id: Option<String>` (litellm_call_id) and `agentic_loop_params: Option<JsonMap>`
+    (model_call_details["agentic_loop_params"]), built by the loop from B247's logging state. LiteLLM also passes
+    anthropic_messages_provider_config; no implementation reads it at the pin (websearch's _execute_agentic_loop does not
+    take it), so the call does not carry it.
+
+  - `async fn run_agentic_loop(&self, call: &AgenticLoopCall<'_>) -> Result<Option<Box<RawValue>>, AgenticHookError>`.
+    Default `Ok(None)`: CustomLogger's body is only a docstring, so it returns None, and the loops return that None to
+    their caller as LiteLLM does.
+
+  - `async fn post_agentic_loop_response(&self, response: Box<RawValue>, plan: &AgenticLoopPlan, kwargs: &JsonMap) ->
+    Result<Box<RawValue>, AgenticHookError>`. Default returns the response unchanged.
+
+  - `async fn agentic_loop_cleanup(&self, plan: &AgenticLoopPlan, kwargs: &JsonMap) -> Result<(), AgenticHookError>`.
+    Default `Ok(())`.
+
+  `AgenticHookError` (error.rs) has one variant, `Failed { callback: String, message: String }`, displayed as
+  "callback {callback} failed: {message}", the shape B8740's LoggerError uses, because the implementations sit in crates
+  above this one and the loops only log the text ("LiteLLM.AgenticHookError: Exception in ...: <error>") and go on. The
+  two safety errors (repeated fingerprint, max loops) are not hook errors; they belong to B8294 and B2419 and must never
+  be turned into this type.
+
+  Tests in agentic_callback/tests.rs (`agentic_callback::tests`), names starting with `defaults_`, `overrides_` or
+  `object_`: a type that implements only callback_name and overrides gets LiteLLM's five defaults (gate false with an
+  empty map, plan with run_agentic_loop false and no patch, run None, post hook returns the same JSON text, cleanup Ok);
+  a test type that overrides should_run and build_plan reports exactly those two flags and its results reach the caller
+  through an `Arc<dyn AgenticCallback>`; a Vec of two `Arc<dyn AgenticCallback>` keeps its order; the error displays the
+  callback name and message.
+scope:
+  paths:
+    - crates/betterlite-context/Cargo.toml
+    - crates/betterlite-context/src/agentic_callback.rs
+    - crates/betterlite-context/src/agentic_callback/**
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L606-L790
+    why: The five agentic hooks, their arguments and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5252-L5258
+    why: Override detection by comparing the class attribute with CustomLogger's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L54-L57
+    why: The post hook is called only when the class overrides it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L236-L307
+    why: An implementation reads litellm_call_id and model_call_details["agentic_loop_params"] from the logging object, which is all AgenticLogging carries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1334-L1390
+    why: The legacy run path never reads the Anthropic provider config it is handed.
+dod:
+  - text: AgenticCallback is object safe and Send + Sync, and a type that overrides nothing gets LiteLLM's five defaults with every override flag false.
+    proof: [trait-tests]
+  - text: A type that overrides two hooks reports exactly those flags, and its results reach the caller through Arc<dyn AgenticCallback> in list order.
+    proof: [trait-tests]
+  - text: AgenticHookError names the callback and keeps the message.
+    proof: [trait-tests]
+checks:
+  optional: []
+  commands:
+    - id: trait-tests
+      why: the trait is missing, a default differs from CustomLogger's or an override flag is wrong
+      run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^agentic_callback::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "AgenticLoopPlan, AgenticLoopRequestPatch, JsonMap and FollowupMessage: B4119. The loops that call the trait: B8294 (chat), B2415 and B2419 (Responses and Messages)."
+  - "The chat-only legacy hooks async_should_run_chat_completion_agentic_loop, async_build_chat_completion_agentic_loop_plan and async_run_chat_completion_agentic_loop (custom_logger.py L792 on), called by _call_agentic_chat_completion_hooks and the OpenAI provider: B119."
+  - "The implementations and their registration: B9822 (compression_interception), B9823 (websearch_interception), B9824 (code_interpreter_interception), over the list B9821 builds."
+pitfalls:
+  - "run_agentic_loop's default is None, not the original response: the chat loop returns that None to main.py, which then keeps its own response."
+  - "build_agentic_loop_plan's default plan has run_agentic_loop false, so a loop that ignores overrides() and calls it anyway only skips; a loop that calls run_agentic_loop on a callback that overrides build_plan breaks LiteLLM's precedence."
+  - "Keep the safety errors out of AgenticHookError; B8294 and B2419 raise them outside the hook error guard."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,152 @@
+id: B9561
+title: Response cache on the gateway text completion, rerank and transcription calls
+description: >-
+  LiteLLM caches atext_completion, arerank and atranscription the same way it caches chat: each router attempt
+  ends in an SDK call under the `client` decorator, whose wrapper looks the request up before the call and stores
+  the answer after it (utils.py L2030-L2059 and L2161-L2167). The router passes `caching` set to cache_responses
+  for all three (router.py L5065-L5073 for text completion, L4952-L4959 for rerank, L4799-L4806 for transcription).
+  B9560 builds the gateway's cache step (`app::inference::response_cache`, `ResponseCacheStep`, `CacheAttempt`)
+  and wires chat and embeddings. This task wires the same step into the three other families the cache supports by
+  default and adds their HTTP oracle cases. It writes no new cache logic: every rule lives in B9560's step and the
+  cache crates under it. Every name stays at 30 characters or fewer.
+
+
+  Where. Read the merged code of B202 (routes/completions.rs), B085 and B8636 (api::rerank_routes, routes/rerank.rs
+  and the RerankRouter impl in app::inference::route_ports) and B083 (api::audio_routes, routes/audio.rs) and find,
+  for each family, the point where an attempt has its deployment and its merged arguments and is about to call
+  the provider. For rerank that is the arerank executor RouterSingleCalls (B8352) calls with LiteLLM's argument
+  order: deployment params, `caching`, `client`, then the request. When the route has no router (B085's no-router
+  branch, litellm.arerank called directly), the kwargs are the request alone and `caching` is absent, so the
+  lookup runs whenever a cache exists. At that point call B9560's `begin` with call type `atext_completion`,
+  `arerank` or `atranscription`, the deployment's litellm model and the kwargs map, then `lookup`. A full hit
+  answers the client from the converted result without a provider call, with `x-litellm-cache-key` set from the
+  key B4305 stamped. A miss sends as today and then calls `store` with the response and the call kwargs.
+
+
+  The kwargs for each family follow B9560's rule (deployment litellm_params, then the call's main argument, then
+  `caching` from the router flag, then the request data, with `metadata.model_group` set to the model group and the
+  key metadata from the pre-call step), with these differences:
+  1. Text completion. The main argument is `prompt`. A stream request (stream true) that misses feeds each parsed
+     chunk to `CacheAttempt::stream_chunk`, so B4304 writes the assembled answer once after the last chunk, and a
+     stream request that hits is answered with B4302's replayed text completion chunks as server sent events ending
+     in `data: [DONE]`.
+  2. Rerank. No main argument. The answer is B4302's RerankResponse conversion as JSON.
+  3. Transcription. The main argument is `file`, and before the lookup the step's kwargs need
+     `metadata.file_checksum`: LiteLLM's function_setup computes it from the uploaded bytes with
+     get_audio_file_content_hash (utils.py L1234-L1243) before the wrapper looks the cache up, and B4296's key
+     reads it ahead of the file name (caching.py L445-L456). Use B1001's port of get_audio_file_content_hash on
+     the upload the route already holds; never put the audio bytes themselves in the kwargs map the key reads.
+     The answer is B4302's TranscriptionResponse conversion in the response format the route already answers.
+
+
+  No cache in the slot, `caching` false or `cache: {"no-cache": true}` (in the JSON body, or as a form field for
+  transcription when the route already decodes form fields into the request data) skips the lookup, and each route
+  then behaves exactly as before. `cache: {"no-store": true}` skips the store. The `cache`, `caching` and
+  `cache_key` fields never reach the provider.
+
+
+  Tests go in crates/betterlite-server, module `app::inference::response_cache::family_tests`
+  (crates/betterlite-server/src/app/inference/response_cache/family_tests.rs, declared under B9560's
+  response_cache module with a `#[cfg(test)]` line in response_cache.rs, the only line this task adds there). They
+  boot each route with an in-memory cache in the slot and a local tokio TcpListener upstream that records each
+  request. Names start with `text_`, `rerank_` or `audio_`: a repeated request makes one upstream call and the
+  second answer has the cache key header; no-cache and no-store behave as for chat; a text completion stream miss is
+  written after its last chunk and a stream hit replays as SSE; two uploads with the same file name and different
+  bytes both reach upstream, and the same bytes under another file name hit.
+
+
+  HTTP oracle cases go in tools/oracle/cases/response-cache-calls/, one `http_scenario` file per case in the format
+  of tools/oracle/cases/harness/http-scenarios/capture-substitution.yaml, with Bearer oracle-master, config
+  `litellm_settings: {cache: true, cache_params: {type: local}}`, a distinct model_name per file (files with the same
+  config share one proxy and one cache), and `upstream: []` on a step that must not reach the provider. Use the
+  providers and upstream answer shapes the merged cases of B202 (tools/oracle/cases/completions), B085
+  (tools/oracle/cases/rerank-routes) and B083 (tools/oracle/cases/api/audio-routes) use. Compare content-type and
+  x-litellm-cache-key on every step. The cases: text-completion-miss-then-hit on /v1/completions;
+  text-completion-no-store; text-completion-stream-miss-then-hit; rerank-miss-then-hit on /v1/rerank;
+  rerank-no-cache; transcription-miss-then-hit (multipart, the same file twice on /v1/audio/transcriptions);
+  transcription-other-bytes (the same file name with different bytes, both steps reach upstream).
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/response_cache.rs
+    - crates/betterlite-server/src/app/inference/response_cache/family_tests.rs
+    - crates/betterlite-server/src/routes/completions.rs
+    - crates/betterlite-server/src/routes/completions/**
+    - crates/betterlite-server/src/routes/rerank.rs
+    - crates/betterlite-server/src/api/rerank_routes.rs
+    - crates/betterlite-server/src/api/rerank_routes/**
+    - crates/betterlite-server/src/app/inference/route_ports.rs
+    - crates/betterlite-server/src/app/inference/route_ports/**
+    - crates/betterlite-server/src/routes/audio.rs
+    - crates/betterlite-server/src/routes/audio/**
+    - crates/betterlite-server/src/api/audio_routes.rs
+    - crates/betterlite-server/src/api/audio_routes/**
+    - tools/oracle/cases/response-cache-calls/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2030-L2059
+    why: The lookup in wrapper_async and the early return of a hit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2161-L2167
+    why: The store after a successful call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1234-L1243
+    why: function_setup puts the audio content hash in metadata.file_checksum before the lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L445-L456
+    why: The key reads file_checksum before the file name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5065-L5073
+    why: The text completion attempt passes prompt and caching before the request kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4952-L4959
+    why: The rerank attempt passes caching and client before the request kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4799-L4806
+    why: The transcription attempt passes file and caching before the request kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12105-L12117
+    why: The text completion route and its four paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L30-L45
+    why: arerank sits under the client decorator, so its wrapper checks the cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L45
+    why: The rerank route and its three paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12655-L12720
+    why: The transcription route turns the upload into a named BytesIO in data["file"].
+dod:
+  - text: A repeated text completion, rerank or transcription request is answered from the cache without a provider call and carries x-litellm-cache-key.
+    proof: [family-tests, family-cases, oracle]
+  - text: A text completion stream miss is written once after its last chunk, and a stream hit replays as SSE.
+    proof: [family-tests, family-cases, oracle]
+  - text: A transcription key follows the uploaded bytes, not the file name.
+    proof: [family-tests, family-cases, oracle]
+  - text: no-cache and no-store behave as in LiteLLM, and with no cache the three routes and their own tests behave as before.
+    proof: [family-tests, route-tests, family-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: family-tests
+      why: a family skips the lookup or the store, answers a hit through the provider, or keys a transcription by its file name
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::response_cache::family_tests::/)'
+    - id: route-tests
+      why: the edits at the send points broke the text completion, rerank, audio or route port tests
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/inference/response_cache/family_tests.rs)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::/) | test(/^api::rerank_routes::/) | test(/^api::audio_routes::/) | test(/^app::inference::route_ports::/)'
+    - id: family-cases
+      why: the HTTP cases for the three families were not added
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/response-cache-calls)"
+oracle_cases:
+  - tools/oracle/cases/response-cache-calls/text-completion-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache-calls/text-completion-no-store.yaml
+  - tools/oracle/cases/response-cache-calls/text-completion-stream-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache-calls/rerank-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache-calls/rerank-no-cache.yaml
+  - tools/oracle/cases/response-cache-calls/transcription-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache-calls/transcription-other-bytes.yaml
+deviations: []
+out_of_scope:
+  - "The cache step, the kwargs rule and the chat and embeddings wiring: B9560. Responses and Anthropic Messages: B125."
+  - "Lookup, conversion, writes and keys: B4305, B4302, B4304 and B4296. The audio content hash: B1001."
+  - "The routes themselves, their decoding and their error answers: B202, B085, B8636 and B083."
+  - "Speech (aspeech) and image calls: LiteLLM's default supported_call_types leave them out, and the router sends no caching for aspeech."
+pitfalls:
+  - "LiteLLM keys a transcription by the content hash function_setup adds, so two different recordings named audio.mp3 must not share an entry."
+  - "Rerank without a router calls litellm.arerank with no caching kwarg, so the lookup still runs whenever a cache exists."
+  - "Rerank has no prompt or messages, so its key comes only from query, documents, top_n and the other rerank params plus model_group."
+  - "Files with the same config share one booted proxy and one in-memory cache, so every case file needs its own model_name."
+  - "The text completion stream replay is text completion chunks (choices[].text), not chat deltas."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
