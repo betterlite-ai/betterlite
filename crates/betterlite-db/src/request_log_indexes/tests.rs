@@ -201,8 +201,15 @@ async fn postgres_replica_nonlock_error_rolls_back() {
     drop(database);
     test.client
         .batch_execute(&format!(
-            "DROP OWNED BY \"{}\"; DROP OWNED BY \"{}\"; DROP OWNED BY \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\";",
-            owners.owner, owners.blocked, owners.viewer, owners.viewer, owners.owner, owners.blocked
+            "DROP OWNED BY \"{}\"; DROP OWNED BY \"{}\"; DROP OWNED BY \"{}\"; REVOKE \"{}\" FROM \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\"; DROP ROLE \"{}\";",
+            owners.owner,
+            owners.blocked,
+            owners.viewer,
+            owners.owner,
+            owners.viewer,
+            owners.viewer,
+            owners.owner,
+            owners.blocked
         ))
         .await
         .unwrap();
