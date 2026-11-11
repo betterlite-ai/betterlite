@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
+use crate::config_include_fixtures;
 use crate::websocket_oracle::{
     OracleLimits,
     decode::{FilesystemFixtures, decode_ws_case},
@@ -33,6 +34,8 @@ pub(crate) use load::{
 pub struct Case {
     pub(crate) name: String,
     pub(crate) config: String,
+    #[serde(default)]
+    pub(crate) config_files: BTreeMap<String, String>,
     pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) native_feature_eligibility: bool,
@@ -224,7 +227,21 @@ pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
 }
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: String| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message,
+    };
     group::validate_common(path, &case.common())?;
+    config_include_fixtures::validate(&case.config_files)
+        .map_err(|source| invalid(source.to_string()))?;
+    for (destination, document) in &case.config_files {
+        if config_inspection::requests_license(path, document)? {
+            let license = config_include_fixtures::ConfigFixtureError::License {
+                destination: destination.clone(),
+            };
+            return Err(invalid(license.to_string()));
+        }
+    }
     validate_request_or_steps(path, case)
 }
 

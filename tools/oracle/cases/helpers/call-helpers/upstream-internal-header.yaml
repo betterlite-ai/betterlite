@@ -1,0 +1,16 @@
+kind: helper
+name: upstream-internal-header
+call:
+  call_helpers:
+    function: upstream_internal_header
+    upstream:
+      x-litellm-attempted-fallbacks: "1"
+      x-ratelimit-limit-requests: "7"
+      x-request-id: abc
+    trusted:
+      x-litellm-attempted-fallbacks: "1"
+      llm_provider-x-vendor: v
+      x-extra: e
+      x-ratelimit-limit-requests: "9"
+env: {}
+compare: {ignore: []}

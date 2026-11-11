@@ -1,0 +1,15 @@
+kind: helper
+name: safe-divide
+call:
+  call_helpers:
+    function: safe_divide
+    values:
+      - {numerator: 10, denominator: 4, default: 0}
+      - {numerator: 10, denominator: 0, default: 0}
+      - {numerator: 10, denominator: 0, default: 7.5}
+      - {numerator: -10, denominator: 4, default: 0}
+      - {numerator: 0, denominator: 5, default: 0}
+      - {numerator: 5, denominator: 2, default: 0}
+      - {numerator: 100, denominator: 0, default: -1}
+env: {}
+compare: {ignore: []}

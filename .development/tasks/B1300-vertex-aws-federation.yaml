@@ -23,6 +23,8 @@ description: >-
   budget 240 Rust/SDK glue, 150 tests, 110 adapters and 80 manifests/seed wiring, maximum 650.
 scope:
   paths:
+    - "tools/oracle/helpers/pyrightconfig.json"
+    - "tools/oracle/helpers/b3993.py"
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-vertex/Cargo.toml

@@ -1,0 +1,11 @@
+kind: helper
+name: call-helpers-upstream-attributes
+call:
+  call_helpers:
+    function: response_headers
+    steps:
+      - function: stream_attributes
+        response: {id: chunk, created: 1, object: chat.completion.chunk, choices: [], citations: [a]}
+        original_chunk: {id: upstream, created: 2, object: chat.completion.chunk, choices: [], usage: {total_tokens: 3}, x_groq: {id: req}, citations: [b]}
+env: {}
+compare: {ignore: []}

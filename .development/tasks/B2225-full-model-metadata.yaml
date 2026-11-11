@@ -83,6 +83,9 @@ description: >-
   wiring lines; 550 planned, 550 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers/b3993.py"
+  - "tools/oracle/helpers"
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/full_model_metadata.rs
   - crates/betterlite-models/src/full_model_metadata/**
@@ -168,7 +171,7 @@ checks:
   commands:
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/full_model_metadata.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/full_model_metadata.py tools/oracle/helpers/full_model_metadata)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
