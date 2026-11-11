@@ -12,7 +12,7 @@ from litellm.caching.redis_batch import active_request_redis_batch, request_redi
 from litellm.caching.redis_cache import RedisCache, RedisCircuitBreaker
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false
 
 DEFAULT_TTL: int = 60
 DEADLINE_SECONDS: float = 1.0
@@ -60,7 +60,7 @@ class FakeCommands:
 
     def expiries(self) -> list[dict[str, str]]:
         sets = [args for name, args in self.seen if name == "SET"]
-        return [{"key": str(key), "ex": expiry_text(expiry)} for key, expiry in sets]
+        return [{"key": str(args[0]), "ex": expiry_text(args[-1])} for args in sets]
 
     def deletions(self) -> list[int]:
         return [len(args) for name, args in self.seen if name == "DEL"]
@@ -72,21 +72,6 @@ def expiry_text(expiry: object) -> str:
     return str(expiry)
 
 
-class FakeSyncRedis:
-    def __init__(self, commands: FakeCommands) -> None:
-        self.commands = commands
-
-    def get(self, name: str) -> object:
-        return self.commands.record("GET", name)
-
-    def set(self, name: str, value: object, ex: object = None, *, nx: bool = False) -> object:
-        _ = value, nx
-        return self.commands.record("SET", name, ex)
-
-    def incr(self, name: str, amount: int = 1) -> object:
-        return self.commands.record("INCRBY", name, amount)
-
-
 class FakePipeline(AbstractAsyncContextManager["FakePipeline"]):
     def __init__(self, commands: FakeCommands) -> None:
         self.commands = commands
@@ -95,55 +80,40 @@ class FakePipeline(AbstractAsyncContextManager["FakePipeline"]):
     async def __aexit__(self, *_exception: object) -> None:
         return None
 
-    def mget(self, keys: Sequence[str]) -> None:
-        self.queued.append(("MGET", tuple(keys)))
+    def __getattr__(self, command: str) -> Callable[..., None]:
+        name = command.upper()
+        return lambda *args, **kwargs: self.queued.append((name, (*args, *kwargs.values())))
 
-    def incrbyfloat(self, name: str, amount: float) -> None:
-        self.queued.append(("INCRBYFLOAT", (name, amount)))
-
-    def expire(self, name: str, time: object) -> None:
-        self.queued.append(("EXPIRE", (name, time)))
-
-    def set(self, name: str, value: object, ex: object = None) -> None:
-        _ = value
-        self.queued.append(("SET", (name, ex)))
-
-    def delete(self, *names: str) -> None:
-        self.queued.append(("DEL", names))
-
-    async def execute(self, *, raise_on_error: bool = True) -> list[object]:
-        _ = raise_on_error
+    async def execute(self, **_options: bool) -> list[object]:
         return [
-            [None] * len(args) if name == "MGET" else self.commands.record(name, *args)
+            [None] * len(cast(Sequence[str], args[0]))
+            if name == "MGET"
+            else self.commands.record(name, *args)
             for name, args in self.queued
         ]
 
 
-class FakeAsyncRedis:
-    def __init__(self, commands: FakeCommands) -> None:
-        self.commands = commands
+def fake_sync_client(commands: FakeCommands) -> MagicMock:
+    return MagicMock(
+        get=MagicMock(side_effect=lambda name: commands.record("GET", name)),
+        set=MagicMock(side_effect=lambda name, *_, ex=None, **__: commands.record("SET", name, ex)),
+        incr=MagicMock(side_effect=lambda name, amount=1: commands.record("INCRBY", name, amount)),
+    )
 
-    async def set(self, name: str, value: object, ex: object = None, *, nx: bool = False) -> object:
-        _ = value, nx
-        return self.commands.record("SET", name, ex)
 
-    async def delete(self, *names: str) -> object:
-        return self.commands.record("DEL", *names)
-
-    async def ttl(self, name: str) -> object:
-        return self.commands.record("TTL", name)
-
-    async def mget(self, keys: Sequence[str]) -> list[object]:
-        return [None for _key in keys]
-
-    def pipeline(self, *, transaction: bool = False) -> FakePipeline:
-        _ = transaction
-        return FakePipeline(self.commands)
+def fake_async_client(commands: FakeCommands) -> MagicMock:
+    return MagicMock(
+        set=AsyncMock(side_effect=lambda name, *_, ex=None, **__: commands.record("SET", name, ex)),
+        delete=AsyncMock(side_effect=lambda *names: commands.record("DEL", *names)),
+        ttl=AsyncMock(side_effect=lambda name: commands.record("TTL", name)),
+        mget=AsyncMock(side_effect=lambda keys: [None for _key in keys]),
+        pipeline=MagicMock(side_effect=lambda **_options: FakePipeline(commands)),
+    )
 
 
 def build_cache(commands: FakeCommands) -> RedisCache:
     cache = object.__new__(RedisCache)
-    async_client = FakeAsyncRedis(commands)
+    async_client = fake_async_client(commands)
     object.__setattr__(cache, "namespace", None)
     object.__setattr__(cache, "default_ttl", DEFAULT_TTL)
     object.__setattr__(cache, "redis_kwargs", {})
@@ -154,7 +124,7 @@ def build_cache(commands: FakeCommands) -> RedisCache:
     logger.async_service_success_hook = AsyncMock()
     logger.async_service_failure_hook = AsyncMock()
     object.__setattr__(cache, "service_logger_obj", logger)
-    object.__setattr__(cache, "redis_client", FakeSyncRedis(commands))
+    object.__setattr__(cache, "redis_client", fake_sync_client(commands))
     object.__setattr__(cache, "init_async_client", lambda: async_client)
     return cache
 
