@@ -5,10 +5,10 @@ from litellm._logging import verbose_logger
 from litellm.models.credentials import CredentialItem
 
 from b5367.markers import Json
-from b5367.views import STATE, UTILS, Input
+from b5367.views import STATE, UTILS, CredentialsInput, FlagsInput
 
 
-def run_credentials(input_value: Input) -> Json:
+def run_credentials(input_value: CredentialsInput) -> Json:
     credentials = input_value.get("credentials")
     no_info: dict[str, str] = {}
     STATE.credential_list = [
@@ -30,7 +30,7 @@ def run_credentials(input_value: Input) -> Json:
     return {"request": request, "warning": warning}
 
 
-def run_request_flags(input_value: Input) -> Json:
+def run_request_flags(input_value: FlagsInput) -> Json:
     request = input_value["request"]
     pass_through = input_value.get("is_pass_through")
     return {

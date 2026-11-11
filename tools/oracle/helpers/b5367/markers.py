@@ -52,8 +52,9 @@ class Markers:
         match value:
             case str():
                 return value
-            case dict():
-                return self.marker(value["logger"], value.get("guardrail"))
+            case object():
+                pass
+        return self.marker(value["logger"], value.get("guardrail"))
 
     def entries(self, values: list[Entry] | None) -> list[CallbackValue]:
         if values is None:

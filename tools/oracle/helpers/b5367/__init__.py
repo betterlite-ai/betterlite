@@ -13,6 +13,7 @@ from b5367.views import (
     ListsSpec,
     LoggingClassGetter,
     Recorder,
+    SetupInput,
     StubLogging,
 )
 
@@ -42,7 +43,7 @@ def logging_out(markers: Markers, logging_obj: StubLogging) -> Json:
     }
 
 
-def install_state(input_value: Input, markers: Markers) -> None:
+def install_state(input_value: SetupInput, markers: Markers) -> None:
     lists = input_value.get("lists")
     if lists is None:
         lists = ListsSpec()
@@ -79,7 +80,7 @@ def lists_out(markers: Markers) -> Json:
     }
 
 
-def run_setup(input_value: Input) -> Json:
+def run_setup(input_value: SetupInput) -> Json:
     markers = Markers()
     install_state(input_value, markers)
     async_flag = input_value.get("is_async_call")
@@ -102,10 +103,8 @@ def run_setup(input_value: Input) -> Json:
 
 
 def run(input_value: Input) -> Json:
-    match input_value["action"]:
-        case "setup":
-            return run_setup(input_value)
-        case "credentials":
-            return run_credentials(input_value)
-        case "request_flags":
-            return run_request_flags(input_value)
+    if input_value["action"] == "setup":
+        return run_setup(input_value)
+    if input_value["action"] == "credentials":
+        return run_credentials(input_value)
+    return run_request_flags(input_value)
