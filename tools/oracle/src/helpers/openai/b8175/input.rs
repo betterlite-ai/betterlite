@@ -59,6 +59,6 @@ pub(crate) enum Step {
         message: String,
         status: u16,
         #[serde(default)]
-        headers: Option<Headers>,
+        headers: Headers,
     },
 }

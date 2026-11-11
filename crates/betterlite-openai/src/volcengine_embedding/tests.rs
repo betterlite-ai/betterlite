@@ -305,11 +305,15 @@ fn a_base64_embedding_stays_a_string() {
 #[test]
 fn the_error_class_keeps_the_status_the_message_and_the_headers() {
     let supplied = header_map(&[("retry-after", "2")]);
-    let error = get_error_class("rate limited", 429, Some(supplied.clone()));
+    let error = get_error_class("rate limited", 429, &supplied);
     assert_eq!(error.status_code, 429);
     assert_eq!(error.message, "rate limited");
     assert_eq!(error.headers, supplied);
-    assert!(get_error_class("boom", 500, None).headers.is_empty());
+    assert!(
+        get_error_class("boom", 500, &Headers::new())
+            .headers
+            .is_empty()
+    );
 }
 
 #[rstest]

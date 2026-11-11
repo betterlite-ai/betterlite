@@ -130,6 +130,6 @@ pub(crate) fn execute(step: &Step) -> HelperResult {
             message,
             status,
             headers,
-        } => error_value(&get_error_class(message, *status, headers.clone())),
+        } => error_value(&get_error_class(message, *status, headers)),
     }
 }

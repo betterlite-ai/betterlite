@@ -114,7 +114,7 @@ class EmbeddingConfig(Protocol):
         self,
         error_message: str,
         status_code: int,
-        headers: dict[str, str] | None,
+        headers: dict[str, str],
     ) -> ApiError: ...
 
 
@@ -294,7 +294,7 @@ def error_class(step: Object) -> Json:
     error = embedding_config().get_error_class(
         text(step, "message"),
         expect_int(step, "status"),
-        optional_headers(step, "headers"),
+        optional_headers(step, "headers") or {},
     )
     value = error.headers
     rendered: Json = None

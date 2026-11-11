@@ -14,16 +14,12 @@ pub enum VolcEngineEmbeddingError {
     UnsupportedParam { name: String },
 }
 
-// LiteLLM's get_error_class wraps the reply's statuses in its own exception, with no headers by default
+// LiteLLM's get_error_class wraps the reply's statuses in its own exception with the headers it is given
 #[must_use]
-pub fn get_error_class(
-    message: &str,
-    status_code: u16,
-    headers: Option<Headers>,
-) -> VolcEngineError {
+pub fn get_error_class(message: &str, status_code: u16, headers: &Headers) -> VolcEngineError {
     VolcEngineError {
         status_code,
         message: message.to_owned(),
-        headers: headers.unwrap_or_default(),
+        headers: headers.clone(),
     }
 }
