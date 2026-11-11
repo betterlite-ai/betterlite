@@ -1,0 +1,11 @@
+kind: helper
+name: realtime-cost-events-one-tier-does-not-build-a-split
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {type: response.completed, response: {service_tier: default, usage: {input_tokens: 2, output_tokens: 1}}}
+      - {type: response.failed, response: {service_tier: priority, usage: {input_tokens: 9, output_tokens: 9}}}
+      - {type: response.failed, response: {service_tier: priority, usage: null}}
+env: {}
+compare: {ignore: []}

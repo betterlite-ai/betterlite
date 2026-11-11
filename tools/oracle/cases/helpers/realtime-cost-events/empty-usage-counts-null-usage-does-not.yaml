@@ -1,0 +1,12 @@
+kind: helper
+name: realtime-cost-events-empty-usage-counts-null-usage-does-not
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {type: response.completed, response: {usage: {}}}
+      - {type: response.completed, response: {usage: null}}
+      - {type: response.incomplete, response: {}}
+      - {type: response.incomplete, response: null}
+env: {}
+compare: {ignore: []}
