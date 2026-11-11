@@ -6,8 +6,7 @@ call:
       - request:
           input: the input
           questions:
-            - type: predicate
-              instructions: is it true?
+            - {type: predicate, instructions: "is it true?"}
         response:
           model: gpt-4o
           answers:
@@ -20,33 +19,43 @@ call:
             total_tokens: 12
     ir_to_response:
       - requested_model: requested-model
-        request:
-          input: {state: "the input"}
+        target:
+          input: the input
           questions:
-            - predicate:
-                instructions: is it true?
-        response:
-          model: null
-          answers: [refusal]
-          usage: {input_tokens: 7, output_tokens: 5, cached_tokens: 2, cache_write_tokens: 3, reasoning_tokens: 4}
+            - {type: predicate, instructions: "is it true?"}
+        source:
+          systemone:
+            request:
+              state: the input
+              questions:
+                truth: {type: noul, instructions: "is it true?"}
+            response:
+              model: null
+              answers:
+                truth: {type: noul, noul: 0.5}
+              usage: {input_tokens: 7, output_tokens: 5, cached_tokens: 2, cache_write_tokens: 3}
       - requested_model: requested-model
-        request:
-          input: {state: "the input"}
+        target:
+          input: the input
           questions:
-            - predicate:
-                instructions: is it true?
-        response:
-          model: provider-model
-          answers: [refusal]
-          usage: {input_tokens: 1, output_tokens: 2}
-    ir_to_request:
+            - {type: predicate, instructions: "is it true?"}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - {type: predicate, instructions: "is it true?"}
+            response:
+              model: provider-model
+              answers:
+                - {type: predicate, name: null, probability: 0.5}
+              usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3}
+    request_roundtrip:
       - model: gpt-4o
         request:
-          input: {state: {k: 1}}
+          input: "{\"k\": 1}"
           questions:
-            - predicate:
-                instructions: is it true?
-    request_roundtrip:
+            - {type: predicate, instructions: "is it true?"}
       - model: gpt-4o
         request:
           input:

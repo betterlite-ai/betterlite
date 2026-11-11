@@ -4,6 +4,10 @@ from typing import TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
+from litellm.llms.base_llm.decisions.transformation import (
+    systemone_request_to_ir,
+    systemone_response_to_ir,
+)
 from litellm.llms.openai.decisions.transformation import (
     OpenAIDecisionsConfig,
     ir_to_openai_request,
@@ -14,25 +18,11 @@ from litellm.llms.openai.decisions.transformation import (
 from litellm.types.decisions import (
     DecisionsIRAnswer,
     DecisionsIRChoiceAnswer,
-    DecisionsIRChoiceOption,
-    DecisionsIRChoiceProbability,
-    DecisionsIRChoiceQuestion,
-    DecisionsIRMessages,
     DecisionsIRPredicateAnswer,
-    DecisionsIRPredicateQuestion,
-    DecisionsIRQuestion,
     DecisionsIRRefusal,
-    DecisionsIRRequest,
     DecisionsIRResponse,
-    DecisionsIRScoreAnswer,
-    DecisionsIRScoreLevel,
-    DecisionsIRScoreProbability,
-    DecisionsIRScoreQuestion,
-    DecisionsIRState,
-    DecisionsIRUsage,
-    DecisionsJSON,
-    NoulCriteria,
-    OpenAIDecisionInputMessage,
+    DecisionsRequestBody,
+    DecisionsResponse,
     OpenAIDecisionRequestBody,
     OpenAIDecisionResponse,
     UnsupportedDecisionsRequest,
@@ -52,148 +42,6 @@ def as_list(value: Json, name: str) -> list[Json]:
     if not isinstance(value, list):
         raise ValueError(f"{name} must be a list")
     return value
-
-
-def as_mapping(value: Json) -> Mapping[str, object]:
-    if value is None:
-        return {}
-    return as_object(value, "extra")
-
-
-def token_count(fields: dict[str, Json], name: str) -> int:
-    return cast(int, fields.get(name, 0))
-
-
-def ir_choice_option(value: Json) -> DecisionsIRChoiceOption:
-    fields = as_object(value, "choice option")
-    return DecisionsIRChoiceOption(
-        value=cast(str | bool, fields["value"]),
-        description=cast(DecisionsJSON | None, fields.get("description")),
-    )
-
-
-def ir_score_level(value: Json) -> DecisionsIRScoreLevel:
-    fields = as_object(value, "score level")
-    return DecisionsIRScoreLevel(
-        label=cast(DecisionsJSON, fields["label"]),
-        description=cast(str | None, fields.get("description")),
-    )
-
-
-def ir_question_from(value: Json) -> DecisionsIRQuestion:
-    fields = as_object(value, "question")
-    if "predicate" in fields:
-        body = as_object(fields["predicate"], "predicate question")
-        return DecisionsIRPredicateQuestion(
-            name=cast(str | None, body.get("name")),
-            instructions=cast(DecisionsJSON | None, body.get("instructions")),
-            criteria=cast(NoulCriteria | None, body.get("criteria")),
-            extra=as_mapping(body.get("extra")),
-        )
-    if "choice" in fields:
-        body = as_object(fields["choice"], "choice question")
-        choices = as_list(body["choices"], "choice question choices")
-        return DecisionsIRChoiceQuestion(
-            name=cast(str | None, body.get("name")),
-            instructions=cast(DecisionsJSON | None, body.get("instructions")),
-            choices=tuple(ir_choice_option(choice) for choice in choices),
-            extra=as_mapping(body.get("extra")),
-        )
-    body = as_object(fields["score"], "score question")
-    levels = as_list(body["levels"], "score question levels")
-    return DecisionsIRScoreQuestion(
-        name=cast(str | None, body.get("name")),
-        instructions=cast(DecisionsJSON | None, body.get("instructions")),
-        levels=tuple(ir_score_level(level) for level in levels),
-        extra=as_mapping(body.get("extra")),
-    )
-
-
-def ir_input_from(value: Json) -> DecisionsIRState | DecisionsIRMessages:
-    fields = as_object(value, "request input")
-    if "state" in fields:
-        return DecisionsIRState(state=cast(DecisionsJSON, fields["state"]))
-    messages = as_list(fields["messages"], "request input messages")
-    return DecisionsIRMessages(
-        messages=tuple(OpenAIDecisionInputMessage.model_validate(message) for message in messages)
-    )
-
-
-def ir_request_from(value: Json) -> DecisionsIRRequest:
-    fields = as_object(value, "request")
-    questions = as_list(fields["questions"], "request questions")
-    return DecisionsIRRequest(
-        input=ir_input_from(fields["input"]),
-        questions=tuple(ir_question_from(question) for question in questions),
-        safety_identifier=cast(str | None, fields.get("safety_identifier")),
-    )
-
-
-def ir_answer_from(value: Json) -> DecisionsIRAnswer:
-    if isinstance(value, str):
-        if value != "refusal":
-            raise ValueError(f"unknown decision answer {value}")
-        return DecisionsIRRefusal()
-    fields = as_object(value, "answer")
-    if "predicate" in fields:
-        body = as_object(fields["predicate"], "predicate answer")
-        return DecisionsIRPredicateAnswer(
-            probability=cast(float, body["probability"]),
-            extra=as_mapping(body.get("extra")),
-        )
-    if "choice" in fields:
-        body = as_object(fields["choice"], "choice answer")
-        probabilities = as_list(body["probabilities"], "choice answer probabilities")
-        return DecisionsIRChoiceAnswer(
-            choice=cast(str | bool, body["choice"]),
-            confidence=cast(float, body["confidence"]),
-            probabilities=tuple(ir_choice_probability(item) for item in probabilities),
-            extra=as_mapping(body.get("extra")),
-        )
-    body = as_object(fields["score"], "score answer")
-    probabilities = as_list(body["probabilities"], "score answer probabilities")
-    return DecisionsIRScoreAnswer(
-        score=cast(float, body["score"]),
-        confidence=cast(float, body["confidence"]),
-        probabilities=tuple(ir_score_probability(item) for item in probabilities),
-        extra=as_mapping(body.get("extra")),
-    )
-
-
-def ir_choice_probability(value: Json) -> DecisionsIRChoiceProbability:
-    fields = as_object(value, "choice probability")
-    return DecisionsIRChoiceProbability(
-        value=cast(str | bool, fields["value"]),
-        probability=cast(float, fields["probability"]),
-    )
-
-
-def ir_score_probability(value: Json) -> DecisionsIRScoreProbability:
-    fields = as_object(value, "score probability")
-    return DecisionsIRScoreProbability(
-        value=cast(int, fields["value"]),
-        label=cast(DecisionsJSON, fields["label"]),
-        probability=cast(float, fields["probability"]),
-    )
-
-
-def ir_response_from(value: Json) -> DecisionsIRResponse:
-    fields = as_object(value, "response")
-    usage = as_object(fields.get("usage") or {}, "response usage")
-    answers = as_list(fields["answers"], "response answers")
-    return DecisionsIRResponse(
-        model=cast(str | None, fields.get("model")),
-        answers=tuple(ir_answer_from(answer) for answer in answers),
-        usage=DecisionsIRUsage(
-            input_tokens=token_count(usage, "input_tokens"),
-            output_tokens=token_count(usage, "output_tokens"),
-            cached_tokens=token_count(usage, "cached_tokens"),
-            cache_write_tokens=token_count(usage, "cache_write_tokens"),
-            reasoning_tokens=token_count(usage, "reasoning_tokens"),
-            extra=as_mapping(usage.get("extra")),
-        ),
-        extra=as_mapping(fields.get("extra")),
-    )
 
 
 def ir_answer_value(answer: DecisionsIRAnswer) -> Json:
@@ -259,20 +107,20 @@ def succeeded(value: Json) -> Json:
     return {"ok": True, "value": value}
 
 
-def ir_to_request(call: dict[str, Json]) -> Json:
-    request = ir_request_from(call["request"])
-    result = ir_to_openai_request(cast(str, call["model"]), request)
-    if isinstance(result, UnsupportedDecisionsRequest):
+def request_value(outcome: Mapping[str, object] | UnsupportedDecisionsRequest) -> Json:
+    if isinstance(outcome, UnsupportedDecisionsRequest):
         return failed()
-    return succeeded(cast(Json, result))
+    return succeeded(cast(Json, outcome))
+
+
+def systemone_to_request(call: dict[str, Json]) -> Json:
+    request = systemone_request_to_ir(DecisionsRequestBody.model_validate(call["request"]))
+    return request_value(ir_to_openai_request(cast(str, call["model"]), request))
 
 
 def request_roundtrip(call: dict[str, Json]) -> Json:
     body = OpenAIDecisionRequestBody.model_validate(call["request"])
-    result = ir_to_openai_request(cast(str, call["model"]), openai_request_to_ir(body))
-    if isinstance(result, UnsupportedDecisionsRequest):
-        return failed()
-    return succeeded(cast(Json, result))
+    return request_value(ir_to_openai_request(cast(str, call["model"]), openai_request_to_ir(body)))
 
 
 def response_to_ir(call: dict[str, Json]) -> Json:
@@ -282,12 +130,28 @@ def response_to_ir(call: dict[str, Json]) -> Json:
     return succeeded(ir_response_value(converted))
 
 
+def source_response(source: dict[str, Json]) -> DecisionsIRResponse:
+    if "openai" in source:
+        body = as_object(source["openai"], "openai source")
+        request = openai_request_to_ir(
+            OpenAIDecisionRequestBody.model_validate(body["request"])
+        )
+        response = OpenAIDecisionResponse.model_validate(body["response"])
+        return openai_response_to_ir(response, request)
+    body = as_object(source["systemone"], "systemone source")
+    request = systemone_request_to_ir(DecisionsRequestBody.model_validate(body["request"]))
+    response = DecisionsResponse.model_validate(body["response"])
+    return systemone_response_to_ir(response, request)
+
+
 def ir_to_response(call: dict[str, Json]) -> Json:
-    request = ir_request_from(call["request"])
-    response = ir_response_from(call["response"])
+    source = source_response(as_object(call["source"], "source"))
+    target = openai_request_to_ir(
+        OpenAIDecisionRequestBody.model_validate(call["target"])
+    )
     try:
         converted = ir_to_openai_response(
-            response, request, cast(str, call["requested_model"])
+            source, target, cast(str, call["requested_model"])
         )
     except ValueError:
         return failed()
@@ -327,7 +191,9 @@ def calls(input_value: dict[str, Json], name: str) -> list[dict[str, Json]]:
 
 def run(input_value: dict[str, Json]) -> Json:
     return {
-        "ir_to_request": [ir_to_request(call) for call in calls(input_value, "ir_to_request")],
+        "systemone_to_request": [
+            systemone_to_request(call) for call in calls(input_value, "systemone_to_request")
+        ],
         "request_roundtrip": [
             request_roundtrip(call) for call in calls(input_value, "request_roundtrip")
         ],

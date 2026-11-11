@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::case::{HelperCase, helper::validate_helper};
 
 const OPERATIONS: [&str; 6] = [
-    "ir_to_request",
+    "systemone_to_request",
     "request_roundtrip",
     "response_to_ir",
     "ir_to_response",

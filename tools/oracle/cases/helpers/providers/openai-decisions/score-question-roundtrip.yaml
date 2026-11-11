@@ -2,23 +2,19 @@ kind: helper
 name: openai-decisions-score-question-roundtrip
 call:
   openai_decisions:
-    ir_to_request:
+    systemone_to_request:
       - model: gpt-4o
         request:
-          input: {state: "the input"}
+          state: "the input"
           questions:
-            - score:
-                name: rate
-                instructions: null
-                levels:
-                  - {label: low}
-                  - {label: [2], description: desc}
-            - score:
-                name: null
-                instructions: ""
-                levels:
-                  - {label: a}
-                  - {label: b}
+            rate:
+              type: score
+              instructions: null
+              criteria: [low, [2]]
+            empty:
+              type: score
+              instructions: ""
+              criteria: [a, b]
     request_roundtrip:
       - model: gpt-4o
         request:

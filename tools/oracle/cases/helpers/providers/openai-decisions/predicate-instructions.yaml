@@ -2,34 +2,31 @@ kind: helper
 name: openai-decisions-predicate-instructions
 call:
   openai_decisions:
-    ir_to_request:
+    systemone_to_request:
       - model: gpt-4o
         request:
-          input: {state: "the input"}
+          state: "the input"
           questions:
-            - predicate:
-                name: truth
-                instructions: {k: [true, null, "é"]}
-                criteria:
-                  "true": "yes"
-                  "false": null
-            - predicate:
-                name: null
-                instructions: null
-                criteria: null
-            - predicate:
-                name: empty
-                instructions: ""
-                criteria: null
-            - predicate:
-                name: no-rules
-                instructions: null
-                criteria:
-                  "true": null
-            - predicate:
-                name: words
-                instructions: plain instructions
-                criteria:
-                  "false": {k: 1}
+            truth:
+              type: noul
+              instructions: {k: [true, null, "é"]}
+              criteria:
+                "true": "yes"
+                "false": null
+            plain:
+              type: noul
+              instructions: null
+              criteria:
+                "true": "a"
+                "false": {k: 1}
+            empty:
+              type: noul
+              instructions: ""
+              criteria: null
+            words:
+              type: noul
+              instructions: plain instructions
+              criteria:
+                "false": {k: 1}
 env: {}
 compare: {ignore: []}

@@ -1,20 +1,20 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::openai;
+use betterlite_models::decisions::systemone;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::decisions::openai::config::OpenAiDecisionsConfig;
 use betterlite_openai::decisions::openai::request::{ir_to_openai_request, openai_request_to_ir};
 use betterlite_openai::decisions::openai::response::to_ir::openai_response_to_ir;
 use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_response;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
+use betterlite_openai::decisions::transformation::requests::systemone_request_to_ir;
+use betterlite_openai::decisions::transformation::responses::to_ir::systemone_response_to_ir;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use self::input::{IrRequest, IrResponse};
-
-mod input;
-mod ir;
+mod output;
 mod tests;
 
 pub(crate) struct Op;
@@ -23,7 +23,7 @@ pub(crate) struct Op;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     #[serde(default)]
-    ir_to_request: Vec<IrToRequestCall>,
+    systemone_to_request: Vec<SystemOneToRequestCall>,
     #[serde(default)]
     request_roundtrip: Vec<RequestRoundtripCall>,
     #[serde(default)]
@@ -38,9 +38,9 @@ pub(crate) struct Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct IrToRequestCall {
+struct SystemOneToRequestCall {
     model: String,
-    request: IrRequest,
+    request: systemone::DecisionsRequestBody,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,8 +61,21 @@ struct ResponseToIrCall {
 #[serde(deny_unknown_fields)]
 struct IrToResponseCall {
     requested_model: String,
-    request: IrRequest,
-    response: IrResponse,
+    target: openai::DecisionRequestBody,
+    source: Source,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum Source {
+    OpenAi {
+        request: openai::DecisionRequestBody,
+        response: openai::DecisionResponse,
+    },
+    SystemOne {
+        request: systemone::DecisionsRequestBody,
+        response: systemone::DecisionsResponse,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,7 +109,7 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         Ok(json!({
-            "ir_to_request": input.ir_to_request.iter().map(call_ir_to_request).collect::<Vec<_>>(),
+            "systemone_to_request": input.systemone_to_request.iter().map(call_systemone_to_request).collect::<Vec<_>>(),
             "request_roundtrip": input.request_roundtrip.iter().map(call_request_roundtrip).collect::<Vec<_>>(),
             "response_to_ir": input.response_to_ir.iter().map(call_response_to_ir).collect::<Vec<_>>(),
             "ir_to_response": input.ir_to_response.iter().map(call_ir_to_response).collect::<Vec<_>>(),
@@ -106,8 +119,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn call_ir_to_request(call: &IrToRequestCall) -> Value {
-    let request = ir::ir_request(&call.request);
+fn call_systemone_to_request(call: &SystemOneToRequestCall) -> Value {
+    let request = systemone_request_to_ir(&call.request);
     match ir_to_openai_request(&call.model, &request) {
         Ok(wire) => wire_value(wire),
         Err(_unsupported) => json!({"ok": false}),
@@ -125,13 +138,22 @@ fn call_request_roundtrip(call: &RequestRoundtripCall) -> Value {
 fn call_response_to_ir(call: &ResponseToIrCall) -> Value {
     let request = openai_request_to_ir(&call.request);
     let response = openai_response_to_ir(&call.response, &request);
-    json!({"ok": true, "value": ir::ir_response_json(&response)})
+    json!({"ok": true, "value": output::ir_response_json(&response)})
 }
 
 fn call_ir_to_response(call: &IrToResponseCall) -> Value {
-    let request = ir::ir_request(&call.request);
-    let ir_response = ir::ir_response(&call.response);
-    match ir_to_openai_response(&ir_response, &request, &call.requested_model) {
+    let target = openai_request_to_ir(&call.target);
+    let response = match &call.source {
+        Source::OpenAi { request, response } => {
+            let source = openai_request_to_ir(request);
+            openai_response_to_ir(response, &source)
+        }
+        Source::SystemOne { request, response } => {
+            let source = systemone_request_to_ir(request);
+            systemone_response_to_ir(response, &source)
+        }
+    };
+    match ir_to_openai_response(&response, &target, &call.requested_model) {
         Ok(converted) => wire_value(converted),
         Err(_mismatch) => json!({"ok": false}),
     }
@@ -144,7 +166,7 @@ fn call_parse_response(call: &ParseResponseCall) -> Value {
         return json!({"ok": false});
     };
     match config.parse_response(&payload, &request) {
-        Ok(response) => json!({"ok": true, "value": ir::ir_response_json(&response)}),
+        Ok(response) => json!({"ok": true, "value": output::ir_response_json(&response)}),
         Err(_invalid) => json!({"ok": false}),
     }
 }

@@ -4,14 +4,19 @@ call:
   openai_decisions:
     ir_to_response:
       - requested_model: requested-model
-        request:
-          input: {state: "the input"}
+        target:
+          input: the input
           questions:
-            - predicate: {name: truth, instructions: "is it true?"}
-        response:
-          model: null
-          answers:
-            - predicate: {probability: 0.5}
-          usage: {input_tokens: 1, output_tokens: 2}
+            - {type: predicate, name: truth, instructions: "is it true?"}
+        source:
+          systemone:
+            request:
+              state: the input
+              questions:
+                truth: {type: noul, instructions: "is it true?"}
+            response:
+              model: null
+              answers:
+                truth: {type: noul, noul: 0.5}
 env: {}
 compare: {ignore: []}

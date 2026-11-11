@@ -59,54 +59,73 @@ call:
           usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
     ir_to_response:
       - requested_model: requested-model
-        request:
-          input: {state: "the input"}
+        target:
+          input: the input
           questions:
-            - predicate:
-                name: first
-                instructions: is it true?
-            - choice:
-                name: second
-                instructions: pick
-                choices:
-                  - {value: a}
-                  - {value: b}
-        response:
-          model: gpt-4o
-          answers: []
+            - {type: predicate, name: first, instructions: "is it true?"}
+            - type: choice
+              name: second
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - {type: predicate, name: first, instructions: "is it true?"}
+            response:
+              model: gpt-4o
+              answers:
+                - {type: predicate, name: first, probability: 0.5}
+              usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
       - requested_model: requested-model
-        request:
-          input: {state: "the input"}
+        target:
+          input: the input
           questions:
-            - predicate:
-                name: first
-                instructions: is it true?
-            - choice:
-                name: second
-                instructions: pick
-                choices:
-                  - {value: a}
-                  - {value: b}
-        response:
-          model: gpt-4o
-          answers: [refusal, refusal, refusal]
+            - {type: predicate, name: first, instructions: "is it true?"}
+            - type: choice
+              name: second
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - {type: predicate, name: first, instructions: "is it true?"}
+                - {type: predicate, name: second, instructions: "is it true?"}
+                - {type: predicate, name: third, instructions: "is it true?"}
+            response:
+              model: gpt-4o
+              answers:
+                - {type: predicate, name: first, probability: 0.5}
+                - {type: predicate, name: second, probability: 0.5}
+                - {type: predicate, name: third, probability: 0.5}
+              usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
       - requested_model: requested-model
-        request:
-          input: {state: "the input"}
+        target:
+          input: the input
           questions:
-            - predicate:
-                name: first
-                instructions: is it true?
-            - choice:
-                name: second
-                instructions: pick
-                choices:
-                  - {value: a}
-                  - {value: b}
-        response:
-          model: gpt-4o
-          answers:
-            - predicate: {probability: 1.0}
-            - score: {score: 1.0, confidence: 1.0, probabilities: []}
+            - {type: predicate, name: first, instructions: "is it true?"}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - type: choice
+                  name: second
+                  instructions: pick
+                  choices:
+                    - {value: a}
+                    - {value: b}
+            response:
+              model: gpt-4o
+              answers:
+                - {type: choice, name: second, choice: a, probabilities: [], confidence: 0.5}
+              usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
 env: {}
 compare: {ignore: []}
