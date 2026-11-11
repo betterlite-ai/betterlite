@@ -5,6 +5,7 @@ use tokio::task::JoinSet;
 use super::support::cache;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
+use crate::request_batch::lock;
 use crate::request_batch::scope::{
     ACTIVE_REQUEST_BATCHES, active_post_call_redis_batch, active_request_redis_batch,
     flush_post_call_redis_batches, request_redis_batch_scope,
@@ -82,11 +83,11 @@ async fn request_batch_nested_scopes_join_the_outer_batches() {
             ACTIVE_REQUEST_BATCHES
                 .try_with(Arc::clone)
                 .ok()
-                .map(|request| request.batches().len()),
+                .map(|request| lock(&request.batches).len()),
             Some(1)
         );
     })
     .await;
 
-    assert_eq!(outer.batches().len(), 1);
+    assert_eq!(lock(&outer.batches).len(), 1);
 }

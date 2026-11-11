@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::support::{cache, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
+use crate::request_batch::lock;
 use crate::request_batch::scope::{
     ACTIVE_REQUEST_BATCHES, active_post_call_redis_batch, active_request_redis_batch,
     flush_post_call_redis_batches, request_redis_batch_scope,
@@ -29,7 +30,7 @@ async fn request_batch_shares_one_batch_per_backend() {
     );
     assert!(!Arc::ptr_eq(&batch_a, &batch_c), "a different namespace");
     assert!(!Arc::ptr_eq(&batch_a, &batch_d), "different settings");
-    assert_eq!(request.batches().len(), 3);
+    assert_eq!(lock(&request.batches).len(), 3);
 }
 
 #[tokio::test]

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_redis::batch::MgetValues;
-use betterlite_redis::request_batch::batches::{PrefetchAction, PrefetchOutcome};
+use betterlite_redis::request_batch::lock;
 use betterlite_redis::request_batch::registry::drain_post_call_redis_batches;
 use betterlite_redis::request_batch::scope::{
     active_post_call_redis_batch, active_request_redis_batch, flush_post_call_redis_batches,
@@ -124,24 +124,18 @@ impl Scenario<'_> {
         let request = Self::active_request()?;
         let (kind, slot, taken) = match action {
             Prefetch::Arm { slot, value } => {
-                let _replaced = request.prefetch(&slot, PrefetchAction::Arm(Box::new(value)));
+                let _replaced = lock(&request.prefetched).insert(slot.clone(), Box::new(value));
                 ("arm", slot, Json::Null)
             }
             Prefetch::Take { slot } => {
-                let taken = match request.prefetch(&slot, PrefetchAction::Take) {
-                    PrefetchOutcome::Taken(taken) => taken,
-                    PrefetchOutcome::Replaced(_) | PrefetchOutcome::Armed(_) => None,
-                };
-                let text = taken
+                let taken = lock(&request.prefetched)
+                    .remove(&slot)
                     .and_then(|value| value.downcast::<String>().ok())
                     .map(|value| *value);
-                ("take", slot, text.map_or(Json::Null, Json::String))
+                ("take", slot, taken.map_or(Json::Null, Json::String))
             }
         };
-        let armed = matches!(
-            request.prefetch(&slot, PrefetchAction::IsArmed),
-            PrefetchOutcome::Armed(true)
-        );
+        let armed = lock(&request.prefetched).contains_key(&slot);
         self.prefetch
             .push(json!({"action": kind, "slot": slot, "taken": taken, "armed": armed}));
         Ok(())
