@@ -1,0 +1,9 @@
+kind: helper
+name: s3-url-key-encoding
+call:
+  b3645:
+    function: s3_url
+    media_uri: 's3://audio/folder/my file (1).wav?next=a=b'
+    region: us-east-1
+env: {}
+compare: {ignore: []}
