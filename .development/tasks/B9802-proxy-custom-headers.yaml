@@ -31,6 +31,10 @@ scope:
   - crates/betterlite-config/src/sections/detailed_timing.rs
   - crates/betterlite-config/src/sections/detailed_timing/**
   - tools/oracle/cases/helpers/custom-headers/**
+  - tools/oracle/helpers/b9802.py
+  - tools/oracle/helpers/b9802/**
+  - tools/oracle/src/helpers/server/b9802.rs
+  - tools/oracle/src/helpers/server/b9802/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1728-L1854

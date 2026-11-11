@@ -135,7 +135,7 @@ out_of_scope:
 - B2419 owns safety, settings, fingerprints and follow-up collision filtering; B9820 owns the AgenticCallback trait, B4119 the plan types and B189 the internal-key predicates.
 - B2414 owns native create transport and Responses fake wrapping; B978 owns Anthropic fake event generation.
 - B080 supplies recursive Responses execution at composition; no dependency from this leaf back to the public SDK wrappers is introduced.
-- Other HTTP-handler operations, including _execute_chat_completion_agentic_plan and _call_agentic_chat_completion_hooks, remain with the chat/interception owners B004/B119.
+- Other HTTP-handler operations, including _execute_chat_completion_agentic_plan and _call_agentic_chat_completion_hooks, remain with the chat/interception owner B119.
 pitfalls:
 - Responses cleanup is inside the executor's try/finally, after patch validation, and is absent from the Anthropic executor.
 - response_override=false is a result; only null means there is no override.

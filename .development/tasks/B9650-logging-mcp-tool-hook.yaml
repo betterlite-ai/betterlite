@@ -34,6 +34,10 @@ scope:
     - crates/betterlite-logging/src/callback_logger/tests.rs
     - tools/oracle/cases/helpers/logging-mcp-tool-hook/**
     - "tools/oracle/fuzz/corpus/helper_case/logging-mcp-tool-hook-*"
+    - tools/oracle/helpers/b9650.py
+    - tools/oracle/helpers/b9650/**
+    - tools/oracle/src/helpers/logging/b9650.rs
+    - tools/oracle/src/helpers/logging/b9650/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1633-L1709
@@ -83,7 +87,7 @@ deviations: []
 out_of_scope:
   - "The rest of litellm_logging.py belongs to B190's parts (B247 to B254) and the owners their out_of_scope lists name."
   - "Calling the hook: B950 (Responses and chat tool execution) and B8198 (_fire_mcp_tool_call_logging); each needs this task in its depends_on."
-  - "Cisco AI Defense's async_post_mcp_tool_call_hook (cisco_ai_defense_mcp.py L97-L173), the only open-source logger that overrides the method. B5109 left its owner to the architect; that task implements this trait method in betterlite-guardrails and depends on this one."
+  - "Cisco AI Defense's async_post_mcp_tool_call_hook (cisco_ai_defense_mcp.py L97-L173), the only open-source logger that overrides the method. B9450 owns it; that task implements this trait method in betterlite-guardrails, registers CiscoMcpToolHook with the success callbacks this task's dispatch reads, and depends on this one."
   - "post_mcp_call guardrails (ProxyLogging.post_mcp_call_hook): B8394."
 pitfalls:
   - "The originals are copied per logger, not once for the walk, so the second logger compares against what the first one left."

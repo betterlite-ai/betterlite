@@ -118,7 +118,7 @@ out_of_scope:
 - B975 owns adapters/streaming_iterator.py L43-L293 splitter/error helpers; B977 and its sync part own all iteration/SSE methods L548-L1044 and AnthropicSSEStream L1212-L1233.
 - B966 owns usage arithmetic and chunk translation; B571 defines empty unsigned thinking, B963 refusal extraction/details.
 - B9840 reads streamed_anthropic_message_id in the /v1/messages logged-response conversion; this task only writes it. Logging persistence and main completion HTTP are not state-helper work.
-- The Responses bridge stream records its own msg_ id the same way (responses_adapters/streaming_iterator.py L127); that file's owner assigns the same field.
+- The Responses bridge stream records its own msg_ id the same way (responses_adapters/streaming_iterator.py L127); B986 assigns the same field.
 - In litellm_logging.py this task builds only record_streamed_anthropic_message_id and its attribute; the logged-response conversions are B9840's, and the rest of the file belongs to B190, its named sibling parts (B247 to B254) and the owners their out_of_scope lists name.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as messages_stream_usage in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_stream_usage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_stream_usage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

@@ -2,7 +2,7 @@ id: B131
 milestone: M8 platform
 title: Gateway and control plane split deployment
 status: todo
-depends_on: [B4471, B710, B711, B712]
+depends_on: [B4471, B710, B711, B712, B9550]
 file: tasks/B131-gateway-launch.yaml
 covers:
   - "gateway/launch.py"

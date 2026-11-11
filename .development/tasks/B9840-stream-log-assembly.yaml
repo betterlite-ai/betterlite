@@ -59,7 +59,7 @@ description: >-
   check, since every JSON object reads as a chunk whose fields are all optional. Every other result goes to
   ChatStreamAssembler unchanged, so a Chat result or a text completion still comes back as is and anything else gives
   None. The mode does not change any branch, and the type keeps no state, so one value serves sync and async handlers.
-  This task builds the type and its tests and edits no server file: the server's composition root builds one value and
+  This task builds the type and its tests and edits no server file: B8610 builds one value and
   hands that Arc to every production success handler.
 
 
@@ -74,8 +74,9 @@ description: >-
   the callbacks. When it fails, log a warning `[Non-Blocking] LiteLLM.Success_Call Error: {error}` and run no callback
   for the call, since LiteLLM raises out of the handler there (L2576-L2577): prepare returns Option<Prepared> and begin
   in handler.rs returns None for None. The raw upstream response LiteLLM keeps in model_call_details["httpx_response"]
-  becomes a typed field: add `pub httpx_response: Option<UpstreamResponse>` (betterlite_http::proxy::UpstreamResponse,
-  with status, headers and body bytes) to LoggingState in logging_state.rs, None in LoggingState::new, and keep it out of
+  becomes a typed field, `pub httpx_response: Option<UpstreamResponse>` (betterlite_http::proxy::UpstreamResponse,
+  with status, headers and body bytes) on LoggingState. B3488 adds it, None in LoggingState::new, and sets it for GenAI
+  generate_content; read it, don't add it. It stays out of
   model_call_details so no payload or callback sees it. B976 adds `streamed_anthropic_message_id: Option<String>` next to
   it; read that field, don't add it.
 
@@ -164,6 +165,10 @@ scope:
     - crates/betterlite-logging/src/logging_success/tests.rs
     - crates/betterlite-logging/src/logging_success/tests/**
     - tools/oracle/cases/helpers/stream-log-assembly/**
+    - tools/oracle/helpers/b9840.py
+    - tools/oracle/helpers/b9840/**
+    - tools/oracle/src/helpers/core_ops/b9840.rs
+    - tools/oracle/src/helpers/core_ops/b9840/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4108-L4171
@@ -294,10 +299,10 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - "The stream gate and chat branch of _get_assembled_streaming_response (L4116-L4119) are B252's ChatStreamAssembler, which this type calls; the success handlers that call the port are B250's."
-  - "Building the one production value and handing it to the server's success handlers (the chat and embeddings logging B012 wires, B8931's pass-through runtime, the cache-hit handler B4301 built) belongs to the server's composition root, not to this task. Until it is swapped in, B012's server logging runs on B252's ChatStreamAssembler."
+  - "Building the one production value and handing it to the server's success handlers (the chat and embeddings logging B012 wires, B8931's pass-through runtime, the cache-hit handler B4301 built) belongs to B8610, not to this task. Until it is swapped in, B012's server logging runs on B252's ChatStreamAssembler."
   - "Anthropic /v1/messages has no assembly branch: its stream hands the success handlers an assembled ModelResponse, which part 4 converts and the chat branch returns."
   - "record_streamed_anthropic_message_id (L4174-L4175) and the streamed_anthropic_message_id field are B976's, written when its stream wrapper starts; the Responses bridge stream that also records the id (responses_adapters/streaming_iterator.py L127) belongs to that file's owner."
-  - "Storing the upstream response in LoggingState.httpx_response is the job of the calls that receive it, as LiteLLM's native /v1/messages call (llm_http_handler.py L2276) and GenAI transform (google_genai/transformation.py L389) do; this task adds the field and reads it."
+  - "Storing the upstream response in LoggingState.httpx_response is the job of the calls that receive it, as LiteLLM's native /v1/messages call (llm_http_handler.py L2276) and GenAI transform (google_genai/transformation.py L389) do; B3488 adds the field and sets it for GenAI, and this task reads it. Nothing sets it for the native /v1/messages call yet, so that call logs from the served body without the upstream llm_provider-* headers."
   - "The A2A usage in model_call_details is written by betterlite-a2a's logging context; this task only copies it onto the result."
   - "The Responses stream iterator that hands over the terminal event is B926's, the interaction stream iterator B3491's, the usage transform B906's, the hidden-params cost helper B1717's and the interaction billing branch (L2604-L2701) B3481's and B3496's."
   - "The remaining functions in litellm_logging.py belong to B190 and its named sibling parts (B247 to B254) and the owners their out_of_scope lists name."

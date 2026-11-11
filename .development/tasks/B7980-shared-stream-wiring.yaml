@@ -20,6 +20,7 @@ description: >-
   In tools/oracle/cases/api/messages-stream/: (1) restamp-client-model: model_name `oracle-alias` routed to `anthropic/claude-3-5-haiku-20241022` with api_base "{{upstream}}" and api_key oracle-key, POST /v1/messages with model oracle-alias, max_tokens 16, one user message and stream true; the upstream streams message_start (message.model "claude-3-5-haiku-20241022"), content_block_start, one content_block_delta with text "hello", content_block_stop, message_delta with stop_reason end_turn and message_stop; the client's message_start carries model "oracle-alias" and every other event is unchanged. (2) raw-model-name-kept: the same request with metadata {"_complexity_router_return_raw_model_name": true}, so the provider's model stays. (3) same-model-frames: model_name equal to the provider model, so the events are relayed in order with nothing restamped.
   In tools/oracle/cases/agents/a2a-stream/: an agent configured under `agents` with agent_name oracle-agent and agent_card_params whose url is "{{upstream}}", set up like B8648's card-config-agent case. (4) resubscribe-events: POST /a2a/oracle-agent with {"jsonrpc": "2.0", "id": "oracle-resubscribe", "method": "tasks/resubscribe", "params": {"id": "task-1"}}; the upstream streams two status-update results for task-1 (state working with final false, then completed with final true) and the client gets both as data frames in order. (5) resubscribe-upstream-404: the upstream answers 404 with a JSON body that has no "error" key, and the client gets one data frame with the -32603 error and message "Not Found".
   The existing stream cases of B081 must keep passing, so they are listed in oracle_cases too.
+  This task also writes tools/oracle/cases/api/anthropic-messages-routes/blocked-response-preserves-paid-usage.yaml, with a passthrough guardrail that blocks the response. B081 runs standalone hooks that cannot raise it over HTTP.
 
 
   Rust tests in app::inference::shared_stream_ports::tests. messages_stream_gets_ping_event boots the application through tower's oneshot against a local upstream that sends message_start, waits 1.5 seconds and sends the rest, with anthropic_sse_ping_interval_seconds 1, and asserts one `event: ping\ndata: {"type": "ping"}\n\n` frame sits between the two (the oracle mock has no per-event delay). The builder passes a cost injection only when include_cost_in_streaming_usage is true. ProxyReservationRelease runs B3003's release once on the tracker it was built with for a key holding an open reservation, and an Err from it is logged instead of lost. A message/stream body dropped before its first event through the production A2A state releases the reservation once.
@@ -33,6 +34,7 @@ scope:
   - crates/betterlite-config/src/sections/anthropic_sse_ping/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-sse-ping-*
   - tools/oracle/cases/api/messages-stream/**
+  - tools/oracle/cases/api/anthropic-messages-routes/blocked-response-preserves-paid-usage.yaml
   - tools/oracle/cases/agents/a2a-stream/**
   lint_tables: false
 references:
@@ -109,7 +111,7 @@ out_of_scope:
 - "The generator, its SSE and A2A flavors, the tail seal, the pings and the standalone ports: B9720."
 - "ProxyStreamHooks: B8632. DisconnectCleanup and its ports: B8605 and B8633. StreamCostInjector: B8930, built as B8931 builds it. The cancel settlement: B3003."
 - "The /v1/messages route, its processing call and the blocked-response branch: B081. The A2A handlers and per-request A2aStreamHooks: B8589. The A2A mount and its state: B8648. The A2A relay functions: B4789."
-- "_arm_detached_stream_failure_hook, create_response and the rest of ProxyBaseLLMRequestProcessing: no task builds the shared class (B7324); see the notes of the B7980 plan."
+- "create_response and the first-chunk checks: B9801. _arm_detached_stream_failure_hook and the rest of ProxyBaseLLMRequestProcessing: no task builds the shared class (B7324); see the notes of the B7980 plan."
 - "proxy_server.py's async_data_generator and its helpers: B8604, B8602 and B8603, the other parts of this umbrella."
 pitfalls:
 - 'anthropic_sse_ping_interval_seconds is a litellm_settings key, not general_settings, and its default is 15.0, so pings are on unless a user sets 0, a negative number or text that does not parse.'

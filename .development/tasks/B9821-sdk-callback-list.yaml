@@ -14,8 +14,9 @@ description: >-
 
   Code goes in crates/betterlite-server/src/state/sdk_callbacks.rs and state/sdk_callbacks/ (list.rs, names.rs, error.rs,
   tests.rs, and one builder file per name: compression.rs, websearch.rs, code_interpreter.rs). The skeleton declares
-  `pub mod sdk_callbacks;` in state.rs and gives ServerState the field `sdk_callbacks: sdk_callbacks::Slot`, built with
-  `Slot::default()` where the other slots are built; this file replaces the stub Slot. Add `betterlite-sdk` and
+  `pub mod sdk_callbacks;` in state.rs and leaves sdk_callbacks.rs empty, since ServerState comes with B1100 and B8610.
+  Give ServerState the field `sdk_callbacks: sdk_callbacks::Slot` yourself, built with `Slot::default()` where the
+  other slots are built; touch nothing else in state.rs. Add `betterlite-sdk` and
   `betterlite-context` (path dependencies) to crates/betterlite-server/Cargo.toml if they are not there yet. Every name
   stays at 30 characters or fewer.
 
@@ -82,6 +83,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/state/sdk_callbacks.rs
     - crates/betterlite-server/src/state/sdk_callbacks/**
     - crates/betterlite-server/src/app/callbacks.rs
@@ -89,6 +91,7 @@ scope:
     - crates/betterlite-server/src/app/callbacks/hooks/**
     - crates/betterlite-config/src/sections/callback_settings.rs
     - crates/betterlite-config/src/sections/callback_settings/tests.rs
+    - docs/deviations/B8741.yaml
     - Cargo.lock
   lint_tables: false
 references:
@@ -135,7 +138,7 @@ deviations: []
 out_of_scope:
   - "The three builder bodies and their HTTP cases: B9822 (compression_interception), B9823 (websearch_interception), B9824 (code_interpreter_interception)."
   - "Handing the list to the gateway's chat, messages and responses calls: B9825. The database reload that calls replace: B8383."
-  - "The other initialize_callbacks_on_proxy names (presidio, lakera_prompt_injection, aporia_prompt_injection, detect_prompt_injection, batch_redis_requests, azure_content_safety, datadog_cost_management): their guardrail and hook tasks, still ConfigError::Unsupported."
+  - "The other initialize_callbacks_on_proxy names (presidio, lakera_prompt_injection, aporia_prompt_injection, detect_prompt_injection, batch_redis_requests, azure_content_safety): their guardrail and hook tasks, still ConfigError::Unsupported."
   - "The traits the views hold: B5367 (DeploymentHook), B9820 (AgenticCallback), B1118 (PreRequestHook, SearchShortCircuit)."
 pitfalls:
   - "Swap the whole list once install has built every entry; a partial list after a failed build would run some interceptions and not others."

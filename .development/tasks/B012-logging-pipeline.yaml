@@ -16,7 +16,7 @@ description: >-
   into B191. Request Logging dispatch is supplied by the split B190 lifecycle tasks, not invented in this integration.
   The success handler's StreamAssembler (B250's port) is built in exactly one place, in server.rs next to the clock,
   sink and registry, as one `Arc<dyn StreamAssembler>` holding B252's ChatStreamAssembler, and every chat and
-  embeddings path reads that Arc. Chat and embeddings streams need nothing more; the server composition root later
+  embeddings path reads that Arc. Chat and embeddings streams need nothing more; B8610 later
   replaces that one value with B9840's LoggedStreamAssembler, so build no second assembler and no branch of your own.
   Write the behavior rstest functions logging_pipeline_logging_integration_tests_behavior in adjacent tests.rs files, with a
   named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation service_logging is already registered; each operation
@@ -129,7 +129,7 @@ out_of_scope:
 - Prometheus, OTel, Datadog, Sentry and other exporters remain in M5.
 - Python callbacks/hooks are B164-B165; spend persistence is B069.
 - The Responses and interaction stream assembly is B9840's, and swapping its LoggedStreamAssembler in for
-  ChatStreamAssembler belongs to the server composition root; B9840 depends on B1717, which already depends on this
+  ChatStreamAssembler belongs to B8610; B9840 depends on B1717, which already depends on this
   task, so this task cannot build it.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/service_logging-<case>.yaml. The rest of that folder belongs to other tasks.'

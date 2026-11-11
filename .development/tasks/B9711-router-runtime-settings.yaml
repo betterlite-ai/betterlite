@@ -30,6 +30,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/helpers/router-runtime-settings/**
   - tools/oracle/fuzz/corpus/helper_case/router-runtime-settings-*
+  - tools/oracle/helpers/b9711.py
+  - tools/oracle/helpers/b9711/**
+  - tools/oracle/src/helpers/router/b9711.rs
+  - tools/oracle/src/helpers/router/b9711/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12185-L12291

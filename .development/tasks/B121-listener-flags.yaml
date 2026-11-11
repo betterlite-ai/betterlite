@@ -89,6 +89,10 @@ scope:
     - crates/betterlite/src/lifespan.rs
     - crates/betterlite/src/lifespan/**
     - tools/oracle/cases/helpers/listener-flags/**
+    - tools/oracle/helpers/b121.py
+    - tools/oracle/helpers/b121/**
+    - tools/oracle/src/helpers/server/b121.rs
+    - tools/oracle/src/helpers/server/b121/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L876-L895

@@ -102,7 +102,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "AgenticLoopPlan, AgenticLoopRequestPatch, JsonMap and FollowupMessage: B4119. The loops that call the trait: B8294 (chat), B2415 and B2419 (Responses and Messages)."
-  - "The chat-only legacy hooks async_should_run_chat_completion_agentic_loop, async_build_chat_completion_agentic_loop_plan and async_run_chat_completion_agentic_loop (custom_logger.py L792 on), called by _call_agentic_chat_completion_hooks and the OpenAI provider: B004 and B119."
+  - "The chat-only legacy hooks async_should_run_chat_completion_agentic_loop, async_build_chat_completion_agentic_loop_plan and async_run_chat_completion_agentic_loop (custom_logger.py L792 on), called by _call_agentic_chat_completion_hooks and the OpenAI provider: B119."
   - "The implementations and their registration: B9822 (compression_interception), B9823 (websearch_interception), B9824 (code_interpreter_interception), over the list B9821 builds."
 pitfalls:
   - "run_agentic_loop's default is None, not the original response: the chat loop returns that None to main.py, which then keeps its own response."

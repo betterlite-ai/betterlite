@@ -23,6 +23,10 @@ scope:
     - crates/betterlite-logging/src/cold_storage_key/**
     - tools/oracle/cases/helpers/cold-storage-key/**
     - "tools/oracle/fuzz/corpus/helper_case/cold-storage-key-*"
+    - tools/oracle/helpers/b9520.py
+    - tools/oracle/helpers/b9520/**
+    - tools/oracle/src/helpers/logging/b9520.rs
+    - tools/oracle/src/helpers/logging/b9520/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5850-L5858

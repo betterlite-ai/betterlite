@@ -31,6 +31,10 @@ scope:
   - Cargo.lock
   - tools/oracle/cases/helpers/router-deployment-pricing/**
   - tools/oracle/fuzz/corpus/helper_case/router-deployment-pricing-*
+  - tools/oracle/helpers/b9710.py
+  - tools/oracle/helpers/b9710/**
+  - tools/oracle/src/helpers/router/b9710.rs
+  - tools/oracle/src/helpers/router/b9710/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L700-L713

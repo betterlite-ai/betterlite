@@ -15,7 +15,7 @@ description: >-
 
 
   Code goes in crates/betterlite-server/src/state/sdk_callbacks/websearch.rs and websearch/ (tests.rs). Replace the
-  body of `build(inputs)` and touch no other file of the slot.
+  body of `build(inputs)` and touch no other file of the slot. Also add websearch/adapter.rs, which implements B8383's `WebsearchInterception` port (is_registered over the Slot's contains, apply over its replace with this builder's entry) for the composition root to hand to B8383.
 
 
   `WebSearchCallback` holds the B4116 logger value built from its config section (`config.sections.websearch_request_hooks`),
@@ -109,7 +109,7 @@ deviations: []
 out_of_scope:
   - "Every hook body: B4113, B4115, B4116, B4117, B4118, B4119. The search providers: their search tasks."
   - "Running the seams on the gateway: B9825. The list and the slot: B9821. Re-registering from the database and the admin settings routes: B8383, which calls the slot's replace with this builder's entry."
-  - "The chat-only legacy hooks (async_run_chat_completion_agentic_loop and the two chat variants) that the OpenAI provider calls: B004 and B119."
+  - "The chat-only legacy hooks (async_run_chat_completion_agentic_loop and the two chat variants) that the OpenAI provider calls: B119."
 pitfalls:
   - "enabled_providers defaults to [\"bedrock\"], so a case without the param intercepts nothing on anthropic or openai; set it in every case that expects a rewrite."
   - "The short circuit never fires for anthropic, bedrock, vertex_ai or azure_ai, which search natively in their agentic loop; a short circuit case needs a provider whose Messages config does not."

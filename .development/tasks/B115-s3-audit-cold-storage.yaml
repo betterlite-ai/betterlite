@@ -22,7 +22,10 @@ description: >-
   Oracle cases in tools/oracle/cases/helpers/s3-audit-logs/ use the b115 helper. The Python side runs inside asyncio.run: it sets litellm.s3_callback_params from the case, replaces the datetime name in litellm.integrations.s3_v2 with a datetime subclass whose now() returns the case's instant, builds S3Logger(s3_callback_params_override=...) when the case gives an override and S3Logger() otherwise, awaits async_log_audit_log_event with the case record, and answers with payload, s3_object_key and s3_object_download_filename of the last queued element; then it cancels the logger's flush task and restores both globals. The Rust side resolves the parameters with resolve_s3_parameters from the same sources, resolves the granularity through a PartitionGranularityCache with the case env and calls audit_element. Cases: day-partition-key (s3_path team-logs, now 2026-03-04T05:06:07Z, id a1, so "team-logs/audit_logs/2026-03-04/05-06-07_a1.json" and "audit-a1.json"), hour-partition-key, env-hour-granularity (S3_PARTITION_GRANULARITY=hour), no-s3-path, override-path-wins (global s3_path global-logs, override s3_path audit-logs), empty-override-ignores-global, id-with-slash-and-colon (id "key/1:x" is key_1_x in the key but stays as is in the download name) and null-before-and-updated-values. Add a helper corpus seed per case under tools/oracle/fuzz/corpus/helper_case/s3-audit-logs-*.
 
 
-  Native tests. s3_audit/tests.rs, against B3994's logger with a recording uploader or a local mock S3 and a paused clock: an audit record below batch_size waits for the timer, the one that reaches batch_size flushes at once, a model event that reaches batch_size does not, audit and model elements land in one queue in arrival order, a record that isn't an object logs the error and leaves the queue unchanged, and the dedicated logger keeps its own queue, uses the audit source's bucket and path and stops its flush loop on shutdown. cold_storage_locator/tests.rs covers no name, a name with nothing built, a name whose logger keeps the default (a catalog-built logger other than s3_v2), and a built s3_v2 logger with path and hour granularity, including a granularity change through the env between two calls. Nothing here changes a response a client sees, so there are no HTTP cases.
+  Native tests. s3_audit/tests.rs, against B3994's logger with a recording uploader or a local mock S3 and a paused clock: an audit record below batch_size waits for the timer, the one that reaches batch_size flushes at once, a model event that reaches batch_size does not, audit and model elements land in one queue in arrival order, a record that isn't an object logs the error and leaves the queue unchanged, and the dedicated logger keeps its own queue, uses the audit source's bucket and path and stops its flush loop on shutdown. cold_storage_locator/tests.rs covers no name, a name with nothing built, a name whose logger keeps the default (a catalog-built logger other than s3_v2), and a built s3_v2 logger with path and hour granularity, including a granularity change through the env between two calls.
+
+
+  Startup wiring is B8742's: its start(state) builds CatalogColdStorage with this task's public constructor `CatalogColdStorage::new(cold_storage_custom_logger, catalog)`. Nothing here changes a response a client sees, so there are no HTTP cases.
 scope:
   paths:
     - crates/betterlite-logging/src/s3_audit.rs
@@ -33,6 +36,10 @@ scope:
     - crates/betterlite-logging/src/s3_batch/**
     - tools/oracle/cases/helpers/s3-audit-logs/**
     - "tools/oracle/fuzz/corpus/helper_case/s3-audit-logs-*"
+    - tools/oracle/helpers/b115.py
+    - tools/oracle/helpers/b115/**
+    - tools/oracle/src/helpers/logging/b115.rs
+    - tools/oracle/src/helpers/logging/b115/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L485-L512
@@ -105,8 +112,8 @@ out_of_scope:
   - "S3Logger.__init__, async_log_success_event, async_log_failure_event, _async_log_event_base and the catalog build of the s3_v2 logger: B3994, whose callback-logger check covers them."
   - "_init_s3_params, resolve_partition_granularity and create_s3_batch_logging_element: B3992. _s3_error_code, _is_terminal, the signing, the uploads and the cold-object download: B3993; upload_data_to_s3 has no caller at the pin. The batch flush, the upload limiter, the batch-file grouping and S3BatchUploadError: B3994."
   - "Choosing the dedicated logger when litellm_settings.s3_audit_callback_params is non-null, caching it, parsing the dict into a Source, building StandardAuditLogPayload and dispatching records to audit_log_callbacks: B2330 and B065."
-  - "Building the cold-storage key and stamping it into the metadata: B9520. Loading litellm_settings.cold_storage_custom_logger and handing it with the catalog to CatalogColdStorage: B1729 loads it, the composition that builds the logging lifecycle wires it."
-  - "Calling log_audit_event through Arc<dyn CallbackLogger>: CallbackLogger has no audit method yet (B8740 left async_log_audit_log_event to B065, whose scope lacks callback_logger.rs); see the report notes."
+  - "Building the cold-storage key and stamping it into the metadata: B9520. Loading litellm_settings.cold_storage_custom_logger and handing it with the catalog to CatalogColdStorage: B1729 loads it, and B8742 wires it at startup (one line in app/callbacks.rs)."
+  - "Calling log_audit_event through Arc<dyn CallbackLogger>: B065 adds async_log_audit_log_event to CallbackLogger and the s3_v2 logger forwards it to log_audit_event."
 pitfalls:
   - "Only audit records flush on batch_size; async_log_success_event and async_log_failure_event only append, so a size check added to the shared queue push would change model-event timing."
   - "The audit file name is %H-%M-%S of the call's UTC time plus the id, with no time- prefix and no microseconds, unlike the time-...-%f name of model events."

@@ -120,7 +120,7 @@ out_of_scope:
   - "The privacy flag for the child (context_compaction.py L486-L499): B336 decides it and passes it to B8291's execute on each call."
   - "asgi_handler.py _TRANSPORT (L31), the httpx ASGITransport with raise_app_exceptions=False: B8291 calls the tower service directly, and axum turns handler errors into responses."
   - "Routing a path under the scalar SERVER_ROOT_PATH: B4200. This task only reads the root path."
-  - "The compression_interception callback name (callback_utils.py L153-L162): B8742's hook arm stays unavailable until a task owns the SDK callback list it belongs in."
+  - "The compression_interception callback name (callback_utils.py L153-L162): B9821 owns the SDK callback list and B9822 the compression callback."
 pitfalls:
   - "Router::layer wraps every route, not the router as one service, so clone the target's app once in install from the router value before the layer; never rebuild it per request."
   - "install must be the last wrap in application: inside RootPaths the child's /tenant-a prefix is never cut and the child gets a 404."

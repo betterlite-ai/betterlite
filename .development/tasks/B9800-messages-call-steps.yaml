@@ -43,6 +43,10 @@ scope:
   - crates/betterlite-config/src/sections/mock_testing_params/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/mock-testing-params-*
   - tools/oracle/cases/helpers/messages-call/**
+  - tools/oracle/helpers/b9800.py
+  - tools/oracle/helpers/b9800/**
+  - tools/oracle/src/helpers/server/b9800.rs
+  - tools/oracle/src/helpers/server/b9800/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L12-L28

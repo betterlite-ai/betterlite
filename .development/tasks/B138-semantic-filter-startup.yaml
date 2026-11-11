@@ -36,6 +36,9 @@ description: >-
   which can hold at most one here.
   - `callback(&self) -> Option<Arc<dyn ProxyCallback>>` gives a SemanticFilterCallback over the held hook, or None
   while the slot is empty, so a proxy without the filter lists no extra callback.
+  - The slot implements B8399's `ProxyCallbackSource`, answering with callback() as a list of at most one. B8610 holds
+  the one Arc<SemanticFilterSlot> and passes it to ProxyLogging::add_proxy_callbacks, so ProxyLogging asks it every time
+  it lists callbacks and a reload that empties or refills the slot shows at once.
 
 
   The proxy callback. `SemanticFilterCallback` holds an Arc<SemanticToolFilterHook> and implements B8390's
@@ -93,6 +96,10 @@ scope:
     - crates/betterlite-server/src/hooks/semantic_filter_proxy/**
     - tools/oracle/cases/helpers/semantic-filter-startup/**
     - "tools/oracle/fuzz/corpus/helper_case/semantic_filter_startup-*"
+    - tools/oracle/helpers/b138.py
+    - tools/oracle/helpers/b138/**
+    - tools/oracle/src/helpers/server/b138.rs
+    - tools/oracle/src/helpers/server/b138/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10323-L10355

@@ -128,6 +128,10 @@ scope:
     - crates/betterlite-logging/src/logging_success/delivery.rs
     - crates/betterlite-logging/src/logging_success/tests/delivery.rs
     - tools/oracle/cases/helpers/shadow-eval-hook/**
+    - tools/oracle/helpers/b118.py
+    - tools/oracle/helpers/b118/**
+    - tools/oracle/src/helpers/server/b118.rs
+    - tools/oracle/src/helpers/server/b118/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L52-L59

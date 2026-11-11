@@ -34,7 +34,8 @@ description: >-
 
 
   Wiring. Read the merged code of B016, B017, B021, B080 and B081 and find, for each route family, where an attempt has its
-  deployment and its request and is about to take the deployment slot and dispatch. Call `compact` there, before the slot,
+  deployment and its request and is about to take the deployment slot and dispatch. If B9560's ResponseCacheStep call is
+  already at this point, put this step before it. Call `compact` there, before the slot,
   as router.py L3767 does before `_deployment_slot`, and send what it returns. Build `GatewayCompaction` where the handler
   starts routing, with `Parts` taken by the handler (`axum::http::request::Parts` is a FromRequestParts extractor). The
   families and their paths: chat is POST /v1/chat/completions, /chat/completions, /engines/{model}/chat/completions and
@@ -79,6 +80,7 @@ scope:
     - crates/betterlite-server/src/routes/responses.rs
     - crates/betterlite-server/src/api/responses_routes.rs
     - crates/betterlite-server/src/api/responses_routes/**
+    - crates/betterlite-server/src/routes/cursor_responses_compat.rs
     - tools/oracle/cases/routing/gateway-compaction/**
     - tools/oracle/fuzz/corpus/http_case/gateway-compaction-*
   lint_tables: false
@@ -144,7 +146,8 @@ out_of_scope:
   - "The executor itself, its child call and header filter: B8291. Building it from the request: B100."
   - "compact_to_fit, initialize_compaction_state, the privacy flag and the summary call: B336. Arming the state in the pre-routing hook (router.py L13837-L13860): B021."
   - "B6020's RouterCompletion and B6021's RouterGeneric: B8630's compaction adapter passes no executor, since no gateway chat, messages or responses call reaches their attempts."
-  - "The other LiteLLM routes that run base_process_llm_request with route type acompletion or aresponses (the Cursor route, background Responses polling, the lens billing call and the prompt test route): see the B9810 notes for the architect."
+  - "The Cursor route (response_api_endpoints/endpoints.py L633) takes the same call in routes/cursor_responses_compat.rs, which this task's scope includes. The lens billing call is B8682's and the prompt test route is B117's; each calls GatewayCompaction at its own dispatch."
+  - "Background Responses polling (response_polling/background_streaming.py L148, B936): no owner yet, since B936 cannot depend on this task (B9810 depends on B080, and B080 depends on B936)."
 pitfalls:
   - "Run the step on every chat, messages and responses attempt, not only for auto routers: an unarmed request comes back unchanged, but a loopback child sent to the plain compactor group must hit B336's child check (context_compaction.py L436-L444)."
   - "Initialize the compaction state before B021's pre-routing hook, or arm_compaction finds no state and the request never compacts."

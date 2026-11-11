@@ -99,7 +99,7 @@ out_of_scope:
 - The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 - Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B8560; MCP hooks 1633-1709 B140;
-  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; the Responses and
+  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B3481/B3496; interaction stream shape B098; the Responses and
   interaction branches of _get_assembled_streaming_response 4120-4142 and _assemble_completed_interaction_response
   4146-4171 B9840; record_streamed_anthropic_message_id 4174-4175 B976; the call-type result conversion in
   _success_handler_helper_fn 2519-2527 and the Anthropic messages, Responses, GenAI and A2A conversions it calls

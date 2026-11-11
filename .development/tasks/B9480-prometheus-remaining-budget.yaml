@@ -32,6 +32,10 @@ scope:
     - crates/betterlite-config/src/sections/prometheus_request_budget/**
     - tools/oracle/cases/helpers/prometheus-remaining-budget/**
     - "tools/oracle/fuzz/corpus/helper_case/prometheus-remaining-budget-*"
+    - tools/oracle/helpers/b9480.py
+    - tools/oracle/helpers/b9480/**
+    - tools/oracle/src/helpers/server/b9480.rs
+    - tools/oracle/src/helpers/server/b9480/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1891-L1985

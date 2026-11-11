@@ -51,9 +51,9 @@ description: >-
   exit 1; InvalidKeepAlive logs one error line and exits 2, as click's usage error does. The pooler error's message field
   reads "betterlite gateway: " followed by the Display text above. The warnings: when workers is above 1, a line with the
   field `workers` and the message "betterlite-gateway serves every request from one process, so the workers setting has
-  no effect"; when keep_alive_given is true, a line with the field `timeout_keep_alive` and the message "betterlite closes
-  each HTTP connection after its response, so the keep-alive timeout has no effect". No log line prints DATABASE_URL,
-  DATABASE_PASSWORD or an assembled URL; the errors name variables, never values.
+  no effect". The keep-alive value is not ignored: where the gateway builds B8610's ServerInputs, it sets
+  `listener.keep_alive_seconds` of B9550's ListenerOptions to the resolved value, an i64 passed as parsed. No log line
+  prints DATABASE_URL, DATABASE_PASSWORD or an assembled URL; the errors name variables, never values.
 
 
   Tests: unit tests in `crates/betterlite-gateway/src/launch/tests.rs`, so their names start with `launch::tests::` and
@@ -69,8 +69,8 @@ description: >-
   KEEPALIVE_TIMEOUT=abc gives 30; env 75 gives 75; neither gives 5 and keep_alive_given false; KEEPALIVE_TIMEOUT="" and
   "abc" fail. Workers: flag 4; WEB_CONCURRENCY=3 without the flag; flag 0 gives 1; WEB_CONCURRENCY=x fails. Process cases:
   the pooler refusal exits 1 with the message in a JSON line and without the DATABASE_PASSWORD value the case set; a
-  bad KEEPALIVE_TIMEOUT exits 2; `--workers 4 --timeout-keep-alive=30` with KEEPALIVE_TIMEOUT=abc prints both warnings
-  with workers 4 and timeout_keep_alive 30, then the config error. Budget: about 130 lines of implementation, 25 of
+  bad KEEPALIVE_TIMEOUT exits 2; `--workers 4 --timeout-keep-alive=30` with KEEPALIVE_TIMEOUT=abc prints the workers
+  warning with workers 4 and no keep-alive warning, then the config error. Budget: about 130 lines of implementation, 25 of
   wiring and 250 of tests.
 scope:
   paths:
@@ -117,7 +117,7 @@ dod:
     proof: [launch-keep-alive-tests, launch-process-keep-alive]
   - text: Workers come from --workers, else WEB_CONCURRENCY, else 1, with 0 read as 1 and a bad WEB_CONCURRENCY an exit 1 error.
     proof: [launch-workers-tests]
-  - text: A workers value above 1 and a given keep-alive timeout each print their one warning line, and no line printed by this code holds a database URL or password.
+  - text: A workers value above 1 prints its one warning line, the resolved keep-alive timeout reaches ListenerOptions.keep_alive_seconds, and no line printed by this code holds a database URL or password.
     proof: [launch-process-ignored, launch-process-pooler]
   - text: The gateway's help lists --workers and --timeout-keep-alive next to B4471's --config, --host and --port, and B4471's shutdown, startup failure and JSON stderr tests still pass.
     proof: [launch-flags-help]
@@ -150,7 +150,7 @@ checks:
         cargo nextest run --locked -p betterlite-gateway --no-tests=fail
         -E 'binary(gateway_launch) & test(/keep_alive/)'
     - id: launch-process-ignored
-      why: the built gateway does not warn about the workers or keep-alive settings it ignores
+      why: the built gateway does not warn about the workers setting it ignores
       run: >-
         cargo nextest run --locked -p betterlite-gateway --no-tests=fail
         -E 'binary(gateway_launch) & test(/ignored/)'
@@ -169,9 +169,6 @@ deviations:
   - what: --workers and WEB_CONCURRENCY are read and validated, and a value above 1 prints a warning; the gateway still serves from one process.
     why: The binary runs one Tokio runtime (B4471); uvicorn's worker processes have no counterpart.
     link: https://github.com/encode/uvicorn/blob/0.51.0/uvicorn/main.py#L111-L117
-  - what: --timeout-keep-alive and KEEPALIVE_TIMEOUT are read and validated, and a given value prints a warning; connections still close after each response.
-    why: Every betterlite binary turns HTTP/1.1 keep-alive off in crates/betterlite-server/src/server.rs (keep_alive(false) since B003), so there is no idle timeout to set. Whether betterlite should keep connections alive is open.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/launch.py#L34-L39
   - what: The gateway accepts only --config, --host, --port, --workers and --timeout-keep-alive; any other uvicorn flag stops it with a usage error and status 2, and a bad --workers or --timeout-keep-alive flag fails at parse time, before the pooler check.
     why: launch.py forwards all argv to uvicorn, but the image, Helm chart and Terraform modules at the pin pass only these flags.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L125-L126

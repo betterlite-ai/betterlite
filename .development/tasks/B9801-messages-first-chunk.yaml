@@ -27,6 +27,10 @@ scope:
   - crates/betterlite-server/fuzz/fuzz_targets/first_chunk_error.rs
   - crates/betterlite-server/fuzz/corpus/first_chunk_error/**
   - tools/oracle/cases/helpers/messages-first-chunk/**
+  - tools/oracle/helpers/b9801.py
+  - tools/oracle/helpers/b9801/**
+  - tools/oracle/src/helpers/server/b9801.rs
+  - tools/oracle/src/helpers/server/b9801/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L737-L806

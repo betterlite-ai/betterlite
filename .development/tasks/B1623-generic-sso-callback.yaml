@@ -4,7 +4,7 @@ description: >-
   Implement generic_sso_callback in betterlite-server, owning _handle_generic_sso_error,
   get_generic_sso_response and its nested response_convertor. Return a typed SsoExchangeResult
   containing identity, redacted received claims, decoded access-token claims and optional
-  B137 identity assertion. Load endpoints/headers and DB role/team mappings through B1610
+  B4663 identity assertion. Load endpoints/headers and DB role/team mappings through B1610
   before entering the exchange error wrapper, preserving that failure ordering.
   GENERIC_INCLUDE_TOKEN_CLAIMS defaults false and recognizes case-insensitive true. When
   enabled, B1609 merges userinfo, ID-token and access-token claims; otherwise convert only

@@ -84,8 +84,11 @@ description: >-
   to `claude` with Anthropic tools github-create_issue, jira-create_ticket and local_lookup. Sent with header
   x-litellm-end-user-id eu-restricted, the provider receives github-create_issue and local_lookup only; with eu-open
   and with no end user header it receives all three. A last step sends the eu-restricted request with OpenAI function
-  tools to /v1/chat/completions and compares whatever LiteLLM forwards there, since the guardrail looks for the end
-  user id only at the top level and in litellm_metadata, and chat requests keep it in metadata.
+  tools to /v1/chat/completions. LiteLLM looks for the end user id only at the top level and in litellm_metadata, and
+  chat requests keep it in metadata, so LiteLLM forwards all three tools there. betterlite filters them (B3815's
+  deviation row reads the metadata key too), so betterlite's provider receives github-create_issue and local_lookup
+  only. This step ignores the captured provider body (B9850's /upstream/{i}/body selector for that step's call)
+  with that reason, and compares the rest; B3815's unit tests prove the filter on the metadata key.
 
 
   mcp_jwt_signer. Every signer case configures the guardrail with mode pre_mcp_call. jwt-jwks-configured-key: env

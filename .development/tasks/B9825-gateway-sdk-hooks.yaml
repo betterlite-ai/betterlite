@@ -54,7 +54,8 @@ description: >-
   Responses stream is already B2415's and B2414's.
 
   Read the merged code of B016, B017, B080, B081 and B9800 first and find, for each family, where an attempt has its
-  deployment and its merged request and is about to dispatch; B9810 hooks its compaction step at the same places. The
+  deployment and its merged request and is about to dispatch; B9810 hooks its compaction step at the same places. If
+  B9560's ResponseCacheStep call is already at this point, put this step before it. The
   families and paths: chat is POST /v1/chat/completions, /chat/completions, /engines/{model}/chat/completions and
   /openai/deployments/{model}/chat/completions; messages is POST /v1/messages and /claude_code_gateway/v1/messages;
   responses is POST /v1/responses, /responses and /openai/v1/responses. Change nothing else in those files.
@@ -133,13 +134,13 @@ out_of_scope:
   - "The hook loops themselves and their error rules: B5367. The chat loop: B8294. The Messages entry pipeline: B1118. The continuation: B2415, B2419."
   - "The list and the interception builders: B9821, then B9822, B9823 and B9824, which add the HTTP oracle cases through these seams."
   - "The SDK path through B5368 and B5656 (RouterCompletion): B8630 assembles it; this task does not move the gateway onto it."
-  - "The chat-only legacy hooks that B024's OpenAI provider calls (_call_agentic_completion_hooks_openai, openai.py L561-L620): B004 and B119."
+  - "The chat-only legacy hooks that B024's OpenAI provider calls (_call_agentic_completion_hooks_openai, openai.py L561-L620): B119."
 pitfalls:
   - "Take one snapshot per client request; a fallback hop and an agentic follow-up must see the same callbacks as the first attempt."
   - "The follow-up carries _agentic_loop_depth 1, so the interceptions skip their pre-call rewrite on it; never strip that key before the deployment hooks run."
   - "A failure hook's own error is swallowed, but the attempt's error must still reach B017 unchanged, or a fallback that should happen does not."
   - "On chat the agentic loop runs before the success deployment hook, so the success hook sees the looped answer, while the follow-up's own success hook runs inside the continuation on the follow-up answer."
-review_level: standard
+review_level: security
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

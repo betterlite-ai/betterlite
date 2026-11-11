@@ -25,7 +25,7 @@ description: >-
   invalid nonempty sortOrder yields HTTP 400 detail "Invalid sortOrder: {value}. Must be 'asc' or
   'desc'"; empty sortOrder uses asc, case is ignored, unknown sortBy is accepted as a no-op. With no
   sortBy even an invalid sortOrder is ignored. Use B849 sorting before B4784's agent_model_infos (LiteLLM's append_agents_to_model_info).
-  Agents are therefore appended after name/search/team filters and sorting; B141's append failure
+  Agents are therefore appended after name/search/team filters and sorting; B4784's append failure
   logs debug and leaves existing rows. Apply B849 auto-router/access-group/wildcard filters to the
   combined rows, overwrite count with the final materialized length (not search's DB count), translate
   team public names with B851, then B849 paginates. Sorting does not interleave appended agents.
@@ -72,7 +72,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15295-L15529
     why: Own model_info_v2; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/model_list_helpers.py#L50-L102
-    why: B141 appends accessible agents after deployment sorting and logs/drops append failures.
+    why: B4784 appends accessible agents after deployment sorting and logs/drops append failures.
 dod:
   - text: config_failure_stops_pipeline, enrichment_failure_stops_pipeline and agent_append_failure_preserves_rows prove ordered collaborators without inventing a route error mapper.
     proof: [behavior-tests]

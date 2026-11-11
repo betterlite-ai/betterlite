@@ -63,25 +63,22 @@ description: >-
   repeated id replaces the earlier files) and count its paths ending ".py". Write tools back to data["tools"]. When the
   contents list is non-empty, call B1504's inject_skill_content_to_messages(data, contents, use_anthropic_format). When the
   files map is non-empty, append B1504's get_litellm_code_execution_tool_anthropic() to data["tools"] once, then set
-  data["litellm_metadata"] to its current object (absent or null is a new empty object; any other non-object is
-  PreCallError::MetadataNotObject), with "_skill_files" set to {skill_id: {path: base64}} (STANDARD alphabet, padded) and
-  "_litellm_code_execution_enabled" set to true, keeping its other keys. Then remove data["container"] in every case,
+  the hook's own request-scoped state to code_execution_enabled true with the files map {skill_id: {path: SkillFiles}}.
+  Neither is written into data["litellm_metadata"] or data["metadata"], and the post-call never reads them from there
+  (a deviation below). Then remove data["container"] in every case,
   and log at debug "SkillsInjectionHook: Messages API - converted {rows} skills to Anthropic tools, injected {contents}
   skill contents, added litellm_code_execution tool with {py paths} modules". Call B1504's functions by these names in
   betterlite_core::skills::content; if B1504 put them on a handler struct, that struct is the hook's PromptHandler
   argument.
 
-  PreCallError is a thiserror enum in wiring/error.rs with ToolsNotList ("tools must be a list") and MetadataNotObject
-  ("litellm_metadata must be an object").
+  PreCallError is a thiserror enum in wiring/error.rs with ToolsNotList ("tools must be a list").
 
 
-  Request data for the post-call (request.rs). `pub fn skills_request_data(request: &Object) -> SkillsRequestData` builds
+  Request data for the post-call (request.rs). `pub fn skills_request_data(request: &Object, skills: RequestMetadata) -> SkillsRequestData` builds
   B3395's record from the deployment call's request map: model (string, "" when absent), messages and tools (arrays,
-  empty when absent), max_tokens (u64, None when absent), and litellm_metadata and metadata each read into
-  RequestMetadata: code_execution_enabled is true only for JSON true under "_litellm_code_execution_enabled", and
-  skill_files is "_skill_files" read as {skill_id: {path: base64 string}} and decoded into SkillFiles per skill. A path
-  whose value is not a string or not valid base64 is dropped with the warning "SkillsInjectionHook: skipping skill file
-  {path} of {skill_id}: not base64" (a deviation below). A metadata value that is not an object counts as absent.
+  empty when absent), max_tokens (u64, None when absent), and skills, the RequestMetadata that the pre-call stored in
+  the hook's request-scoped state for this request (default when the pre-call stored none). The request map's own
+  litellm_metadata and metadata are never read for the flag or the files.
 
 
   Sandbox adapter (sandbox.rs). Implement B3394's SkillsSandbox for B1506's SkillsSandboxExecutor: execute(code,
@@ -110,7 +107,7 @@ description: >-
   core pre_call and returns Ok(PreCallReturn::Unchanged) after editing data in place; a PreCallError becomes
   ProxyHookError::Http with status 400 and the error text. `pub async fn post_call_success_deployment(&self,
   request_data: &Object, response: HookResponse) -> Result<Option<HookResponse>, SkillsLoopError>` builds
-  skills_request_data(request_data) and returns the core post_call_success with the Messages adapter. ProxyCallback has
+  skills_request_data(request_data, state) with the request's stored skills state and returns the core post_call_success with the Messages adapter. ProxyCallback has
   no deployment-level method yet, so this inherent method is what the deployment hook loop calls once one exists.
 
 
@@ -121,7 +118,8 @@ description: >-
   SkillsInjectionHook(), replaces LiteLLMSkillsHandler.fetch_skill_from_db with an async stub that returns the row,
   returns None or raises RuntimeError for the case, awaits async_pre_call_hook(UserAPIKeyAuth(), DualCache(), data,
   call_type), restores the stub, and answers the returned dict with every bytes value in litellm_metadata._skill_files
-  base64 encoded. The rows use instructions, description and small ZIP archives built for the case.
+  base64 encoded. The Rust adapter answers the stored skills state in that same shape, since the deviation below moves
+  the data out of the request map. The rows use instructions, description and small ZIP archives built for the case.
 
 
   Size. The owned LiteLLM spans (main.py L118-L254 and L325-L348) are about 95 non-blank, non-comment lines, so this is
@@ -136,18 +134,22 @@ scope:
     - crates/betterlite-server/src/hooks/litellm_skills/**
     - tools/oracle/cases/helpers/skills-pre-call/**
     - "tools/oracle/fuzz/corpus/helper_case/skills_pre_call-*"
+    - tools/oracle/helpers/b095.py
+    - tools/oracle/helpers/b095/**
+    - tools/oracle/src/helpers/core_ops/b095.rs
+    - tools/oracle/src/helpers/core_ops/b095/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L118-L182
     why: async_pre_call_hook, the call type gate, the container checks, the prefix split and the not-found warning.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L184-L254
-    why: _process_for_messages_api, tool order, content injection, the code execution tool, litellm_metadata and the container removal.
+    why: _process_for_messages_api, tool order, content injection, the code execution tool, the stored skills state and the container removal.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L325-L348
     why: _fetch_skill_from_db and its warning.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L106-L116
     why: the constructor defaults the proxy hook passes (no kwargs).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L371-L438
-    why: how the post-call reads litellm_metadata and metadata, which skills_request_data feeds.
+    why: how the post-call record is built from the request map and the stored skills state.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L199-L212
     why: fetch_skill_from_db, which already returns None for missing, unauthorized and failed reads (B1502 builds it).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L128-L184
@@ -171,11 +173,11 @@ dod:
     proof: [pre-call-gate]
   - text: With rows kept, tools get one Anthropic-style tool per row after the caller's tools, skill content goes to top-level system for anthropic_messages and to the messages system entry otherwise, and the container is removed even when it also held native skills.
     proof: [pre-call-transform]
-  - text: When any row has files, the litellm_code_execution tool is appended once after the skill tools, and litellm_metadata keeps its other keys and gets _skill_files as base64 per skill id and _litellm_code_execution_enabled true; with no files neither the tool nor litellm_metadata is added.
+  - text: When any row has files, the litellm_code_execution tool is appended once after the skill tools, and the request's skills state gets the files per skill id and code execution enabled; with no files neither the tool nor the state is added, and the request's metadata keys are never touched.
     proof: [pre-call-transform]
-  - text: A non-array tools value and a non-object litellm_metadata come back as PreCallError, and the proxy hook answers them as a 400 naming the field.
+  - text: A non-array tools value comes back as PreCallError, and the proxy hook answers it as a 400 naming the field.
     proof: [pre-call-transform, proxy-hook]
-  - text: skills_request_data reads model, messages, tools, max_tokens and both metadata maps with their flag and decoded files, drops a file that is not valid base64, and treats a non-object metadata value as absent.
+  - text: skills_request_data reads model, messages, tools and max_tokens from the request map and takes the flag and files from the stored skills state, ignoring any _litellm_code_execution_enabled or _skill_files a client sent in litellm_metadata or metadata.
     proof: [request-data]
   - text: The Messages adapter sends exactly model, messages, tools and max_tokens to B1134's dispatch and returns the response body as a Dict, and the sandbox adapter maps B1506's result into SandboxOutcome.
     proof: [adapters]
@@ -192,7 +194,7 @@ checks:
       why: the call type gate, the container checks, the prefix split or the fetch handling is wrong or untested
       run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::wiring::tests::pre_call_gate/)'
     - id: pre-call-transform
-      why: tool order, content injection, the code execution tool, litellm_metadata or the container removal is wrong or untested
+      why: tool order, content injection, the code execution tool, the stored skills state or the container removal is wrong or untested
       run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::wiring::tests::pre_call_transform/)'
     - id: request-data
       why: the post-call request record is built wrong from the request map
@@ -230,11 +232,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/skills-pre-call/other-call-type-ignored.yaml
   - tools/oracle/cases/helpers/skills-pre-call/skills-not-a-list.yaml
 deviations:
-  - what: _skill_files in litellm_metadata holds each file as a base64 string, not raw bytes.
-    why: betterlite's request map is JSON and cannot hold bytes; the post-call decodes them again, so the sandbox gets the same files.
-  - what: A _skill_files entry that is not a valid base64 string is dropped with a warning when the post-call reads it.
-    why: LiteLLM hands a client-sent string to the sandbox as it is; betterlite's typed sandbox takes bytes, and only the pre-call writes this map in normal use.
-  - what: A non-array tools value or a non-object litellm_metadata answers 400 naming the field.
+  - what: The code execution flag and the skill files stay in the hook's request-scoped state. They are not written into litellm_metadata, and the post-call ignores any such keys a client sends.
+    why: LiteLLM writes them into litellm_metadata and reads them back, also from client metadata (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L398-L405), and strips nothing (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L376-L384), so a client could start the sandbox loop with its own files.
+  - what: A non-array tools value answers 400 naming the field.
     why: LiteLLM raises AttributeError or TypeError there and answers 500; docs/compatibility.md rejects a value of the wrong declared type with a 400.
   - what: The proxy hook edits the request map in place and returns PreCallReturn::Unchanged instead of returning the map.
     why: LiteLLM returns the same dict it mutated, so the request that goes on is identical.
@@ -256,7 +256,7 @@ pitfalls:
   - A skill fetched twice adds two tools, but its files land once under the same skill_id key.
   - The debug count is the raw skills array length, non-object entries included, while the summary line counts only .py paths of the files map.
   - The continuation call sends only model, messages, tools and max_tokens, with no api_key or api_base from the deployment, so it resolves credentials like a plain SDK call.
-  - LiteLLM reads _litellm_code_execution_enabled and _skill_files from the client-supplied metadata too, so skills_request_data must read both maps exactly as B3395's record expects.
+  - LiteLLM reads _litellm_code_execution_enabled and _skill_files from the client-supplied metadata too; betterlite does not, so a test must send both keys in litellm_metadata and metadata and see the loop stay off.
 review_level: security
 budget:
   max_changed_lines: 1500
