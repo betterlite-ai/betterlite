@@ -1,0 +1,13 @@
+id: B9821
+milestone: M8 platform
+title: Server SDK callback list and the interception callback names
+status: todo
+depends_on: [B9820, B8742, B8656, B8610, B1100, B5367, B1118, B189]
+file: tasks/B9821-sdk-callback-list.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

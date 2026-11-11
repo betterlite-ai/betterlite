@@ -137,7 +137,7 @@ out_of_scope:
   - Compression failure handling, timeout resolution and request headers (handle_compress_failure in headroom_failure, resolve_timeout and request_headers in headroom_settings) provided by B3773.
   - Tool call extraction (has_tool_with_name, get_tool_calls_from_response) provided by B226.
   - Retrieval hook implementation (_call_retrieve, async_should_run_agentic_loop, async_build_agentic_loop_plan) owned by B3775.
-  - Initialization from guardrail registry (owned by B107).
+  - Initialization from guardrail registry (owned by B8217 and B8521).
   - ">-
     CustomGuardrail base class lifecycle (CustomGuardrail.__init__, add_standard_logging_guardrail_information_to_request_data, update_in_memory_litellm_params base implementation, log_guardrail_information decorator):
     Framework base class for guardrail integration; owned by B5471 (construction and updates) and B3664 (invocation logging). Required for initialization and lifecycle; infrastructure dependency."
