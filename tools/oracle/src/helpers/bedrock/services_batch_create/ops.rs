@@ -18,24 +18,19 @@ use super::support::{DEFAULT_UUID, epoch, fixture_credentials, region_inputs, ru
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 pub(super) fn run(input: &Input) -> HelperResult {
-    match input.operation {
+    let call: fn(&Scenario) -> Value = match input.operation {
+        Operation::MetadataSanitization => return metadata_operation(input),
+        Operation::TitanBatchTokenUsage => return titan_operation(input),
+        Operation::CreateSignedRequest => signed_call,
+        Operation::CreateStatusMapping | Operation::CreateReplyDefaults => reply_call,
         Operation::BatchRoleRequired
         | Operation::OutputBucketFallback
         | Operation::TagsValidation
         | Operation::Input24hWindow
         | Operation::GeneratedJobName
-        | Operation::OwnerAndKms => build_operation(input),
-        Operation::CreateSignedRequest => signed_operation(input),
-        Operation::CreateStatusMapping | Operation::CreateReplyDefaults => reply_operation(input),
-        Operation::MetadataSanitization => metadata_operation(input),
-        Operation::TitanBatchTokenUsage => titan_operation(input),
-    }
-}
-
-fn build_operation(input: &Input) -> HelperResult {
-    Ok(json!({
-        "calls": input.scenarios.iter().map(build_call).collect::<Vec<Value>>()
-    }))
+        | Operation::OwnerAndKms => build_call,
+    };
+    Ok(json!({"calls": input.scenarios.iter().map(call).collect::<Vec<Value>>()}))
 }
 
 fn build_call(scenario: &Scenario) -> Value {
@@ -71,12 +66,6 @@ fn create_input<'text>(
     })
 }
 
-fn signed_operation(input: &Input) -> HelperResult {
-    Ok(json!({
-        "calls": input.scenarios.iter().map(signed_call).collect::<Vec<Value>>()
-    }))
-}
-
 fn signed_call(scenario: &Scenario) -> Value {
     let Some(credentials) = scenario.credentials.as_ref() else {
         return json!({"failed": true});
@@ -89,11 +78,11 @@ fn signed_call(scenario: &Scenario) -> Value {
     let Ok(runtime) = runtime() else {
         return json!({"failed": true});
     };
-    let signed = runtime.block_on(transform_create_batch_request(
+    let outcome = runtime.block_on(transform_create_batch_request(
         input,
         |_settings, _region| ready(Ok::<Credentials, CredentialError>(held.clone())),
     ));
-    match signed {
+    match outcome {
         Ok(signed) => json!({
             "failed": false,
             "method": signed.method,
@@ -103,12 +92,6 @@ fn signed_call(scenario: &Scenario) -> Value {
         }),
         Err(_error) => json!({"failed": true}),
     }
-}
-
-fn reply_operation(input: &Input) -> HelperResult {
-    Ok(json!({
-        "calls": input.scenarios.iter().map(reply_call).collect::<Vec<Value>>()
-    }))
 }
 
 fn reply_call(scenario: &Scenario) -> Value {
