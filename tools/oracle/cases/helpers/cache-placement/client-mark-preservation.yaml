@@ -1,0 +1,41 @@
+kind: helper
+name: cache-placement-client-marks
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages: [{role: user, content: hello, cache_control: {type: ephemeral, ttl: 1h}}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: hello, prompt_cache_breakpoint: {mode: explicit}}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: text, text: one, cache_control: {type: ephemeral}}, {type: text, text: two}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: [{type: text, text: one, prompt_cache_breakpoint: {mode: explicit}}, {type: text, text: two}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: hello, cache_control: null}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: [{type: text, text: one, cache_control: null}, {type: text, text: two}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: [{type: text, text: one, cache_control: null}, {type: text, text: two}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+        openai_dialect: true
+      - messages: [{role: user, content: hello, cache_control: {type: ephemeral}}, {role: user, content: world}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 2
+      - messages: [{role: user, content: hello, cache_control: {type: ephemeral}}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 1
+      - messages: [{role: user, content: hello, cache_control: {}}]
+        points: [{location: message, role: user, index: null, control: {type: ephemeral, ttl: 1h}}]
+        max_blocks: 4
+env: {}
+compare: {ignore: []}
