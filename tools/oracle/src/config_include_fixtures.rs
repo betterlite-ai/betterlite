@@ -7,11 +7,11 @@ use thiserror::Error;
 
 use crate::OracleError;
 
-pub(crate) const MAX_FILES: usize = 16;
-pub(crate) const MAX_BODY_BYTES: usize = 64 * 1024;
-pub(crate) const MAX_TOTAL_BYTES: usize = 256 * 1024;
-pub(crate) const MAX_DESTINATION_BYTES: usize = 512;
-pub(crate) const MAX_COMPONENTS: usize = 8;
+const MAX_FILES: usize = 16;
+const MAX_BODY_BYTES: usize = 64 * 1024;
+const MAX_TOTAL_BYTES: usize = 256 * 1024;
+const MAX_DESTINATION_BYTES: usize = 512;
+const MAX_COMPONENTS: usize = 8;
 
 #[derive(Debug, Error)]
 pub enum ConfigFixtureError {
@@ -138,7 +138,7 @@ fn unsafe_reason(destination: &str) -> Option<&'static str> {
     }
     let components = destination.split('/').collect::<Vec<_>>();
     if components.len() > MAX_COMPONENTS {
-        return Some("it has more than eight path components");
+        return Some("it has too many path components");
     }
     for component in components {
         match Path::new(component).components().next() {
