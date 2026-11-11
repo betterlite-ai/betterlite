@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from importlib import import_module
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
@@ -166,6 +167,17 @@ class Provider:
         return handler
 
 
+def first_argument(record: logging.LogRecord, text: str) -> JsonValue:
+    args = record.args
+    if not args or not (record.levelno == logging.DEBUG or text.startswith(API_WARNING)):
+        return None
+    match args:
+        case Mapping():
+            return JSON.validate_json(pydantic_core.to_json(args))
+        case tuple():
+            return JSON.validate_json(pydantic_core.to_json(args[0]))
+
+
 class Events(logging.Filter):
     def __init__(self) -> None:
         super().__init__()
@@ -176,25 +188,23 @@ class Events(logging.Filter):
     @override
     def filter(self, record: logging.LogRecord) -> bool:
         text = record.getMessage()
-        match record.args:
-            case (first, *_) if record.levelno == logging.DEBUG or text.startswith(API_WARNING):
-                value = JSON.validate_json(pydantic_core.to_json(first))
-            case _:
-                value = None
-        if record.levelno == logging.DEBUG:
-            for prefix, subject in DEBUG_SUBJECTS.items():
-                if text.startswith(prefix):
-                    self.debugs.append({"subject": subject, "value": value})
-        elif record.levelno == logging.ERROR:
-            for prefix, subject in ERROR_SUBJECTS.items():
-                if text.startswith(prefix):
-                    self.errors.append({"subject": subject})
-        elif text.startswith(API_WARNING):
+        value = first_argument(record, text)
+        for prefix, subject in DEBUG_SUBJECTS.items():
+            if record.levelno == logging.DEBUG and text.startswith(prefix):
+                self.debugs.append({"subject": subject, "value": value})
+        for prefix, subject in ERROR_SUBJECTS.items():
+            if record.levelno == logging.ERROR and text.startswith(prefix):
+                self.errors.append({"subject": subject})
+        if record.levelno == logging.WARNING:
+            self.warn(text, value)
+        return True
+
+    def warn(self, text: str, value: JsonValue) -> None:
+        if text.startswith(API_WARNING):
             self.warnings.append({"subject": "Bedrock CountTokens API error", "status": value})
         elif text.startswith(GENERIC_WARNING):
             subject = "Error calling Bedrock CountTokens API"
             self.warnings.append({"subject": subject, "status": None})
-        return True
 
 
 def error_message_kind(message: str | None, status: int | None) -> str | None:
