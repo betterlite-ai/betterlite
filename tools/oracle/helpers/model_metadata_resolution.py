@@ -1,7 +1,8 @@
+import io
 import json
 import os
 from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from typing import NotRequired, TypeAlias, TypedDict, cast
 from unittest import mock
 
@@ -179,6 +180,7 @@ def metadata_observation(query: Query, model: str, provider: str | None) -> Json
             LemonadeChatConfig, "get_model_info", dynamic_handler("lemonade", dynamic)
         ),
         mock.patch.object(litellm, "module_level_client", client),
+        redirect_stdout(io.StringIO()),
     ):
         answer: Object
         try:
@@ -206,7 +208,9 @@ def query_observation(scenario: str, fixture: Object, query: Object) -> Json:
     provider = optional_text(query, "custom_llm_provider")
     with installed(fixture):
         if scenario == "potential_names":
-            names = _get_potential_model_names(model=model, custom_llm_provider=provider)
+            # get_llm_provider prints its provider list to stdout when it cannot infer one
+            with redirect_stdout(io.StringIO()):
+                names = _get_potential_model_names(model=model, custom_llm_provider=provider)
             return {"result": json_value(names)}
         return metadata_observation(cast(Query, query), model, provider)
 
