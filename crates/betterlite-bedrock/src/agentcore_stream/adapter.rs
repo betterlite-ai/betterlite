@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::str;
 use std::sync::Arc;
 
@@ -13,7 +14,7 @@ use crate::agentcore_response::error::BedrockFailure;
 use crate::agentcore_response::json::parse_json_reply;
 use crate::agentcore_stream::transport::{Chunks, HandlerKind, PostRequest, StreamHandler};
 use crate::agentcore_stream::{
-    AgentCoreStream, AgentCoreStreamError, FIRST_RESPONSE, StreamDeps, StreamPostCall,
+    AgentCoreStream, AgentCoreStreamError, FIRST_RESPONSE, PROVIDER, StreamDeps, StreamPostCall,
     StreamRequest,
 };
 use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput, ErrorReply, ResponseBody};
@@ -86,10 +87,7 @@ pub async fn open(
 ) -> Result<AgentCoreStream, AgentCoreStreamError> {
     let handler = handler_for(deps, kind);
     let url = Url::parse(request.api_base).map_err(AgentCoreStreamError::Url)?;
-    let body = match request.signed_json_body {
-        Some(bytes) if !bytes.is_empty() => bytes.to_vec(),
-        Some(_) | None => serde_json::to_vec(request.data).map_err(AgentCoreStreamError::Encode)?,
-    };
+    let body = request_body(request)?;
     let head = handler
         .post(PostRequest {
             url,
@@ -116,11 +114,22 @@ pub async fn open(
             &content,
         ));
     }
-    Ok(AgentCoreStream::streaming(
-        request.model,
-        Arc::clone(&deps.ids),
-        chunks,
-    ))
+    Ok(AgentCoreStream {
+        provider: PROVIDER,
+        model: request.model.to_owned(),
+        ids: Arc::clone(&deps.ids),
+        chunks: Some(chunks),
+        buffer: Vec::new(),
+        pending: VecDeque::new(),
+        failure: None,
+    })
+}
+
+fn request_body(request: &StreamRequest<'_>) -> Result<Vec<u8>, AgentCoreStreamError> {
+    match request.signed_json_body {
+        Some(bytes) if !bytes.is_empty() => Ok(bytes.to_vec()),
+        Some(_) | None => serde_json::to_vec(request.data).map_err(AgentCoreStreamError::Encode),
+    }
 }
 
 async fn check_status(

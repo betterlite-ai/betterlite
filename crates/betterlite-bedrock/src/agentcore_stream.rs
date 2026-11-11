@@ -8,7 +8,6 @@ use std::sync::Arc;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::stream::chunk::{Choice, Chunk, Delta};
 use futures_util::StreamExt as _;
 use http::HeaderMap;
@@ -94,21 +93,10 @@ pub struct AgentCoreStream {
     pub chunks: Option<Chunks>,
     pub buffer: Vec<u8>,
     pub pending: VecDeque<Chunk>,
+    pub failure: Option<AgentCoreStreamError>,
 }
 
 impl AgentCoreStream {
-    #[must_use]
-    pub fn streaming(model: &str, ids: Arc<dyn IdSource>, chunks: Chunks) -> Self {
-        Self {
-            provider: PROVIDER,
-            model: model.to_owned(),
-            ids,
-            chunks: Some(chunks),
-            buffer: Vec::new(),
-            pending: VecDeque::new(),
-        }
-    }
-
     #[must_use]
     pub fn ready(model: &str, ids: Arc<dyn IdSource>, content: &str) -> Self {
         let mut pending = VecDeque::new();
@@ -125,6 +113,7 @@ impl AgentCoreStream {
             chunks: None,
             buffer: Vec::new(),
             pending,
+            failure: None,
         }
     }
 
@@ -133,38 +122,32 @@ impl AgentCoreStream {
             if let Some(chunk) = self.pending.pop_front() {
                 return Ok(Some(chunk));
             }
-            let Some(events) = self.next_events().await? else {
-                return Ok(None);
-            };
-            for event in events {
-                self.pending
-                    .push_back(chunk_for(&self.model, self.ids.as_ref(), event));
+            if let Some(error) = self.failure.take() {
+                return Err(error);
             }
-        }
-    }
-
-    async fn next_events(&mut self) -> Result<Option<Vec<LineEvent>>, AgentCoreStreamError> {
-        let next = {
             let Some(chunks) = self.chunks.as_mut() else {
                 return Ok(None);
             };
-            chunks.next().await
-        };
-        match next {
-            Some(Ok(bytes)) => match line::decode_agentcore_line(&mut self.buffer, &bytes) {
-                Ok(events) => Ok(Some(events)),
-                Err(source) => {
-                    self.chunks = None;
-                    Err(AgentCoreStreamError::Line(source))
+            let mut events = Vec::new();
+            let failure = match chunks.next().await {
+                Some(Ok(bytes)) => {
+                    line::decode_agentcore_line(&mut self.buffer, &bytes, &mut events)
+                        .err()
+                        .map(AgentCoreStreamError::Line)
                 }
-            },
-            Some(Err(source)) => {
+                Some(Err(source)) => Some(AgentCoreStreamError::Body(source)),
+                None => {
+                    self.chunks = None;
+                    None
+                }
+            };
+            if failure.is_some() {
                 self.chunks = None;
-                Err(AgentCoreStreamError::Body(source))
+                self.failure = failure;
             }
-            None => {
-                self.chunks = None;
-                Ok(None)
+            for event in events {
+                self.pending
+                    .push_back(chunk_for(&self.model, self.ids.as_ref(), event));
             }
         }
     }
@@ -190,16 +173,6 @@ fn chunk_for(model: &str, ids: &dyn IdSource, event: LineEvent) -> Chunk {
         ),
         LineEvent::MessageStop => (Delta::default(), Some("stop".to_owned()), None),
     };
-    chunk(model, ids, delta, finish_reason, usage)
-}
-
-fn chunk(
-    model: &str,
-    ids: &dyn IdSource,
-    delta: Delta,
-    finish_reason: Option<String>,
-    usage: Option<ChatUsage>,
-) -> Chunk {
     Chunk {
         id: format!("chatcmpl-{}", ids.next_id()),
         object: CHUNK_OBJECT.to_owned(),
@@ -216,5 +189,3 @@ fn chunk(
         service_tier: None,
     }
 }
-
-mod tests;

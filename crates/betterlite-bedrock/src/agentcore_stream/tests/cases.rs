@@ -316,6 +316,40 @@ fn bad_json_skipped() {
             LineError::DeltaTextNotString
         ));
     }
+    bad_json_chunks_before_error();
+}
+
+fn bad_json_chunks_before_error() {
+    let first = r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"first"}}}}"#;
+    let bad_usage = r#"data: {"event":{"metadata":{"usage":5}}}"#;
+    let after = r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"after"}}}}"#;
+    let one_read = format!("{first}\n{bad_usage}\n{after}\n");
+    for outcome in both(&Scenario::sse(&[&one_read]), &ids(3)) {
+        assert_eq!(contents(&outcome.before_error), ["first"]);
+        assert!(matches!(
+            line_error(outcome.emitted.unwrap_err()),
+            LineError::UsageNotObject
+        ));
+    }
+    let same_line =
+        r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"kept"}},"metadata":{"usage":5}}}"#;
+    let one_line = format!("{same_line}\n");
+    for outcome in both(&Scenario::sse(&[&one_line]), &ids(2)) {
+        assert_eq!(contents(&outcome.before_error), ["kept"]);
+        assert!(matches!(
+            line_error(outcome.emitted.unwrap_err()),
+            LineError::UsageNotObject
+        ));
+    }
+    let bad_delta = r#"data: {"event":{"contentBlockDelta":{"delta":5}}}"#;
+    let delta_read = format!("{first}\n{bad_delta}\n");
+    for outcome in both(&Scenario::sse(&[&delta_read]), &ids(2)) {
+        assert_eq!(contents(&outcome.before_error), ["first"]);
+        assert!(matches!(
+            line_error(outcome.emitted.unwrap_err()),
+            LineError::DeltaNotObject
+        ));
+    }
 }
 
 fn fresh_id_created_zero() {
@@ -496,26 +530,47 @@ fn stream_http_errors() {
 
 #[test]
 fn agentcore_stream_bounded_inputs() {
-    let long_read = "x".repeat(MAX_LINE_BYTES.saturating_add(1));
+    let mut events = Vec::new();
     let mut buffer = Vec::new();
-    let error = decode_agentcore_line(&mut buffer, long_read.as_bytes()).unwrap_err();
+    let long_read = "x".repeat(MAX_LINE_BYTES.saturating_add(1));
+    let error = decode_agentcore_line(&mut buffer, long_read.as_bytes(), &mut events).unwrap_err();
     assert!(matches!(error, LineError::TooLarge { .. }));
     let mut exact = Vec::new();
     let boundary = "x".repeat(MAX_LINE_BYTES);
-    assert!(
-        decode_agentcore_line(&mut exact, boundary.as_bytes())
-            .unwrap()
-            .is_empty()
-    );
-    let mut complete = String::from("data: ");
-    complete.push_str(&"x".repeat(MAX_LINE_BYTES));
-    complete.push('\n');
-    let mut complete_buffer = Vec::new();
-    assert!(
-        decode_agentcore_line(&mut complete_buffer, complete.as_bytes())
-            .unwrap()
-            .is_empty()
-    );
+    decode_agentcore_line(&mut exact, boundary.as_bytes(), &mut events).unwrap();
+    let mut complete = Vec::new();
+    let over_line = format!("{}\n", "x".repeat(MAX_LINE_BYTES.saturating_add(1)));
+    let error =
+        decode_agentcore_line(&mut complete, over_line.as_bytes(), &mut events).unwrap_err();
+    assert!(matches!(error, LineError::TooLarge { .. }));
+    let mut at_limit = Vec::new();
+    let exact_line = format!("{}\n", "x".repeat(MAX_LINE_BYTES));
+    decode_agentcore_line(&mut at_limit, exact_line.as_bytes(), &mut events).unwrap();
+    assert!(events.is_empty());
+}
+
+#[rstest]
+fn agentcore_stream_line_cap(#[values(HandlerKind::Sync, HandlerKind::Async)] kind: HandlerKind) {
+    let head = "x".repeat(MAX_LINE_BYTES);
+    let at_limit = Scenario::sse(&[&head, "\n"]);
+    assert!(run(kind, &at_limit, &ids(1)).emitted.unwrap().is_empty());
+    let split = Scenario::sse(&[&head, "x\n"]);
+    let error = run(kind, &split, &ids(1)).emitted.unwrap_err();
+    assert!(matches!(
+        line_error(error),
+        LineError::TooLarge {
+            limit: MAX_LINE_BYTES
+        }
+    ));
+    let first = r#"data: {"event":{"contentBlockDelta":{"delta":{"text":"first"}}}}"#;
+    let before = format!("{first}\n{head}");
+    let complete = Scenario::sse(&[&before, "x\n"]);
+    let outcome = run(kind, &complete, &ids(1));
+    assert_eq!(contents(&outcome.before_error), ["first"]);
+    assert!(matches!(
+        line_error(outcome.emitted.unwrap_err()),
+        LineError::TooLarge { .. }
+    ));
 }
 
 #[rstest]

@@ -16,11 +16,11 @@ fn replays_the_bedrock_services_agentcore_stream_corpus() {
             let bytes = fs::read(&path)?;
             let name = path.file_name().unwrap().to_str().unwrap().to_owned();
             let mut buffer = Vec::new();
-            let outcome = decode_agentcore_line(&mut buffer, &bytes);
+            let mut events = Vec::new();
+            let outcome = decode_agentcore_line(&mut buffer, &bytes, &mut events);
             let expected_ok = !name.starts_with("invalid-");
             assert_eq!(outcome.is_ok(), expected_ok, "{name}");
             if expected_ok {
-                let events = outcome.unwrap();
                 let silent = name.starts_with("malformed-") || name.starts_with("truncated-");
                 assert_eq!(events.is_empty(), silent, "{name}");
                 if name.starts_with("valid-") {

@@ -12,3 +12,6 @@ deviations:
   - what: The fake-stream JSON body and the body read for a non-200 error message are capped at 16 MiB; a larger body fails with a typed error.
     why: LiteLLM reads those streamed responses without a bound, while an untrusted provider body needs a limit in a gateway.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L694-L695
+  - what: A stream line longer than 1 MiB, whether it arrives in one read or in several, fails the stream with a typed error after the events decoded before it were delivered.
+    why: LiteLLM buffers a line without a bound, while an untrusted provider line needs a limit in a gateway. The limit applies to complete lines too, so the answer does not depend on how the network splits reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L539-L547

@@ -38,39 +38,35 @@ pub enum LineError {
     UsageNegative { field: &'static str },
 }
 
+const TOO_LARGE: LineError = LineError::TooLarge {
+    limit: MAX_LINE_BYTES,
+};
+
 pub fn decode_agentcore_line(
     buffer: &mut Vec<u8>,
     bytes: &[u8],
-) -> Result<Vec<LineEvent>, LineError> {
-    if bytes.len() > MAX_LINE_BYTES && !bytes.contains(&b'\n') {
-        return Err(LineError::TooLarge {
-            limit: MAX_LINE_BYTES,
-        });
-    }
+    events: &mut Vec<LineEvent>,
+) -> Result<(), LineError> {
     buffer.extend_from_slice(bytes);
-    let mut events = Vec::new();
     let mut start = 0_usize;
     while let Some(offset) = buffer
         .get(start..)
         .and_then(|rest| rest.iter().position(|byte| *byte == b'\n'))
     {
-        let end = start.checked_add(offset).ok_or(LineError::TooLarge {
-            limit: MAX_LINE_BYTES,
-        })?;
+        let end = start.checked_add(offset).ok_or(TOO_LARGE)?;
         if let Some(line) = buffer.get(start..end) {
-            decode_line(line, &mut events)?;
+            if line.len() > MAX_LINE_BYTES {
+                return Err(TOO_LARGE);
+            }
+            decode_line(line, events)?;
         }
-        start = end.checked_add(1).ok_or(LineError::TooLarge {
-            limit: MAX_LINE_BYTES,
-        })?;
+        start = end.checked_add(1).ok_or(TOO_LARGE)?;
     }
     buffer.drain(..start);
     if buffer.len() > MAX_LINE_BYTES {
-        return Err(LineError::TooLarge {
-            limit: MAX_LINE_BYTES,
-        });
+        return Err(TOO_LARGE);
     }
-    Ok(events)
+    Ok(())
 }
 
 fn decode_line(raw: &[u8], events: &mut Vec<LineEvent>) -> Result<(), LineError> {

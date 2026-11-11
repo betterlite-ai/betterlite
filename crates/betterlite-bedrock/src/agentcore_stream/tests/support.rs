@@ -253,6 +253,7 @@ pub(super) struct Outcome {
     pub(super) posts: Vec<RecordedRequest>,
     pub(super) post_calls: Vec<LoggedCall>,
     pub(super) remaining_ids: usize,
+    pub(super) before_error: Vec<Chunk>,
     pub(super) emitted: Result<Vec<Chunk>, AgentCoreStreamError>,
 }
 
@@ -317,12 +318,16 @@ impl Fixture {
 pub(super) fn run(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Outcome {
     let fixture = Fixture::build(kind, scenario, ids);
     let opened = fixture.open(kind, scenario);
-    let (provider, emitted) = match opened {
+    let (provider, before_error, emitted) = match opened {
         Ok(mut stream) => {
             let provider = stream.provider;
-            (Some(provider), drain(&mut stream))
+            let (chunks, failure) = drain(&mut stream);
+            match failure {
+                None => (Some(provider), Vec::new(), Ok(chunks)),
+                Some(error) => (Some(provider), chunks, Err(error)),
+            }
         }
-        Err(error) => (None, Err(error)),
+        Err(error) => (None, Vec::new(), Err(error)),
     };
     let default_posts = fixture.default.posts();
     let handler = if default_posts.is_empty() {
@@ -340,18 +345,19 @@ pub(super) fn run(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Outco
         posts,
         post_calls: fixture.logger.calls(),
         remaining_ids: fixture.id_source.remaining(),
+        before_error,
         emitted,
     }
 }
 
-fn drain(stream: &mut AgentCoreStream) -> Result<Vec<Chunk>, AgentCoreStreamError> {
+fn drain(stream: &mut AgentCoreStream) -> (Vec<Chunk>, Option<AgentCoreStreamError>) {
     block_on(async {
         let mut chunks = Vec::new();
         loop {
             match stream.next_chunk().await {
                 Ok(Some(chunk)) => chunks.push(chunk),
-                Ok(None) => break Ok(chunks),
-                Err(error) => break Err(error),
+                Ok(None) => break (chunks, None),
+                Err(error) => break (chunks, Some(error)),
             }
         }
     })
