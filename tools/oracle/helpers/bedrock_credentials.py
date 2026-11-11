@@ -8,6 +8,7 @@ from typing import TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
+from litellm._logging import verbose_logger
 from litellm.llms.bedrock import base_aws_llm
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.types.llms.bedrock import AwsAuthParams, AwsSessionTag
@@ -232,8 +233,8 @@ def harness(case: Params) -> Generator[FakeSts, None, None]:
             patch.object(base_aws_llm, "datetime", FixedClock(now)),
             patch.object(base_aws_llm, "get_secret", return_value=case.get("resolved_token")),
             patch.object(base_aws_llm, "BEDROCK_MAX_POLICY_SIZE", 75),
-            patch.object(base_aws_llm.verbose_logger, "warning", new=sts.warnings.warning),
-            patch.object(base_aws_llm.verbose_logger, "error", new=sts.warnings.error),
+            patch.object(verbose_logger, "warning", new=sts.warnings.warning),
+            patch.object(verbose_logger, "error", new=sts.warnings.error),
         ):
             yield sts
 

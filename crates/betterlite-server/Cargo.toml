@@ -12,7 +12,9 @@ axum.workspace = true
 base64 = "0.23.1"
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-billing = { path = "../betterlite-billing" }
+betterlite-cache = { path = "../betterlite-cache" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
