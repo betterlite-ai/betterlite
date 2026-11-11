@@ -49,6 +49,9 @@ pub fn build_base_response(
     chunks: &StreamedChunks,
 ) -> Result<BaseResponse, StreamBaseAssemblyError> {
     let first = &chunks.first_chunk;
+    if first.object.is_none() {
+        return Err(StreamBaseAssemblyError::MissingObject);
+    }
     let created = first
         .created
         .ok_or(StreamBaseAssemblyError::MissingCreated)?;
@@ -56,11 +59,6 @@ pub fn build_base_response(
         .model
         .as_deref()
         .ok_or(StreamBaseAssemblyError::MissingModel)?;
-    let raw_finish_reason = finish_reason(&chunks.chunks);
-    let mapped = mapped_finish_reason(&raw_finish_reason).to_owned();
-    let provider_specific_fields = (mapped != raw_finish_reason).then_some(ChoiceProviderFields {
-        native_finish_reason: raw_finish_reason,
-    });
     let mut response = BaseResponse {
         id: chunk_id(&chunks.chunks),
         object: RESPONSE_OBJECT.to_owned(),
@@ -68,15 +66,7 @@ pub fn build_base_response(
         model: model_from_chunks(&chunks.chunks, first_model),
         system_fingerprint: first.system_fingerprint.clone(),
         service_tier: service_tier_from_chunks(&chunks.chunks),
-        choices: vec![BaseChoice {
-            index: 0,
-            message: BaseMessage {
-                role: role_from_chunks(&chunks.chunks),
-                content: Some(String::new()),
-            },
-            finish_reason: mapped,
-            provider_specific_fields,
-        }],
+        choices: vec![base_choice(&chunks.chunks)],
         usage: Usage::default(),
         hidden_params: JsonObject::new(),
     };
@@ -88,6 +78,24 @@ pub fn build_base_response(
         );
     }
     Ok(response)
+}
+
+// The one base choice, with the finish reason mapped like Choices and the provider's raw value beside it.
+fn base_choice(chunks: &[Chunk]) -> BaseChoice {
+    let raw_finish_reason = finish_reason(chunks);
+    let mapped = mapped_finish_reason(&raw_finish_reason).to_owned();
+    let provider_specific_fields = (mapped != raw_finish_reason).then_some(ChoiceProviderFields {
+        native_finish_reason: raw_finish_reason,
+    });
+    BaseChoice {
+        index: 0,
+        message: BaseMessage {
+            role: role_from_chunks(chunks),
+            content: Some(String::new()),
+        },
+        finish_reason: mapped,
+        provider_specific_fields,
+    }
 }
 
 pub fn apply_hidden_params(response: &mut BaseResponse, chunk: Option<&Chunk>) {

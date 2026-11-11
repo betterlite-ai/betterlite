@@ -13,6 +13,8 @@ mod tests;
 pub enum StreamBaseAssemblyError {
     #[error("the chunk list is empty")]
     NoChunks,
+    #[error("the first chunk has no object")]
+    MissingObject,
     #[error("the first chunk has no created timestamp")]
     MissingCreated,
     #[error("the first chunk has no model")]

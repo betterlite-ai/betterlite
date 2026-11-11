@@ -147,8 +147,10 @@ def response_case(arguments: dict[str, Json]) -> Json:
     chunks = build_chunks(cast(list[dict[str, Json]], arguments.get("chunks", [])))
     if not chunks:
         return {"ok": False, "error_type": "empty_chunks"}
+    processor = stream_processor(chunks)
     try:
-        response = stream_processor(chunks).build_base_response(chunks)
+        # stream_chunk_builder passes ChunkProcessor.chunks, so the sorted order reaches the builder
+        response = processor.build_base_response(processor.chunks)
     except KeyError:
         return {"ok": False, "error_type": "missing_first_field"}
     return response_view(response)

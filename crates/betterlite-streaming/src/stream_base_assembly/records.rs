@@ -9,6 +9,7 @@ pub struct Chunk {
     // LiteLLM keeps _hidden_params only while it is a dict; null and other values act absent
     #[serde(rename = "_hidden_params")]
     pub hidden_params: Option<JsonValue>,
+    pub object: Option<String>,
     pub id: Option<String>,
     pub created: Option<i64>,
     pub model: Option<String>,

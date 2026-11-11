@@ -128,23 +128,25 @@ fn sort_needs_first_created_at() {
 
 fn base_metadata() {
     base_metadata_identity();
+    base_metadata_sorted_first();
     base_metadata_defaults();
     base_needs_first_fields();
 }
 
 fn base_metadata_identity() {
     let response = base_for(
-        r#"[{"id":"","created":7,"model":"orig","system_fingerprint":"fp","choices":[]},
-            {"id":"id2","model":"real","choices":[{"delta":{"role":"user"},"finish_reason":null}]},
-            {"model":"real","service_tier":"t1","choices":[{"delta":{"role":"tool"}}]},
-            {"service_tier":""}]"#,
+        r#"[{"object":"chat.completion.chunk","id":"","created":7,"model":"orig","system_fingerprint":"fp","choices":[]},
+            {"object":"chat.completion.chunk","id":"id2","model":"real-1","choices":[{"delta":{"role":"user"},"finish_reason":null}]},
+            {"object":"chat.completion.chunk","id":"id3","model":"real-2","service_tier":"t1","choices":[{"delta":{"role":"tool"}}]},
+            {"object":"chat.completion.chunk","service_tier":"t2"},
+            {"object":"chat.completion.chunk","service_tier":""}]"#,
     );
     assert_eq!(response.id, "id2");
     assert_eq!(response.object, "chat.completion");
     assert_eq!(response.created, 7);
-    assert_eq!(response.model, "real");
+    assert_eq!(response.model, "real-1");
     assert_eq!(response.system_fingerprint.as_deref(), Some("fp"));
-    assert_eq!(response.service_tier.as_deref(), Some("t1"));
+    assert_eq!(response.service_tier.as_deref(), Some("t2"));
     assert_eq!(
         response.choices,
         vec![BaseChoice {
@@ -160,16 +162,30 @@ fn base_metadata_identity() {
     assert_eq!(response.usage, Usage::default());
 }
 
+fn base_metadata_sorted_first() {
+    // the sort reorders the chunks, but object, created, model source and fingerprint come from the original first
+    let response = base_for(
+        r#"[{"object":"chat.completion.chunk","id":"a","created":7,"model":"orig","system_fingerprint":"fp","choices":[],"_hidden_params":{"created_at":2}},
+            {"object":"chat.completion.chunk","id":"b","created":9,"model":"orig2","choices":[],"_hidden_params":{"created_at":1}}]"#,
+    );
+    assert_eq!(response.created, 7);
+    assert_eq!(response.system_fingerprint.as_deref(), Some("fp"));
+    assert_eq!(response.model, "orig2");
+    assert_eq!(response.id, "b");
+    assert_eq!(response.hidden_params, object(r#"{"created_at":2}"#));
+}
+
 fn base_metadata_defaults() {
     // the first chunk with choices wins and only its first choice is read; an empty role falls back
     let role = base_for(
-        r#"[{"created":1,"model":"m","choices":[]},
-            {"created":1,"model":"m","choices":[{"delta":{"role":""}},{"delta":{"role":"tool"}}]},
-            {"created":1,"model":"m","choices":[{"delta":{"role":"user"}}]}]"#,
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"m","choices":[]},
+            {"object":"chat.completion.chunk","created":1,"model":"m","choices":[{"delta":{"role":""}},{"delta":{"role":"tool"}}]},
+            {"object":"chat.completion.chunk","created":1,"model":"m","choices":[{"delta":{"role":"user"}}]}]"#,
     );
     assert_eq!(role.choices[0].message.role, "assistant");
 
-    let defaults = base_for(r#"[{"created":1,"model":"orig","choices":[]}]"#);
+    let defaults =
+        base_for(r#"[{"object":"chat.completion.chunk","created":1,"model":"orig","choices":[]}]"#);
     assert_eq!(defaults.id, "");
     assert_eq!(defaults.model, "orig");
     assert_eq!(defaults.created, 1);
@@ -177,19 +193,33 @@ fn base_metadata_defaults() {
     assert_eq!(defaults.service_tier, None);
 
     // an empty model in a later chunk is skipped in favour of the original model
-    let blank_model =
-        base_for(r#"[{"created":1,"model":"orig","choices":[]},{"model":"","choices":[]}]"#);
+    let blank_model = base_for(
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"orig","choices":[]},{"model":"","choices":[]}]"#,
+    );
     assert_eq!(blank_model.model, "orig");
 }
 
 fn base_needs_first_fields() {
-    let no_created = StreamedChunks::new(chunks(r#"[{"model":"orig","choices":[]}]"#)).unwrap();
+    let no_object =
+        StreamedChunks::new(chunks(r#"[{"created":1,"model":"orig","choices":[]}]"#)).unwrap();
+    assert_eq!(
+        build_base_response(&no_object),
+        Err(StreamBaseAssemblyError::MissingObject)
+    );
+
+    let no_created = StreamedChunks::new(chunks(
+        r#"[{"object":"chat.completion.chunk","model":"orig","choices":[]}]"#,
+    ))
+    .unwrap();
     assert_eq!(
         build_base_response(&no_created),
         Err(StreamBaseAssemblyError::MissingCreated)
     );
 
-    let no_model = StreamedChunks::new(chunks(r#"[{"created":1,"choices":[]}]"#)).unwrap();
+    let no_model = StreamedChunks::new(chunks(
+        r#"[{"object":"chat.completion.chunk","created":1,"choices":[]}]"#,
+    ))
+    .unwrap();
     assert_eq!(
         build_base_response(&no_model),
         Err(StreamBaseAssemblyError::MissingModel)
@@ -204,7 +234,7 @@ fn finish_and_hidden() {
 fn finish_reason_boundaries() {
     // the last non-None first-choice finish reason is mapped like Choices does, keeping the raw value
     let response = base_for(
-        r#"[{"created":1,"model":"m","choices":[{"finish_reason":"length"}],"_hidden_params":{"a":1}},
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"m","choices":[{"finish_reason":"length"}],"_hidden_params":{"a":1}},
             {"created":1,"model":"m","choices":[{"finish_reason":null}]},
             {"created":1,"model":"m","choices":[{"finish_reason":""}],"_hidden_params":{"b":2}}]"#,
     );
@@ -218,7 +248,9 @@ fn finish_reason_boundaries() {
     assert_eq!(response.hidden_params, object(r#"{"b":2}"#));
 
     // an alias keeps its provider value; a reason the map knows has no provider field
-    let alias = base_for(r#"[{"created":1,"model":"m","choices":[{"finish_reason":"end_turn"}]}]"#);
+    let alias = base_for(
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"m","choices":[{"finish_reason":"end_turn"}]}]"#,
+    );
     assert_eq!(alias.choices[0].finish_reason, "stop");
     assert_eq!(
         alias.choices[0].provider_specific_fields,
@@ -227,11 +259,15 @@ fn finish_reason_boundaries() {
         })
     );
 
-    let known = base_for(r#"[{"created":1,"model":"m","choices":[{"finish_reason":"length"}]}]"#);
+    let known = base_for(
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"m","choices":[{"finish_reason":"length"}]}]"#,
+    );
     assert_eq!(known.choices[0].finish_reason, "length");
     assert_eq!(known.choices[0].provider_specific_fields, None);
 
-    let stopped = base_for(r#"[{"created":1,"model":"m","choices":[{"finish_reason":null}]}]"#);
+    let stopped = base_for(
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"m","choices":[{"finish_reason":null}]}]"#,
+    );
     assert_eq!(stopped.choices[0].finish_reason, "stop");
     assert_eq!(stopped.choices[0].provider_specific_fields, None);
     assert!(stopped.hidden_params.is_empty());
@@ -240,7 +276,7 @@ fn finish_reason_boundaries() {
 fn hidden_params_boundaries() {
     // the first hidden string differing from the original model wins
     let provider = base_for(
-        r#"[{"created":1,"model":"orig","_hidden_params":{"provider_response_model":"real-1"}},
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"orig","_hidden_params":{"provider_response_model":"real-1"}},
             {"created":1,"model":"orig","_hidden_params":{"provider_response_model":"real-2","last":true}}]"#,
     );
     assert_eq!(
@@ -254,7 +290,7 @@ fn hidden_params_boundaries() {
 
     // when every candidate equals the original model the first one is kept
     let same = base_for(
-        r#"[{"created":1,"model":"orig","_hidden_params":{"provider_response_model":"orig"}},
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"orig","_hidden_params":{"provider_response_model":"orig"}},
             {"created":1,"model":"orig","_hidden_params":{"provider_response_model":""}}]"#,
     );
     assert_eq!(
@@ -263,14 +299,17 @@ fn hidden_params_boundaries() {
     );
 
     // the last chunk's hidden map is copied whole; only the overlay is skipped for an empty value
-    let absent =
-        base_for(r#"[{"created":1,"model":"m","_hidden_params":{"provider_response_model":""}}]"#);
+    let absent = base_for(
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"m","_hidden_params":{"provider_response_model":""}}]"#,
+    );
     assert_eq!(
         absent.hidden_params,
         object(r#"{"provider_response_model":""}"#)
     );
 
-    let mut updated = base_for(r#"[{"created":1,"model":"m","_hidden_params":{"keep":1}}]"#);
+    let mut updated = base_for(
+        r#"[{"object":"chat.completion.chunk","created":1,"model":"m","_hidden_params":{"keep":1}}]"#,
+    );
     apply_hidden_params(&mut updated, None);
     assert_eq!(updated.hidden_params, object(r#"{"keep":1}"#));
     let replacement = chunk(r#"{"_hidden_params":{"replaced":true}}"#);
