@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from functools import partial
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
@@ -9,8 +9,10 @@ import httpx
 from litellm.integrations.adaptive_concurrency import AdaptiveConcurrencyLimiter, PutSample
 from litellm.integrations.s3_v2 import S3Logger
 from litellm.types.integrations.s3_v2 import s3BatchLoggingElement
+from litellm.types.llms.bedrock import AwsSessionTag
 from typing_extensions import override
 
+AwsArgument: TypeAlias = str | bool | Sequence[AwsSessionTag] | None
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
@@ -69,7 +71,7 @@ class CredentialProvider:
     def __init__(self, keys: Keys) -> None:
         self.credentials = FixedCredentials(keys)
 
-    def __call__(self, **_kwargs: str | None) -> FixedCredentials:
+    def __call__(self, *_args: AwsArgument, **_kwargs: AwsArgument) -> FixedCredentials:
         return self.credentials
 
 
@@ -126,39 +128,65 @@ def freeze_auth_clock(epoch: int) -> None:
     botocore.auth.get_current_datetime = partial(frozen_datetime, epoch)  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L33
 
 
-def build_logger(
-    settings: Settings, keys: Keys, client: ScriptedClient, limiter: RecordingLimiter | None
-) -> S3Logger:
-    logger = object.__new__(S3Logger)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L118
-    empty_source: dict[str, str] = {}
-    virtual_hosted = settings.get("use_virtual_hosted_style")
-    drop_terminal = settings.get("drop_on_terminal_error")
-    adaptive = settings.get("adaptive_concurrency")
-    logger._init_s3_params(
-        params_source=empty_source,
-        s3_bucket_name=settings["bucket_name"],
-        s3_region_name=settings["region_name"],
-        s3_endpoint_url=settings.get("endpoint_url"),
-        s3_use_virtual_hosted_style=False if virtual_hosted is None else virtual_hosted,
-        s3_server_side_encryption=settings.get("server_side_encryption"),
-        s3_sse_kms_key_id=settings.get("sse_kms_key_id"),
-        s3_drop_on_terminal_error=True if drop_terminal is None else drop_terminal,
-        s3_adaptive_concurrency=False if adaptive is None else adaptive,
+class ScriptedLogger(S3Logger):
+    def __init__(
+        self,
+        settings: Settings,
+        keys: Keys,
+        client: ScriptedClient,
+        limiter: RecordingLimiter | None,
+    ) -> None:
+        empty_source: dict[str, str] = {}
+        virtual_hosted = settings.get("use_virtual_hosted_style")
+        drop_terminal = settings.get("drop_on_terminal_error")
+        adaptive = settings.get("adaptive_concurrency")
+        init_params = self._init_s3_params  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128
+        init_params(
+            params_source=empty_source,
+            s3_bucket_name=settings["bucket_name"],
+            s3_region_name=settings["region_name"],
+            s3_endpoint_url=settings.get("endpoint_url"),
+            s3_use_virtual_hosted_style=False if virtual_hosted is None else virtual_hosted,
+            s3_server_side_encryption=settings.get("server_side_encryption"),
+            s3_sse_kms_key_id=settings.get("sse_kms_key_id"),
+            s3_drop_on_terminal_error=True if drop_terminal is None else drop_terminal,
+            s3_adaptive_concurrency=False if adaptive is None else adaptive,
+        )
+        self.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L227
+        self.get_credentials = CredentialProvider(keys)
+        if limiter is not None:
+            self._upload_limiter = limiter
+        self._flush_dropped = {}
+
+    async def upload(self, element: s3BatchLoggingElement) -> str:
+        delivered = await self.async_upload_data_to_s3(element)
+        if id(element) in self._flush_dropped:
+            return "dropped"
+        return "delivered" if delivered else "retry"
+
+    async def download(self, object_key: str) -> dict[str, Json] | None:
+        found = await self._download_object_from_s3(object_key)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
+        return cast("dict[str, Json] | None", found)  # fmt: skip  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
+
+
+def build_element(element_input: Element) -> s3BatchLoggingElement:
+    payload_value = element_input.get("payload")
+    content_type_value = element_input.get("content_type")
+    payload: dict[str, Json] = {} if payload_value is None else payload_value
+    return s3BatchLoggingElement(
+        payload=payload,
+        s3_object_key=element_input["s3_object_key"],
+        s3_object_download_filename=element_input["s3_object_download_filename"],
+        body=element_input.get("body"),
+        content_type="application/json" if content_type_value is None else content_type_value,
     )
-    logger.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L227
-    logger.get_credentials = CredentialProvider(keys)
-    if limiter is not None:
-        logger._upload_limiter = limiter
-    logger._flush_dropped = {}
-    return logger
 
 
 async def execute(input_value: Input) -> dict[str, Json]:
     settings = input_value["settings"]
-    adaptive = settings.get("adaptive_concurrency")
-    limiter = RecordingLimiter() if adaptive is True else None
+    limiter = RecordingLimiter() if settings.get("adaptive_concurrency") is True else None
     client = ScriptedClient(input_value["responses"])
-    logger = build_logger(settings, input_value["credentials"], client, limiter)
+    logger = ScriptedLogger(settings, input_value["credentials"], client, limiter)
     freeze_auth_clock(input_value["now"])
     outcome: str | None = None
     samples: list[Json] | None = None
@@ -167,30 +195,14 @@ async def execute(input_value: Input) -> dict[str, Json]:
         element_input = input_value.get("element")
         if element_input is None:
             raise ValueError("a put call needs an element")
-        payload_value = element_input.get("payload")
-        content_type_value = element_input.get("content_type")
-        payload: dict[str, Json] = {} if payload_value is None else payload_value
-        element = s3BatchLoggingElement(
-            payload=payload,
-            s3_object_key=element_input["s3_object_key"],
-            s3_object_download_filename=element_input["s3_object_download_filename"],
-            body=element_input.get("body"),
-            content_type="application/json" if content_type_value is None else content_type_value,
-        )
-        delivered = await logger.async_upload_data_to_s3(element)
-        dropped = id(element) in logger._flush_dropped  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L247
-        outcome = "dropped" if dropped else ("delivered" if delivered else "retry")
+        outcome = await logger.upload(build_element(element_input))
         if limiter is not None:
             samples = limiter.samples
     else:
         object_key = input_value.get("object_key")
         if object_key is None:
             raise ValueError("a get call needs an object_key")
-        download = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
-            Callable[[str], Awaitable[dict[str, Json] | None]],
-            logger._download_object_from_s3,  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
-        )
-        object_value = await download(object_key)
+        object_value = await logger.download(object_key)
     return {
         "requests": client.requests,
         "outcome": outcome,
