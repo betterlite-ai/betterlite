@@ -14,6 +14,7 @@ description: >-
   Rewrite the request in place when forbidden tools exist and on_disallowed_action is rewrite.
   Raise HTTPException(400) when blocked.
   Report the denial reason in the violation message if the rule has one.
+  The 400 detail is `{"error": "Violated guardrail policy", "detection_message": <message>}` with LiteLLM's exact message text, for example `Tool 'Bash' denied by rule 'deny-bash'`; the tool-permission-request-block case compares it exactly.
 
   Port eight functions from LiteLLM's tool_permission.py: _check_tool_permission, _get_request_tool_name, _get_legacy_function_name, _get_named_tool_choice, _get_named_function_call, _collect_request_tools, and async_pre_call_hook.
   The function _modify_request_with_permission_errors (38 characters) exceeds the 30-character name limit and must be renamed; use a shorter name like rewrite_forbidden_tools (23 chars) or apply_permission_errors (23 chars).
@@ -121,11 +122,6 @@ oracle_cases:
   - tools/oracle/cases/tool-permission/request-multiple-forbidden-rewrite.yaml
 
 deviations:
-  - what: >-
-      HTTPException(400) detail has error and detection_message fields.
-      LiteLLM uses the same fields in its detail dict; betterlite's error message text is independent of LiteLLM's.
-    why: Matches LiteLLM's wire format exactly at the field level; message text differs only in content, not structure.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L823-L829
   - what: >-
       Request body modifications happen in place on the data dict parameter, matching LiteLLM's behavior.
       This means the request passed to the model is the same object that was rewritten.

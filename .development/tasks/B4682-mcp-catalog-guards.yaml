@@ -214,7 +214,7 @@ deviations:
 out_of_scope:
   - Alert delivery and logging; CatalogAlert is a record only, not posted to Slack or stored.
   - Guardrail hook implementation; this task calls the seam but does not implement guardrails.
-  - Manager discovery and startup integration; those belong in B138.
+  - Manager discovery and startup integration; those are B8462 and B4727.
   - ProxyLogging, UserAPIKeyAuth and MCPPreCallRequestObject type implementations; those are consumed as type dependencies from B732 and the proxy layer.
   - Helper functions used by strip_known_server_prefix (iter_known_server_prefixes, match_known_server_prefix, split_server_prefix_from_name, get_server_prefix, compute_short_server_prefix, normalize_server_name) are owned here as part of prefix-stripping behavior; their full implementations at utils.py:335-384, 408-443 are available for reference.
   - Helper functions and imports used by logging_safe_mcp_headers (clean_headers, redact_credential_headers, upstream_credential_headers, _custom_litellm_key_header_name, _identity_header_names, _forwarded_upstream_header_names) are owned here as part of header-sanitization behavior; their implementations and external dependencies are available for reference at utils.py:914-1089.

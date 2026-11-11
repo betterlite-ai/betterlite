@@ -1,0 +1,146 @@
+id: B9825
+title: SDK deployment hooks and agentic loops on the gateway chat, messages and responses calls
+description: >-
+  In LiteLLM every routed attempt ends in an SDK function under the `client` decorator (litellm.acompletion,
+  litellm.anthropic_messages, litellm.aresponses). Its wrapper runs `async_pre_call_deployment_hook` over litellm.callbacks
+  before the call (utils.py L2009-L2016), `async_post_call_failure_deployment_hook` when the call raises (L2101-L2112) and
+  `async_post_call_success_deployment_hook` on the result (L2153-L2159). Inside the call, acompletion runs the chat agentic
+  loop on a ModelResponse (main.py L698-L720), anthropic_messages runs the pre-request hooks and the web search short
+  circuit (B1118), and the Messages and Responses handlers run the agentic continuation (B2415). The three interception
+  callbacks act only through these seams: they rewrite tools and turn a stream off in the deployment hook, and answer
+  their own tool calls in the loop. The betterlite gateway does not go through B5368's wrapper or B5656's acompletion:
+  /v1/chat/completions selects through B016, retries through B017 and sends through B014's ChatExecutor, and /v1/messages
+  and /v1/responses run through B081 (with B9800's call steps) and B080. So nothing on the gateway reads B9821's list.
+  This task runs those seams on the gateway with the list.
+
+
+  Code goes in the module `app::inference::sdk_hooks` (crates/betterlite-server/src/app/inference/sdk_hooks.rs and
+  sdk_hooks/, tests in sdk_hooks/tests.rs; the skeleton declares it), plus one call per seam at the places listed below.
+  Every name stays at 30 characters or fewer.
+
+
+  The step. `SdkHooks` is built once per client request from `state.sdk_callbacks.snapshot()`, so a reload by B8383 never
+  changes the list under a running request, and is shared by every attempt of that request. Per attempt, after the
+  deployment is picked and its params are merged into the request (the point where LiteLLM's router calls the SDK
+  function), and before the deployment slot and the send:
+  1. `pre_call(&mut request, call_type)` runs B5367's `async_pre_call_deployment_hook` over the snapshot's
+     `deployment_hooks()` with call type `acompletion`, `anthropic_messages` or `aresponses`. A returned map replaces the
+     request; a hook error goes to the client through the route's existing error answer, as LiteLLM raises it from the
+     wrapper. When the hooks changed `stream`, the attempt sends what they left (LiteLLM syncs logging_obj.stream to it,
+     utils.py L2013-L2016), and the client still gets the shape it asked for (step 3).
+  2. On a send error, `failure(&request, &error, call_type)` runs B5367's `async_post_call_failure_deployment_hook`;
+     whatever it raises is dropped and the attempt's own error goes on to B017's retry and fallback logic unchanged.
+  3. Chat only: when the send gives a complete chat response, call B8294's `maybe_run_chat_agentic_loop` with the
+     response, the attempt's model and messages, the optional params (every non-null request field except model,
+     messages, stream, acompletion and deployment_id, main.py L705-L717), the request as kwargs, the logging state, the
+     deployment's provider, the stream flag the hooks left, the snapshot's `agentic_callbacks()` and two ports. On the
+     proxy a request's dynamic success callbacks are names, never logger instances, so LiteLLM's loop drops them and so
+     does this one. `GatewayContinuation` implements B8294's ChatContinuation: it runs the same attempt pipeline (steps 1
+     to 4 around B014's ChatExecutor) for the follow-up model, messages, params and kwargs against the deployment the
+     attempt used, without a new router selection, since LiteLLM's follow-up is a direct litellm.acompletion with the
+     deployment's credentials in kwargs. `GatewayFakeStream` implements FakeStreamPort over B010's MockResponseIterator
+     inside B005's CustomStreamWrapper. A `Some` result replaces the response; a stream result goes to the client as
+     server sent events even though the attempt was sent with stream false, the way LiteLLM's proxy streams the
+     CustomStreamWrapper acompletion returns. B8294's two safety errors reach the client through the route's error answer.
+  4. On the result (after step 3 for chat, since LiteLLM's loop runs inside acompletion and the wrapper sees what
+     acompletion returns), `success(&request, result, call_type)` runs B5367's `async_post_call_success_deployment_hook`
+     and returns what it gives.
+
+  Messages and Responses. B1118's entry pipeline and B2415's continuation take their callbacks from their composition.
+  Where B081's route state (routes/anthropic_messages.rs and B9800's messages_call) and B080's (routes/responses.rs)
+  build them per request, pass the request's `SdkHooks` lists: `pre_request_hooks()` and `search_short_circuits()` to
+  B1118, `agentic_callbacks()` to B2415 (and to B2419's override checks it calls). Run steps 1, 2 and 4 around each Messages
+  and Responses attempt with call types anthropic_messages and aresponses. The fake stream for a converted Messages or
+  Responses stream is already B2415's and B2414's.
+
+  Read the merged code of B016, B017, B080, B081 and B9800 first and find, for each family, where an attempt has its
+  deployment and its merged request and is about to dispatch; B9810 hooks its compaction step at the same places. If
+  B9560's ResponseCacheStep call is already at this point, put this step before it. The
+  families and paths: chat is POST /v1/chat/completions, /chat/completions, /engines/{model}/chat/completions and
+  /openai/deployments/{model}/chat/completions; messages is POST /v1/messages and /claude_code_gateway/v1/messages;
+  responses is POST /v1/responses, /responses and /openai/v1/responses. Change nothing else in those files.
+
+
+  Tests in sdk_hooks/tests.rs boot B8610's application with a config of one `openai/gpt-4o-mini` deployment and one
+  `anthropic/claude-sonnet-4-20250514` deployment against a local tokio TcpListener upstream that records each request
+  and answers from a script, and install test callbacks with `state.sdk_callbacks.replace`. Names start with `chat_`,
+  `messages_`, `responses_`, `stream_` or `empty_`. A deployment hook that renames a tool is seen by the upstream on each
+  family; a hook error answers through the route's error answer with no upstream call; a failure hook runs once per failed
+  attempt and its own error never replaces the upstream error; a success hook's replacement reaches the client. Chat: an
+  agentic callback whose gate says run and whose plan patches messages makes a second upstream call with the patched
+  messages and depth 1, and the client gets the second answer; a callback with `overrides()` all false is never called.
+  `stream_`: a deployment hook that sets stream false and `_code_interpreter_interception_converted_stream` true makes the
+  upstream call non-stream and the client still gets text/event-stream chunks ending in `data: [DONE]`. `empty_`: with no
+  callbacks every family sends the request unchanged and makes one upstream call.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/sdk_hooks.rs
+    - crates/betterlite-server/src/app/inference/sdk_hooks/**
+    - crates/betterlite-server/src/routes/chat.rs
+    - crates/betterlite-server/src/routes/chat/**
+    - crates/betterlite-server/src/routes/anthropic_messages.rs
+    - crates/betterlite-server/src/api/anthropic_messages_routes.rs
+    - crates/betterlite-server/src/api/anthropic_messages_routes/**
+    - crates/betterlite-server/src/messages_call.rs
+    - crates/betterlite-server/src/messages_call/**
+    - crates/betterlite-server/src/routes/responses.rs
+    - crates/betterlite-server/src/api/responses_routes.rs
+    - crates/betterlite-server/src/api/responses_routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2009-L2016
+    why: The pre-call deployment hook replaces the kwargs, and the logging stream follows what the hooks left.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2101-L2112
+    why: The failure deployment hook runs on a call error and nothing it raises replaces that error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2140-L2159
+    why: The success deployment hook runs after post-call rules and its result is what the caller gets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L690-L740
+    why: acompletion runs the chat agentic loop once for every provider, with the optional params it builds there.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L195-L201
+    why: The follow-up is a direct litellm.acompletion, not a router call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L115-L225
+    why: The Messages pre-request hooks and web search short circuit read every CustomLogger in litellm.callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5667-L5720
+    why: The continuation dispatcher walks the global callbacks and then the request's dynamic ones.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12016
+    why: The chat route and its four paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L160
+    why: The /v1/messages route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L193-L212
+    why: The three Responses create paths.
+dod:
+  - text: Each chat, messages and responses attempt runs the pre-call deployment hooks before the send, the failure hooks on a send error without changing that error, and the success hooks on the result, over one snapshot of the list per request.
+    proof: [sdk-hooks-tests]
+  - text: A chat response goes through B8294's loop with the list's agentic callbacks, and a follow-up runs through the same attempt pipeline against the same deployment.
+    proof: [sdk-hooks-tests]
+  - text: A request whose stream the hooks turned off is sent non-stream and answered to the client as server sent events.
+    proof: [sdk-hooks-tests]
+  - text: B1118 and B2415 get the request's pre-request, search and agentic lists on the messages and responses routes.
+    proof: [sdk-hooks-tests]
+  - text: With an empty list every family sends the request unchanged, and the routes' own tests still pass.
+    proof: [sdk-hooks-tests, route-tests]
+checks:
+  optional: []
+  commands:
+    - id: sdk-hooks-tests
+      why: a seam is missing from a family, runs on the wrong request, or loses the client's stream shape
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::sdk_hooks::tests::/)'
+    - id: route-tests
+      why: the edits at the dispatch points broke the tests of the chat, messages or responses routes
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/inference/sdk_hooks.rs crates/betterlite-server/src/app/inference/sdk_hooks)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::/) | test(/^api::anthropic_messages_routes::/) | test(/^api::responses_routes::/) | test(/^messages_call::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The hook loops themselves and their error rules: B5367. The chat loop: B8294. The Messages entry pipeline: B1118. The continuation: B2415, B2419."
+  - "The list and the interception builders: B9821, then B9822, B9823 and B9824, which add the HTTP oracle cases through these seams."
+  - "The SDK path through B5368 and B5656 (RouterCompletion): B8630 assembles it; this task does not move the gateway onto it."
+  - "The chat-only legacy hooks that B024's OpenAI provider calls (_call_agentic_completion_hooks_openai, openai.py L561-L620): B119."
+pitfalls:
+  - "Take one snapshot per client request; a fallback hop and an agentic follow-up must see the same callbacks as the first attempt."
+  - "The follow-up carries _agentic_loop_depth 1, so the interceptions skip their pre-call rewrite on it; never strip that key before the deployment hooks run."
+  - "A failure hook's own error is swallowed, but the attempt's error must still reach B017 unchanged, or a fallback that should happen does not."
+  - "On chat the agentic loop runs before the success deployment hook, so the success hook sees the looped answer, while the follow-up's own success hook runs inside the continuation on the follow-up answer."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,158 @@
+id: B125
+title: Response cache on the gateway Responses and Anthropic Messages calls
+description: >-
+  B125 was the response caching umbrella. Its parts built the caches, keys, envelopes, lookup, writes, settings
+  routes and the gateway cache step; this last part wires that step into the two families left: the OpenAI
+  Responses calls and the Anthropic Messages calls. In LiteLLM both end in an SDK function under the `client`
+  decorator (litellm.aresponses, responses/main.py L575-L576, and anthropic_messages,
+  llms/anthropic/pass_through/messages/handler.py L228-L229), so wrapper_async looks the cache up before the call
+  and stores the answer after it (utils.py L2030-L2059, L2124-L2167), and `aresponses` and `anthropic_messages`
+  are in the default supported_call_types (types/caching.py L43-L58). The betterlite gateway runs /v1/responses
+  through B080's route and /v1/messages through B081's route with B9800's call steps, so neither reaches that
+  wrapper. Every name stays at 30 characters or fewer.
+
+
+  Where. Read the merged code of B080 (routes/responses.rs, api::responses_routes) and B081 with B9800
+  (routes/anthropic_messages.rs, api::anthropic_messages_routes, messages_call) and find, for each family, the
+  point where an attempt has its deployment and its merged arguments and is about to call the provider; B9825 and
+  B9810 hook the same points, and the cache step goes after their steps when they are merged. There call B9560's
+  `ResponseCacheStep::begin` with call type `aresponses` or `anthropic_messages`, the deployment's litellm model
+  and the kwargs map, then `lookup`, and on a miss `store` or the stream writes below.
+
+
+  The kwargs. Both families go through the router's generic helper, not the chat attempt: it builds
+  `{**data, "caching": cache_responses, **kwargs, "model": <deployment model>}` (router.py L5368-L5374), and the
+  router's metadata for that function sits under `litellm_metadata`, not `metadata` (router.py L4068 and
+  _get_router_metadata_variable_name). Build the kwargs map in that shape and let B4296 read what it reads: its
+  model value takes `metadata.model_group` only, so on these two families the key normally uses the deployment's
+  model, and two deployments of one group do not share entries. Do not copy model_group into `metadata` to make
+  them share. `cache`, `caching` and `cache_key` never reach the provider.
+
+
+  Responses. A non-stream hit answers B4302's Responses conversion (the ResponsesAPIResponse) as JSON. A stream
+  request that hits is answered with B4302's Responses stream replay as server sent events in the route's existing
+  Responses event framing. A non-stream miss stores the ResponsesAPIResponse through `store`. A stream miss is
+  written by B926's Responses stream hook when the `response.completed` event arrives (streaming_iterator.py
+  L690-L730): pass that hook the attempt's handler state from B9560's `CacheAttempt`, the way LiteLLM leaves the
+  handler on the logging object, so the hook finds the request kwargs, the preset key and the store check. Do not
+  write the stream a second time from the gateway.
+
+
+  Anthropic Messages. A non-stream hit answers the cached message as stored (B4302 leaves a Messages dict
+  unchanged). A stream request that hits is answered with B980's cached Messages stream (the replayed SSE events,
+  CachedAnthropicMessagesStreamIterator). A non-stream miss stores the response through `store`. A stream miss goes
+  through B4304's `wrap_streaming_result_for_cache` decision (utils.py L2138-L2141): when it says Wrap, send the
+  provider stream through B980's AnthropicMessagesStreamCacheWriter, so it is written once when the stream ends; when
+  it says PassThrough, send the stream as today.
+
+
+  Both families answer a hit with `x-litellm-cache-key` set from the key B4305 stamped, next to the route's other
+  headers, and no provider call. No cache in the slot, `caching` false or `cache: {"no-cache": true}` skips the
+  lookup and leaves each route exactly as before; `cache: {"no-store": true}` skips every write.
+
+
+  Tests go in crates/betterlite-server, module `app::inference::response_cache::native_tests`
+  (crates/betterlite-server/src/app/inference/response_cache/native_tests.rs, declared with a `#[cfg(test)]` line in
+  response_cache.rs, the only line this task adds there). They boot both routes with an in-memory cache in the slot
+  and a local tokio TcpListener upstream that records each request and answers JSON or SSE from a script. Names
+  start with `responses_` or `messages_`: a repeated non-stream request makes one upstream call and the second
+  answer has the cache key header; a stream miss is written once after the stream ends and the same stream request
+  then replays from the cache; no-store writes nothing; no-cache reaches upstream; two deployments of one group do
+  not share an entry.
+
+
+  HTTP oracle cases go in tools/oracle/cases/response-cache-native/, one `http_scenario` file per case in the format
+  of tools/oracle/cases/harness/http-scenarios/capture-substitution.yaml, with Bearer oracle-master, config
+  `litellm_settings: {cache: true, cache_params: {type: local}}`, a distinct model_name per file (files with the same
+  config share one proxy and one cache), and `upstream: []` on a step that must not reach the provider. Responses
+  files use an `openai/gpt-4o-mini` deployment and Messages files an `anthropic/claude-sonnet-4-20250514` deployment,
+  both at {{upstream}} with api_key oracle-key, with the answer shapes of the merged B080 and B081 cases. Compare
+  content-type and x-litellm-cache-key on every step, and ignore only fields that differ between two LiteLLM runs.
+  The cases: responses-miss-then-hit (POST /v1/responses); responses-path-alias (first step on /v1/responses,
+  second on /openai/v1/responses, a hit); responses-no-store; responses-stream-miss-then-hit; messages-miss-then-hit
+  (POST /v1/messages); messages-no-cache; messages-stream-miss-then-hit.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/response_cache.rs
+    - crates/betterlite-server/src/app/inference/response_cache/native_tests.rs
+    - crates/betterlite-server/src/routes/responses.rs
+    - crates/betterlite-server/src/api/responses_routes.rs
+    - crates/betterlite-server/src/api/responses_routes/**
+    - crates/betterlite-server/src/routes/anthropic_messages.rs
+    - crates/betterlite-server/src/api/anthropic_messages_routes.rs
+    - crates/betterlite-server/src/api/anthropic_messages_routes/**
+    - crates/betterlite-server/src/messages_call.rs
+    - crates/betterlite-server/src/messages_call/**
+    - tools/oracle/cases/response-cache-native/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2030-L2059
+    why: The lookup in wrapper_async and the early return of a hit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2124-L2167
+    why: The stream branch that wraps a Messages stream for the cache, and the store after a non-stream call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1136-L1174
+    why: wrap_streaming_result_for_cache wraps only Messages streams, and aresponses is checked against both aresponses and responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5334-L5374
+    why: The generic attempt that both families take, with caching from cache_responses and the deployment model in the kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4060-L4072
+    why: The generic call's router metadata goes under litellm_metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L423-L436
+    why: The key's model value reads metadata.model_group and litellm_params.metadata only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L690-L730
+    why: The Responses stream writes its completed response through the caching handler left on the logging object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/response_cache.py#L38-L177
+    why: The Messages stream cache writer and the cached Messages stream replay.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L193-L212
+    why: The three Responses create paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L125
+    why: The /v1/messages route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L43-L58
+    why: aresponses and anthropic_messages are cached by default.
+dod:
+  - text: A repeated Responses or Messages request, stream or not, is answered from the cache without a provider call and carries x-litellm-cache-key.
+    proof: [native-tests, native-cases, oracle]
+  - text: A stream miss is written once when the stream ends, through B926's hook for Responses and B980's writer for Messages, and never again from the gateway.
+    proof: [native-tests, native-cases, oracle]
+  - text: The kwargs follow the router's generic attempt, so the key uses the deployment model on both families and no-cache and no-store behave as in LiteLLM.
+    proof: [native-tests, native-cases, oracle]
+  - text: With no cache both routes behave as before, and their own tests still pass.
+    proof: [native-tests, route-tests, native-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: native-tests
+      why: a family skips the lookup or the store, writes a stream twice, answers a hit through the provider, or keys by model group
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::response_cache::native_tests::/)'
+    - id: route-tests
+      why: the edits at the send points broke the Responses or Messages tests
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/inference/response_cache/native_tests.rs)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::/) | test(/^api::anthropic_messages_routes::/) | test(/^messages_call::/)'
+    - id: native-cases
+      why: the HTTP cases for the Responses and Messages cache were not added
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/response-cache-native)"
+oracle_cases:
+  - tools/oracle/cases/response-cache-native/responses-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache-native/responses-path-alias.yaml
+  - tools/oracle/cases/response-cache-native/responses-no-store.yaml
+  - tools/oracle/cases/response-cache-native/responses-stream-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache-native/messages-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache-native/messages-no-cache.yaml
+  - tools/oracle/cases/response-cache-native/messages-stream-miss-then-hit.yaml
+deviations: []
+out_of_scope:
+  - "litellm/caching/__init__.py only re-exports the cache classes; B8066 builds the Python package's betterlite.caching exports and the Rust crates expose their own types."
+  - "litellm/caching/_internal_lru_cache.py: lru_cache_wrapper has no caller at the pin."
+  - "litellm/caching/Readme.md is a folder overview for LiteLLM contributors; nothing to build."
+  - "cache_settings_endpoints.py: B4306 owns _resolve_cache_url_precedence, _parse_stored_settings, _overlay_environment, _redact_credentials, _is_credential_field, _has_connection_target, _target_repr, _saved_secret_is_reusable, _merge_over_saved and _redact_settings; B4307 owns _cache_config_table (over B726's repository), CacheSettingsResponse and GET /cache/settings; B4308 owns CacheTestRequest, CacheTestResponse and POST /cache/settings/test; B8502 owns _log_audit_task_exception, _emit_cache_settings_audit_log, CacheSettingsManager, CacheSettingsUpdateRequest and POST /cache/settings; B8650 mounts the routes."
+  - "The cache step, the kwargs rule and the chat and embeddings wiring: B9560. Text completion, rerank and transcription: B9561."
+  - "The Responses stream hook: B926. The Messages stream writer and cached stream: B980. Lookup, conversion, writes and keys: B4305, B4302, B4304 and B4296."
+  - "The routes themselves: B080 and B081 with B9800. The deployment hooks and compaction on the same attempts: B9825 and B9810."
+pitfalls:
+  - "The generic attempt keeps model_group under litellm_metadata and the key never reads it there, so Responses and Messages entries are per deployment model; copying model_group into metadata would make them shared and differ from LiteLLM."
+  - "wrap_streaming_result_for_cache wraps only anthropic_messages streams; a Responses stream is written by B926's hook on response.completed, so wrapping it too would write twice."
+  - "B926's hook only writes when the handler's request kwargs say stream true or a converted stream, and it reads the preset key from the handler, so it needs the attempt's own handler state, not a new one."
+  - "A Messages hit returns the stored dict unchanged, so the answer keeps the stored id and usage."
+  - "Files with the same config share one booted proxy and one in-memory cache, so every case file needs its own model_name."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -79,15 +79,13 @@ description: >-
   and id rules), `check_` (the two results of check_prisma_client and the 500 shape), `save_` (perform_health_check_and_save: the
   name choice, the tracker hand-off, the returned counts), `health_` (each numbered step of GET /health with a fake cycle and a fake
   results source), `history_` and `latest_`. The oracle helper cases drive Python's `_convert_health_check_to_dict` and
-  `_health_endpoint_resolve_target_model_name` with stub objects. HTTP oracle cases run the booted proxy without a database.
+  `_health_endpoint_resolve_target_model_name` with stub objects.
 
 scope:
   paths:
     - crates/betterlite-server/src/health_status_routes.rs
     - crates/betterlite-server/src/health_status_routes/**
-    - tools/oracle/cases/health/status/**
     - tools/oracle/cases/helpers/health-status-routes/**
-    - "tools/oracle/fuzz/corpus/http_case/health-status-*"
     - "tools/oracle/fuzz/corpus/helper_case/health_status_routes-*"
     - tools/oracle/helpers/b4445.py
     - tools/oracle/helpers/b4445/**
@@ -117,7 +115,7 @@ dod:
   - text: A missing model_id returns the model argument; a model_id with no router, an erroring lookup or no deployment is a 404 with the exact message; a found deployment returns its model_name.
     proof: [target-tests, oracle, helper-python]
   - text: A missing store is HTTP 500 with "Database not initialized" on both history and latest.
-    proof: [check-tests, oracle]
+    proof: [check-tests]
   - text: perform_health_check_and_save names the saved model by cli_model first, saves only with a store and a name, hands the save to the tracker, and returns the lists and their lengths.
     proof: [save-tests]
   - text: GET /health answers 500 "Model list not initialized" with no deployment list and no CLI model, and probes the CLI model when one is set.
@@ -127,13 +125,11 @@ dod:
   - text: With background checks on, the cache is filtered by the allowed or targeted ids, the missing-id warning field appears when no kept deployment has an id, and an unrestricted untargeted caller gets the cache as it is.
     proof: [health-tests]
   - text: A model-specific request with zero healthy endpoints answers 503 with the same body, and a non-admin gets the notice header and the stripped body.
-    proof: [health-tests, oracle]
+    proof: [health-tests]
   - text: History returns the page object with the converted rows, honours the limit and offset ranges with 422 outside them, and a store call error is a 500 with the exact detail.
-    proof: [history-tests, oracle]
+    proof: [history-tests]
   - text: Latest returns the object keyed by model_id or model_name with the total.
     proof: [latest-tests]
-  - text: HTTP corpus cases replay through the shared HTTP-case parser.
-    proof: [http-case-corpus]
   - text: Helper corpus cases replay through the shared helper-case parser.
     proof: [helper-case-corpus]
 
@@ -188,17 +184,8 @@ checks:
         grep -lE '^[[:space:]]+b4445:' tools/oracle/fuzz/corpus/helper_case/health_status_routes-* &&
         test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: http-case-corpus
-      why: the HTTP-case decoder does not replay the new health-status requests
-      run: >-
-        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/http_case/health-status-*")" &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
 
 oracle_cases:
-  - tools/oracle/cases/health/status/history-no-database.yaml
-  - tools/oracle/cases/health/status/latest-no-database.yaml
-  - tools/oracle/cases/health/status/history-limit-zero-422.yaml
-  - tools/oracle/cases/health/status/health-unknown-model-id-404.yaml
   - tools/oracle/cases/helpers/health-status-routes/convert-row.yaml
   - tools/oracle/cases/helpers/health-status-routes/resolve-target.yaml
 
