@@ -281,6 +281,10 @@ impl<Storage: ClickHouseStorage> SpendLoggerFactory<Storage> for FailingLoggers 
             message: "the spend logger could not be built".to_owned(),
         })
     }
+
+    fn lens(&self) -> LensAnalysis {
+        LensAnalysis::default()
+    }
 }
 
 pub(crate) struct OperatorLogger;

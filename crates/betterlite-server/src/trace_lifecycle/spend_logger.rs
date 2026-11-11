@@ -52,9 +52,7 @@ pub trait SpendLoggerFactory<Storage: ClickHouseStorage>: Send + Sync {
     ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, TraceLifecycleError>;
 
     // B4001's projection marks rows from the Lens context injected here, so one shared context paints them all
-    fn lens(&self) -> LensAnalysis {
-        LensAnalysis::default()
-    }
+    fn lens(&self) -> LensAnalysis;
 }
 
 pub struct ClickHouseSpendLoggers {
