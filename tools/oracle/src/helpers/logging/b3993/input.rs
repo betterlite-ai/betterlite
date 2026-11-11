@@ -16,7 +16,7 @@ pub(crate) struct Input {
     pub(crate) responses: Vec<Reply>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Operation {
     Put,
