@@ -9,7 +9,7 @@ use super::support::{cache, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use crate::request_batch::scope::{
-    active_post_call_redis_batch, active_request_redis_batch, active_request_redis_batches,
+    ACTIVE_REQUEST_BATCHES, active_post_call_redis_batch, active_request_redis_batch,
     flush_post_call_redis_batches, request_redis_batch_scope,
 };
 
@@ -21,7 +21,9 @@ async fn request_batch_post_call_writes_flush_separately() {
     let cached = cache(&server, Some("ns")).await;
 
     let (_, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
-        let request = active_request_redis_batches().expect("a request scope");
+        let request = ACTIVE_REQUEST_BATCHES
+            .try_with(Arc::clone)
+            .expect("a request scope");
         let reads = active_request_redis_batch(&cached).expect("a request batch");
         let writes = active_post_call_redis_batch(&cached).expect("a post-call batch");
         assert!(Arc::ptr_eq(&reads, &request.batch(&cached)));
@@ -135,7 +137,9 @@ async fn request_batch_flush_all_cancels_an_idle_deadline() {
     let deadline = Duration::from_secs(1);
 
     let (_, ()) = request_redis_batch_scope(deadline, async {
-        let request = active_request_redis_batches().expect("a request scope");
+        let request = ACTIVE_REQUEST_BATCHES
+            .try_with(Arc::clone)
+            .expect("a request scope");
         let writes = active_post_call_redis_batch(&cached).expect("a post-call batch");
         writes
             .increment("counter", 1.5, None)
@@ -172,7 +176,9 @@ async fn request_batch_flush_all_keeps_a_deadline_with_pending_writes() {
     let deadline = Duration::from_secs(1);
 
     let (_, ()) = request_redis_batch_scope(deadline, async {
-        let request = active_request_redis_batches().expect("a request scope");
+        let request = ACTIVE_REQUEST_BATCHES
+            .try_with(Arc::clone)
+            .expect("a request scope");
         let writes = active_post_call_redis_batch(&cached).expect("a post-call batch");
         writes.increment("counter", 1.5, None);
         yield_now().await;

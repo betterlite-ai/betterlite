@@ -10,9 +10,7 @@ use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::request_batch::batches::RequestRedisBatches;
-use betterlite_redis::request_batch::scope::{
-    active_request_redis_batches, request_redis_batch_scope,
-};
+use betterlite_redis::request_batch::scope::{ACTIVE_REQUEST_BATCHES, request_redis_batch_scope};
 use serde_json::{Value as Json, json};
 use thiserror::Error;
 
@@ -85,7 +83,7 @@ pub(crate) async fn run(call: &Call) -> HelperResult {
     let mut scenario = Scenario::start(call, deadline).await?;
     let walked = if call.in_scope {
         let (request, walked) = request_redis_batch_scope(deadline, async {
-            if let Some(active) = active_request_redis_batches() {
+            if let Ok(active) = ACTIVE_REQUEST_BATCHES.try_with(Arc::clone) {
                 scenario.record_request(&active);
             }
             scenario.walk().await
@@ -210,8 +208,9 @@ impl<'call> Scenario<'call> {
     }
 
     pub(crate) fn active_request() -> Result<Arc<RequestRedisBatches>, Box<HelperError>> {
-        active_request_redis_batches()
-            .ok_or_else(|| invalid("the step needs an active request_redis_batch_scope"))
+        ACTIVE_REQUEST_BATCHES
+            .try_with(Arc::clone)
+            .map_err(|_outside_scope| invalid("the step needs an active request_redis_batch_scope"))
     }
 
     pub(crate) fn touch_active_request(&mut self) -> Result<(), Box<HelperError>> {

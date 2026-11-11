@@ -17,7 +17,7 @@ use crate::batch::RedisBatch;
 use crate::redis_cache::RedisCache;
 
 task_local! {
-    static ACTIVE_REQUEST_BATCHES: Arc<RequestRedisBatches>;
+    pub static ACTIVE_REQUEST_BATCHES: Arc<RequestRedisBatches>;
 }
 
 pub async fn request_redis_batch_scope<F>(
@@ -44,24 +44,6 @@ where
     (batches, output)
 }
 
-#[rustfmt::skip]
-pub async fn with_request_redis_batches<F>(batches: Arc<RequestRedisBatches>, operation: F) -> F::Output
-where
-    F: Future,
-{
-    ACTIVE_REQUEST_BATCHES
-        .scope(batches, operation)
-        .await
-}
-
-#[must_use]
-#[rustfmt::skip]
-pub fn active_request_redis_batches() -> Option<Arc<RequestRedisBatches>> {
-    ACTIVE_REQUEST_BATCHES
-        .try_with(Arc::clone)
-        .ok()
-}
-
 #[must_use]
 pub fn active_request_redis_batch(redis_cache: &Arc<RedisCache>) -> Option<Arc<RedisBatch>> {
     ACTIVE_REQUEST_BATCHES
@@ -77,7 +59,7 @@ pub fn active_post_call_redis_batch(redis_cache: &Arc<RedisCache>) -> Option<Arc
 }
 
 pub async fn flush_post_call_redis_batches() {
-    if let Some(batches) = active_request_redis_batches() {
+    if let Ok(batches) = ACTIVE_REQUEST_BATCHES.try_with(Arc::clone) {
         batches.flush_post_call().await;
     }
 }

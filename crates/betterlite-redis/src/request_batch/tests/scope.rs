@@ -6,8 +6,8 @@ use super::support::cache;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use crate::request_batch::scope::{
-    active_post_call_redis_batch, active_request_redis_batch, active_request_redis_batches,
-    flush_post_call_redis_batches, request_redis_batch_scope, with_request_redis_batches,
+    ACTIVE_REQUEST_BATCHES, active_post_call_redis_batch, active_request_redis_batch,
+    flush_post_call_redis_batches, request_redis_batch_scope,
 };
 
 #[tokio::test]
@@ -17,13 +17,15 @@ async fn request_batch_spawned_task_can_join_the_request_scope() {
     let cached = cache(&server, Some("ns")).await;
 
     let (_, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
-        let request = active_request_redis_batches().expect("a request scope");
+        let request = ACTIVE_REQUEST_BATCHES
+            .try_with(Arc::clone)
+            .expect("a request scope");
         let writes = active_post_call_redis_batch(&cached).expect("the request's post-call batch");
         let carried = Arc::clone(&request);
         let expected = Arc::clone(&writes);
         let target = Arc::clone(&cached);
         let mut tasks = JoinSet::new();
-        tasks.spawn(with_request_redis_batches(carried, async move {
+        tasks.spawn(ACTIVE_REQUEST_BATCHES.scope(carried, async move {
             let joined = active_post_call_redis_batch(&target)
                 .expect("the carried request's post-call batch");
             assert!(Arc::ptr_eq(&joined, &expected));
@@ -52,11 +54,15 @@ async fn request_batch_nested_scopes_join_the_outer_batches() {
     let cached = cache(&server, Some("ns")).await;
 
     let (outer, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
-        let outer_request = active_request_redis_batches().expect("the outer scope");
+        let outer_request = ACTIVE_REQUEST_BATCHES
+            .try_with(Arc::clone)
+            .expect("the outer scope");
         let outer_batch = active_request_redis_batch(&cached).expect("the outer batch");
 
         let (nested, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
-            let inner_request = active_request_redis_batches().expect("the outer scope inside");
+            let inner_request = ACTIVE_REQUEST_BATCHES
+                .try_with(Arc::clone)
+                .expect("the outer scope inside");
             assert!(Arc::ptr_eq(&outer_request, &inner_request));
             let inner_batch = active_request_redis_batch(&cached).expect("the outer batch inside");
             assert!(Arc::ptr_eq(&outer_batch, &inner_batch));
@@ -73,7 +79,10 @@ async fn request_batch_nested_scopes_join_the_outer_batches() {
             &active_request_redis_batch(&cached).expect("the outer batch after")
         ));
         assert_eq!(
-            active_request_redis_batches().map(|request| request.batches().len()),
+            ACTIVE_REQUEST_BATCHES
+                .try_with(Arc::clone)
+                .ok()
+                .map(|request| request.batches().len()),
             Some(1)
         );
     })

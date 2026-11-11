@@ -18,6 +18,18 @@ use crate::redis_cache::RedisCache;
 // litellm.caching.redis_batch.POST_CALL_FLUSH_DEADLINE_SECONDS, kept as a Duration so it types the deadline at its boundary.
 pub const POST_CALL_FLUSH_DEADLINE: Duration = Duration::from_secs(1);
 
+pub enum PrefetchAction {
+    Arm(PrefetchSlot),
+    Take,
+    IsArmed,
+}
+
+pub enum PrefetchOutcome {
+    Replaced(Option<PrefetchSlot>),
+    Taken(Option<PrefetchSlot>),
+    Armed(bool),
+}
+
 pub struct RequestRedisBatches {
     pub(super) post_call_deadline: Duration,
     pub(super) batches: Mutex<IndexMap<BackendKey, Arc<RedisBatch>>>,
@@ -77,12 +89,12 @@ impl RequestRedisBatches {
     }
 
     #[must_use]
-    #[rustfmt::skip]
     pub fn batches(&self) -> Vec<Arc<RedisBatch>> {
-        lock(&self.batches)
-            .values()
-            .cloned()
-            .collect()
+        let mut batches = Vec::new();
+        for batch in lock(&self.batches).values() {
+            batches.push(Arc::clone(batch));
+        }
+        batches
     }
 
     pub async fn flush_all(&self) {
@@ -112,24 +124,16 @@ impl RequestRedisBatches {
         self.discard_if_idle();
     }
 
-    #[rustfmt::skip]
-    pub fn arm_prefetch(&self, name: &str, value: PrefetchSlot) -> Option<PrefetchSlot> {
-        lock(&self.prefetched)
-            .insert(name.to_owned(), value)
-    }
-
     #[must_use]
-    #[rustfmt::skip]
-    pub fn take_prefetch(&self, name: &str) -> Option<PrefetchSlot> {
-        lock(&self.prefetched)
-            .remove(name)
-    }
-
-    #[must_use]
-    #[rustfmt::skip]
-    pub fn prefetch_armed(&self, name: &str) -> bool {
-        lock(&self.prefetched)
-            .contains_key(name)
+    pub fn prefetch(&self, name: &str, action: PrefetchAction) -> PrefetchOutcome {
+        let mut slots = lock(&self.prefetched);
+        match action {
+            PrefetchAction::Arm(value) => {
+                PrefetchOutcome::Replaced(slots.insert(name.to_owned(), value))
+            }
+            PrefetchAction::Take => PrefetchOutcome::Taken(slots.remove(name)),
+            PrefetchAction::IsArmed => PrefetchOutcome::Armed(slots.contains_key(name)),
+        }
     }
 
     fn pending(slots: &Mutex<IndexMap<BackendKey, Arc<RedisBatch>>>) -> Vec<Arc<RedisBatch>> {

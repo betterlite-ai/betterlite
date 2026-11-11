@@ -4,7 +4,7 @@ use super::support::{cache, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use crate::request_batch::scope::{
-    active_post_call_redis_batch, active_request_redis_batch, active_request_redis_batches,
+    ACTIVE_REQUEST_BATCHES, active_post_call_redis_batch, active_request_redis_batch,
     flush_post_call_redis_batches, request_redis_batch_scope,
 };
 
@@ -72,7 +72,7 @@ async fn request_batch_accessors_are_empty_outside_a_scope() {
     let server = FakeServer::start().await;
     let cached = cache(&server, Some("ns")).await;
 
-    assert!(active_request_redis_batches().is_none());
+    assert!(ACTIVE_REQUEST_BATCHES.try_with(Arc::clone).is_err());
     assert!(active_request_redis_batch(&cached).is_none());
     assert!(active_post_call_redis_batch(&cached).is_none());
     flush_post_call_redis_batches().await;
