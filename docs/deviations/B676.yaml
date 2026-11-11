@@ -6,3 +6,6 @@ deviations:
   - what: The credential runs the IMDS availability probe on every token request instead of remembering a successful probe on the credential object.
     why: betterlite's credential is a value object built per configured identity, and remembering availability would add mutable state shared between requests.
     link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/imds.py#L90-L122
+  - what: A Retry-After value that is neither a number nor an HTTP date waits for the backoff instead of failing the token request.
+    why: azure-core raises from its date parser on such a value, which ends the credential call with an unrelated parse error. No working setup relies on that crash, and the retry budget still bounds the wait.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-core_1.41.0/sdk/core/azure-core/azure/core/pipeline/policies/_utils.py#L62-L76

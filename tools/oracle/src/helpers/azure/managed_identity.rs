@@ -118,7 +118,7 @@ impl From<Failure> for Box<HelperError> {
 // hosted and Arc protocol failures are other tasks' oracle cases; the fixture transport refuses them
 const fn category(error: &Identity) -> &'static str {
     match error {
-        Identity::ImdsUnavailable { .. }
+        Identity::ImdsUnavailable
         | Identity::TokenRequest { .. }
         | Identity::ImdsError { .. }
         | Identity::NoEndpoint

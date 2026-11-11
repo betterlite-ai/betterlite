@@ -20,16 +20,16 @@ pub const PROBE_TIMEOUT_SECONDS: u64 = 1;
 pub const TOKEN_BUDGET: RetryBudget = RetryBudget {
     total: 5,
     connect: 3,
+    status: 5,
 };
 const REFRESH_THRESHOLD_SECONDS: i64 = 7200;
 
-// None means the transport's configured connection timeout, which is two seconds for the token path
 #[derive(Debug)]
 pub struct ImdsRequest {
     pub url: String,
     pub query: Vec<(String, String)>,
     pub headers: Vec<(String, String)>,
-    pub timeout_seconds: Option<u64>,
+    pub timeout_seconds: u64,
 }
 
 #[derive(Debug)]
@@ -94,11 +94,16 @@ fn request(
             ("x-ms-client-request-id".to_owned(), id.to_owned()),
         ]);
     }
+    let timeout_seconds = if request_id.is_none() {
+        PROBE_TIMEOUT_SECONDS
+    } else {
+        CONNECTION_TIMEOUT_SECONDS
+    };
     ImdsRequest {
         url: url(environment),
         query: query(resource, client_id),
         headers,
-        timeout_seconds: request_id.is_none().then_some(PROBE_TIMEOUT_SECONDS),
+        timeout_seconds,
     }
 }
 
@@ -108,12 +113,6 @@ fn content_type(response: &ImdsResponse) -> Option<&str> {
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
         .map(|(_, value)| value.as_str())
-}
-
-const fn no_response() -> ManagedIdentityError {
-    ManagedIdentityError::ImdsUnavailable {
-        description: String::new(),
-    }
 }
 
 fn check_probe(
@@ -126,7 +125,7 @@ fn check_probe(
     let response = io
         .transport
         .get(&request)
-        .map_err(|_source| no_response())?;
+        .map_err(|_source| ManagedIdentityError::ImdsUnavailable)?;
     if response.status != 403 {
         return Ok(());
     }
@@ -141,7 +140,7 @@ fn check_probe(
 
 fn reply_failure(response: &ImdsResponse, error: &ImdsTokenError) -> ManagedIdentityError {
     let ImdsTokenError::Json(_) = error else {
-        return no_response();
+        return ManagedIdentityError::ImdsUnavailable;
     };
     let body = response.body.expose_secret();
     if body.is_empty() || content_type(response).is_some_and(|kind| kind.starts_with("text/")) {
@@ -189,7 +188,7 @@ fn reply(
         Ok(ImdsReply::Error { error, description }) => {
             Err(ManagedIdentityError::TokenRequest { error, description })
         }
-        Ok(ImdsReply::Missing) => Err(no_response()),
+        Ok(ImdsReply::Missing) => Err(ManagedIdentityError::ImdsUnavailable),
         Err(error) => Err(reply_failure(response, &error)),
     }
 }

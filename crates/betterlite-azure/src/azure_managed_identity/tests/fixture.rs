@@ -75,7 +75,7 @@ pub(super) struct RecordedRequest {
     pub(super) url: String,
     pub(super) query: BTreeMap<String, String>,
     pub(super) headers: BTreeMap<String, String>,
-    pub(super) timeout_seconds: Option<u64>,
+    pub(super) timeout_seconds: u64,
 }
 
 impl RecordedRequest {

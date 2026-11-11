@@ -65,7 +65,7 @@ fn imds_request_shape(request: &super::fixture::RecordedRequest) {
     assert_eq!(request.header("x-client-sku"), Some(CLIENT_SKU));
     assert_eq!(request.header("x-client-ver"), Some(CLIENT_VERSION));
     assert_eq!(request.header("x-ms-client-request-id"), Some(REQUEST_ID));
-    assert_eq!(request.timeout_seconds, None);
+    assert_eq!(request.timeout_seconds, 2);
 }
 
 fn default_authority() {
@@ -136,9 +136,9 @@ fn probe_in_chain() {
     let requests = fixture.imds.recorded();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].headers.len(), 0);
-    assert_eq!(requests[0].timeout_seconds, Some(1));
+    assert_eq!(requests[0].timeout_seconds, 1);
     assert_eq!(requests[1].header("metadata"), Some("true"));
-    assert_eq!(requests[1].timeout_seconds, None);
+    assert_eq!(requests[1].timeout_seconds, 2);
     assert!(fixture.scheduler.recorded().is_empty());
 }
 
@@ -454,8 +454,9 @@ fn imds_retry_policy() {
     exhausted_ladder(410, &[5, 10, 20, 40].map(Duration::from_secs));
     exhausted_ladder(404, &[1600, 3200, 6400, 12800].map(Duration::from_millis));
     retry_mixed();
-    retry_after();
-    retry_400_not_retried();
+    retry_connection_then_status();
+    retry_after_headers();
+    retry_status_codes();
     retry_transport_error();
 }
 
@@ -483,24 +484,74 @@ fn retry_mixed() {
     );
 }
 
-fn retry_after() {
+// connection errors and error statuses spend one total budget and share one backoff history
+fn retry_connection_then_status() {
     let fixture = Fixture::new(&[]);
-    fixture.imds.push(Reply::Response {
-        status: 429,
-        headers: vec![("Retry-After", "7")],
-        body: "slow".to_owned(),
-    });
-    fixture.imds.push(Reply::ok(TOKEN));
-    let token = fixture.acquire(&[SCOPE]).unwrap();
-    assert_eq!(token.token.expose_secret(), "imds-token");
-    assert_eq!(fixture.scheduler.recorded(), vec![Duration::from_secs(7)]);
+    fixture.imds.push_all(repeat_n(Reply::Failure, 3).collect());
+    fixture
+        .imds
+        .push_all(repeat_n(Reply::json(500, "boom"), 3).collect());
+    fixture.acquire(&[SCOPE]).unwrap_err();
+    assert_eq!(fixture.imds.recorded().len(), 6);
+    assert_eq!(
+        fixture.scheduler.recorded(),
+        [1600, 3200, 6400, 12800].map(Duration::from_millis)
+    );
 }
 
-fn retry_400_not_retried() {
-    let fixture = Fixture::new(&[]);
-    fixture.imds.push(Reply::bare(400, "boom"));
-    fixture.acquire(&[SCOPE]).unwrap_err();
-    assert_eq!(fixture.imds.recorded().len(), 1);
+// a non-empty Retry-After header makes any error status retryable; the millisecond headers only set the wait
+fn retry_after_headers() {
+    let future = "Tue, 14 Nov 2023 22:13:50 GMT";
+    let past = "Tue, 14 Nov 2023 22:13:10 GMT";
+    let cases = [
+        (429, "Retry-After", "7", 2, 7000),
+        (400, "Retry-After", "7", 2, 7000),
+        (400, "Retry-After", future, 2, 30_000),
+        (400, "Retry-After", past, 2, 0),
+        (400, "Retry-After", "0", 2, 0),
+        (500, "Retry-After", "soon", 2, 0),
+        (400, "Retry-After", "", 1, 0),
+        (200, "Retry-After", "7", 1, 0),
+        (503, "x-ms-retry-after-ms", "1500", 2, 1500),
+        (503, "retry-after-ms", "250", 2, 250),
+        (400, "x-ms-retry-after-ms", "1500", 1, 0),
+    ];
+    for (status, name, value, requests, sleep_millis) in cases {
+        let fixture = Fixture::new(&[]);
+        fixture.imds.push(Reply::Response {
+            status,
+            headers: vec![(name, value)],
+            body: TOKEN.to_owned(),
+        });
+        fixture.imds.push(Reply::ok(TOKEN));
+        let _outcome = fixture.acquire(&[SCOPE]);
+        let expected = if sleep_millis == 0 {
+            Vec::new()
+        } else {
+            vec![Duration::from_millis(sleep_millis)]
+        };
+        assert_eq!(
+            fixture.imds.recorded().len(),
+            requests,
+            "{status} {name} {value}"
+        );
+        assert_eq!(
+            fixture.scheduler.recorded(),
+            expected,
+            "{status} {name} {value}"
+        );
+    }
+}
+
+fn retry_status_codes() {
+    let cases = [(400, 1), (403, 1), (408, 2), (505, 2), (998, 2), (999, 1)];
+    for (status, requests) in cases {
+        let fixture = Fixture::new(&[]);
+        fixture.imds.push(Reply::bare(status, "boom"));
+        fixture.imds.push(Reply::ok(TOKEN));
+        let _outcome = fixture.acquire(&[SCOPE]);
+        assert_eq!(fixture.imds.recorded().len(), requests, "{status}");
+    }
 }
 
 fn retry_transport_error() {

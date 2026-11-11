@@ -26,8 +26,8 @@ pub enum ManagedIdentityError {
         "Workload identity was selected but no client ID was provided. Configure the environment with a client ID or pass a value for \"client_id\" argument"
     )]
     WorkloadClientId,
-    #[error("{NO_RESPONSE_PREFIX} {description}")]
-    ImdsUnavailable { description: String },
+    #[error("{NO_RESPONSE_PREFIX} ")]
+    ImdsUnavailable,
     #[error("{NO_RESPONSE_PREFIX} Token request error: ({error}) {description}")]
     TokenRequest { error: String, description: String },
     #[error("ManagedIdentityCredential authentication unavailable. Error: {message}")]

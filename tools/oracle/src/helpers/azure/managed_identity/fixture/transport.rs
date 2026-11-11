@@ -6,7 +6,9 @@ use betterlite_azure::azure_arc_identity::{ArcRequest, ArcResponse, ArcTransport
 use betterlite_azure::azure_hosted_identity::request::{
     HostedRequest, HostedResponse, HostedTransport,
 };
-use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsResponse, ImdsTransport};
+use betterlite_azure::azure_managed_identity::imds::{
+    CONNECTION_TIMEOUT_SECONDS, ImdsRequest, ImdsResponse, ImdsTransport,
+};
 use betterlite_azure::oidc_exchange::transport::{HttpReply, Transport as OidcTransport};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -101,7 +103,9 @@ impl ImdsTransport for SharedTransport {
                 "params": BTreeMap::from_iter(request.query.iter().cloned()),
                 "headers": header_map(request.headers.iter().cloned()),
                 "form": null,
-                "timeout": request.timeout_seconds,
+                // the Python pipeline only records a timeout a request sets itself, so the transport default stays null
+                "timeout": (request.timeout_seconds != CONNECTION_TIMEOUT_SECONDS)
+                    .then_some(request.timeout_seconds),
             }),
         );
         let reply = self.shared.next()?;

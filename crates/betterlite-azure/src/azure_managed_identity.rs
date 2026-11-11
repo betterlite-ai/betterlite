@@ -37,30 +37,14 @@ pub struct ManagedIdentityToken {
     pub refresh_on: Option<i64>,
 }
 
-impl ManagedIdentityToken {
-    const fn issued(
-        token: SecretString,
-        expires_on: i64,
-        token_type: String,
-        refresh_on: Option<i64>,
-    ) -> Self {
-        Self {
-            token,
-            expires_on: Some(expires_on),
-            token_type: Some(token_type),
-            refresh_on,
-        }
-    }
-}
-
 impl From<AccessToken> for ManagedIdentityToken {
     fn from(token: AccessToken) -> Self {
-        Self::issued(
-            token.token,
-            token.expires_on,
-            token.token_type,
-            token.refresh_on,
-        )
+        Self {
+            token: token.token,
+            expires_on: Some(token.expires_on),
+            token_type: Some(token.token_type),
+            refresh_on: token.refresh_on,
+        }
     }
 }
 
@@ -114,8 +98,17 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
             return Self::workload(io, &selection, scope);
         }
         if selection.kind == ManagedIdentityKind::CloudShell {
-            let acquired = self.shell().acquire(&io.hosted, resource)?;
-            return Ok(ManagedIdentityToken::from(acquired));
+            let shell = CloudShellCredential {
+                environment: self.environment.hosted.clone(),
+                identity: HostedIdentity {
+                    client_id: self.client_id.map(str::to_owned),
+                    identity_config: BTreeMap::new(),
+                },
+                within_default_credential: self.within_default_credential,
+            };
+            return Ok(ManagedIdentityToken::from(
+                shell.acquire(&io.hosted, resource)?,
+            ));
         }
         self.msal_backed(io, resource)
     }
@@ -138,21 +131,6 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
         })
     }
 
-    fn shell(&self) -> CloudShellCredential {
-        CloudShellCredential {
-            environment: self.environment.hosted.clone(),
-            identity: self.hosted_identity(),
-            within_default_credential: self.within_default_credential,
-        }
-    }
-
-    fn hosted_identity(&self) -> HostedIdentity {
-        HostedIdentity {
-            client_id: self.client_id.map(str::to_owned),
-            identity_config: BTreeMap::new(),
-        }
-    }
-
     // once an MSAL-backed credential is selected, MSAL re-reads the environment by key presence
     fn msal_backed(
         &self,
@@ -164,7 +142,10 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
             Some(kind) => {
                 let hosted = HostedCredential {
                     environment: self.environment.hosted.clone(),
-                    identity: self.hosted_identity(),
+                    identity: HostedIdentity {
+                        client_id: self.client_id.map(str::to_owned),
+                        identity_config: BTreeMap::new(),
+                    },
                 };
                 Ok(ManagedIdentityToken::from(
                     hosted.acquire(kind, &io.hosted, resource)?,

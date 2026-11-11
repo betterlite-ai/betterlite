@@ -21,10 +21,10 @@ where
         ArcIdentity::SystemAssigned
     };
     let token = acquire_arc_token(host, &transport, &endpoint, resource, identity)?;
-    Ok(ManagedIdentityToken::issued(
-        token.token,
-        token.expires_on,
-        token.token_type,
-        token.refresh_on,
-    ))
+    Ok(ManagedIdentityToken {
+        token: token.token,
+        expires_on: Some(token.expires_on),
+        token_type: Some(token.token_type),
+        refresh_on: token.refresh_on,
+    })
 }
