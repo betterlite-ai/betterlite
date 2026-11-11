@@ -120,10 +120,18 @@ fn default_health_check_interval_fills_a_missing_interval(
 }
 
 #[rstest]
-#[case::not_a_number("abc")]
-#[case::a_fraction("3.5")]
-fn a_malformed_default_health_check_interval_names_the_variable(#[case] value: &str) {
-    let error = load("{}", &[("DEFAULT_HEALTH_CHECK_INTERVAL", value)]).unwrap_err();
+#[case::not_a_number("{}", "abc")]
+#[case::a_fraction("{}", "3.5")]
+// LiteLLM parses the variable at import, so a configured interval does not spare a malformed value
+#[case::a_configured_interval_does_not_spare_it(
+    "general_settings: {health_check_interval: 60}",
+    "abc"
+)]
+fn a_malformed_default_health_check_interval_names_the_variable(
+    #[case] source: &str,
+    #[case] value: &str,
+) {
+    let error = load(source, &[("DEFAULT_HEALTH_CHECK_INTERVAL", value)]).unwrap_err();
     assert_eq!(error.category(), "environment");
     assert!(error.to_string().contains("DEFAULT_HEALTH_CHECK_INTERVAL"));
 }
