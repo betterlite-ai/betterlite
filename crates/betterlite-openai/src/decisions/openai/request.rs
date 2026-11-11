@@ -3,7 +3,7 @@ pub mod wire;
 use betterlite_models::decisions::openai::{
     self, ContentPart, DecisionInput, InputMessage, MessageContent,
 };
-use betterlite_models::decisions::systemone::{NoulCriteria, NoulLabel};
+use betterlite_models::decisions::systemone::NoulLabel;
 use betterlite_models::decisions::text::{TextError, decisions_text};
 use betterlite_models::decisions::{DecisionsJson, Extra, ir};
 
@@ -18,75 +18,43 @@ const CHOICE_INSTRUCTIONS: &str = "Which choice best fits the input?";
 const SCORE_INSTRUCTIONS: &str = "Which level best fits the input?";
 const PREDICATE_INSTRUCTIONS: &str = "Is this true of the input?";
 
-macro_rules! ir_variant_fn {
-    ($fn_name:ident, $Variant:ident, $Struct:ident, $field:ident, $ValueType:ty) => {
-        const fn $fn_name(
-            name: Option<String>,
-            instructions: Option<DecisionsJson>,
-            value: $ValueType,
-            extra: Extra,
-        ) -> ir::DecisionQuestion {
-            ir::DecisionQuestion::$Variant(ir::$Struct {
-                name,
-                instructions,
-                $field: value,
-                extra,
-            })
-        }
-    };
-}
-
-ir_variant_fn!(
-    ir_predicate,
-    Predicate,
-    PredicateQuestion,
-    criteria,
-    Option<NoulCriteria>
-);
-ir_variant_fn!(
-    ir_choice,
-    Choice,
-    ChoiceQuestion,
-    choices,
-    Vec<ir::ChoiceOption>
-);
-ir_variant_fn!(ir_score, Score, ScoreQuestion, levels, Vec<ir::ScoreLevel>);
-
 #[must_use]
 pub fn openai_request_to_ir(request: &openai::DecisionRequestBody) -> ir::DecisionRequest {
+    let instructions = |text: &str| Some(DecisionsJson::Text(text.to_owned()));
+    let mut questions = Vec::new();
+    for question in request.questions.as_ref() {
+        let extra = Extra::default();
+        questions.push(match question {
+            openai::DecisionQuestion::Predicate(predicate) => {
+                ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
+                    name: predicate.name.clone(),
+                    instructions: instructions(&predicate.instructions),
+                    criteria: None,
+                    extra,
+                })
+            }
+            openai::DecisionQuestion::Choice(checked) => {
+                let choice = checked.as_ref();
+                ir::DecisionQuestion::Choice(ir::ChoiceQuestion {
+                    name: choice.name.clone(),
+                    instructions: instructions(&choice.instructions),
+                    choices: ir_choices(choice),
+                    extra,
+                })
+            }
+            openai::DecisionQuestion::Score(score) => {
+                ir::DecisionQuestion::Score(ir::ScoreQuestion {
+                    name: score.name.clone(),
+                    instructions: instructions(&score.instructions),
+                    levels: ir_levels(score),
+                    extra,
+                })
+            }
+        });
+    }
     ir::DecisionRequest {
         input: ir_input(&request.input),
-        questions: request
-            .questions
-            .as_ref()
-            .iter()
-            .map(|question| {
-                let extra = Extra::default();
-                match question {
-                    openai::DecisionQuestion::Predicate(predicate) => ir_predicate(
-                        predicate.name.clone(),
-                        Some(DecisionsJson::Text(predicate.instructions.clone())),
-                        None,
-                        extra,
-                    ),
-                    openai::DecisionQuestion::Choice(checked) => {
-                        let choice = checked.as_ref();
-                        ir_choice(
-                            choice.name.clone(),
-                            Some(DecisionsJson::Text(choice.instructions.clone())),
-                            ir_choices(choice),
-                            extra,
-                        )
-                    }
-                    openai::DecisionQuestion::Score(score) => ir_score(
-                        score.name.clone(),
-                        Some(DecisionsJson::Text(score.instructions.clone())),
-                        ir_levels(score),
-                        extra,
-                    ),
-                }
-            })
-            .collect(),
+        questions,
         safety_identifier: request.safety_identifier.clone(),
     }
 }
