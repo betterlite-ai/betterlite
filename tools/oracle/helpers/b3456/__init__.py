@@ -1,201 +1,223 @@
 import asyncio
 import os
-from typing import TypeAlias, cast
-from unittest.mock import patch
+from dataclasses import dataclass, field
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
 
-from litellm.rag.ingestion import bedrock_ingestion
-from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion
+from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion, _normalize_principal_arn
 from litellm.types.rag import RAGIngestOptions
+from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-Params: TypeAlias = dict[str, Json]
-Call: TypeAlias = tuple[str, Params]
 
 
-def object_of(value: Json, name: str) -> Params:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return cast(Params, value)
+class PrincipalCase(TypedDict):
+    caller_arn: str
+    account_id: str
 
 
-def objects_of(value: Json, name: str) -> list[Params]:
-    if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
-    return [object_of(entry, name) for entry in value]
+class Principal(TypedDict):
+    step: Literal["principal"]
+    cases: list[PrincipalCase]
 
 
-def text_of(value: Json, name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
+class Detect(TypedDict):
+    step: Literal["detect"]
+    vector: dict[str, Json]
+    environment: dict[str, str]
+    data_sources: list[Json]
+    data_source: dict[str, Json]
 
 
-def environment_of(value: Json) -> dict[str, str]:
-    return cast(dict[str, str], object_of(value, "environment"))
+class BucketCase(TypedDict):
+    vector: dict[str, Json]
+    environment: dict[str, str]
+    unique_id: str
 
 
-class FakeAgent:
-    def __init__(self) -> None:
-        self.calls: list[Call] = []
-        self.data_sources: list[Json] = []
-        self.data_source: Params = {}
-        self.knowledge_base_id = ""
-        self.data_source_id = ""
+class Bucket(TypedDict):
+    step: Literal["bucket"]
+    cases: list[BucketCase]
 
-    def list_data_sources(self, **params: Json) -> Params:
-        self.calls.append(("list_data_sources", params))
-        return {"dataSourceSummaries": list(self.data_sources)}
 
-    def get_data_source(self, **params: Json) -> Params:
-        self.calls.append(("get_data_source", params))
-        return dict(self.data_source)
+class CreateKnowledgeBase(TypedDict):
+    step: Literal["create_knowledge_base"]
+    vector: dict[str, Json]
+    environment: dict[str, str]
+    kb_name: str
+    knowledge_base_id: str
+    role_arn: str
+    collection_arn: str
 
-    def create_bucket(self, **params: Json) -> None:
-        self.calls.append(("create_bucket", params))
 
-    def create_knowledge_base(self, **params: Json) -> Params:
-        self.calls.append(("create_knowledge_base", params))
+class CreateDataSource(TypedDict):
+    step: Literal["create_data_source"]
+    vector: dict[str, Json]
+    environment: dict[str, str]
+    kb_name: str
+    data_source_id: str
+
+
+Input: TypeAlias = Principal | Detect | Bucket | CreateKnowledgeBase | CreateDataSource
+
+
+class BucketConfiguration(TypedDict):
+    LocationConstraint: str
+
+
+class BucketParams(TypedDict):
+    Bucket: str
+    CreateBucketConfiguration: NotRequired[BucketConfiguration]
+
+
+class BedrockClient(Protocol):
+    def list_data_sources(self, **_params: Json) -> dict[str, Json]: ...
+
+    def get_data_source(self, **_params: Json) -> dict[str, Json]: ...
+
+    def create_bucket(self, **params: Unpack[BucketParams]) -> dict[str, Json]: ...
+
+    def create_knowledge_base(self, **params: Json) -> dict[str, Json]: ...
+
+    def get_knowledge_base(self, **params: Json) -> dict[str, Json]: ...
+
+    def create_data_source(self, **params: Json) -> dict[str, Json]: ...
+
+
+@dataclass
+class FakeClient(BedrockClient):
+    data_sources: list[Json] = field(default_factory=list)
+    data_source: dict[str, Json] = field(default_factory=dict)
+    knowledge_base_id: str = ""
+    data_source_id: str = ""
+    location_constraint: str | None = None
+    knowledge_base_params: dict[str, Json] = field(default_factory=dict)
+    data_source_params: dict[str, Json] = field(default_factory=dict)
+    polls: list[Json] = field(default_factory=list)
+
+    @override
+    def list_data_sources(self, **_params: Json) -> dict[str, Json]:
+        return {"dataSourceSummaries": self.data_sources}
+
+    @override
+    def get_data_source(self, **_params: Json) -> dict[str, Json]:
+        return self.data_source
+
+    @override
+    def create_bucket(self, **params: Unpack[BucketParams]) -> dict[str, Json]:
+        configuration = params.get("CreateBucketConfiguration")
+        self.location_constraint = (
+            None if configuration is None else configuration["LocationConstraint"]
+        )
+        return {"Location": f"/{params['Bucket']}"}
+
+    @override
+    def create_knowledge_base(self, **params: Json) -> dict[str, Json]:
+        self.knowledge_base_params = params
         return {"knowledgeBase": {"knowledgeBaseId": self.knowledge_base_id, "status": "CREATING"}}
 
-    def get_knowledge_base(self, **params: Json) -> Params:
-        self.calls.append(("get_knowledge_base", params))
+    @override
+    def get_knowledge_base(self, **params: Json) -> dict[str, Json]:
+        self.polls.append(params)
         return {"knowledgeBase": {"knowledgeBaseId": self.knowledge_base_id, "status": "ACTIVE"}}
 
-    def create_data_source(self, **params: Json) -> Params:
-        self.calls.append(("create_data_source", params))
+    @override
+    def create_data_source(self, **params: Json) -> dict[str, Json]:
+        self.data_source_params = params
         return {"dataSource": {"dataSourceId": self.data_source_id}}
 
 
-class ClientProvider:
-    def __init__(self, agent: FakeAgent) -> None:
-        self.agent = agent
-
-    def __call__(self, _service_name: str) -> FakeAgent:
-        return self.agent
-
-
-def build(vector: Json, environment: Json) -> BedrockRAGIngestion:
-    options = cast(RAGIngestOptions, {"vector_store": object_of(vector, "vector")})
-    with patch.dict(os.environ, environment_of(environment), clear=True):
-        return BedrockRAGIngestion(ingest_options=options)
-
-
-def call_params(calls: list[Call], name: str) -> Params:
-    for call_name, params in calls:
-        if call_name == name:
-            return params
-    raise ValueError(f"the {name} call was not recorded")
-
-
-def location_constraint(calls: list[Call]) -> str | None:
-    configuration = call_params(calls, "create_bucket").get("CreateBucketConfiguration")
-    if not isinstance(configuration, dict):
-        return None
-    constraint = cast(Params, configuration).get("LocationConstraint")
-    return constraint if isinstance(constraint, str) else None
-
-
-def created(ingestion: BedrockRAGIngestion, name: str) -> str | None:
-    value = ingestion._created_resources.get(name)  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-    return value if isinstance(value, str) else None
-
-
-def principal(input_value: Params) -> Json:
-    arns: list[Json] = []
-    for case in objects_of(input_value["cases"], "cases"):
-        caller_arn = text_of(case["caller_arn"], "caller_arn")
-        account_id = text_of(case["account_id"], "account_id")
-        arns.append(
-            bedrock_ingestion._normalize_principal_arn(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-                caller_arn, account_id
+class RecordingIngestion(BedrockRAGIngestion):
+    def __init__(
+        self, vector: dict[str, Json], environment: dict[str, str], client: FakeClient
+    ) -> None:
+        self.client = client
+        # the constructor reads os.environ, so only the case environment may be visible
+        saved = dict(os.environ)
+        os.environ.clear()
+        os.environ.update(environment)
+        try:
+            options = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rag.py#L183
+                RAGIngestOptions, {"vector_store": vector}
             )
-        )
-    return {"principal_arns": arns}
+            super().__init__(ingest_options=options)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
 
+    @override
+    def _get_boto3_client(self, service_name: str) -> FakeClient:
+        return self.client
 
-def detect(input_value: Params) -> Json:
-    agent = FakeAgent()
-    agent.data_sources = cast(list[Json], objects_of(input_value["data_sources"], "data_sources"))
-    agent.data_source = object_of(input_value["data_source"], "data_source")
-    ingestion = build(input_value["vector"], input_value.get("environment", {}))
-    with patch.object(BedrockRAGIngestion, "_get_boto3_client", ClientProvider(agent)):
-        ingestion._auto_detect_config()  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-    return {
-        "data_source_id": ingestion.data_source_id,
-        "s3_bucket": ingestion.s3_bucket,
-        "s3_prefix": ingestion.s3_prefix,
-    }
+    def detect(self) -> dict[str, Json]:
+        self._auto_detect_config()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L141
+        return {
+            "data_source_id": self.data_source_id,
+            "s3_bucket": self.s3_bucket,
+            "s3_prefix": self.s3_prefix,
+        }
 
+    def bucket(self, unique_id: str) -> dict[str, Json]:
+        name = self._create_s3_bucket(unique_id)
+        return {
+            "name": name,
+            "location_constraint": self.client.location_constraint,
+            "created": str(self._created_resources["s3_bucket"]),
+        }
 
-def bucket(input_value: Params) -> Json:
-    results: list[Json] = []
-    for case in objects_of(input_value["cases"], "cases"):
-        agent = FakeAgent()
-        ingestion = build(case["vector"], case.get("environment", {}))
-        with patch.object(BedrockRAGIngestion, "_get_boto3_client", ClientProvider(agent)):
-            name = ingestion._create_s3_bucket(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-                text_of(case["unique_id"], "unique_id")
-            )
-        results.append(
-            {
-                "name": name,
-                "location_constraint": location_constraint(agent.calls),
-                "created": created(ingestion, "s3_bucket"),
-            }
-        )
-    return {"buckets": results}
-
-
-def create_knowledge_base(input_value: Params) -> Json:
-    agent = FakeAgent()
-    agent.knowledge_base_id = text_of(input_value["knowledge_base_id"], "knowledge_base_id")
-    ingestion = build(input_value["vector"], input_value.get("environment", {}))
-    with patch.object(BedrockRAGIngestion, "_get_boto3_client", ClientProvider(agent)):
+    def knowledge_base(self, kb_name: str, role_arn: str, collection_arn: str) -> dict[str, Json]:
         knowledge_base_id = asyncio.run(
-            ingestion._create_knowledge_base(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-                text_of(input_value["kb_name"], "kb_name"),
-                text_of(input_value["role_arn"], "role_arn"),
-                text_of(input_value["collection_arn"], "collection_arn"),
-            )
+            self._create_knowledge_base(kb_name, role_arn, collection_arn)
         )
-    return {
-        "knowledge_base_id": knowledge_base_id,
-        "created": created(ingestion, "knowledge_base"),
-        "create_params": call_params(agent.calls, "create_knowledge_base"),
-        "get_calls": [params for name, params in agent.calls if name == "get_knowledge_base"],
-    }
+        return {
+            "knowledge_base_id": knowledge_base_id,
+            "created": str(self._created_resources["knowledge_base"]),
+            "create_params": self.client.knowledge_base_params,
+            "get_calls": self.client.polls,
+        }
+
+    def data_source_from(self, kb_name: str, bucket: Json) -> dict[str, Json]:
+        match bucket:
+            case str() as configured:
+                self.s3_bucket = configured
+            case None | bool() | int() | float() | list() | dict():
+                self.s3_bucket = None
+        data_source_id = self._create_data_source(kb_name)
+        return {
+            "data_source_id": data_source_id,
+            "created": str(self._created_resources["data_source"]),
+            "create_params": self.client.data_source_params,
+        }
 
 
-def create_data_source(input_value: Params) -> Json:
-    agent = FakeAgent()
-    agent.data_source_id = text_of(input_value["data_source_id"], "data_source_id")
-    vector = object_of(input_value["vector"], "vector")
-    ingestion = build(vector, input_value.get("environment", {}))
-    bucket_name = vector.get("s3_bucket")
-    ingestion.s3_bucket = bucket_name if isinstance(bucket_name, str) else None
-    with patch.object(BedrockRAGIngestion, "_get_boto3_client", ClientProvider(agent)):
-        data_source_id = ingestion._create_data_source(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage]
-            text_of(input_value["kb_name"], "kb_name")
+def run(input_value: Input) -> Json:
+    if input_value["step"] == "principal":
+        arns: list[Json] = [
+            _normalize_principal_arn(case["caller_arn"], case["account_id"])
+            for case in input_value["cases"]
+        ]
+        return {"principal_arns": arns}
+    if input_value["step"] == "detect":
+        client = FakeClient(
+            data_sources=input_value["data_sources"], data_source=input_value["data_source"]
         )
-    return {
-        "data_source_id": data_source_id,
-        "created": created(ingestion, "data_source"),
-        "create_params": call_params(agent.calls, "create_data_source"),
-    }
-
-
-def run(input_value: dict[str, Json]) -> Json:
-    step = text_of(input_value.get("step"), "step")
-    match step:
-        case "principal":
-            return principal(input_value)
-        case "detect":
-            return detect(input_value)
-        case "bucket":
-            return bucket(input_value)
-        case "create_knowledge_base":
-            return create_knowledge_base(input_value)
-        case "create_data_source":
-            return create_data_source(input_value)
-        case _:
-            raise ValueError(f"unknown step: {step}")
+        return RecordingIngestion(
+            input_value["vector"], input_value["environment"], client
+        ).detect()
+    if input_value["step"] == "bucket":
+        buckets: list[Json] = []
+        for case in input_value["cases"]:
+            bucket_client = FakeClient()
+            ingestion = RecordingIngestion(case["vector"], case["environment"], bucket_client)
+            buckets.append(ingestion.bucket(case["unique_id"]))
+        return {"buckets": buckets}
+    if input_value["step"] == "create_knowledge_base":
+        kb_client = FakeClient(knowledge_base_id=input_value["knowledge_base_id"])
+        ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], kb_client)
+        return ingestion.knowledge_base(
+            input_value["kb_name"], input_value["role_arn"], input_value["collection_arn"]
+        )
+    source_client = FakeClient(data_source_id=input_value["data_source_id"])
+    ingestion = RecordingIngestion(input_value["vector"], input_value["environment"], source_client)
+    return ingestion.data_source_from(
+        input_value["kb_name"], input_value["vector"].get("s3_bucket")
+    )

@@ -106,6 +106,7 @@ pub struct DataSourceSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetDataSourceResponse {
     pub data_source: DataSource,
 }
@@ -157,6 +158,7 @@ pub struct NewS3DataSourceConfiguration {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateDataSourceResponse {
     pub data_source: CreatedDataSource,
 }

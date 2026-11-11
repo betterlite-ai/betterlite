@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_rag::bedrock_ingestion::resources::principal::normalize_principal_arn;
-use betterlite_rag::bedrock_ingestion::settings::VectorStoreConfig;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -20,7 +19,7 @@ pub(crate) enum Input {
         cases: Vec<Identity>,
     },
     Detect {
-        vector: VectorStoreConfig,
+        vector: BTreeMap<String, Value>,
         #[serde(default)]
         environment: BTreeMap<String, String>,
         data_sources: Value,
@@ -31,7 +30,7 @@ pub(crate) enum Input {
     },
     CreateKnowledgeBase(CreateKnowledgeBaseCase),
     CreateDataSource {
-        vector: VectorStoreConfig,
+        vector: BTreeMap<String, Value>,
         #[serde(default)]
         environment: BTreeMap<String, String>,
         kb_name: String,
@@ -47,7 +46,7 @@ pub(crate) struct Identity {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Bucket {
-    vector: VectorStoreConfig,
+    vector: BTreeMap<String, Value>,
     #[serde(default)]
     environment: BTreeMap<String, String>,
     unique_id: String,
@@ -55,7 +54,7 @@ pub(crate) struct Bucket {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CreateKnowledgeBaseCase {
-    vector: VectorStoreConfig,
+    vector: BTreeMap<String, Value>,
     #[serde(default)]
     environment: BTreeMap<String, String>,
     kb_name: String,
@@ -66,7 +65,7 @@ pub(crate) struct CreateKnowledgeBaseCase {
 
 fn detect(
     runtime: &Runtime,
-    vector: &VectorStoreConfig,
+    vector: &BTreeMap<String, Value>,
     environment: &BTreeMap<String, String>,
     data_sources: &Value,
     data_source: &Value,
@@ -143,7 +142,7 @@ fn create_knowledge_base(runtime: &Runtime, case: &CreateKnowledgeBaseCase) -> H
 
 fn create_data_source(
     runtime: &Runtime,
-    vector: &VectorStoreConfig,
+    vector: &BTreeMap<String, Value>,
     environment: &BTreeMap<String, String>,
     kb_name: &str,
     data_source_id: &str,

@@ -5,7 +5,7 @@ use betterlite_bedrock::aws_endpoints::region::non_llm_region_name;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde_json::Number;
 use serde_json::value::RawValue;
 
 pub const DEFAULT_EMBEDDING_MODEL: &str = "amazon.titan-embed-text-v2:0";
@@ -112,35 +112,34 @@ fn flag(config: &VectorStoreConfig, field: &'static str) -> Result<Option<bool>,
     serde_json::from_str(raw.get()).map_err(|_source| SettingsError::FieldType { field })
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum TimeoutValue {
-    Signed(i64),
-    Unsigned(u64),
-    Float(f64),
-    Text(String),
-}
-
 fn timeout(config: &VectorStoreConfig) -> Result<i64, SettingsError> {
     let Some(raw) = config.get("ingestion_timeout") else {
         return Ok(DEFAULT_INGESTION_TIMEOUT);
     };
-    let parsed: Option<TimeoutValue> =
-        serde_json::from_str(raw.get()).map_err(|_source| SettingsError::Timeout)?;
-    match parsed {
-        None => Ok(DEFAULT_INGESTION_TIMEOUT),
-        Some(TimeoutValue::Signed(seconds)) => Ok(seconds),
-        Some(TimeoutValue::Unsigned(seconds)) => {
-            i64::try_from(seconds).map_err(|_source| SettingsError::Timeout)
-        }
-        Some(TimeoutValue::Float(seconds)) => Decimal::from_f64(seconds)
-            .and_then(|value| value.to_i64())
-            .ok_or(SettingsError::Timeout),
-        Some(TimeoutValue::Text(value)) => value
+    if raw.get().starts_with('"') {
+        let text: String =
+            serde_json::from_str(raw.get()).map_err(|_source| SettingsError::Timeout)?;
+        return text
             .trim()
             .parse::<i64>()
-            .map_err(|_source| SettingsError::Timeout),
+            .map_err(|_source| SettingsError::Timeout);
     }
+    let number: Option<Number> =
+        serde_json::from_str(raw.get()).map_err(|_source| SettingsError::Timeout)?;
+    number.map_or(Ok(DEFAULT_INGESTION_TIMEOUT), |seconds| {
+        whole_seconds(&seconds)
+    })
+}
+
+fn whole_seconds(number: &Number) -> Result<i64, SettingsError> {
+    if let Some(seconds) = number.as_i64() {
+        return Ok(seconds);
+    }
+    number
+        .as_f64()
+        .and_then(Decimal::from_f64)
+        .and_then(|value| value.to_i64())
+        .ok_or(SettingsError::Timeout)
 }
 
 mod tests;

@@ -112,12 +112,15 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) fn build(
-        vector: &VectorStoreConfig,
+        vector: &BTreeMap<String, Value>,
         environment: &BTreeMap<String, String>,
         responses: Vec<AwsRagResponse>,
     ) -> Result<Self, Box<HelperError>> {
+        // the case files are YAML, which cannot fill the raw values of a VectorStoreConfig
+        let text = serde_json::to_string(vector).or_value_error()?;
+        let config: VectorStoreConfig = serde_json::from_str(&text).or_value_error()?;
         let settings =
-            BedrockRagSettings::from_vector_store_config(vector, environment).or_value_error()?;
+            BedrockRagSettings::from_vector_store_config(&config, environment).or_value_error()?;
         Ok(Self {
             state: BedrockRagState::new(&settings),
             settings,
