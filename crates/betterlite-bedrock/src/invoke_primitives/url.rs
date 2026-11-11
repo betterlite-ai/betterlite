@@ -22,7 +22,7 @@ pub struct CompleteUrl<'text> {
     pub api_base: Option<&'text str>,
     pub model: &'text str,
     pub optional_params: &'text Params,
-    pub stream: Option<bool>,
+    pub stream: bool,
     pub environment: InvokeEnvironment<'text>,
 }
 
@@ -72,7 +72,7 @@ pub fn invoke_model_url(request: CompleteUrl<'_>) -> Result<InvokeModelUrl, UrlE
         region: &region,
         endpoint_type: BedrockEndpointType::Runtime,
     });
-    let streaming = request.stream == Some(true) && provider != Some(BedrockInvokeProvider::Ai21);
+    let streaming = request.stream && provider != Some(BedrockInvokeProvider::Ai21);
     let suffix = if streaming {
         "invoke-with-response-stream"
     } else {

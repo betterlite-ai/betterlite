@@ -13,7 +13,7 @@ fn request<'text>(
     model: &'text str,
     api_base: Option<&'text str>,
     optional_params: &'text Params,
-    stream: Option<bool>,
+    stream: bool,
     environment: InvokeEnvironment<'text>,
 ) -> Result<InvokeModelUrl, UrlError> {
     invoke_model_url(CompleteUrl {
@@ -38,7 +38,7 @@ fn environment_with_endpoint(runtime_endpoint: Option<&str>) -> InvokeEnvironmen
     }
 }
 
-fn plain_url(stream: Option<bool>) -> InvokeModelUrl {
+fn plain_url(stream: bool) -> InvokeModelUrl {
     request(
         "anthropic.claude-v2",
         None,
@@ -64,7 +64,7 @@ pub(super) fn invoke_model_url_case() {
 }
 
 fn defaults() {
-    let defaulted = plain_url(None);
+    let defaulted = plain_url(false);
     assert_eq!(defaulted.endpoint_url, DEFAULT_STREAMING);
     assert_eq!(defaulted.model_id, "anthropic.claude-v2");
     assert_eq!(defaulted.provider, Some(BedrockInvokeProvider::Anthropic));
@@ -77,7 +77,7 @@ fn api_base_wins() {
         "anthropic.claude-v2",
         Some("https://proxy.example/"),
         &proxy_params,
-        None,
+        false,
         environment_with_endpoint(Some("https://environment.example")),
     )
     .unwrap();
@@ -92,7 +92,7 @@ fn configured_and_environment() {
         "anthropic.claude-v2",
         None,
         &params(r#"{"aws_bedrock_runtime_endpoint":"https://configured.example"}"#),
-        None,
+        false,
         environment_with_endpoint(Some("https://environment.example")),
     )
     .unwrap();
@@ -104,7 +104,7 @@ fn configured_and_environment() {
         "anthropic.claude-v2",
         None,
         &empty(),
-        None,
+        false,
         environment_with_endpoint(Some("https://environment.example")),
     )
     .unwrap();
@@ -116,14 +116,14 @@ fn configured_and_environment() {
 
 fn streaming_action() {
     assert_eq!(
-        plain_url(Some(true)).endpoint_url,
+        plain_url(true).endpoint_url,
         "https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude-v2/invoke-with-response-stream"
     );
     let ai21 = request(
         "ai21.j2-mid-v1",
         None,
         &empty(),
-        Some(true),
+        true,
         InvokeEnvironment::default(),
     )
     .unwrap();
@@ -131,14 +131,12 @@ fn streaming_action() {
         ai21.endpoint_url,
         "https://bedrock-runtime.us-west-2.amazonaws.com/model/ai21.j2-mid-v1/invoke"
     );
-    for stream in [Some(false), None] {
-        assert_eq!(plain_url(stream).endpoint_url, DEFAULT_STREAMING);
-    }
+    assert_eq!(plain_url(false).endpoint_url, DEFAULT_STREAMING);
     let unknown = request(
         "custom-model",
         None,
         &empty(),
-        Some(true),
+        true,
         InvokeEnvironment::default(),
     )
     .unwrap();
@@ -153,7 +151,7 @@ fn explicit_region() {
         "anthropic.claude-v2",
         None,
         &params(r#"{"aws_region_name":"eu-central-1"}"#),
-        None,
+        false,
         InvokeEnvironment {
             region_name: Some("ap-south-1"),
             region: None,
@@ -174,7 +172,7 @@ fn environment_regions() {
         "anthropic.claude-v2",
         None,
         &empty(),
-        None,
+        false,
         InvokeEnvironment {
             region_name: Some("ap-south-1"),
             region: Some("ca-central-1"),
@@ -188,7 +186,7 @@ fn environment_regions() {
         "anthropic.claude-v2",
         None,
         &empty(),
-        None,
+        false,
         InvokeEnvironment {
             region_name: None,
             region: Some("ca-central-1"),
@@ -205,7 +203,7 @@ fn arn_region_and_encoding() {
         "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude",
         None,
         &empty(),
-        None,
+        false,
         InvokeEnvironment::default(),
     )
     .unwrap();
@@ -228,7 +226,7 @@ fn invoke_prefix_stripped() {
         "invoke/anthropic.claude-v2",
         None,
         &empty(),
-        None,
+        false,
         InvokeEnvironment::default(),
     )
     .unwrap();
@@ -240,7 +238,7 @@ fn plain_override() {
         "anthropic.claude-v2",
         None,
         &params(r#"{"model_id":"custom/id"}"#),
-        None,
+        false,
         InvokeEnvironment::default(),
     )
     .unwrap();
@@ -253,7 +251,7 @@ fn arn_override_cannot_set_region() {
         "arn:aws:bedrock:eu-west-1:1:model/x",
         None,
         &params(r#"{"model_id":"arn:aws:bedrock:us-east-1:1:model/y"}"#),
-        None,
+        false,
         InvokeEnvironment::default(),
     )
     .unwrap();
@@ -269,7 +267,7 @@ fn malformed_parameters() {
         "anthropic.claude-v2",
         None,
         &params(r#"{"aws_region_name":"US-East-1"}"#),
-        None,
+        false,
         InvokeEnvironment::default(),
     );
     assert!(matches!(invalid, Err(UrlError::Endpoint(_))));
@@ -277,7 +275,7 @@ fn malformed_parameters() {
         "anthropic.claude-v2",
         None,
         &params(r#"{"aws_region_name":5}"#),
-        None,
+        false,
         InvokeEnvironment::default(),
     );
     assert!(matches!(

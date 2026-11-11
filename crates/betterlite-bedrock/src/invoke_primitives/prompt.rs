@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::aws_endpoints::provider::BedrockInvokeProvider;
+use crate::aws_endpoints::provider::BedrockInvokeProvider as Provider;
 
 const LLAMA3_INSTRUCT_MODEL: &str = "meta-llama/Meta-Llama-3-8B-Instruct";
 const DEEPSEEK_MODEL: &str = "deepseek-r1/deepseek-r1-7b-instruct";
@@ -40,27 +40,15 @@ pub enum ConversionError {
 pub struct CustomPromptEntry {
     pub roles: BTreeMap<String, RoleTemplate>,
     #[serde(default)]
-    pub initial_prompt_value: Option<String>,
+    pub initial_prompt_value: String,
     #[serde(default)]
-    pub final_prompt_value: Option<String>,
-}
-
-impl From<&CustomPromptEntry> for CustomPromptTemplate {
-    fn from(entry: &CustomPromptEntry) -> Self {
-        Self {
-            roles: entry.roles.clone(),
-            initial_prompt_value: entry.initial_prompt_value.clone().unwrap_or_default(),
-            final_prompt_value: entry.final_prompt_value.clone().unwrap_or_default(),
-            bos_token: String::new(),
-            eos_token: String::new(),
-        }
-    }
+    pub final_prompt_value: String,
 }
 
 pub struct PromptConversion<'text> {
     pub model: &'text str,
     pub messages: &'text [Message],
-    pub provider: Option<BedrockInvokeProvider>,
+    pub provider: Option<Provider>,
     pub custom_prompt_dict: &'text BTreeMap<String, CustomPromptEntry>,
     pub prompts: &'text PromptFactory,
     pub now: DateTime<Utc>,
@@ -76,73 +64,54 @@ pub async fn convert_messages_to_prompt(
     conversion: PromptConversion<'_>,
 ) -> Result<ConvertedPrompt, ConversionError> {
     if let Some(entry) = conversion.custom_prompt_dict.get(conversion.model) {
+        let template = CustomPromptTemplate {
+            roles: entry.roles.clone(),
+            initial_prompt_value: entry.initial_prompt_value.clone(),
+            final_prompt_value: entry.final_prompt_value.clone(),
+            bos_token: String::new(),
+            eos_token: String::new(),
+        };
         return Ok(ConvertedPrompt {
-            prompt: custom_prompt(&CustomPromptTemplate::from(entry), conversion.messages)?,
+            prompt: custom_prompt(&template, conversion.messages)?,
             chat_history: None,
         });
     }
     match conversion.provider {
         Some(
-            BedrockInvokeProvider::Anthropic
-            | BedrockInvokeProvider::Amazon
-            | BedrockInvokeProvider::Mistral
-            | BedrockInvokeProvider::Meta
-            | BedrockInvokeProvider::Llama,
-        ) => family_prompt(&conversion).await,
-        Some(BedrockInvokeProvider::Cohere) => cohere_prompt(conversion.messages),
-        Some(BedrockInvokeProvider::DeepseekR1) => {
-            factory_prompt(
-                &conversion,
-                DEEPSEEK_MODEL,
-                None,
-                Some(DEEPSEEK_MODEL),
-                "deepseek_r1",
-            )
-            .await
+            Provider::Anthropic
+            | Provider::Amazon
+            | Provider::Mistral
+            | Provider::Meta
+            | Provider::Llama,
+        ) => factory_prompt(&conversion, conversion.model, Some("bedrock"), "bedrock").await,
+        Some(Provider::Cohere) => cohere_prompt(conversion.messages),
+        Some(Provider::DeepseekR1) => {
+            factory_prompt(&conversion, DEEPSEEK_MODEL, None, "deepseek_r1").await
         }
         Some(
-            BedrockInvokeProvider::Ai21
-            | BedrockInvokeProvider::Nova
-            | BedrockInvokeProvider::Qwen3
-            | BedrockInvokeProvider::Qwen2
-            | BedrockInvokeProvider::Twelvelabs
-            | BedrockInvokeProvider::Openai
-            | BedrockInvokeProvider::Stability
-            | BedrockInvokeProvider::Moonshot,
+            Provider::Ai21
+            | Provider::Nova
+            | Provider::Qwen3
+            | Provider::Qwen2
+            | Provider::Twelvelabs
+            | Provider::Openai
+            | Provider::Stability
+            | Provider::Moonshot,
         )
-        | None => fallback_prompt(conversion.messages),
+        | None => concatenated(conversion.messages),
     }
-}
-
-async fn family_prompt(
-    conversion: &PromptConversion<'_>,
-) -> Result<ConvertedPrompt, ConversionError> {
-    let lower = conversion.model.to_lowercase();
-    let template = bedrock_template(&lower);
-    factory_prompt(
-        conversion,
-        conversion.model,
-        Some("bedrock"),
-        template,
-        "bedrock",
-    )
-    .await
-}
-
-fn fallback_prompt(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError> {
-    Ok(ConvertedPrompt {
-        prompt: concatenated(messages)?,
-        chat_history: None,
-    })
 }
 
 async fn factory_prompt(
     conversion: &PromptConversion<'_>,
     model: &str,
     custom_provider: Option<&str>,
-    local_template: Option<&str>,
     operation: &'static str,
 ) -> Result<ConvertedPrompt, ConversionError> {
+    let local_template = match custom_provider {
+        Some("bedrock") => bedrock_template(&model.to_lowercase()),
+        _ => Some(model),
+    };
     if let Some(template) = local_template
         && !has_local_template(conversion.prompts, template)
     {
@@ -185,7 +154,7 @@ fn cohere_prompt(messages: &[Message]) -> Result<ConvertedPrompt, ConversionErro
     })
 }
 
-fn concatenated(messages: &[Message]) -> Result<String, ConversionError> {
+fn concatenated(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError> {
     let mut prompt = String::new();
     for message in messages {
         match &message.content {
@@ -194,7 +163,10 @@ fn concatenated(messages: &[Message]) -> Result<String, ConversionError> {
             Content::Null => prompt.push_str("None"),
         }
     }
-    Ok(prompt)
+    Ok(ConvertedPrompt {
+        prompt,
+        chat_history: None,
+    })
 }
 
 fn bedrock_template(lower: &str) -> Option<&'static str> {

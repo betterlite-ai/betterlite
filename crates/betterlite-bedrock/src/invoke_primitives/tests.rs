@@ -290,7 +290,7 @@ fn url_failure() {
         api_base: None,
         model: "anthropic.claude-v2",
         optional_params: &optional,
-        stream: None,
+        stream: false,
         environment: InvokeEnvironment::default(),
     })
     .unwrap_err();

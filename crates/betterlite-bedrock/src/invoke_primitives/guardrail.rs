@@ -1,5 +1,4 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
+use serde::Deserialize;
 use serde_json::value::RawValue;
 use thiserror::Error;
 
@@ -10,9 +9,13 @@ const TRACE: &str = "X-Amzn-Bedrock-Trace";
 #[derive(Debug, Error)]
 pub enum GuardrailError {
     #[error(
-        "Invalid guardrailConfig={raw}. Expected format: {{'guardrailIdentifier': str, 'guardrailVersion': str, 'trace': 'enabled'|'disabled'|'enabled_full'}}. Error: {detail}"
+        "Invalid guardrailConfig={raw}. Expected format: {{'guardrailIdentifier': str, 'guardrailVersion': str, 'trace': 'enabled'|'disabled'|'enabled_full'}}. Error: {source}"
     )]
-    Invalid { raw: String, detail: String },
+    Invalid {
+        raw: String,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error(
         "guardrailConfig={raw} is missing 'guardrailIdentifier'. Expected format: {{'guardrailIdentifier': str, 'guardrailVersion': str, 'trace': 'enabled'|'disabled'|'enabled_full'}}"
     )]
@@ -28,60 +31,47 @@ impl GuardrailError {
     }
 }
 
-pub fn guardrail_headers(raw: &RawValue) -> Result<Vec<(String, String)>, GuardrailError> {
-    let text = raw.get();
-    let parsed: Json = serde_json::from_str(text).map_err(|source| GuardrailError::Invalid {
-        raw: text.to_owned(),
-        detail: source.to_string(),
-    })?;
-    let Json::Object(fields) = parsed else {
-        return Err(GuardrailError::Invalid {
-            raw: text.to_owned(),
-            detail: "expected an object".to_owned(),
-        });
-    };
-    let identifier = text_field(&fields, "guardrailIdentifier", text)?;
-    let version = text_field(&fields, "guardrailVersion", text)?;
-    let trace = match fields.get("trace") {
-        None => None,
-        Some(Json::Text(value))
-            if matches!(value.as_str(), "enabled" | "disabled" | "enabled_full") =>
-        {
-            Some(value.to_ascii_uppercase())
-        }
-        Some(_) => {
-            return Err(GuardrailError::Invalid {
-                raw: text.to_owned(),
-                detail: "trace must be 'enabled', 'disabled' or 'enabled_full'".to_owned(),
-            });
-        }
-    };
-    let Some(required_identifier) = identifier else {
-        return Err(GuardrailError::MissingIdentifier {
-            raw: text.to_owned(),
-        });
-    };
-    let mut headers = vec![(IDENTIFIER.to_owned(), required_identifier.to_owned())];
-    if let Some(version_value) = version {
-        headers.push((VERSION.to_owned(), version_value.to_owned()));
-    }
-    if let Some(trace_value) = trace {
-        headers.push((TRACE.to_owned(), trace_value));
-    }
-    Ok(headers)
+#[derive(Deserialize)]
+struct GuardrailConfig {
+    #[serde(rename = "guardrailIdentifier")]
+    identifier: Option<String>,
+    #[serde(rename = "guardrailVersion")]
+    version: Option<String>,
+    trace: Option<Trace>,
 }
 
-fn text_field<'fields>(
-    fields: &'fields IndexMap<String, Json>,
-    name: &str,
-    raw: &str,
-) -> Result<Option<&'fields str>, GuardrailError> {
-    match fields.get(name) {
-        None => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(_) => Err(GuardrailError::Invalid {
-            raw: raw.to_owned(),
-            detail: format!("{name} must be a string"),
-        }),
+#[derive(Deserialize)]
+enum Trace {
+    #[serde(rename = "enabled")]
+    Enabled,
+    #[serde(rename = "disabled")]
+    Disabled,
+    #[serde(rename = "enabled_full")]
+    EnabledFull,
+}
+
+pub fn guardrail_headers(raw: &RawValue) -> Result<Vec<(String, String)>, GuardrailError> {
+    let config: GuardrailConfig =
+        serde_json::from_str(raw.get()).map_err(|source| GuardrailError::Invalid {
+            raw: raw.get().to_owned(),
+            source,
+        })?;
+    let Some(identifier) = config.identifier else {
+        return Err(GuardrailError::MissingIdentifier {
+            raw: raw.get().to_owned(),
+        });
+    };
+    let mut headers = vec![(IDENTIFIER.to_owned(), identifier)];
+    if let Some(version) = config.version {
+        headers.push((VERSION.to_owned(), version));
     }
+    if let Some(trace) = config.trace {
+        let value = match trace {
+            Trace::Enabled => "ENABLED",
+            Trace::Disabled => "DISABLED",
+            Trace::EnabledFull => "ENABLED_FULL",
+        };
+        headers.push((TRACE.to_owned(), value.to_owned()));
+    }
+    Ok(headers)
 }

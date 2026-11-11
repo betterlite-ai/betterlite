@@ -132,7 +132,7 @@ fn model_url(case: &UrlCase) -> Result<Value, Box<HelperError>> {
         api_base: case.api_base.as_deref(),
         model: &case.model,
         optional_params: &case.optional_params,
-        stream: case.stream,
+        stream: case.stream.unwrap_or(false),
         environment: InvokeEnvironment {
             region_name: settings.aws_region_name.as_deref(),
             region: settings.aws_region.as_deref(),
