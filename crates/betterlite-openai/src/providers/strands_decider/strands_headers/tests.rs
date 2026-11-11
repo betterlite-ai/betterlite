@@ -66,8 +66,8 @@ fn strands_headers_drop_the_host_and_both_reserved_prefixes_case_insensitively()
     assert_eq!(
         kept,
         vec![
-            "X-Request-Source",
             SESSION_HEADER,
+            "X-Request-Source",
             "x-amazon",
             "x-amzn-bedrock-agentcore",
         ]

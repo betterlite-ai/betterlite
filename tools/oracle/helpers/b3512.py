@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import botocore.auth
 import httpx
-from litellm.llms.strands_decider.decisions import transformation
+from litellm._logging import verbose_logger
 from litellm.llms.strands_decider.decisions.transformation import (
     StrandsDeciderDecisionsConfig,
     agentcore_runtime,
@@ -19,6 +19,7 @@ from litellm.types.decisions import (
     DecisionsIRRequest,
     DecisionsIRResponse,
     DecisionsIRState,
+    UnsupportedDecisionsRequest,
 )
 from pydantic import JsonValue
 
@@ -101,7 +102,7 @@ def recorded_dropped() -> Generator[list[Json], None, None]:
         if args:
             dropped.extend(cast("list[Json]", args[0]))
 
-    with patch.object(transformation.verbose_logger, "warning", capture):
+    with patch.object(verbose_logger, "warning", capture):
         yield dropped
 
 
@@ -146,6 +147,8 @@ def sign_step(fields: Object) -> Json:
     api_key = optional_text(fields, "api_key")
     params: Mapping[str, object] = obj_or_empty(fields.get("litellm_params"))
     body = config.transform_decisions_request(model, ir_request(fields), PROVIDER)
+    if isinstance(body, UnsupportedDecisionsRequest):
+        raise ValueError(body.reason)
     url = config.get_complete_url(api_base=api_base, model=model)
     with frozen_clock(expect_int(fields, "now")), recorded_dropped() as dropped:
         signed, payload = config.sign_request(
@@ -156,7 +159,7 @@ def sign_step(fields: Object) -> Json:
             api_key=api_key,
             litellm_params=params,
         )
-    forwarded = {name: value for name, value in signed.items() if isinstance(value, str)}
+    forwarded = dict(signed)
     return {
         "dropped": cast("Json", list(dropped)),
         "headers": cast("Json", forwarded),
