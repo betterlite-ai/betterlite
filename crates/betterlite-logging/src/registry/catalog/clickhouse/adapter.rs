@@ -7,6 +7,7 @@ use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::clickhouse::clickhouse_logging::context::LensAnalysis;
+use crate::clickhouse::clickhouse_logging::payload::CallbackKwargs;
 use crate::clickhouse::clickhouse_logging::spend_logger::{CallbackEvent, ClickHouseSpendLogger};
 use crate::clickhouse::clickhouse_logging::storage::ClickHouseStorage;
 
@@ -22,6 +23,20 @@ fn delivery_error(error: &serde_json::Error) -> LoggerError {
     }
 }
 
+impl<Storage: ClickHouseStorage> ClickHouseAdapter<Storage> {
+    const fn callback_event<'event>(
+        &'event self,
+        kwargs: &'event CallbackKwargs,
+    ) -> CallbackEvent<'event> {
+        CallbackEvent {
+            kwargs,
+            // B190 redacts the stored payload before the event is built, so the projection keeps what it got
+            redact: false,
+            lens: &self.lens,
+        }
+    }
+}
+
 // the success and failure hooks are async in LiteLLM, and the batch logger never waits on ClickHouse
 #[async_trait]
 impl<Storage: ClickHouseStorage + 'static> CallbackLogger for ClickHouseAdapter<Storage> {
@@ -31,24 +46,17 @@ impl<Storage: ClickHouseStorage + 'static> CallbackLogger for ClickHouseAdapter<
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         let kwargs = callback_kwargs(&event.payload).map_err(|error| delivery_error(&error))?;
-        let call = CallbackEvent {
-            kwargs: &kwargs,
-            // B190 redacts the stored payload before the event is built, so the projection keeps what it got
-            redact: false,
-            lens: &self.lens,
-        };
-        self.logger.async_log_success_event(&call).await;
+        self.logger
+            .async_log_success_event(&self.callback_event(&kwargs))
+            .await;
         Ok(())
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         let kwargs = callback_kwargs(&event.payload).map_err(|error| delivery_error(&error))?;
-        let call = CallbackEvent {
-            kwargs: &kwargs,
-            redact: false,
-            lens: &self.lens,
-        };
-        self.logger.async_log_failure_event(&call).await;
+        self.logger
+            .async_log_failure_event(&self.callback_event(&kwargs))
+            .await;
         Ok(())
     }
 }

@@ -1,5 +1,6 @@
 mod adapter;
 mod payload;
+mod rows;
 mod schema;
 mod storage;
 mod tests;

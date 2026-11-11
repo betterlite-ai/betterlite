@@ -28,7 +28,20 @@ where
     }
 }
 
-// LiteLLM's sync hooks are sync and post on the blocking client, so they go onto the owned tracker
+impl<Sender: MeteringSender + 'static, Time: UtcClock + 'static> OpenMeterAdapter<Sender, Time> {
+    // LiteLLM's sync hooks post on the blocking client, so both go onto the owned tracker
+    fn spawn_sync(&self, event: &LoggerEvent) {
+        let payload = Arc::clone(&event.payload);
+        let logger = Arc::clone(&self.logger);
+        let _spawned = self.tracker.spawn(async move {
+            let call = metering_event(&payload);
+            if let Err(error) = logger.log_success_event(&call).await {
+                tracing::warn!(%error, "the openmeter event could not be logged");
+            }
+        });
+    }
+}
+
 #[async_trait]
 impl<Sender: MeteringSender + 'static, Time: UtcClock + 'static> CallbackLogger
     for OpenMeterAdapter<Sender, Time>
@@ -38,26 +51,12 @@ impl<Sender: MeteringSender + 'static, Time: UtcClock + 'static> CallbackLogger
     }
 
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        let payload = Arc::clone(&event.payload);
-        let logger = Arc::clone(&self.logger);
-        let _spawned = self.tracker.spawn(async move {
-            let call = metering_event(&payload);
-            if let Err(error) = logger.log_success_event(&call).await {
-                tracing::warn!(%error, "the openmeter success event could not be logged");
-            }
-        });
+        self.spawn_sync(event);
         Ok(())
     }
 
     fn log_stream_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        let payload = Arc::clone(&event.payload);
-        let logger = Arc::clone(&self.logger);
-        let _spawned = self.tracker.spawn(async move {
-            let call = metering_event(&payload);
-            if let Err(error) = logger.log_success_event(&call).await {
-                tracing::warn!(%error, "the openmeter stream event could not be logged");
-            }
-        });
+        self.spawn_sync(event);
         Ok(())
     }
 
