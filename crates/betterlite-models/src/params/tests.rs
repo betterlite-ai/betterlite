@@ -410,13 +410,21 @@ fn extra_body_wrong_type_is_rejected() {
 }
 
 fn nested_drop_paths_are_rejected() {
-    let error = mapping(
+    let dotted = mapping(
         r#"{"tools": []}"#,
-        r#"{"additional_drop_params": ["tools[*].function.strict"]}"#,
+        r#"{"additional_drop_params": ["tools.function.strict"]}"#,
     )
     .unwrap_err();
     assert!(
-        matches!(error, ParameterError::NestedDropPath { path } if path == "tools[*].function.strict")
+        matches!(dotted, ParameterError::NestedDropPath { path } if path == "tools.function.strict")
+    );
+    let indexed = mapping(
+        r#"{"tools": []}"#,
+        r#"{"additional_drop_params": ["tools[0].strict"]}"#,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(indexed, ParameterError::NestedDropPath { path } if path == "tools[0].strict")
     );
 }
 

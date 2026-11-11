@@ -391,6 +391,17 @@ fn identical_base_model_adds_nothing() {
         union("gpt-4o", "gpt-4o"),
         listed(&[BASE, &["response_format", "user"]].concat())
     );
+    let capabilities = caps(&[]);
+    let base_capabilities = caps(&[OpenAiCapability::CatalogModel]);
+    let mut query = query("gpt-4o", OpenAiConfigTag::Gpt, &capabilities);
+    query.base_model = Some(ModelProjection {
+        model: "gpt-4o",
+        capabilities: &base_capabilities,
+    });
+    assert_eq!(
+        supported_parameters(&query),
+        listed(&[BASE, &["response_format"]].concat())
+    );
 }
 
 fn embeddings_ignores_the_base_model() {

@@ -85,13 +85,17 @@ fn a_null_deployment_flag_is_unset() {
 }
 
 fn a_nested_drop_path_is_rejected() {
-    let source = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      additional_drop_params: ['tools[*].function.strict']\n";
-    let error = settings(source, &[]).unwrap_err();
+    let dotted = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      additional_drop_params: ['tools.function']\n";
+    let error = settings(dotted, &[]).unwrap_err();
     assert!(
-        error.contains(
-            "model_list.0.litellm_params.additional_drop_params[tools[*].function.strict]"
-        ),
+        error.contains("model_list.0.litellm_params.additional_drop_params[tools.function]"),
         "{error}"
+    );
+    let indexed = "model_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      additional_drop_params: ['tools[0]']\n";
+    let indexed_error = settings(indexed, &[]).unwrap_err();
+    assert!(
+        indexed_error.contains("model_list.0.litellm_params.additional_drop_params[tools[0]]"),
+        "{indexed_error}"
     );
 }
 
