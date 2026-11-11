@@ -5,7 +5,7 @@ use serde_json::Number;
 
 use crate::api::skills::fixtures::{CALL_ID, kwargs, text};
 use crate::api::skills::list_fixtures::{
-    Fixture, HostedCall, call_with, hosted_params, listing, logging, map, params_with_query,
+    Fixture, HostedCall, call_with, hosted_params, listing, logging, map,
 };
 
 async fn hosted_call(limit: Option<i64>) -> HostedCall {
@@ -49,7 +49,8 @@ async fn hosted_pagination_treats_a_zero_limit_as_absent() {
 async fn hosted_pagination_omits_page_source_and_extra_query() {
     let fixture = Fixture::new();
     let values = kwargs();
-    let params = params_with_query(map(&[
+    let mut params = hosted_params();
+    params.extra_query = Some(map(&[
         ("limit", Json::Number(Number::from(7_i64))),
         ("page", text("2")),
     ]));
