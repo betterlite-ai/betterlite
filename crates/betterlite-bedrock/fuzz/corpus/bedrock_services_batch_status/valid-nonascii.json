@@ -1,0 +1,1 @@
+{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"Failed","message":"échec du travail","jobName":"nuit-é"}
