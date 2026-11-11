@@ -347,6 +347,28 @@ fn callback_resolution_skips_a_name_outside_the_catalog() {
 }
 
 #[test]
+fn callback_request_logger_of_another_name_is_registered() {
+    let mut fixture = setup_with(&[("langfuse", Outcome::Logger(String::from("langfuse")))]);
+    let existing: Arc<dyn CallbackLogger> = hook("otel");
+    fixture
+        .lists
+        .async_success
+        .push(DynamicCallback::Logger(existing));
+    fixture
+        .call(
+            "completion",
+            &[],
+            chat_request(r#"{"callbacks":["langfuse"]}"#),
+        )
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        labels(&fixture.lists.async_success),
+        ["logger:otel", "logger:langfuse"]
+    );
+}
+
+#[test]
 fn callback_resolution_removes_one_name_entry() {
     let mut fixture = setup_with(&[("langfuse", Outcome::Logger(String::from("langfuse")))]);
     fixture.lists.success = vec![name("langfuse"), name("langfuse")];
