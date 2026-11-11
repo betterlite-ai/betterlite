@@ -4,10 +4,10 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 import litellm
 from litellm import utils
 from litellm.exceptions import UnsupportedParamsError
-from litellm.llms.base_llm.base_utils import type_to_response_format_param
+from litellm.llms.base_llm import base_utils
 from litellm.llms.bedrock.common_utils import BedrockModelInfo
 from litellm.llms.bedrock.image_generation.image_handler import BedrockImageGeneration
-from litellm.utils import ProviderConfigManager, _bedrock_route_for_request, _get_non_default_params
+from litellm.utils import ProviderConfigManager
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Fields: TypeAlias = dict[str, Json]
@@ -29,21 +29,21 @@ class RequestSpec(TypedDict):
 
 class Call(TypedDict):
     function: str
-    passed_params: NotRequired[Fields]
-    default_names: NotRequired[list[str]]
+    passed_params: Fields
+    default_names: list[str]
     additional_drop_params: NotRequired[list[str] | None]
-    kwargs: NotRequired[Fields]
-    excluding: NotRequired[list[str]]
+    kwargs: Fields
+    excluding: list[str]
     endpoint: NotRequired[Literal["completion", "transcription"] | None]
-    non_default_params: NotRequired[Fields]
-    optional_params: NotRequired[Fields]
-    model: NotRequired[str]
-    request: NotRequired[RequestSpec]
+    non_default_params: Fields
+    optional_params: Fields
+    model: str
+    request: RequestSpec
     remove_sensitive_keys: NotRequired[bool | None]
     add_provider_specific_params: NotRequired[bool | None]
-    params: NotRequired[Fields]
-    custom_llm_provider: NotRequired[str]
-    openai_params: NotRequired[list[str]]
+    params: Fields
+    custom_llm_provider: str
+    openai_params: list[str]
     drop_params: NotRequired[bool | None]
     litellm_drop_params: NotRequired[bool | None]
     mapper: NotRequired[MapperSpec | None]
@@ -65,6 +65,9 @@ DEFAULTS: Call = {
     "optional_params": {},
     "params": {},
     "openai_params": [],
+    "model": "",
+    "custom_llm_provider": "",
+    "request": {"passed_params": {}, "special_params": {}, "custom_llm_provider": ""},
 }
 
 
@@ -76,17 +79,11 @@ class FixtureError(Exception):
 
 class Mapper:
     def __init__(self, spec: MapperSpec) -> None:
-        self.supported = spec["supported"]
-        self.fail_status = spec.get("fail_status")
-        self.records = spec.get("records") is True
-        self.rewrite_refs = spec.get("rewrite_refs") is True
+        self.spec = spec
+        self.get_supported_openai_params = Provide(spec["supported"])
         self.get_supported_openai_params_stt = self.get_supported_openai_params
         self.map_openai_params_stt = self.map_openai_params
         self.get_json_schema_from_pydantic_object = self.schema_for
-
-    def get_supported_openai_params(self, model: str = "") -> list[str]:
-        del model
-        return list(self.supported)
 
     def map_openai_params(
         self,
@@ -96,25 +93,25 @@ class Mapper:
         model: str = "",
         drop_params: bool = False,
     ) -> Fields:
-        if self.fail_status is not None:
-            raise FixtureError(self.fail_status)
+        if (status := self.spec.get("fail_status")) is not None:
+            raise FixtureError(status)
         mapped = {**optional_params, **non_default_params}
-        if self.records:
+        if self.spec.get("records") is True:
             mapped["seen_drop"] = drop_params
             mapped["seen_model"] = model
         return mapped
 
     def schema_for(self, response_format: Fields) -> Json:
-        template = "/$defs/{model}" if self.rewrite_refs else None
-        return type_to_response_format_param(response_format, ref_template=template)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179
+        template = "/$defs/{model}" if self.spec.get("rewrite_refs") is True else None
+        return base_utils.type_to_response_format_param(response_format, ref_template=template)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179
 
 
 class Provide:
-    def __init__(self, mapper: Mapper | None) -> None:
-        self.mapper = mapper
+    def __init__(self, value: Mapper | list[str] | None) -> None:
+        self.value = value
 
-    def __call__(self, *_args: Json, **_kwargs: Json) -> Mapper | None:
-        return self.mapper
+    def __call__(self, *_args: Json, **_kwargs: Json) -> Mapper | list[str] | None:
+        return self.value
 
 
 class RouteRecorder:
@@ -134,7 +131,7 @@ def build_mapper(spec: MapperSpec | None) -> Mapper | None:
 def bedrock_route(call: Call) -> Json:
     recorder = RouteRecorder()
     BedrockModelInfo.get_bedrock_route = recorder  # type: ignore[method-assign, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1347
-    _bedrock_route_for_request(
+    utils._bedrock_route_for_request(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3489
         call["model"], call["passed_params"], call.get("additional_drop_params")
     )
     return recorder.answer
@@ -209,9 +206,9 @@ def image_generation(call: Call) -> Json:
 
 def select_non_default(call: Call) -> Json:
     defaults: dict[str, None] = dict.fromkeys(call["default_names"])
-    return _get_non_default_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3497
+    return utils._get_non_default_params(  # noqa: SLF001  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3497
         passed_params=call["passed_params"],
-        default_params=defaults,
+        default_params=defaults,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3497
         additional_drop_params=call.get("additional_drop_params"),
     )
 
