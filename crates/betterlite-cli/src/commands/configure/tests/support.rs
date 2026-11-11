@@ -111,6 +111,7 @@ pub(crate) fn target_configure(
         Target::Codex => "codex",
     };
     let parsed = TestCli::try_parse_from([
+        "lite",
         "configure",
         name,
         "--api-key",

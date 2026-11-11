@@ -89,8 +89,9 @@ async fn withheld_credentials_name_the_default_endpoint_when_none_was_captured()
         .unwrap();
     set_base_url(&harness.environment, "http://elsewhere.test");
     harness.unconfigure(unconfigure_claude()).await.unwrap();
-    let expected = "env.ANTHROPIC_AUTH_TOKEN (captured with no env.ANTHROPIC_BASE_URL (Anthropic's default endpoint))";
-    assert!(harness.stdout_text().contains(expected));
+    let expected = "env.ANTHROPIC_AUTH_TOKEN (captured with no ANTHROPIC_BASE_URL (Anthropic's default endpoint))";
+    let stdout = harness.stdout_text();
+    assert!(stdout.contains(expected), "{stdout}");
 }
 
 #[tokio::test]
