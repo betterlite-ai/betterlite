@@ -5,10 +5,12 @@ use betterlite_models::decisions::Json;
 use betterlite_redis::request_batch::scope::{
     active_request_redis_batch, request_redis_batch_scope,
 };
+use serde_json::Number;
+use tracing::instrument::WithSubscriber as _;
 
-use super::support::{
-    FakeRedis, Reply, ResizableMemory, connect_cache, local_memory, settings_for_tests, write,
-};
+use super::deferred_log::{capture_warnings, captured};
+
+use super::support::{FakeRedis, Reply, connect_cache, local_memory, settings_for_tests, write};
 use crate::dual_cache::{DualCache, DualCacheError, MAX_REDIS_BATCH_CACHE_SIZE, Ttl, lock_read};
 use crate::types::pipeline::RedisPipelineIncrement;
 
@@ -49,6 +51,27 @@ async fn get_cache_falls_back_to_redis_and_backfills_memory() {
         Some(Ttl::Expiry(1030.0_f64))
     );
     assert_eq!(cache.get_cache("key", false), Some(text("from-redis")));
+    assert_eq!(server.commands("GET").len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn async_get_cache_falls_back_to_redis_and_backfills_memory() {
+    let server = FakeRedis::start().await;
+    server.script("GET", vec![Reply::Bulk("\"from-redis\"".to_owned())]);
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        Some(connect_cache(server.addr).await),
+        settings_for_tests(Some(30.0_f64)),
+    );
+    assert_eq!(
+        cache.async_get_cache("key", false).await,
+        Some(text("from-redis"))
+    );
+    assert_eq!(
+        cache.async_get_ttl("key").await.expect("the backfill ttl"),
+        Some(Ttl::Expiry(1030.0_f64))
+    );
+    assert_eq!(cache.get_cache("key", true), Some(text("from-redis")));
     assert_eq!(server.commands("GET").len(), 1);
 }
 
@@ -157,7 +180,7 @@ async fn async_set_cache_pipeline_swallows_a_redis_error() {
 async fn async_delete_cache_keys_chunks_the_redis_deletes() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
-        ResizableMemory::new(),
+        local_memory(1000.0),
         Some(connect_cache(server.addr).await),
         settings_for_tests(None),
     );
@@ -200,7 +223,7 @@ async fn increment_cache_propagates_the_redis_error() {
     assert_eq!(
         cache.get_cache("key", true),
         Some(Json::Number(
-            serde_json::Number::from_f64(2.0_f64).expect("a finite number")
+            Number::from_f64(2.0_f64).expect("a finite number")
         ))
     );
 }
@@ -220,7 +243,7 @@ async fn increment_cache_rejects_a_fractional_increment_for_redis() {
     assert_eq!(
         cache.get_cache("key", true),
         Some(Json::Number(
-            serde_json::Number::from_f64(1.5_f64).expect("a finite number")
+            Number::from_f64(1.5_f64).expect("a finite number")
         ))
     );
 }
@@ -412,4 +435,55 @@ async fn pipeline_increment_post_call_queues_every_increment() {
     assert!(server.commands("INCRBYFLOAT").is_empty());
     batches.flush_post_call().await;
     assert_eq!(server.commands("INCRBYFLOAT").len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pipeline_increment_post_call_counts_memory_before_the_flush() {
+    let server = FakeRedis::start().await;
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        Some(connect_cache(server.addr).await),
+        settings_for_tests(None),
+    );
+    let increments = [
+        RedisPipelineIncrement {
+            key: "first".to_owned(),
+            increment_value: 1.0_f64,
+            ttl: None,
+        },
+        RedisPipelineIncrement {
+            key: "second".to_owned(),
+            increment_value: 2.0_f64,
+            ttl: None,
+        },
+    ];
+    let (batches, ()) = request_redis_batch_scope(DEADLINE, async {
+        cache.pipeline_increment_post_call(&increments).await;
+        let first = Number::from_f64(1.0_f64).expect("a finite number");
+        let second = Number::from_f64(2.0_f64).expect("a finite number");
+        assert_eq!(cache.get_cache("first", true), Some(Json::Number(first)));
+        assert_eq!(cache.get_cache("second", true), Some(Json::Number(second)));
+    })
+    .await;
+    assert!(server.commands("INCRBYFLOAT").is_empty());
+    drop(batches);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_post_call_redis_increment_is_logged_after_the_flush() {
+    let server = FakeRedis::start().await;
+    server.script("INCRBYFLOAT", vec![Reply::Error("ERR boom")]);
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        Some(connect_cache(server.addr).await),
+        settings_for_tests(None),
+    );
+    let (batches, ()) = request_redis_batch_scope(DEADLINE, async {
+        cache.increment_cache_post_call("key", 2.0_f64, None).await;
+    })
+    .await;
+    let (subscriber, bytes) = capture_warnings();
+    batches.flush_post_call().with_subscriber(subscriber).await;
+    let log = captured(&bytes);
+    assert!(log.contains("post-call Redis increment failed"), "{log}");
 }

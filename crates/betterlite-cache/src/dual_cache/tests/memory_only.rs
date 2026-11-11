@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
@@ -7,7 +6,7 @@ use betterlite_redis::cache_primitives::decode::CachedValue;
 use indexmap::IndexMap;
 use serde_json::Number;
 
-use super::support::{ResizableMemory, local_memory};
+use super::support::local_memory;
 use crate::dual_cache::limited_size::LimitedSizeOrderedDict;
 use crate::dual_cache::value::{cache_from_json, json_from_cached};
 use crate::dual_cache::{
@@ -160,14 +159,41 @@ fn update_cache_ttl_keeps_a_value_the_call_leaves_out() {
 }
 
 #[test]
-fn update_in_memory_max_size_restores_the_default_for_none() {
-    let memory = ResizableMemory::new();
-    let settings = DualCacheSettings::from_environment(&BTreeMap::new());
-    let cache = DualCache::new(Arc::clone(&memory), None, settings);
-    cache.update_in_memory_max_size(Some(300));
-    assert_eq!(memory.max_size(), 300);
+fn update_in_memory_max_size_evicts_at_the_new_size_on_the_next_set() {
+    let cache = DualCache::new(local_memory(1000.0), None, settings(None));
+    cache.update_in_memory_max_size(Some(1));
+    cache.set_cache("first", &text("one"), write(None, true));
+    assert_eq!(cache.get_cache("first", true), Some(text("one")));
+    cache.set_cache("second", &text("two"), write(None, true));
+    assert_eq!(cache.get_cache("first", true), None);
+    assert_eq!(cache.get_cache("second", true), Some(text("two")));
+}
+
+#[test]
+fn update_in_memory_max_size_zero_stores_nothing() {
+    let cache = DualCache::new(local_memory(1000.0), None, settings(None));
+    cache.update_in_memory_max_size(Some(0));
+    cache.set_cache("key", &text("value"), write(None, true));
+    assert_eq!(cache.get_cache("key", true), None);
+    let counted = cache.increment_cache("count", 1.0_f64, write(None, true));
+    assert_eq!(counted.expect("the increment").to_bits(), 1.0_f64.to_bits());
+    assert_eq!(cache.get_cache("count", true), None);
+}
+
+#[tokio::test]
+async fn update_in_memory_max_size_restores_the_default_for_none() {
+    let cache = DualCache::new(local_memory(1000.0), None, settings(None));
+    cache.update_in_memory_max_size(Some(1));
     cache.update_in_memory_max_size(None);
-    assert_eq!(memory.max_size(), DEFAULT_MAX_SIZE_IN_MEMORY);
+    let entries: Vec<(String, Json)> = (0..=DEFAULT_MAX_SIZE_IN_MEMORY)
+        .map(|index| (format!("key-{index:03}"), text("value")))
+        .collect();
+    cache
+        .async_set_cache_pipeline(&entries, write(None, true))
+        .await;
+    assert_eq!(cache.get_cache("key-000", true), None);
+    assert_eq!(cache.get_cache("key-001", true), Some(text("value")));
+    assert_eq!(cache.get_cache("key-200", true), Some(text("value")));
 }
 
 #[tokio::test]

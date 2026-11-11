@@ -3,9 +3,6 @@ use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use num_traits::ToPrimitive as _;
-
-use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
@@ -23,13 +20,8 @@ use tokio::io::{
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
-use crate::backend::memory::MemoryCacheOps;
 use crate::backend::memory::local::LocalMemoryOps;
-use crate::backend::{BackendError, CacheResult, Ttl};
-use crate::dual_cache::{
-    CacheOptions, DEFAULT_MAX_SIZE_IN_MEMORY, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE,
-    MemoryMaxSize,
-};
+use crate::dual_cache::{CacheOptions, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 
 pub(crate) fn write(ttl: Option<f64>, local_only: bool) -> CacheOptions {
     CacheOptions {
@@ -308,96 +300,4 @@ pub(crate) async fn connect_cache(addr: SocketAddr) -> Arc<RedisCache> {
         .await
         .expect("the fake Redis accepts the connection");
     Arc::new(cache)
-}
-
-// a memory tier that records the live max size so the resize path can be observed
-pub(crate) struct ResizableMemory {
-    values: Mutex<BTreeMap<String, (CacheValue, Option<f64>)>>,
-    max_size: Mutex<usize>,
-}
-
-impl ResizableMemory {
-    pub(crate) fn new() -> Arc<Self> {
-        Arc::new(Self {
-            values: Mutex::new(BTreeMap::new()),
-            max_size: Mutex::new(DEFAULT_MAX_SIZE_IN_MEMORY),
-        })
-    }
-
-    pub(crate) fn max_size(&self) -> usize {
-        *lock(&self.max_size)
-    }
-}
-
-impl MemoryCacheOps for ResizableMemory {
-    fn default_ttl(&self) -> i64 {
-        600
-    }
-
-    fn get_cache(&self, key: &str) -> CacheResult<Option<CacheValue>> {
-        Ok(lock(&self.values)
-            .get(key)
-            .map(|(value, _ttl)| value.clone()))
-    }
-
-    fn set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        lock(&self.values).insert(key.to_owned(), (value, ttl));
-        Ok(())
-    }
-
-    fn delete_cache(&self, key: &str) -> CacheResult<()> {
-        lock(&self.values).remove(key);
-        Ok(())
-    }
-
-    fn flush_cache(&self) -> CacheResult<()> {
-        lock(&self.values).clear();
-        Ok(())
-    }
-
-    fn batch_get_cache(&self, keys: &[String]) -> CacheResult<Vec<Option<CacheValue>>> {
-        let values = lock(&self.values);
-        Ok(keys
-            .iter()
-            .map(|key| values.get(key).map(|(value, _ttl)| value.clone()))
-            .collect())
-    }
-
-    fn increment_cache(&self, key: &str, value: f64, ttl: Ttl) -> CacheResult<f64> {
-        let next = {
-            let mut values = lock(&self.values);
-            let base = match values.get(key).map(|(stored, _ttl)| stored.clone()) {
-                Some(CacheValue::Integer(number)) => {
-                    number.to_f64().ok_or_else(|| BackendError::NotNumeric {
-                        key: key.to_owned(),
-                    })?
-                }
-                Some(CacheValue::Float(number)) => number,
-                None => 0.0_f64,
-                Some(_) => {
-                    return Err(BackendError::NotNumeric {
-                        key: key.to_owned(),
-                    });
-                }
-            };
-            let incremented = base.mul_add(1.0_f64, value);
-            values.insert(key.to_owned(), (CacheValue::Float(incremented), ttl));
-            incremented
-        };
-        Ok(next)
-    }
-
-    fn ttl_entries(&self) -> CacheResult<Vec<(String, f64)>> {
-        let values = lock(&self.values);
-        Ok(values
-            .iter()
-            .filter_map(|(key, (_value, ttl))| ttl.map(|expiry| (key.clone(), expiry)))
-            .collect())
-    }
-}
-
-impl MemoryMaxSize for ResizableMemory {
-    fn set_max_size(&self, max_size: usize) {
-        *lock(&self.max_size) = max_size;
-    }
 }
