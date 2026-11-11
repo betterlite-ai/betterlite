@@ -1,13 +1,16 @@
 use std::future::pending;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::task::{JoinSet, yield_now};
 use tokio::time::{advance, timeout};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{cache, cache_with_timeout, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
+use crate::request_batch::lock;
 use crate::request_batch::scope::{
     ACTIVE_REQUEST_BATCHES, active_post_call_redis_batch, active_request_redis_batch,
     flush_post_call_redis_batches, request_redis_batch_scope,
@@ -126,6 +129,55 @@ async fn request_batch_post_call_deadline_flushes_the_post_call_writes() {
         assert_eq!(writes.pending(), 0);
         assert_eq!(writes.flushes(), 1);
         assert_eq!(command_names(&server), ["INCRBYFLOAT"]);
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn request_batch_deadline_skips_a_post_call_batch_with_no_writes() {
+    let server = FakeServer::start().await;
+    let cached = cache(&server, Some("ns")).await;
+
+    let (_, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
+        let writes = active_post_call_redis_batch(&cached).expect("a post-call batch");
+        let flushed = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&flushed);
+        writes.add_flush_hook(Arc::new(move || flag.store(true, Ordering::Relaxed)));
+
+        advance(POST_CALL_FLUSH_DEADLINE).await;
+        yield_now().await;
+        assert!(
+            !flushed.load(Ordering::Relaxed),
+            "the deadline skips a batch with nothing pending"
+        );
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn request_batch_a_stale_deadline_does_not_flush_the_current_one() {
+    let server = FakeServer::start().await;
+    server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
+    let cached = cache(&server, Some("ns")).await;
+
+    let (_, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
+        let request = ACTIVE_REQUEST_BATCHES
+            .try_with(Arc::clone)
+            .expect("a request scope");
+        let writes = active_post_call_redis_batch(&cached).expect("a post-call batch");
+        writes.increment("counter", 1.5, None);
+        let replacement = Arc::new(CancellationToken::new());
+        let replaced = lock(&request.deadline).replace(replacement);
+        assert!(replaced.is_some(), "the first deadline was armed");
+
+        advance(POST_CALL_FLUSH_DEADLINE).await;
+        yield_now().await;
+        assert_eq!(
+            writes.pending(),
+            1,
+            "the expired token is not the armed deadline"
+        );
+        assert!(command_names(&server).is_empty());
     })
     .await;
 }

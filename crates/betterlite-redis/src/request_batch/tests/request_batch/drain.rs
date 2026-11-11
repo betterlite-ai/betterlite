@@ -1,5 +1,8 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use tokio::time::sleep;
 
 use super::support::{cache, cache_with_timeout, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
@@ -116,5 +119,47 @@ async fn request_batch_weak_registry_forgets_a_dropped_request() {
         "a registered request stays only weakly held"
     );
     assert!(weak.upgrade().is_none());
+
     drain_post_call_redis_batches().await;
+    assert!(
+        !lock(&registry::OPEN_POST_CALL)
+            .iter()
+            .any(|held| held.ptr_eq(&weak)),
+        "drain drops the dead entry"
+    );
+
+    let (pruned, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
+    apply(&pruned, Change::Register);
+    let pruned_weak = Arc::downgrade(&pruned);
+    drop(pruned);
+    let (next, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
+    apply(&next, Change::Register);
+    assert!(
+        !lock(&registry::OPEN_POST_CALL)
+            .iter()
+            .any(|held| held.ptr_eq(&pruned_weak)),
+        "registering drops the dead entry"
+    );
+    drain_post_call_redis_batches().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn request_batch_drain_waits_for_the_requests_spawned_tasks() {
+    let server = FakeServer::start().await;
+    let cached = cache(&server, Some("ns")).await;
+    let (request, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
+    let writes = request.post_call(&cached);
+    assert_eq!(writes.pending(), 0, "a post-call batch with no writes");
+    let finished = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&finished);
+    request.follow_ups.spawn(async move {
+        sleep(Duration::from_secs(1)).await;
+        flag.store(true, Ordering::Relaxed);
+    });
+
+    drain_post_call_redis_batches().await;
+    assert!(
+        finished.load(Ordering::Relaxed),
+        "drain waits for the request's spawned tasks"
+    );
 }
