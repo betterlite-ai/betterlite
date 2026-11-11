@@ -2,6 +2,8 @@ use super::error::SigningError;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+use tracing::dispatcher::{get_default, with_default};
+use tracing::{Dispatch, Span};
 pub const AWS_SIGNING_MAX_THREADS: usize = 16;
 #[derive(Debug, Clone)]
 pub struct AwsSigningExecutor {
@@ -20,7 +22,8 @@ impl AwsSigningExecutor {
         T: Send + 'static,
         F: FnOnce() -> T + Send + 'static,
     {
-        let span = tracing::Span::current();
+        let span = Span::current();
+        let dispatch = get_default(Dispatch::clone);
         let permit = Arc::clone(&self.permits)
             .acquire_owned()
             .await
@@ -28,7 +31,7 @@ impl AwsSigningExecutor {
         let mut tasks = JoinSet::new();
         tasks.spawn_blocking(move || {
             let _permit = permit;
-            span.in_scope(sign)
+            with_default(&dispatch, || span.in_scope(sign))
         });
         tasks
             .join_next()

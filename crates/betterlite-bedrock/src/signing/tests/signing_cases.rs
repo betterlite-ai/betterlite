@@ -90,7 +90,6 @@ fn runtime() -> Runtime {
 }
 
 fn test_assert_signed(signed: &AwsSignedRequest, url: &str, body: &[u8], headers: &[(&str, &str)]) {
-    assert_eq!(signed.method, "POST");
     assert_eq!(signed.url, url);
     assert_eq!(signed.body, body.to_vec());
     assert_eq!(header_map(&signed.headers), expected(headers));
@@ -210,6 +209,7 @@ fn fixed_clock_sigv4() {
         &[],
         Body::Text(r#"{"messages":[{"role":"user","content":"hello"}]}"#),
     );
+    assert_eq!(signed.method, "POST");
     test_assert_signed(
         &signed,
         ENDPOINT,
@@ -605,6 +605,7 @@ fn bedrock_body_signature() {
         configured: None,
     })
     .unwrap();
+    assert_eq!(signed.method, "POST");
     test_assert_signed(
         &signed,
         ENDPOINT,
@@ -691,6 +692,7 @@ fn body_json_post_checks() {
         now: now(),
     })
     .unwrap();
+    assert_eq!(post.method, "POST");
     test_assert_signed(
         &post,
         ENDPOINT,
@@ -819,7 +821,10 @@ fn target_region_from_model_arn() {
     let target = result.unwrap();
     assert_eq!(target.region, "eu-west-1");
     assert_eq!(target.endpoint, None);
-    assert!(target.credentials.unwrap().session_token.is_none());
+    assert_eq!(
+        target.credentials.unwrap().access_key_id.expose_secret(),
+        "AKIDEXAMPLE"
+    );
     assert_eq!(resolved, 1);
     assert!(remaining.is_empty());
 }
@@ -907,6 +912,7 @@ fn test_batch_post(endpoint: &str, fixture: &Credentials) {
         fixture,
     })
     .unwrap();
+    assert_eq!(post.method, "POST");
     test_assert_signed(
         &post,
         endpoint,

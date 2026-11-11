@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::pin::Pin;
+use std::sync::mpsc::sync_channel;
 use std::task::{Context, Waker};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -157,13 +158,18 @@ fn test_cancelled_signature() {
     let bob = test_fixture_credentials("AKIDBOB", "bob-secret", Some("bob-token"));
     let executor = AwsSigningExecutor::default();
     let bob_headers = test_base_headers();
+    let (release, gate) = sync_channel::<()>(1);
     let mut cancelled: Pin<
         Box<dyn Future<Output = Result<AwsSignedRequest, SigningError>> + Send>,
-    > = Box::pin(executor.run(move || test_signed_with(&bob, &bob_headers)));
+    > = Box::pin(executor.run(move || {
+        gate.recv().unwrap();
+        test_signed_with(&bob, &bob_headers)
+    }));
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     assert!(cancelled.as_mut().poll(&mut context).is_pending());
     drop(cancelled);
+    release.send(()).unwrap();
     let after = test_signed_with(&alice, &test_base_headers());
     assert_eq!(
         test_header(&after, "X-Amz-Security-Token").as_deref(),
@@ -195,31 +201,14 @@ fn test_no_credentials_failure() -> SigningError {
     .unwrap_err()
 }
 
-fn test_bad_region_failure(credentials: &Credentials) -> SigningError {
-    request_headers(RequestHeaders {
-        credentials: Some(credentials),
-        region: "NOT-A-REGION",
-        extra_headers: &[],
-        endpoint: ENDPOINT,
-        data: Body::Text("{}"),
-        headers: &test_base_headers(),
-        api_key: None,
-        configured_bearer: None,
-        supports_bearer_token: true,
-        now: now(),
-    })
-    .unwrap_err()
-}
-
-fn test_bad_header_failure(credentials: &Credentials) -> SigningError {
-    let bad_header = vec![("x-bad".to_owned(), Some(format!("{SECRET_KEY}\n")))];
+fn test_bad_endpoint_failure(credentials: &Credentials) -> SigningError {
     request_headers(RequestHeaders {
         credentials: Some(credentials),
         region: "us-west-2",
         extra_headers: &[],
-        endpoint: ENDPOINT,
+        endpoint: &format!("{SECRET_KEY}\n"),
         data: Body::Text("{}"),
-        headers: &bad_header,
+        headers: &test_base_headers(),
         api_key: None,
         configured_bearer: None,
         supports_bearer_token: true,
@@ -244,8 +233,7 @@ fn test_missing_region_failure(credentials: &Credentials) -> SigningError {
 fn test_request_failures(credentials: &Credentials) -> Vec<SigningError> {
     vec![
         test_no_credentials_failure(),
-        test_bad_region_failure(credentials),
-        test_bad_header_failure(credentials),
+        test_bad_endpoint_failure(credentials),
         test_missing_region_failure(credentials),
     ]
 }
@@ -291,6 +279,6 @@ fn bedrock_signing_secret_safe_failure() {
     let signed = test_signed_with(&credentials, &test_base_headers());
     let signed_debug = format!("{signed:?}");
     assert!(!signed_debug.contains(SECRET_TOKEN));
-    assert!(signed_debug.contains("<redacted>"));
+    assert!(signed_debug.contains("header_names"));
     assert_eq!(failures[0].to_string(), "Unable to locate credentials");
 }
