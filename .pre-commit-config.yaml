@@ -119,7 +119,7 @@ repos:
         types: [python]
         pass_filenames: false
       - id: basedpyright-helpers
-        name: basedpyright on the legacy oracle helpers
+        name: basedpyright on the oracle helpers
         entry: bash .development/hooks/python.sh pyright
         language: system
         files: ^tools/oracle/helpers/.*\.py$
