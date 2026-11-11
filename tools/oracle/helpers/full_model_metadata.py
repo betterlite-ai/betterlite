@@ -2,7 +2,7 @@ import copy
 import io
 from contextlib import redirect_stdout
 from functools import lru_cache, partial
-from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import httpx
 import litellm
@@ -73,17 +73,6 @@ class Fixture(TypedDict):
 class Input(TypedDict):
     fixture: Fixture
     steps: list[Step]
-
-
-class CacheInfoView(Protocol):
-    @property
-    def hits(self) -> int: ...
-    @property
-    def misses(self) -> int: ...
-    @property
-    def maxsize(self) -> int | None: ...
-    @property
-    def currsize(self) -> int: ...
 
 
 class ParameterQueryError(Exception):
@@ -185,13 +174,9 @@ def outcome(step: LookupStep) -> Outcome:
     return live, False
 
 
-def cache_json(info: CacheInfoView) -> Json:
-    return {
-        "hits": info.hits,
-        "misses": info.misses,
-        "maxsize": info.maxsize,
-        "currsize": info.currsize,
-    }
+def cache_json(info: tuple[int, int, int | None, int]) -> Json:
+    hits, misses, maxsize, currsize = info
+    return {"hits": hits, "misses": misses, "maxsize": maxsize, "currsize": currsize}
 
 
 def caches_json() -> Json:
