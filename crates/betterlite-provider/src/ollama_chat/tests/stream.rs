@@ -332,7 +332,7 @@ fn a_truthy_non_object_line_is_an_error() {
 }
 
 #[test]
-fn skipping_a_line_keeps_the_reasoning_state() {
+fn a_skipped_line_does_not_reset_the_reasoning_state() {
     let mut iterator = OllamaChatIterator::default();
     parsed_in(
         &mut iterator,
@@ -341,13 +341,13 @@ fn skipping_a_line_keeps_the_reasoning_state() {
     let _skipped = iterator
         .next_chunk("not json", NOW, &SequenceIds::new())
         .unwrap();
-    let reasoning = parsed_in(
+    let closing = parsed_in(
         &mut iterator,
-        r#"{"model": "m", "message": {"content": "more"}, "done": false}"#,
+        r#"{"model": "m", "message": {"content": "</think>done"}, "done": false}"#,
     );
     assert_eq!(
-        reasoning.choices.first().unwrap().delta,
-        expected_delta(None, Some("more"))
+        closing.choices.first().unwrap().delta,
+        expected_delta(Some("done"), None)
     );
 }
 
