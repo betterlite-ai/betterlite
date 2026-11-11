@@ -120,10 +120,15 @@ pub(super) fn jpeg_data_url() -> String {
     format!("data:image/jpeg;base64,{JPEG_BASE64}")
 }
 
-fn bmp_bytes(width: i32, height: i32) -> Vec<u8> {
-    let mut bytes = Vec::new();
+fn bmp_bytes(width: u32, height: u32) -> Vec<u8> {
+    let row_bytes = width.saturating_mul(3);
+    let stride = row_bytes.next_multiple_of(4);
+    let pixel_bytes = stride.saturating_mul(height);
+    let file_size = pixel_bytes.saturating_add(54);
+    let length = usize::try_from(file_size).unwrap_or(usize::MAX);
+    let mut bytes = Vec::with_capacity(length);
     bytes.extend_from_slice(b"BM");
-    bytes.extend_from_slice(&58_u32.to_le_bytes());
+    bytes.extend_from_slice(&file_size.to_le_bytes());
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(&54_u32.to_le_bytes());
     bytes.extend_from_slice(&40_u32.to_le_bytes());
@@ -132,12 +137,12 @@ fn bmp_bytes(width: i32, height: i32) -> Vec<u8> {
     bytes.extend_from_slice(&1_u16.to_le_bytes());
     bytes.extend_from_slice(&24_u16.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend_from_slice(&4_u32.to_le_bytes());
+    bytes.extend_from_slice(&pixel_bytes.to_le_bytes());
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 0, 255, 0]);
+    bytes.resize(length, 0);
     bytes
 }
 
@@ -152,7 +157,7 @@ pub(super) fn bmp_data_url() -> String {
 pub(super) fn oversized_bmp_data_url() -> String {
     format!(
         "data:image/bmp;base64,{}",
-        STANDARD.encode(bmp_bytes(100_000, 1))
+        STANDARD.encode(bmp_bytes(8193, 1))
     )
 }
 
