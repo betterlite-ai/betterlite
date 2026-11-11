@@ -1,0 +1,43 @@
+kind: helper
+name: datadog-metrics-tag-extraction-includes-team
+call:
+  b3939:
+    operation: extract_tags
+    environment:
+      DD_ENV: production
+      DD_SERVICE: gateway
+      DD_VERSION: "2.0.0"
+      HOSTNAME: host-9
+      POD_NAME: pod-9
+    payload:
+      id: chatcmpl-4
+      trace_id: trace-4
+      session_id: session-4
+      call_type: completion
+      response_cost: 0.5
+      status: success
+      status_fields: {llm_api_status: success, guardrail_status: not_run}
+      total_tokens: 5
+      prompt_tokens: 2
+      completion_tokens: 3
+      startTime: 1704067200.0
+      endTime: 1704067201.0
+      completionStartTime: 1704067200.5
+      response_time: 1.0
+      model_map_information: {}
+      model: gpt-4o
+      model_group: production
+      custom_llm_provider: openai
+      api_base: "https://api.openai.com"
+      metadata:
+        user_api_key_team_alias: Team One
+        team_alias: Fallback Team
+        user_api_key_team_id: team-id
+        team_id: other-id
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+    clock: 1704067201.0
+env: {}
+compare: {ignore: []}
