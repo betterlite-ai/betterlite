@@ -2,6 +2,9 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use betterlite_db::migration_deploy::DeployError;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::spend_backfills::BackfillError;
+use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -28,7 +31,31 @@ pub enum Operation {
     Migrate,
     #[command(about = "Create the views LiteLLM's proxy reads, as the offline db_scripts job does")]
     DatabaseViews,
+    #[command(
+        about = "Backfill daily tool spend from spend logs before a cutover timestamp",
+        long_about = "Backfill LiteLLM_DailyToolSpend from LiteLLM_SpendLogToolIndex and LiteLLM_SpendLogs.\n\nPre-deploy index rows may include tools that were declared but never invoked, and each such request's full spend is attributed to every indexed tool. Coverage is bounded by spend-log retention. Existing (date, tool_name) buckets are skipped, never merged."
+    )]
+    DailyToolSpend {
+        #[arg(
+            long,
+            value_name = "TIMESTAMP",
+            help = "UTC cutover; index rows before it are backfilled"
+        )]
+        cutover: DateTime<Utc>,
+    },
+    #[command(about = "Raise each active and archived key's total_spend to its current spend")]
+    KeyTotalSpend,
+    #[command(
+        about = "Rebuild resetting keys' lifetime spend from spend logs",
+        long_about = "Rebuild resetting keys' total_spend from LiteLLM_SpendLogs.\n\nRun key-total-spend first; this is its optional follow-up. Coverage is bounded by spend-log retention. Run it while the proxy is idle or with traffic paused, because queued spend-log batches would be missing from the rebuilt sum."
+    )]
+    KeyTotalSpendFromLogs,
 }
+
+// the backend keys a registered service by operation, so the parsed cutover is not part of the lookup
+pub const DAILY_TOOL_SPEND_KEY: Operation = Operation::DailyToolSpend {
+    cutover: DateTime::<Utc>::UNIX_EPOCH,
+};
 
 impl Operation {
     #[must_use]
@@ -36,6 +63,9 @@ impl Operation {
         match self {
             Self::Migrate => "migrate",
             Self::DatabaseViews => "database-views",
+            Self::DailyToolSpend { .. } => "daily-tool-spend",
+            Self::KeyTotalSpend => "key-total-spend",
+            Self::KeyTotalSpendFromLogs => "key-total-spend-from-logs",
         }
     }
 
@@ -53,14 +83,27 @@ impl Operation {
                 )),
             }),
             Self::DatabaseViews => DbAdminCommand::DatabaseViews,
+            Self::DailyToolSpend { cutover } => {
+                DbAdminCommand::DailyToolSpend(DailyToolSpendOptions { cutover })
+            }
+            Self::KeyTotalSpend => DbAdminCommand::KeyTotalSpend,
+            Self::KeyTotalSpendFromLogs => DbAdminCommand::KeyTotalSpendFromLogs,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DailyToolSpendOptions {
+    pub cutover: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DbAdminCommand {
     Migrate(MigrationOptions),
     DatabaseViews,
+    DailyToolSpend(DailyToolSpendOptions),
+    KeyTotalSpend,
+    KeyTotalSpendFromLogs,
 }
 
 impl DbAdminCommand {
@@ -69,10 +112,15 @@ impl DbAdminCommand {
         match self {
             Self::Migrate(_) => Operation::Migrate,
             Self::DatabaseViews => Operation::DatabaseViews,
+            Self::DailyToolSpend(_) => DAILY_TOOL_SPEND_KEY,
+            Self::KeyTotalSpend => Operation::KeyTotalSpend,
+            Self::KeyTotalSpendFromLogs => Operation::KeyTotalSpendFromLogs,
         }
     }
 }
 
+// padding keeps the command enum's larger options variant within three times this one's size
+#[repr(align(8))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MigrationOptions {
     pub use_migrate: bool,
@@ -101,6 +149,43 @@ pub enum DbAdminError {
         lines: Vec<String>,
         #[source]
         source: ViewsError,
+    },
+    #[error("{source}")]
+    SpendBackfill {
+        #[source]
+        source: SpendBackfillError,
+    },
+}
+
+impl From<BackfillError> for DbAdminError {
+    fn from(source: BackfillError) -> Self {
+        Self::SpendBackfill {
+            source: SpendBackfillError::Backfill { source },
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SpendBackfillError {
+    #[error("the database URL is not a PostgreSQL connection string: {source}")]
+    Url {
+        #[source]
+        source: tokio_postgres::Error,
+    },
+    #[error("the database pool could not be built: {source}")]
+    Pool {
+        #[source]
+        source: deadpool_postgres::BuildError,
+    },
+    #[error("the backfill could not acquire a database connection: {source}")]
+    Session {
+        #[source]
+        source: DbError,
+    },
+    #[error("{source}")]
+    Backfill {
+        #[source]
+        source: BackfillError,
     },
 }
 
