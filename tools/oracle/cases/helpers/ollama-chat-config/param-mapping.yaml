@@ -1,0 +1,60 @@
+kind: helper
+name: ollama-chat-param-mapping
+env: {}
+compare: {ignore: []}
+call:
+  b8155:
+    op: params
+    config:
+      mirostat: 0
+      mirostat_eta: 0.1
+      mirostat_tau: 5.0
+      num_ctx: 4096
+      num_gqa: 8
+      num_thread: 8
+      repeat_last_n: 64
+      repeat_penalty: 1.1
+      seed: 0
+      tfs_z: 1.0
+      num_predict: 42
+      top_k: 40
+      system: ""
+      template: t
+      temperature: 0.5
+      stop: [x, "y"]
+      top_p: 0.9
+    cases:
+      - {model: llama3, non_default: {max_tokens: 5}}
+      - {model: llama3, non_default: {max_completion_tokens: 7}}
+      - {model: llama3, non_default: {max_tokens: 5, max_completion_tokens: 7}}
+      - {model: llama3, non_default: {stream: true}}
+      - {model: llama3, non_default: {stream: false}}
+      - {model: llama3, non_default: {temperature: 0}}
+      - {model: llama3, non_default: {seed: 1}}
+      - {model: llama3, non_default: {top_p: 0.9}}
+      - {model: llama3, non_default: {frequency_penalty: 1.2}}
+      - {model: llama3, non_default: {stop: [x, "y"]}}
+      - {model: llama3, non_default: {response_format: {type: json_object}}}
+      - {model: llama3, non_default: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}}
+      - {model: llama3, non_default: {response_format: {type: json_schema}}}
+      - {model: llama3, non_default: {response_format: {type: text}}}
+      - {model: llama3, non_default: {response_format: {type: text, json_schema: {schema: {type: object}}}}}
+      - {model: llama3, non_default: {reasoning_effort: low}}
+      - {model: llama3, non_default: {reasoning_effort: high}}
+      - {model: llama3, non_default: {reasoning_effort: minimal}}
+      - {model: llama3, non_default: {reasoning_effort: null}}
+      - {model: gpt-oss:20b, non_default: {reasoning_effort: medium}}
+      - {model: gpt-oss:20b, non_default: {reasoning_effort: minimal}}
+      - {model: llama3, non_default: {tools: [{type: function, function: {name: f}}]}}
+      - {model: llama3, non_default: {functions: [{name: f}]}}
+      - {model: llama3, non_default: {tool_choice: auto}}
+      - {model: llama3, non_default: {max_tokens: 5, temperature: 0, other: 3}}
+      - {model: llama3, non_default: {max_tokens: 5}, optional: {num_predict: 9}}
+    validate:
+      - {}
+      - {api_key: sk-x}
+      - {api_key: ""}
+      - {api_key: sk-x, headers: {X: "1"}}
+      - {api_key: sk-x, headers: {Authorization: "Bearer other"}}
+      - {api_key: sk-x, headers: {authorization: "Bearer other"}}
+    urls: [null, "http://h:11434", "http://h:11434/", "http://h:11434/api/chat", "http://h/api/chat/"]

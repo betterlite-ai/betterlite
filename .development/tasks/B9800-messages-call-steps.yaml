@@ -1,0 +1,130 @@
+id: B9800
+title: Messages route call steps and route choice
+description: >-
+  After the pre-call step, LiteLLM's /v1/messages pipeline hands the request data to route_request (litellm/proxy/route_llm_request.py L431-L466), and that runs _route_request_single_attempt (L469-L725) with route type "anthropic_messages". That function first runs steps every route type shares (the required body parameter check, the mock testing gate, the removal of enable_tag_filtering) and then picks how the call runs: the router's anthropic_messages, the SDK's litellm.anthropic_messages directly, or a model-not-found error. On main only the embeddings route has a mock gate (crates/betterlite-openai/src/embedding.rs, GATED_MOCK_PARAMS, two of LiteLLM's six names and no opt-in), and no task builds these steps for the messages route. This task builds them for B081's pipeline, and that pipeline calls `MessagesCallSteps::call` once per request. Everything goes in crates/betterlite-server, module `messages_call` (crates/betterlite-server/src/messages_call.rs and messages_call/: steps.rs, plan.rs, outcome.rs, standalone.rs, tests.rs), plus one config section. Every name stays at 30 characters or fewer.
+
+
+  Config. Section `mock_testing_params` (crates/betterlite-config/src/sections/mock_testing_params.rs and mock_testing_params/tests.rs) reads general_settings.dangerously_allow_mock_testing_request_params (LiteLLM's MOCK_TESTING_CONFIG_KEY). Its value is `MockTestingParams { allowed: bool }`: absent or null is false, a bool is used as given, any other type is a config error naming the key (docs/compatibility.md). No environment variable feeds it. The skeleton creates the section stub and declares it in sections.rs, so fill only the section's own files, and commit seeds crates/betterlite-config/fuzz/corpus/config_yaml/mock-testing-params-true.yaml and mock-testing-params-false.yaml.
+
+
+  Shared steps (steps.rs), each a plain function over `&mut Map<String, Value>` or `&Map<String, Value>`, run in this order by `call`:
+  1. `required_param_missing(route_type: &str, data) -> Result<(), CallStepError>` is raise_if_required_body_param_missing (L162-L190) with LiteLLM's table: acompletion needs messages, aembedding input, aresponses input, acreate_batch input_file_id, endpoint and completion_window, in that order. A parameter is missing when the key is absent or its value is null. The first missing one fails with `MissingParam { route, param }`, where route is the ROUTE_ENDPOINT_MAPPING text for those four ("/chat/completions", "/embeddings", "/responses", "/batches"). anthropic_messages has no entry, so the messages route never fails here; a request without messages or max_tokens reaches the dispatch.
+  2. LiteLLM's add_shared_session_to_data attaches the aiohttp session (L259-L327); betterlite's HTTP client already pools connections, so there is no step here.
+  3. `mock_params_disallowed(data, allowed: bool) -> Result<(), CallStepError>` is raise_if_mock_testing_params_disallowed (L207-L218). Constant `GATED_MOCK_PARAM_NAMES` holds, in this order, mock_testing_fallbacks, mock_testing_context_fallbacks, mock_testing_content_policy_fallbacks, mock_testing_rate_limit_error, mock_timeout and mock_delay, and `MOCK_TESTING_CONFIG_KEY` holds "dangerously_allow_mock_testing_request_params". When `allowed` is false, every name whose key is in the data (whatever its value, null included) is collected in the constant's order, and a non-empty list fails with `MockParamsDisabled { names }`.
+  4. Remove `enable_tag_filtering` from the data when present.
+
+
+  Route choice (plan.rs). `MessagesRouteInput` holds `model: Option<String>` (the data's `model` when it is a string), `has_model: bool` (the key is present), `team_id: Option<String>` (get_team_id_from_data, L228-L240: `metadata.user_api_key_team_id` when `metadata` is an object holding that key, else the same key in `litellm_metadata`, used only when it is a string), `is_proxy_admin: bool` (the caller's key has user_role proxy_admin; LiteLLM's _is_proxy_admin_request reads it off the auth object in the metadata), `has_api_key_or_base`, `has_user_config` and `has_override` (the data has `api_key` or `api_base`, `user_config`, `router_settings_override`) and `user_model: Option<String>` (the `--model` CLI value). `plan_messages_route(input, view: Option<&dyn MessagesRouting>) -> MessagesRoute` copies the anthropic_messages path of L493-L725. `MessagesRoute` is `Router { specific_deployment: bool }`, `Direct`, `UserConfig`, `Blocked`, `A2aAgent`, `MissingModel` or `NotFound`. Rules in LiteLLM's order:
+  1. `has_api_key_or_base`: `Router` with a view, `Direct` without one.
+  2. `has_user_config`: `UserConfig` (see deviations).
+  3. `has_override`: `Router` with a view, `Direct` without one. Before either call, `call` removes `router_settings_override` from the data and copies fallbacks, context_window_fallbacks, content_policy_fallbacks, num_retries, timeout, model_group_retry_policy, routing_strategy and enable_tag_filtering from it into the data when the override has the key and the data does not (L516-L544), so an enable_tag_filtering from the override survives step 4 above.
+  4. With a view: when the model is a non-empty string and `all_blocked(model, team_id)` is true, `Blocked`. When the data has no `model` key, `MissingModel` (LiteLLM's `data["model"]` raises KeyError there). A team id that `map_team_model(model, team_id)` answers gives `Router` with the mapped name written into the data's model. `is_recognized_model(model)`, or `is_proxy_admin` with no team id and a model that is not in `model_names` but is in `team_public_model_names`, gives `Router`. A model not in `model_names` gives `Direct` when `pass_through_all_models`, `Router` when `has_default_or_pattern`, `Router { specific_deployment: true }` when `is_deployment_name(model)`, `A2aAgent` when the model starts with "a2a/", and `NotFound` otherwise. A model in `model_names` that none of these took is `NotFound`. A model that is not a string compares as absent from every list.
+  5. Without a view: `Direct` when `user_model` is set, else `NotFound`.
+
+
+  Ports (outcome.rs). `MessagesOutcome` is what the call returns: `Message { body: Map<String, Value>, hidden: Map<String, Value> }` or `Stream { source: SharedSource, hidden: Map<String, Value> }`, with B9720's `SharedSource` (crates/betterlite-server/src/shared_stream.rs: the items as B8604's `ItemStream`, the snapshot handle and the `BufferedOutput` flag) and the hidden params (model_id, api_base, response_cost, additional_headers and the rest LiteLLM keeps in _hidden_params) in `hidden`. `MessagesDispatch` is a trait with one async method `dispatch(&self, data: Map<String, Value>) -> Result<MessagesOutcome, MessagesCallError>`, LiteLLM's litellm.anthropic_messages(**data). `B1134Dispatch` implements it over B1134's public messages dispatch in crates/betterlite-core/src/api/messages_dispatch.rs (read its merged input, result and constructor there; B1134's result is turned into a MessagesOutcome here, a native event or byte stream becoming StreamItem values the way B8602's StreamItem kinds describe, and B1134's error becomes `MessagesCallError::Call`). `MessagesRouting` is a trait that extends B7324's `DeploymentLookup` (keepalive_interval.rs) and holds the router facts the plan reads (all_blocked, map_team_model, is_recognized_model, model_names contains, team_public_model_names contains, pass_through_all_models, has_default_or_pattern, is_deployment_name) plus two async calls: `anthropic_messages(&self, data, specific_deployment: bool) -> Result<MessagesOutcome, MessagesCallError>` (Router.anthropic_messages, built by B6021 with B312's stream fallbacks) and `a2a_agent(&self, data) -> Option<Result<MessagesOutcome, MessagesCallError>>` (B4788's route_a2a_agent_request; None falls through to NotFound as in LiteLLM). `ModelReadThrough` is a trait with one async method `attempt(&self, model: &str) -> bool`, B8231's models instance of model_registry_read_through.
+
+
+  `MessagesCallSteps::new(dispatch: Arc<dyn MessagesDispatch>, routing: Option<Arc<dyn MessagesRouting>>, read_through: Option<Arc<dyn ModelReadThrough>>, mock: MockTestingParams, user_model: Option<String>)`. `call(&self, data: Map<String, Value>, is_proxy_admin: bool) -> Result<MessagesOutcome, MessagesCallError>` is route_request: run one attempt (the four steps, the plan from the data, then `Router` calls routing.anthropic_messages, `Direct` calls dispatch, `A2aAgent` calls routing.a2a_agent and takes NotFound on None, and the other plans return their errors). When the attempt fails with `NotFound`, the model is a non-empty string and `read_through` is set and its attempt answers true, run one more attempt on the data as it was before the first one and return that result; otherwise return the NotFound.
+  `standalone_routing(executor: Arc<ChatExecutor>, dispatch: Arc<dyn MessagesDispatch>) -> Arc<dyn MessagesRouting>` (standalone.rs) is what B081's routes(state) builds until a later task swaps in the production router, the way the chat and embeddings routes on main pick deployments today. Its facts come from the executor's deployments: model_names and is_recognized_model are the model groups, is_deployment_name matches a deployment's litellm_model, nothing is blocked, no team model is mapped, there are no team public names, no pass-through and no default or pattern. Its anthropic_messages picks a deployment with crate::routing::simple_shuffle::pick_deployment (by litellm_model when specific_deployment is true), writes the deployment's litellm_model as `model`, its api_base, its api_key, its timeout in seconds as `timeout` and `litellm_metadata.model_info.id` from model_id into the data (keeping what the data has elsewhere in litellm_metadata), calls the dispatch and puts model_id and api_base into the outcome's hidden params. Its deployments_for answers an empty list and a2a_agent answers None.
+
+
+  Errors. `CallStepError` and `MessagesCallError` live in messages_call; `MessagesCallError` wraps `CallStepError` by `#[from]` and adds `Call(CallFailure)` for a failure of B1134's dispatch or of the routing port, and these plan outcomes. `CallFailure { status: Option<u16>, message: String, error_type: Option<String>, param: Option<String>, headers: BTreeMap<String, String>, timeout: Option<f64> }` keeps what B081's generic error answer reads off LiteLLM's exception (status_code, message, type, param, the response headers and timeout), so the adapter fills it from B1134's error without losing the upstream status. `Context { status: u16, message: String }` is LiteLLM's AnthropicContextManagementError when B1134 reports one, kept apart because B081 answers it differently. The plan outcomes are each with LiteLLM's status and text so B081 can shape the answer: `MissingParam` is a ProxyException with message "{route}: Missing required parameter: '{param}'.", type invalid_request_error, param the parameter and code 400; `MockParamsDisabled` is an HTTP 400 whose detail is {"error": "Mock testing request params are disabled on this proxy: {names joined by \", \"}. An admin can enable them by setting `general_settings.dangerously_allow_mock_testing_request_params: true` in config.yaml. This setting cannot be changed from the Admin UI or the API."}; `NotFound` is an HTTP 400 whose detail is {"error": "anthropic_messages: Invalid model name passed in model={model}. Call `/v1/models` to view available models for your key."} (ROUTE_ENDPOINT_MAPPING has no anthropic_messages entry, so the route type is the name, and model is "" when absent); `Blocked` is LiteLLM's PermissionDeniedError, status 403 with message "litellm.PermissionDeniedError: Model is blocked" (the exception class adds the prefix); `MissingModel` is status 500 with message "'model'"; `UserConfig` is the deviation below. A method `http_detail(&self) -> Option<Value>` gives the detail of the two HTTP failures and `status(&self) -> u16` the status of every case.
+
+
+  Tests in messages_call/tests.rs (`messages_call::tests`) are rstest cases with fakes for the dispatch, the routing and the read-through: the required-param table for each listed route type and for anthropic_messages, the mock gate (each name, two names in constant order, a null value, allowed true), the tag filtering removal, every plan rule in order, the override copy only for absent keys, the call reaching the right callee for each plan, the read-through retry (taken once on NotFound, not taken for an empty model, without the port, or when it answers false), and the standalone routing writing the picked deployment's values. Helper oracle cases compare the two pure gates with LiteLLM through the operation named b9800: the Python side calls raise_if_required_body_param_missing and raise_if_mock_testing_params_disallowed on the given data and returns the raised exception's status, detail or message, type, param and code, or nothing.
+scope:
+  paths:
+  - crates/betterlite-server/src/messages_call.rs
+  - crates/betterlite-server/src/messages_call/**
+  - crates/betterlite-server/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/src/sections/mock_testing_params.rs
+  - crates/betterlite-config/src/sections/mock_testing_params/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/mock-testing-params-*
+  - tools/oracle/cases/helpers/messages-call/**
+  - tools/oracle/helpers/b9800.py
+  - tools/oracle/helpers/b9800/**
+  - tools/oracle/src/helpers/server/b9800.rs
+  - tools/oracle/src/helpers/server/b9800/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L12-L28
+  why: GATED_MOCK_PARAM_NAMES in its order and MOCK_TESTING_CONFIG_KEY.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L53-L73
+  why: _is_a2a_agent_model and _raise_if_model_fully_blocked with its empty-model skip and its 403 PermissionDeniedError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L403-L431
+  why: 'PermissionDeniedError puts "litellm.PermissionDeniedError: " before its message.'
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L76-L159
+  why: ROUTE_ENDPOINT_MAPPING has no anthropic_messages entry; ProxyModelNotFoundError and its detail text.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L162-L240
+  why: The required body parameter table and error, the mock gate with its error text and opt-in read, and get_team_id_from_data.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L431-L466
+  why: route_request and its one retry after a model registry read-through.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L469-L544
+  why: The order of the shared steps, then the api_key or api_base, user_config and router_settings_override branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L545-L725
+  why: The router branch for a route type outside the eval, container, interaction, agent and video lists, the a2a fall-through and the not-found error.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L20-L28
+  why: _is_proxy_admin_request reads the user_role of the auth object in the metadata.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L306-L310
+  why: user_config is a banned request body field, so it reaches route_request only when an admin allowed it.
+dod:
+- text: >-
+    The required-param check fails with LiteLLM's message, type, param and code for the four listed route types and never for anthropic_messages,
+    and the mock gate rejects the six names in LiteLLM's order with its detail text unless dangerously_allow_mock_testing_request_params is true.
+  proof: [call-steps-tests, oracle, helper-python]
+- text: enable_tag_filtering is gone from the data the call gets, and a router_settings_override copies its eight keys only where the data has none.
+  proof: [call-steps-tests]
+- text: >-
+    plan_messages_route follows LiteLLM's order: api_key or api_base, user_config, the override, the blocked check, the missing model, the team map,
+    recognized and admin public models, pass-through, default or pattern, deployment names, a2a and not found, and without a router user_model or not found.
+  proof: [call-steps-tests]
+- text: >-
+    call reaches the router, the dispatch or the a2a port for each plan, returns the blocked, missing-model, user_config and not-found errors with their
+    status and detail, and retries once after a read-through that answers true.
+  proof: [call-steps-tests]
+- text: The standalone routing picks a deployment of the model group and writes its model, api_base, api_key, timeout and model id into the call.
+  proof: [call-steps-tests]
+- text: dangerously_allow_mock_testing_request_params loads as true, false and the default false, and its seeds pass the production YAML parser.
+  proof: [config-tests, config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+  - id: call-steps-tests
+    why: a shared step, a plan rule, the override copy, a callee, an error text or the read-through retry is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^messages_call::/)'
+  - id: config-tests
+    why: the mock testing opt-in does not load with its type and default
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mock_testing_params::/)'
+  - id: config-corpus
+    why: no new mock testing seed is accepted by the production YAML parser
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/mock-testing-params-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the two gates have no pinned LiteLLM comparison through the b9800 helper
+    run: grep -qE '^[[:space:]]+b9800:' tools/oracle/fuzz/corpus/helper_case/b9800-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/messages-call/required-params.yaml
+- tools/oracle/cases/helpers/messages-call/mock-params-gate.yaml
+deviations:
+- what: A /v1/messages request whose data still carries `user_config` after auth (an admin allowed that banned field) gets a 400 invalid_request_error "user_config is not supported on /v1/messages" instead of a router built from that config.
+  why: LiteLLM builds a throwaway Router from client-sent deployment settings per request; betterlite builds routers only from config, and B8692 answers the same way for pass-through routes.
+- what: Until a task swaps the production router into B081's route, the standalone routing knows only the model groups and litellm models of config.yaml, so team model maps, team public models, wildcard patterns, blocked deployments and the per-deployment keepalive_seconds have no effect on /v1/messages.
+  why: The route cannot depend on the router wiring, since that sits above the routes; the chat and embeddings routes on main pick deployments the same way today.
+out_of_scope:
+- "_route_user_config_request (L38-L50): no router is built from request data, see deviations."
+- "add_shared_session_to_data and _get_shared_session_lock (L243-L327): aiohttp session reuse; betterlite's pooled HTTP client already reuses connections."
+- "The acompletion batch branch (L499-L511), the Google GenAI generationConfig rewrite (L488-L492) and the eval, container, interaction, agent, video and moderation lists (L549-L706): other route types; B004 and B014 own chat, B9372 the evals, B7430 the containers, B6460 the videos."
+- "Router.anthropic_messages and its stream fallbacks: B6021 and B312, reached through MessagesRouting. route_a2a_agent_request: B4788. model_registry_read_through: B8231. The production MessagesRouting and ModelReadThrough and their swap into B081's routes(state): see B081's notes."
+- "litellm.anthropic_messages and the provider call behind it: B1134 and B982."
+pitfalls:
+- 'The mock gate lists names in GATED_MOCK_PARAM_NAMES order, not request order, and counts a key whose value is null.'
+- 'The not-found route name is "anthropic_messages" with no leading slash, since ROUTE_ENDPOINT_MAPPING has no entry for it, and the model text is "" when the data has none.'
+- 'The required-param table has no anthropic_messages entry; do not reject a messages request without messages or max_tokens here.'
+- 'enable_tag_filtering is removed before the override copy, so only a value from router_settings_override reaches the router.'
+- 'The blocked check runs before the team model map and skips an empty or non-string model.'
+- 'The read-through retry starts again from the data as it was before the first attempt, so the first attempt''s removals and override copy are not applied twice.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

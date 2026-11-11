@@ -1,0 +1,12 @@
+task: B8155
+deviations:
+  - what: >-
+      A chat request whose message carries a value the declared type cannot hold (tool-call
+      arguments that are not JSON, a content part whose text is not a string, an image_url object
+      whose url is not a string, a reasoning field that is not a string, a tool_call_id that is not
+      a string) fails with 400 and names the message and field. LiteLLM lets the JSONDecodeError or
+      AttributeError escape as an unhandled 500.
+    why: >-
+      These are client errors on input of the wrong type, which docs/compatibility.md rejects at the
+      entry point; a 400 names the field where a 500 only says the request failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/chat/transformation.py#L258-L271

@@ -2,7 +2,7 @@ id: B8332
 milestone: M3 providers
 title: Hugging Face, Replicate and Predibase dispatch in main.py
 status: todo
-depends_on: [B004, B005, B173, B195, B196, B249, B2202, B2230, B5846, B5847, B5848, B5990, B5991]
+depends_on: [B004, B005, B173, B195, B196, B249, B2202, B2230, B5846, B5847, B5848, B5990, B5991, B9850]
 file: tasks/B8332-model-hub-dispatch.yaml
 covers:
   - "litellm/main.py"
