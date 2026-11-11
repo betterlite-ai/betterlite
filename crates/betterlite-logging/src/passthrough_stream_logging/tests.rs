@@ -13,34 +13,19 @@ use rstest::rstest;
 use self::support::{
     FakeHandler, FakeTinyfish, PASS_THROUGH, PanickingHandler, ProbeStream, RecordingDispatch,
     RecordingLogger, billing_handle, capture_logs, dispatch_handle, handler_handle, json, object,
-    object_state, probe, providers_with, state, time,
+    object_state, probe, providers_with, route_default, route_stream, state, time,
 };
 use super::build::build_passthrough_logging_result;
 use super::lines::convert_raw_bytes_to_str_lines;
 use super::model::extract_model_for_cost_injection;
 use super::object::SuccessHandlerDispatch;
-use super::router::{AnthropicFrameProbe, StreamLoggingRouter, TinyfishStreamBilling};
-use super::types::{
-    CollectedChunksHandler, EndpointType, HandlerError, HandlerOutcome, ProviderChunkHandlers,
-};
+use super::types::{CollectedChunksHandler, EndpointType, HandlerError, HandlerOutcome};
 use crate::logging_success::payload_state::STANDARD_LOGGING_OBJECT;
 use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use crate::passthrough_logging_state::response::{PassThroughResponse, PassThroughResponseObject};
 use crate::registry::CallbackRegistry;
 
 const VERTEX_ROUTE: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models/gemini-1.5-pro:streamGenerateContent";
-
-fn router(
-    providers: Arc<ProviderChunkHandlers>,
-    frames: Arc<dyn AnthropicFrameProbe>,
-    tinyfish: Arc<dyn TinyfishStreamBilling>,
-) -> StreamLoggingRouter {
-    StreamLoggingRouter {
-        providers,
-        frames,
-        tinyfish,
-    }
-}
 
 fn fallback_text(lines: &[String]) -> String {
     format!(
@@ -550,13 +535,7 @@ async fn evidence_stamps_true_for_a_complete_anthropic_stream() {
     let fake = probe(ProbeStream::Complete);
     let frames = Arc::clone(&fake);
 
-    router(
-        Arc::clone(&input.providers),
-        frames,
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, frames).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -570,25 +549,11 @@ async fn evidence_stamps_true_for_a_complete_anthropic_stream() {
 
 #[tokio::test]
 async fn evidence_stamps_false_without_a_message_stop() {
-    let logging_obj = object(
-        state(PASS_THROUGH, &[]),
-        Arc::new(RecordingDispatch::default()),
-    );
-    let mut input = support::input(
-        Arc::clone(&logging_obj),
-        Arc::clone(&support::handlers().providers),
-        EndpointType::Anthropic,
-    );
+    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
     input.raw_bytes = vec![b"event: ping\n\n".to_vec()];
     let frames = probe(ProbeStream::NoMessageStop);
 
-    router(
-        Arc::clone(&input.providers),
-        frames,
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, frames).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -598,25 +563,11 @@ async fn evidence_stamps_false_without_a_message_stop() {
 
 #[tokio::test]
 async fn evidence_stamps_false_for_a_provider_error_frame() {
-    let logging_obj = object(
-        state(PASS_THROUGH, &[]),
-        Arc::new(RecordingDispatch::default()),
-    );
-    let mut input = support::input(
-        Arc::clone(&logging_obj),
-        Arc::clone(&support::handlers().providers),
-        EndpointType::Anthropic,
-    );
+    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
     input.raw_bytes = vec![b"event: message_stop\nevent: error\n\n".to_vec()];
     let frames = probe(ProbeStream::ProviderError);
 
-    router(
-        Arc::clone(&input.providers),
-        frames,
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, frames).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -626,25 +577,11 @@ async fn evidence_stamps_false_for_a_provider_error_frame() {
 
 #[tokio::test]
 async fn evidence_stamps_false_with_a_non_whitespace_tail() {
-    let logging_obj = object(
-        state(PASS_THROUGH, &[]),
-        Arc::new(RecordingDispatch::default()),
-    );
-    let mut input = support::input(
-        Arc::clone(&logging_obj),
-        Arc::clone(&support::handlers().providers),
-        EndpointType::Anthropic,
-    );
+    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
     input.raw_bytes = vec![b"event: message_stop\n\ndata: partial".to_vec()];
     let frames = probe(ProbeStream::Complete);
 
-    router(
-        Arc::clone(&input.providers),
-        frames,
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, frames).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -654,25 +591,11 @@ async fn evidence_stamps_false_with_a_non_whitespace_tail() {
 
 #[tokio::test]
 async fn evidence_stamps_true_with_a_whitespace_only_tail() {
-    let logging_obj = object(
-        state(PASS_THROUGH, &[]),
-        Arc::new(RecordingDispatch::default()),
-    );
-    let mut input = support::input(
-        Arc::clone(&logging_obj),
-        Arc::clone(&support::handlers().providers),
-        EndpointType::Anthropic,
-    );
+    let (logging_obj, mut input) = support::stream_input(EndpointType::Anthropic);
     input.raw_bytes = vec![b"event: message_stop\n\n   ".to_vec()];
     let frames = probe(ProbeStream::Complete);
 
-    router(
-        Arc::clone(&input.providers),
-        frames,
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, frames).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -695,13 +618,7 @@ async fn evidence_stamps_false_for_a_non_anthropic_type_and_probes_empty_bytes()
     let fake = probe(ProbeStream::Complete);
     let frames = Arc::clone(&fake);
 
-    router(
-        Arc::clone(&input.providers),
-        frames,
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, frames).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -735,13 +652,7 @@ async fn evidence_stamp_survives_a_failing_handler() {
     input.raw_bytes = vec![b"event: ping\n\n".to_vec()];
     let frames = probe(ProbeStream::NoMessageStop);
 
-    router(
-        Arc::clone(&input.providers),
-        frames,
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, frames).await;
 
     assert_eq!(
         object_state(&logging_obj).get("prompt_cache_response_complete"),
@@ -765,13 +676,7 @@ async fn tinyfish_route_returns_without_dispatch_when_a_poller_runs() {
     let tinyfish = Arc::new(FakeTinyfish::for_run(true, Some("run-1".to_owned())));
     let billing = billing_handle(Arc::clone(&tinyfish));
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        billing,
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_stream(input, probe(ProbeStream::NoMessageStop), billing).await;
 
     assert_eq!(*tinyfish.poller_checks.lock().unwrap(), 1);
     assert!(tinyfish.scanned.lock().unwrap().is_empty());
@@ -796,13 +701,7 @@ async fn tinyfish_route_starts_billing_for_a_late_run_id() {
     let tinyfish = Arc::new(FakeTinyfish::for_run(false, Some("run-9".to_owned())));
     let billing = billing_handle(Arc::clone(&tinyfish));
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        billing,
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_stream(input, probe(ProbeStream::NoMessageStop), billing).await;
 
     assert_eq!(
         tinyfish.started.lock().unwrap().as_slice(),
@@ -825,16 +724,11 @@ async fn tinyfish_route_dispatches_the_handler_result_and_kwargs() {
         EndpointType::Tinyfish,
     );
     input.raw_bytes = vec![b"data: one\ndata: two\n\n".to_vec()];
-    let tinyfish = Arc::new(FakeTinyfish::returning(Ok(outcome_with_kwargs())));
+    let tinyfish =
+        Arc::new(FakeTinyfish::for_run(false, None).with_reply(Ok(outcome_with_kwargs())));
     let billing = billing_handle(Arc::clone(&tinyfish));
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        billing,
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_stream(input, probe(ProbeStream::NoMessageStop), billing).await;
 
     assert_eq!(
         tinyfish.handler_calls.lock().unwrap().as_slice(),
@@ -863,16 +757,11 @@ async fn tinyfish_route_dispatches_with_cache_hit_from_the_state() {
         Arc::clone(&support::handlers().providers),
         EndpointType::Tinyfish,
     );
-    let tinyfish = Arc::new(FakeTinyfish::returning(Ok(outcome_with_kwargs())));
+    let tinyfish =
+        Arc::new(FakeTinyfish::for_run(false, None).with_reply(Ok(outcome_with_kwargs())));
     let billing = billing_handle(Arc::clone(&tinyfish));
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        billing,
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_stream(input, probe(ProbeStream::NoMessageStop), billing).await;
 
     assert!(dispatch.calls()[0].cache_hit);
 }
@@ -890,18 +779,12 @@ async fn tinyfish_route_logs_and_swallows_a_handler_error() {
         Arc::clone(&support::handlers().providers),
         EndpointType::Tinyfish,
     );
-    let tinyfish = Arc::new(FakeTinyfish::returning(Err(HandlerError::leaf(
-        TestLeafError,
-    ))));
+    let tinyfish = Arc::new(
+        FakeTinyfish::for_run(false, None).with_reply(Err(HandlerError::leaf(TestLeafError))),
+    );
     let billing = billing_handle(Arc::clone(&tinyfish));
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        billing,
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_stream(input, probe(ProbeStream::NoMessageStop), billing).await;
 
     let logs = captured.text();
     assert!(logs.contains("Error in _route_streaming_logging_to_handler: the leaf failed"));
@@ -926,13 +809,7 @@ async fn route_dispatch_calls_dispatch_once_with_the_build_result() {
     input.end_time = time("2024-01-01T00:00:05+00:00");
     input.raw_bytes = vec![b"data: {}\n\n".to_vec()];
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, probe(ProbeStream::NoMessageStop)).await;
 
     let calls = dispatch.calls();
     assert_eq!(calls.len(), 1);
@@ -973,13 +850,7 @@ async fn route_dispatch_reads_cache_hit_from_a_json_true_only(
         EndpointType::OpenAi,
     );
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, probe(ProbeStream::NoMessageStop)).await;
 
     assert_eq!(dispatch.calls()[0].cache_hit, expected);
 }
@@ -999,13 +870,7 @@ async fn route_dispatch_builds_off_the_async_runtime() {
     );
     let caller = current().id();
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, probe(ProbeStream::NoMessageStop)).await;
 
     assert_ne!(handler.calls()[0].thread, caller);
 }
@@ -1031,13 +896,7 @@ async fn route_dispatch_prefers_async_handlers_and_forwards_the_kwargs() {
     );
     input.end_time = time("2024-01-01T00:00:07+00:00");
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, probe(ProbeStream::NoMessageStop)).await;
 
     assert_eq!(
         logger.calls.lock().unwrap().as_slice(),
@@ -1070,13 +929,7 @@ async fn route_error_logs_a_handler_failure_and_skips_dispatch() {
         EndpointType::OpenAi,
     );
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, probe(ProbeStream::NoMessageStop)).await;
 
     assert!(
         captured
@@ -1101,13 +954,7 @@ async fn route_error_logs_a_panicking_build_task_and_skips_dispatch() {
         EndpointType::OpenAi,
     );
 
-    router(
-        Arc::clone(&input.providers),
-        probe(ProbeStream::NoMessageStop),
-        Arc::new(FakeTinyfish::default()),
-    )
-    .route_streaming_logging_to_handler(input)
-    .await;
+    route_default(input, probe(ProbeStream::NoMessageStop)).await;
 
     let logs = captured.text();
     assert!(logs.contains("Error in _route_streaming_logging_to_handler:"));

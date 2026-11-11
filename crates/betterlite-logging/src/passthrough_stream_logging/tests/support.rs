@@ -18,7 +18,9 @@ use super::super::object::{
     StreamLoggingCallbacks, StreamLoggingObject, StreamLoggingState, StreamSuccessCall,
     StreamSuccessDispatch,
 };
-use super::super::router::{AnthropicFrameProbe, TinyfishCollectedChunks, TinyfishStreamBilling};
+use super::super::router::{
+    AnthropicFrameProbe, StreamLoggingRouter, TinyfishCollectedChunks, TinyfishStreamBilling,
+};
 use super::super::types::{
     CollectedChunksCall, CollectedChunksHandler, EndpointType, HandlerError, HandlerOutcome,
     ProviderChunkHandlers,
@@ -145,6 +147,21 @@ pub(super) fn passthrough() -> Arc<PassThroughEndpointLogging> {
     })
 }
 
+pub(super) fn stream_input(
+    endpoint_type: EndpointType,
+) -> (Arc<StreamLoggingObject>, StreamLoggingInput) {
+    let logging_obj = object(
+        state(PASS_THROUGH, &[]),
+        Arc::new(RecordingDispatch::default()),
+    );
+    let input = input(
+        Arc::clone(&logging_obj),
+        Arc::clone(&handlers().providers),
+        endpoint_type,
+    );
+    (logging_obj, input)
+}
+
 pub(super) fn input(
     logging_obj: Arc<StreamLoggingObject>,
     providers: Arc<ProviderChunkHandlers>,
@@ -217,17 +234,22 @@ impl CollectedChunksHandler for FakeHandler {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(recorded);
-        self.reply
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .unwrap_or_else(|| Err(HandlerError::leaf(FakeCalledTwice)))
+        next_reply(&self.reply)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("the fake handler was called more than once")]
 pub(super) struct FakeCalledTwice;
+
+fn next_reply(
+    slot: &Mutex<Option<Result<HandlerOutcome, HandlerError>>>,
+) -> Result<HandlerOutcome, HandlerError> {
+    slot.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .unwrap_or_else(|| Err(HandlerError::leaf(FakeCalledTwice)))
+}
 
 pub(super) struct PanickingHandler;
 
@@ -306,6 +328,24 @@ pub(super) fn billing_handle(tinyfish: Arc<FakeTinyfish>) -> Arc<dyn TinyfishStr
 
 pub(super) fn handler_handle(handler: Arc<FakeHandler>) -> Arc<dyn CollectedChunksHandler> {
     handler
+}
+
+pub(super) async fn route_stream(
+    input: StreamLoggingInput,
+    frames: Arc<dyn AnthropicFrameProbe>,
+    tinyfish: Arc<dyn TinyfishStreamBilling>,
+) {
+    StreamLoggingRouter {
+        providers: Arc::clone(&input.providers),
+        frames,
+        tinyfish,
+    }
+    .route_streaming_logging_to_handler(input)
+    .await;
+}
+
+pub(super) async fn route_default(input: StreamLoggingInput, frames: Arc<dyn AnthropicFrameProbe>) {
+    route_stream(input, frames, Arc::new(FakeTinyfish::default())).await;
 }
 
 #[derive(Default)]
@@ -412,16 +452,9 @@ impl FakeTinyfish {
         }
     }
 
-    pub(super) fn returning(reply: Result<HandlerOutcome, HandlerError>) -> Self {
-        Self {
-            poller: false,
-            run_id: None,
-            poller_checks: Mutex::new(0),
-            scanned: Mutex::new(Vec::new()),
-            started: Mutex::new(Vec::new()),
-            handler_calls: Mutex::new(Vec::new()),
-            reply: Mutex::new(Some(reply)),
-        }
+    pub(super) fn with_reply(mut self, reply: Result<HandlerOutcome, HandlerError>) -> Self {
+        self.reply = Mutex::new(Some(reply));
+        self
     }
 }
 
@@ -459,11 +492,7 @@ impl TinyfishStreamBilling for FakeTinyfish {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call.lines.to_vec());
-        self.reply
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .unwrap_or_else(|| Err(HandlerError::leaf(FakeCalledTwice)))
+        next_reply(&self.reply)
     }
 }
 
