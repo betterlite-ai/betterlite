@@ -1,14 +1,13 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+mod fakes;
+
+use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
-use async_trait::async_trait;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_router::io_token_reservations::clock::{IoClock, minute_label};
-use betterlite_router::io_token_reservations::counter::{CountObservation, IoCounter};
+use betterlite_router::io_token_reservations::counter::IoCounter;
 use betterlite_router::io_token_reservations::error::{IoPreCallError, RateLimitExceeded};
-use betterlite_router::io_token_reservations::estimate::{InputTokenCounter, IoInputField};
 use betterlite_router::io_token_reservations::limits::{
     IoDeployment, IoLimits, MinuteKeys, minute_keys,
 };
@@ -20,6 +19,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Builder;
 
+use self::fakes::{ProbeCounter, ProbeEstimator};
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
@@ -105,67 +105,6 @@ pub struct ErrorFields {
     pub code: String,
     pub error_type: String,
     pub retry_after_seconds: u64,
-}
-
-#[derive(Default)]
-struct ProbeCounter {
-    values: Mutex<BTreeMap<String, i64>>,
-}
-
-impl ProbeCounter {
-    fn seed(&self, key: &str, value: i64) {
-        if let Ok(mut values) = self.values.lock() {
-            values.insert(key.to_owned(), value);
-        }
-    }
-
-    fn value(&self, key: &str) -> i64 {
-        self.values
-            .lock()
-            .map(|values| values.get(key).copied().unwrap_or_default())
-            .unwrap_or_default()
-    }
-}
-
-#[async_trait]
-impl IoCounter for ProbeCounter {
-    async fn increment_counter(
-        &self,
-        key: &str,
-        value: i64,
-        _ttl_seconds: u64,
-    ) -> CountObservation {
-        let Ok(mut values) = self.values.lock() else {
-            return CountObservation::Unavailable;
-        };
-        let Some(current) = values
-            .get(key)
-            .copied()
-            .unwrap_or_default()
-            .checked_add(value)
-        else {
-            return CountObservation::Overflow;
-        };
-        values.insert(key.to_owned(), current);
-        drop(values);
-        CountObservation::Counted(current)
-    }
-}
-
-struct ProbeEstimator {
-    estimate: i64,
-}
-
-#[async_trait]
-impl InputTokenCounter for ProbeEstimator {
-    async fn count_field(
-        &self,
-        _model: &str,
-        _field: IoInputField,
-        _value: &Json,
-    ) -> Option<usize> {
-        usize::try_from(self.estimate).ok()
-    }
 }
 
 pub(crate) fn run(
