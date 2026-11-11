@@ -46,13 +46,19 @@ pub struct Configured {
     pub params: JudgeParams,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct JudgeParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub judge_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub criteria: Option<Vec<Criterion>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub overall_threshold: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub on_failure: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<EventHookParameter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_on: Option<bool>,
 }
 

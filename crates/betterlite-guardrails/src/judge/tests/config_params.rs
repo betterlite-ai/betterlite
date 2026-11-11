@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_judge::{
 };
 use rstest::rstest;
 
-use crate::judge::config::{GuardrailEntry, LitellmParamsSource, ParamKey, ParamValue, get_param};
+use crate::judge::config::{GuardrailEntry, LitellmParamsSource, ParamKey, get_param, parse_param};
 use crate::judge::error::JudgeError;
 use crate::judge::hooks::{EventHookConfig, GuardrailEventHook, coerce_event_hook};
 
@@ -84,16 +84,14 @@ fn judge_config_tests_behavior(#[case] case: Case) {
         Case::TypedAttributeWins => {
             let params = params_with_model(Some("typed".to_owned()));
             let mapping = value_map(&[("judge_model", text("raw"))]);
-            let resolved =
-                get_param(&params, &mapping_entry(&mapping), ParamKey::JudgeModel).expect("param");
-            assert_eq!(resolved, Some(ParamValue::Text("typed".to_owned())));
+            let resolved = get_param(&params, &mapping_entry(&mapping), ParamKey::JudgeModel);
+            assert_eq!(resolved, Some(GuardrailValue::Text("typed".to_owned())));
         }
         Case::MappingKey => {
             let params = JudgeParams::default();
             let mapping = value_map(&[("judge_model", text("raw"))]);
-            let resolved =
-                get_param(&params, &mapping_entry(&mapping), ParamKey::JudgeModel).expect("param");
-            assert_eq!(resolved, Some(ParamValue::Text("raw".to_owned())));
+            let resolved = get_param(&params, &mapping_entry(&mapping), ParamKey::JudgeModel);
+            assert_eq!(resolved, Some(GuardrailValue::Text("raw".to_owned())));
         }
         Case::ParsedAttribute => {
             let params = JudgeParams::default();
@@ -102,21 +100,21 @@ fn judge_config_tests_behavior(#[case] case: Case) {
                 guardrail_name: Some("judge"),
                 litellm_params: Some(LitellmParamsSource::Parsed(&parsed)),
             };
-            let resolved = get_param(&params, &entry, ParamKey::JudgeModel).expect("param");
-            assert_eq!(resolved, Some(ParamValue::Text("parsed".to_owned())));
+            let resolved = get_param(&params, &entry, ParamKey::JudgeModel);
+            assert_eq!(resolved, Some(GuardrailValue::Text("parsed".to_owned())));
         }
         Case::AbsentEverywhere => {
             let params = JudgeParams::default();
             let mapping = BTreeMap::new();
-            let resolved =
-                get_param(&params, &mapping_entry(&mapping), ParamKey::JudgeModel).expect("param");
+            let resolved = get_param(&params, &mapping_entry(&mapping), ParamKey::JudgeModel);
             assert_eq!(resolved, None);
         }
         Case::WrongType => {
             let params = JudgeParams::default();
             let mapping = value_map(&[("judge_model", GuardrailValue::Boolean(true))]);
-            let error = get_param(&params, &mapping_entry(&mapping), ParamKey::JudgeModel)
-                .expect_err("wrong type");
+            let error =
+                parse_param::<String>(&params, &mapping_entry(&mapping), ParamKey::JudgeModel)
+                    .expect_err("wrong type");
             assert!(matches!(
                 error,
                 JudgeError::InvalidParam { key: "judge_model" }
@@ -125,14 +123,14 @@ fn judge_config_tests_behavior(#[case] case: Case) {
         Case::IntegerThreshold => {
             let params = JudgeParams::default();
             let mapping = value_map(&[("overall_threshold", GuardrailValue::SignedInteger(90))]);
-            let resolved = get_param(
+            let resolved = parse_param::<f64>(
                 &params,
                 &mapping_entry(&mapping),
                 ParamKey::OverallThreshold,
             )
             .expect("param");
             assert_eq!(
-                number_bits(resolved.as_ref()),
+                resolved.map(f64::to_bits),
                 Some(90.0_f64.to_bits()),
                 "an integer threshold becomes a float"
             );
@@ -140,19 +138,19 @@ fn judge_config_tests_behavior(#[case] case: Case) {
         Case::FloatThreshold => {
             let params = JudgeParams::default();
             let mapping = value_map(&[("overall_threshold", GuardrailValue::Decimal(72.5))]);
-            let resolved = get_param(
+            let resolved = parse_param::<f64>(
                 &params,
                 &mapping_entry(&mapping),
                 ParamKey::OverallThreshold,
             )
             .expect("param");
-            assert_eq!(number_bits(resolved.as_ref()), Some(72.5_f64.to_bits()));
+            assert_eq!(resolved.map(f64::to_bits), Some(72.5_f64.to_bits()));
         }
         Case::TextThreshold => {
             let params = JudgeParams::default();
             let mapping =
                 value_map(&[("overall_threshold", GuardrailValue::Text("80".to_owned()))]);
-            let error = get_param(
+            let error = parse_param::<f64>(
                 &params,
                 &mapping_entry(&mapping),
                 ParamKey::OverallThreshold,
@@ -174,11 +172,15 @@ fn judge_config_tests_behavior(#[case] case: Case) {
                     criterion_value("b", GuardrailValue::Decimal(50.0), "second"),
                 ]),
             )]);
-            let resolved =
-                get_param(&params, &mapping_entry(&mapping), ParamKey::Criteria).expect("param");
+            let resolved = parse_param::<Vec<Criterion>>(
+                &params,
+                &mapping_entry(&mapping),
+                ParamKey::Criteria,
+            )
+            .expect("param");
             assert_eq!(
                 resolved,
-                Some(ParamValue::Criteria(vec![
+                Some(vec![
                     Criterion {
                         name: "a".to_owned(),
                         description: "first".to_owned(),
@@ -189,27 +191,30 @@ fn judge_config_tests_behavior(#[case] case: Case) {
                         description: "second".to_owned(),
                         weight: CriterionWeight::Float(50.0),
                     },
-                ]))
+                ])
             );
         }
         Case::RawMode => {
             let params = JudgeParams::default();
             let mapping = value_map(&[("mode", text("pre_call"))]);
-            let resolved =
-                get_param(&params, &mapping_entry(&mapping), ParamKey::Mode).expect("param");
+            let resolved = parse_param::<EventHookParameter>(
+                &params,
+                &mapping_entry(&mapping),
+                ParamKey::Mode,
+            )
+            .expect("param");
             assert_eq!(
                 resolved,
-                Some(ParamValue::EventHook(EventHookParameter::Single(
-                    "pre_call".to_owned()
-                )))
+                Some(EventHookParameter::Single("pre_call".to_owned()))
             );
         }
         Case::RawDefaultOn => {
             let params = JudgeParams::default();
             let mapping = value_map(&[("default_on", GuardrailValue::Boolean(true))]);
             let resolved =
-                get_param(&params, &mapping_entry(&mapping), ParamKey::DefaultOn).expect("param");
-            assert_eq!(resolved, Some(ParamValue::Boolean(true)));
+                parse_param::<bool>(&params, &mapping_entry(&mapping), ParamKey::DefaultOn)
+                    .expect("param");
+            assert_eq!(resolved, Some(true));
         }
         Case::CoerceDefault => {
             assert_eq!(
@@ -257,18 +262,5 @@ fn judge_config_tests_behavior(#[case] case: Case) {
                 JudgeError::InvalidEventHook { value } if value == "sometimes"
             ));
         }
-    }
-}
-
-fn number_bits(value: Option<&ParamValue>) -> Option<u64> {
-    match value {
-        Some(ParamValue::Number(number)) => Some(number.to_bits()),
-        Some(
-            ParamValue::Text(_)
-            | ParamValue::Boolean(_)
-            | ParamValue::Criteria(_)
-            | ParamValue::EventHook(_),
-        )
-        | None => None,
     }
 }
