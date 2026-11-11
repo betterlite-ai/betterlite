@@ -1,0 +1,38 @@
+kind: helper
+name: datadog-llm-metrics-metrics-all-tokens
+call:
+  b3937:
+    function: metrics
+    payload:
+      id: "chatcmpl-1"
+      trace_id: "trace-1"
+      session_id: "session-1"
+      call_type: "completion"
+      response_cost: 0.5
+      status: "success"
+      status_fields: {"llm_api_status": "success", "guardrail_status": "not_run"}
+      total_tokens: 10
+      prompt_tokens: 4
+      completion_tokens: 6
+      startTime: 1704067200.0
+      endTime: 1704067201.5
+      completionStartTime: 1704067200.5
+      response_time: 1.5
+      model_map_information: {}
+      model: "gpt-4o"
+      model_group: "gpt-4o"
+      api_base: "https://api.openai.com"
+      metadata:
+        usage_object:
+          cache_read_input_tokens: 2
+          cache_creation_input_tokens: 1
+          completion_tokens_details:
+            reasoning_tokens: 3
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+      standard_built_in_tools_params: null
+    tool_output_tokens: 12.0
+env: {}
+compare: {ignore: []}

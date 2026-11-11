@@ -1,0 +1,22 @@
+kind: helper
+name: detect-configured-source
+call:
+  b3456:
+    step: detect
+    vector:
+      vector_store_id: KB123
+      data_source_id: DS9
+      s3_bucket: configured-bucket
+      s3_prefix: custom/prefix/
+      aws_region_name: eu-west-1
+    environment: {}
+    data_sources:
+      - dataSourceId: DS1
+    data_source:
+      dataSource:
+        dataSourceConfiguration:
+          s3Configuration:
+            bucketArn: "arn:aws-us-gov:s3:::arn-bucket"
+            inclusionPrefixes: ["arn-prefix/"]
+env: {}
+compare: {ignore: []}
