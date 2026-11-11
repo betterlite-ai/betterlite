@@ -20,8 +20,14 @@ pub struct Raw {
     _unused: (),
 }
 
-#[derive(Debug, Clone)]
+// Boxed: Sections holds each Settings by value, and config snapshots live inside futures
+#[derive(Debug, Clone, Default)]
 pub struct Settings {
+    pub inner: Box<Inner>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Inner {
     pub database_url: Option<SecretString>,
     pub direct_url: Option<SecretString>,
     pub migration_lock_timeout: Duration,
@@ -29,7 +35,7 @@ pub struct Settings {
     pub prisma_migrate_deploy_timeout: Duration,
 }
 
-impl Default for Settings {
+impl Default for Inner {
     fn default() -> Self {
         Self {
             database_url: None,
@@ -51,28 +57,30 @@ impl Section for Raw {
         let command = lookup.lookup(PRISMA_COMMAND_TIMEOUT_ENV_VAR);
         let deploy = lookup.lookup(PRISMA_DEPLOY_TIMEOUT_ENV_VAR);
         Ok(Settings {
-            database_url: lookup
-                .lookup("DATABASE_URL")
-                .filter(|text| !text.is_empty())
-                .map(SecretString::from),
-            direct_url: lookup
-                .lookup("DIRECT_URL")
-                .filter(|text| !text.is_empty())
-                .map(SecretString::from),
-            migration_lock_timeout: timeout_from_env(
-                MIGRATION_LOCK_TIMEOUT_ENV_VAR,
-                lookup.lookup(MIGRATION_LOCK_TIMEOUT_ENV_VAR).as_deref(),
-                DEFAULT_LOCK_TIMEOUT,
-            ),
-            prisma_command_timeout: timeout_from_env(
-                PRISMA_COMMAND_TIMEOUT_ENV_VAR,
-                command.as_deref(),
-                DEFAULT_COMMAND_TIMEOUT,
-            ),
-            prisma_migrate_deploy_timeout: prisma_migrate_deploy_timeout(
-                deploy.as_deref(),
-                command.as_deref(),
-            ),
+            inner: Box::new(Inner {
+                database_url: lookup
+                    .lookup("DATABASE_URL")
+                    .filter(|text| !text.is_empty())
+                    .map(SecretString::from),
+                direct_url: lookup
+                    .lookup("DIRECT_URL")
+                    .filter(|text| !text.is_empty())
+                    .map(SecretString::from),
+                migration_lock_timeout: timeout_from_env(
+                    MIGRATION_LOCK_TIMEOUT_ENV_VAR,
+                    lookup.lookup(MIGRATION_LOCK_TIMEOUT_ENV_VAR).as_deref(),
+                    DEFAULT_LOCK_TIMEOUT,
+                ),
+                prisma_command_timeout: timeout_from_env(
+                    PRISMA_COMMAND_TIMEOUT_ENV_VAR,
+                    command.as_deref(),
+                    DEFAULT_COMMAND_TIMEOUT,
+                ),
+                prisma_migrate_deploy_timeout: prisma_migrate_deploy_timeout(
+                    deploy.as_deref(),
+                    command.as_deref(),
+                ),
+            }),
         })
     }
 }
