@@ -46,13 +46,10 @@ impl LitellmAgentResolver {
     }
 }
 
-// A model entry selects the resolver by its prefix, unlike the strip which finds the text anywhere.
 #[must_use]
 pub fn is_litellm_agent_model(model: &str) -> bool {
-    if model.starts_with(LITELLM_AGENT_PREFIX) {
-        return true;
-    }
-    false
+    // The gate and the router select by a leading prefix, unlike the strip which finds the text anywhere.
+    model.starts_with(LITELLM_AGENT_PREFIX)
 }
 
 mod tests;
