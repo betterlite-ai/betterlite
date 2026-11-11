@@ -4,7 +4,7 @@ use betterlite_config::rag::document::ingest::{
 use rstest::rstest;
 
 use crate::s3_vectors_ingestion::{
-    S3_VECTORS_STORE_ID_ERROR, ingest_embedding_options, ingest_target,
+    DEFAULT_NON_FILTERABLE_KEYS, S3_VECTORS_STORE_ID_ERROR, ingest_embedding_options, ingest_target,
 };
 
 fn options(text: &str) -> S3VectorsVectorStoreOptions {
@@ -124,4 +124,9 @@ fn ingest_embedding_override_leaves_the_input_unchanged() {
 fn ingest_embedding_override_keeps_absent_options() {
     let config = options("{}");
     assert_eq!(ingest_embedding_options(&config, None), None);
+}
+
+#[test]
+fn default_non_filterable_keys_are_source_text() {
+    assert_eq!(DEFAULT_NON_FILTERABLE_KEYS, ["source_text"]);
 }
