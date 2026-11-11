@@ -1,0 +1,240 @@
+id: B137
+title: MCP auth, grants and outbound credential parity through the booted proxy
+description: >-
+  Finish the MCP auth umbrella with HTTP evidence, not new code. Its parts build MCP request admission (B4654, B4673,
+  B4679, B7490), server and tool grants (B4668 to B4672), the outbound credential modes (B4661, B4664, B4665, B4667)
+  and the gateway OAuth server (B4666, B4674, B4676). Each of them planned helper cases only, because no route reached
+  its code yet, and left the HTTP cases to this umbrella. B8621 to B8623 now build the production ports and B8624,
+  B8626, B8702 and B8728 mount the routes, but those mount tasks carry only their route tasks' cases and a few wiring
+  cases. This task writes the missing HTTP oracle cases in tools/oracle/cases/http/mcp-auth-parity/ and adds no product
+  code and no route. When a case shows betterlite differs from LiteLLM, report blocked and name the part that owns the
+  behavior (the out_of_scope list below maps every function), since this task's scope holds no product code.
+
+
+  Before writing a case, run it with `cargo run --locked -p betterlite-oracle -- --self-check
+  tools/oracle/cases/http/mcp-auth-parity` so LiteLLM shows every upstream request it makes, and keep each upstream
+  script strict: list exactly the answers LiteLLM consumes and nothing more.
+
+
+  Shared setup. general_settings.master_key is oracle-master in every case. Set the env var PROXY_BASE_URL to
+  https://gateway.example.test in every case that compares a WWW-Authenticate header, so the resource_metadata URLs
+  name the same origin on both peers instead of each gateway's own port. The MCP request envelope is a POST with
+  Content-Type application/json, Accept "application/json, text/event-stream", MCP-Protocol-Version 2025-03-26 and the
+  body {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26",
+  "capabilities": {}, "clientInfo": {"name": "oracle-client", "version": "1"}}}, as B8728's transport cases send it.
+  Servers go in the top-level mcp_servers map of config.yaml:
+
+  alpha and beta are managed OpenAPI servers, so their tools register from a local spec at startup and listing them
+  needs no MCP upstream: server_id test-alpha (test-beta), url "{{upstream}}", auth_type none, spec_path
+  tools/oracle/cases/http/mcp-auth-parity/fixtures/openapi.json (repository-root-relative, so both gateways read the
+  same file), and alpha also has access_groups [group-a]. The fixture is an OpenAPI 3.0.3 document with two POST
+  operations, /echo (operationId echo) and /other (operationId other), each taking a JSON body {text: string}.
+
+  bridge: server_id test-bridge, url "{{upstream}}/mcp", auth_type oauth_delegate, dcr_bridge true,
+  authorization_url "{{upstream}}/authorize", token_url "{{upstream}}/token".
+  pass: server_id test-pass, url "{{upstream}}/mcp", auth_type true_passthrough.
+  obo: server_id test-obo, url "{{upstream}}/mcp", auth_type oauth2_token_exchange, token_exchange_endpoint
+  "{{upstream}}/token", client_id obo-client, client_secret obo-secret, audience api://oracle-upstream.
+  jag: server_id test-jag, url "{{upstream}}/mcp", auth_type oauth2_id_jag, token_exchange_endpoint
+  "{{upstream}}/org-token", id_jag_resource_token_endpoint "{{upstream}}/resource-token", client_id jag-client,
+  client_secret jag-secret.
+  m2m: server_id test-m2m, url "{{upstream}}/mcp", auth_type oauth2, oauth2_flow client_credentials, client_id
+  m2m-client, client_secret m2m-secret, token_url "{{upstream}}/token", scopes [tools.read].
+
+  Each case configures only the servers it needs.
+
+
+  Grant cases (B4668 to B4672, through B8626's /mcp-rest routes). These are `kind: http_scenario` cases with
+  general_settings.database_url "{{postgres}}" and alpha and beta configured. Setup steps create the principals
+  through the management routes with the master key and capture what the next step needs: POST /key/generate (capture
+  /key as a secret), POST /team/new (capture /team_id), POST /user/new and POST /organization/new (capture
+  /organization_id), each carrying an object_permission body. A setup step ignores only the fields each peer generates
+  (the key, token hashes, ids, timestamps), one pointer per field with the reason that it is generated per peer, and
+  still compares status. The last step sends the captured key as Authorization: Bearer.
+
+  key-server-grant-list: a key with object_permission {mcp_servers: [test-alpha]} lists GET /mcp-rest/tools/list and
+  sees only alpha's tools. key-server-grant-call-denied: the same key sends POST /mcp-rest/tools/call {server_id:
+  test-beta, name: echo, arguments: {text: hi}} and gets LiteLLM's 403 access_denied before any upstream request.
+  key-no-mcp-servers: mcp_servers ["no-mcp-servers"] lists nothing. key-tool-permission-list: object_permission
+  {mcp_tool_permissions: {test-alpha: [echo]}} lists alpha's echo and not alpha's other. key-tool-permission-call-denied:
+  that key calls other on test-alpha and gets the 403 tool denial, with no upstream request. team-grant-inherited: a
+  team with mcp_servers [test-beta] and a key in it with no permission of its own sees beta only. team-key-intersection:
+  the same team and a key with mcp_servers [test-alpha, test-beta] sees beta only. require-key-access-defined: as
+  team-grant-inherited with general_settings.require_key_mcp_access_defined true, so the key sees nothing.
+  access-group-grant: a key with mcp_servers [test-beta] and mcp_access_groups [group-a] sees both, since access group
+  grants add on top. user-ceiling: POST /user/new for user mcp-user with mcp_servers [test-alpha], then a key for
+  mcp-user with mcp_servers [test-alpha, test-beta] sees alpha only. org-ceiling: an organization with mcp_servers
+  [test-alpha], a team in it, and a key in that team with mcp_servers [test-alpha, test-beta] sees alpha only.
+
+
+  Admission cases (B4654, B4673, B4679, B7490, through B8728's /mcp routes). `kind: http`, no database, upstream []
+  unless a case says otherwise. session-bearer-forged: POST /mcp/ with Authorization: Bearer llm_session_forged answers
+  the gateway's 401 authentication_required with WWW-Authenticate carrying error="invalid_token" and the aggregate
+  resource_metadata. bad-bearer-aggregate: Authorization: Bearer sk-not-a-key on POST /mcp/ falls back to the same
+  invalid_token challenge. explicit-key-wrong: x-litellm-api-key: sk-not-a-key on POST /mcp/ answers the key auth's own
+  401 with no challenge. bridge-cold-start: POST /mcp/bridge with no credential is admitted anonymously and then gets
+  the per-server resource_metadata challenge. bridge-forged-envelope: Authorization: Bearer llm_env_forged on POST
+  /mcp/bridge fails envelope admission with the same 401 and per-server invalid_token challenge as bridge-bad-bearer. bridge-bad-bearer: Authorization: Bearer
+  sk-not-a-key on POST /mcp/bridge answers 401 "Invalid or expired credential" with the per-server invalid_token
+  challenge. passthrough-header-cold-start: POST /mcp/ with x-mcp-servers: pass and no credential is admitted as a
+  pass-through cold start, the gateway probes the upstream, and the upstream script answers that probe 401 with
+  WWW-Authenticate 'Bearer resource_metadata="https://upstream.example.test/.well-known/oauth-protected-resource/mcp"',
+  which the client must receive unchanged.
+
+
+  Outbound credential cases (B4661, B4664, B4665, B4667, through B8728 and B8626). `kind: http`, no database. Every
+  request carries x-litellm-api-key: oracle-master. token-exchange-no-subject: POST /mcp/obo with no Authorization gets
+  the RFC 9728 challenge with error="invalid_token" before any upstream request. token-exchange-idp-rejects: the same
+  with Authorization: Bearer subject-token-1, and the upstream answers the exchange POST to /token with 400 {"error":
+  "invalid_grant"}: the client gets the invalid_token challenge, and the case compares the recorded exchange request.
+  token-exchange-step-up: the upstream answers 400 {"error": "interaction_required", "claims":
+  "{\"access_token\":{\"acrs\":{\"essential\":true,\"value\":\"c1\"}}}"} and the challenge carries
+  error="insufficient_claims" and the claims base64-encoded. token-exchange-gateway-fault: the upstream answers 400
+  {"error": "invalid_client"}, a gateway fault and not a subject rejection, so the answer is the mapped error status
+  and not the challenge. id-jag-no-assertion: POST /mcp/jag with no Authorization and no database has no stored SSO
+  assertion to exchange, so the pre-flight answers the status raise_public maps the resolver's error to.
+  client-credentials-token-rejected: GET /mcp-rest/tools/list?server_id=test-m2m with Authorization: Bearer
+  oracle-master, the upstream answering the token POST 401 {"error": "invalid_client"}; compare the answer and the
+  recorded client_credentials token request (its form and authorization header).
+
+
+  Gateway OAuth cases (B4666, B4674, B4676, through B8624's and B8702's routes). No database.
+  gateway-dcr-refresh-forged is a `kind: http_scenario`: POST /register with {client_name: oracle-cli, redirect_uris:
+  ["http://127.0.0.1:33418/callback"], grant_types: [authorization_code, refresh_token], token_endpoint_auth_method:
+  none} registers an aggregate client (capture /client_id, ignore the sealed /client_id and /client_id_issued_at with
+  that reason), then POST /token as a form (body_kind bytes, Content-Type application/x-www-form-urlencoded) with
+  grant_type=refresh_token, the captured client_id and refresh_token=llm_srefresh_forged answers invalid_grant.
+  gateway-dcr-code-forged: the same registration, then grant_type=authorization_code with code=forged-code,
+  redirect_uri=http://127.0.0.1:33418/callback and code_verifier=oracle-verifier-0123456789012345678901234567890 answers
+  invalid_grant. bridge-refresh-envelope-forged is a `kind: http`: POST /bridge/token as a form with
+  grant_type=refresh_token, client_id=bridge and refresh_token=llm_refresh_forged, compared as LiteLLM answers it.
+
+
+  Every comparison checks status, content-type and any WWW-Authenticate header. Keep error, error_description, type,
+  param and code where the surface gives them; ignore only wording at its exact pointer, with the repository's wording
+  reason, and never a WWW-Authenticate value. Add one corpus seed per case kind: an mcp-auth-parity-* file in
+  tools/oracle/fuzz/corpus/http_case for a `kind: http` case and one in tools/oracle/fuzz/corpus/http_scenarios for a
+  scenario, so the existing decoders replay them.
+scope:
+  paths:
+    - tools/oracle/cases/http/mcp-auth-parity/**
+    - tools/oracle/fuzz/corpus/http_case/mcp-auth-parity-*
+    - tools/oracle/fuzz/corpus/http_scenarios/mcp-auth-parity-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L417-L630
+    why: process_mcp_request picks the admission arm from the explicit key, the bridge envelope and session prefixes, the pass-through targets and the oauth2 headers; the admission cases walk these arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L233-L361
+    why: The gateway challenge target, its scope test, the challenge text and _admission_failure_fallback with its cold-start branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L929-L1038
+    why: Bridge authorization with its "Invalid or expired credential" challenge and the gateway session arm that fails closed with invalid_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1555-L1761
+    why: get_mcp_server_access, the key, team, access group, end user, agent, user and org order the grant cases cover, and the no-mcp-servers opt-out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L615-L695
+    why: The REST call's server check, its 404 server_not_found and 403 access_denied bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1366
+    why: POST /mcp-rest/tools/call, its decorator, error mapping and the HTTPException pass-through the denial cases reach.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5691-L5731
+    why: The per-key tool denial and its 403 text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2440-L2700
+    why: The config keys each mcp_servers entry reads, the oauth2_flow requirement, the dcr_bridge auth type rule and startup OAuth discovery.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4091-L4214
+    why: Egress credential resolution and the token exchange pre-flight, with the challenge each failure raises.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1602-L1824
+    why: The pre-emptive 401s at the transport edge for oauth2, token exchange, oauth delegate, DCR bridge and pass-through servers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/adapter.py#L276-L389
+    why: raise_public's status per CredError tag and the token exchange challenge with insufficient_claims and base64 claims.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchange_provider.py#L34-L104
+    why: Which IdP error codes are gateway faults, and when a claims blob is read from the error body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2024-L2075
+    why: POST /token and /{mcp_server_name}/token, and the gateway client id branch into aggregate_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2944-L3010
+    why: POST /register and /{mcp_server_name}/register, and why a body with redirect_uris reaches the aggregate registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L373-L444
+    why: register_aggregate_client and its redirect_uris checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L223-L236
+    why: The per-server WWW-Authenticate value with and without invalid_token.
+  - url: https://docs.litellm.ai/docs/mcp
+    why: How operators configure MCP servers, auth types and key, team and access group permissions.
+dod:
+  - text: Key, team, access group, user and organization grants decide which servers and tools a key lists and calls through /mcp-rest, as in LiteLLM.
+    proof: [case-files, oracle]
+  - text: Forged session, envelope and key credentials, bridge and pass-through cold starts get LiteLLM's status and WWW-Authenticate challenge on /mcp.
+    proof: [case-files, oracle]
+  - text: Token exchange, ID-JAG and client_credentials servers send LiteLLM's token requests and map each failure to LiteLLM's challenge or status.
+    proof: [case-files, oracle]
+  - text: Aggregate DCR registration and forged refresh, code and bridge refresh grants answer as LiteLLM does.
+    proof: [case-files, oracle]
+  - text: The new transcripts parse through the existing HTTP case and scenario decoders.
+    proof: [http-corpus, scenario-corpus]
+checks:
+  optional: []
+  commands:
+    - id: case-files
+      why: No newly added MCP auth case exists or the shared OpenAPI fixture is missing.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-auth-parity)" && test -f tools/oracle/cases/http/mcp-auth-parity/fixtures/openapi.json
+    - id: http-corpus
+      why: The single-request cases never reach the HTTP case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/mcp-auth-parity-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+    - id: scenario-corpus
+      why: The scenario cases never reach the scenario parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_scenarios/mcp-auth-parity-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::replays_corpus$/)'
+oracle_cases:
+  - tools/oracle/cases/http/mcp-auth-parity/key-server-grant-list.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/key-server-grant-call-denied.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/key-no-mcp-servers.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/key-tool-permission-list.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/key-tool-permission-call-denied.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/team-grant-inherited.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/team-key-intersection.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/require-key-access-defined.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/access-group-grant.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/user-ceiling.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/org-ceiling.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/session-bearer-forged.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/bad-bearer-aggregate.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/explicit-key-wrong.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/bridge-cold-start.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/bridge-forged-envelope.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/bridge-bad-bearer.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/passthrough-header-cold-start.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/token-exchange-no-subject.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/token-exchange-idp-rejects.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/token-exchange-step-up.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/token-exchange-gateway-fault.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/id-jag-no-assertion.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/client-credentials-token-rejected.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/gateway-dcr-refresh-forged.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/gateway-dcr-code-forged.yaml
+  - tools/oracle/cases/http/mcp-auth-parity/bridge-refresh-envelope-forged.yaml
+deviations: []
+out_of_scope:
+  - "No route and no production port: B8610 composes the app, B8621 to B8623 build the MCP identity, token and OAuth state, B8624 and B8702 mount the OAuth routes, B8626 the /mcp-rest routes and B8728 the /mcp transport. Their own HTTP cases are not repeated here, and neither are B136's upstream conversation cases."
+  - "outbound_credentials/__init__.py (re-exports only) and every function in outbound_credentials/resolver.py (_NullOAuthTokenStore, _NullTokenExchanger, UpstreamCredentialProvider and its arms, _id_jag_slot_key, _id_jag_fingerprint, _client_auth_fingerprint, _not_implemented, resolve_credentials_with_source): B4667. The Byok key source arm returns not_implemented, since no code builds a Byok source at the pin."
+  - "auth/litellm_auth_handler.py MCPAuthenticatedUser: B8200."
+  - "user_api_key_auth_mcp.py, header and target parsing: B4654 owns _parse_mcp_server_names_from_path, the MCPRequestHandler header name constants, extract_target_server_names_from_path, _resolve_target_server_names, _get_mcp_auth_header_from_headers, _get_mcp_server_auth_headers_from_headers, _get_oauth2_headers_from_headers, get_mcp_client_side_auth_header_name, get_litellm_api_key_from_headers, _safe_get_headers_from_scope, _reject_duplicate_authorization, get_mcp_access_groups_from_headers and get_mcp_access_groups_from_scope."
+  - "user_api_key_auth_mcp.py, admission fallbacks: B7490 owns _is_mcp_passthrough_cold_start, _is_legacy_delegate_cold_start, _has_client_supplied_mcp_auth, _gateway_dcr_challenge_target, _is_gateway_dcr_challenge_scope, _gateway_dcr_challenge, _admission_failure_fallback, DcrBridgeTarget, _target_servers_are_true_passthrough, _single_dcr_bridge_delegate_target and _dcr_bridge_invalid_token_challenge."
+  - "user_api_key_auth_mcp.py, live credential checks: B4679 owns _is_litellm_auth_admission_error, _explicit_credential_matches_envelope, _is_mcp_admitted_user_subject, _is_gateway_admission_credential, _scrub_gateway_admission_credentials, _run_pre_db_read_auth_checks, _reload_admitted_key, _raise_503_if_db_unavailable, _reject_if_admitted_owner_scim_deactivated, _enforce_admitted_live_policy and _admitted_key_is_active."
+  - "user_api_key_auth_mcp.py, request admission: B4673 owns process_mcp_request with its mock_body, _admit_dcr_bridge_delegate, _open_dcr_bridge_envelope, _admit_dcr_bridge_dual_credential, _admit_dcr_bridge_authorization, _admit_gateway_session, _reload_admitted_principal and reload_admitted_user."
+  - "user_api_key_auth_mcp.py, server access and attribution: B4671 owns MCPServerAccess, get_allowed_mcp_servers, get_mcp_server_access, _admitted_subject_team_rpm_limits, _scoped_source_auth, admitted_subject_sources, _roster_team_object, admitted_source_grants, _toolset_scope, resolve_admitted_subject_servers, billing_auth_for_tool_call and attributing_source_for_server."
+  - "user_api_key_auth_mcp.py, ceilings: B4670 owns _agent_capped_servers, _apply_primary_org_ceiling, _apply_agent_and_org_tool_ceilings, _get_allowed_mcp_servers_for_org, _get_allowed_mcp_servers_for_end_user, _get_allowed_mcp_servers_for_user, _apply_user_server_ceiling, apply_agent_caller_ceiling, _user_places_mcp_ceiling, admin_view_unscoped, _apply_user_tool_ceiling, apply_agent_caller_tool_ceiling, _apply_end_user_tool_ceiling, get_allowed_mcp_servers_for_agent, _get_agent_access_group_server_ceiling and get_agent_tool_permissions_for_server."
+  - "user_api_key_auth_mcp.py, tool grants: B4672 owns _narrow_tools_to_toolset, resolve_admitted_subject_tools, get_allowed_tools_for_server, tool_is_granted, is_tool_allowed_for_server and is_tool_allowed, and notes that _as_list (a list copy) needs no Rust function."
+  - "user_api_key_auth_mcp.py, object permissions: B4668 owns UnloadableEntitlementError, _get_key_object_permission, team_object_permission, key_object_permission_hydrated, _get_team_object_permission, _toolset_tool_permissions, _toolset_tools_for_server, _union_tool_grants, _key_object_permission_hydrated, _key_or_team_declares_toolsets, _load_named_object_permission, _get_org_object_permission, _get_end_user_object_permission, _get_user_object_permission, _user_object_permission_id, _agent_object_permission_id and _get_agent_object_permission."
+  - "user_api_key_auth_mcp.py, key and team grants: B4669 owns _get_key_access_group_mcp_server_extras, _get_allowed_mcp_servers_for_key, _get_allowed_mcp_servers_for_team, _team_ids_for_mcp_grant, _resolve_user_team_ids, _team_granted_servers, _allowed_mcp_servers_for_single_team, _get_config_server_ids_for_access_groups, _get_db_server_ids_for_access_groups and _get_mcp_servers_from_access_groups. get_mcp_access_groups, _get_mcp_access_groups_for_key and _get_mcp_access_groups_for_team have no caller at the pin (B4669 records it), so they get no case."
+  - "HTTP cases for OAuth identity binding (B4659) and per-user token refresh (B4660): both need a stored LiteLLM_MCPUserCredentials row written by a finished browser OAuth flow and an id_token signed by a key the case controls. The scenario setup cannot seed that table and the consent step needs an SSO session cookie, so their native tests and B8622's and B8623's wiring tests cover them."
+  - "Admitted gateway sessions and valid bridge envelopes at /mcp: a valid llm_session_ or llm_env_ value is minted only at the end of the browser consent flow under each peer's own signing key, so the cases here cover the forged values and B4673's tests cover admission."
+  - "A request with two Authorization headers (B4654's 400): a case's request headers are a map, so one case cannot send the header twice; B4654's tests cover it."
+pitfalls:
+  - "auth_type oauth2 without oauth2_flow stops LiteLLM at startup (\"auth_type oauth2 requires an explicit oauth2_flow\"), so the m2m server sets oauth2_flow client_credentials."
+  - "dcr_bridge is accepted only with auth_type true_passthrough or oauth_delegate, and _single_dcr_bridge_delegate_target needs oauth_delegate, so the bridge server must be oauth_delegate for the bridge arms to run."
+  - "OAuth servers without explicit endpoints trigger metadata discovery that reads the upstream script; give each one authorization_url and token_url, or token_exchange_endpoint, and check with --self-check that no discovery request eats an answer."
+  - "The prefixes route to different arms: llm_session_ and llm_srefresh_ go to the session arm, llm_env_ and llm_refresh_ to the bridge arms; a forged value must start with the exact prefix of the arm it tests."
+  - "x-litellm-api-key makes the explicit-key arm win over every other arm, so the bearer and bridge admission cases must not send it, while the outbound credential cases must."
+  - "The opt-out literal is \"no-mcp-servers\"; it zeroes the key's servers even when its team grants some."
+  - "invalid_client, unauthorized_client, unsupported_grant_type, invalid_target and invalid_scope from the exchange endpoint are gateway faults and never produce the challenge; claims is read only when it is a non-empty string."
+  - "Without PROXY_BASE_URL each peer writes its own host and port into resource_metadata, and ignoring the header to hide that would hide the behavior under test."
+  - "access_groups on a config server grant additively through mcp_access_groups even when the key's own mcp_servers list leaves the server out."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

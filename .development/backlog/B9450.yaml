@@ -1,0 +1,14 @@
+id: B9450
+milestone: M6 guardrails
+title: Cisco AI Defense streaming output scan and MCP tool output hook
+status: todo
+depends_on: [B3756, B3760, B3761, B3762, B2227, B010, B9650]
+file: tasks/B9450-cisco-stream-mcp-hooks.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/{cisco_ai_defense,cisco_ai_defense_mcp}.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

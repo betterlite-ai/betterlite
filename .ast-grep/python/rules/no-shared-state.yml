@@ -1,0 +1,8 @@
+id: no-shared-state
+language: python
+severity: error
+message: global and nonlocal share state between calls; pass the value in and return the new one
+rule:
+  any:
+    - kind: global_statement
+    - kind: nonlocal_statement

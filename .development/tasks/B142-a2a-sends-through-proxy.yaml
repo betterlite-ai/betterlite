@@ -1,0 +1,207 @@
+id: B142
+title: Live A2A provider ports and successful agent sends through the proxy
+description: >-
+  B142's parts built the A2A client, the provider configs and the completion bridge in
+  betterlite-a2a, and B8589 and B8648 serve and mount POST /a2a/{agent_id},
+  /a2a/{agent_id}/message/send and /v1/a2a/{agent_id}/message/send. Two things are left. The
+  provider parts reach the network and the chat stack only through ports, and nothing in the
+  gateway implements those ports yet. And every HTTP case so far is an error or a card: no case
+  sends a message through the booted proxy and gets an agent's answer back. This task writes the
+  production adapters, hands them to the A2A route state, and proves each send path over HTTP. It
+  ports no LiteLLM function; the adapters stand where LiteLLM calls httpx and litellm.acompletion.
+
+  Adapters. Module app::agents::a2a_ports in crates/betterlite-server/src/app/agents/a2a_ports.rs
+  and a2a_ports/ (completion.rs, transports.rs, clock.rs, error.rs, tests.rs); the skeleton declares
+  it in app/agents.rs. Read the merged traits before writing anything, since B4804 and B4809 are
+  still being built: AgentTransport in betterlite_a2a::pydantic_ai_submit (B4806), RunTransport in
+  watsonx_run::transport (B4808), TokenTransport and TokenClock in watsonx_credentials::bearer
+  (B4807), the port B4809's completion bridge calls in place of litellm.acompletion (its deviation
+  calls it the seam for vars(litellm)["acompletion"]), and whatever transport port B4804 leaves for
+  its AgentCore POST. Implement each one once, over the shared ProxiedClient the server state already
+  holds; build no second reqwest pool and read no environment during a request.
+
+  The HTTP adapters send exactly the URL, headers and body the part built and honor the limits the
+  request carries: AgentRequest.timeout (60 s by default) and RunLimits (timeout and
+  max_response_bytes, 8 MiB) as the request deadline and body bound. AgentTransport turns the
+  response body into AgentJson with serde_json::from_slice, and a body that is not JSON is the
+  adapter's error, the way httpx's response.json() raises in LiteLLM. RunTransport keeps the split
+  B4808 relies on: a failure before the response headers arrive is RunFailure::Transport, a deadline
+  hit before headers is RunFailure::Timeout, and anything after the headers lands in the body
+  (StreamBody::ReadFailed or TooLarge for post_stream). TokenTransport posts the secret body with its
+  content type and keeps the answer secret. pause is tokio::time::sleep. The clock holds an Instant
+  taken at construction for monotonic and reads SystemTime for unix_seconds; no statics.
+
+  The completion port runs B5656's AsyncCompletionTarget built with the shared ProxiedClient, the
+  same direct SDK call B8665 uses for litellm.acompletion. It does not go through the router, so a
+  model that is only in model_list gets nothing from it; the agent's litellm_params carry
+  api_base, api_key and the provider. A finished response goes back as the bridge's model response
+  and a stream as its chunk stream. A provider error keeps its kind: B8589 answers a
+  litellm.BadRequestError with -32602 and HTTP 400 and everything else with -32603 and 500, so a
+  provider 400 that comes back as a generic error is a bug here.
+
+  State. In crates/betterlite-server/src/app/agents/a2a/state.rs (B8648's), pass these adapters
+  where the route state builds the provider configs and the bridge, each constructed once at mount.
+  If B8648 already built one of them over the shared client, keep that one and don't write a second;
+  if it passed a placeholder that fails, replace it. Change nothing else in that file. Tests in
+  app::agents::a2a_ports::tests run each HTTP adapter against a local axum server: the method, URL,
+  headers and body arrive as given, a timeout and a refused connection map to the variants above, a
+  body past the bound is refused, and a non-JSON agent body is an error. The completion test feeds
+  a recorded chat answer and a 400 through a local server and checks the response and the error
+  kind.
+
+  Cases. All new cases go in tools/oracle/cases/agents/a2a-sends/, ordinary HTTP cases (no kind
+  field) through the booted proxy with the master key the other HTTP cases send (Bearer
+  oracle-master). Agents come from config under the agents key, the shape B8648's
+  card-config-agent case uses: agent_name, agent_card_params with name and url "{{upstream}}", and
+  litellm_params where a provider is involved. LiteLLM gives a config agent a stable hash id, so
+  x-litellm-agent-id compares across sides. The mock serves each case's upstream list in order and
+  does not substitute {{upstream}} inside a body.
+
+  native-send-localhost-card: a 0.3 card with url http://localhost:1/, preferredTransport JSONRPC and
+  streaming off, then a JSON-RPC result holding an agent message. The first send fails to connect,
+  the localhost retry resends to the agent's api_base, and the client gets the agent's result.
+  native-send-v1-caller: the same agent called with method SendMessage, so the answer is converted
+  to the 1.0 shape. native-stream: message/stream to a card with streaming on, the agent answering
+  SSE events (task, working status, artifact, completed status with final true). native-card-missing:
+  one 404 for each of the three card paths, answering -32603 with 500. bridge-openai-send:
+  custom_llm_provider openai with model, api_base "{{upstream}}" and api_key, the mock answering a
+  chat completion. bridge-openai-stream: the same agent over message/stream with chat chunks as SSE.
+  bridge-provider-bad-request: the chat call answers an OpenAI 400 error body, and the client gets
+  -32602 with 400. pydantic-send-polling: custom_llm_provider pydantic_ai_agents, a submitted task,
+  one working poll, then a completed task with a text artifact. watsonx-cp4d-send:
+  custom_llm_provider watsonx_orchestrate with cp4d_host "{{upstream}}", instance_id, wxo_agent_id,
+  username and api_key, answering the /icp4d-api/v1/authorize token, the run and its completed
+  state. agentcore-jwt-send: custom_llm_provider bedrock, model
+  bedrock/agentcore/arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/oracle-agent,
+  aws_bedrock_runtime_endpoint "{{upstream}}", api_key and a fixed runtimeSessionId of 33 or more
+  characters, so the bearer header and session header compare. langflow-send-session:
+  custom_llm_provider langflow, model langflow/<flow id>, api_base "{{upstream}}", and a message with a
+  contextId, answered by a LangFlow run response.
+
+  Compare status, content-type and the whole body. Ignore only ids LiteLLM draws from uuid4 (the
+  bridge's messageId, taskId and contextId, the A2A client's generated ids), each with its why, and
+  /error/message only where it carries Python exception text. Compare upstream_headers where a
+  part sets them: content-type and x-litellm-agent-id on native sends, authorization and
+  x-amzn-bedrock-agentcore-runtime-session-id on AgentCore, authorization on watsonx.
+
+  The oracle passes when both sides fail the same way, so add module a2a_http in
+  tools/oracle/src/a2a_http.rs and a2a_http/ (the skeleton declares it in tools/oracle/src/lib.rs)
+  with the test litellm_answers_every_send_case in a2a_http/tests.rs. It decodes every case in the
+  folder with decode_case, runs them through run_group_with_url with self_check true, reads each
+  client-litellm.json and asserts LiteLLM's own answer: status 200 with a result and no error for
+  the JSON sends, at least one event and no error event for the streams, and the exact code and
+  status for native-card-missing and bridge-provider-bad-request. A case written so LiteLLM can't
+  reach its mock fails there. The adapters parse no bytes beyond serde_json::from_slice into a
+  Value, so there is no decoder and no fuzz target.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/agents/a2a_ports.rs
+    - crates/betterlite-server/src/app/agents/a2a_ports/**
+    - crates/betterlite-server/src/app/agents/a2a/state.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/a2a_http.rs
+    - tools/oracle/src/a2a_http/**
+    - tools/oracle/cases/agents/a2a-sends/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L635-L905
+    why: The three invoke paths, the agent and URL checks, the user key hash for the bridge and the message/send call whose answer the cases compare.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L412-L563
+    why: message/stream answers SSE, with a -32603 error event on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L1017-L1032
+    why: BadRequestError is -32602 with 400, anything else -32603 "Internal error" with 500.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L120-L132
+    why: The served version comes from the agent, then a PascalCase method or an a2a-version 1.x header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L299-L337
+    why: The native send retries once against api_base after a connection error to a localhost card URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L403-L552
+    why: asend_message picks the bridge on custom_llm_provider, otherwise resolves the card and sends with X-LiteLLM-Trace-Id and X-LiteLLM-Agent-Id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L101-L135
+    why: The retry needs a card URL, an api_base, a localhost pattern and a connection error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L584-L589
+    why: localhost, 127.0.0.1, 0.0.0.0 and [::1] are the localhost patterns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/litellm_completion_bridge/handler.py#L113-L181
+    why: The bridge's fallback is litellm.acompletion with the agent's litellm_params, the call the completion port replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/config_manager.py#L17-L61
+    why: Which custom_llm_provider values reach Pydantic AI, AgentCore, LangFlow and watsonx Orchestrate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/handler.py#L27-L113
+    why: The submit and polling calls the AgentTransport adapter carries, 60 s by default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L92-L170
+    why: The 90 s client, the token cache key and the cp4d token URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L276-L320
+    why: The run request sequence of the watsonx case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/bedrock_agentcore/transformation.py#L121-L215
+    why: AgentCore's URL, session header and signing inputs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L77-L142
+    why: aws_bedrock_runtime_endpoint replaces the AWS host, and an api_key turns SigV4 into a bearer header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/langflow/config.py#L16-L61
+    why: LangFlow scopes the contextId to the caller and calls the bridge with provider routing skipped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L145-L165
+    why: The session id is the first 16 hex characters of sha256 of the hashed key, a dash and the contextId.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L89-L110
+    why: The LangFlow run URL the langflow case's mock answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7059-L7066
+    why: Config agents load from agents, then agent_list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L466-L505
+    why: A config agent's id is a stable hash, so x-litellm-agent-id is the same on both sides.
+dod:
+  - text: Every A2A provider port the merged parts leave for the gateway has one production adapter over the shared client, with the request's deadline and body bound and the failure split the parts rely on.
+    proof: [ports-tests]
+  - text: The completion port runs the direct SDK completion with the agent's litellm_params and keeps a provider 400 apart from other failures.
+    proof: [ports-tests, sends-cases, oracle]
+  - text: The A2A route state takes the adapters and B8648's state tests still pass.
+    proof: [ports-tests, state-regression]
+  - text: Native, bridge, Pydantic AI, watsonx Orchestrate, AgentCore and LangFlow sends answer through the booted proxy as LiteLLM does, streams included.
+    proof: [sends-cases, sends-litellm-answers, oracle]
+checks:
+  optional: []
+  commands:
+    - id: ports-tests
+      why: An adapter is missing, sends something other than the part built, or maps a failure to the wrong variant.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^app::agents::a2a_ports::/)'
+    - id: state-regression
+      why: Passing the adapters broke the route state B8648 built.
+      run: >-
+        rg -q 'a2a_ports' crates/betterlite-server/src/app/agents/a2a/state.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^app::agents::a2a::/)'
+    - id: sends-cases
+      why: No HTTP case sends an A2A message through the proxy.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agents/a2a-sends)"
+    - id: sends-litellm-answers
+      why: A case that LiteLLM itself answers with an error would pass the comparison without testing a send.
+      run: >-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail
+        -E 'test(/^a2a_http::tests::litellm_answers_every_send_case$/)'
+oracle_cases:
+  - tools/oracle/cases/agents/a2a-sends/native-send-localhost-card.yaml
+  - tools/oracle/cases/agents/a2a-sends/native-send-v1-caller.yaml
+  - tools/oracle/cases/agents/a2a-sends/native-stream.yaml
+  - tools/oracle/cases/agents/a2a-sends/native-card-missing.yaml
+  - tools/oracle/cases/agents/a2a-sends/bridge-openai-send.yaml
+  - tools/oracle/cases/agents/a2a-sends/bridge-openai-stream.yaml
+  - tools/oracle/cases/agents/a2a-sends/bridge-provider-bad-request.yaml
+  - tools/oracle/cases/agents/a2a-sends/pydantic-send-polling.yaml
+  - tools/oracle/cases/agents/a2a-sends/watsonx-cp4d-send.yaml
+  - tools/oracle/cases/agents/a2a-sends/agentcore-jwt-send.yaml
+  - tools/oracle/cases/agents/a2a-sends/langflow-send-session.yaml
+deviations: []
+out_of_scope:
+  - "proxy/a2a/discovery.py and endpoints.py: B8202, mounted by B9767. proxy/a2a/__init__.py only re-exports B4811's agent_card and B8202's discovery names."
+  - "The invoke and card handlers: B8589. Their mount, the route state and the error and card cases: B8648. JSON-RPC forwarding and the SSE relay for tasks/resubscribe: B4788 and B4789."
+  - "Everything inside betterlite-a2a (card resolution, native client, retry, usage, version conversion, provider configs, bridge): B4800 to B4814."
+  - "_handle_a2a_response_logging in litellm_core_utils/litellm_logging.py L4322-L4343: B9840."
+  - "The direct SDK completion and its provider dispatch: B5656 and B014. The LangFlow chat provider: B8101."
+pitfalls:
+  - "A mock body never gets {{upstream}} substituted, so a native card can't name the mock; give it a localhost URL and let the retry resend to api_base, since a card on any other host is not retried."
+  - "The card resolver tries /.well-known/agent-card.json, /.well-known/agent.json and the Foundry path in order, so native-card-missing needs one 404 answer per path or the answers shift."
+  - "Keep one watsonx case: both sides cache the bearer token under auth_mode:cp4d_host:username:api_key for the whole run, so a second case with the same values sends no token request."
+  - "message/stream answers 200 text/event-stream even when it fails; the failure is a data event with code -32603, not an HTTP error."
+  - "LangFlow's config calls the bridge without agent_extra_headers, so a forwarded x-a2a-<agent>- header never reaches the LangFlow request."
+  - "Only an api_key in litellm_params makes AgentCore send Authorization: Bearer; without it the request is SigV4-signed and needs AWS credentials the oracle doesn't have."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

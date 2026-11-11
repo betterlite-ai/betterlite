@@ -1,0 +1,24 @@
+kind: helper
+name: openai-decisions-missing-text-field
+call:
+  openai_decisions:
+    request_roundtrip:
+      - model: gpt-4o
+        request:
+          input: the input
+          questions:
+            - type: choice
+              choices:
+                - {value: a}
+                - {value: b}
+      - model: gpt-4o
+        request:
+          input: the input
+          questions:
+            - type: choice
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+env: {}
+compare: {ignore: []}

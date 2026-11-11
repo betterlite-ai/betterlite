@@ -1,0 +1,14 @@
+id: B9800
+milestone: M5 api families
+title: Messages route call steps and route choice
+status: todo
+depends_on: [B1134, B9720, B8604, B8602, B7324, B002]
+file: tasks/B9800-messages-call-steps.yaml
+covers:
+  - "litellm/proxy/route_llm_request.py"
+parent: B081
+split_from: B081
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -9,7 +9,7 @@ description: >-
   per-user env var reader (B4714's get_user_env_vars behind a trait so tests use a fake) and a
   clock, passed in by constructor.
 
-  UpstreamClients also holds B8254's `JwtSignerSlot` and exposes `jwt_signer(&self) -> Option<Arc<McpJwtSigner>>`, the slot's `get` read on every call (LiteLLM's get_mcp_jwt_signer). B8462's tools/list JWT gate in _get_tools_from_server reads the signer there. This task signs nothing itself.
+  UpstreamClients also holds B8254's `JwtSignerSlot` and exposes `jwt_signer(&self) -> Option<Arc<JwtSigner>>`, the slot's `get` read on every call (LiteLLM's get_mcp_jwt_signer). B8462's tools/list JWT gate in _get_tools_from_server reads the signer there. This task signs nothing itself.
 
 
   create_client(server, mcp_auth_header, extra_headers, stdio_env, subject_token, auth, raw_headers,
@@ -22,7 +22,7 @@ description: >-
   auth value comes from B4662's resolve_mcp_auth and the header name from resolved_token_header.
   Sampling and elicitation callbacks come from B8191's legacy callbacks, only when allow_sampling or
   allow_elicitation is set on the record; the sampling callback carries the caller auth, raw headers
-  and client ip as its operation context.
+  and client ip as its operation context. Fill SessionSettings.handlers (B9653's ServerRequestHandlers) from those legacy callbacks when allow_sampling or allow_elicitation is set.
 
 
   stdio: when B4716's stdio policy is disabled, fail with 403 and MCP_STDIO_DISABLED_MESSAGE. The env

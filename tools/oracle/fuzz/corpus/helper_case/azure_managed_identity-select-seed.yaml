@@ -1,0 +1,5 @@
+kind: helper
+name: azure-managed-identity-select-seed
+call: {azure_managed_identity: {steps: [{action: select, environment: {IDENTITY_ENDPOINT: "", IDENTITY_HEADER: "", IDENTITY_SERVER_THUMBPRINT: ""}}, {action: select, environment: {AZURE_AUTHORITY_HOST: "https://login.contoso.test", AZURE_TENANT_ID: "tenant", AZURE_FEDERATED_TOKEN_FILE: "/var/run/token", AZURE_CLIENT_ID: "client"}}]}}
+env: {}
+compare: {ignore: []}
