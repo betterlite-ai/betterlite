@@ -1,7 +1,7 @@
 id: B857
 milestone: M4 keys, spend and management
 title: Migration drift checks and invalid-index repair
-status: todo
+status: done
 depends_on: [B002, B171, B700, B701, B709, B711, B716, B856, B860]
 file: tasks/B857-migration-drift.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/db/check_migration.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1245
