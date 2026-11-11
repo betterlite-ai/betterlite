@@ -47,23 +47,28 @@ pub(super) async fn organizations(client: &Client, rows: &[OrganizationRow]) -> 
     Ok(())
 }
 
-async fn execute_metadata(client: &Client, row: &KeyMetadataRow) -> FixtureResult<()> {
+async fn execute_key(client: &Client, row: &KeyMetadataRow) -> FixtureResult<()> {
     let token = FixtureSeed::key_hash(row.token.expose_secret());
     execute(
         client,
         KEY_METADATA_UPDATE,
         &[&row.key_alias, &row.organization_id, &token],
     )
-    .await?;
-    if let Some(organization_id) = &row.team_organization_id {
-        execute(client, TEAM_METADATA_UPDATE, &[&organization_id, &token]).await?;
-    }
-    Ok(())
+    .await
+}
+
+async fn execute_team(client: &Client, row: &KeyMetadataRow) -> FixtureResult<()> {
+    let token = FixtureSeed::key_hash(row.token.expose_secret());
+    let Some(organization_id) = &row.team_organization_id else {
+        return Ok(());
+    };
+    execute(client, TEAM_METADATA_UPDATE, &[&organization_id, &token]).await
 }
 
 pub(super) async fn key_metadata(client: &Client, rows: &[KeyMetadataRow]) -> FixtureResult<()> {
     for row in rows {
-        execute_metadata(client, row).await?;
+        execute_key(client, row).await?;
+        execute_team(client, row).await?;
     }
     Ok(())
 }
@@ -76,39 +81,35 @@ fn usage_api_key(row: &FinOpsUsageRow) -> String {
 }
 
 async fn execute_usage(client: &Client, row: &FinOpsUsageRow) -> FixtureResult<()> {
-    execute(
-        client,
-        DAILY_USAGE_INSERT,
-        &[
-            &row.id,
-            &row.user_id,
-            &row.date,
-            &usage_api_key(row),
-            &row.model,
-            &row.model_group,
-            &row.custom_llm_provider,
-            &row.mcp_namespaced_tool_name,
-            &row.endpoint,
-            &row.prompt_tokens,
-            &row.completion_tokens,
-            &row.cache_read_input_tokens,
-            &row.cache_creation_input_tokens,
-            &row.compression_saved_tokens,
-            &row.compression_savings_spend.to_string(),
-            &row.prompt_caching_savings_spend.to_string(),
-            &row.gateway_injected_savings.to_string(),
-            &row.autorouter_savings_spend.to_string(),
-            &row.spend.to_string(),
-            &row.api_requests,
-            &row.successful_requests,
-            &row.failed_requests,
-            &row.total_response_time_ms,
-            &row.timed_requests,
-            &row.created_at,
-            &row.updated_at,
-        ],
-    )
-    .await
+    let values: &[&(dyn ToSql + Sync)] = &[
+        &row.id,
+        &row.user_id,
+        &row.date,
+        &usage_api_key(row),
+        &row.model,
+        &row.model_group,
+        &row.custom_llm_provider,
+        &row.mcp_namespaced_tool_name,
+        &row.endpoint,
+        &row.prompt_tokens,
+        &row.completion_tokens,
+        &row.cache_read_input_tokens,
+        &row.cache_creation_input_tokens,
+        &row.compression_saved_tokens,
+        &row.compression_savings_spend.to_string(),
+        &row.prompt_caching_savings_spend.to_string(),
+        &row.gateway_injected_savings.to_string(),
+        &row.autorouter_savings_spend.to_string(),
+        &row.spend.to_string(),
+        &row.api_requests,
+        &row.successful_requests,
+        &row.failed_requests,
+        &row.total_response_time_ms,
+        &row.timed_requests,
+        &row.created_at,
+        &row.updated_at,
+    ];
+    execute(client, DAILY_USAGE_INSERT, values).await
 }
 
 pub(super) async fn daily_usage(client: &Client, rows: &[FinOpsUsageRow]) -> FixtureResult<()> {
