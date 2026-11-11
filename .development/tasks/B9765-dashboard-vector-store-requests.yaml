@@ -1,0 +1,112 @@
+id: B9765
+title: Exercise vector-store registration, upload and search page requests
+description: >-
+  Cover the vector-stores page with roughly 650 lines of booted HTTP scenarios. B9090
+  supplies its retained components and provider form definitions; the existing vector
+  and RAG owners supply all behavior. This task adds no SDK operation, provider adapter,
+  decoder or dashboard source. Use B860's separate databases and the standard local
+  upstream mock, with files represented by the existing multipart case format.
+
+  Management requests. GET /vector_store/list sends no query despite networking.tsx's
+  unused page/page_size arguments; data[] supplies vector_store_id,custom_llm_provider,
+  vector_store_name,vector_store_description,vector_store_metadata and credential fields.
+  B1070 builds it and its /v1/vector_store/list alias. Reuse B9735's no-page-query case.
+  POST /vector_store/new sends {vector_store_id,custom_llm_provider,vector_store_name,
+  vector_store_description,vector_store_metadata,litellm_credential_name,litellm_params}.
+  Metadata is parsed JSON or {}; litellm_params contains the selected provider's fields
+  and embedding reference when applicable. Success refetches rather than reading an
+  invented returned id. POST /vector_store/info sends {vector_store_id} and reads the
+  vector_store object; its metadata can be a JSON string which the UI parses. POST
+  /vector_store/update sends id,provider,name,description,metadata, but does not resubmit
+  credential fields merely because info returned them. POST /vector_store/delete sends
+  {vector_store_id}; there is no DELETE request. B1069 owns new/update/delete and B1070
+  info/list. Cover create-info-edit-info-delete with the same form values and permissions.
+
+  Shared setup GET /credentials returns credentials[] and credential_name,
+  credential_info.provider (B1601). GET /model_group/info has no query and reads
+  data[].model_group,mode and provider model metadata (B060); reuse B9735's model-group
+  case, which also serves the embedding-model selector. Use configured reusable
+  credentials and model_list entries for populated options, keeping raw secrets out
+  of the GET response. No arbitrary database fixture schema is introduced.
+
+  Creation by upload POST /rag/ingest is multipart, not JSON. It carries a file field and
+  a request text field containing {ingest_options:{vector_store:{custom_llm_provider,
+  vector_store_id?,...providerSpecificParams},litellm_vector_store_params?:{
+  vector_store_name?,vector_store_description?}}}. The browser supplies the boundary,
+  with only the gateway authorization header set by networking. Bedrock is the form's
+  initial provider; selecting another supported provider changes custom_llm_provider,
+  not the envelope. Send the first file without vector_store_id, capture the response's
+  vector_store_id, and send the second file using it. The UI counts successful uploads
+  locally and displays that id; it does not require a synthetic documents_count response.
+  B3465 builds /rag/ingest and /v1/rag/ingest; only the unversioned route is used here.
+  Use the existing OpenAI ingest adapter for a deterministic local two-file success
+  sequence, and the actual Bedrock form fields for a dependency-owned missing-credential
+  failure. Do not build a new provider or assume the OpenAI-only fixture proves Bedrock.
+
+  GET /v1/indexes has no query/body and reads data[] with id,index_name,index_info,
+  litellm_params.vector_store_index/vector_store_name and created/updated metadata.
+  POST /v1/vector_stores/{id}/search sends only {query}, reading data[] with
+  file_id,filename,score,content and attributes. B1067 owns these routes; search also
+  exposes /vector_stores/{id}/search, which the page does not use. Use a configured
+  mock-backed registered store so search returns a populated result after registration.
+  Preserve absence of max_num_results and filters; the UI does not send them.
+
+  No on-disk vector-page HTTP case sends these requests. B1069/B1070/B1067 have future
+  route cases, and B3465's ingest-openai-existing-file scenario does not send this
+  browser file/request multipart body or reuse the first response id for the next file.
+  Keep those cases and add only the page sequences. Compare status, stable record fields,
+  content-type and error detail or type/param/code as actually returned, using captured
+  ids rather than ignoring data arrays. All calls use the configured dashboard auth
+  header, default Authorization Bearer; JSON requests use application/json.
+scope:
+  paths:
+    - tools/oracle/cases/ui/vector-stores/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5523-L5720
+    why: Management methods, unused pagination arguments and multipart upload envelope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L6842-L6872
+    why: Search body is query-only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/vector-stores/_components/CreateVectorStore.tsx#L175-L207
+    why: The second browser upload reuses the first successful vector_store_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L272-L697
+    why: B1069/B1070's six management routes and the list alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L100-L176
+    why: Both existing search route decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L612-L642
+    why: Index-list decorator and response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L528-L696
+    why: Existing ingest decorators and multipart handling belong to B3465.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L143-L168
+    why: Reusable credential choices are masked records from B1601.
+dod:
+  - text: Registration, metadata editing, info and POST deletion use the vector form's exact bodies and preserve credentials without exposing them.
+    proof: [vector-page-transcripts, oracle]
+  - text: Multipart creation reuses the first returned store id and the page's index/search requests return populated consumable records.
+    proof: [vector-page-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: vector-page-transcripts
+      why: SDK vector cases do not cover the dashboard's management paths or file/request multipart upload.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/vector-stores)"
+oracle_cases:
+  - tools/oracle/cases/ui/vector-stores/register-edit-info-delete.yaml
+  - tools/oracle/cases/ui/vector-stores/reusable-credential-options.yaml
+  - tools/oracle/cases/ui/vector-stores/two-browser-file-uploads.yaml
+  - tools/oracle/cases/ui/vector-stores/bedrock-form-missing-credential.yaml
+  - tools/oracle/cases/ui/vector-stores/index-view-and-query-only-search.yaml
+  - tools/oracle/cases/ui/management-selectors/vector-store-options-no-page-query.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+deviations: []
+out_of_scope:
+  - B1067/B1069/B1070/B3465/B1601/B060 keep their entire referenced handlers; provider-specific registration, ingest and search transformations remain with their provider owners.
+  - B9090 retains all vector-store page functions, selectors, provider definitions and tests; B9735 owns the two reused catalog cases.
+pitfalls:
+  - Adding page_size=100 changes the actual vectorStoreListCall request even though that default exists in its signature.
+  - Multipart request is a JSON string field alongside file, not an application/json request with a filename.
+  - The dashboard deletes a registered store with POST /vector_store/delete, not the provider DELETE route.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

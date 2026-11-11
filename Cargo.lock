@@ -1205,6 +1205,7 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
+ "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
@@ -1340,6 +1341,7 @@ dependencies = [
  "num-traits",
  "regex",
  "rstest",
+ "rust_decimal",
  "rustix",
  "secrecy",
  "serde",
@@ -1432,6 +1434,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-models",
  "betterlite-redact",
+ "hex",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1439,6 +1442,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -1472,6 +1476,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -1479,6 +1484,7 @@ dependencies = [
  "jiff",
  "jsonschema",
  "lopdf",
+ "num-traits",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -1520,6 +1526,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-dashboard-browser"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
@@ -1543,6 +1553,7 @@ dependencies = [
  "futures-util",
  "hex",
  "percent-encoding",
+ "rand 0.10.3",
  "rcgen",
  "regex",
  "rstest",
@@ -2022,6 +2033,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "lru",
  "percent-encoding",
  "rstest",
  "rust_decimal",
@@ -2421,6 +2433,9 @@ dependencies = [
 name = "betterlite-prompts-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
  "chrono",
  "indexmap 2.14.2",
@@ -2452,6 +2467,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "jsonwebtoken",
  "mutants",
  "pem",
  "rstest",
@@ -2467,6 +2483,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -2657,6 +2674,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
  "unicode-general-category",
 ]
 
@@ -2873,6 +2891,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",

@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-prompt-duplicate-document-name
+call:
+  bedrock_prompt:
+    messages:
+      - role: user
+        content:
+          - type: document
+            source: {type: base64, media_type: application/pdf, data: QUJD}
+      - {role: assistant, content: ok}
+      - role: user
+        content:
+          - type: document
+            source: {type: base64, media_type: application/pdf, data: QUJD}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+env: {}
+compare: {ignore: []}

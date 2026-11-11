@@ -1,4 +1,5 @@
 pub(crate) mod agent_daily_activity;
+pub(crate) mod agent_discovery;
 pub(crate) mod anthropic_messages;
 pub(crate) mod assistant_runs;
 pub(crate) mod batch_read;
@@ -18,6 +19,7 @@ pub(crate) mod model_info_v1;
 pub(crate) mod model_info_v2;
 pub(crate) mod moderations;
 pub(crate) mod ocr;
+pub(crate) mod prompt_tools;
 pub(crate) mod prompts;
 pub(crate) mod realtime_websocket;
 pub(crate) mod rerank;

@@ -31,7 +31,7 @@ scope:
   - tools/oracle/src/helpers/server/b355/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L846-L959
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L840-L959
   why: Implementation boundary verified against the pinned checkout.
 dod:
 - text: Write tests named auto_router_read_api_behaviors and auto_router_read_api_boundaries under auto_router_read_api::tests. The first

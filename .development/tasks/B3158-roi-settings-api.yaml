@@ -179,8 +179,8 @@ deviations:
     why: The model list from the router is the source of truth; only configured models in that list are valid for the estimator.
 out_of_scope:
   - >-
-    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:119-120` (`get_roi_sync_manager`) — owned by B076,
-    the umbrella that composes the sync manager instance.
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:119-120` (`get_roi_sync_manager`) — owned by B8677,
+    the mount that holds the one sync manager instance.
   - >-
     `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:123-124` (`get_github_transport`) — owned by B3161,
     which injects the GitHub transport when testing connections.

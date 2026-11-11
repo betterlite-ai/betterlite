@@ -140,7 +140,7 @@ out_of_scope:
   - "Generation, content, remix, list, status and character calls in litellm/videos/main.py: B3338, B3339, B3340 and B3341."
   - "decode_video_id_with_provider: B672. get_provider_video_config: B3332. GenericLiteLLMParams: B010. update_environment_variables: B247. exception_type: B185 and B186."
   - "The /v1/videos/edits and /v1/videos/extensions proxy routes and their multipart parsing: the video endpoint tasks under B093."
-  - "litellm/videos/__init__.py re-exports and the router's avideo_edit and avideo_extension factory wiring: module wiring is B093 and the router tasks."
+  - "litellm/videos/__init__.py re-exports and the router's avideo_edit and avideo_extension factory wiring: the Python module exports are B7883, the Rust declarations belong to the skeleton and the router factory wiring is B6460."
 pitfalls:
   - The mock check reads mock_response with get, not pop, and runs before the provider decode, so a mocked call never needs a valid video id or provider.
   - The unsupported message differs by call ("video edit is not supported for" and "video extension is not supported for"), and it names the provider only, never the video id.

@@ -1,0 +1,30 @@
+kind: helper
+name: messages-context-clear-cleared-content-and-usage
+call:
+  messages_context_clear:
+    action: editor
+    model: gpt-4o-mini
+    messages:
+      - role: assistant
+        content:
+          - {type: tool_use, id: a, name: lookup, input: {query: one}}
+          - {type: tool_use, id: b}
+          - {type: tool_use, id: c}
+          - {type: tool_use, id: e}
+          - {type: tool_use, id: d}
+      - role: user
+        content:
+          - {type: tool_result, tool_use_id: a, content: scalar, is_error: true, cache_control: {type: ephemeral}}
+          - {type: tool_result, tool_use_id: b, content: [{type: text, text: listed}]}
+          - {type: tool_result, tool_use_id: c, content: null}
+          - {type: tool_result, tool_use_id: e}
+          - {type: tool_result, tool_use_id: d, content: latest}
+        custom: kept
+    tools: null
+    system: null
+    edit_spec:
+      trigger: {value: 100}
+      keep: {value: 0}
+    counter: {mode: scripted, values: [120, 80]}
+env: {}
+compare: {ignore: []}

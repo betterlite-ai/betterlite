@@ -5,7 +5,7 @@ description: >-
 
   Off switch. The route state takes `index_enabled: bool` from the config key `litellm_settings.public_skills_index` (default false, LiteLLM's `litellm.public_skills_index`), read by this task's config section public_skills_index. When it is not true, all three routes answer 404 `{"detail": "Not Found"}` before anything else runs, the stored skills are not read, and no archive is built.
 
-  Reads. The state also takes the stored-skill reader from B3212 (a list of up to 1000 skills, newest first, and a get by id that gives `None` for an unknown id) and B3210's `build_skill_archive` (it gives the archive `content`, `digest`, `declared_name`, `declared_description`, or nothing for a bad upload). Both are called through constructor-given traits so the tests use fakes. Building an archive is blocking work, so run it with `spawn_blocking`. A stored skill is read as: `skill_id`, `display_title` (optional), `description` (optional), `file_content` (optional bytes), `updated_at` (optional datetime).
+  Reads. The state also takes the stored-skill reader from B3212 (a list of up to 1000 skills, newest first, and a get by id that gives `None` for an unknown id; LiteLLM's `stored_skill` turns every ValueError of the get into `None`, which covers both the missing-skill error and the no-database error, and any other database failure is not caught and surfaces) and B3210's `build_skill_archive` (it gives the archive `content`, `digest`, `declared_name`, `declared_description`, or nothing for a bad upload). Both are called through constructor-given traits so the tests use fakes. Building an archive is blocking work, so run it with `spawn_blocking`. A stored skill is read as: `skill_id`, `display_title` (optional), `description` (optional), `file_content` (optional bytes), `updated_at` (optional datetime).
 
   Archive cache. Keep a cache of built archives with at most 128 entries and a one-hour time to live, built on B2226's local TTL cache. The key is `<skill_id>:<updated_at in ISO format>`; a skill with no `updated_at` is never cached, and an archive larger than 524288 bytes is built but not cached. `_archive_for(skill)`: no `file_content` gives no archive; a cache hit returns the cached archive; otherwise build it; if the build gives nothing, log at warning "Agent Skills index: skipping skill <id>, its upload is not a zip holding SKILL.md at the root of a single top-level folder" and give no archive.
 
@@ -28,10 +28,10 @@ references:
     why: The constants, the cache, the off switch, the stored-skill readers and the three routes.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L132-L200
     why: Installable filter, archive cache, slug, unique names and description rules.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/discovery_endpoints/agent_skills_endpoints.py#L1-L26
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/discovery_endpoints/agent_skills_endpoints.py#L10-L25
     why: The index record, the $schema alias and the two length limits.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/__init__.py#L1-L1
-    why: The package marker; it holds no code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/__init__.py#L1-L4
+    why: The package re-exports the two discovery routers; no code besides the re-exports.
 dod:
   - text: The three routes exist for GET only, need no key, and the alias is left out of the OpenAPI document.
     proof: [route-tests]
