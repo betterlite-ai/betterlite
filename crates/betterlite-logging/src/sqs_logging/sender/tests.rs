@@ -4,7 +4,11 @@ use std::sync::Arc;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use secrecy::ExposeSecret as _;
+use betterlite_secrets::secret_codec::OsNonces;
+use betterlite_secrets::stored_cipher::app_crypto::{AppCrypto, Envelope};
+use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretSlice};
+use serde::Deserialize;
 
 use crate::sqs_logging::credentials::{CredentialParams, CredentialSource};
 use crate::sqs_logging::health::DummyHealthPayload;
@@ -16,6 +20,13 @@ use crate::sqs_logging::tests::support::{
 };
 
 use super::{SendError, SqsSender};
+
+#[derive(Deserialize)]
+struct Wrapped {
+    #[serde(rename = "__encrypted__")]
+    encrypted: bool,
+    payload: Envelope,
+}
 
 fn sender_with(
     settings: Settings,
@@ -254,18 +265,21 @@ async fn send_message_reports_a_transport_failure() {
     assert!(matches!(error, SendError::Transport(_)));
 }
 
+#[rstest]
+#[case::at_the_error_threshold(400)]
+#[case::server_error(500)]
 #[tokio::test]
-async fn send_message_reports_an_error_status_with_the_body() {
-    let error = sender(settings(), RecordingDelivery::answering(500, "boom"))
+async fn send_message_reports_an_error_status_with_the_body(#[case] status: u16) {
+    let error = sender(settings(), RecordingDelivery::answering(status, "boom"))
         .send_message(&payload())
         .await
         .expect_err("the status is an error");
     assert!(matches!(
         error,
         SendError::Status {
-            status: 500,
+            status: reported,
             detail
-        } if detail == "boom"
+        } if reported == status && detail == "boom"
     ));
 }
 
@@ -287,12 +301,15 @@ async fn send_message_describes_a_non_utf8_error_body() {
     ));
 }
 
+#[rstest]
+#[case::redirect(302)]
+#[case::below_the_error_threshold(399)]
 #[tokio::test]
-async fn send_message_accepts_a_redirect_status() {
-    sender(settings(), RecordingDelivery::answering(302, ""))
+async fn send_message_accepts_statuses_below_the_error_threshold(#[case] status: u16) {
+    sender(settings(), RecordingDelivery::answering(status, ""))
         .send_message(&payload())
         .await
-        .expect("httpx does not raise for a redirect");
+        .expect("httpx does not raise below 400");
 }
 
 #[tokio::test]
@@ -335,4 +352,39 @@ async fn send_message_encrypts_the_body_when_configured() {
     let message = form_body_of(&body);
     assert!(message.contains("\"__encrypted__\":true"));
     assert!(!message.contains("gpt-3.5-turbo"));
+}
+
+#[tokio::test]
+async fn send_message_encrypts_with_the_configured_aad() {
+    let key = STANDARD.encode([7_u8; 32]);
+    let delivery = RecordingDelivery::delivering();
+    let records = Arc::clone(&delivery.records);
+    let sender = sender(
+        settings_with(&[
+            ("sqs_queue_url", QUEUE_URL),
+            ("sqs_region_name", "us-east-1"),
+            ("sqs_aws_access_key_id", ACCESS_KEY_ID),
+            ("sqs_aws_secret_access_key", SECRET_ACCESS_KEY),
+            ("sqs_aws_use_application_level_encryption", "True"),
+            ("sqs_app_encryption_key_b64", &key),
+            ("sqs_app_encryption_aad", "tenant=bill"),
+        ]),
+        delivery,
+    );
+    sender
+        .send_message(&payload())
+        .await
+        .expect("the message sends");
+    records.wait_for(1).await;
+    let message = form_body_of(&records.body(0));
+    let wrapped: Wrapped = serde_json::from_str(&message).expect("the envelope is JSON");
+    assert!(wrapped.encrypted);
+    let decrypted = AppCrypto::new(&SecretSlice::from([7_u8; 32].to_vec()), OsNonces)
+        .expect("the key is 32 bytes")
+        .decrypt_json(&wrapped.payload, b"tenant=bill")
+        .expect("the aad matches");
+    assert_eq!(
+        decrypted,
+        serde_json::to_value(payload()).expect("the payload serializes")
+    );
 }
