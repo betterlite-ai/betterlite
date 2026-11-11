@@ -2,4 +2,5 @@
 
 mod cases;
 mod corpus;
+mod responses;
 mod support;

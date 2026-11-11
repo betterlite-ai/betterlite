@@ -125,3 +125,12 @@ pub(super) fn capture() -> (Captured, DefaultGuard) {
         .finish();
     (captured, set_default(subscriber))
 }
+
+pub(super) fn header<'signed>(signed: &'signed AwsSignedRequest, name: &str) -> &'signed str {
+    signed
+        .headers
+        .iter()
+        .find(|(found, _)| found.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+        .unwrap()
+}
