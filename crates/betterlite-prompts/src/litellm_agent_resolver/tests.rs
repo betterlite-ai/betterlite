@@ -31,8 +31,9 @@ fn sample_params() -> PromptParams {
 #[case::without_the_slash("litellm_agent", "litellm_agent")]
 #[case::slash_without_the_prefix("gpt-4/litellm_agent", "gpt-4/litellm_agent")]
 #[case::uppercase("LITELLM_AGENT/gpt-4", "LITELLM_AGENT/gpt-4")]
-#[case::leading_space(" litellm_agent/gpt-4", " litellm_agent/gpt-4")]
-#[case::trailing_space("litellm_agent/ gpt-4", " gpt-4")]
+#[case::space_before_the_prefix(" litellm_agent/gpt-4", " gpt-4")]
+#[case::space_after_the_prefix("litellm_agent/ gpt-4", " gpt-4")]
+#[case::trailing_space("litellm_agent/gpt-4 ", "gpt-4 ")]
 #[case::empty("", "")]
 fn the_first_prefix_anywhere_is_stripped_once(#[case] model: &str, #[case] expected: &str) {
     let resolver = LitellmAgentResolver;
