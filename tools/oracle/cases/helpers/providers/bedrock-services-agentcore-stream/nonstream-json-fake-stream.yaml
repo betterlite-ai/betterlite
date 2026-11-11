@@ -1,0 +1,25 @@
+kind: helper
+name: nonstream-json-fake-stream
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000011
+      - 00000000-0000-4000-8000-000000000012
+    scenarios:
+      - reads: ['{"result":{"content":[{"text":"hello"}]}}']
+        headers: [[content-type, application/json]]
+      - reads: ['{"jsonrpc":"2.0","result":{"message":{"parts":[{"kind":"text","text":"a2a"}]}}}']
+        headers: [[content-type, application/json]]
+      - reads: ['{"z": 1, "a": 2}']
+        headers: [[content-type, application/json]]
+      - reads: ['{"result":{"content":[]}}']
+        headers: [[content-type, application/json]]
+      - reads: ['{"result":{"content":[{"text":"x"}]},"usage":{"inputTokens":9}}']
+        headers: [[CONTENT-TYPE, Application/JSON]]
+      - reads: ['{"result":{"content":[{"text":"sse"}]}}']
+        headers: [[content-type, text/event-stream]]
+      - reads: ['{"result":"plain"}']
+        headers: [[content-type, application/json]]
+env: {}
+compare: {ignore: []}
