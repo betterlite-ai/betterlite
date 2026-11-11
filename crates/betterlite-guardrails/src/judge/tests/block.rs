@@ -2,12 +2,15 @@ use betterlite_models::decisions::Json;
 use reqwest::StatusCode;
 use rstest::rstest;
 
+use crate::content_filter::risk_scoring::GuardrailStatus;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::judge::error::JudgeError;
+use crate::judge::hooks::{EventHookConfig, GuardrailEventHook};
 use crate::judge::verdict::EvalInformation;
 
 use super::support::{
-    Outcome, RecordingCompletion, guardrail_with, reply_with_score, request_data, texts,
+    FIXED_SECONDS, Outcome, RecordingCompletion, guardrail_with, only_record, reply_with_score,
+    request_data, texts,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -56,37 +59,68 @@ async fn judge_block_tests_behavior(#[case] case: Case) {
             let EvalInformation::Single(information) = data
                 .metadata
                 .eval_information
+                .clone()
                 .expect("the eval info is written before the block")
             else {
                 panic!("one judge leaves one entry");
             };
             assert!(!information.passed);
+            let record = only_record(&data);
+            assert_eq!(
+                record.guardrail_status,
+                GuardrailStatus::GuardrailIntervened
+            );
+            assert_eq!(record.guardrail_provider, "llm_as_a_judge");
+            assert_eq!(record.guardrail_name, "test_judge");
+            assert_eq!(
+                record.guardrail_mode,
+                EventHookConfig::Single(GuardrailEventHook::PostCall)
+            );
+            assert_eq!(record.start_time.to_bits(), FIXED_SECONDS.to_bits());
+            assert_eq!(record.end_time.to_bits(), FIXED_SECONDS.to_bits());
+            let Json::Object(response) = &record.guardrail_response else {
+                panic!("the record keeps the judge reply");
+            };
+            let Some(Json::Number(score)) = response.get("overall_score") else {
+                panic!("the record keeps the judge score");
+            };
+            assert_eq!(score.as_f64().map(f64::to_bits), Some(50.0_f64.to_bits()));
         }
         Case::AtThresholdPasses => {
             let guardrail = guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(
                 reply_with_score(80.0),
             ))));
+            let mut data = request_data(Vec::new());
             guardrail
                 .apply_guardrail(
                     texts(&["response"]),
-                    &mut request_data(Vec::new()),
+                    &mut data,
                     GuardrailInputType::Response,
                 )
                 .await
                 .expect("a score equal to the threshold passes");
+            assert_eq!(
+                only_record(&data).guardrail_status,
+                GuardrailStatus::Success
+            );
         }
         Case::AboveThresholdPasses => {
             let guardrail = guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(
                 reply_with_score(90.0),
             ))));
+            let mut data = request_data(Vec::new());
             guardrail
                 .apply_guardrail(
                     texts(&["response"]),
-                    &mut request_data(Vec::new()),
+                    &mut data,
                     GuardrailInputType::Response,
                 )
                 .await
                 .expect("a high score passes");
+            assert_eq!(
+                only_record(&data).guardrail_status,
+                GuardrailStatus::Success
+            );
         }
         Case::ResponseDetailNamesResponse => {
             let guardrail = guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(

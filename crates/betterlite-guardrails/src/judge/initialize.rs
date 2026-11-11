@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_judge::{Criterion, EventHookParameter, JudgeParams};
 use rust_decimal::Decimal;
@@ -45,6 +46,7 @@ where
         event_hook: resolved.event_hook,
         default_on: resolved.default_on,
         completion,
+        now: SystemTime::now,
     });
     registry.add_litellm_callback(Arc::clone(&instance));
     Ok(instance)

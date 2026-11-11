@@ -1,17 +1,21 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_judge::Criterion;
+use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
 use serde::{Deserialize, Serialize};
 
+use crate::content_filter::risk_scoring::GuardrailStatus;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 
 use super::call::{JudgeCompletion, JudgeVerdict, run_judge};
 use super::error::{JudgeBlockDetail, JudgeError};
-use super::hooks::EventHookConfig;
+use super::hooks::{EventHookConfig, event_type_for};
 use super::prompt::text_under_review;
+use super::record::{JUDGE_PROVIDER, JudgeGuardrailRecord};
 use super::verdict::{EvalInformation, EvaluationInformation, merge, overall_score, verdicts};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +44,7 @@ pub struct LLMAsAJudgeGuardrail {
     pub event_hook: EventHookConfig,
     pub default_on: bool,
     pub completion: Arc<dyn JudgeCompletion>,
+    pub now: fn() -> SystemTime,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
@@ -68,6 +73,11 @@ pub struct RequestData {
 pub struct RequestMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eval_information: Option<EvalInformation>,
+    #[serde(
+        rename = "standard_logging_guardrail_information",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub guardrail_records: Vec<JudgeGuardrailRecord>,
     #[serde(flatten)]
     pub rest: BTreeMap<String, GuardrailValue>,
 }
@@ -77,6 +87,12 @@ fn judge_messages(inputs: &JudgeInputs, request_data: &RequestData) -> Vec<Messa
         Some(messages) if !messages.is_empty() => messages.clone(),
         Some(_) | None => request_data.messages.clone().unwrap_or_default(),
     }
+}
+
+struct Evaluation {
+    status: GuardrailStatus,
+    verdict: JudgeVerdict,
+    block: Option<JudgeError>,
 }
 
 impl LLMAsAJudgeGuardrail {
@@ -90,26 +106,78 @@ impl LLMAsAJudgeGuardrail {
         if text.is_empty() {
             return Ok(inputs);
         }
+        let started = (self.now)();
         let messages = judge_messages(&inputs, request_data);
-        let verdict = match run_judge(self, &messages, &text, input_type).await {
+        let evaluation = self
+            .evaluate(&messages, &text, input_type, &mut request_data.metadata)
+            .await;
+        let ended = (self.now)();
+        request_data
+            .metadata
+            .guardrail_records
+            .push(JudgeGuardrailRecord {
+                guardrail_name: self.guardrail_name.clone(),
+                guardrail_provider: JUDGE_PROVIDER.to_owned(),
+                guardrail_mode: event_type_for(&self.event_hook, input_type)
+                    .map_or_else(|| self.event_hook.clone(), EventHookConfig::Single),
+                guardrail_response: Json::Object(evaluation.verdict),
+                guardrail_status: evaluation.status,
+                start_time: started
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs_f64(),
+                end_time: ended
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs_f64(),
+            });
+        evaluation.block.map_or(Ok(inputs), Err)
+    }
+
+    async fn evaluate(
+        &self,
+        messages: &[Message],
+        text: &str,
+        input_type: GuardrailInputType,
+        metadata: &mut RequestMetadata,
+    ) -> Evaluation {
+        let verdict = match run_judge(self, messages, text, input_type).await {
             Ok(verdict) => verdict,
             Err(error) => {
                 tracing::warn!(
                     error = %error,
                     "llm_as_a_judge guardrail: judge call failed, failing open"
                 );
-                return Ok(inputs);
+                return Evaluation {
+                    status: GuardrailStatus::GuardrailFailedToRespond,
+                    verdict: JudgeVerdict::new(),
+                    block: None,
+                };
             }
         };
         let Some(score) = overall_score(&verdict) else {
             tracing::warn!("llm_as_a_judge: invalid overall_score from judge, failing open");
-            return Ok(inputs);
+            return Evaluation {
+                status: GuardrailStatus::Success,
+                verdict,
+                block: None,
+            };
         };
-        self.record(&mut request_data.metadata, score, &verdict);
-        if score >= self.overall_threshold || self.on_failure == OnFailure::Log {
-            return Ok(inputs);
+        self.record(metadata, score, &verdict);
+        if score >= self.overall_threshold {
+            return Evaluation {
+                status: GuardrailStatus::Success,
+                verdict,
+                block: None,
+            };
         }
-        Err(self.blocked(score, &verdict, input_type))
+        let block = (self.on_failure == OnFailure::Block)
+            .then(|| self.blocked(score, &verdict, input_type));
+        Evaluation {
+            status: GuardrailStatus::GuardrailIntervened,
+            verdict,
+            block,
+        }
     }
 
     fn record(&self, metadata: &mut RequestMetadata, score: f64, verdict: &JudgeVerdict) {

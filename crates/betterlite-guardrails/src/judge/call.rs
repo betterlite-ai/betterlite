@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
@@ -47,10 +48,12 @@ pub struct JudgeCompletionResponse {
     pub choices: Vec<JudgeReply>,
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("{message}")]
+// The backend's error type lives in the crate that implements the trait, so this crate can only hold it boxed.
+#[derive(Debug, thiserror::Error)]
+#[error("{source}")]
 pub struct JudgeCompletionError {
-    pub message: String,
+    #[source]
+    pub source: Box<dyn Error + Send + Sync>,
 }
 
 #[async_trait]

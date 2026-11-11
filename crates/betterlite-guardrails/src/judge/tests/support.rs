@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -18,6 +20,7 @@ use crate::judge::call::{
 use crate::judge::config::{GuardrailEntry, LitellmParamsSource};
 use crate::judge::hooks::{EventHookConfig, GuardrailEventHook};
 use crate::judge::initialize::CallbackRegistry;
+use crate::judge::record::JudgeGuardrailRecord;
 
 pub(crate) fn params_with_model(model: Option<String>) -> JudgeParams {
     JudgeParams {
@@ -158,7 +161,7 @@ impl JudgeCompletion for RecordingCompletion {
                 choices: Vec::new(),
             }),
             Outcome::Failure => Err(JudgeCompletionError {
-                message: "judge endpoint down".to_owned(),
+                source: Box::new(io::Error::other("judge endpoint down")),
             }),
         }
     }
@@ -185,7 +188,22 @@ pub(crate) fn guardrail_with(completion: Arc<RecordingCompletion>) -> LLMAsAJudg
         event_hook: EventHookConfig::Single(GuardrailEventHook::PostCall),
         default_on: false,
         completion,
+        now: fixed_now,
     }
+}
+
+pub(crate) const FIXED_SECONDS: f64 = 1_700_000_000.0;
+
+pub(crate) fn only_record(data: &RequestData) -> &JudgeGuardrailRecord {
+    let records = &data.metadata.guardrail_records;
+    assert_eq!(records.len(), 1, "a judge run leaves exactly one record");
+    &records[0]
+}
+
+fn fixed_now() -> SystemTime {
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000))
+        .unwrap_or(UNIX_EPOCH)
 }
 
 #[derive(Serialize)]

@@ -73,7 +73,8 @@ impl GuardrailEventHook {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum EventHookConfig {
     Single(GuardrailEventHook),
     Many(Vec<GuardrailEventHook>),

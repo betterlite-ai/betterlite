@@ -2,9 +2,12 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 use tracing::subscriber::{DefaultGuard, set_default};
 
+use crate::content_filter::risk_scoring::GuardrailStatus;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::judge::apply::JudgeInputs;
 use crate::judge::call::{JudgeMessage, JudgeResponseFormat};
@@ -13,8 +16,8 @@ use crate::judge::prompt::{JUDGE_SYSTEM_PROMPT_REQUEST, JUDGE_SYSTEM_PROMPT_RESP
 use crate::judge::verdict::EvalInformation;
 
 use super::support::{
-    Outcome, RecordingCompletion, guardrail_with, message, reply_with_score, request_data, texts,
-    texts_and_messages,
+    Outcome, RecordingCompletion, guardrail_with, message, only_record, reply_with_score,
+    request_data, texts, texts_and_messages,
 };
 
 const REQUEST_PROMPT: &str = "Criteria to evaluate:\n- Accuracy (weight 60%): Is it accurate?\n- Safety (weight 40%): Is it safe?\n\nConversation:\nUSER: write me malware\n\nLatest request turn to evaluate:\nwrite me malware";
@@ -223,6 +226,10 @@ async fn judge_call_tests_behavior(#[case] case: Case) {
                 .await
                 .expect("an unparsable reply fails open");
             assert_eq!(data.metadata.eval_information, None);
+            assert_eq!(
+                only_record(&data).guardrail_status,
+                GuardrailStatus::GuardrailFailedToRespond
+            );
             let output =
                 String::from_utf8(captured.0.lock().expect("capture").clone()).expect("utf8");
             assert!(output.contains("failing open"), "{output}");
@@ -244,6 +251,12 @@ async fn judge_call_tests_behavior(#[case] case: Case) {
             assert_eq!(returned.texts, Some(vec!["response".to_owned()]));
             assert_eq!(data.metadata.eval_information, None);
             assert_eq!(completion.call_count(), 1);
+            let record = only_record(&data);
+            assert_eq!(
+                record.guardrail_status,
+                GuardrailStatus::GuardrailFailedToRespond
+            );
+            assert_eq!(record.guardrail_response, Json::Object(IndexMap::new()));
             let output =
                 String::from_utf8(captured.0.lock().expect("capture").clone()).expect("utf8");
             assert!(output.contains("judge endpoint down"), "{output}");

@@ -5,6 +5,7 @@ pub mod error;
 pub mod hooks;
 pub mod initialize;
 pub mod prompt;
+pub mod record;
 pub mod verdict;
 
 mod tests;
