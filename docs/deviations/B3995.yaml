@@ -1,0 +1,11 @@
+task: B3995
+deviations:
+  - what: async_send_message swallows all exceptions from credential fetch, signing and HTTP delivery, logging them without propagating to the caller.
+    why: Matches LiteLLM behavior where callback failures do not block the request; health checks may report healthy despite prior send errors if test-message construction succeeds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L308-L309
+  - what: The profile, role, web identity token and STS endpoint settings (sqs_aws_profile_name, sqs_aws_role_name, sqs_aws_web_identity_token, sqs_aws_sts_endpoint, or their AWS_* variables) are refused when the logger is built. Only static access keys, with an optional session token, sign requests.
+    why: BaseAWSLLM.get_credentials follows boto profile, STS AssumeRole and web identity flows that no task here implements. Refusing at startup tells the operator, where LiteLLM would hand over those flows and an unsupported setting would only fail on each send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L346
+  - what: A key under callback_settings.aws_sqs that the SQS logger does not apply (including sqs_use_ssl, sqs_verify, sqs_endpoint_url, sqs_api_version and sqs_config, which LiteLLM stores but never uses when sending), and a value that is not a bool or an integer where one is expected, fail the logger build.
+    why: LiteLLM keeps unknown keys in aws_sqs_callback_params and lets a wrong type surface through Python truthiness. A typo in a setting such as sqs_queue_ulr would otherwise leave the logger without a queue and every send failing silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L120-L201
