@@ -20,6 +20,7 @@ mod process;
 mod report_check;
 mod review_check;
 mod schema;
+mod shellcheck;
 mod show;
 mod spec;
 mod trace;
@@ -144,6 +145,16 @@ enum Command {
         #[arg(help = "A path from the repository or LiteLLM root, optionally with :line")]
         target: String,
     },
+    #[command(
+        about = "Run shellcheck on every run command of checks.yaml, with .shellcheckrc, or of task files, with the default checks"
+    )]
+    Shellcheck {
+        #[arg(
+            required = true,
+            help = ".development/checks.yaml or a file in .development/tasks/"
+        )]
+        paths: Vec<PathBuf>,
+    },
 }
 
 fn listing(
@@ -230,6 +241,7 @@ fn run_command(
             Ok((vec!["a worker vendor is available".to_owned()], true))
         }
         Command::Validate => validate_command(development),
+        Command::Shellcheck { paths } => shellcheck::shellcheck(&development.root, &paths),
         Command::List { task, local } => Ok((listing(development, &task, local)?, true)),
         Command::Preflight { task: id } => {
             let task = development.task(&id)?;
