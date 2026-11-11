@@ -4,25 +4,23 @@ use std::time::Duration;
 
 pub const METRIC_WINDOW: Duration = Duration::from_hours(27);
 
-// LiteLLM's class-level _last_metric_emission_time and _metric_lock, shared by every logger a factory builds
+// LiteLLM's class-level _last_metric_emission_time behind _metric_lock, shared by every logger a factory builds
 #[derive(Default)]
 pub struct MetricBackoff {
     last_emission: Mutex<Duration>,
 }
 
 impl MetricBackoff {
+    // The first read is the quick check; the re-check under the lock makes sure only one caller claims the window
     #[must_use]
-    pub fn is_due(&self, now: Duration) -> bool {
-        let last = *self
+    pub fn claim(&self, now: Duration) -> bool {
+        let observed = *self
             .last_emission
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        now.saturating_sub(last) >= METRIC_WINDOW
-    }
-
-    // The re-check under the lock is the double-checked one, so two threads cannot both emit
-    #[must_use]
-    pub fn claim(&self, now: Duration) -> bool {
+        if now.saturating_sub(observed) < METRIC_WINDOW {
+            return false;
+        }
         let mut last = self
             .last_emission
             .lock()

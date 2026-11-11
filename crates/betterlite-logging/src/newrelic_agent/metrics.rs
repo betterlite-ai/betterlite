@@ -3,9 +3,6 @@ use super::logger::NewRelicLogger;
 
 pub(super) fn check_and_emit_periodic_metric(logger: &NewRelicLogger) {
     let now = (logger.clock)();
-    if !logger.backoff.is_due(now) {
-        return;
-    }
     if !logger.backoff.claim(now) {
         return;
     }

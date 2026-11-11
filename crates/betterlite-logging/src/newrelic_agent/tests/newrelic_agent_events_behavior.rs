@@ -165,6 +165,22 @@ fn response_messages_are_flagged_and_timestamped() {
 }
 
 #[test]
+fn message_events_carry_the_trace_id() {
+    let fixture = default_fixture();
+    let logger = fixture.build();
+    logger.log_success_event(&event(payload())).unwrap();
+    let messages = message_attributes(&fixture);
+    assert_eq!(
+        attribute_value(&messages[0], "trace_id"),
+        Json::Text("trace-1".to_owned())
+    );
+    assert_eq!(
+        attribute_value(&messages[1], "trace_id"),
+        Json::Text("trace-1".to_owned())
+    );
+}
+
+#[test]
 fn content_is_omitted_when_message_logging_is_turned_off() {
     let mut off = default_fixture();
     off.turn_off(true);
