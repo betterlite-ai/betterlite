@@ -1,0 +1,18 @@
+id: no-reflection
+language: python
+severity: error
+message: reading or writing an attribute by its name as a string hides it from the type checker; use the typed attribute, or a typed mapping when the key really is data
+rule:
+  any:
+    - kind: call
+      has:
+        field: function
+        kind: identifier
+        regex: ^(getattr|setattr|delattr|hasattr|vars|globals|locals|attrgetter|methodcaller)$
+    - kind: attribute
+      regex: ^operator\.(attrgetter|methodcaller)$
+    - kind: attribute
+      has:
+        field: attribute
+        kind: identifier
+        regex: ^__dict__$
