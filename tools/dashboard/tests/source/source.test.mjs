@@ -252,10 +252,14 @@ test("a patch that writes outside the selected export is rejected", async (t) =>
   await writePatchPair(fixture.paths.patchesDir, "10-extra.patch", patch, [
     { path: target, preimage: null, postimage: hashText(content) },
   ]);
+  await fs.mkdir(fixture.paths.outDir, { recursive: true });
+  await fs.writeFile(path.join(fixture.paths.outDir, "sentinel"), "keep");
   await rejected(
     prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir }),
     "patch-path",
   );
+  assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "sentinel"), "utf8"), "keep");
+  assert.equal(await exists(path.join(fixture.paths.outDir, "ui/litellm-dashboard/next.config.mjs")), false);
 });
 
 test("a patch that changes a pinned dependency file is rejected", async (t) => {
