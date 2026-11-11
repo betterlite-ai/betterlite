@@ -1,0 +1,47 @@
+kind: helper
+name: non-default-params-filters-seed
+call:
+  b5362:
+    calls:
+      - function: select_non_default
+        passed_params: {temperature: 0.5, top_p: null, model: gpt-4o, seed: 0, user: ""}
+        default_names: [temperature, top_p, seed, user]
+      - function: select_non_default
+        passed_params: {temperature: 0.5, top_p: 0.9, seed: 7}
+        default_names: [temperature, top_p, seed]
+        additional_drop_params: [top_p]
+      - function: select_non_default
+        passed_params: {temperature: null, top_p: null}
+        default_names: [temperature, top_p]
+        additional_drop_params: []
+      - function: filter_out_litellm
+        kwargs: {api_key: sk-1, metadata: {a: 1}, temperature: 0.5, my_param: 2, drop_params: true}
+        excluding: [temperature]
+      - function: filter_out_litellm
+        kwargs: {}
+        excluding: []
+      - function: filter_out_litellm
+        endpoint: completion
+        kwargs: {temperature: 0.5, language: de, my_param: 2, api_key: sk-1, _litellm_x: 1, top_k: null}
+      - function: filter_out_litellm
+        endpoint: completion
+        kwargs: {}
+      - function: filter_out_litellm
+        endpoint: transcription
+        kwargs: {temperature: 0.5, language: de, response_format: json, timestamp_granularities: [word], metadata: {a: 1}, my_param: 2}
+      - function: filter_out_litellm
+        endpoint: transcription
+        kwargs: {}
+      - function: bedrock_route
+        model: us.anthropic.claude-3-sonnet-20240229-v1:0
+        passed_params: {temperature: 0.1, aws_region_name: us-east-1}
+      - function: bedrock_route
+        model: bedrock/converse/anthropic.claude-3-sonnet
+        passed_params: {temperature: 0.1, top_k: 5}
+        additional_drop_params: [top_k]
+      - function: bedrock_route
+        model: invoke/anthropic.claude-3-sonnet
+        passed_params: {extra_body: {a: 1}}
+        additional_drop_params: [extra_body]
+env: {}
+compare: {ignore: []}
