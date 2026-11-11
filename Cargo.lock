@@ -2531,17 +2531,25 @@ name = "betterlite-rag"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redis",
+ "hex",
+ "percent-encoding",
  "redis",
  "rstest",
  "rust_decimal",
  "secrecy",
+ "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
