@@ -2,7 +2,7 @@ use crate::decisions::Json;
 use crate::lemonade_model_metadata::ModelInfoClient;
 use crate::model_metadata_resolution::dynamic::DynamicMetadataSource;
 
-use super::details::{self, CapabilityError, MetadataValue};
+use super::details::{self, CapabilityError, MetadataValue, Phrase, Strategy};
 use super::{CapabilityEnvironment, CapabilityPredicates, CapabilityRequest};
 
 // LiteLLM's PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA, as the provider slugs it compares.
@@ -20,41 +20,12 @@ where
     Transport: ModelInfoClient,
 {
     async fn supports_factory(&mut self, request: &CapabilityRequest<'_>, key: &str) -> bool {
-        let target = match details::resolve_target(request, self) {
-            Ok(target) => target,
-            Err(error) => {
-                details::log_failure(
-                    &format!("checking {key} support"),
-                    request.model,
-                    request.custom_llm_provider,
-                    &CapabilityError::from(error),
-                );
-                return details::provider_flag(
-                    request.model,
-                    request.custom_llm_provider,
-                    key,
-                    self,
-                );
-            }
-        };
-        let value = match details::metadata_field(&target, key, self).await {
-            Ok(value) => value,
-            Err(error) => {
-                details::log_failure(
-                    &format!("checking {key} support"),
-                    &target.model,
-                    Some(&target.provider),
-                    &error,
-                );
-                return details::provider_flag(&target.model, Some(&target.provider), key, self);
-            }
-        };
-        match value {
-            MetadataValue::Value(Json::Bool(true)) => true,
-            MetadataValue::Value(_) => false,
-            MetadataValue::Absent => {
-                details::bare_is_true(&target.model, key, self)
-                    || details::provider_flag(&target.model, Some(&target.provider), key, self)
+        match details::lookup(request, key, Strategy::DeclaredFirst, Phrase::Support, self).await {
+            Ok((_, MetadataValue::Value(Json::Bool(true)))) => true,
+            Ok((target, MetadataValue::Absent)) => details::fallback_answer(&target, key, self),
+            Ok((_, MetadataValue::Value(_))) => false,
+            Err(failure) => {
+                details::provider_flag(&failure.model, failure.provider.as_deref(), key, self)
             }
         }
     }
@@ -64,34 +35,18 @@ where
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> Option<String> {
-        let target = match details::resolved_target(request, self) {
-            Ok(target) => target,
-            Err(error) => {
-                details::log_failure(
-                    &format!("reading {key}"),
-                    request.model,
-                    request.custom_llm_provider,
-                    &CapabilityError::from(error),
-                );
-                return None;
-            }
-        };
-        let value = match details::metadata_field(&target, key, self).await {
-            Ok(value) => value,
-            Err(error) => {
-                details::log_failure(
-                    &format!("reading {key}"),
-                    &target.model,
-                    Some(&target.provider),
-                    &error,
-                );
-                return None;
-            }
+        let Ok((target, value)) =
+            details::lookup(request, key, Strategy::Resolved, Phrase::Reading, self).await
+        else {
+            return None;
         };
         if let MetadataValue::Value(Json::Text(text)) = value {
             return Some(text);
         }
-        details::bare_text(&target.model, key, self)
+        match details::bare_declaration(&target.model, key, self) {
+            Some(Json::Text(text)) => Some(text),
+            _ => None,
+        }
     }
 
     async fn is_explicitly_disabled_factory(
@@ -99,63 +54,42 @@ where
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> bool {
-        let target = match details::resolve_target(request, self) {
-            Ok(target) => target,
-            Err(error) => {
-                details::log_failure(
-                    &format!("checking {key} disabled state"),
-                    request.model,
-                    request.custom_llm_provider,
-                    &CapabilityError::from(error),
-                );
-                return false;
-            }
+        let found = details::lookup(
+            request,
+            key,
+            Strategy::DeclaredFirst,
+            Phrase::DisabledState,
+            self,
+        )
+        .await;
+        let Ok((target, value)) = found else {
+            return false;
         };
-        let value = match details::metadata_field(&target, key, self).await {
-            Ok(value) => value,
-            Err(error) => {
-                details::log_failure(
-                    &format!("checking {key} disabled state"),
-                    &target.model,
-                    Some(&target.provider),
-                    &error,
-                );
-                return false;
-            }
-        };
-        match value {
-            MetadataValue::Value(Json::Bool(false)) => true,
-            MetadataValue::Absent => details::bare_is_false(&target.model, key, self),
-            MetadataValue::Value(_) => false,
+        if matches!(value, MetadataValue::Absent) {
+            return matches!(
+                details::bare_declaration(&target.model, key, self),
+                Some(Json::Bool(false))
+            );
         }
+        value == MetadataValue::Value(Json::Bool(false))
     }
 
     async fn supports_native_streaming(&mut self, request: &CapabilityRequest<'_>) -> Json {
-        let target = match details::resolved_target(request, self) {
-            Ok(target) => target,
-            Err(error) => {
-                details::log_failure(
-                    "checking supports_native_streaming support",
-                    request.model,
-                    request.custom_llm_provider,
-                    &CapabilityError::from(error),
-                );
-                return Json::Bool(false);
-            }
+        let Ok((_, value)) = details::lookup(
+            request,
+            "supports_native_streaming",
+            Strategy::Resolved,
+            Phrase::Support,
+            self,
+        )
+        .await
+        else {
+            return Json::Bool(false);
         };
-        match details::metadata_field(&target, "supports_native_streaming", self).await {
-            // a missing or null flag reads as native streaming, and any other value passes through as written
-            Ok(MetadataValue::Absent) => Json::Bool(true),
-            Ok(MetadataValue::Value(value)) => value,
-            Err(error) => {
-                details::log_failure(
-                    "checking supports_native_streaming support",
-                    &target.model,
-                    Some(&target.provider),
-                    &error,
-                );
-                Json::Bool(false)
-            }
+        // a missing or null flag reads as native streaming, and any other value passes through as written
+        match value {
+            MetadataValue::Absent => Json::Bool(true),
+            MetadataValue::Value(declared) => declared,
         }
     }
 

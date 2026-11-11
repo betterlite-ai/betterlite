@@ -73,89 +73,376 @@ const RESPONSE_SCHEMA_PROVIDER_OVERRIDE: &str = r#"{
     "deepseek/schema-silent": {"litellm_provider": "deepseek", "mode": "chat"}
 }"#;
 
-pub(super) async fn supports_resolution() {
-    let fixture = Fixture::new(SUPPORTS_RESOLUTION);
-    let mut session = Session::new(&fixture);
-    let key = "supports_function_calling";
-    let inferred = CapabilityRequest {
-        model: "gpt-4o",
-        custom_llm_provider: None,
-    };
-    let inferred_answer = session.environment().supports_factory(&inferred, key).await;
-    assert!(inferred_answer);
-    let prefixed = CapabilityRequest {
-        model: "openai/gpt-4o",
-        custom_llm_provider: None,
-    };
-    let prefixed_answer = session.environment().supports_factory(&prefixed, key).await;
-    assert!(prefixed_answer);
-    let declared = CapabilityRequest {
-        model: "github_copilot/gpt-4o",
-        custom_llm_provider: None,
-    };
-    let declared_answer = session.environment().supports_factory(&declared, key).await;
-    assert!(declared_answer);
-    let blocked = CapabilityRequest {
-        model: "openai/gpt-4o-flags",
-        custom_llm_provider: None,
-    };
-    let blocked_answer = session.environment().supports_factory(&blocked, key).await;
-    assert!(!blocked_answer);
-    resolution_blocks_and_falls_back(&mut session, key).await;
+#[derive(Clone, Copy)]
+enum Reader {
+    Supports(&'static str),
+    Declared(&'static str),
+    Disabled(&'static str),
+    Streaming,
+    ResponseSchema,
 }
 
-async fn resolution_blocks_and_falls_back(session: &mut Session<'_>, key: &str) {
-    let provider = Some("deepseek");
-    let zeroed = CapabilityRequest {
-        model: "deepseek/deepseek-chat",
-        custom_llm_provider: provider,
-    };
-    assert!(!session.environment().supports_factory(&zeroed, key).await);
-    let text = CapabilityRequest {
-        model: "deepseek/string-model",
-        custom_llm_provider: provider,
-    };
-    assert!(!session.environment().supports_factory(&text, key).await);
-    let bare = CapabilityRequest {
-        model: "deepseek/prefixed-model",
-        custom_llm_provider: provider,
-    };
-    assert!(session.environment().supports_factory(&bare, key).await);
-    let supported = CapabilityRequest {
-        model: "fireworks_ai/mystery",
-        custom_llm_provider: Some("fireworks_ai"),
-    };
-    assert!(
-        session
+// A plain struct, because a Text variant next to a bool one trips clippy's variant size lint.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Expected {
+    flag: Option<bool>,
+    text: Option<&'static str>,
+}
+
+impl Expected {
+    const fn flag(value: bool) -> Self {
+        Self {
+            flag: Some(value),
+            text: None,
+        }
+    }
+
+    const fn text(value: &'static str) -> Self {
+        Self {
+            flag: None,
+            text: Some(value),
+        }
+    }
+
+    const fn nothing() -> Self {
+        Self {
+            flag: None,
+            text: None,
+        }
+    }
+
+    fn json(self) -> Json {
+        match (self.flag, self.text) {
+            (Some(flag), _) => Json::Bool(flag),
+            (None, Some(text)) => Json::Text(text.to_owned()),
+            (None, None) => Json::Null,
+        }
+    }
+}
+
+struct Scenario {
+    fixture: &'static str,
+    reader: Reader,
+    steps: &'static [(&'static str, Option<&'static str>, Expected)],
+}
+
+struct NamedScenario {
+    fixture: &'static str,
+    steps: &'static [(NamedCapability, &'static str, Option<&'static str>, bool)],
+}
+
+async fn check(scenario: &Scenario) {
+    let fixture = Fixture::new(scenario.fixture);
+    let mut session = Session::new(&fixture);
+    for (model, provider, expected) in scenario.steps {
+        let request = CapabilityRequest {
+            model,
+            custom_llm_provider: *provider,
+        };
+        let answer = match scenario.reader {
+            Reader::Supports(key) => {
+                Json::Bool(session.environment().supports_factory(&request, key).await)
+            }
+            Reader::Declared(key) => session
+                .environment()
+                .declared_value_factory(&request, key)
+                .await
+                .map_or(Json::Null, Json::Text),
+            Reader::Disabled(key) => Json::Bool(
+                session
+                    .environment()
+                    .is_explicitly_disabled_factory(&request, key)
+                    .await,
+            ),
+            Reader::Streaming => {
+                session
+                    .environment()
+                    .supports_native_streaming(&request)
+                    .await
+            }
+            Reader::ResponseSchema => Json::Bool(
+                session
+                    .environment()
+                    .supports_response_schema(&request)
+                    .await,
+            ),
+        };
+        assert_eq!(answer, expected.json(), "{model}");
+    }
+}
+
+async fn check_named(scenario: &NamedScenario) {
+    let fixture = Fixture::new(scenario.fixture);
+    let mut session = Session::new(&fixture);
+    for (capability, model, provider, expected) in scenario.steps {
+        let request = CapabilityRequest {
+            model,
+            custom_llm_provider: *provider,
+        };
+        let answer = session
             .environment()
-            .supports_factory(&supported, key)
-            .await
-    );
-    let silent = CapabilityRequest {
-        model: "xai/mystery-two",
-        custom_llm_provider: Some("xai"),
-    };
-    assert!(!session.environment().supports_factory(&silent, key).await);
-    let unknown = CapabilityRequest {
-        model: "nothing-here",
-        custom_llm_provider: None,
-    };
-    assert!(!session.environment().supports_factory(&unknown, key).await);
+            .supports_named(&request, *capability)
+            .await;
+        assert_eq!(answer, *expected, "{model}");
+    }
+}
+
+const SUPPORTS_RESOLUTION_STEPS: &[(&str, Option<&str>, Expected)] = &[
+    ("gpt-4o", None, Expected::flag(true)),
+    ("openai/gpt-4o", None, Expected::flag(true)),
+    ("github_copilot/gpt-4o", None, Expected::flag(true)),
+    ("openai/gpt-4o-flags", None, Expected::flag(false)),
+    (
+        "deepseek/deepseek-chat",
+        Some("deepseek"),
+        Expected::flag(false),
+    ),
+    (
+        "deepseek/string-model",
+        Some("deepseek"),
+        Expected::flag(false),
+    ),
+    (
+        "deepseek/prefixed-model",
+        Some("deepseek"),
+        Expected::flag(true),
+    ),
+    (
+        "fireworks_ai/mystery",
+        Some("fireworks_ai"),
+        Expected::flag(true),
+    ),
+    ("xai/mystery-two", Some("xai"), Expected::flag(false)),
+    ("nothing-here", None, Expected::flag(false)),
+];
+
+const DECLARED_CUSTOM_STEPS: &[(&str, Option<&str>, Expected)] = &[
+    ("empty-string-model", Some("deepseek"), Expected::text("")),
+    (
+        "deepseek/bool-model",
+        Some("deepseek"),
+        Expected::text("bare-text"),
+    ),
+    (
+        "deepseek/number-model",
+        Some("deepseek"),
+        Expected::text("bare-number"),
+    ),
+    (
+        "deepseek/missing-model",
+        Some("deepseek"),
+        Expected::nothing(),
+    ),
+    ("nothing-here", None, Expected::nothing()),
+];
+
+const EXPLICIT_DISABLED_STEPS: &[(&str, Option<&str>, Expected)] = &[
+    ("disabled-model", Some("deepseek"), Expected::flag(true)),
+    ("enabled-model", Some("deepseek"), Expected::flag(false)),
+    (
+        "deepseek/bare-disabled",
+        Some("deepseek"),
+        Expected::flag(true),
+    ),
+    (
+        "deepseek/bare-enabled",
+        Some("deepseek"),
+        Expected::flag(false),
+    ),
+    (
+        "deepseek/silent-model",
+        Some("deepseek"),
+        Expected::flag(false),
+    ),
+    ("github_copilot/gpt-4o", None, Expected::flag(true)),
+    ("nothing-here", None, Expected::flag(false)),
+];
+
+const NAMED_CAPABILITY_STEPS: &[(NamedCapability, &str, Option<&str>, bool)] = &[
+    (
+        NamedCapability::SystemMessages,
+        "system-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::ParallelCalls,
+        "parallel-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::FunctionCalling,
+        "function-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::ToolChoice,
+        "tool-choice-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::PromptCaching,
+        "caching-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::Reasoning,
+        "reasoning-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::NoneReasoningEffort,
+        "none-effort-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::MidConversationSystem,
+        "mid-system-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::NativeStructuredOutput,
+        "structured-model",
+        Some("deepseek"),
+        true,
+    ),
+    (
+        NamedCapability::SystemMessages,
+        "silent-model",
+        Some("deepseek"),
+        false,
+    ),
+];
+
+const NATIVE_STREAMING_STEPS: &[(&str, Option<&str>, Expected)] = &[
+    ("plain-model", Some("deepseek"), Expected::flag(true)),
+    ("null-model", Some("deepseek"), Expected::flag(true)),
+    ("false-model", Some("deepseek"), Expected::flag(false)),
+    (
+        "string-model",
+        Some("deepseek"),
+        Expected::text("sometimes"),
+    ),
+    ("true-model", Some("deepseek"), Expected::flag(true)),
+    ("nothing-here", None, Expected::flag(false)),
+];
+
+const RESPONSE_SCHEMA_STEPS: &[(&str, Option<&str>, Expected)] = &[
+    ("whatever", Some("predibase"), Expected::flag(true)),
+    ("whatever", Some("fireworks_ai"), Expected::flag(true)),
+    ("whatever", Some("lm_studio"), Expected::flag(true)),
+    ("whatever", Some("nebius"), Expected::flag(true)),
+    ("whatever", Some("databricks"), Expected::flag(true)),
+    (
+        "deepseek/schema-true",
+        Some("deepseek"),
+        Expected::flag(true),
+    ),
+    (
+        "deepseek/schema-false",
+        Some("deepseek"),
+        Expected::flag(false),
+    ),
+    (
+        "deepseek/schema-silent",
+        Some("deepseek"),
+        Expected::flag(false),
+    ),
+    ("nothing-here", None, Expected::flag(false)),
+];
+
+const FUNCTION_CALLING_KEY: &str = "supports_function_calling";
+const REASONING_KEY: &str = "supports_reasoning";
+const CUSTOM_KEY: &str = "supports_custom";
+const VISION_KEY: &str = "supports_vision";
+
+const REASONING_DECLARATION_STEPS: &[(&str, Option<&str>, Expected)] = &[(
+    "reasoning-model",
+    Some("deepseek"),
+    Expected::text("stringy"),
+)];
+
+const SUPPORTS_RESOLUTION_SCENARIO: Scenario = Scenario {
+    fixture: SUPPORTS_RESOLUTION,
+    reader: Reader::Supports(FUNCTION_CALLING_KEY),
+    steps: SUPPORTS_RESOLUTION_STEPS,
+};
+
+const REASONING_DECLARATION_SCENARIO: Scenario = Scenario {
+    fixture: DECLARED_STRING_VALUE,
+    reader: Reader::Declared(REASONING_KEY),
+    steps: REASONING_DECLARATION_STEPS,
+};
+
+const DECLARED_CUSTOM_SCENARIO: Scenario = Scenario {
+    fixture: DECLARED_STRING_VALUE,
+    reader: Reader::Declared(CUSTOM_KEY),
+    steps: DECLARED_CUSTOM_STEPS,
+};
+
+const EXPLICIT_DISABLED_SCENARIO: Scenario = Scenario {
+    fixture: EXPLICIT_DISABLED,
+    reader: Reader::Disabled(VISION_KEY),
+    steps: EXPLICIT_DISABLED_STEPS,
+};
+
+const NAMED_CAPABILITY_SCENARIO: NamedScenario = NamedScenario {
+    fixture: NAMED_CAPABILITY_WRAPPERS,
+    steps: NAMED_CAPABILITY_STEPS,
+};
+
+const NATIVE_STREAMING_SCENARIO: Scenario = Scenario {
+    fixture: NATIVE_STREAMING_DEFAULT,
+    reader: Reader::Streaming,
+    steps: NATIVE_STREAMING_STEPS,
+};
+
+const RESPONSE_SCHEMA_SCENARIO: Scenario = Scenario {
+    fixture: RESPONSE_SCHEMA_PROVIDER_OVERRIDE,
+    reader: Reader::ResponseSchema,
+    steps: RESPONSE_SCHEMA_STEPS,
+};
+
+pub(super) async fn supports_resolution() {
+    check(&SUPPORTS_RESOLUTION_SCENARIO).await;
+}
+
+pub(super) async fn declared_string_value() {
+    check(&REASONING_DECLARATION_SCENARIO).await;
+    check(&DECLARED_CUSTOM_SCENARIO).await;
+}
+
+pub(super) async fn explicit_disabled() {
+    check(&EXPLICIT_DISABLED_SCENARIO).await;
+}
+
+pub(super) async fn named_capability_wrappers() {
+    check_named(&NAMED_CAPABILITY_SCENARIO).await;
+}
+
+pub(super) async fn native_streaming_default() {
+    check(&NATIVE_STREAMING_SCENARIO).await;
+}
+
+pub(super) async fn response_schema_provider_override() {
+    check(&RESPONSE_SCHEMA_SCENARIO).await;
 }
 
 pub(super) async fn supports_error_fallback() {
     let fixture = Fixture::new(SUPPORTS_ERROR_FALLBACK);
     let mut session = Session::new(&fixture);
-    unresolved_failures_log_and_continue(&mut session).await;
-    unmatched_failures_log_and_continue(&mut session).await;
-}
-
-async fn unresolved_failures_log_and_continue(session: &mut Session<'_>) {
     let unresolved = CapabilityRequest {
         model: "nothing-here",
         custom_llm_provider: None,
     };
-    let (answer, log) = logged_supports(session, &unresolved, "supports_function_calling").await;
+    let (answer, log) = logged_supports(&mut session, &unresolved, FUNCTION_CALLING_KEY).await;
     assert!(!answer);
     assert!(
         log.contains(
@@ -164,15 +451,16 @@ async fn unresolved_failures_log_and_continue(session: &mut Session<'_>) {
         ),
         "{log}"
     );
+    unmatched_failure_falls_back(&mut session).await;
 }
 
-async fn unmatched_failures_log_and_continue(session: &mut Session<'_>) {
+async fn unmatched_failure_falls_back(session: &mut Session<'_>) {
     let unmatched = CapabilityRequest {
         model: "fireworks_ai/nothing-known",
         custom_llm_provider: Some("fireworks_ai"),
     };
-    let (answer, log) = logged_supports(session, &unmatched, "supports_function_calling").await;
-    assert!(answer, "{log}");
+    let (supported, log) = logged_supports(session, &unmatched, FUNCTION_CALLING_KEY).await;
+    assert!(supported, "{log}");
     assert!(
         log.contains("You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: "),
         "{log}"
@@ -188,461 +476,9 @@ async fn unmatched_failures_log_and_continue(session: &mut Session<'_>) {
     };
     let stateless_answer = session
         .environment()
-        .supports_factory(&stateless, "supports_function_calling")
+        .supports_factory(&stateless, FUNCTION_CALLING_KEY)
         .await;
     assert!(!stateless_answer);
-}
-
-pub(super) async fn declared_string_value() {
-    let fixture = Fixture::new(DECLARED_STRING_VALUE);
-    let mut session = Session::new(&fixture);
-    declared_values(&mut session).await;
-    declared_number_values(&mut session).await;
-    let provider = Some("deepseek");
-    let missing = CapabilityRequest {
-        model: "deepseek/missing-model",
-        custom_llm_provider: provider,
-    };
-    let missing_value = session
-        .environment()
-        .declared_value_factory(&missing, "supports_custom")
-        .await;
-    assert_eq!(missing_value, None);
-    let unknown = CapabilityRequest {
-        model: "nothing-here",
-        custom_llm_provider: None,
-    };
-    let unknown_value = session
-        .environment()
-        .declared_value_factory(&unknown, "supports_custom")
-        .await;
-    assert_eq!(unknown_value, None);
-}
-
-async fn declared_values(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let declared = CapabilityRequest {
-        model: "reasoning-model",
-        custom_llm_provider: provider,
-    };
-    let declared_value = session
-        .environment()
-        .declared_value_factory(&declared, "supports_reasoning")
-        .await;
-    assert_eq!(declared_value.as_deref(), Some("stringy"));
-    let empty = CapabilityRequest {
-        model: "empty-string-model",
-        custom_llm_provider: provider,
-    };
-    let empty_value = session
-        .environment()
-        .declared_value_factory(&empty, "supports_custom")
-        .await;
-    assert_eq!(empty_value.as_deref(), Some(""));
-    let boolean = CapabilityRequest {
-        model: "deepseek/bool-model",
-        custom_llm_provider: provider,
-    };
-    let boolean_value = session
-        .environment()
-        .declared_value_factory(&boolean, "supports_custom")
-        .await;
-    assert_eq!(boolean_value.as_deref(), Some("bare-text"));
-}
-
-async fn declared_number_values(session: &mut Session<'_>) {
-    let number = CapabilityRequest {
-        model: "deepseek/number-model",
-        custom_llm_provider: Some("deepseek"),
-    };
-    let number_value = session
-        .environment()
-        .declared_value_factory(&number, "supports_custom")
-        .await;
-    assert_eq!(number_value.as_deref(), Some("bare-number"));
-}
-
-pub(super) async fn explicit_disabled() {
-    let fixture = Fixture::new(EXPLICIT_DISABLED);
-    let mut session = Session::new(&fixture);
-    let provider = Some("deepseek");
-    let disabled = CapabilityRequest {
-        model: "disabled-model",
-        custom_llm_provider: provider,
-    };
-    let disabled_answer = session
-        .environment()
-        .is_explicitly_disabled_factory(&disabled, "supports_vision")
-        .await;
-    assert!(disabled_answer);
-    disabled_keeps_absent_models_eligible(&mut session).await;
-}
-
-async fn disabled_keeps_absent_models_eligible(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let enabled = CapabilityRequest {
-        model: "enabled-model",
-        custom_llm_provider: provider,
-    };
-    let enabled_answer = session
-        .environment()
-        .is_explicitly_disabled_factory(&enabled, "supports_vision")
-        .await;
-    assert!(!enabled_answer);
-    let bare_disabled = CapabilityRequest {
-        model: "deepseek/bare-disabled",
-        custom_llm_provider: provider,
-    };
-    let bare_disabled_answer = session
-        .environment()
-        .is_explicitly_disabled_factory(&bare_disabled, "supports_vision")
-        .await;
-    assert!(bare_disabled_answer);
-    let bare_enabled = CapabilityRequest {
-        model: "deepseek/bare-enabled",
-        custom_llm_provider: provider,
-    };
-    let bare_enabled_answer = session
-        .environment()
-        .is_explicitly_disabled_factory(&bare_enabled, "supports_vision")
-        .await;
-    assert!(!bare_enabled_answer);
-    disabled_keeps_silent_models_eligible(session).await;
-}
-
-async fn disabled_keeps_silent_models_eligible(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let silent = CapabilityRequest {
-        model: "deepseek/silent-model",
-        custom_llm_provider: provider,
-    };
-    let silent_answer = session
-        .environment()
-        .is_explicitly_disabled_factory(&silent, "supports_vision")
-        .await;
-    assert!(!silent_answer);
-    let declared = CapabilityRequest {
-        model: "github_copilot/gpt-4o",
-        custom_llm_provider: None,
-    };
-    let declared_answer = session
-        .environment()
-        .is_explicitly_disabled_factory(&declared, "supports_vision")
-        .await;
-    assert!(declared_answer);
-    let unknown = CapabilityRequest {
-        model: "nothing-here",
-        custom_llm_provider: None,
-    };
-    let unknown_answer = session
-        .environment()
-        .is_explicitly_disabled_factory(&unknown, "supports_vision")
-        .await;
-    assert!(!unknown_answer);
-}
-
-pub(super) async fn named_capability_wrappers() {
-    let fixture = Fixture::new(NAMED_CAPABILITY_WRAPPERS);
-    let mut session = Session::new(&fixture);
-    named_message_wrappers(&mut session).await;
-    named_reasoning_wrappers(&mut session).await;
-}
-
-async fn named_message_wrappers(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let system = CapabilityRequest {
-        model: "system-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&system, NamedCapability::SystemMessages)
-            .await
-    );
-    let parallel = CapabilityRequest {
-        model: "parallel-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&parallel, NamedCapability::ParallelCalls)
-            .await
-    );
-    let function = CapabilityRequest {
-        model: "function-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&function, NamedCapability::FunctionCalling)
-            .await
-    );
-    named_choice_wrappers(session).await;
-}
-
-async fn named_choice_wrappers(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let tool_choice = CapabilityRequest {
-        model: "tool-choice-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&tool_choice, NamedCapability::ToolChoice)
-            .await
-    );
-    let caching = CapabilityRequest {
-        model: "caching-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&caching, NamedCapability::PromptCaching)
-            .await
-    );
-    let reasoning = CapabilityRequest {
-        model: "reasoning-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&reasoning, NamedCapability::Reasoning)
-            .await
-    );
-}
-
-async fn named_reasoning_wrappers(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let effort = CapabilityRequest {
-        model: "none-effort-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&effort, NamedCapability::NoneReasoningEffort)
-            .await
-    );
-    let mid_system = CapabilityRequest {
-        model: "mid-system-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&mid_system, NamedCapability::MidConversationSystem)
-            .await
-    );
-    let structured = CapabilityRequest {
-        model: "structured-model",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_named(&structured, NamedCapability::NativeStructuredOutput)
-            .await
-    );
-    silent_system_messages(session).await;
-}
-
-async fn silent_system_messages(session: &mut Session<'_>) {
-    let silent = CapabilityRequest {
-        model: "silent-model",
-        custom_llm_provider: Some("deepseek"),
-    };
-    let silent_answer = session
-        .environment()
-        .supports_named(&silent, NamedCapability::SystemMessages)
-        .await;
-    assert!(!silent_answer);
-}
-
-pub(super) async fn native_streaming_default() {
-    let fixture = Fixture::new(NATIVE_STREAMING_DEFAULT);
-    let mut session = Session::new(&fixture);
-    streaming_defaults(&mut session).await;
-    streaming_passthrough(&mut session).await;
-}
-
-async fn streaming_defaults(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let plain = CapabilityRequest {
-        model: "plain-model",
-        custom_llm_provider: provider,
-    };
-    let plain_value = session
-        .environment()
-        .supports_native_streaming(&plain)
-        .await;
-    assert_eq!(plain_value, Json::Bool(true));
-    let nulled = CapabilityRequest {
-        model: "null-model",
-        custom_llm_provider: provider,
-    };
-    let nulled_value = session
-        .environment()
-        .supports_native_streaming(&nulled)
-        .await;
-    assert_eq!(nulled_value, Json::Bool(true));
-    let refused = CapabilityRequest {
-        model: "false-model",
-        custom_llm_provider: provider,
-    };
-    let refused_value = session
-        .environment()
-        .supports_native_streaming(&refused)
-        .await;
-    assert_eq!(refused_value, Json::Bool(false));
-    let unknown = CapabilityRequest {
-        model: "nothing-here",
-        custom_llm_provider: None,
-    };
-    let unknown_value = session
-        .environment()
-        .supports_native_streaming(&unknown)
-        .await;
-    assert_eq!(unknown_value, Json::Bool(false));
-}
-
-async fn streaming_passthrough(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let passthrough = CapabilityRequest {
-        model: "string-model",
-        custom_llm_provider: provider,
-    };
-    let passthrough_value = session
-        .environment()
-        .supports_native_streaming(&passthrough)
-        .await;
-    assert_eq!(passthrough_value, Json::Text("sometimes".to_owned()));
-    let accepted = CapabilityRequest {
-        model: "true-model",
-        custom_llm_provider: provider,
-    };
-    let accepted_value = session
-        .environment()
-        .supports_native_streaming(&accepted)
-        .await;
-    assert_eq!(accepted_value, Json::Bool(true));
-}
-
-pub(super) async fn response_schema_provider_override() {
-    let fixture = Fixture::new(RESPONSE_SCHEMA_PROVIDER_OVERRIDE);
-    let mut session = Session::new(&fixture);
-    response_schema_overrides(&mut session).await;
-    response_schema_map_flags(&mut session).await;
-}
-
-async fn response_schema_overrides(session: &mut Session<'_>) {
-    let predibase = CapabilityRequest {
-        model: "whatever",
-        custom_llm_provider: Some("predibase"),
-    };
-    assert!(
-        session
-            .environment()
-            .supports_response_schema(&predibase)
-            .await
-    );
-    let fireworks = CapabilityRequest {
-        model: "whatever",
-        custom_llm_provider: Some("fireworks_ai"),
-    };
-    assert!(
-        session
-            .environment()
-            .supports_response_schema(&fireworks)
-            .await
-    );
-    let studio = CapabilityRequest {
-        model: "whatever",
-        custom_llm_provider: Some("lm_studio"),
-    };
-    assert!(
-        session
-            .environment()
-            .supports_response_schema(&studio)
-            .await
-    );
-    response_schema_remaining_overrides(session).await;
-}
-
-async fn response_schema_remaining_overrides(session: &mut Session<'_>) {
-    let nebius = CapabilityRequest {
-        model: "whatever",
-        custom_llm_provider: Some("nebius"),
-    };
-    assert!(
-        session
-            .environment()
-            .supports_response_schema(&nebius)
-            .await
-    );
-    let databricks = CapabilityRequest {
-        model: "whatever",
-        custom_llm_provider: Some("databricks"),
-    };
-    assert!(
-        session
-            .environment()
-            .supports_response_schema(&databricks)
-            .await
-    );
-}
-
-async fn response_schema_map_flags(session: &mut Session<'_>) {
-    let provider = Some("deepseek");
-    let flagged = CapabilityRequest {
-        model: "deepseek/schema-true",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        session
-            .environment()
-            .supports_response_schema(&flagged)
-            .await
-    );
-    let refused = CapabilityRequest {
-        model: "deepseek/schema-false",
-        custom_llm_provider: provider,
-    };
-    assert!(
-        !session
-            .environment()
-            .supports_response_schema(&refused)
-            .await
-    );
-    response_schema_silent_models(session).await;
-}
-
-async fn response_schema_silent_models(session: &mut Session<'_>) {
-    let silent = CapabilityRequest {
-        model: "deepseek/schema-silent",
-        custom_llm_provider: Some("deepseek"),
-    };
-    assert!(
-        !session
-            .environment()
-            .supports_response_schema(&silent)
-            .await
-    );
-    let unknown = CapabilityRequest {
-        model: "nothing-here",
-        custom_llm_provider: None,
-    };
-    assert!(
-        !session
-            .environment()
-            .supports_response_schema(&unknown)
-            .await
-    );
 }
 
 async fn logged_supports(

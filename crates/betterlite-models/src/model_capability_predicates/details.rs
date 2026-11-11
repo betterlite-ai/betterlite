@@ -18,6 +18,7 @@ use crate::resolution::{ResolutionError, ResolutionRequest, resolve};
 use super::{CapabilityEnvironment, CapabilityRequest};
 
 // Python's dict.get: absent and null read the same, and any other value is compared by identity or read as text.
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum MetadataValue {
     Absent,
     Value(Json),
@@ -39,7 +40,13 @@ pub(super) struct Target {
     pub(super) provider: String,
 }
 
-// declared_authenticating_provider answers for the OAuth providers, whose prefix is the whole declaration.
+// What LiteLLM's provider-info fallback reads after a failure: the declared pair, or the resolved one.
+pub(super) struct Failure {
+    pub(super) model: String,
+    pub(super) provider: Option<String>,
+}
+
+// get_llm_provider returns the declared provider pair itself, skipping the OAuth flow its resolution runs.
 pub(super) fn declared_target(request: &CapabilityRequest<'_>) -> Option<Target> {
     let declared = authenticating_provider(Some(request.model), request.custom_llm_provider)?;
     let provider = <&'static str>::from(declared).to_owned();
@@ -54,17 +61,7 @@ pub(super) fn declared_target(request: &CapabilityRequest<'_>) -> Option<Target>
     })
 }
 
-pub(super) fn resolve_target<Source, Transport>(
-    request: &CapabilityRequest<'_>,
-    environment: &CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<Target, ResolutionError> {
-    if let Some(target) = declared_target(request) {
-        return Ok(target);
-    }
-    resolved_target(request, environment)
-}
-
-// get_llm_provider without the authenticating fast path, which the string readers and streaming call.
+// get_llm_provider, which the string readers and streaming call without the declared fast path.
 pub(super) fn resolved_target<Source, Transport>(
     request: &CapabilityRequest<'_>,
     environment: &CapabilityEnvironment<'_, Source, Transport>,
@@ -80,6 +77,96 @@ pub(super) fn resolved_target<Source, Transport>(
         model: resolved.model,
         provider: resolved.provider.slug().to_owned(),
     })
+}
+
+// Which provider pair the declarations below resolve before reading the metadata.
+#[derive(Clone, Copy)]
+pub(super) enum Strategy {
+    DeclaredFirst,
+    Resolved,
+}
+
+// The debug line's middle phrase; LiteLLM names each reader's failure differently.
+#[derive(Clone, Copy)]
+pub(super) enum Phrase {
+    Support,
+    Reading,
+    DisabledState,
+}
+
+impl Phrase {
+    fn of(self, key: &str) -> String {
+        match self {
+            Self::Support => format!("checking {key} support"),
+            Self::Reading => format!("reading {key}"),
+            Self::DisabledState => format!("checking {key} disabled state"),
+        }
+    }
+}
+
+// The target and its metadata value, or the pair a failed lookup hands to the provider-info fallback.
+pub(super) async fn lookup<Source, Transport>(
+    request: &CapabilityRequest<'_>,
+    key: &str,
+    strategy: Strategy,
+    phrase: Phrase,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<(Target, MetadataValue), Failure>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    let what = phrase.of(key);
+    let target = resolvable(request, strategy, &what, environment)?;
+    match metadata_field(&target, key, environment).await {
+        Ok(value) => Ok((target, value)),
+        Err(error) => {
+            log_failure(&what, &target.model, Some(&target.provider), &error);
+            Err(Failure {
+                model: target.model,
+                provider: Some(target.provider),
+            })
+        }
+    }
+}
+
+// A resolution failure logs its own phrase and hands the declared pair to the provider-info fallback.
+fn resolvable<Source, Transport>(
+    request: &CapabilityRequest<'_>,
+    strategy: Strategy,
+    what: &str,
+    environment: &CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<Target, Failure> {
+    let resolved = match strategy {
+        Strategy::DeclaredFirst => {
+            declared_target(request).map_or_else(|| resolved_target(request, environment), Ok)
+        }
+        Strategy::Resolved => resolved_target(request, environment),
+    };
+    resolved.map_err(|error| {
+        log_failure(
+            what,
+            request.model,
+            request.custom_llm_provider,
+            &CapabilityError::from(error),
+        );
+        Failure {
+            model: request.model.to_owned(),
+            provider: request.custom_llm_provider.map(str::to_owned),
+        }
+    })
+}
+
+// A metadata None answer reads the bare entry for an exact True, then the provider info for one.
+pub(super) fn fallback_answer<Source, Transport>(
+    target: &Target,
+    key: &str,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> bool {
+    matches!(
+        bare_declaration(&target.model, key, environment),
+        Some(Json::Bool(true))
+    ) || provider_flag(&target.model, Some(&target.provider), key, environment)
 }
 
 pub(super) async fn metadata_field<Source, Transport>(
@@ -127,34 +214,15 @@ fn bare_field(
     (value.get() != "null").then(|| value.clone())
 }
 
-pub(super) fn bare_is_true<Source, Transport>(
+// A bare entry that is not an object answers nothing, the way LiteLLM's isinstance check skips it.
+pub(super) fn bare_declaration<Source, Transport>(
     model: &str,
     key: &str,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> bool {
-    let metadata = &environment.metadata;
-    let value = bare_field(metadata.model_cost, &mut *environment.keys, model, key);
-    value.is_some_and(|raw| matches!(from_str::<bool>(raw.get()), Ok(true)))
-}
-
-pub(super) fn bare_is_false<Source, Transport>(
-    model: &str,
-    key: &str,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> bool {
-    let metadata = &environment.metadata;
-    let value = bare_field(metadata.model_cost, &mut *environment.keys, model, key);
-    value.is_some_and(|raw| matches!(from_str::<bool>(raw.get()), Ok(false)))
-}
-
-pub(super) fn bare_text<Source, Transport>(
-    model: &str,
-    key: &str,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Option<String> {
+) -> Option<Json> {
     let metadata = &environment.metadata;
     let value = bare_field(metadata.model_cost, &mut *environment.keys, model, key)?;
-    from_str::<String>(value.get()).ok()
+    from_str(value.get()).ok()
 }
 
 // get_provider_info answers True or None for a key; every other provider declares nothing for it.
