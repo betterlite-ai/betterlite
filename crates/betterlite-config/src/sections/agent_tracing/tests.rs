@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::PathBuf;
+use std::fs::{read, read_dir};
+use std::io::Error;
 
 use rstest::rstest;
 use secrecy::ExposeSecret as Secret;
@@ -101,8 +101,24 @@ fn rejects_an_unknown_key_under_tracing() {
     assert_eq!(paths, ["general_settings.tracing.other"]);
 }
 
-#[rstest]
-fn replays_the_agent_tracing_corpus(#[files("fuzz/corpus/agent_tracing/*")] path: PathBuf) {
-    let bytes = fs::read(path).unwrap();
-    let _settings = decode_agent_tracing(&bytes);
+#[test]
+fn decodes_the_tracing_store() {
+    let enabled =
+        decode_agent_tracing(b"general_settings:\n  tracing:\n    store: clickhouse\n").unwrap();
+    assert!(enabled.enabled);
+    let disabled = decode_agent_tracing(b"general_settings: {}\n").unwrap();
+    assert!(!disabled.enabled);
+}
+
+#[test]
+fn replays_the_agent_tracing_corpus() {
+    read_dir("fuzz/corpus/agent_tracing")
+        .unwrap()
+        .try_for_each(|entry_result| {
+            let entry = entry_result?;
+            let bytes = read(entry.path())?;
+            let _settings = decode_agent_tracing(&bytes);
+            Ok::<(), Error>(())
+        })
+        .unwrap();
 }
