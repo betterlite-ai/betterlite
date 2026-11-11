@@ -1,0 +1,131 @@
+kind: helper
+name: openai-decisions-answer-alignment
+call:
+  openai_decisions:
+    response_to_ir:
+      - request:
+          input: the input
+          questions:
+            - type: predicate
+              name: first
+              instructions: is it true?
+            - type: choice
+              name: second
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+        response:
+          model: gpt-4o
+          answers:
+            - {type: predicate, name: first, probability: 0.5}
+          usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+      - request:
+          input: the input
+          questions:
+            - type: predicate
+              name: first
+              instructions: is it true?
+            - type: choice
+              name: second
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+        response:
+          model: gpt-4o
+          answers:
+            - {type: predicate, name: first, probability: 0.5}
+            - {type: choice, name: second, choice: a, probabilities: [], confidence: 0.5}
+            - {type: refusal, name: third}
+          usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+      - request:
+          input: the input
+          questions:
+            - type: predicate
+              name: first
+              instructions: is it true?
+            - type: choice
+              name: second
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+        response:
+          model: gpt-4o
+          answers:
+            - {type: choice, name: first, choice: a, probabilities: [], confidence: 0.5}
+            - {type: predicate, name: second, probability: 0.5}
+          usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+    ir_to_response:
+      - requested_model: requested-model
+        target:
+          input: the input
+          questions:
+            - {type: predicate, name: first, instructions: "is it true?"}
+            - type: choice
+              name: second
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - {type: predicate, name: first, instructions: "is it true?"}
+            response:
+              model: gpt-4o
+              answers:
+                - {type: predicate, name: first, probability: 0.5}
+              usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+      - requested_model: requested-model
+        target:
+          input: the input
+          questions:
+            - {type: predicate, name: first, instructions: "is it true?"}
+            - type: choice
+              name: second
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - {type: predicate, name: first, instructions: "is it true?"}
+                - {type: predicate, name: second, instructions: "is it true?"}
+                - {type: predicate, name: third, instructions: "is it true?"}
+            response:
+              model: gpt-4o
+              answers:
+                - {type: predicate, name: first, probability: 0.5}
+                - {type: predicate, name: second, probability: 0.5}
+                - {type: predicate, name: third, probability: 0.5}
+              usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+      - requested_model: requested-model
+        target:
+          input: the input
+          questions:
+            - {type: predicate, name: first, instructions: "is it true?"}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - type: choice
+                  name: second
+                  instructions: pick
+                  choices:
+                    - {value: a}
+                    - {value: b}
+            response:
+              model: gpt-4o
+              answers:
+                - {type: choice, name: second, choice: a, probabilities: [], confidence: 0.5}
+              usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+env: {}
+compare: {ignore: []}

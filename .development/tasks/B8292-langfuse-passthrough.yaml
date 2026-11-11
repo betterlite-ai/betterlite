@@ -5,17 +5,17 @@ description: >-
   GET, POST, PUT, DELETE and PATCH. A Langfuse SDK points its host at the gateway and signs in with the gateway key as
   the Langfuse secret key. The route checks that key, picks the real Langfuse host and credentials, and hands the call to
   the pass-through factory (B3615's `create_pass_through_route`, a Rust function that returns a handler; call it, do not
-  copy it). It registers its own route, so it also has HTTP oracle cases.
+  copy it). B103 mounts the router and owns its HTTP oracle cases.
 
   Code goes in crates/betterlite-server/src/langfuse_passthrough.rs and langfuse_passthrough/. Files: route.rs (the
   router and the handler `langfuse_proxy_route`), basic_auth.rs, credentials.rs, target.rs and error.rs. The function
-  `langfuse_router(deps: LangfuseDeps) -> axum::Router` returns the router; the architect adds it to the app once.
+  `langfuse_router(deps: LangfuseDeps) -> axum::Router` returns the router; B103 merges it into the app.
   `LangfuseDeps` holds the factory's handler (`Arc<PassThroughHandler>` as B3615 and B3613 define it), the bool
   `user_url_validation` (from B5082's `user_url_policy` section, default true) and these ports, each a small trait in
   this module so tests use fakes and no global is read:
   - `KeyAuthPort`: `authenticate(bearer_key: &str, request) -> Result<UserApiKeyAuth, ProxyException>`, the proxy key check of B052.
   - `LoggingSettingsPort`: `callback_vars(key: &UserApiKeyAuth) -> Option<HashMap<String, String>>`, LiteLLM's `_get_dynamic_logging_metadata` (B1102 to B1105 own it) reduced to its `callback_vars`.
-  - `SecretPort`: `get_secret(name: &str) -> Option<String>`, LiteLLM's `litellm.utils.get_secret` (B8500).
+  - `SecretPort`: `get_secret(name: &str) -> Result<Option<String>, SecretLookupError>`, so a lookup error surfaces as LiteLLM's HTTP 500 and never turns into None; LiteLLM's `litellm.utils.get_secret` (B8500).
   - `UrlGuardPort`: `validate_url(url: &str) -> Result<(String, String), String>`, B5082's SSRF check. It returns the URL to call and the Host header, or the error text.
 
   `langfuse_proxy_route(endpoint, request, response)` does this in order.
@@ -55,7 +55,6 @@ scope:
   paths:
     - crates/betterlite-server/src/langfuse_passthrough.rs
     - crates/betterlite-server/src/langfuse_passthrough/**
-    - tools/oracle/cases/server/langfuse-passthrough/**
     - tools/oracle/helpers/b8292.py
     - tools/oracle/helpers/b8292/**
     - tools/oracle/src/helpers/server/b8292.rs
@@ -86,7 +85,7 @@ dod:
   - text: The base URL comes from the dynamic host, then LANGFUSE_HOST, then https://cloud.langfuse.com, and the credentials follow the dynamic or secret rule with the missing-credential 400 for a dynamic host.
     proof: [credentials-tests]
   - text: validate_path decodes until stable and refuses control characters, a backslash, a leading double slash and dot segments with the exact 400 text.
-    proof: [path-tests, oracle]
+    proof: [path-tests]
   - text: normalize_base adds http:// to a bare host and refuses a bad scheme, no host and embedded credentials with the three exact texts.
     proof: [base-url-tests]
   - text: With a dynamic host and user_url_validation on, the SSRF check runs and the returned URL and Host header are used, with its error as a 400.
@@ -116,12 +115,7 @@ checks:
       why: the SSRF branch, the Host header or the Authorization header is wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^langfuse_passthrough::target::tests::target/)'
 
-oracle_cases:
-  - tools/oracle/cases/server/langfuse-passthrough/path-dot-segments-400.yaml
-  - tools/oracle/cases/server/langfuse-passthrough/path-double-encoded-400.yaml
-  - tools/oracle/cases/server/langfuse-passthrough/path-backslash-400.yaml
-  - tools/oracle/cases/server/langfuse-passthrough/path-leading-double-slash-400.yaml
-  - tools/oracle/cases/server/langfuse-passthrough/authorization-without-colon-500.yaml
+oracle_cases: []
 
 deviations:
   - what: The route is registered at start. LiteLLM imports the module on the first request under /langfuse.
@@ -135,7 +129,7 @@ out_of_scope:
   - "_get_dynamic_logging_metadata: B1102 to B1105."
   - "validate_url and the SSRF rules: B5082."
   - "create_request_copy and default_vertex_config in this file: no caller at the pin (proxy_server.py reads its own default_vertex_config key)."
-  - "Registering the router in the app: the architect."
+  - "Mounting the router and the Langfuse HTTP cases: B103."
 
 pitfalls:
   - "The key is the piece after the first colon, so the Langfuse public key before the colon is never checked."

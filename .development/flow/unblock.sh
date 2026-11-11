@@ -115,7 +115,8 @@ if grep -q -i -E "scope blocker|scope\.paths|widen [^.]*scope|outside ([a-z0-9']
     [ -n "$covered" ] && continue
     grep -q -F "$path" <<< "$excluded" && exit 1
     crate=$(crate_of "$path")
-    grep -q -E "^$crate(/|$)" <<< "$scope" || exit 1
+    # a path in a crate the task doesn't touch is often only context (another task's code), so it never goes in, and the rest still can
+    grep -q -E "^$crate(/|$)" <<< "$scope" || continue
     added="$added $path"
   done
   [ -n "$added" ] || exit 1

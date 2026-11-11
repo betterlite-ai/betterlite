@@ -91,7 +91,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/vertex-gcs-access/model-path.yaml
 deviations: []
 out_of_scope:
-  - B115 retains is_managed_cloud_storage_uri, encode_s3_object_key_for_url and the general non-GCS cloud_storage_security.py API; this task ports only the GCS argument specialization of its validation/naming functions.
+  - B2208 owns is_managed_cloud_storage_uri, encode_s3_object_key_for_url and the general non-GCS cloud_storage_security.py API; this task ports only the GCS argument specialization of its validation/naming functions.
   - B1376 selects file operations and maps GCS metadata; B1374, B1375 and B1377 own batch row and stream conversion.
   - The S3-specific helper contract and allow_legacy_cloud_file_ids loader already belong to B643.
   - Proxy unified-file ownership checks are B087 and are not replaced by native bucket authorization.

@@ -147,7 +147,7 @@ out_of_scope:
   - "Buffered streaming response assembly and Anthropic SSE reconstruction (B3807)."
   - "Stream chunk building via stream_chunk_builder from LiteLLM (B2227)."
   - "Framework metadata observation, guardrail scheduling and role predicates (U1)."
-  - "apply_to_output and output_parse_pii resolution from request config (lifecycle/B108)."
+  - "apply_to_output and output_parse_pii resolution from request config (B9463)."
 
 pitfalls:
   - "logging_hook yields to ThreadPoolExecutor only when asyncio.get_running_loop() succeeds; RuntimeError from no running loop means safe synchronous execution."

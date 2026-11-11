@@ -9,7 +9,7 @@ description: >-
   responses back to the caller. Websocket streaming connects to Cato's output analyzer, consumes verified
   chunks and block signals, and propagates sender failures and cancellation.
 
-  Lakera AI (`_check_response_flagged`) provides legacy score/flag decision logic independent of B107's
+  Lakera AI (`_check_response_flagged`) provides legacy score/flag decision logic independent of B9451's
   moderation call site. The method compares prompt_injection and jailbreak scores against configured
   `category_thresholds`, and returns a block decision when flagged is true with no thresholds set.
 

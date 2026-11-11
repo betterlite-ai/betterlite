@@ -93,7 +93,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L213-L229
 out_of_scope:
   - Lifecycle hook entry points (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook wrapper logic);
-    B107 orchestrates when AIM guardrails are invoked.
+    B9451 owns the AIM hook entry points.
   - The threshold-based decision whether to run inspection on a particular request; B219 and other tasks handle that.
   - Other guardrail providers (Akto, Cisco, etc.); each gets its own task.
 pitfalls:

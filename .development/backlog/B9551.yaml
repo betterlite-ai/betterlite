@@ -1,0 +1,13 @@
+id: B9551
+milestone: M8 platform
+title: Mount the debugging routes and prove them over HTTP
+status: todo
+depends_on: [B8610, B4174]
+file: tasks/B9551-debug-routes-mount.yaml
+covers: []
+parent: B121
+split_from: B121
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

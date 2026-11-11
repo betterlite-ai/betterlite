@@ -84,7 +84,7 @@ deviations:
 
 out_of_scope:
   - "Provider factory owned by B157 (ProviderConfigManager.get_provider_evals_api_config, litellm/utils.py:9262-9279)."
-  - "HTTP handler implementation and transport dispatch for create_run_handler/list_runs_handler: no task currently owns these in base_llm_http_handler.py; flagged as unresolved, same as B3425."
+  - "HTTP handler implementation and transport dispatch for create_run_handler/list_runs_handler (B9371, api::eval_run_http)."
   - Request/response transformation for OpenAI (owned by B523).
   - Logging infrastructure and observability (B247).
   - Exception type mapping from provider errors to OpenAI vs. other/fallback (B185, B186).

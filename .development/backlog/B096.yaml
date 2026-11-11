@@ -2,8 +2,8 @@ id: B096
 milestone: M5 api families
 title: Evals API
 status: todo
-depends_on: [B3420, B3421, B3422, B3423, B3424, B3425, B3426, B3427, B3428]
-file: null
+depends_on: [B3420, B3425, B8801, B8775, B9372]
+file: tasks/B096-eval-run-by-id-routes.yaml
 covers:
   - "litellm/evals/__init__.py"
   - "litellm/proxy/openai_evals_endpoints/__init__.py"

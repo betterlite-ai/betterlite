@@ -3,7 +3,7 @@ title: Bedrock InvokeAgent requests and trace replies
 description: >-
   Add InvokeAgentRequest/Reply with agent id/alias/session inputs, signed agent-runtime URLs and event stream reply
   aggregation. Preserve trace/preprocessing/orchestration usage and decoded text chunks without exposing trace payloads
-  in logs. The public agent gateway API remains B050/B141; this is a provider adapter callable as chat.
+  in logs. The public agent gateway API remains B050/B4784-B4787/B8589/B8647; this is a provider adapter callable as chat.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_agent/transformation.py:

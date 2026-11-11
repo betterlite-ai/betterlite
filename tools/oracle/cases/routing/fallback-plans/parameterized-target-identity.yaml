@@ -1,0 +1,72 @@
+kind: probe
+name: fallback-parameterized-target-identity
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [{model: claude, _target_order: 1}, {model: claude, _target_order: 2}, claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [{model: claude, _target_order: 1}, {model: claude, _target_order: 2}, claude]}
+          max_fallbacks: 5
+        request: {}
+        attempted: [claude]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [{model: claude, _target_order: 1}, {model: claude, _target_order: 2}, claude]}
+          max_fallbacks: 5
+        request: {}
+        attempted:
+          - {model: claude, _target_order: 1}
+          - {model: claude, _target_order: 2}
+          - {model: claude}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [{model: claude, messages: [{role: user, content: hi}]}, {model: claude, messages: [{role: user, content: bye}]}, claude]}
+          max_fallbacks: 5
+        request: {}
+        attempted:
+          - {model: claude, messages: [{role: user, content: hi}]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [{model: claude, _excluded_deployment_ids: [one, two]}, {model: claude, _excluded_deployment_ids: [one]}]}
+          max_fallbacks: 5
+        request: {}
+        attempted:
+          - {model: claude, _excluded_deployment_ids: [two, one]}

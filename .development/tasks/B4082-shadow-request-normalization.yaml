@@ -65,7 +65,7 @@ description: >-
   sorted map. Values with no JSON form do not exist in a `serde_json::Value`, so the None branch is kept
   only for a serialization error from serde_json.
 
-  `GuardrailRequestSnapshot` is an immutable struct with `body` and `fingerprint`.
+  `GuardrailRequestSnapshot` is the existing betterlite_logging::callback_logger::event::GuardrailRequestSnapshot (on main since B8740), not a second struct in betterlite-core, since LoggerEvent.guardrail_snapshot carries that type. It is an immutable struct with `body` and `fingerprint`.
   `GuardrailRequestSnapshot::capture(body, metadata) -> Option<Self>` returns None when no
   request-mutating guardrail ran or the fingerprint is None. Otherwise it stores a copy of the body made
   with B2204's `independent_snapshot`, so later changes to the request never reach the snapshot.
@@ -239,9 +239,9 @@ deviations:
     why: Same skip behavior without catching panics; the cause stays visible in the log line.
 
 out_of_scope:
-  - "ShadowEvalLogger.async_log_success_event, which calls surface_ops, picks post_guardrail_kwargs for wire_params surfaces and calls judgeable_sample, has no owner yet; see the notes in the planner report."
+  - "ShadowEvalLogger.async_log_success_event, which calls surface_ops, picks post_guardrail_kwargs for wire_params surfaces and calls judgeable_sample: B118. _sampled_jobs: B118."
   - "The final-text readers (_chat_final_text, _responses_final_text), routing decision readers and result records: B4081."
-  - "Active jobs, _sampled_jobs, _direction_admits, _scope_admits, _sample_hits and the jobs cache: B4083."
+  - "Active jobs, _direction_admits, _scope_admits, _sample_hits and the jobs cache: B4083."
   - "Shadow call and blind judge execution (_call_router_shadow, _call_judge, the judge prompt and PairwiseVerdict): B4084."
   - "Budget gates and the per-arm pipeline (_run_shadow_eval, _run_shadow_arm): B4085."
   - "Storing the snapshot on the logging object and calling GuardrailRequestSnapshot.capture after the guardrails ran (litellm_pre_call_utils.py L1960-L1990, litellm_logging.py L723 and L3478-L3500): the proxy pre-call and logging tasks that own those files."
