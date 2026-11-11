@@ -177,6 +177,23 @@ async fn bucket_exists_returns_on_the_first_get_without_creating() {
 }
 
 #[tokio::test]
+async fn bucket_exists_creates_when_the_get_is_not_ok() {
+    let transport = FakeTransport::new(vec![response(201), response(200)]);
+    let clients = rag_clients(transport.clone());
+    let requests = S3VectorsRequests {
+        clients: &clients,
+        aws_region_name: REGION,
+    };
+    requests
+        .ensure_vector_bucket_exists("my-vector-bucket")
+        .await
+        .expect("the bucket is created");
+    let recorded = transport.requests();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[1].url, CREATE_BUCKET_URL);
+}
+
+#[tokio::test]
 async fn bucket_exists_fails_on_a_create_status_it_does_not_accept() {
     let transport = FakeTransport::new(vec![response(404), response_with_body(500, "boom")]);
     let clients = rag_clients(transport.clone());
@@ -366,6 +383,24 @@ async fn index_exists_omits_the_metadata_configuration_when_empty() {
 }
 
 #[tokio::test]
+async fn index_exists_creates_when_the_get_is_not_ok() {
+    let keys = vec!["source_text".to_owned()];
+    let transport = FakeTransport::new(vec![response(201), response(200)]);
+    let clients = rag_clients(transport.clone());
+    let requests = S3VectorsRequests {
+        clients: &clients,
+        aws_region_name: REGION,
+    };
+    requests
+        .ensure_vector_index_exists(&index_config(&keys))
+        .await
+        .expect("the index is created");
+    let recorded = transport.requests();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[1].url, CREATE_INDEX_URL);
+}
+
+#[tokio::test]
 async fn index_exists_fails_on_a_create_status_it_does_not_accept() {
     let keys = vec!["source_text".to_owned()];
     let transport = FakeTransport::new(vec![response(404), response_with_body(500, "boom")]);
@@ -427,6 +462,21 @@ async fn put_vectors_accepts_the_success_statuses(#[case] status: u16) {
         .await
         .expect("the vectors are stored");
     assert_eq!(transport.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn put_vectors_reports_a_transport_failure() {
+    let transport = FakeTransport::new(vec![failure()]);
+    let clients = rag_clients(transport.clone());
+    let requests = S3VectorsRequests {
+        clients: &clients,
+        aws_region_name: REGION,
+    };
+    let error = requests
+        .put_vectors("my-vector-bucket", "my-index", &[entry("doc_0")])
+        .await
+        .expect_err("a failed transport is an error");
+    assert!(matches!(error, S3VectorsError::Request(_)));
 }
 
 #[tokio::test]
