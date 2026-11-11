@@ -382,14 +382,14 @@ async fn the_user_agent_tags_are_not_step_tags() {
 }
 
 #[tokio::test]
-async fn a_configured_header_tag_is_not_a_step_tag() {
+async fn a_metadata_tag_that_names_a_header_is_kept() {
     let (adapter, capture, tracker) = fixture();
-    let with_header_tag = event_from(&PAYLOAD.replace(
+    let with_named_tag = event_from(&PAYLOAD.replace(
         r#""request_tags": []"#,
-        r#""request_tags": ["x-customer: acme"]"#,
+        r#""request_tags": ["team: search"]"#,
     ));
     adapter
-        .log_success_event(&with_header_tag)
+        .log_success_event(&with_named_tag)
         .expect("the event is accepted");
     tracker.close();
     tracker.wait().await;
@@ -397,7 +397,7 @@ async fn a_configured_header_tag_is_not_a_step_tag() {
     assert_request(&requests);
     assert_eq!(
         field(&requests[0].body, "tags_0"),
-        &json(r#"["tier", "prod"]"#)
+        &json(r#"["team: search"]"#)
     );
 }
 

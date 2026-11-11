@@ -40,31 +40,13 @@ fn metadata_fields(payload: &StandardLoggingPayload) -> IndexMap<String, Json> {
 
 const USER_AGENT_TAG: &str = "User-Agent: ";
 
-// _get_request_tags appends the User-Agent tags and then one tag per configured header, and only the metadata tags before them belong here
-fn appended_tag(tag: &Json) -> bool {
-    let Json::Text(text) = tag else {
-        return false;
-    };
-    if text.starts_with(USER_AGENT_TAG) {
-        return true;
-    }
-    match text.split_once(": ") {
-        Some((name, _value)) => {
-            !name.is_empty()
-                && name
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
-        }
-        None => false,
-    }
-}
-
+// _get_request_tags appends its User-Agent tags after the metadata tags, and betterlite has no extra_spend_tag_headers to append more
 fn metadata_tags(payload: &StandardLoggingPayload) -> Vec<Json> {
     let appended = payload
         .request_tags
         .iter()
         .rev()
-        .take_while(|tag| appended_tag(tag))
+        .take_while(|tag| matches!(tag, Json::Text(text) if text.starts_with(USER_AGENT_TAG)))
         .count();
     let logged = payload.request_tags.len().saturating_sub(appended);
     payload.request_tags.iter().take(logged).cloned().collect()
