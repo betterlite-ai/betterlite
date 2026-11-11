@@ -137,7 +137,7 @@ out_of_scope:
   - "gateway_dcr_flow.py constants, models, OauthError, sealing, register_aggregate_client, the port traits (ReloadUser, MintProxyCredential, ExchangeSubjectToken), the refusing defaults, supported_grant_types, ClaimOutcome, claim_refusal and the single-use guard with peek: B4674."
   - "register, authorize, the connect flow, consent, is_proxy_api_resource, resolve_scoped_resource_server and the discovery document: B4675."
   - "Session token minting, opening and claims: B4652. open_session_refresh_bearer and signing key resolution: B4653."
-  - "The routes /token, /{mcp_server_name}/token, /revoke and /introspect in discoverable_endpoints.py, and the server-level token exchange branch of token_endpoint: the umbrella B137 and B7321."
+  - "The routes /token, /{mcp_server_name}/token, /revoke and /introspect in discoverable_endpoints.py, and the server-level token exchange branch of token_endpoint: B7321, mounted by B8624."
   - "_reload_active_user_by_id and mint_proxy_credential: B4658. exchange_idp_subject_token: B4663."
 pitfalls:
   - "aggregate_token checks the master key and the signing config before it looks at grant_type, so a bad config answers 500 even for an unknown grant, and a missing code answers 400 only on a healthy gateway."

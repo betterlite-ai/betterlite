@@ -1,0 +1,13 @@
+id: B9825
+milestone: M5 api families
+title: SDK deployment hooks and agentic loops on the gateway chat, messages and responses calls
+status: todo
+depends_on: [B9821, B5367, B8294, B2415, B1118, B080, B081, B9800, B014, B016, B017, B005, B010, B8610]
+file: tasks/B9825-gateway-sdk-hooks.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

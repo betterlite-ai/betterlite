@@ -1,0 +1,232 @@
+id: B9451
+title: AIM, Akto, Conduct, legacy Lakera and Lasso hook bodies
+description: >-
+  The class tasks for five A to L guardrails built their transport, payloads and verdict checks but left
+  the hook methods that LiteLLM's ProxyLogging calls: AIM's pre-call, moderation and post-call hooks
+  (B3750 built call_aim_guardrail, call_aim_guardrail_on_output and the streaming hook), Akto's
+  apply_guardrail (B3751 built the payload, send and unreachable helpers), the legacy Lakera v1 check and
+  its two hooks (B3777 built the constructor, B3755 the flag check), and Lasso's three hooks with the
+  classify and classifix calls between them (B3778 built transport and response checks, B3779 the
+  masking write-back). Conduct needs a class that refuses to build. Build these in betterlite-guardrails,
+  in the new module third_party_hooks_a.rs with third_party_hooks_a/ holding aim.rs, akto.rs, conduct.rs,
+  lakera.rs, lasso.rs, error.rs and tests.rs. Read each class module on main for its type and method
+  names; this task calls them and never copies them.
+
+
+  error.rs holds `ThirdPartyHookError` (thiserror). One variant carries an HTTP rejection, the
+  status code and the detail JSON of LiteLLM's HTTPException or ProxyException (with openai_code when
+  set); one carries a plain failure that LiteLLM raises as Exception and the proxy answers with 500; and
+  one wraps each class error the hooks pass on (AIM's, Akto's, Lakera's and LassoError). B8666 turns the
+  variants into the proxy hook error, so the variant must say the status without parsing text. No
+  variant text holds an api key.
+
+
+  The callers decide two things before a hook runs, so the hooks take them as arguments. A hook whose
+  LiteLLM body calls should_run_guardrail takes `should_run: bool`, computed by the caller with B3665's
+  gate and the event named below; AIM's and Akto's bodies call no gate, so theirs take none. Recording
+  the run for logging (log_guardrail_information) is B3664's begin/finish around the call, not done here.
+
+
+  aim.rs. `pre_call(aim, data, call_type, key_alias)`: when B3665's is_non_conversational_call_type is
+  true for the call type and the guardrail's inspect_embeddings is false, log at debug and return the
+  data unchanged; otherwise return what call_aim_guardrail(data, "pre_call", key_alias) returns (the data,
+  anonymized when Aim says so). `moderation` does the same skip, calls with hook "moderation" and
+  returns the data it got, dropping the anonymized copy. `post_call_success(aim, data, response,
+  key_alias)` only acts on a nonstreaming chat response with at least one choice that is a message
+  choice. It calls call_aim_guardrail_on_output once per such choice, all at the same time, with the
+  message content or "" and hook "output", waits for every call, then goes through the choices in order:
+  a failed call returns that error, a result with a detection_message returns B3750's rejection with
+  openai_code content_policy_violation, and a redacted_output replaces that choice's content.
+
+
+  akto.rs. `apply_guardrail(akto, inputs, request_data, input_type, event_hook)`: Akto's HOOK_TO_INPUT
+  maps the single hook name pre_call to request and post_call to response; when the configured mode is
+  one of those two and does not match input_type, return the inputs unchanged (a list or tagged mode
+  matches neither, so both input types run). For request: build the payload without the response and
+  send it with guardrails on and ingest off. A send that fails to connect or gets an error status goes to
+  B3751's handle_unreachable with the inputs, and its answer is returned. A blocked verdict builds a
+  second payload with status 403, sets responsePayload to the JSON text of {"body": <JSON text of
+  {"x-blocked-by": "Akto Proxy", "reason": reason}>} and responseHeaders to the JSON text of
+  {"content-type": "application/json"}, starts that ingest-only send in the background (tokio::spawn,
+  not awaited) and returns a 403 rejection whose detail is the reason, or "Blocked by Akto Guardrails"
+  when the reason is empty. For response: build the payload with the response, start a send with
+  guardrails and ingest both on in the background, and return the inputs. A background send never fails
+  the request.
+
+
+  conduct.rs. LiteLLM ships ConductGuardrail as a stand-in when the optional conduct-litellm-guard
+  package is missing, and its constructor raises ImportError with MISSING_PACKAGE_MESSAGE:
+  "conduct-litellm-guard>=0.2.5 is required for the Conduct guardrail. Install it with: pip install
+  \"conduct-litellm-guard>=0.2.5\"". betterlite has no such package, so `conduct::build(args:
+  &ConductArgs)` (B8217's struct) always returns ThirdPartyHookError's ConductMissingPackage variant with
+  that text.
+
+
+  lakera.rs. `LegacyLakeraHooks::new(moderation: LegacyLakeraModeration, legacy:
+  &legacy_guardrails::Settings, add_function_to_prompt: bool)` keeps B3777's class, the enabled roles
+  and the flag. The roles come from B3683's config.sections.legacy_guardrails.by_name["prompt_injection"]:
+  its enabled_roles, or the default roles system, assistant, user when there is no such item or its roles
+  are null. add_function_to_prompt is litellm.add_function_to_prompt, false by default. A `LakeraGate`
+  argument tells the hooks how the guardrail was set up: `Legacy` when it has no event_hook (the
+  litellm_settings.callbacks and legacy guardrails path), or `Checked(should_run)` when it has one.
+  pre_call returns at once for Legacy with moderation_check in_parallel, or for Checked(false) with the
+  pre_call event; moderation returns at once for Legacy with moderation_check pre_call, or for
+  Checked(false) with the during_call event. Otherwise both run `check(data, selection)`.
+
+
+  check follows lakeraAI_Moderation._check. B3663's should_proceed_based_on_metadata with the name
+  lakera_prompt_injection answering false ends it. When data has a messages list: for each message whose
+  role is enabled, add its tool_calls (when the key is there) to a list; remember a system message and go
+  on; for user and assistant keep {role, content}, a later message of the same role replacing the
+  earlier one. A system message, when add_function_to_prompt is false, becomes {role system, content:
+  its content plus " Function Input: " and the arguments of each tool call that has a function, joined by
+  one space} (the suffix only when there is at least one argument); when the flag is true the system
+  message is left out. Order the entries system, user, assistant, drop the empty ones; none left logs
+  at debug and ends the check. The body is {"input": [entries]}. When data has an input text the body
+  is {"input": text}; an input list of texts is joined with "\n". Every body merges B3665's
+  dynamic_request_body_params (see deviations for the messages body). Data with neither a messages list
+  nor an input text or list still makes the call, with an empty body, as LiteLLM does. POST it to {api_base}/v1/prompt_injection with
+  Authorization "Bearer <key>", Content-Type application/json and the guardrail's timeout. An error
+  status returns a plain failure whose text is the response body. A 200 answer goes to B3755's flag and
+  threshold check, whose 400 rejection is returned; another 2xx status is accepted unchecked.
+
+
+  lasso.rs. pre_call(should_run for pre_call): false returns the data unchanged; otherwise get or make
+  the conversation id through B3778's conversation_id with the shared conversation cache, then run.
+  moderation(should_run for during_call) runs the same way without that first step. run follows
+  _run_lasso_guardrail: B3779's lifecycle::run gives the expanded messages; a non-string input
+  (Responses API input list) is flattened with B3665's build_inspection_messages and appended, and
+  forces the classify endpoint because LiteLLM's has_non_string_content looks at input too. Nothing to
+  inspect returns the data. Classify: headers and payload through B3778, POST, process_response.
+  Classifix ({api_base}/classifix): the same call, then on violations_detected with masked messages
+  write them back with lifecycle::run, put the masked input back only when it was a text, and log the
+  masking. Errors map like _handle_api_error: a rejection passes, then timeout, invalid key, rate limit,
+  other status and any other failure become plain failures with LiteLLM's texts.
+  post_call_success(should_run for post_call) acts only on a nonstreaming chat response and otherwise
+  logs a warning. It collects, per choice with a message, {"role": "assistant", "content": content}
+  when the content is not empty, and for each tool call with an id and a name {"role": "model",
+  "content": {"type": "tool_use", "id", "name", "input"}} through B3778's extract_tool_call_fields. No
+  message logs "No response messages found to validate". With mask it calls classifix with message
+  type COMPLETION and the request's litellm_call_id, applies the masked messages to the response through
+  B3779's post_call, passes a rejection on and turns any other failure into "Failed to apply post-call
+  masking: <error>"; without mask it runs the classify path with COMPLETION.
+
+
+  Tests in third_party_hooks_a/tests.rs use axum mocks for each vendor and cover every branch named
+  above. Helper cases in tools/oracle/cases/guardrails/third-party-hooks-a/ call this task's helper with
+  the class settings, the request data or inputs, the call type or input type, the gate answer, and the
+  scripted vendor answers in order (`answers: [{status, headers, body}]`, the onyx pattern with a list).
+  The output is the returned data, inputs or response, the error status and detail, and every request
+  the vendor got with its path, headers and body (the adapter waits for Akto's background sends).
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/third_party_hooks_a.rs
+    - crates/betterlite-guardrails/src/third_party_hooks_a/**
+    - tools/oracle/cases/guardrails/third-party-hooks-a/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L141-L169
+    why: AIM's pre-call and moderation hooks with the embeddings skip.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L368-L410
+    why: AIM's post-call hook, all choices scanned at once and checked in order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L62-L66
+    why: HOOK_TO_INPUT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L403-L485
+    why: Akto's apply_guardrail, the blocked ingest and the response-side background send.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L25-L28
+    why: MISSING_PACKAGE_MESSAGE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L104-L119
+    why: The stand-in class whose constructor raises when the package is missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L40-L46
+    why: GUARDRAIL_NAME and INPUT_POSITIONING_MAP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L115-L285
+    why: _check, the role filter, the system message function input and the v1 call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L287-L346
+    why: The two hooks and the event_hook None versus gate branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L155-L161
+    why: Role and default_roles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L172-L311
+    why: Lasso's three hooks and the post-call message list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L366-L476
+    why: _run_lasso_guardrail, _handle_classification and _handle_masking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L589-L622
+    why: _handle_api_error and its texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py#L269-L290
+    why: has_non_string_content checks input as well as messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3005-L3030
+    why: The during-call dispatch calls async_moderation_hook without the cache argument Lasso's signature requires.
+dod:
+  - text: AIM skips non-conversational calls unless inspect_embeddings is set, keeps moderation read-only and checks every output choice, rejecting with content_policy_violation or writing the redacted text.
+    proof: [hook-tests, helper-python, oracle]
+  - text: Akto checks requests and blocks with 403 and a background ingest, sends responses in the background only, and skips an input type its mode does not handle.
+    proof: [hook-tests, helper-python, oracle]
+  - text: Building a Conduct guardrail fails with LiteLLM's missing-package text.
+    proof: [hook-tests, oracle]
+  - text: The legacy Lakera hooks honor moderation_check without an event_hook and the gate with one, and the check builds LiteLLM's v1 body from enabled roles, function input and input texts.
+    proof: [hook-tests, helper-python, oracle]
+  - text: Lasso's hooks pick classify or classifix, write masked text back, scan model output with COMPLETION and map transport errors like LiteLLM.
+    proof: [hook-tests, helper-python, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hook-tests
+      why: a hook body is missing or takes a different branch than LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^third_party_hooks_a::/)'
+    - id: helper-python
+      why: the oracle adapter for the hook cases is missing or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- 'tools/oracle/helpers/b9451*')" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/guardrails/third-party-hooks-a/aim-embeddings-skipped.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/aim-embeddings-inspected.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/aim-moderation-keeps-data.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/aim-output-blocked.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/aim-output-redacted.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/akto-request-allowed.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/akto-request-blocked.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/akto-response-background.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/akto-mode-mismatch.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/akto-unreachable.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/conduct-missing-package.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lakera-in-parallel-pre-call-skips.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lakera-role-order.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lakera-system-function-input.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lakera-enabled-roles.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lakera-input-list.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lakera-flagged.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lakera-upstream-error.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lasso-pre-call-classify.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lasso-pre-call-masked.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lasso-input-list-classify.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lasso-gate-off.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lasso-output-blocked.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lasso-output-masked.yaml
+  - tools/oracle/cases/guardrails/third-party-hooks-a/lasso-api-timeout.yaml
+deviations:
+  - what: Lasso's moderation hook runs with the shared conversation cache when the during-call dispatch reaches it.
+    why: LiteLLM's dispatch calls async_moderation_hook without the cache argument Lasso's signature requires, so every during_call Lasso request fails with a TypeError (500). This follows the hook's intent; the choice is the owner's to confirm.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L206-L232
+  - what: The legacy Lakera check merges dynamic request body params into the messages body, as it does for the input body.
+    why: LiteLLM passes them to json.dumps as keyword arguments on the messages path, so any extra_body for this guardrail fails the request with a TypeError (500). This follows the input path; the choice is the owner's to confirm.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L208-L212
+  - what: A Conduct guardrail never builds.
+    why: LiteLLM's working class extends ConductGuard from the separate conduct-litellm-guard package, and LiteLLM doesn't ship it; without it LiteLLM's constructor raises the same message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L104-L119
+out_of_scope:
+  - "AIM's transport, redaction, streaming hook and config model: B3750. Akto's payload, send, unreachable and config helpers: B3751. Conduct's request_payload, decision_status, record_decision, apply_conduct_guardrail and binds_unreachable_fallback: B3752. Lakera v1's constructor and initializer: B3777; _check_response_flagged: B3755. Lasso's constructor, transport and response checks: B3778; masking expansion and write-back: B3779."
+  - "lakera_ai_v2.py: B3779 and B8522."
+  - "Building each class from its spec and forwarding ProxyLogging's hooks to these functions: B8666. The litellm_settings.callbacks binding of lakera_prompt_injection: B107."
+  - "The CustomGuardrail gate, dynamic body params and non-conversational call types: B3665. should_proceed_based_on_metadata: B3663. The log_guardrail_information records: B3664."
+pitfalls:
+  - "AIM's moderation hook returns the data it got even when Aim anonymized it, so only pre_call can rewrite the request."
+  - "Akto compares str(event_hook) with \"pre_call\" and \"post_call\"; a list mode never matches, so both input types run for it."
+  - "Legacy Lakera without an event_hook defaults to moderation_check in_parallel, so its pre_call does nothing and only the moderation hook calls Lakera."
+  - "When add_function_to_prompt is true the system message is dropped from the Lakera input entirely, not sent without the suffix."
+  - "Lakera's enabled roles come from the legacy guardrail named prompt_injection, not from the lakera_prompt_injection callback name."
+  - "Lasso's post-call masking always calls /classifix, while the pre-call path falls back to /classify for non-string content."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

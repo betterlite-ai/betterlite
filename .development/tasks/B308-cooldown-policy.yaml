@@ -2,7 +2,7 @@ id: B308
 title: Cooldown error policy and callback events
 description: 'Apply B369 CooldownDecision using B307 cooldown records and B304 deployment counters. Emit
   B012 typed cooldown events exactly once, keep notification failures from masking provider errors, and
-  implement disabled-cooldown and debug snapshots. Prometheus export remains B111. Implement the owned
+  implement disabled-cooldown and debug snapshots. Prometheus export remains B111, which implements the cooldown observer this task exposes: a trait in cooldown_policy.rs that carries the model name, model id, api_base, provider and exception status, with a no-op default. Implement the owned
   native service in crates/betterlite-router/src/cooldown_policy.rs. B301 registers ProbeOperation::CooldownPolicy and its Python entry as stubs, so fill only tools/oracle/src/router_probes/cooldown_policy.rs and tools/oracle/litellm/probes/cooldown_policy.py and leave mod.rs and registry.py as they are; the adapters only call
   production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
