@@ -218,6 +218,11 @@ fn uploads(
     Some("abcdef01-2345-4678-9abc-def012345678.txt"),
     GENERATED_FILENAMES_DIFFER
 )]
+#[case::no_extension(
+    Some("0123456789ab4def8123456789abcdef"),
+    Some("aaaaaaaaaaaa4aaaaaaaaaaaaaaaaaaa"),
+    GENERATED_FILENAMES_DIFFER
+)]
 #[case::hex_against_hyphenated(
     Some("0123456789ab4def8123456789abcdef.txt"),
     Some("01234567-89ab-4def-8123-456789abcdef.txt"),

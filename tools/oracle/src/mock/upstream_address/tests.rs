@@ -52,6 +52,11 @@ fn parsed_events(events: &[&str]) -> Option<Vec<String>> {
     r#"{"urls": ["http://127.0.0.1:4010/one"]}"#,
     &[]
 )]
+#[case::other_scalars(
+    r#"{"url": "{{upstream}}/one", "retries": 3, "stream": true}"#,
+    r#"{"url": "http://127.0.0.1:4010/one", "retries": 3, "stream": true}"#,
+    &[]
+)]
 #[case::events_second_string("null", "null", &["event: first", "data: {{upstream}}/two"])]
 fn fill_names_the_mock_address(
     #[case] body: &str,
