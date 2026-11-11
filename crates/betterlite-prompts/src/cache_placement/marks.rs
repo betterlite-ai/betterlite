@@ -14,20 +14,16 @@ pub fn fields_carry_mark(fields: &Object) -> bool {
 }
 
 #[must_use]
-pub fn count_content_marks(content: Option<&Content>) -> usize {
-    match content {
-        Some(Content::Parts(parts)) => parts
-            .iter()
-            .filter(|part| fields_carry_mark(&part.fields))
-            .count(),
-        Some(Content::Text(_)) | None => 0,
-    }
-}
-
-#[must_use]
 pub fn count_message_marks(message: &Message) -> usize {
-    usize::from(fields_carry_mark(&message.provider_specific_fields))
-        .saturating_add(count_content_marks(message.content.as_ref()))
+    let parts = match message.content.as_ref() {
+        Some(Content::Parts(parts)) => parts.as_slice(),
+        Some(Content::Text(_)) | None => &[],
+    };
+    let marked = parts
+        .iter()
+        .filter(|part| fields_carry_mark(&part.fields))
+        .count();
+    usize::from(fields_carry_mark(&message.provider_specific_fields)).saturating_add(marked)
 }
 
 #[must_use]
@@ -40,13 +36,13 @@ pub fn system_has_mark(system: &SystemPrompt) -> bool {
 
 #[must_use]
 pub fn count_system_marks(system: Option<&SystemPrompt>) -> usize {
-    match system {
-        Some(SystemPrompt::Blocks(blocks)) => blocks
-            .iter()
-            .filter(|block| fields_carry_mark(block))
-            .count(),
-        Some(SystemPrompt::Text(_)) | None => 0,
-    }
+    let Some(SystemPrompt::Blocks(blocks)) = system else {
+        return 0;
+    };
+    blocks
+        .iter()
+        .filter(|block| fields_carry_mark(block))
+        .count()
 }
 
 #[must_use]
