@@ -16,6 +16,7 @@ fn set_of(values: &[&str]) -> BTreeSet<String> {
 pub(super) fn unsupported_override() {
     defaults_hold();
     sequences_collect_names();
+    null_override_reads_as_absent();
     invalid_overrides_warn();
 }
 
@@ -23,6 +24,14 @@ fn defaults_hold() {
     let missing = resolve_unsupported_override(None, None, true);
     assert_eq!(missing.names, None);
     assert_eq!(missing.warning, None);
+}
+
+fn null_override_reads_as_absent() {
+    let deployment = support::unsupported(&["context_management"]);
+    let null_override = UnsupportedParams::Other(PlatformValue::Null);
+    let from_optional = resolve_unsupported_override(Some(&deployment), Some(&null_override), true);
+    assert_eq!(from_optional.names, Some(set_of(&["context_management"])));
+    assert_eq!(from_optional.warning, None);
 }
 
 fn sequences_collect_names() {

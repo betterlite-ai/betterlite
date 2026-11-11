@@ -47,7 +47,7 @@ pub fn resolve_unsupported_override(
     optional: Option<&UnsupportedParams>,
     log_invalid: bool,
 ) -> UnsupportedResolution {
-    let Some(raw) = optional.or(deployment) else {
+    let Some(raw) = non_null(optional).or_else(|| non_null(deployment)) else {
         return UnsupportedResolution::default();
     };
     let resolution = match raw {
@@ -69,6 +69,14 @@ pub fn resolve_unsupported_override(
         tracing::warn!("{}", warning.message());
     }
     resolution
+}
+
+// LiteLLM reads a null override as absent, so an explicit null never warns
+const fn non_null(value: Option<&UnsupportedParams>) -> Option<&UnsupportedParams> {
+    match value {
+        Some(UnsupportedParams::Other(PlatformValue::Null)) => None,
+        _ => value,
+    }
 }
 
 pub fn filter_request_body(

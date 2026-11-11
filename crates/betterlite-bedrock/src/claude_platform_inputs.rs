@@ -1,7 +1,6 @@
 pub mod body;
 pub mod endpoint;
 pub mod error;
-pub mod route;
 pub mod signing;
 pub mod workspace;
 
