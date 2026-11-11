@@ -103,13 +103,14 @@ async fn exact_seen(app: &Router, uri: &str, upgrade: bool) -> ExactSeen {
     serde_json::from_slice(&body).unwrap()
 }
 
-fn redirecting(scalar_root: &str) -> Router {
-    let inner = Router::new()
-        .fallback(|| async { "passed" })
-        .layer(from_fn(redirect_root_slash));
-    RootPaths::from_settings(&settings(scalar_root, &[]))
-        .unwrap()
-        .wrap(inner)
+async fn passed() -> &'static str {
+    "passed"
+}
+
+fn redirect_target(scalar_root: &str) -> Router {
+    let paths = RootPaths::from_settings(&settings(scalar_root, &[])).unwrap();
+    let plain = Router::new().fallback(passed);
+    paths.wrap(plain.layer(from_fn(redirect_root_slash)))
 }
 
 async fn seen(app: &Router, uri: &str) -> Seen {
