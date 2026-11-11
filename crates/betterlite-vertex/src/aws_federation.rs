@@ -47,25 +47,49 @@ pub struct AwsParams {
     pub external_id: Option<String>,
 }
 
-impl AwsParams {
-    fn settings(&self) -> AwsSettings {
-        AwsSettings {
-            access_key_id: self.access_key_id.clone(),
-            secret_access_key: self.secret_access_key.clone(),
-            session_token: self.session_token.clone(),
-            region_name: self.region_name.clone(),
-            session_name: self.session_name.clone(),
-            profile_name: self.profile_name.clone(),
-            role_name: self.role_name.clone(),
-            web_identity_token: self.web_identity_token.clone(),
-            sts_endpoint: self.sts_endpoint.clone(),
-            external_id: self.external_id.clone(),
-            session_tags: None,
-            role_arn: None,
-            web_identity_token_file: None,
-            bearer_token: None,
-        }
-    }
+pub fn credentials_from_explicit_aws<R>(
+    input: FederationInput,
+    resolver: &R,
+) -> Result<AwsFederation<'_, R>, FederationError>
+where
+    R: AwsCredentialsResolver,
+{
+    let region = input
+        .aws
+        .region_name
+        .as_deref()
+        .filter(|region| !region.is_empty())
+        .ok_or(FederationError::AwsRegionRequired)?
+        .to_owned();
+    let settings = AwsSettings {
+        access_key_id: input.aws.access_key_id,
+        secret_access_key: input.aws.secret_access_key,
+        session_token: input.aws.session_token,
+        region_name: input.aws.region_name,
+        session_name: input.aws.session_name,
+        profile_name: input.aws.profile_name,
+        role_name: input.aws.role_name,
+        web_identity_token: input.aws.web_identity_token,
+        sts_endpoint: input.aws.sts_endpoint,
+        external_id: input.aws.external_id,
+        session_tags: None,
+        role_arn: None,
+        web_identity_token_file: None,
+        bearer_token: None,
+    };
+    Ok(AwsFederation {
+        supplier: AwsSecuritySupplier {
+            resolver,
+            settings,
+            region,
+        },
+        audience: input.audience,
+        subject_token_type: input.subject_token_type,
+        token_url: input.token_url,
+        impersonation_url: input.impersonation_url,
+        universe_domain: input.universe_domain,
+        scopes: input.scopes,
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -138,36 +162,6 @@ pub struct AwsFederation<'resolver, R> {
     pub impersonation_url: Option<String>,
     pub universe_domain: Option<String>,
     pub scopes: Vec<String>,
-}
-
-pub fn credentials_from_explicit_aws<R>(
-    input: FederationInput,
-    resolver: &R,
-) -> Result<AwsFederation<'_, R>, FederationError>
-where
-    R: AwsCredentialsResolver,
-{
-    let region = input
-        .aws
-        .region_name
-        .as_deref()
-        .filter(|region| !region.is_empty())
-        .ok_or(FederationError::AwsRegionRequired)?
-        .to_owned();
-    let settings = input.aws.settings();
-    Ok(AwsFederation {
-        supplier: AwsSecuritySupplier {
-            resolver,
-            settings,
-            region,
-        },
-        audience: input.audience,
-        subject_token_type: input.subject_token_type,
-        token_url: input.token_url,
-        impersonation_url: input.impersonation_url,
-        universe_domain: input.universe_domain,
-        scopes: input.scopes,
-    })
 }
 
 impl<R> AwsFederation<'_, R>
