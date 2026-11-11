@@ -3,7 +3,6 @@ use std::error::Error;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use betterlite_models::judge_primitives::error::JudgePrimitivesError;
 use betterlite_models::judge_primitives::judge_verdict_parsing::parse_json_verdict;
 use betterlite_prompts::message_content::Message;
 use indexmap::IndexMap;
@@ -11,9 +10,12 @@ use serde::Serialize;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 
+use self::error::JudgeCallError;
 use super::apply::LLMAsAJudgeGuardrail;
 use super::hooks::{INTERNAL_CALL_ORIGIN, JUDGE_CALL_ORIGIN};
 use super::prompt::{build_judge_prompt, system_prompt};
+
+pub mod error;
 
 pub type JudgeVerdict = IndexMap<String, Json>;
 
@@ -46,22 +48,6 @@ pub struct JudgeReply {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JudgeCompletionResponse {
     pub choices: Vec<JudgeReply>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum JudgeCallError<E> {
-    #[error("the judge model call failed: {source}")]
-    Completion {
-        #[source]
-        source: E,
-    },
-    #[error("the judge model returned no choices")]
-    NoChoices,
-    #[error("the judge model reply is not a verdict: {source}")]
-    Verdict {
-        #[source]
-        source: JudgePrimitivesError,
-    },
 }
 
 #[async_trait]
