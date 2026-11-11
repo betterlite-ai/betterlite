@@ -82,15 +82,13 @@ fn cache_keys_separate_audiences_identities_and_kinds() {
     cache.state(&same_audience_second);
     cache.state(&other_audience);
     cache.state(&source_handle);
-    let mut keys = cache.cache_keys();
-    keys.sort();
     assert_eq!(
-        keys,
+        cache.cache_keys(),
         vec![
-            ("https://one.example".to_owned(), "key-one".to_owned()),
-            ("https://one.example".to_owned(), "key-one".to_owned()),
-            ("https://one.example".to_owned(), "key-two".to_owned()),
-            ("https://two.example".to_owned(), "key-one".to_owned()),
+            same_audience_first.clone(),
+            same_audience_second,
+            source_handle.clone(),
+            other_audience,
         ]
     );
     assert_ne!(same_audience_first, source_handle);

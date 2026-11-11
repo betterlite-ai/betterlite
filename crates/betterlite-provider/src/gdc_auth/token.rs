@@ -16,7 +16,7 @@ pub enum TokenReplyError {
 }
 #[rustfmt::skip]
 #[derive(Deserialize)]
-struct ReplyBody { access_token: String, #[serde(default)] expires_in: Option<Expiry> }
+struct ReplyBody { access_token: SecretString, #[serde(default)] expires_in: Option<Expiry> }
 #[rustfmt::skip]
 #[derive(Deserialize)] #[serde(untagged)]
 enum Expiry { Seconds(i64), Text(String) }
@@ -36,5 +36,5 @@ pub fn decode_gdc_token_reply(bytes: &[u8]) -> Result<TokenReply, TokenReplyErro
         Some(Expiry::Seconds(seconds)) => Some(seconds),
         Some(Expiry::Text(text)) => Some(text.trim().parse::<i64>().map_err(|_error| TokenReplyError::Expiry)?),
     };
-    Ok(TokenReply { token: SecretString::from(reply.access_token), expires_in })
+    Ok(TokenReply { token: reply.access_token, expires_in })
 }

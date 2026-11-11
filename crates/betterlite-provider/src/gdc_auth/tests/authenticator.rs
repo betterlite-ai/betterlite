@@ -7,7 +7,7 @@ use futures_util::poll;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::gdc_auth::authenticator::credential_identity;
-use crate::gdc_auth::cache::CredentialIdentity;
+use crate::gdc_auth::cache::{CacheKey, CredentialIdentity};
 use crate::gdc_auth::error::GdcAuthError;
 use crate::gdc_auth::headers::Headers;
 use crate::gdc_auth::transport::{GdcClock as _, TokenTrust};
@@ -495,10 +495,10 @@ async fn a_fixture_credential_never_opens_a_ca_path_or_uses_the_transport() {
     assert_eq!(harness.transport.count(), 0);
     assert_eq!(
         harness.auth.cache.cache_keys(),
-        vec![(
-            "https://gateway.example".to_owned(),
-            request.api_key.expose_secret().to_owned()
-        )]
+        vec![CacheKey {
+            audience: "https://gateway.example".to_owned(),
+            identity: CredentialIdentity::ApiKey(request.api_key.clone()),
+        }]
     );
 }
 

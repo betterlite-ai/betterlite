@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use aws_lc_rs::signature::{ECDSA_P256_SHA256_FIXED, ECDSA_P384_SHA384_FIXED};
 use secrecy::ExposeSecret as _;
 
@@ -11,8 +13,10 @@ use super::support::{
     RSA_PRIVATE_PEM, TOKEN_URI, descriptor, jwt_claims, jwt_header, verify_ecdsa,
 };
 
-fn account(pem: &str) -> GdchServiceAccount {
-    GdchServiceAccount::load(descriptor("project-a", pem)).expect("a loadable fixture key")
+fn account(pem: &str) -> Arc<GdchServiceAccount> {
+    PemCredentials
+        .build(descriptor("project-a", pem))
+        .expect("a loadable fixture key")
 }
 
 #[test]
@@ -66,39 +70,51 @@ fn a_p384_key_signs_with_es384() {
 
 #[test]
 fn a_p521_key_is_not_supported() {
-    let error = GdchServiceAccount::load(descriptor("project-a", P521_SEC1)).unwrap_err();
-    assert!(matches!(error, CredentialError::Curve));
+    let error = PemCredentials
+        .build(descriptor("project-a", P521_SEC1))
+        .unwrap_err();
+    assert!(matches!(error, CredentialError::Key));
 }
 
 #[test]
 fn an_rsa_pkcs8_key_is_not_an_ec_credential() {
-    let error = GdchServiceAccount::load(descriptor("project-a", RSA_PKCS8_PEM)).unwrap_err();
-    assert!(matches!(error, CredentialError::NotEc));
+    let error = PemCredentials
+        .build(descriptor("project-a", RSA_PKCS8_PEM))
+        .unwrap_err();
+    assert!(matches!(error, CredentialError::Key));
 }
 
 #[test]
 fn an_rsa_private_key_pem_is_not_an_ec_credential() {
-    let error = GdchServiceAccount::load(descriptor("project-a", RSA_PRIVATE_PEM)).unwrap_err();
+    let error = PemCredentials
+        .build(descriptor("project-a", RSA_PRIVATE_PEM))
+        .unwrap_err();
     assert!(matches!(error, CredentialError::NotEc));
 }
 
 #[test]
 fn an_unparsable_ec_private_key_is_refused() {
-    let error = GdchServiceAccount::load(descriptor("project-a", GARBAGE_PEM)).unwrap_err();
-    assert!(matches!(error, CredentialError::Pem));
+    let error = PemCredentials
+        .build(descriptor("project-a", GARBAGE_PEM))
+        .unwrap_err();
+    assert!(matches!(error, CredentialError::Key));
 }
 
 #[test]
 fn an_encrypted_private_key_is_not_an_ec_credential() {
     let pem = "-----BEGIN ENCRYPTED PRIVATE KEY-----\nbm90IGEga2V5\n-----END ENCRYPTED PRIVATE KEY-----\n";
-    let error = GdchServiceAccount::load(descriptor("project-a", pem)).unwrap_err();
+    let error = PemCredentials
+        .build(descriptor("project-a", pem))
+        .unwrap_err();
     assert!(matches!(error, CredentialError::NotEc));
 }
 
 #[test]
 fn a_truncated_pkcs8_key_is_refused() {
     let truncated = P256_PKCS8.replace("-----END PRIVATE KEY-----", "");
-    let error = GdchServiceAccount::load(descriptor("project-a", &truncated)).unwrap_err();
+    let error = PemCredentials
+        .build(descriptor("project-a", &truncated))
+        .unwrap_err();
     assert!(matches!(error, CredentialError::Pem));
 }
 
@@ -107,7 +123,9 @@ fn a_key_body_never_reaches_the_error_text() {
     let secret_body = "c2VjcmV0LWtleS1tYXRlcmlhbA==";
     let pem =
         format!("-----BEGIN EC PRIVATE KEY-----\n{secret_body}\n-----END EC PRIVATE KEY-----\n");
-    let error = GdchServiceAccount::load(descriptor("project-a", &pem)).unwrap_err();
+    let error = PemCredentials
+        .build(descriptor("project-a", &pem))
+        .unwrap_err();
     assert!(!error.to_string().contains(secret_body));
     assert!(!format!("{error:?}").contains(secret_body));
 }
@@ -159,9 +177,13 @@ fn certificate_pem_of_length(length: usize) -> String {
 fn the_pem_size_limit_keeps_the_boundary_and_refuses_one_byte_more() {
     let at_limit = certificate_pem_of_length(0x4000);
     assert_eq!(at_limit.len(), 0x4000);
-    let at_limit_error = GdchServiceAccount::load(descriptor("project-a", &at_limit)).unwrap_err();
+    let at_limit_error = PemCredentials
+        .build(descriptor("project-a", &at_limit))
+        .unwrap_err();
     assert!(matches!(at_limit_error, CredentialError::NotEc));
     let over_limit = certificate_pem_of_length(0x4001);
-    let over_error = GdchServiceAccount::load(descriptor("project-a", &over_limit)).unwrap_err();
+    let over_error = PemCredentials
+        .build(descriptor("project-a", &over_limit))
+        .unwrap_err();
     assert!(matches!(over_error, CredentialError::Pem));
 }

@@ -2450,10 +2450,8 @@ dependencies = [
  "jsonwebtoken",
  "mutants",
  "pem",
- "pkcs8",
  "rstest",
  "rust_decimal",
- "sec1",
  "secrecy",
  "serde",
  "serde_json",
@@ -7963,16 +7961,6 @@ dependencies = [
  "pbkdf2 0.13.0",
  "salsa20 0.11.0",
  "sha2 0.11.1",
-]
-
-[[package]]
-name = "sec1"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d56d437c2f19203ce5f7122e507831de96f3d2d4d3be5af44a0b0a09d8a80e4d"
-dependencies = [
- "der",
- "zeroize",
 ]
 
 [[package]]

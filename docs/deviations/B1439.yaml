@@ -15,3 +15,6 @@ deviations:
   - what: The token exchange gives up when the deployment's outbound deadline passes, including between retries. LiteLLM has no deadline on the GDCH token exchange and can wait as long as the token endpoint keeps the connection open.
     why: Every outbound call has a timeout in betterlite; a token endpoint that stops answering must not pin a request forever.
     link: ""
+  - what: A credential that opens more than 128 levels of JSON nesting and then ends or breaks is refused as an authentication failure. LiteLLM treats text that is not valid JSON as a plain bearer token.
+    why: serde_json stops at 128 levels with the same error for an unfinished document as for a complete one, so the two cannot be told apart without a second parser; refusing is the safe side because a complete document that deep must be refused.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gdc/chat/transformation.py#L202-L217

@@ -10,7 +10,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::gdc_policy::{caching_enabled, read_env_bool};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::gdc_auth::authenticator::{GdcAuth, GdcAuthParts, GdcValidation};
-use betterlite_provider::gdc_auth::cache::TokenCache;
+use betterlite_provider::gdc_auth::cache::{CredentialIdentity, TokenCache};
 use betterlite_provider::gdc_auth::credential::FixtureCredentials;
 use betterlite_provider::gdc_auth::headers::Headers;
 use betterlite_provider::gdc_auth::key::{GdcKey, decode_gdc_key};
@@ -101,9 +101,20 @@ fn validation_outcome(call: &ValidationCall, settings: &Settings, auth: &GdcAuth
     let validation = GdcValidation { model: MODEL, api_base: base, api_key: Some(&api_key), headers, optional_params: &call.optional_params, call: deployment, global: &settings.global, ssl_verify, caching, deadline: Duration::from_secs(30), source_identity: "source-handle" };
     let runtime = tokio::runtime::Builder::new_current_thread().build().map_err(|error| failure(error.to_string()))?;
     match runtime.block_on(auth.validate_environment(validation)) {
-        Ok(projected) => Ok(json!({ "ok": true, "headers": exposed(&projected), "cache": auth.cache.cache_keys() })),
+        Ok(projected) => Ok(json!({ "ok": true, "headers": exposed(&projected), "cache": cache_identities(auth) })),
         Err(error) => Ok(json!({ "ok": false, "status": error.class().metadata().status_code })),
     }
+}
+
+fn cache_identities(auth: &GdcAuth) -> Vec<(String, String)> {
+    auth.cache
+        .cache_keys()
+        .into_iter()
+        .map(|key| match key.identity {
+            CredentialIdentity::ApiKey(secret) => (key.audience, secret.expose_secret().to_owned()),
+            CredentialIdentity::SourceHandle(handle) => (key.audience, handle),
+        })
+        .collect()
 }
 
 fn exposed(headers: &Headers) -> BTreeMap<String, String> {

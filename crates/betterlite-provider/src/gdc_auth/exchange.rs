@@ -45,7 +45,7 @@ impl Exchange<'_> {
             if remaining == 0 {
                 return Err(ExchangeError::Deadline);
             }
-            let response = self.transport.exchange(attempt_request(&request, remaining)).await.map_err(|source| ExchangeError::Transport { source })?;
+            let response = self.transport.exchange(TokenExchangeRequest { url: request.url.clone(), body: request.body.clone(), trust: request.trust.clone(), timeout: Duration::from_millis(remaining) }).await.map_err(|source| ExchangeError::Transport { source })?;
             if response.status == 200 {
                 return Ok(response);
             }
@@ -62,15 +62,6 @@ impl Exchange<'_> {
         let low = wait_millis.saturating_mul(90).saturating_div(100);
         let high = wait_millis.saturating_mul(110).saturating_div(100);
         self.jitter.uniform_millis(low, high)
-    }
-}
-
-fn attempt_request(request: &ExchangeRequest, remaining: u64) -> TokenExchangeRequest {
-    TokenExchangeRequest {
-        url: request.url.clone(),
-        body: request.body.clone(),
-        trust: request.trust.clone(),
-        timeout: Duration::from_millis(remaining),
     }
 }
 

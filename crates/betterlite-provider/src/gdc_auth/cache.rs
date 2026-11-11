@@ -72,12 +72,11 @@ impl TokenCache {
         }
     }
     #[must_use]
-    pub fn cache_keys(&self) -> Vec<(String, String)> {
+    pub fn cache_keys(&self) -> Vec<CacheKey> {
         let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries
-            .keys()
-            .map(|key| (key.audience.clone(), identity_order(&key.identity).1.to_owned()))
-            .collect()
+        let keys = entries.keys().cloned().collect();
+        drop(entries);
+        keys
     }
 }
 

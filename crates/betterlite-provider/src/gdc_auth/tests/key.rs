@@ -43,6 +43,13 @@ fn rejected_keys_are_authentication_failures(#[case] api_key: &str) {
 }
 
 #[test]
+fn valid_json_nested_past_the_parser_depth_limit_is_not_a_bearer_key() {
+    let nested = format!("{}{}", "[".repeat(200), "]".repeat(200));
+    let error = decode_gdc_key(nested.as_bytes(), "gdc/model").unwrap_err();
+    assert_eq!(status(&error), 401);
+}
+
+#[test]
 fn an_unsupported_format_version_is_refused() {
     let json = descriptor_json("project-a", P256_SEC1)
         .replace("\"format_version\":\"1\"", "\"format_version\":\"2\"");
