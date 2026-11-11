@@ -92,13 +92,17 @@ impl<Client: EvictableClient> LlmClientCache<Client> {
         if *key_expiry <= now {
             return true;
         }
-        let live_count = entries.iter().filter(|(_, expiry)| *expiry > now).count();
+        let is_live = |expiry: f64| expiry.total_cmp(&now).is_gt();
+        let live_count = entries
+            .iter()
+            .filter(|(_, expiry)| is_live(*expiry))
+            .count();
         if live_count < self.capacity {
             return false;
         }
         let victim = entries
             .iter()
-            .filter(|(_, expiry)| *expiry > now)
+            .filter(|(_, expiry)| is_live(*expiry))
             .map(|(marker, expiry)| (marker, *expiry))
             .min_by(|(left_key, left_expiry), (right_key, right_expiry)| {
                 left_expiry
