@@ -64,14 +64,18 @@ pub async fn convert_messages_to_prompt(
     conversion: PromptConversion<'_>,
 ) -> Result<ConvertedPrompt, ConversionError> {
     if let Some(entry) = conversion.custom_prompt_dict.get(conversion.model) {
-        return custom_entry_prompt(entry, &conversion);
+        let template = CustomPromptTemplate {
+            roles: entry.roles.clone(),
+            initial_prompt_value: entry.initial_prompt_value.clone().unwrap_or_default(),
+            final_prompt_value: entry.final_prompt_value.clone().unwrap_or_default(),
+            bos_token: String::new(),
+            eos_token: String::new(),
+        };
+        return Ok(ConvertedPrompt {
+            prompt: custom_prompt(&template, conversion.messages)?,
+            chat_history: None,
+        });
     }
-    selected_prompt(conversion).await
-}
-
-async fn selected_prompt(
-    conversion: PromptConversion<'_>,
-) -> Result<ConvertedPrompt, ConversionError> {
     match conversion.provider {
         Some(
             BedrockInvokeProvider::Anthropic
@@ -123,23 +127,6 @@ async fn family_prompt(
 fn fallback_prompt(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError> {
     Ok(ConvertedPrompt {
         prompt: concatenated(messages)?,
-        chat_history: None,
-    })
-}
-
-fn custom_entry_prompt(
-    entry: &CustomPromptEntry,
-    conversion: &PromptConversion<'_>,
-) -> Result<ConvertedPrompt, ConversionError> {
-    let template = CustomPromptTemplate {
-        roles: entry.roles.clone(),
-        initial_prompt_value: entry.initial_prompt_value.clone().unwrap_or_default(),
-        final_prompt_value: entry.final_prompt_value.clone().unwrap_or_default(),
-        bos_token: String::new(),
-        eos_token: String::new(),
-    };
-    Ok(ConvertedPrompt {
-        prompt: custom_prompt(&template, conversion.messages)?,
         chat_history: None,
     })
 }
