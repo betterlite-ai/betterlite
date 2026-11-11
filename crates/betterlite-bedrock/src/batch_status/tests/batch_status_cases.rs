@@ -301,6 +301,12 @@ fn rejected_timestamp_forms() {
     .expect("the zero year decodes");
     assert_eq!(year_zero.created_at, NOW);
     assert_eq!(year_zero.expires_at, None);
+    let separator = decode(
+        r#"{"jobArn":"a","status":"InProgress","submitTime":"2024x01-15T00:00:00Z","jobExpirationTime":"2024x01-15T00:00:00Z"}"#,
+    )
+    .expect("the bad separator decodes");
+    assert_eq!(separator.created_at, NOW);
+    assert_eq!(separator.expires_at, None);
 }
 
 fn offset_timestamp_forms() {

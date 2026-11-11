@@ -39,12 +39,15 @@ fn canonical_iso(text: &str) -> Option<String> {
 }
 
 fn date_text(bytes: &[u8]) -> Option<String> {
-    let year = number(bytes, 0, 4)?;
-    if year == 0 || bytes.get(4) != Some(&b'-') || bytes.get(7) != Some(&b'-') {
+    if bytes.get(4) != Some(&b'-') || bytes.get(7) != Some(&b'-') {
         return None;
     }
+    let year = number(bytes, 0, 4)?;
     let month = number(bytes, 5, 2)?;
     let day = number(bytes, 8, 2)?;
+    if year == 0 {
+        return None;
+    }
     Some(format!("{year:04}-{month:02}-{day:02}"))
 }
 
@@ -53,18 +56,23 @@ fn time_text(bytes: &[u8]) -> Option<String> {
     let Some(separator) = bytes.get(2) else {
         return Some(format!("{hour:02}:00:00"));
     };
-    if *separator != b':' {
-        let offset = offset_text(bytes, 2)?;
-        return Some(format!("{hour:02}:00:00{offset}"));
+    match *separator {
+        b':' => {
+            let minute = number(bytes, 3, 2)?;
+            let (second, fraction, rest) = seconds(bytes.get(5..)?)?;
+            let offset = if rest.is_empty() {
+                String::new()
+            } else {
+                offset_text(rest, 0)?
+            };
+            Some(format!("{hour:02}:{minute:02}:{second}{fraction}{offset}"))
+        }
+        b'+' | b'-' => {
+            let offset = offset_text(bytes, 2)?;
+            Some(format!("{hour:02}:00:00{offset}"))
+        }
+        _ => None,
     }
-    let minute = number(bytes, 3, 2)?;
-    let (second, fraction, rest) = seconds(bytes.get(5..)?)?;
-    let offset = if rest.is_empty() {
-        String::new()
-    } else {
-        offset_text(rest, 0)?
-    };
-    Some(format!("{hour:02}:{minute:02}:{second}{fraction}{offset}"))
 }
 
 fn seconds(bytes: &[u8]) -> Option<(String, String, &[u8])> {
