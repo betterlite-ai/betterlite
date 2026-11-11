@@ -28,7 +28,7 @@ use super::error::ProcessError;
 use super::launcher::{
     ExitCode, GatewayLauncher, LaunchRequest, ProcessLauncher as _, gateway_command,
 };
-use super::liveliness::poll_liveliness;
+use super::liveliness::{poll_liveliness, tail_log};
 use super::log_tail::stream_log;
 use super::pid_record::{PidRecord, read_pid_record, write_pid_record};
 use super::port::{LoopbackPortProbe, PortProbe as _};
@@ -353,6 +353,16 @@ fn poll_liveliness_times_out_after_thirty_seconds_with_the_log_tail() {
     assert!(text.contains("row-06"), "{text}");
     assert!(!text.contains("row-05"), "{text}");
     assert_eq!(clock.sleeps(), 60);
+}
+
+#[test]
+fn tail_log_replaces_invalid_utf8_instead_of_hiding_the_tail() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let log_path = directory.path().join("proxy.log");
+    fs::write(&log_path, b"row one\nrow \xff two\n").unwrap();
+    let tail = tail_log(&log_path);
+    assert!(tail.contains("row one"), "{tail}");
+    assert!(tail.contains("row \u{fffd} two"), "{tail}");
 }
 
 #[test]

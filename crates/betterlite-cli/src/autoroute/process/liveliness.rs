@@ -52,9 +52,14 @@ pub fn tail_log(log_path: &Path) -> String {
     if !log_path.exists() {
         return NO_LOG_OUTPUT.to_owned();
     }
-    let Ok(text) = fs::read_to_string(log_path) else {
+    let Ok(bytes) = fs::read(log_path) else {
         return NO_LOG_OUTPUT.to_owned();
     };
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "LiteLLM reads the log with errors=\"replace\" and still shows its last lines"
+    )]
+    let text = String::from_utf8_lossy(&bytes);
     let lines: Vec<&str> = text.lines().collect();
     let tail: Vec<&str> = lines
         .iter()
