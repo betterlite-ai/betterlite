@@ -173,6 +173,44 @@ fn recoverable_name_rejects_hostile_names(#[case] name: &str, #[case] recoverabl
 }
 
 #[tokio::test]
+async fn recovery_query_timeout_is_typed() {
+    let catalog = [migration(
+        "20240101000000_known",
+        "CREATE TABLE known_probe (id integer)",
+    )];
+    let jitter = FakeJitter(0);
+    let steps = PgSteps::new(PgStepsInputs {
+        schema: "public".to_owned(),
+        catalog: &catalog,
+        prisma_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        deploy_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        lock_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        database_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        direct_url: None,
+        schema_prisma: &[],
+        current_build: None,
+        command_timeout: Duration::ZERO,
+        lock_timeout: LOCK_TIMEOUT,
+        jitter: &jitter,
+        next_id,
+    })
+    .expect("an offline deploy pool builds");
+    let identity = steps
+        .unfinished_identity("20240101000000_known")
+        .await
+        .expect_err("an identity read past its command timeout is a typed error");
+    assert!(matches!(
+        identity,
+        RecoveryError::QueryTimeout { seconds: 0 }
+    ));
+    let lock = steps
+        .deploy_lock_held()
+        .await
+        .expect_err("a lock read past its command timeout is a typed error");
+    assert!(matches!(lock, RecoveryError::QueryTimeout { seconds: 0 }));
+}
+
+#[tokio::test]
 async fn baseline_connection_failure_propagates() {
     let catalog = [migration(
         "20240101000000_known",
