@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-transcribe-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-transcribe = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "media_duration"
+path = "fuzz_targets/media_duration.rs"
+test = false
+doc = false
+bench = false
