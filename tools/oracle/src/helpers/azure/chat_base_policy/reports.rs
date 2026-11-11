@@ -53,7 +53,7 @@ pub(super) fn load_settings(settings: Settings) -> Result<Loaded, Box<HelperErro
     .load(&config_source(settings))
     .map_err(|error| helper_error("ConfigError", error.to_string()))?;
     Ok(Loaded {
-        drop_params: config.litellm_settings.drop_params,
+        drop_params: config.litellm_settings.drop_params.unwrap_or(false),
         openai_system_messages_first: config
             .sections
             .openai_chat_content

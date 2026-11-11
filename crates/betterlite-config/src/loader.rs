@@ -95,7 +95,7 @@ impl<L: EnvironmentLookup> ConfigLoader<L> {
             lookup: &self.lookup,
             enabled: drop_params.enabled,
         })?;
-        convert(raw, sections, &self.lookup, drop_params.enabled)
+        convert(raw, sections, &self.lookup)
     }
 }
 
@@ -160,12 +160,7 @@ impl<L: EnvironmentLookup> EnvironmentLookup for DropParamsLookup<'_, L> {
     }
 }
 
-fn convert(
-    raw: RawConfig,
-    sections: Sections,
-    lookup: Lookup<'_>,
-    drop_params: bool,
-) -> Result<Config, ConfigError> {
+fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Config, ConfigError> {
     let mut model_list = Vec::with_capacity(raw.model_list.len());
     for (index, deployment) in raw.model_list.into_iter().enumerate() {
         model_list.push(convert_deployment(deployment, index, lookup)?);
@@ -174,7 +169,7 @@ fn convert(
         model_list,
         general_settings: convert_general(raw.general_settings, lookup)?,
         router_settings: convert_router(raw.router_settings, lookup)?,
-        litellm_settings: convert_litellm(raw.litellm_settings, lookup, drop_params)?,
+        litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
         environment_variables: convert_environment(raw.environment_variables, lookup)?,
         sections,
     })
@@ -205,17 +200,12 @@ fn convert_router(raw: RawRouter, lookup: Lookup<'_>) -> Result<RouterSettings, 
     })
 }
 
-fn convert_litellm(
-    raw: RawLiteLlm,
-    lookup: Lookup<'_>,
-    drop_params_env: bool,
-) -> Result<LiteLlmSettings, ConfigError> {
+fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSettings, ConfigError> {
     let retries_path = "litellm_settings.num_retries";
     let timeout_path = "litellm_settings.request_timeout";
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
-    let drop_params = raw.drop_params.unwrap_or(drop_params_env);
     Ok(LiteLlmSettings {
         ssl_verify: raw.ssl_verify,
         ssl_certificate: raw.ssl_certificate,
@@ -224,7 +214,7 @@ fn convert_litellm(
         ssl_security_level: raw.ssl_security_level,
         num_retries,
         request_timeout,
-        drop_params,
+        drop_params: raw.drop_params,
         proxy_trust: ProxyTrust {
             aiohttp_trust_env: raw.aiohttp_trust_env,
             disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,

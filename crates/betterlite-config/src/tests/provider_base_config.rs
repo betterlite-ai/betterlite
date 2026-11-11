@@ -81,7 +81,6 @@ fn provider_base_config_drop_params_cases(
 ) {
     let lookup = environment_lookup(environment);
     let loaded = ConfigLoader { lookup }.load(source).unwrap();
-    assert_eq!(loaded.litellm_settings.drop_params, expected);
     assert_eq!(
         loaded.sections.drop_params.policy.global_drop_params,
         expected

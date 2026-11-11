@@ -88,7 +88,7 @@ pub struct LiteLlmSettings {
     pub ssl_security_level: Option<String>,
     pub num_retries: Option<u32>,
     pub request_timeout: Option<f64>,
-    pub drop_params: bool,
+    pub drop_params: Option<bool>,
     pub proxy_trust: ProxyTrust,
     pub bedrock_metadata_fields: Vec<String>,
     pub modify_params: bool,
