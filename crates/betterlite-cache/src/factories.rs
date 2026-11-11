@@ -17,8 +17,10 @@ pub enum FactoryError<HandleError>
 where
     HandleError: Error + 'static,
 {
-    #[error("the native cache ttl {value} is negative or not finite")]
+    #[error("the native cache ttl {value} must be finite and positive")]
     Ttl { value: f64 },
+    #[error("the native cache limits must be positive")]
+    Limits,
     #[error("the native redis cache needs a non-empty namespace")]
     Namespace,
     #[error("the native cache handle could not be created")]
@@ -40,6 +42,9 @@ impl Cache {
         Factory: NativeHandleFactory,
     {
         checked_ttl(options.ttl)?;
+        if options.capacity == 0 || options.max_entry_bytes == 0 {
+            return Err(FactoryError::Limits);
+        }
         let handle = factory
             .memory_handle(options)
             .map_err(|source| FactoryError::Handle { source })?;
@@ -66,6 +71,9 @@ impl Cache {
         if namespace.is_empty() {
             return Err(FactoryError::Namespace);
         }
+        if options.max_entry_bytes == 0 {
+            return Err(FactoryError::Limits);
+        }
         let handle = factory
             .redis_handle(url, namespace, options)
             .map_err(|source| FactoryError::Handle { source })?;
@@ -79,12 +87,12 @@ impl Cache {
     }
 }
 
-// a negative or non-finite ttl cannot become a duration; zero is an explicit zero duration and passes
+// the native handle's duration conversion refuses a zero, negative or non-finite ttl
 fn checked_ttl<HandleError>(ttl: f64) -> Result<(), FactoryError<HandleError>>
 where
     HandleError: Error + 'static,
 {
-    if !ttl.is_finite() || ttl < 0.0_f64 {
+    if !ttl.is_finite() || ttl <= 0.0_f64 {
         return Err(FactoryError::Ttl { value: ttl });
     }
     Ok(())

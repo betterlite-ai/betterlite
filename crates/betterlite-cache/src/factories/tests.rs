@@ -333,6 +333,8 @@ enum FactoryKind {
 }
 
 #[rstest]
+#[case::memory_zero(FactoryKind::Memory, 0.0_f64)]
+#[case::redis_zero(FactoryKind::Redis, 0.0_f64)]
 #[case::memory_negative(FactoryKind::Memory, -1.0_f64)]
 #[case::redis_negative(FactoryKind::Redis, -1.0_f64)]
 #[case::redis_nan(FactoryKind::Redis, f64::NAN)]
@@ -379,19 +381,24 @@ fn an_invalid_ttl_is_rejected_before_the_handle_is_created(
 }
 
 #[rstest]
-#[case::memory(FactoryKind::Memory)]
-#[case::redis(FactoryKind::Redis)]
-fn a_zero_ttl_reaches_the_handle(#[case] factory: FactoryKind) {
+#[case::memory_capacity_zero(FactoryKind::Memory, 0_usize, 0x0040_0000_usize)]
+#[case::memory_max_entry_zero(FactoryKind::Memory, 200_usize, 0_usize)]
+#[case::redis_max_entry_zero(FactoryKind::Redis, 200_usize, 0_usize)]
+fn a_zero_limit_is_rejected_before_the_handle_is_created(
+    #[case] factory: FactoryKind,
+    #[case] capacity: usize,
+    #[case] max_entry_bytes: usize,
+) {
     let host = RecordingHost::default();
     let mut callbacks = CacheCallbacks::default();
-    let facade = match factory {
+    let result = match factory {
         FactoryKind::Memory => Cache::memory(
             &host,
             &mut callbacks,
             MemoryHandleOptions {
-                ttl: 0.0,
-                capacity: 200,
-                max_entry_bytes: 0x0040_0000,
+                ttl: 600.0,
+                capacity,
+                max_entry_bytes,
             },
         ),
         FactoryKind::Redis => Cache::redis(
@@ -400,34 +407,19 @@ fn a_zero_ttl_reaches_the_handle(#[case] factory: FactoryKind) {
             "redis://cache:6379",
             "shared",
             RedisHandleOptions {
-                ttl: 0.0,
-                max_entry_bytes: 0x0040_0000,
+                ttl: 600.0,
+                max_entry_bytes,
             },
         ),
-    }
-    .unwrap();
-    assert_eq!(facade.ttl, Some(0.0_f64));
-    match factory {
-        FactoryKind::Memory => assert_eq!(
-            host.state().memory,
-            [MemoryHandleOptions {
-                ttl: 0.0,
-                capacity: 200,
-                max_entry_bytes: 0x0040_0000,
-            }]
-        ),
-        FactoryKind::Redis => assert_eq!(
-            host.state().redis,
-            [(
-                "redis://cache:6379".to_owned(),
-                "shared".to_owned(),
-                RedisHandleOptions {
-                    ttl: 0.0,
-                    max_entry_bytes: 0x0040_0000,
-                },
-            )]
-        ),
-    }
+    };
+    let Err(error) = result else {
+        panic!("the factory must reject a zero limit")
+    };
+    assert!(matches!(error, FactoryError::Limits));
+    assert_eq!(callbacks, CacheCallbacks::default());
+    assert!(host.state().memory.is_empty());
+    assert!(host.state().redis.is_empty());
+    assert!(host.state().handles.is_empty());
 }
 
 #[tokio::test]
@@ -444,20 +436,35 @@ async fn the_facade_lifecycle_does_not_reach_the_native_backend() {
     assert!(host.state().handles[0].state().calls.is_empty());
 }
 
-#[test]
-fn a_host_failure_is_returned_with_its_source() {
+#[rstest]
+#[case::memory(FactoryKind::Memory)]
+#[case::redis(FactoryKind::Redis)]
+fn a_host_failure_is_returned_with_its_source(#[case] factory: FactoryKind) {
     let host = RecordingHost {
         state: Mutex::new(HostState::default()),
         refusing: true,
     };
-    let Err(error) = Cache::memory(
-        &host,
-        &mut CacheCallbacks::default(),
-        MemoryHandleOptions::default(),
-    ) else {
+    let mut callbacks = CacheCallbacks::default();
+    let result = match factory {
+        FactoryKind::Memory => {
+            Cache::memory(&host, &mut callbacks, MemoryHandleOptions::default()).map(drop)
+        }
+        FactoryKind::Redis => Cache::redis(
+            &host,
+            &mut callbacks,
+            "redis://cache:6379",
+            "shared",
+            RedisHandleOptions::default(),
+        )
+        .map(drop),
+    };
+    let Err(error) = result else {
         panic!("the factory must return the host failure")
     };
     assert!(matches!(error, FactoryError::Handle { source: HostError }));
+    assert_eq!(callbacks, CacheCallbacks::default());
+    assert!(host.state().memory.is_empty());
+    assert!(host.state().redis.is_empty());
     assert!(host.state().handles.is_empty());
 }
 
