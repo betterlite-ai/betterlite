@@ -1,5 +1,3 @@
-use indexmap::IndexMap;
-
 use crate::controls::json_value::JsonValue;
 
 pub const DEFAULT_MAX_RECURSE_DEPTH: usize = 100;
@@ -51,9 +49,10 @@ pub fn flatten_form_field_values(
         let JsonValue::Object(entries) = source else {
             return Err(FormFieldError::NotAnObject);
         };
-        flattener.seed(entries);
+        for (name, value) in entries {
+            flattener.flatten_root(name, value)?;
+        }
     }
-    flattener.run()?;
     Ok(flattener.fields)
 }
 
@@ -71,8 +70,9 @@ pub fn serialize_multipart_fields(
         fields: Vec::new(),
         pending: Vec::new(),
     };
-    flattener.seed(entries);
-    flattener.run()?;
+    for (name, value) in entries {
+        flattener.flatten_root(name, value)?;
+    }
     let mut serialized = Vec::new();
     for field in flattener.fields {
         match field.value {
@@ -102,32 +102,27 @@ struct Flattener<'value> {
 }
 
 impl<'value> Flattener<'value> {
-    fn seed(&mut self, entries: &'value IndexMap<String, JsonValue>) {
-        for (name, value) in entries {
-            self.pending.push((name.clone(), value, 0));
-        }
-    }
-
-    fn run(&mut self) -> Result<(), FormFieldError> {
-        while let Some((name, value, depth)) = self.pending.pop() {
+    fn flatten_root(&mut self, name: &str, value: &'value JsonValue) -> Result<(), FormFieldError> {
+        self.pending.push((name.to_owned(), value, 0));
+        while let Some((field, current, depth)) = self.pending.pop() {
             if depth > self.max_depth {
                 return Err(FormFieldError::TooDeep {
                     limit: self.max_depth,
                 });
             }
-            match value {
+            match current {
                 JsonValue::Object(entries) => self.push_children(
-                    &name,
+                    &field,
                     depth,
                     entries
                         .iter()
                         .rev()
                         .map(|(key, child)| (key.as_str(), child)),
                 ),
-                JsonValue::Array(items) => self.push_array(name, items, depth),
+                JsonValue::Array(items) => self.push_array(field, items, depth),
                 JsonValue::Null => {}
                 JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) => {
-                    self.push_scalar(name, value);
+                    self.push_scalar(field, current);
                 }
             }
         }
