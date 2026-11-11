@@ -36,9 +36,9 @@ pub fn usable_login(
     if api_key.is_none() {
         return Ok(false);
     }
-    let loaded =
+    let stored =
         block_on(load_cli_token(files, vault)).map_err(|source| BackupError::Runtime { source })?;
-    Ok(loaded.is_some_and(|record| is_token_fresh(&record, now_seconds, expiration_hours)))
+    Ok(stored.is_some_and(|record| is_token_fresh(&record, now_seconds, expiration_hours)))
 }
 
 pub fn key_resolved_on_the_way_in<H, W>(
@@ -67,7 +67,10 @@ pub fn stored_login_is_pkce(
     files: &dyn CredentialFiles,
     vault: &mut (dyn SecretVault + Send + Sync),
 ) -> Result<bool, BackupError> {
-    let loaded =
-        block_on(load_cli_token(files, vault)).map_err(|source| BackupError::Runtime { source })?;
-    Ok(loaded.is_some_and(|record| record.refresh_token.is_some()))
+    let Some(record) =
+        block_on(load_cli_token(files, vault)).map_err(|source| BackupError::Runtime { source })?
+    else {
+        return Ok(false);
+    };
+    Ok(record.refresh_token.is_some())
 }
