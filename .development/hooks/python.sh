@@ -60,8 +60,16 @@ case ${mode} in
   pyright)
     [[ ${#legacy[@]} -eq 0 ]] || exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json "${legacy[@]}"
     ;;
+  similarity)
+    tracked=$(git ls-files -- '*.py' ':!:**/fixtures/**') || exit 1
+    files=()
+    while read -r file; do
+      grep -q -x -F -- "${file}" python-legacy.txt || files+=("${file}")
+    done <<< "${tracked}"
+    [[ ${#files[@]} -eq 0 ]] || exec similarity-py "${files[@]}" --threshold 0.85 --min-lines 8 --fail-on-duplicates
+    ;;
   *)
-    echo "usage: python.sh ruff|rules|mypy|pyright FILE..." >&2
+    echo "usage: python.sh ruff|rules|mypy|pyright|similarity FILE..." >&2
     exit 2
     ;;
 esac

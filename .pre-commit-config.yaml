@@ -73,6 +73,28 @@ repos:
         entry: zizmor --offline
         language: system
         files: ^\.github/(workflows/[^/]+|actions/[^/]+/action)\.ya?ml$
+      - id: actionlint
+        name: actionlint
+        entry: actionlint
+        language: system
+        files: ^\.github/workflows/[^/]+\.ya?ml$
+      # .shellcheckrc turns on every optional check
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+      - id: shfmt
+        name: shfmt
+        entry: shfmt -i 2 -sr -ci -d
+        language: system
+        types: [shell]
+      - id: shellcheck-specs
+        name: shellcheck on the run commands of checks.yaml and new task files
+        entry: bash .development/hooks/shellcheck-specs.sh
+        language: system
+        files: ^\.development/(checks\.yaml|tasks/[^/]+\.yaml)$
+        require_serial: true
       # a file in python-legacy.txt gets only the checks it had before mypy and the Python rules, until a cleanup task fixes it
       - id: ruff
         name: ruff
@@ -90,6 +112,12 @@ repos:
         language: system
         types: [python]
         require_serial: true
+      - id: python-similarity
+        name: no near copies among the Python files off the legacy list
+        entry: bash .development/hooks/python.sh similarity
+        language: system
+        types: [python]
+        pass_filenames: false
       - id: basedpyright-helpers
         name: basedpyright on the legacy oracle helpers
         entry: bash .development/hooks/python.sh pyright
