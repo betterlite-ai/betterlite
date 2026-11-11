@@ -8,6 +8,7 @@ use crate::model_metadata_resolution::hf_config::HfConfigClient;
 
 mod details;
 mod predicates;
+mod raw;
 mod tests;
 
 pub struct CapabilityRequest<'request> {

@@ -3,6 +3,7 @@ use crate::lemonade_model_metadata::ModelInfoClient;
 use crate::model_metadata_resolution::dynamic::DynamicMetadataSource;
 
 use super::details::{self, CapabilityError, MetadataValue, Phrase, Strategy};
+use super::raw;
 use super::{CapabilityEnvironment, CapabilityPredicates, CapabilityRequest};
 
 // LiteLLM's PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA, as the provider slugs it compares.
@@ -43,7 +44,7 @@ where
         if let MetadataValue::Value(Json::Text(text)) = value {
             return Some(text);
         }
-        match details::bare_declaration(&target.model, key, self) {
+        match raw::bare_declaration(&target.model, key, self) {
             Some(Json::Text(text)) => Some(text),
             _ => None,
         }
@@ -67,7 +68,7 @@ where
         };
         if matches!(value, MetadataValue::Absent) {
             return matches!(
-                details::bare_declaration(&target.model, key, self),
+                raw::bare_declaration(&target.model, key, self),
                 Some(Json::Bool(false))
             );
         }
