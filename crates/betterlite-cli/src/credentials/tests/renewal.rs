@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -10,7 +10,6 @@ use crate::credentials::renewal::{
     FreshApiKeyRequest, RenewalStore as _, RenewalVault, fresh_api_key, key_rotated_by_a_sibling,
     refresh_inputs,
 };
-use crate::credentials::storage::CredentialStore;
 use crate::keyring::KeyringUnusable;
 
 use super::support::{
@@ -42,8 +41,8 @@ fn sibling_of(previous: &CliTokenData) -> CliTokenData {
     sibling
 }
 
-fn frozen_clock() -> FixedWallClock {
-    FixedWallClock(NOW)
+fn frozen_clock() -> Arc<FixedWallClock> {
+    Arc::new(FixedWallClock(NOW))
 }
 
 fn set_field(field: &str, value: Option<&str>, record: &mut CliTokenData) {
@@ -67,10 +66,8 @@ async fn renewal_saver_stores_the_record_in_the_vault_and_the_file() {
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
     let mut renewal = RenewalVault {
-        store: CredentialStore {
-            files: &files,
-            vault: &mut vault,
-        },
+        files: &files,
+        vault: &mut vault,
         warn: &warn,
         token_path: files.path(),
     };
@@ -91,10 +88,8 @@ async fn renewal_saver_warns_when_no_store_keeps_the_credential() {
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
     let mut renewal = RenewalVault {
-        store: CredentialStore {
-            files: &files,
-            vault: &mut vault,
-        },
+        files: &files,
+        vault: &mut vault,
         warn: &warn,
         token_path: files.path(),
     };
@@ -115,10 +110,8 @@ async fn renewal_saver_warns_when_the_file_cannot_record_the_secret() {
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
     let mut renewal = RenewalVault {
-        store: CredentialStore {
-            files: &files,
-            vault: &mut vault,
-        },
+        files: &files,
+        vault: &mut vault,
         warn: &warn,
         token_path: files.path(),
     };
@@ -142,10 +135,8 @@ async fn renewal_reader_returns_the_record_the_vault_keeps() {
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
     let mut renewal = RenewalVault {
-        store: CredentialStore {
-            files: &files,
-            vault: &mut vault,
-        },
+        files: &files,
+        vault: &mut vault,
         warn: &warn,
         token_path: files.path(),
     };
@@ -166,10 +157,8 @@ async fn renewal_reader_returns_none_without_a_stored_login() {
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
     let mut renewal = RenewalVault {
-        store: CredentialStore {
-            files: &files,
-            vault: &mut vault,
-        },
+        files: &files,
+        vault: &mut vault,
         warn: &warn,
         token_path: files.path(),
     };
@@ -182,22 +171,22 @@ async fn successful_renewal(
 ) -> (
     Option<SecretString>,
     ScriptedStore,
-    ScriptedHttp,
+    Arc<ScriptedHttp>,
     Vec<String>,
 ) {
     let mut store = ScriptedStore::default();
-    let http = scripted_http(vec![Reply::Response(response(
+    let http = Arc::new(scripted_http(vec![Reply::Response(response(
         200,
         &token_body("sk-renewed", "refresh-2", 3_600),
-    ))]);
+    ))]));
     let log = Mutex::new(Vec::new());
     let clock = frozen_clock();
     let warn = warn_sink(&log);
     let key = fresh_api_key(FreshApiKeyRequest {
         record,
         store: &mut store,
-        http: &http,
-        clock: &clock,
+        http: Arc::clone(&http),
+        clock: Arc::clone(&clock),
         warn: &warn,
     })
     .await;
@@ -301,10 +290,10 @@ async fn fresh_api_key_posts_the_refresh_grant_to_the_stored_endpoint() {
 #[tokio::test]
 async fn fresh_api_key_warns_when_a_refresh_fails_without_a_sibling() {
     let mut store = ScriptedStore::default();
-    let http = scripted_http(vec![Reply::Response(response(
+    let http = Arc::new(scripted_http(vec![Reply::Response(response(
         400,
         r#"{"error":"invalid_grant"}"#,
-    ))]);
+    ))]));
     let clock = frozen_clock();
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
@@ -312,8 +301,8 @@ async fn fresh_api_key_warns_when_a_refresh_fails_without_a_sibling() {
     let key = fresh_api_key(FreshApiKeyRequest {
         record: &record_expiring_at(1_000_100.0_f64),
         store: &mut store,
-        http: &http,
-        clock: &clock,
+        http: Arc::clone(&http),
+        clock: Arc::clone(&clock),
         warn: &warn,
     })
     .await;
@@ -332,7 +321,7 @@ async fn fresh_api_key_warns_when_a_refresh_fails_without_a_sibling() {
 #[tokio::test]
 async fn fresh_api_key_returns_none_when_the_failed_key_is_expired() {
     let mut store = ScriptedStore::default();
-    let http = scripted_http(vec![Reply::Transport]);
+    let http = Arc::new(scripted_http(vec![Reply::Transport]));
     let clock = frozen_clock();
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
@@ -340,8 +329,8 @@ async fn fresh_api_key_returns_none_when_the_failed_key_is_expired() {
     let key = fresh_api_key(FreshApiKeyRequest {
         record: &record_expiring_at(999_000.0_f64),
         store: &mut store,
-        http: &http,
-        clock: &clock,
+        http: Arc::clone(&http),
+        clock: Arc::clone(&clock),
         warn: &warn,
     })
     .await;
@@ -353,7 +342,7 @@ async fn fresh_api_key_returns_none_when_the_failed_key_is_expired() {
 #[tokio::test]
 async fn fresh_api_key_returns_none_when_the_failed_key_expires_at_the_same_moment() {
     let mut store = ScriptedStore::default();
-    let http = scripted_http(vec![Reply::Transport]);
+    let http = Arc::new(scripted_http(vec![Reply::Transport]));
     let clock = frozen_clock();
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
@@ -361,8 +350,8 @@ async fn fresh_api_key_returns_none_when_the_failed_key_expires_at_the_same_mome
     let key = fresh_api_key(FreshApiKeyRequest {
         record: &record_expiring_at(1_000_000.0_f64),
         store: &mut store,
-        http: &http,
-        clock: &clock,
+        http: Arc::clone(&http),
+        clock: Arc::clone(&clock),
         warn: &warn,
     })
     .await;
@@ -379,15 +368,13 @@ async fn fresh_api_key_uses_a_sibling_key_without_warning() {
         save_cli_token(&files, &mut vault, sibling_of(&previous)).await,
         SecretSave::SecretStored
     ));
-    let http = scripted_http(vec![Reply::Transport]);
+    let http = Arc::new(scripted_http(vec![Reply::Transport]));
     let clock = frozen_clock();
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
     let mut renewal = RenewalVault {
-        store: CredentialStore {
-            files: &files,
-            vault: &mut vault,
-        },
+        files: &files,
+        vault: &mut vault,
         warn: &warn,
         token_path: files.path(),
     };
@@ -395,8 +382,8 @@ async fn fresh_api_key_uses_a_sibling_key_without_warning() {
     let key = fresh_api_key(FreshApiKeyRequest {
         record: &previous,
         store: &mut renewal,
-        http: &http,
-        clock: &clock,
+        http: Arc::clone(&http),
+        clock: Arc::clone(&clock),
         warn: &warn,
     })
     .await;
@@ -409,7 +396,7 @@ async fn fresh_api_key_uses_a_sibling_key_without_warning() {
 async fn fresh_api_key_warns_when_the_reloaded_record_is_the_same_credential() {
     let previous = record_expiring_at(1_000_100.0_f64);
     let mut store = scripted_store(Some(previous.clone()));
-    let http = scripted_http(vec![Reply::Transport]);
+    let http = Arc::new(scripted_http(vec![Reply::Transport]));
     let clock = frozen_clock();
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
@@ -417,8 +404,8 @@ async fn fresh_api_key_warns_when_the_reloaded_record_is_the_same_credential() {
     let key = fresh_api_key(FreshApiKeyRequest {
         record: &previous,
         store: &mut store,
-        http: &http,
-        clock: &clock,
+        http: Arc::clone(&http),
+        clock: Arc::clone(&clock),
         warn: &warn,
     })
     .await;
@@ -433,7 +420,7 @@ async fn fresh_api_key_warns_when_the_reloaded_record_has_another_identity() {
     let mut foreign = sibling_of(&previous);
     set_field("user_id", Some("user-2"), &mut foreign);
     let mut store = scripted_store(Some(foreign));
-    let http = scripted_http(vec![Reply::Transport]);
+    let http = Arc::new(scripted_http(vec![Reply::Transport]));
     let clock = frozen_clock();
     let log = Mutex::new(Vec::new());
     let warn = warn_sink(&log);
@@ -441,8 +428,8 @@ async fn fresh_api_key_warns_when_the_reloaded_record_has_another_identity() {
     let key = fresh_api_key(FreshApiKeyRequest {
         record: &previous,
         store: &mut store,
-        http: &http,
-        clock: &clock,
+        http: Arc::clone(&http),
+        clock: Arc::clone(&clock),
         warn: &warn,
     })
     .await;

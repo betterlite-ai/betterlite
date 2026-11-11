@@ -128,8 +128,10 @@ async fn replacement_saves_the_new_login_and_revokes_only_the_previous_token() {
     let mut vault = FakeVault::working();
     stored_previous(&files, &mut vault).await;
     vault.clear_events();
-    let http = scripted_http(vec![Reply::Response(response(200, ""))])
-        .with_events(Arc::clone(&vault.events));
+    let http = Arc::new(
+        scripted_http(vec![Reply::Response(response(200, ""))])
+            .with_events(Arc::clone(&vault.events)),
+    );
     let log = Mutex::new(Vec::new());
     let echo = warn_sink(&log);
     let mut replacement = record();
@@ -139,7 +141,7 @@ async fn replacement_saves_the_new_login_and_revokes_only_the_previous_token() {
         record: replacement,
         files: &files,
         vault: &mut vault,
-        http: &http,
+        http: Arc::clone(&http),
         echo: &echo,
     })
     .await;
@@ -161,7 +163,7 @@ async fn replacement_saves_the_new_login_and_revokes_only_the_previous_token() {
 async fn replacement_skips_revocation_when_nothing_was_stored_before() {
     let files = test_files();
     let mut vault = FakeVault::working();
-    let http = scripted_http(Vec::new());
+    let http = Arc::new(scripted_http(Vec::new()));
     let log = Mutex::new(Vec::new());
     let echo = warn_sink(&log);
 
@@ -169,7 +171,7 @@ async fn replacement_skips_revocation_when_nothing_was_stored_before() {
         record: record(),
         files: &files,
         vault: &mut vault,
-        http: &http,
+        http: Arc::clone(&http),
         echo: &echo,
     })
     .await;
@@ -185,7 +187,7 @@ async fn replacement_skips_revocation_when_the_new_login_could_not_be_saved() {
     stored_previous(&files, &mut vault).await;
     files.refusals.push(Refusal::Write);
     let mut unavailable = FakeVault::unavailable(KeyringUnusable::KeyringUnreachable);
-    let http = scripted_http(Vec::new());
+    let http = Arc::new(scripted_http(Vec::new()));
     let log = Mutex::new(Vec::new());
     let echo = warn_sink(&log);
 
@@ -193,7 +195,7 @@ async fn replacement_skips_revocation_when_the_new_login_could_not_be_saved() {
         record: record(),
         files: &files,
         vault: &mut unavailable,
-        http: &http,
+        http: Arc::clone(&http),
         echo: &echo,
     })
     .await;
@@ -208,7 +210,7 @@ async fn replacement_still_revokes_when_the_file_could_not_record_the_secret() {
     let mut vault = FakeVault::working();
     stored_previous(&files, &mut vault).await;
     files.refusals.push(Refusal::Commit);
-    let http = scripted_http(vec![Reply::Response(response(200, ""))]);
+    let http = Arc::new(scripted_http(vec![Reply::Response(response(200, ""))]));
     let log = Mutex::new(Vec::new());
     let echo = warn_sink(&log);
 
@@ -216,7 +218,7 @@ async fn replacement_still_revokes_when_the_file_could_not_record_the_secret() {
         record: record(),
         files: &files,
         vault: &mut vault,
-        http: &http,
+        http: Arc::clone(&http),
         echo: &echo,
     })
     .await;
@@ -230,10 +232,10 @@ async fn replacement_warns_when_the_previous_token_cannot_be_revoked() {
     let files = test_files();
     let mut vault = FakeVault::working();
     stored_previous(&files, &mut vault).await;
-    let http = scripted_http(vec![Reply::Response(response(
+    let http = Arc::new(scripted_http(vec![Reply::Response(response(
         503,
         r#"{"error":"temporarily_unavailable"}"#,
-    ))]);
+    ))]));
     let log = Mutex::new(Vec::new());
     let echo = warn_sink(&log);
 
@@ -241,7 +243,7 @@ async fn replacement_warns_when_the_previous_token_cannot_be_revoked() {
         record: record(),
         files: &files,
         vault: &mut vault,
-        http: &http,
+        http: Arc::clone(&http),
         echo: &echo,
     })
     .await;
@@ -258,8 +260,10 @@ async fn replacement_stores_the_new_record_for_the_next_command() {
     let files = test_files();
     let mut vault = FakeVault::working();
     stored_previous(&files, &mut vault).await;
-    let http = scripted_http(vec![Reply::Response(response(200, ""))])
-        .with_events(Arc::clone(&vault.events));
+    let http = Arc::new(
+        scripted_http(vec![Reply::Response(response(200, ""))])
+            .with_events(Arc::clone(&vault.events)),
+    );
     let log = Mutex::new(Vec::new());
     let echo = warn_sink(&log);
     let mut replacement = record();
@@ -271,7 +275,7 @@ async fn replacement_stores_the_new_record_for_the_next_command() {
             record: replacement,
             files: &files,
             vault: &mut vault,
-            http: &http,
+            http: Arc::clone(&http),
             echo: &echo,
         })
         .await,

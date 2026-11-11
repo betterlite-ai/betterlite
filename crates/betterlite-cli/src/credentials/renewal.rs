@@ -1,11 +1,16 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use num_traits::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::credential_lifecycle::files::CredentialFiles;
+use crate::credential_lifecycle::load::load_cli_token;
 use crate::credential_lifecycle::outcome::SecretSave;
+use crate::credential_lifecycle::save::save_cli_token;
+use crate::keyring::SecretVault;
 use crate::pkce_login::models::{CliAuthContract, PkceCredential, PkceFailure};
 use crate::pkce_login::oauth::{RefreshCredentialRequest, refresh_credential};
 use crate::pkce_login::{Http, WallClock};
@@ -14,7 +19,7 @@ use crate::token_records::freshness::is_token_fresh;
 use super::contracts::CliTokenData;
 use super::login::pkce_token_record;
 use super::notice::{MessageSink, storage_notice};
-use super::storage::{CredentialStore, TokenStore as _};
+use super::worker::run_blocking;
 
 pub struct RefreshInputs {
     pub token_endpoint: String,
@@ -76,7 +81,8 @@ pub trait RenewalStore: Send {
 }
 
 pub struct RenewalVault<'store> {
-    pub store: CredentialStore<'store>,
+    pub files: &'store dyn CredentialFiles,
+    pub vault: &'store mut (dyn SecretVault + Send + Sync),
     pub warn: MessageSink<'store>,
     pub token_path: &'store Path,
 }
@@ -84,7 +90,7 @@ pub struct RenewalVault<'store> {
 #[async_trait]
 impl RenewalStore for RenewalVault<'_> {
     async fn save(&mut self, record: CliTokenData) -> SecretSave {
-        let outcome = self.store.save_token(record).await;
+        let outcome = save_cli_token(self.files, self.vault, record).await;
         if matches!(
             &outcome,
             SecretSave::CredentialNotSaved(_) | SecretSave::CredentialNotRecorded(_)
@@ -95,50 +101,78 @@ impl RenewalStore for RenewalVault<'_> {
     }
 
     async fn reload(&mut self) -> Option<CliTokenData> {
-        self.store.load_token().await
+        load_cli_token(self.files, self.vault).await
+    }
+}
+
+enum StoredKey {
+    Missing,
+    Usable(SecretString),
+    Renew { key: SecretString, expires_at: f64 },
+}
+
+fn classify_stored_key(record: &CliTokenData, now: f64) -> StoredKey {
+    let Some(key) = record.key.as_ref() else {
+        return StoredKey::Missing;
+    };
+    if key.expose_secret().is_empty() {
+        return StoredKey::Missing;
+    }
+    let Some(expires_at) = record.expires_at else {
+        return StoredKey::Usable(key.clone());
+    };
+    // is_token_fresh ignores expiration_hours for a record that carries expires_at
+    if is_token_fresh(record, now, 0) {
+        return StoredKey::Usable(key.clone());
+    }
+    StoredKey::Renew {
+        key: key.clone(),
+        expires_at,
     }
 }
 
 pub struct FreshApiKeyRequest<'store, H, W> {
     pub record: &'store CliTokenData,
     pub store: &'store mut (dyn RenewalStore + Send),
-    pub http: &'store H,
-    pub clock: &'store W,
+    pub http: Arc<H>,
+    pub clock: Arc<W>,
     pub warn: MessageSink<'store>,
 }
 
 #[must_use]
 pub async fn fresh_api_key<H, W>(request: FreshApiKeyRequest<'_, H, W>) -> Option<SecretString>
 where
-    H: Http + Sync,
-    W: WallClock + Sync,
+    H: Http + Send + Sync + 'static,
+    W: WallClock + Send + Sync + 'static,
 {
-    let key = request.record.key.as_ref()?;
-    if key.expose_secret().is_empty() {
-        return None;
-    }
-    let Some(expires_at) = request.record.expires_at else {
-        return Some(key.clone());
-    };
     let now = request.clock.now_seconds().to_f64().unwrap_or_default();
-    // is_token_fresh ignores expiration_hours for a record that carries expires_at
-    if is_token_fresh(request.record, now, 0) {
-        return Some(key.clone());
-    }
-    let still_valid = (now < expires_at).then(|| key.clone());
+    let (key, expires_at) = match classify_stored_key(request.record, now) {
+        StoredKey::Missing => return None,
+        StoredKey::Usable(key) => return Some(key),
+        StoredKey::Renew { key, expires_at } => (key, expires_at),
+    };
+    let still_valid = (now < expires_at).then_some(key);
     let Some(inputs) = refresh_inputs(request.record) else {
         return still_valid;
     };
-    let refreshed = refresh_stored_credential(request.record, &inputs, request.http, request.clock);
+    let base_url = request.record.base_url.clone();
+    let refreshed = refresh_off_thread(
+        base_url,
+        inputs,
+        Arc::clone(&request.http),
+        Arc::clone(&request.clock),
+    )
+    .await;
     match refreshed {
         Ok(credential) => Some(
-            save_renewed_credential(request.store, request.record, credential, request.clock).await,
+            save_renewed_credential(request.store, request.record, credential, &*request.clock)
+                .await,
         ),
         Err(failure) => {
             let sibling = sibling_after_failed_refresh(
                 request.store,
                 request.record,
-                request.clock,
+                &*request.clock,
                 request.warn,
                 &failure,
             )
@@ -148,8 +182,26 @@ where
     }
 }
 
+async fn refresh_off_thread<H, W>(
+    base_url: String,
+    inputs: RefreshInputs,
+    http: Arc<H>,
+    clock: Arc<W>,
+) -> Result<PkceCredential, PkceFailure>
+where
+    H: Http + Send + Sync + 'static,
+    W: WallClock + Send + Sync + 'static,
+{
+    let joined =
+        run_blocking(move || refresh_stored_credential(&base_url, &inputs, &*http, &*clock)).await;
+    match joined {
+        Ok(result) => result,
+        Err(error) => Err(PkceFailure::Protocol(error.to_string())),
+    }
+}
+
 fn refresh_stored_credential<H, W>(
-    record: &CliTokenData,
+    base_url: &str,
     inputs: &RefreshInputs,
     http: &H,
     clock: &W,
@@ -159,7 +211,7 @@ where
     W: WallClock,
 {
     refresh_credential(
-        &renewal_contract(inputs, &record.base_url),
+        &renewal_contract(inputs, base_url),
         &RefreshCredentialRequest {
             client_id: inputs.client_id.clone(),
             refresh_token: inputs.refresh_token.clone(),

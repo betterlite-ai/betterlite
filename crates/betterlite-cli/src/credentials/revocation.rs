@@ -1,40 +1,64 @@
+use std::sync::Arc;
+
 use crate::credential_lifecycle::files::CredentialFiles;
 use crate::credential_lifecycle::load::load_cli_token;
 use crate::credential_lifecycle::outcome::SecretSave;
 use crate::credential_lifecycle::save::save_cli_token;
 use crate::keyring::SecretVault;
 use crate::pkce_login::Http;
+use crate::pkce_login::models::PkceFailure;
 use crate::pkce_login::revoke::{RevocationUnavailableOrFailure, revoke_credential};
 
 use super::contracts::CliTokenData;
 use super::notice::MessageSink;
 use super::renewal::{refresh_inputs, renewal_contract};
+use super::worker::run_blocking;
 
 pub struct ReplaceStoredTokenRequest<'store, H> {
     pub record: CliTokenData,
     pub files: &'store dyn CredentialFiles,
     pub vault: &'store mut (dyn SecretVault + Send + Sync),
-    pub http: &'store H,
+    pub http: Arc<H>,
     pub echo: MessageSink<'store>,
 }
 
 #[must_use]
 pub async fn replace_stored_token<H>(request: ReplaceStoredTokenRequest<'_, H>) -> SecretSave
 where
-    H: Http + Sync,
+    H: Http + Send + Sync + 'static,
 {
     let previous = load_cli_token(request.files, request.vault).await;
     let stored = save_cli_token(request.files, request.vault, request.record).await;
-    if let Some(previous_login) = previous
+    let revocation = if let Some(previous_login) = previous
         && !matches!(&stored, SecretSave::CredentialNotSaved(_))
-        && let Some(failure) = revoke_stored_credential(&previous_login, request.http)
     {
+        revoke_off_thread(previous_login, Arc::clone(&request.http)).await
+    } else {
+        None
+    };
+    if let Some(failure) = revocation {
         (request.echo)(&format!(
             "Could not revoke the previous login's refresh token on the proxy ({}); it expires on its own.",
             revocation_reason(&failure)
         ));
     }
     stored
+}
+
+async fn revoke_off_thread<H>(
+    record: CliTokenData,
+    http: Arc<H>,
+) -> Option<RevocationUnavailableOrFailure>
+where
+    H: Http + Send + Sync + 'static,
+{
+    let joined = run_blocking(move || revoke_stored_credential(&record, &*http)).await;
+    match joined {
+        Ok(outcome) => outcome,
+        Err(error) => Some(RevocationUnavailableOrFailure::Failure(
+            PkceFailure::Protocol(error.to_string()),
+        )),
+    }
 }
 
 #[must_use]
