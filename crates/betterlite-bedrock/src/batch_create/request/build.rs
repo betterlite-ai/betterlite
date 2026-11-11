@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use betterlite_models::decisions::Json;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::ExposeSecret as _;
+use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 
 use super::wire::{
@@ -112,7 +113,8 @@ fn output_bucket(
     input: &CreateBatchInput<'_>,
     input_bucket: &str,
 ) -> Result<String, BatchCreateError> {
-    let configured = read_string(input.deployment_params, OUTPUT_BUCKET_PARAM)?;
+    let configured =
+        read_param::<Option<String>>(input.deployment_params, OUTPUT_BUCKET_PARAM)?.flatten();
     Ok(configured
         .filter(|bucket| !bucket.is_empty())
         .or_else(|| {
@@ -126,8 +128,9 @@ fn output_bucket(
 }
 
 fn role_arn(input: &CreateBatchInput<'_>) -> Result<String, BatchCreateError> {
-    let deployment = read_string(input.deployment_params, ROLE_ARN_PARAM)?;
-    let request = read_string(input.request_params, ROLE_ARN_PARAM)?;
+    let deployment =
+        read_param::<Option<String>>(input.deployment_params, ROLE_ARN_PARAM)?.flatten();
+    let request = read_param::<Option<String>>(input.request_params, ROLE_ARN_PARAM)?.flatten();
     deployment
         .filter(|role| !role.is_empty())
         .or_else(|| request.filter(|role| !role.is_empty()))
@@ -142,11 +145,12 @@ fn role_arn(input: &CreateBatchInput<'_>) -> Result<String, BatchCreateError> {
 }
 
 fn tag_source(input: &CreateBatchInput<'_>) -> Result<Option<Json>, BatchCreateError> {
-    let configured = read_json(input.deployment_params, TAGS_PARAM)?;
+    let configured = read_param::<Json>(input.deployment_params, TAGS_PARAM)?;
     if let Some(value) = configured.filter(|value| !matches!(value, Json::Null)) {
         return Ok(Some(value));
     }
-    Ok(read_json(input.request_params, TAGS_PARAM)?.filter(|value| !matches!(value, Json::Null)))
+    Ok(read_param::<Json>(input.request_params, TAGS_PARAM)?
+        .filter(|value| !matches!(value, Json::Null)))
 }
 
 fn owner_and_encryption_key(
@@ -187,25 +191,17 @@ fn setting_map(params: &BTreeMap<String, Box<RawValue>>, names: &[&str]) -> Sett
     map
 }
 
-fn read_string(
+fn read_param<T>(
     params: &BTreeMap<String, Box<RawValue>>,
     field: &'static str,
-) -> Result<Option<String>, BatchCreateError> {
+) -> Result<Option<T>, BatchCreateError>
+where
+    T: DeserializeOwned,
+{
     let Some(raw) = params.get(field) else {
         return Ok(None);
     };
-    serde_json::from_str::<Option<String>>(raw.get())
-        .map_err(|source| BatchCreateError::FieldType { field, source })
-}
-
-fn read_json(
-    params: &BTreeMap<String, Box<RawValue>>,
-    field: &'static str,
-) -> Result<Option<Json>, BatchCreateError> {
-    let Some(raw) = params.get(field) else {
-        return Ok(None);
-    };
-    serde_json::from_str::<Json>(raw.get())
+    serde_json::from_str(raw.get())
         .map(Some)
-        .map_err(|source| BatchCreateError::FieldJson { field, source })
+        .map_err(|source| BatchCreateError::Field { field, source })
 }

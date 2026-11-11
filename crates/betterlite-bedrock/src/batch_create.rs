@@ -26,14 +26,8 @@ pub enum BatchCreateError {
         "Invalid 'bedrock_tags' value. Expected a list of {{'key': <str>, 'value': <str>}} dicts, e.g. [{{'key': 'team', 'value': 'genai'}}]. Got: {raw}"
     )]
     InvalidTags { raw: String },
-    #[error("{field}: Input should be a valid string")]
-    FieldType {
-        field: &'static str,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("{field}: Input should be a valid JSON value")]
-    FieldJson {
+    #[error("{field}: Input has the wrong type")]
+    Field {
         field: &'static str,
         #[source]
         source: serde_json::Error,

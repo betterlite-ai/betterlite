@@ -19,8 +19,16 @@ use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     let call: fn(&Scenario) -> Value = match input.operation {
-        Operation::MetadataSanitization => return metadata_operation(input),
-        Operation::TitanBatchTokenUsage => return titan_operation(input),
+        Operation::MetadataSanitization => {
+            return values_operation(input, |decoded| {
+                serde_json::to_value(openai_batch_metadata(decoded)).or_value_error()
+            });
+        }
+        Operation::TitanBatchTokenUsage => {
+            return values_operation(input, |decoded| {
+                serde_json::to_value(titan_batch_token_usage(decoded)).or_value_error()
+            });
+        }
         Operation::CreateSignedRequest => signed_call,
         Operation::CreateStatusMapping | Operation::CreateReplyDefaults => reply_call,
         Operation::BatchRoleRequired
@@ -122,20 +130,14 @@ fn scripted_clock(values: &[i64]) -> impl Fn() -> i64 + '_ {
     }
 }
 
-fn metadata_operation(input: &Input) -> HelperResult {
+fn values_operation(
+    input: &Input,
+    project: fn(&Json) -> Result<Value, Box<HelperError>>,
+) -> HelperResult {
     let mut values = Vec::with_capacity(input.values.len());
     for value in &input.values {
         let decoded: Json = serde_json::from_value(value.clone()).or_value_error()?;
-        values.push(serde_json::to_value(openai_batch_metadata(&decoded)).or_value_error()?);
-    }
-    Ok(json!({"values": values}))
-}
-
-fn titan_operation(input: &Input) -> HelperResult {
-    let mut values = Vec::with_capacity(input.values.len());
-    for value in &input.values {
-        let decoded: Json = serde_json::from_value(value.clone()).or_value_error()?;
-        values.push(serde_json::to_value(titan_batch_token_usage(&decoded)).or_value_error()?);
+        values.push(project(&decoded)?);
     }
     Ok(json!({"values": values}))
 }

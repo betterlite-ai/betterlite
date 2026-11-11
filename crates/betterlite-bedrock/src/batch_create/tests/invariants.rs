@@ -1,5 +1,6 @@
 use std::future::ready;
 
+use betterlite_config::sections::bedrock_settings::AwsSettings;
 use secrecy::ExposeSecret;
 
 use super::{SESSION_TOKEN, Sources, fixture_credentials, runtime};
@@ -9,68 +10,47 @@ use crate::credentials::error::CredentialError;
 
 #[test]
 fn bedrock_services_batch_create_credential_identity_isolation() {
-    deployment_identity_is_isolated();
-    request_identity_is_isolated();
-}
-
-fn deployment_identity_is_isolated() {
     let deployment = Sources::new(
         r#"{"aws_access_key_id": "DEPLOYKEY", "aws_secret_access_key": "deploy-secret", "aws_region_name": "us-east-1", "aws_role_name": "deploy-role"}"#,
         r#"{"aws_access_key_id": "REQUESTKEY", "aws_secret_access_key": "request-secret", "aws_profile_name": "request-profile"}"#,
         &[],
     );
-    let signed = runtime()
-        .block_on(transform_create_batch_request(
-            deployment.input("m", Some("s3://b/k")),
-            |settings, _region| {
-                assert_eq!(
-                    settings
-                        .access_key_id
-                        .as_ref()
-                        .map(ExposeSecret::expose_secret),
-                    Some("DEPLOYKEY")
-                );
-                assert_eq!(settings.profile_name, None);
-                ready(Ok::<Credentials, CredentialError>(fixture_credentials(
-                    "DEPLOYKEY",
-                    None,
-                )))
-            },
-        ))
-        .expect("the deployment identity signs");
-    let authorization = signed.headers.get("Authorization").expect("signed");
-    assert!(authorization.contains("DEPLOYKEY"));
-    assert!(!authorization.contains("REQUESTKEY"));
-}
-
-fn request_identity_is_isolated() {
+    assert_signed_as(&deployment, ("DEPLOYKEY", "REQUESTKEY"), |settings| {
+        assert_eq!(settings.profile_name, None);
+    });
     let request_only = Sources::new(
         "{}",
         r#"{"aws_access_key_id": "REQUESTKEY", "aws_secret_access_key": "request-secret", "aws_region_name": "eu-west-1"}"#,
         &[],
     );
+    assert_signed_as(&request_only, ("REQUESTKEY", "DEPLOYKEY"), |settings| {
+        assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
+    });
+}
+
+fn assert_signed_as(sources: &Sources, keys: (&'static str, &str), check: fn(&AwsSettings)) {
+    let (expected, other) = keys;
     let signed = runtime()
         .block_on(transform_create_batch_request(
-            request_only.input("m", Some("s3://b/k")),
+            sources.input("m", Some("s3://b/k")),
             |settings, _region| {
                 assert_eq!(
                     settings
                         .access_key_id
                         .as_ref()
                         .map(ExposeSecret::expose_secret),
-                    Some("REQUESTKEY")
+                    Some(expected)
                 );
-                assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
+                check(settings);
                 ready(Ok::<Credentials, CredentialError>(fixture_credentials(
-                    "REQUESTKEY",
-                    None,
+                    expected, None,
                 )))
             },
         ))
-        .expect("the request identity signs");
+        .expect("the identity signs");
     let authorization = signed.headers.get("Authorization").expect("signed");
-    assert!(authorization.contains("REQUESTKEY"));
-    assert!(!authorization.contains("DEPLOYKEY"));
+    assert!(authorization.contains(expected));
+    assert!(!authorization.contains(other));
 }
 
 #[test]
