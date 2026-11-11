@@ -1,0 +1,80 @@
+# a CancelledError (BatchSendCancelled in LiteLLM) restores only the records the destination never accepted, so delivered halves are never resubmitted, and leaves a retry pending
+kind: helper
+name: azure-sentinel-cancellation-remainder
+call:
+  b4002:
+    scenarios:
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 4
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {status: 200}
+          - {cancel: true}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b, c, d]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 4
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {cancel: true}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b, c, d]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 4
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {status: 413, body: too large}
+          - {status: 200}
+          - {cancel: true}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b, c, d]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {cancel: true}
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {cancel: true, arrive: {model: [e]}}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {cancel: true}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b]}
+          - {do: model, ids: [c]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {cancel: true}
+          - {status: 200}
+        actions:
+          - {do: audit, ids: [x, z]}
+          - {do: model, ids: [a, b]}
+env: {}
+compare: {ignore: []}

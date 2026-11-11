@@ -1354,6 +1354,7 @@ dependencies = [
  "rustix",
  "secrecy",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "serde_path_to_error",
  "serde_with",
@@ -1697,6 +1698,7 @@ dependencies = [
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
@@ -1919,6 +1921,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -1941,6 +1944,7 @@ dependencies = [
  "jiff",
  "lettre",
  "mail-builder",
+ "md-5",
  "minijinja",
  "minijinja-contrib",
  "nix",
@@ -2114,6 +2118,9 @@ name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
@@ -2545,17 +2552,30 @@ name = "betterlite-rag"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-types",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
+ "betterlite-redact",
  "betterlite-redis",
+ "betterlite-secret-managers",
+ "hex",
+ "percent-encoding",
  "redis",
  "rstest",
  "rust_decimal",
  "secrecy",
+ "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -2719,14 +2739,23 @@ dependencies = [
 name = "betterlite-sdk"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-core",
+ "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-redact",
  "chrono",
+ "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -2826,7 +2855,9 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-auth",
  "betterlite-billing",
+ "betterlite-cache",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
  "betterlite-db",
  "betterlite-env",

@@ -1,0 +1,38 @@
+# async_log_audit_log_event queues the StandardAuditLogPayload in audit_queue, apart from the model queue, and sends it to the audit stream at batch_size
+kind: helper
+name: azure-sentinel-audit-event-queueing
+call:
+  b4002:
+    scenarios:
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        actions:
+          - {do: audit, ids: [x, z]}
+      - init: {dcr_immutable_id: dcr-1, stream_name: Custom-Models, audit_stream_name: Custom-Audit, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 204}
+        actions:
+          - {do: audit, ids: [x]}
+          - {do: model, ids: [a]}
+          - {do: audit, ids: [z]}
+      - init: {dcr_immutable_id: dcr-1, stream_name: Custom-Models, audit_stream_name: Custom-Audit, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b]}
+          - {do: audit, ids: [x]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 503, body: down}
+          - {status: 200}
+        actions:
+          - {do: audit, ids: [x]}
+          - {do: audit, ids: [z]}
+          - {do: model, ids: [a]}
+env: {}
+compare: {ignore: []}
