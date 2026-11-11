@@ -55,7 +55,7 @@ call:
           - {status: 503, body: down, arrive: {audit: [z, w]}}
         actions:
           - {do: model, ids: [a]}
-          - {do: audit, ids: [x, y]}
+          - {do: audit, ids: [x, z]}
       - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
         batch_size: 3
         max_queue_size: 4

@@ -6,7 +6,7 @@ call:
     scenarios:
       - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
         actions:
-          - {do: audit, ids: [x, y]}
+          - {do: audit, ids: [x, z]}
       - init: {dcr_immutable_id: dcr-1, stream_name: Custom-Models, audit_stream_name: Custom-Audit, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
         batch_size: 2
         replies:
@@ -15,7 +15,7 @@ call:
         actions:
           - {do: audit, ids: [x]}
           - {do: model, ids: [a]}
-          - {do: audit, ids: [y]}
+          - {do: audit, ids: [z]}
       - init: {dcr_immutable_id: dcr-1, stream_name: Custom-Models, audit_stream_name: Custom-Audit, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
         batch_size: 2
         replies:
@@ -32,7 +32,7 @@ call:
           - {status: 200}
         actions:
           - {do: audit, ids: [x]}
-          - {do: audit, ids: [y]}
+          - {do: audit, ids: [z]}
           - {do: model, ids: [a]}
 env: {}
 compare: {ignore: []}

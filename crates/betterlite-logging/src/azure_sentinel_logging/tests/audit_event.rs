@@ -40,18 +40,19 @@ async fn audit_batches_serialize_the_audit_fields() {
         .await;
     let entries = rig.transport.calls()[1].entries();
     let fields = &entries[0];
-    let names: Vec<&str> = fields.keys().map(String::as_str).collect();
+    let mut names: Vec<&str> = fields.keys().map(String::as_str).collect();
+    names.sort_unstable();
     assert_eq!(
         names,
         [
-            "id",
-            "updated_at",
+            "action",
+            "before_value",
             "changed_by",
             "changed_by_api_key",
-            "action",
-            "table_name",
+            "id",
             "object_id",
-            "before_value",
+            "table_name",
+            "updated_at",
             "updated_values"
         ]
     );

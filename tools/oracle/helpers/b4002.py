@@ -1,22 +1,21 @@
 import asyncio
-import json
 import logging
 import os
+import time
 from collections.abc import Mapping
-from typing import TypeAlias, cast
-from unittest.mock import patch
+from dataclasses import dataclass, field
+from typing import Literal, TypeAlias, TypedDict
 
 import httpx
-import litellm.integrations.azure_sentinel.azure_sentinel as sentinel
-from litellm._logging import verbose_logger  # pyright: ignore[reportPrivateUsage]
+from litellm._logging import verbose_logger
 from litellm.integrations.azure_sentinel.azure_sentinel import AzureSentinelLogger
-from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, MaskedHTTPStatusError
-from litellm.types.utils import StandardAuditLogPayload, StandardLoggingPayload
+from litellm.llms.custom_httpx.http_handler import MaskedHTTPStatusError
+from litellm.types.utils import StandardAuditLogPayload
+from pydantic import TypeAdapter
+from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
-START = 1_000_000.0
-TOKEN_PATH = "/oauth2/v2.0/token"  # noqa: S105 - a URL path, not a credential
 EVENTS = (
     ("standard_logging_object not found in kwargs", "missing_payload"),
     ("exceeded max_queue_size", "queue_overflow"),
@@ -24,11 +23,63 @@ EVENTS = (
 )
 
 
+@dataclass(frozen=True)
+class Arrivals:
+    model: tuple[str, ...] = ()
+    audit: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Reply:
+    status: int = 0
+    body: str = ""
+    network: bool = False
+    cancel: bool = False
+    arrive: Arrivals = Arrivals()
+
+
+@dataclass(frozen=True)
+class Action:
+    do: Literal["model", "audit", "flush", "advance"]
+    ids: tuple[str, ...] = ()
+    failure: bool = False
+    missing: bool = False
+    pad: int | None = None
+    seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class Scenario:
+    environment: dict[str, str] = field(default_factory=dict)
+    init: dict[str, str] = field(default_factory=dict)
+    batch_size: int | None = None
+    max_queue_size: int | None = None
+    replies: list[Reply] = field(default_factory=list)
+    actions: tuple[Action, ...] = ()
+
+
+class SentRecord(TypedDict, total=False):
+    id: str
+    status: str
+    updated_at: str
+    changed_by: str
+    changed_by_api_key: str
+    action: str
+    table_name: str
+    object_id: str
+    before_value: str | None
+    updated_values: str | None
+
+
+SENT_BATCH = TypeAdapter(list[SentRecord])
+SCENARIOS = TypeAdapter(list[Scenario])
+
+
 class _Clock:
     def __init__(self) -> None:
-        self.now = START
+        self.now = 1_000_000.0
 
-    def time(self) -> float:
+    def __call__(self) -> float:
         return self.now
 
 
@@ -37,6 +88,7 @@ class _Capture(logging.Handler):
         super().__init__()
         self.counts = {name: 0 for _, name in EVENTS}
 
+    @override
     def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
         for fragment, name in EVENTS:
@@ -44,21 +96,12 @@ class _Capture(logging.Handler):
                 self.counts[name] += 1
 
 
-def _object(value: Json) -> Object:
-    return cast(Object, value) if isinstance(value, dict) else {}
-
-
-def _items(value: Json) -> list[Json]:
-    return cast("list[Json]", value) if isinstance(value, list) else []
-
-
-def _strings(value: Json) -> list[str]:
-    return [cast(str, item) for item in _items(value)]
-
-
-def _model_payload(identifier: str, *, failure: bool, pad: int) -> StandardLoggingPayload:
+def _model_payload(identifier: str, *, failure: bool, pad: int | None) -> Object:
     status = "failure" if failure else "success"
-    payload: Object = {
+    parameters: Object = {}
+    if pad is not None:
+        parameters["pad"] = "x" * pad
+    return {
         "id": identifier,
         "trace_id": "trace-1",
         "session_id": "session-1",
@@ -79,14 +122,13 @@ def _model_payload(identifier: str, *, failure: bool, pad: int) -> StandardLoggi
         "metadata": {},
         "saved_cache_cost": 0.0,
         "request_tags": [],
-        "model_parameters": {"pad": "x" * pad} if pad else {},
+        "model_parameters": parameters,
         "hidden_params": {},
     }
-    return cast(StandardLoggingPayload, payload)
 
 
 def _audit_payload(identifier: str) -> StandardAuditLogPayload:
-    payload: Object = {
+    return {
         "id": identifier,
         "updated_at": "2024-01-01T00:00:00Z",
         "changed_by": "admin",
@@ -97,165 +139,161 @@ def _audit_payload(identifier: str) -> StandardAuditLogPayload:
         "before_value": None,
         "updated_values": "{}",
     }
-    return cast(StandardAuditLogPayload, payload)
 
 
-def _entry(record: Object) -> Object:
+def _entry(record: SentRecord) -> Object:
     if "table_name" in record:
-        return record
+        return {
+            "id": record["id"],
+            "updated_at": record["updated_at"],
+            "changed_by": record["changed_by"],
+            "changed_by_api_key": record["changed_by_api_key"],
+            "action": record["action"],
+            "table_name": record["table_name"],
+            "object_id": record["object_id"],
+            "before_value": record["before_value"],
+            "updated_values": record["updated_values"],
+        }
     return {"id": record["id"], "status": record["status"]}
 
 
 class _Client:
-    def __init__(self, replies: list[Object]) -> None:
+    def __init__(self, logger: AzureSentinelLogger, replies: list[Reply]) -> None:
+        self.logger = logger
         self.replies = replies
         self.calls: list[Json] = []
-        self.logger: AzureSentinelLogger | None = None
 
-    def _arrive(self, arrive: Object) -> None:
-        logger = self.logger
-        if logger is None:
-            return
-        for identifier in _strings(arrive.get("model")):
-            logger.log_queue.append(_model_payload(identifier, failure=False, pad=0))
-        for identifier in _strings(arrive.get("audit")):
-            logger.audit_log_queue.append(_audit_payload(identifier))
-
-    def _record(self, url: str, data: object, headers: Mapping[str, str]) -> None:
+    async def post(
+        self, url: str, data: dict[str, str] | bytes, headers: Mapping[str, str]
+    ) -> httpx.Response:
         lowered = {name.lower(): value for name, value in headers.items()}
         call: Object = {
             "authorization": lowered.get("authorization"),
             "content_type": lowered.get("content-type"),
+            "url": url,
         }
-        if url.endswith(TOKEN_PATH):
-            call["kind"] = "token"
-            call["url"] = url
-            call["form"] = cast(Json, data)
-        else:
-            call["kind"] = "batch"
-            call["url"] = url
-            records = _items(cast(Json, json.loads(cast(bytes, data))))
-            call["entries"] = [_entry(_object(record)) for record in records]
+        match data:
+            case dict():
+                call["kind"] = "token"
+                form: Object = dict(data)
+                call["form"] = form
+            case bytes():
+                call["kind"] = "batch"
+                call["entries"] = [_entry(record) for record in SENT_BATCH.validate_json(data)]
         self.calls.append(call)
-
-    async def post(self, url: str, data: object, headers: Mapping[str, str]) -> httpx.Response:
-        self._record(url, data, headers)
         reply = self.replies.pop(0)
-        self._arrive(_object(reply.get("arrive")))
-        if reply.get("cancel"):
+        for name in reply.arrive.model:
+            payload = _model_payload(name, failure=False, pad=None)
+            self.logger.log_queue.append(payload)  # type: ignore[arg-type,misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
+        for name in reply.arrive.audit:
+            self.logger.audit_log_queue.append(_audit_payload(name))
+        if reply.cancel:
             raise asyncio.CancelledError
-        if reply.get("network"):
+        if reply.network:
             raise RuntimeError("the scripted network failed")
-        status = cast(int, reply["status"])
-        text = cast(str, reply.get("body", ""))
-        response = httpx.Response(status, text=text, request=httpx.Request("POST", url))
-        if status >= 400:  # noqa: PLR2004 - the real client raises on every error status
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as error:
-                raise MaskedHTTPStatusError(error, message=text, text=text) from None
+        response = httpx.Response(reply.status, text=reply.body, request=httpx.Request("POST", url))
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            raise MaskedHTTPStatusError(error, message=reply.body, text=reply.body) from None
         return response
 
 
-async def _perform(action: Object, logger: AzureSentinelLogger, clock: _Clock) -> Json:
-    step = action.get("do")
-    match step:
+async def _perform(action: Action, logger: AzureSentinelLogger, clock: _Clock) -> Json:
+    match action.do:
         case "model":
-            failure = bool(action.get("failure"))
-            if action.get("missing"):
-                if failure:
-                    await logger.async_log_failure_event({}, None, None, None)  # pyright: ignore[reportUnknownMemberType]
+            calls: list[Object] = [{}] if action.missing else []
+            for name in action.ids:
+                payload = _model_payload(name, failure=action.failure, pad=action.pad)
+                calls.append({"standard_logging_object": payload})
+            for kwargs in calls:
+                if action.failure:
+                    await logger.async_log_failure_event(kwargs, None, None, None)  # type: ignore[no-untyped-call,misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L267
                 else:
-                    await logger.async_log_success_event({}, None, None, None)  # pyright: ignore[reportUnknownMemberType]
-                return None
-            pad = cast(int, action.get("pad") or 0)
-            for identifier in _strings(action.get("ids")):
-                payload = _model_payload(identifier, failure=failure, pad=pad)
-                kwargs = {"standard_logging_object": payload}
-                if failure:
-                    await logger.async_log_failure_event(kwargs, None, None, None)  # pyright: ignore[reportUnknownMemberType]
-                else:
-                    await logger.async_log_success_event(kwargs, None, None, None)  # pyright: ignore[reportUnknownMemberType]
+                    await logger.async_log_success_event(kwargs, None, None, None)  # type: ignore[no-untyped-call,misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L240
             return None
         case "audit":
-            for identifier in _strings(action.get("ids")):
+            for identifier in action.ids:
                 await logger.async_log_audit_log_event(_audit_payload(identifier))
             return None
         case "flush":
-            await logger.flush_queue()
+            await logger.flush_queue()  # type: ignore[no-untyped-call,misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_sentinel/azure_sentinel.py#L444
             return {"last_flush_time": int(logger.last_flush_time)}
         case "advance":
-            clock.now += cast(float, action["seconds"])
+            clock.now += action.seconds
             return None
-        case _:
-            message = f"unknown action: {step}"
-            raise ValueError(message)
 
 
-async def _run_scenario(scenario: Object) -> Json:
+async def _run_logger(scenario: Scenario, clock: _Clock, capture: _Capture) -> Json:
+    try:
+        logger = AzureSentinelLogger(**scenario.init)
+    except ValueError as error:
+        return {"initialized": False, "error": str(error)}
+    client = _Client(logger, scenario.replies)
+    logger.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799
+    settings: Object = {
+        "model_url": logger.api_endpoint,
+        "audit_url": logger.audit_api_endpoint,
+        "token_url": f"{logger.authority_host}/{logger.tenant_id}/oauth2/v2.0/token",
+        "scope": logger.oauth_scope,
+        "client_id": logger.client_id,
+        "client_secret": logger.client_secret,
+        "batch_size": logger.batch_size,
+        "flush_interval": logger.flush_interval,
+        "max_queue_size": logger.max_queue_size,
+    }
+    logger.flush_interval = 3600
+    if scenario.batch_size is not None:
+        logger.batch_size = scenario.batch_size
+    if scenario.max_queue_size is not None:
+        logger.max_queue_size = scenario.max_queue_size
+    results: list[Json] = []
+    for action in scenario.actions:
+        try:
+            results.append(await _perform(action, logger, clock))
+        except asyncio.CancelledError:
+            results.append({"cancelled": True})
+    logs: Object = dict(capture.counts)
+    model_queue: list[Json] = [record["id"] for record in logger.log_queue]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570
+    return {
+        "initialized": True,
+        "settings": settings,
+        "actions": results,
+        "model_queue": model_queue,
+        "audit_queue": [record["id"] for record in logger.audit_log_queue],
+        "awaiting": {
+            "model": logger.logs_awaiting_retry,
+            "audit": logger.audit_logs_awaiting_retry,
+        },
+        "calls": client.calls,
+        "logs": logs,
+    }
+
+
+async def _run_scenario(scenario: Scenario) -> Json:
     clock = _Clock()
     capture = _Capture()
-    client = _Client([_object(reply) for reply in _items(scenario.get("replies"))])
-    environment = cast("dict[str, str]", scenario.get("environment") or {})
+    saved_environment = dict(os.environ)
+    saved_time = time.time
     saved_level = verbose_logger.level
     saved_handlers = verbose_logger.handlers[:]
+    for name in [name for name in os.environ if name.startswith("AZURE_")]:
+        del os.environ[name]
+    os.environ.update(scenario.environment)
+    time.time = clock
     verbose_logger.handlers = [capture]
     verbose_logger.setLevel(logging.DEBUG)
     try:
-        with patch.dict(os.environ, environment), patch.object(sentinel, "time", clock):
-            for name in [name for name in os.environ if name.startswith("AZURE_")]:
-                if name not in environment:
-                    del os.environ[name]
-            try:
-                init = cast("dict[str, str | None]", scenario.get("init") or {})
-                logger = AzureSentinelLogger(**init)
-            except ValueError as error:
-                return {"initialized": False, "error": str(error)}
-            logger.async_httpx_client = cast(AsyncHTTPHandler, client)
-            client.logger = logger
-            settings: Object = {
-                "model_url": logger.api_endpoint,
-                "audit_url": logger.audit_api_endpoint,
-                "token_url": f"{logger.authority_host}/{logger.tenant_id}{TOKEN_PATH}",
-                "scope": logger.oauth_scope,
-                "client_id": logger.client_id,
-                "client_secret": logger.client_secret,
-                "batch_size": logger.batch_size,
-                "flush_interval": logger.flush_interval,
-                "max_queue_size": logger.max_queue_size,
-            }
-            logger.flush_interval = 3600
-            batch_size = scenario.get("batch_size")
-            if isinstance(batch_size, int):
-                logger.batch_size = batch_size
-            max_queue_size = scenario.get("max_queue_size")
-            if isinstance(max_queue_size, int):
-                logger.max_queue_size = max_queue_size
-            results: list[Json] = []
-            for action in _items(scenario.get("actions")):
-                try:
-                    results.append(await _perform(_object(action), logger, clock))
-                except asyncio.CancelledError:
-                    results.append({"cancelled": True})
-            return {
-                "initialized": True,
-                "settings": settings,
-                "actions": results,
-                "model_queue": [record["id"] for record in logger.log_queue],
-                "audit_queue": [record["id"] for record in logger.audit_log_queue],
-                "awaiting": {
-                    "model": logger.logs_awaiting_retry,
-                    "audit": logger.audit_logs_awaiting_retry,
-                },
-                "calls": client.calls,
-                "logs": cast(Json, capture.counts),
-            }
+        return await _run_logger(scenario, clock, capture)
     finally:
+        time.time = saved_time
+        os.environ.clear()
+        os.environ.update(saved_environment)
         verbose_logger.handlers = saved_handlers
         verbose_logger.setLevel(saved_level)
 
 
-def run(input_value: dict[str, Json]) -> Json:
-    scenarios = _items(input_value.get("scenarios"))
-    results = [asyncio.run(_run_scenario(_object(scenario))) for scenario in scenarios]
-    return {"results": cast(Json, results)}
+def run(input_value: Object) -> Json:
+    scenarios = SCENARIOS.validate_python(input_value["scenarios"])
+    results: list[Json] = [asyncio.run(_run_scenario(scenario)) for scenario in scenarios]
+    return {"results": results}
