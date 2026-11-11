@@ -38,13 +38,24 @@ pub struct GenerateReply {
     #[serde(default)]
     pub eval_count: OptionalCount,
     #[serde(default)]
-    pub message: Option<ReplyMessage>,
+    pub message: OptionalMessage,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReplyMessage {
     #[serde(default)]
     pub content: ResponseText,
+}
+
+// LiteLLM evaluates the message fallback eagerly, so a null message or content fails even when eval_count is present
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(untagged)]
+pub enum OptionalMessage {
+    #[default]
+    #[serde(skip)]
+    Absent,
+    Null,
+    Message(ReplyMessage),
 }
 
 // an absent count falls back to the counter, while an explicit null is a reply-field error
@@ -104,7 +115,13 @@ impl TryFrom<&[u8]> for GenerateReply {
     type Error = OllamaError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        serde_json::from_slice(bytes).map_err(|source| OllamaError::Shape { source })
+        let value: Json =
+            serde_json::from_slice(bytes).map_err(|source| OllamaError::Shape { source })?;
+        if !matches!(value, Json::Object(_)) {
+            return Err(OllamaError::ReplyField { field: "body" });
+        }
+        let raw = serde_json::to_value(value).map_err(|source| OllamaError::Shape { source })?;
+        serde_json::from_value(raw).map_err(|source| OllamaError::Shape { source })
     }
 }
 
@@ -220,9 +237,10 @@ async fn token_usage(
             });
         }
     };
+    let counted_completion = message_char_count(&reply.message)?;
     let completion_tokens = match reply.eval_count {
         OptionalCount::Count(count) => count,
-        OptionalCount::Absent => message_char_count(reply.message.as_ref())?,
+        OptionalCount::Absent => counted_completion,
         OptionalCount::Null => {
             return Err(OllamaError::ReplyField {
                 field: "eval_count",
@@ -236,15 +254,18 @@ async fn token_usage(
     })
 }
 
-fn message_char_count(message: Option<&ReplyMessage>) -> Result<u64, OllamaError> {
-    match message.map(|entry| &entry.content) {
-        Some(ResponseText::Text(text)) => {
-            Ok(u64::try_from(text.chars().count()).unwrap_or(u64::MAX))
-        }
-        Some(ResponseText::Absent) | None => Ok(0),
-        Some(ResponseText::Null) => Err(OllamaError::ReplyField {
-            field: "message.content",
-        }),
+// LiteLLM builds the message fallback before the eval_count lookup, so this validates the message on every reply
+fn message_char_count(message: &OptionalMessage) -> Result<u64, OllamaError> {
+    match message {
+        OptionalMessage::Absent => Ok(0),
+        OptionalMessage::Null => Err(OllamaError::ReplyField { field: "message" }),
+        OptionalMessage::Message(entry) => match &entry.content {
+            ResponseText::Text(text) => Ok(u64::try_from(text.chars().count()).unwrap_or(u64::MAX)),
+            ResponseText::Absent => Ok(0),
+            ResponseText::Null => Err(OllamaError::ReplyField {
+                field: "message.content",
+            }),
+        },
     }
 }
 

@@ -13,6 +13,9 @@ call:
       - {model: llama3, body: '{"response": "hello", "prompt_eval_count": 0, "eval_count": 0}'}
       - {model: llama3, body: '{"response": "hello", "prompt_eval_count": null, "eval_count": null}'}
       - {model: llama3, body: '{"response": "hello", "message": {"content": "abcd"}}'}
+      - {model: llama3, body: '{"response": "hello", "message": null}'}
+      - {model: llama3, body: '{"response": "hello", "eval_count": 4, "message": {"content": null}}'}
+      - {model: llama3, body: '{"response": "hello", "eval_count": 4, "prompt_eval_count": 1, "message": null}'}
       - {model: llama3, body: '{"response": "hello"}', request_data: {prompt: "a b c"}}
       - {model: llama3, body: '{"response": "hello"}', request_data: {prompt: ""}}
       - {model: llama3, body: '{"response": "hello"}', request_data: {format: text}}

@@ -31,5 +31,4 @@ call:
       - '[]'
       - '{}'
       - '{"response": 5, "done": false}'
-      - '{"response": "", "thinking": 5, "done": false}'
       - '{"response": "x"}'

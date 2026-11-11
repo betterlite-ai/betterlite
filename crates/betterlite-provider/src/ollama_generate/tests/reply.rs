@@ -188,6 +188,13 @@ async fn a_missing_completion_count_uses_the_message_character_count() {
 #[case::null_prompt(r#"{"response":"hello","prompt_eval_count":null}"#)]
 #[case::null_eval(r#"{"response":"hello","eval_count":null}"#)]
 #[case::null_message_content(r#"{"response":"hello","message":{"content":null}}"#)]
+#[case::null_message(r#"{"response":"hello","message":null}"#)]
+#[case::null_content_with_eval_count(
+    r#"{"response":"hello","eval_count":4,"message":{"content":null}}"#
+)]
+#[case::null_message_with_counts(
+    r#"{"response":"hello","eval_count":4,"prompt_eval_count":1,"message":null}"#
+)]
 #[tokio::test]
 async fn a_null_count_is_a_reply_field_error(#[case] body: &str) {
     let error = failed(body, &request_data(r#"{"prompt":"a b"}"#)).await;
@@ -300,9 +307,12 @@ async fn a_wrong_typed_thinking_is_a_decode_error() {
     assert_eq!(error.status(), None);
 }
 
+#[rstest]
+#[case::non_empty("[1, 2]")]
+#[case::empty("[]")]
 #[tokio::test]
-async fn a_non_object_body_is_a_decode_error() {
-    let error = failed("[1, 2]", &nothing()).await;
+async fn a_non_object_body_is_a_decode_error(#[case] body: &str) {
+    let error = failed(body, &nothing()).await;
     assert_eq!(error.status(), None);
 }
 
