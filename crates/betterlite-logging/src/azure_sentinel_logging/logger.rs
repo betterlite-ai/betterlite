@@ -90,7 +90,7 @@ impl AzureSentinelLogger {
         });
         if let Some(tasks) = deps.tasks {
             let periodic = Arc::clone(&logger);
-            let _task = tasks.spawn(async move { periodic.periodic_flush().await });
+            tasks.spawn(async move { periodic.periodic_flush().await });
         }
         logger
     }

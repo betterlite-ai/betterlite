@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::EnvironmentLookup;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use url::Url;
 
@@ -14,7 +14,6 @@ pub const DEFAULT_AUTHORITY_HOST: &str = "https://login.microsoftonline.com";
 pub const DEFAULT_MONITOR_SCOPE: &str = "https://monitor.azure.com/.default";
 const GOVERNMENT_MONITOR_SCOPE: &str = "https://monitor.azure.us/.default";
 
-// every constructor argument LiteLLM takes; an absent or empty one falls through to the environment
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SentinelInit {
@@ -96,10 +95,6 @@ fn credentials(
     let first = |argument: &Option<String>, names: &[&str]| {
         first_set(argument.as_deref(), environment, names)
     };
-    let secret_argument = init
-        .client_secret
-        .as_ref()
-        .map(|secret| secret.expose_secret().to_owned());
     Ok(Credentials {
         dcr_immutable_id: first(&init.dcr_immutable_id, &["AZURE_SENTINEL_DCR_IMMUTABLE_ID"])
             .ok_or(SentinelError::MissingDcrImmutableId)?,
@@ -115,8 +110,9 @@ fn credentials(
             &["AZURE_SENTINEL_CLIENT_ID", "AZURE_CLIENT_ID"],
         )
         .ok_or(SentinelError::MissingClientId)?,
-        client_secret: first(
-            &secret_argument,
+        client_secret: first_set(
+            init.client_secret.as_ref().map(ExposeSecret::expose_secret),
+            environment,
             &["AZURE_SENTINEL_CLIENT_SECRET", "AZURE_CLIENT_SECRET"],
         )
         .ok_or(SentinelError::MissingClientSecret)?,

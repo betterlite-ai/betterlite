@@ -19,7 +19,6 @@ use super::logger::AzureSentinelLogger;
 pub const MAX_PAYLOAD_SIZE_BYTES: usize = 1_000_000;
 const SUCCESS_STATUS_CODES: [u16; 2] = [200, 204];
 
-// one stream's batch, delivered to that stream's ingestion URL
 pub(crate) struct SentinelBatch<'logger> {
     pub(crate) logger: &'logger AzureSentinelLogger,
     pub(crate) url: &'logger str,
