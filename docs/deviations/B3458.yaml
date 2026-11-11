@@ -1,0 +1,20 @@
+task: B3458
+deviations:
+  - what: The four S3 Vectors calls are signed and sent by B3456's BedrockRagClients::signed_request_with through its injected transport, not by LiteLLM's requests.Request plus botocore SigV4Auth and its pooled httpx client.
+    why: One signing path for every AWS call, and the rules forbid hand-written SigV4.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L191-L264
+  - what: When GetVectorBucket or GetIndex fails (non-200 response), betterlite treats it as "does not exist" and attempts creation rather than propagating the error.
+    why: LiteLLM's pin shows this get-error-to-create pattern (lines 288-314, 324-330).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L288-L330
+  - what: A CreateVectorBucket or CreateIndex answer outside 200, 201, 409 and the 4xx/5xx that raise is a typed error. LiteLLM logs it, then calls raise_for_status(), which raises only for 4xx and 5xx, so the same status returns success to its caller.
+    why: The definition of done accepts 200, 201 and 409 only, and AWS does not answer these operations with another status a working setup could rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L304-L311
+  - what: A PutVectors answer outside 200, 201 and the 4xx/5xx that raise is a typed error. LiteLLM logs it, then calls raise_for_status(), which raises only for 4xx and 5xx, so the same status returns success to its caller.
+    why: The definition of done accepts 200 and 201 only, and AWS does not answer PutVectors with another status a working setup could rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L390-L394
+  - what: Request strings are sent as given; the NUL bytes that LiteLLM's safe_dumps strips from every string key and value are kept.
+    why: Stripping changes user data silently, and an S3 Vectors name or key containing a NUL byte is not something a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L37-L84
+  - what: A bad vector_store_id, a vector store id part that is empty, or a vector bucket name AWS rejects is a typed S3VectorsInputError; LiteLLM raises ValueError.
+    why: The error type is betterlite's own and carries the same reason; Python's exception classes are not part of the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L36-L42
