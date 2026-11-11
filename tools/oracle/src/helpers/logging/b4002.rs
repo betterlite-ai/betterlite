@@ -267,12 +267,16 @@ async fn perform(
             Ok(json!({ "last_flush_time": flushed.as_secs() }))
         }
         Action::Advance { seconds } => {
-            let mut now = clock.0.lock().unwrap_or_else(PoisonError::into_inner);
-            let later = now.saturating_add(Duration::from_secs(*seconds));
-            *now = later;
+            advance(clock, *seconds);
             Ok(Value::Null)
         }
     }
+}
+
+fn advance(clock: &ManualClock, seconds: u64) {
+    let mut now = clock.0.lock().unwrap_or_else(PoisonError::into_inner);
+    let later = now.saturating_add(Duration::from_secs(seconds));
+    *now = later;
 }
 
 async fn log_models(
