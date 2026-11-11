@@ -1,0 +1,32 @@
+name: provider-framework-aiohttp-no-key-fallback
+config: |
+  model_list:
+    - model_name: keyless-model
+      litellm_params:
+        model: aiohttp_openai/gpt-upstream
+        api_base: "{{upstream}}"
+env: {AIOHTTP_OPENAI_API_KEY: ignored-key}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-aiohttp-keyless}
+  body:
+    model: keyless-model
+    messages: [{role: user, content: Say hello.}]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-aiohttp-keyless
+      object: chat.completion
+      created: 1700000013
+      model: gpt-upstream
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!}
+          finish_reason: stop
+compare:
+  headers: [content-type, x-litellm-call-id, x-litellm-model-group]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

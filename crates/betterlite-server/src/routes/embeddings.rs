@@ -4,18 +4,22 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use betterlite_config::sections::mock_response::selection::resolve_mock;
+use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
-use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, provider_failure};
-use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest};
+use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
 use serde::Serialize;
 use std::str;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
+use crate::server::chat_setup::provider_call::CallError;
+use crate::server::chat_setup::provider_call::embedding::provider_embedding;
 
 use super::chat::headers::{failure_headers, success_headers};
 
@@ -85,19 +89,78 @@ async fn embeddings(
             &executor.redactor,
         );
     };
-    match embedding::send(&executor, deployment, &request).await {
-        Ok(outcome) => {
+    match embed(&executor, deployment, &request).await {
+        Ok((response, upstream_headers, upstream_time)) => {
             let response_headers = success_headers(
-                &outcome.upstream.headers,
+                &upstream_headers,
                 deployment,
                 &call_id,
-                outcome.upstream_time,
+                upstream_time,
                 started.elapsed(),
             );
-            (response_headers, Json(outcome.response)).into_response()
+            (response_headers, Json(response)).into_response()
         }
-        Err(error) => failure(&error, &call_id, Some(deployment), &executor.redactor),
+        Err(error) => call_failure(&error, &call_id, Some(deployment), &executor.redactor),
     }
+}
+
+async fn embed(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<(EmbeddingResponse, HeaderMap, Duration), CallError<EmbeddingError>> {
+    if embedding_mocks_resolve(executor, deployment, request)? {
+        let outcome = embedding::send(executor, deployment, request).await?;
+        return Ok((
+            outcome.response,
+            outcome.upstream.headers,
+            outcome.upstream_time,
+        ));
+    }
+    provider_embedding(executor, deployment, request).await
+}
+
+fn embedding_mocks_resolve(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+) -> Result<bool, EmbeddingError> {
+    let (client_response, client_tool_calls) =
+        client_mock(&request.passthrough, executor.mock.permission)
+            .map_err(|source| EmbeddingError::Body { source })?;
+    let resolved = resolve_mock(
+        executor.mock.responses.get(&deployment.model_id),
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
+        None,
+    );
+    Ok(resolved.and_then(|plan| plan.response).is_some())
+}
+
+// a provider call that ends without a route error is the server's own fault, so the client sees a 500
+fn call_failure(
+    error: &CallError<EmbeddingError>,
+    call_id: &str,
+    deployment: Option<&ChatDeployment>,
+    redactor: &Redactor,
+) -> Response {
+    if let CallError::Route(route) = error {
+        return failure(route, call_id, deployment, redactor);
+    }
+    let body = ErrorBody {
+        error: ErrorObject {
+            message: redactor.redact_internal_details(&error.to_string()),
+            error_type: String::from("internal_server_error"),
+            param: None,
+            code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
+        },
+    };
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        failure_headers(None, None, call_id, deployment),
+        Json(body),
+    )
+        .into_response()
 }
 
 fn failure(
@@ -107,7 +170,12 @@ fn failure(
     redactor: &Redactor,
 ) -> Response {
     let failure = embedding_failure(error, redactor);
-    let message = match error {
+    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
+    respond(failure, route_message(error), response_headers)
+}
+
+fn route_message(error: &EmbeddingError) -> String {
+    match error {
         EmbeddingError::Provider { response } => {
             provider_message(response.status, &response.body, error)
         }
@@ -121,7 +189,12 @@ fn failure(
         | EmbeddingError::MissingApiKey
         | EmbeddingError::Endpoint { .. }
         | EmbeddingError::Mock { .. } => error.to_string(),
-    };
+    }
+}
+
+fn respond(failure: ProviderFailure, message: String, headers: HeaderMap) -> Response {
+    let status_code =
+        StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let body = ErrorBody {
         error: ErrorObject {
             message,
@@ -130,10 +203,7 @@ fn failure(
             code: failure.status.to_string(),
         },
     };
-    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
-    let status_code =
-        StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    (status_code, response_headers, Json(body)).into_response()
+    (status_code, headers, Json(body)).into_response()
 }
 
 fn embedding_failure(error: &EmbeddingError, redactor: &Redactor) -> ProviderFailure {
@@ -175,10 +245,8 @@ fn failure_headers_for_embedding(
     call_id: &str,
     deployment: Option<&ChatDeployment>,
 ) -> HeaderMap {
-    match error {
-        EmbeddingError::Provider { response } => {
-            failure_headers(None, Some(&response.headers), call_id, deployment)
-        }
+    let upstream = match error {
+        EmbeddingError::Provider { response } => Some(&response.headers),
         EmbeddingError::Body { .. }
         | EmbeddingError::Unsupported { .. }
         | EmbeddingError::Encode { .. }
@@ -188,13 +256,9 @@ fn failure_headers_for_embedding(
         | EmbeddingError::UnsupportedProvider { .. }
         | EmbeddingError::MissingApiKey
         | EmbeddingError::Endpoint { .. }
-        | EmbeddingError::Mock { .. } => {
-            let chat_error = ChatError::UnknownModel {
-                model: String::new(),
-            };
-            failure_headers(Some(&chat_error), None, call_id, deployment)
-        }
-    }
+        | EmbeddingError::Mock { .. } => None,
+    };
+    failure_headers(None, upstream, call_id, deployment)
 }
 
 fn provider_message(status: u16, body: &[u8], fallback: &EmbeddingError) -> String {

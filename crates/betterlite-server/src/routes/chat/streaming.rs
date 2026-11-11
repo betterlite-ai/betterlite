@@ -11,17 +11,23 @@ use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mo
 use betterlite_core::mock::chat::{ChatAnswer, answer};
 use betterlite_core::mock::stream::{StreamSpec, chunks, usage_chunk};
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::StreamResponse;
+use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::mock_failure;
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
 use betterlite_openai::stream::SseParser;
 use betterlite_openai::stream::chunk::{Choice, Chunk, Delta};
+use betterlite_provider::operation::{ChatOperation, OperationRequest, OperationResult};
+use betterlite_provider::prepared::deployment::Deployment;
+use betterlite_provider::provider::Provider;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
 use super::headers::stream_headers;
-use super::{CallContext, failure};
+use super::{CallContext, ChatRouteState, call_failure, failure};
+use crate::server::chat_setup::provider_call::{CallError, chat_error};
 
 struct RelayState {
     upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
@@ -33,11 +39,13 @@ struct RelayState {
 }
 
 pub(super) async fn stream_chat(
-    executor: &ChatExecutor,
+    state: &ChatRouteState,
     deployment: &ChatDeployment,
     request: &ChatRequest,
+    control: ControlOptions,
     call: &CallContext<'_>,
 ) -> Response {
+    let executor = &state.executor;
     let (client_response, client_tool_calls) =
         match client_mock(&request.passthrough, executor.mock.permission) {
             Ok(client) => client,
@@ -59,21 +67,53 @@ pub(super) async fn stream_chat(
         return mock_stream(executor, deployment, request, &plan, call);
     }
     let upstream_started = Instant::now();
-    match executor.stream(deployment, request).await {
-        Ok(upstream) => {
-            let upstream_time = upstream_started.elapsed();
-            let headers = stream_headers(
-                upstream.response.headers(),
-                deployment,
-                call.id,
-                upstream_time,
-                call.started.elapsed(),
-            );
-            let stream_body = Body::from_stream(relay_bytes(upstream.body_stream(), request));
-            (headers, stream_body).into_response()
-        }
-        Err(error) => failure(&error, call, Some(deployment)),
-    }
+    let upstream = match provider_stream(state, deployment, request, control).await {
+        Ok(upstream) => upstream,
+        Err(error) => return call_failure(&error, call, Some(deployment)),
+    };
+    let upstream_time = upstream_started.elapsed();
+    let headers = stream_headers(
+        upstream.response.headers(),
+        deployment,
+        call.id,
+        upstream_time,
+        call.started.elapsed(),
+    );
+    let stream_body = Body::from_stream(relay_bytes(upstream.body_stream(), request));
+    (headers, stream_body).into_response()
+}
+
+async fn provider_stream(
+    state: &ChatRouteState,
+    deployment: &ChatDeployment,
+    request: &ChatRequest,
+    control: ControlOptions,
+) -> Result<StreamResponse, CallError<ChatError>> {
+    let executor = &state.executor;
+    let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
+    let inputs = Deployment::from_chat(deployment);
+    let operation = OperationRequest::Stream(Box::new(ChatOperation {
+        model: inputs.model.clone(),
+        request: request.clone(),
+        control,
+    }));
+    let prepared = provider
+        .prepare(&operation, &inputs, &executor.catalog)
+        .map_err(chat_error)?;
+    let client = executor
+        .client
+        .deployments
+        .get(&deployment.model_id)
+        .unwrap_or(&executor.client);
+    let answer = provider
+        .execute(client, &prepared, &inputs)
+        .await
+        .map_err(chat_error)?;
+    let result = provider.decode(&prepared, answer).map_err(chat_error)?;
+    let OperationResult::Stream(stream) = result else {
+        return Err(CallError::Mismatched);
+    };
+    Ok(*stream)
 }
 
 fn mock_stream(
