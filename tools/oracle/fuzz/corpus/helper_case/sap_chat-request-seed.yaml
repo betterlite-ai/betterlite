@@ -1,0 +1,24 @@
+kind: helper
+name: sap_chat-request-seed
+call:
+  b5845:
+    operation: requests
+    calls:
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params: {temperature: 0.5}
+      - model: gpt-4o
+        messages: []
+        optional_params: {strict: true, response_format: {type: json_object}}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params: {model_version: '2024-05-13', temperature: 0.1}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          fallback_sap_modules:
+            - model: sap/other
+              model_version: '2024-06-14'
+              temperature: 0.2
+env: {}
+compare: {ignore: []}

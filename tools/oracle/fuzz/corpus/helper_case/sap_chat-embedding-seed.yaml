@@ -1,0 +1,12 @@
+kind: helper
+name: sap_chat-embedding-seed
+call:
+  b5845:
+    operation: embeddings
+    calls:
+      - {function: request, model: text-embedding-3-large, input: hi, optional_params: {version: v1}}
+      - {function: prepare, session: {token: Bearer case-token, resource_group: rg1, deployment_url: 'https://dep.example.com/v2/'}}
+      - {function: response, raw_text: '{"final_result":{"object":"list","data":[],"model":"m","usage":{"prompt_tokens":0,"total_tokens":0}}}'}
+      - {function: error_class, message: boom, status: 400}
+env: {}
+compare: {ignore: []}
