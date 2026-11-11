@@ -28,11 +28,22 @@ deviations:
       "cache" once, as Cache.__init__ does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L59-L68
   - what: >-
-      A handle ttl that is not finite and positive and a redis namespace that is empty are refused by
-      the factory with a typed error before the handle factory is called; LiteLLM raises ValueError
-      from NativeCacheHandle.memory or NativeCacheHandle.redis at the same point.
+      A handle ttl that is negative or not finite, and a redis namespace that is empty, are refused
+      by the factory with a typed error before the handle factory is called; a ttl of 0 is forwarded
+      as an explicit zero duration. LiteLLM forwards the ttl to NativeCacheHandle, which raises
+      ValueError for a negative or non-finite duration, and raises ValueError for an empty namespace.
     why: >-
-      The factory resolves the ttl default and requires the namespace, so it applies the native
-      handle's own duration and namespace rules before a handle exists. The error names the rejected
-      value, and no handle is constructed.
+      std's Duration::try_from_secs_f64 rejects a negative or non-finite value and accepts zero, so
+      the factory refuses exactly what could not become a duration and lets the zero duration through
+      to the handle as LiteLLM does. The error names the rejected value, and no handle is constructed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_v2/cache/__init__.py#L64-L71
+  - what: >-
+      A facade the v2 factories return does not answer ping or delete_cache_keys through the native
+      adapter: Cache::ping returns Ok(None) and Cache::delete_cache_keys returns Ok(()) for an injected
+      backend, where LiteLLM's Cache.ping awaits the backend's ping and Cache.delete_cache_keys awaits
+      its delete_cache_keys.
+    why: >-
+      Those two dispatch methods live in B4299's configuration/cache.rs, outside this task's
+      scope.paths, and only consult Backend::Redis. The adapter implements both operations and its
+      tests prove that; routing Backend::Injected to them is B4299's change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L989-L999

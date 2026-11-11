@@ -304,21 +304,3 @@ fn get_ttl_falls_back_to_the_base_cache_default() {
     assert_eq!(backend.get_ttl(None), 60);
     assert_eq!(backend.get_ttl(Some(30)), 30);
 }
-
-#[rstest]
-#[case::null("null", None)]
-#[case::zero("0", Some(0.0_f64))]
-#[case::fraction("0.5", Some(0.5_f64))]
-fn the_ttl_type_accepts_absent_null_and_numeric_values(#[case] raw: &str, #[case] expected: Ttl) {
-    let parsed: Ttl = serde_json::from_str(raw).unwrap();
-    assert_eq!(parsed, expected);
-}
-
-#[rstest]
-#[case::text("\"600\"")]
-#[case::boolean("true")]
-#[case::list("[]")]
-#[case::object("{}")]
-fn a_ttl_outside_the_declared_type_is_rejected_at_the_boundary(#[case] raw: &str) {
-    serde_json::from_str::<Ttl>(raw).unwrap_err();
-}

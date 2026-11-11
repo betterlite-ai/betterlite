@@ -17,7 +17,7 @@ pub enum FactoryError<HandleError>
 where
     HandleError: Error + 'static,
 {
-    #[error("the native cache ttl {value} is not a finite positive duration")]
+    #[error("the native cache ttl {value} is negative or not finite")]
     Ttl { value: f64 },
     #[error("the native redis cache needs a non-empty namespace")]
     Namespace,
@@ -79,12 +79,12 @@ impl Cache {
     }
 }
 
-// the native handle refuses a zero or non-finite duration, so the factory refuses it before the handle exists
+// a negative or non-finite ttl cannot become a duration; zero is an explicit zero duration and passes
 fn checked_ttl<HandleError>(ttl: f64) -> Result<(), FactoryError<HandleError>>
 where
     HandleError: Error + 'static,
 {
-    if !ttl.is_finite() || ttl <= 0.0_f64 {
+    if !ttl.is_finite() || ttl < 0.0_f64 {
         return Err(FactoryError::Ttl { value: ttl });
     }
     Ok(())

@@ -333,8 +333,8 @@ enum FactoryKind {
 }
 
 #[rstest]
-#[case::memory_zero(FactoryKind::Memory, 0.0_f64)]
 #[case::memory_negative(FactoryKind::Memory, -1.0_f64)]
+#[case::redis_negative(FactoryKind::Redis, -1.0_f64)]
 #[case::redis_nan(FactoryKind::Redis, f64::NAN)]
 #[case::redis_positive_infinity(FactoryKind::Redis, f64::INFINITY)]
 #[case::redis_negative_infinity(FactoryKind::Redis, f64::NEG_INFINITY)]
@@ -376,6 +376,72 @@ fn an_invalid_ttl_is_rejected_before_the_handle_is_created(
     assert!(host.state().memory.is_empty());
     assert!(host.state().redis.is_empty());
     assert!(host.state().handles.is_empty());
+}
+
+#[rstest]
+#[case::memory(FactoryKind::Memory)]
+#[case::redis(FactoryKind::Redis)]
+fn a_zero_ttl_reaches_the_handle(#[case] factory: FactoryKind) {
+    let host = RecordingHost::default();
+    let mut callbacks = CacheCallbacks::default();
+    let facade = match factory {
+        FactoryKind::Memory => Cache::memory(
+            &host,
+            &mut callbacks,
+            MemoryHandleOptions {
+                ttl: 0.0,
+                capacity: 200,
+                max_entry_bytes: 0x0040_0000,
+            },
+        ),
+        FactoryKind::Redis => Cache::redis(
+            &host,
+            &mut callbacks,
+            "redis://cache:6379",
+            "shared",
+            RedisHandleOptions {
+                ttl: 0.0,
+                max_entry_bytes: 0x0040_0000,
+            },
+        ),
+    }
+    .unwrap();
+    assert_eq!(facade.ttl, Some(0.0_f64));
+    match factory {
+        FactoryKind::Memory => assert_eq!(
+            host.state().memory,
+            [MemoryHandleOptions {
+                ttl: 0.0,
+                capacity: 200,
+                max_entry_bytes: 0x0040_0000,
+            }]
+        ),
+        FactoryKind::Redis => assert_eq!(
+            host.state().redis,
+            [(
+                "redis://cache:6379".to_owned(),
+                "shared".to_owned(),
+                RedisHandleOptions {
+                    ttl: 0.0,
+                    max_entry_bytes: 0x0040_0000,
+                },
+            )]
+        ),
+    }
+}
+
+#[tokio::test]
+async fn the_facade_lifecycle_does_not_reach_the_native_backend() {
+    let host = RecordingHost::default();
+    let facade = Cache::memory(
+        &host,
+        &mut CacheCallbacks::default(),
+        MemoryHandleOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(facade.ping().await.unwrap(), None);
+    facade.delete_cache_keys(&["key".to_owned()]).await.unwrap();
+    assert!(host.state().handles[0].state().calls.is_empty());
 }
 
 #[test]
