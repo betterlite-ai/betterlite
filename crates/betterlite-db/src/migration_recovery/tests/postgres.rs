@@ -215,11 +215,11 @@ async fn postgres_lock_contention_is_typed() {
     with_schema(|database| async move {
         let jitter = FakeJitter(0);
         let steps = database.steps(&[], &jitter);
-        let released = steps
+        let held = steps
             .deploy_lock_held()
             .await
             .expect("the lock state reads");
-        assert!(!released, "no session holds the Prisma migration lock yet");
+        assert!(!held, "no session holds the Prisma migration lock yet");
         let holder = database.pool.get().await.expect("a holder session");
         holder
             .execute("SELECT pg_advisory_lock($1)", &[&PRISMA_LOCK_KEY])
