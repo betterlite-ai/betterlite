@@ -15,8 +15,8 @@ use crate::langfuse_observations::requested_ids::RequestedIds;
 
 use super::cache::TRACING;
 use super::support::{
-    Failing, Gated, Recording, acquire_with, end_span, lookup, request, schedule, settings, spec,
-    wait_until,
+    Failing, Gated, GatedRecording, Recording, acquire_with, end_span, end_spans, lookup, request,
+    schedule, settings, spec, wait_until,
 };
 use super::{
     ChannelSpec, LangfuseChannelError, LangfuseTracing, acquire_langfuse_tracing,
@@ -85,6 +85,27 @@ async fn a_flush_that_misses_its_deadline_reports_failure() {
     assert!(started.elapsed() < Duration::from_secs(2));
     gate.add_permits(16);
     sleep(Duration::from_millis(50)).await;
+    tracing.shutdown();
+}
+
+#[tokio::test]
+async fn a_burst_beyond_the_default_queue_is_kept_while_the_destination_is_slow() {
+    let gate = Arc::new(Semaphore::new(0));
+    let recording = Recording::default();
+    let exporter = GatedRecording {
+        gate: Arc::clone(&gate),
+        recording: recording.clone(),
+    };
+    let tracing = build_langfuse_tracing(
+        exporter,
+        &Handle::current(),
+        &schedule(60_000, 100_000),
+        &lookup(&[]),
+    );
+    end_spans(&tracing, 6_000);
+    gate.add_permits(1_000);
+    assert!(tracing.flush(30_000).await);
+    assert_eq!(recording.span_count(), 6_000);
     tracing.shutdown();
 }
 

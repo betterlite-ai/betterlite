@@ -225,6 +225,25 @@ impl SpanExporter for Gated {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct GatedRecording {
+    pub(super) gate: Arc<Semaphore>,
+    pub(super) recording: Recording,
+}
+
+impl SpanExporter for GatedRecording {
+    async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+        let _permit = self.gate.acquire().await.expect("the gate stays open");
+        self.recording.export(batch).await
+    }
+}
+
+pub(super) fn end_spans(tracing: &LangfuseTracing, count: usize) {
+    for _ in 0..count {
+        end_span(tracing, "burst");
+    }
+}
+
 pub(super) fn end_span(tracing: &LangfuseTracing, name: &'static str) {
     let mut span = tracing.tracer.span_builder(name).start(&tracing.tracer);
     span.end();
