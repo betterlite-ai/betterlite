@@ -357,6 +357,37 @@ async fn execute_resolves_the_client_secrets_into_the_connection() {
 }
 
 #[tokio::test]
+async fn execute_maps_the_caller_key_through_prepare_secrets() {
+    let server = MockServer::start(vec![answer_reply()]).await;
+    let mut client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    client.secrets = Arc::new(EnvironmentSecret {
+        name: "MISTRAL_AZURE_API_KEY",
+        value: "azure-key",
+    });
+    let mut request_wire = wire(
+        "mistral-ocr-latest",
+        document("data:application/pdf;base64,YWJj"),
+        Some(format!("{}/v1", server.base)),
+    );
+    request_wire.api_key = None;
+    let request = decode_request(request_wire).expect("the request decodes");
+    let response = OcrRoute { client }
+        .execute(request, &())
+        .await
+        .expect("the call succeeds");
+    assert_eq!(response.model, "mistral-ocr-latest");
+    let requests = server.requests().await;
+    let lowered = requests
+        .first()
+        .expect("one request was sent")
+        .to_lowercase();
+    assert!(
+        lowered.contains("authorization: bearer azure-key"),
+        "{lowered}"
+    );
+}
+
+#[tokio::test]
 async fn a_caller_token_call_without_a_host_is_invalid() {
     let (client, _token_calls) = counting_client();
     let mut request_wire = wire(
