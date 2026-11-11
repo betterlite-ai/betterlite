@@ -1,0 +1,11 @@
+kind: helper
+name: logging-mcp-tool-hook-name-entries-skipped
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+      structured_content: {answer: 42}
+    dynamic_success: [ghost]
+    global_success: []
+env: {}
+compare: {ignore: []}
