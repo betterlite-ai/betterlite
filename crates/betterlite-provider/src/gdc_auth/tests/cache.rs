@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::gdc_auth::cache::{
@@ -92,6 +94,32 @@ fn cache_keys_separate_audiences_identities_and_kinds() {
         ]
     );
     assert_ne!(same_audience_first, source_handle);
+}
+
+#[test]
+fn cache_keys_compare_by_audience_then_identity() {
+    let first = key(
+        "https://one.example",
+        CredentialIdentity::ApiKey(secret("key-one")),
+    );
+    let same = key(
+        "https://one.example",
+        CredentialIdentity::ApiKey(secret("key-one")),
+    );
+    let later_identity = key(
+        "https://one.example",
+        CredentialIdentity::ApiKey(secret("key-two")),
+    );
+    let later_audience = key(
+        "https://two.example",
+        CredentialIdentity::ApiKey(secret("key-one")),
+    );
+    assert_eq!(first, same);
+    assert_eq!(first.partial_cmp(&same), Some(Ordering::Equal));
+    assert_eq!(first.cmp(&later_identity), Ordering::Less);
+    assert_eq!(later_identity.cmp(&first), Ordering::Greater);
+    assert_eq!(first.partial_cmp(&later_audience), Some(Ordering::Less));
+    assert_eq!(later_audience.cmp(&later_identity), Ordering::Greater);
 }
 
 #[test]
