@@ -1479,6 +1479,7 @@ dependencies = [
  "jiff",
  "jsonschema",
  "lopdf",
+ "num-traits",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
