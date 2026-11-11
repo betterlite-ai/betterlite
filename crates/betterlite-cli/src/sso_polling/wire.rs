@@ -40,14 +40,17 @@ pub fn decode_object<T>(bytes: &[u8]) -> Result<T, WireError>
 where
     T: DeserializeOwned,
 {
-    // JSON allows only space, tab, carriage return and line feed as leading whitespace.
-    let first = bytes
-        .iter()
-        .copied()
-        .find(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'));
-    if first.is_some_and(|byte| byte != b'{') && serde_json::from_slice::<IgnoredAny>(bytes).is_ok()
-    {
+    if is_array_or_scalar(bytes) {
         return Err(WireError::NotObject);
     }
     decode(bytes)
+}
+
+fn is_array_or_scalar(bytes: &[u8]) -> bool {
+    // JSON allows only space, tab, carriage return and line feed as leading whitespace.
+    let opens_object = bytes
+        .iter()
+        .find(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+        .is_none_or(|byte| *byte == b'{');
+    !opens_object && serde_json::from_slice::<IgnoredAny>(bytes).is_ok()
 }
