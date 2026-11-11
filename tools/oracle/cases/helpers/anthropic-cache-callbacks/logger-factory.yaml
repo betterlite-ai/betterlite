@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-cache-callbacks-logger-factory
+call:
+  b4126:
+    operation: logger_factory
+    probes:
+      - params: {}
+      - params: {cache_control_injection_points: []}
+      - params: {cache_control_injection_points: null}
+      - params: {cache_control_injection_points: [{location: tool_config, control: null}]}
+      - params: {cache_control_injection_points: [{location: tool_config, control: null}]}
+        logger_from_factory: false
+      - params: {cache_control_injection_points: {location: tool_config}}
+env: {}
+compare: {ignore: []}
