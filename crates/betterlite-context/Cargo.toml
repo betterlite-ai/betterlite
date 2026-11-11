@@ -10,6 +10,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-redact = { path = "../betterlite-redact" }
 hex.workspace = true
+indexmap = "2.14.2"
 percent-encoding.workspace = true
 regex.workspace = true
 rust_decimal.workspace = true
