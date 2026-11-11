@@ -25,8 +25,7 @@ pub(crate) fn resolved<'catalog>(
                 .find(|(key, _)| key.to_lowercase() == wanted);
             folded.map(|(_key, canonical)| canonical)
         });
-        if let Some(entry) = canonical.and_then(|canonical| catalog.entries.get(canonical.as_ref()))
-        {
+        if let Some(entry) = canonical.and_then(|name_key| catalog.entries.get(name_key.as_ref())) {
             return Some(entry);
         }
     }
