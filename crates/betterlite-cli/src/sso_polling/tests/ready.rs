@@ -152,6 +152,25 @@ fn ready_notices_a_non_json_success_body_on_the_connection_error_schedule() {
 }
 
 #[test]
+fn ready_retries_when_json_is_followed_by_trailing_bytes() {
+    let fixture = PollFixture::new(
+        scripted_transport(vec![
+            Reply::Response(response(200, r#"{"status":"ready"} trailing"#)),
+            Reply::Response(response(200, r#"{"status":"ready"}"#)),
+        ]),
+        Echo::default(),
+    );
+
+    let data = fixture.poll(&wait_options()).expect("the poll");
+
+    assert!(data.is_some());
+    assert_eq!(fixture.echo.recorded().len(), 1);
+    let notice = fixture.echo.recorded();
+    assert!(notice[0].starts_with("Connection error (will retry): "));
+    assert_eq!(fixture.sleeper.intervals(), vec![Duration::from_secs(2)]);
+}
+
+#[test]
 fn ready_times_out_when_the_success_body_is_never_json() {
     let mut options = wait_options();
     options.total_timeout_seconds = 10;
