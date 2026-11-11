@@ -183,5 +183,8 @@ fn compatibility_deviations(
         max_event_bytes: usize::MAX,
         max_items: usize::MAX,
     };
-    assert!(unconstrained.check(input).is_ok());
+    let unchecked = unconstrained
+        .check(input)
+        .expect("the pinned code applies no cap, so the same size passes");
+    assert_eq!(unchecked.limit, usize::MAX);
 }

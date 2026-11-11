@@ -2,6 +2,7 @@ use thiserror::Error;
 
 mod tests;
 
+// resolved once at the boundary; B198's deadline and B206's metadata stay on the call context
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApiLimits {
     pub max_json_bytes: usize,
