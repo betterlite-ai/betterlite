@@ -232,7 +232,7 @@ fn report(
             "host": logger.settings.api_url,
             "capture_url": logger.settings.capture_url,
             "batch_size": logger.settings.batch.batch_size,
-            "flush_interval_ms": u64::try_from(logger.settings.batch.flush_interval.as_millis()).unwrap_or(u64::MAX),
+            "flush_interval_ms": logger.settings.batch.flush_interval.as_secs().saturating_mul(1000),
             "mock_mode": logger.settings.mock_mode,
             "max_queue_size": logger.settings.batch.max_queue_size,
         },

@@ -1,12 +1,12 @@
 use rstest::rstest;
 
-use crate::posthog_logging::event::{create_event_payload, uuid_id};
-use crate::posthog_logging::tests::support::payload;
+use crate::posthog_logging::event::create_event_payload;
+use crate::posthog_logging::tests::support::{fixed_id, payload};
 
 fn event_name(call_type: &str) -> String {
     let mut payload = payload();
     payload.call_type = call_type.to_owned();
-    create_event_payload(&payload, uuid_id)
+    create_event_payload(&payload, fixed_id)
         .expect("the event builds")
         .event
 }
@@ -27,7 +27,7 @@ fn posthog_event_type_follows_the_call_type(#[case] call_type: &str, #[case] exp
 fn posthog_event_type_keeps_the_embedding_projection() {
     let mut payload = payload();
     payload.call_type = "embedding".to_owned();
-    let event = create_event_payload(&payload, uuid_id).expect("the event builds");
+    let event = create_event_payload(&payload, fixed_id).expect("the event builds");
     assert!(event.properties.contains_key("$ai_input"));
     assert!(!event.properties.contains_key("$ai_output_choices"));
     assert!(!event.properties.contains_key("$ai_output_tokens"));

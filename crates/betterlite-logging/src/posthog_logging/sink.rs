@@ -45,6 +45,7 @@ impl PostHogSink {
 
     // PostHogLogger._flush_on_exit: any failed post leaves the whole queue for a later flush
     pub async fn flush_on_exit(&self) {
+        let _flush = self.queue.flush_lock.lock().await;
         let pending = self.queue.pending();
         if pending.is_empty() {
             return;

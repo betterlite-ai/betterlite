@@ -4,6 +4,7 @@ use std::time::Duration;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
+use subtle::ConstantTimeEq as _;
 use thiserror::Error;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -50,14 +51,21 @@ struct PostHogBatchPayload<'batch> {
     batch: &'batch [PostHogEventPayload],
 }
 
+fn same_key(left: &SecretString, right: &SecretString) -> bool {
+    bool::from(
+        left.expose_secret()
+            .as_bytes()
+            .ct_eq(right.expose_secret().as_bytes()),
+    )
+}
+
 #[must_use]
 pub fn group_events(events: Vec<QueuedEvent>) -> Vec<CredentialGroup> {
     let mut groups: Vec<CredentialGroup> = Vec::new();
     for item in events {
-        let shared = groups.iter_mut().find(|group| {
-            group.api_url == item.api_url
-                && group.api_key.expose_secret() == item.api_key.expose_secret()
-        });
+        let shared = groups
+            .iter_mut()
+            .find(|group| group.api_url == item.api_url && same_key(&group.api_key, &item.api_key));
         match shared {
             Some(group) => group.events.push(item.event),
             None => groups.push(CredentialGroup {

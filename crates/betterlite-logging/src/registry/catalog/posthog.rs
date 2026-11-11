@@ -3,7 +3,6 @@ use std::sync::Arc;
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::posthog_logging::delivery::PooledTransport;
-use crate::posthog_logging::event::uuid_id;
 use crate::posthog_logging::logger::{PostHogDeps, PostHogLogger};
 use crate::posthog_logging::settings::resolve;
 
@@ -19,7 +18,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
             transport: Arc::new(PooledTransport {
                 client: inputs.http.clone(),
             }),
-            ids: uuid_id,
+            ids: || uuid::Uuid::new_v4().to_string(),
             tasks: inputs.tracker.clone(),
             shutdown: Some(inputs.shutdown.clone()),
         },

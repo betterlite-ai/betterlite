@@ -3,11 +3,13 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use crate::fields::payload::StandardLoggingPayload;
-use crate::posthog_logging::event::{create_event_payload, uuid_id};
-use crate::posthog_logging::tests::support::{failed_payload, number, object, payload, text};
+use crate::posthog_logging::event::create_event_payload;
+use crate::posthog_logging::tests::support::{
+    failed_payload, fixed_id, number, object, payload, text,
+};
 
 fn properties(payload: &StandardLoggingPayload) -> IndexMap<String, Json> {
-    create_event_payload(payload, uuid_id)
+    create_event_payload(payload, fixed_id)
         .expect("the event builds")
         .properties
 }

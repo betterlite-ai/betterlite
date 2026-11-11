@@ -16,12 +16,6 @@ pub const GENERATION_EVENT: &str = "$ai_generation";
 
 pub type IdGenerator = fn() -> String;
 
-#[must_use]
-pub fn uuid_id() -> String {
-    // LiteLLM invents the distinct id with uuid4 only when the payload and metadata carry no identifier
-    uuid::Uuid::new_v4().to_string()
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PostHogEventPayload {
     pub event: String,

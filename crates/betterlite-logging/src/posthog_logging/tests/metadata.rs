@@ -1,8 +1,8 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::posthog_logging::event::{PostHogEventError, create_event_payload, uuid_id};
-use crate::posthog_logging::tests::support::{number, object, payload, text};
+use crate::posthog_logging::event::{PostHogEventError, create_event_payload};
+use crate::posthog_logging::tests::support::{fixed_id, number, object, payload, text};
 
 const INTERNAL_FIELDS: [&str; 32] = [
     "endpoint",
@@ -42,7 +42,7 @@ const INTERNAL_FIELDS: [&str; 32] = [
 fn properties(metadata: Json) -> IndexMap<String, Json> {
     let mut payload = payload();
     payload.metadata.requester_metadata = Some(metadata);
-    create_event_payload(&payload, uuid_id)
+    create_event_payload(&payload, fixed_id)
         .expect("the event builds")
         .properties
 }
@@ -84,7 +84,7 @@ fn posthog_metadata_overwrites_a_builtin_property() {
 fn posthog_metadata_rejects_a_non_object_value() {
     let mut payload = payload();
     payload.metadata.requester_metadata = Some(text("not an object"));
-    let error = create_event_payload(&payload, uuid_id).expect_err("the metadata type is wrong");
+    let error = create_event_payload(&payload, fixed_id).expect_err("the metadata type is wrong");
     assert!(matches!(error, PostHogEventError::MetadataType));
 }
 

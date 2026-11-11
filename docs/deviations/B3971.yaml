@@ -9,3 +9,6 @@ deviations:
   - what: A request-selected posthog_api_url still overrides the configured endpoint, which B188 forbids for export destinations.
     why: _get_credentials_for_request reads standard_callback_dynamic_params.posthog_api_url first, and this task requires that routing decision, so it is recorded here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L315-L339
+  - what: Only the requester's metadata becomes PostHog custom properties; the proxy-level metadata fields LiteLLM forwards from litellm_params.metadata (tags, user_agent, spend_logs_metadata and the rest) are not sent.
+    why: betterlite's LoggerEvent carries the standard logging payload directly, and its metadata.requester_metadata is the caller-supplied dict; the proxy plumbing fields LiteLLM copies out of litellm_params.metadata are not present on that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L404-L407
