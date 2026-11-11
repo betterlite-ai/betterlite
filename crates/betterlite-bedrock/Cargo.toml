@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 aws-config = { version = "=1.12.0", default-features = false, features = ["rt-tokio", "test-util"] }
 aws-credential-types = "=1.3.1"
 aws-sdk-sts = { version = "=1.116.0", default-features = false, features = ["rt-tokio"] }
@@ -20,6 +21,7 @@ betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-env = { path = "../betterlite-env" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
@@ -32,7 +34,9 @@ chrono.workspace = true
 crc32fast = "1.5.3"
 encoding_rs = "0.8.42"
 fancy-regex = "0.19.2"
+futures-util = { version = "0.3.34", default-features = false }
 hex.workspace = true
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 mime = "0.3.17"
 num-traits = "0.2.19"
@@ -49,9 +53,6 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
-async-trait = "0.1.92"
-betterlite-http = { path = "../betterlite-http" }
-futures-util = { version = "0.3.34", default-features = false }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tracing-subscriber.workspace = true
