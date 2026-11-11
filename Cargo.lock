@@ -2490,6 +2490,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
  "zeroize",
 ]
 
@@ -2668,6 +2669,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-tokenizer",
  "fancy-regex 0.19.2",
+ "hex",
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
@@ -2678,6 +2680,8 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "strum",
  "thiserror",
  "tokio",
  "tokio-util",
