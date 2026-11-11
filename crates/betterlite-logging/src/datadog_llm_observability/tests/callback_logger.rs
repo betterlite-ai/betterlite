@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 
 use crate::callback_logger::CallbackLogger as _;
+use crate::datadog_llm_observability::logger::uuid_id;
 use crate::datadog_llm_observability::tests::support;
 
 fn logger() -> (Arc<support::Logger>, Arc<support::ScriptedTransport>) {
@@ -63,4 +64,13 @@ async fn callback_logger_accepts_dynamic_parameters_that_are_not_an_object() {
         .await
         .expect("the event is accepted");
     assert_eq!(logger.queue.pending().len(), 1);
+}
+
+#[test]
+fn uuid_id_generates_a_version_four_uuid() {
+    let first = uuid_id();
+    let second = uuid_id();
+    assert_eq!(first.len(), 36);
+    uuid::Uuid::parse_str(&first).expect("the id is a uuid");
+    assert_ne!(first, second);
 }

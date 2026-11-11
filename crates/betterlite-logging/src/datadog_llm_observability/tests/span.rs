@@ -326,3 +326,32 @@ fn datadog_llm_obs_logging_is_off_follows_the_flags_and_the_request() {
     };
     assert!(logging_is_off(&message_logging_off, &Object::new()));
 }
+
+#[tokio::test]
+async fn datadog_llm_obs_embedding_kind_needs_a_caller_parent() {
+    let mut payload = support::standard_payload("chatcmpl-1");
+    payload.call_type = "embedding".to_owned();
+    let without = assemble(&settings(false), &payload, &Object::new(), false)
+        .await
+        .expect("the span assembles");
+    assert_eq!(
+        without.meta.expect("the span carries meta").kind,
+        Some(SpanKind::Llm)
+    );
+    let empty = object(&[("parent_id", text(""))]);
+    let parentless = assemble(&settings(false), &payload, &empty, false)
+        .await
+        .expect("the span assembles");
+    assert_eq!(
+        parentless.meta.expect("the span carries meta").kind,
+        Some(SpanKind::Llm)
+    );
+    let parented = object(&[("parent_id", text("parent"))]);
+    let child = assemble(&settings(false), &payload, &parented, false)
+        .await
+        .expect("the span assembles");
+    assert_eq!(
+        child.meta.expect("the span carries meta").kind,
+        Some(SpanKind::Embedding)
+    );
+}
