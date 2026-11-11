@@ -233,3 +233,34 @@ async fn unconfigure_reports_an_unreadable_receipt() {
             .contains("is not a readable `lite configure claude` receipt")
     );
 }
+
+#[tokio::test]
+async fn unconfigure_codex_reports_when_nothing_is_left_to_restore() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![listing(&[("codex-1", None)])]).await;
+    let mut harness = Harness::new(environment, context(&proxy.base_url, None));
+    harness
+        .configure(target_configure(
+            Target::Codex,
+            &proxy.base_url,
+            "sk-test",
+            "codex-1",
+        ))
+        .await
+        .unwrap();
+    let settings_path = settings_path_for(Target::Codex, &harness.environment).unwrap();
+    fs::write(&settings_path, "model = \"mine\"\n").unwrap();
+    let args = UnconfigureArgs {
+        forget: false,
+        command: Some(UnconfigureTarget::Codex { forget: false }),
+    };
+    harness.unconfigure(args).await.unwrap();
+    let stdout = harness.stdout_text();
+    assert!(stdout.contains(&format!(
+        "Nothing in {} was still ours to restore.",
+        settings_path.display()
+    )));
+    assert!(!stdout.contains("Restored in"));
+    assert!(fs::read_to_string(&settings_path).unwrap().contains("mine"));
+}

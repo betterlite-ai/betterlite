@@ -2,12 +2,16 @@
 
 use clap::Parser as _;
 use secrecy::ExposeSecret as _;
+use tempfile::TempDir;
 
-use crate::commands::configure::args::{ConfigureTarget, ConnectionFlags};
+use crate::commands::configure::args::{
+    ConfigureArgs, ConfigureTarget, ConnectionFlags, ReconfigureArgs, ReconfigureTarget,
+};
 use crate::commands::configure::connection::connection_settings;
 use crate::commands::configure::error::ConfigureCommandError;
 use crate::commands::configure::test_support::{
-    TestCli, TestCommand, context, group_connection, implicit_context, token_context,
+    FakeEnvironment, Harness, MockProxy, TestCli, TestCommand, claude_env, claude_settings,
+    codex_config, context, group_connection, implicit_context, listing, token_context,
 };
 
 #[test]
@@ -127,4 +131,53 @@ fn flag_precedence_parses_both_gateway_url_levels() {
         panic!("expected the claude subcommand");
     };
     assert_eq!(connection.gateway_url.as_deref(), Some("http://sub.test"));
+}
+
+#[tokio::test]
+async fn option_merge_group_flags_reach_a_configure_subcommand() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
+    let mut harness = Harness::new(environment, context("http://login.test", Some("sk-login")));
+    let args = ConfigureArgs {
+        connection: group_connection(Some("sk-group"), Some(&proxy.base_url)),
+        command: Some(ConfigureTarget::Claude {
+            connection: ConnectionFlags::from(group_connection(None, None)),
+            model: Some("claude-1".to_owned()),
+            default_model: false,
+        }),
+    };
+    harness.configure(args).await.unwrap();
+    assert!(harness.prompter.calls.is_empty());
+    assert_eq!(proxy.requests(), vec!["/v1/models".to_owned()]);
+    let settings = claude_settings(&harness.environment);
+    assert_eq!(
+        claude_env(&settings, "ANTHROPIC_BASE_URL").as_deref(),
+        Some(proxy.base_url.as_str())
+    );
+    assert_eq!(
+        claude_env(&settings, "ANTHROPIC_AUTH_TOKEN").as_deref(),
+        Some("sk-group")
+    );
+}
+
+#[tokio::test]
+async fn option_merge_group_flags_reach_a_reconfigure_subcommand() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![listing(&[("codex-1", None)])]).await;
+    let mut harness = Harness::new(environment, context("http://login.test", Some("sk-login")));
+    let args = ReconfigureArgs {
+        connection: group_connection(Some("sk-group"), Some(&proxy.base_url)),
+        command: Some(ReconfigureTarget::Codex {
+            connection: ConnectionFlags::from(group_connection(None, None)),
+            model: Some("codex-1".to_owned()),
+        }),
+    };
+    harness.reconfigure(args).await.unwrap();
+    assert!(harness.prompter.calls.is_empty());
+    assert_eq!(proxy.requests(), vec!["/v1/models".to_owned()]);
+    let config = codex_config(&harness.environment);
+    assert!(config.contains(proxy.base_url.as_str()));
+    assert!(config.contains("sk-group"));
 }

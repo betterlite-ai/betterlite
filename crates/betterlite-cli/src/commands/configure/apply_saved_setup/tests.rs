@@ -224,3 +224,37 @@ async fn group_invocation_reports_an_invalid_saved_setup() {
     assert!(error.to_string().contains("Saved claude setup"));
     assert!(error.to_string().contains("is invalid or unsupported"));
 }
+
+#[tokio::test]
+async fn configure_subcommand_reapplies_the_saved_profile_without_a_terminal() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
+    save_profile(
+        Target::Claude,
+        &environment,
+        &proxy.base_url,
+        Some("claude-1"),
+    )
+    .await;
+    let mut harness = Harness::new(environment, context(&proxy.base_url, None));
+    let args = ConfigureArgs {
+        connection: group_connection(None, None),
+        command: Some(ConfigureTarget::Claude {
+            connection: ConnectionFlags::from(group_connection(None, None)),
+            model: None,
+            default_model: false,
+        }),
+    };
+    harness.configure(args).await.unwrap();
+    assert!(harness.prompter.calls.is_empty());
+    let settings = claude_settings(&harness.environment);
+    assert_eq!(
+        claude_env(&settings, "ANTHROPIC_AUTH_TOKEN").as_deref(),
+        Some("sk-saved")
+    );
+    assert_eq!(
+        claude_env(&settings, "ANTHROPIC_MODEL").as_deref(),
+        Some("claude-1")
+    );
+}
