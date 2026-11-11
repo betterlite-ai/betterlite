@@ -1,13 +1,11 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use deadpool_postgres::GenericClient as _;
 use secrecy::SecretString;
-use tokio::time::{Instant, sleep};
 
-use crate::request_log_indexes::replica_identity::{
-    apply_on, apply_replica_identity_full, remaining,
-};
+use crate::request_log_indexes::replica_identity::{apply_on, apply_replica_identity_full};
 
+use super::fake_postgres::delayed_stalled_server;
 use super::support::{
     FakeDatabase, FakeFault, PostgresTest, errored, informed, install_logs, replica_identity,
     role_name, stalled_database_url,
@@ -193,25 +191,27 @@ async fn replica_identity_connect_times_out() {
     sockets.shutdown().await;
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn replica_connect_time_counts_against_the_command_budget() {
     let (logs, _guard) = install_logs();
-    let fake = FakeDatabase::default();
-    fake.configure(|state| {
-        state
-            .statement_faults
-            .push(("DO $$".to_owned(), FakeFault::Pending));
-    });
+    let (url, mut servers) = delayed_stalled_server(Duration::from_millis(600)).await;
+    let budget = Duration::from_secs(1);
     let started = Instant::now();
-    sleep(Duration::from_millis(60)).await;
-    let left = remaining(Duration::from_millis(100), started);
-    assert_eq!(left, Duration::from_millis(40));
-    assert!(!apply_on(&fake, left).await);
-    assert_eq!(started.elapsed(), Duration::from_millis(100));
+    assert!(!apply_replica_identity_full(&url, budget).await);
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= budget,
+        "the run ended before its command budget: {elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(1300),
+        "the connect delay was not charged against the command budget: {elapsed:?}"
+    );
     assert!(errored(
         &logs.contents(),
         "Timed out setting REPLICA IDENTITY FULL on LiteLLM tables"
     ));
+    servers.shutdown().await;
 }
 
 #[tokio::test]

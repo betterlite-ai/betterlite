@@ -2,6 +2,7 @@
 
 mod connect;
 mod ensure;
+mod fake_postgres;
 mod leaf;
 mod locks;
 mod partition;
