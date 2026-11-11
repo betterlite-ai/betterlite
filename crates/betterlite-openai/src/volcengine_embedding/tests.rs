@@ -5,17 +5,21 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::error::{VolcEngineEmbeddingError, get_error_class};
 use super::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use super::reply::decode_reply;
 use super::request::{get_complete_url, transform_embedding_request, validate_environment};
-use crate::embedding::{EmbeddingInput, EmbeddingResponse, EmbeddingUsage};
+use crate::embedding::{EmbeddingInput, EmbeddingResponse, EmbeddingUsage, EmbeddingVector};
 use crate::openai_base_config::{Headers, Object};
 
-fn object(value: Value) -> Object {
-    serde_json::from_value(value).unwrap()
+fn object(text: &str) -> Object {
+    serde_json::from_str(text).unwrap()
+}
+
+fn value(text: &str) -> Value {
+    serde_json::from_str(text).unwrap()
 }
 
 fn secret(text: &str) -> SecretString {
@@ -29,11 +33,7 @@ fn header_map(pairs: &[(&str, &str)]) -> Headers {
         .collect()
 }
 
-fn map(
-    params: Value,
-    options: Value,
-    drop_params: bool,
-) -> Result<Object, VolcEngineEmbeddingError> {
+fn map(params: &str, options: &str, drop_params: bool) -> Result<Object, VolcEngineEmbeddingError> {
     let mut optional = object(options);
     map_openai_params(&object(params), &mut optional, drop_params).map(|()| optional)
 }
@@ -47,79 +47,76 @@ fn the_supported_list_is_the_fixed_litellm_list() {
 }
 
 #[rstest]
-#[case::float(json!({"encoding_format": "float"}))]
-#[case::base64(json!({"encoding_format": "base64"}))]
-#[case::null(json!({"encoding_format": null}))]
-#[case::user(json!({"user": "u"}))]
-#[case::null_user(json!({"user": null}))]
-#[case::extra_headers(json!({"extra_headers": {"x-call": "1"}}))]
-fn a_supported_option_is_kept_as_given(#[case] params: Value) {
-    assert_eq!(
-        map(params.clone(), json!({}), false).unwrap(),
-        object(params)
-    );
+#[case::float(r#"{"encoding_format": "float"}"#)]
+#[case::base64(r#"{"encoding_format": "base64"}"#)]
+#[case::null(r#"{"encoding_format": null}"#)]
+#[case::user(r#"{"user": "u"}"#)]
+#[case::null_user(r#"{"user": null}"#)]
+#[case::extra_headers(r#"{"extra_headers": {"x-call": "1"}}"#)]
+fn a_supported_option_is_kept_as_given(#[case] params: &str) {
+    assert_eq!(map(params, "{}", false).unwrap(), object(params));
 }
 
 #[rstest]
-#[case::empty(json!({"encoding_format": ""}))]
-#[case::wrong_case(json!({"encoding_format": "Float"}))]
-#[case::number(json!({"encoding_format": 1}))]
-#[case::bool(json!({"encoding_format": true}))]
-#[case::list(json!({"encoding_format": ["float"]}))]
-fn a_bad_encoding_format_fails_without_drop_params(#[case] params: Value) {
+#[case::empty(r#"{"encoding_format": ""}"#)]
+#[case::wrong_case(r#"{"encoding_format": "Float"}"#)]
+#[case::number(r#"{"encoding_format": 1}"#)]
+#[case::bool(r#"{"encoding_format": true}"#)]
+#[case::list(r#"{"encoding_format": ["float"]}"#)]
+fn a_bad_encoding_format_fails_without_drop_params(#[case] params: &str) {
     assert!(matches!(
-        map(params, json!({}), false),
+        map(params, "{}", false),
         Err(VolcEngineEmbeddingError::UnsupportedEncodingFormat { .. })
     ));
 }
 
 #[rstest]
-#[case::empty(json!({"encoding_format": ""}))]
-#[case::number(json!({"encoding_format": 1}))]
-#[case::bool(json!({"encoding_format": true}))]
-fn a_bad_encoding_format_is_dropped_with_drop_params(#[case] params: Value) {
-    assert_eq!(map(params, json!({}), true).unwrap(), Object::new());
+#[case::empty(r#"{"encoding_format": ""}"#)]
+#[case::number(r#"{"encoding_format": 1}"#)]
+#[case::bool(r#"{"encoding_format": true}"#)]
+fn a_bad_encoding_format_is_dropped_with_drop_params(#[case] params: &str) {
+    assert_eq!(map(params, "{}", true).unwrap(), Object::new());
 }
 
 #[rstest]
-#[case::dimensions(json!({"dimensions": 3}))]
-#[case::modalities(json!({"modalities": ["text"]}))]
-fn an_unsupported_option_fails_without_drop_params(#[case] params: Value) {
+#[case::dimensions(r#"{"dimensions": 3}"#)]
+#[case::modalities(r#"{"modalities": ["text"]}"#)]
+fn an_unsupported_option_fails_without_drop_params(#[case] params: &str) {
     assert!(matches!(
-        map(params, json!({}), false),
+        map(params, "{}", false),
         Err(VolcEngineEmbeddingError::UnsupportedParam { .. })
     ));
 }
 
 #[rstest]
-#[case::dimensions(json!({"dimensions": 3}))]
-#[case::modalities(json!({"modalities": ["text"]}))]
-fn an_unsupported_option_is_dropped_with_drop_params(#[case] params: Value) {
-    assert_eq!(map(params, json!({}), true).unwrap(), Object::new());
+#[case::dimensions(r#"{"dimensions": 3}"#)]
+#[case::modalities(r#"{"modalities": ["text"]}"#)]
+fn an_unsupported_option_is_dropped_with_drop_params(#[case] params: &str) {
+    assert_eq!(map(params, "{}", true).unwrap(), Object::new());
 }
 
 #[test]
 fn the_options_already_present_survive_the_mapping() {
     let mapped = map(
-        json!({"encoding_format": "float"}),
-        json!({"dimensions": 9, "other": 1}),
+        r#"{"encoding_format": "float"}"#,
+        r#"{"dimensions": 9, "other": 1}"#,
         false,
     )
     .unwrap();
     assert_eq!(
         mapped,
-        object(json!({"dimensions": 9, "other": 1, "encoding_format": "float"}))
+        object(r#"{"dimensions": 9, "other": 1, "encoding_format": "float"}"#)
     );
 }
 
 #[test]
 fn the_error_names_the_rejected_option() {
-    let error = map(json!({"dimensions": 3}), json!({}), false).unwrap_err();
+    let error = map(r#"{"dimensions": 3}"#, "{}", false).unwrap_err();
     assert_eq!(
         error.to_string(),
         "Unsupported parameter for Volcengine: dimensions"
     );
-    let format = map(json!({"encoding_format": 1}), json!({}), false).unwrap_err();
+    let format = map(r#"{"encoding_format": 1}"#, "{}", false).unwrap_err();
     assert!(
         format
             .to_string()
@@ -193,88 +190,67 @@ fn the_volcengine_headers_win_over_a_caller_header_with_the_same_spelling() {
 }
 
 #[rstest]
-#[case::single_text(EmbeddingInput::Text(String::from("hello")), json!(["hello"]))]
+#[case::single_text(EmbeddingInput::Text(String::from("hello")), r#"["hello"]"#)]
 #[case::texts(
     EmbeddingInput::Texts(vec![String::from("a"), String::from("b")]),
-    json!(["a", "b"])
+    r#"["a", "b"]"#
 )]
-#[case::tokens(EmbeddingInput::Tokens(vec![1, 2]), json!([1, 2]))]
-#[case::token_lists(EmbeddingInput::TokenLists(vec![vec![1, 2]]), json!([[1, 2]]))]
+#[case::tokens(EmbeddingInput::Tokens(vec![1, 2]), "[1, 2]")]
+#[case::token_lists(EmbeddingInput::TokenLists(vec![vec![1, 2]]), "[[1, 2]]")]
 fn a_single_string_becomes_a_one_item_list_and_lists_stay(
     #[case] input: EmbeddingInput,
-    #[case] expected: Value,
+    #[case] expected: &str,
 ) {
     let body = transform_embedding_request("doubao-embedding", &input, &Object::new());
+    assert_eq!(body.get("input"), Some(&value(expected)));
     assert_eq!(
-        body,
-        object(json!({"model": "doubao-embedding", "input": expected}))
+        body.get("model").and_then(Value::as_str),
+        Some("doubao-embedding")
     );
 }
 
 #[test]
 fn only_the_two_body_options_are_added_and_a_null_one_is_left_out() {
-    let options = object(json!({
-        "encoding_format": "base64",
-        "user": "u",
-        "extra_headers": {"x-call": "1"},
-        "other": 1,
-    }));
+    let options = object(
+        r#"{"encoding_format": "base64", "user": "u", "extra_headers": {"x-call": "1"}, "other": 1}"#,
+    );
     let body =
         transform_embedding_request("m", &EmbeddingInput::Text(String::from("hi")), &options);
     assert_eq!(
         body,
-        object(json!({
-            "model": "m",
-            "input": ["hi"],
-            "encoding_format": "base64",
-            "user": "u",
-        }))
+        object(r#"{"model": "m", "input": ["hi"], "encoding_format": "base64", "user": "u"}"#)
     );
-    let nulls = object(json!({"encoding_format": null, "user": null}));
-    let body = transform_embedding_request("m", &EmbeddingInput::Text(String::from("hi")), &nulls);
-    assert_eq!(body, object(json!({"model": "m", "input": ["hi"]})));
+    let nulls = object(r#"{"encoding_format": null, "user": null}"#);
+    let null_body =
+        transform_embedding_request("m", &EmbeddingInput::Text(String::from("hi")), &nulls);
+    assert_eq!(null_body, object(r#"{"model": "m", "input": ["hi"]}"#));
 }
 
-fn reply(value: Value) -> EmbeddingResponse {
-    serde_json::from_value(value).unwrap()
+fn reply(text: &str) -> EmbeddingResponse {
+    serde_json::from_str(text).unwrap()
 }
 
 #[test]
 fn the_reply_is_built_as_the_openai_embedding_response() {
-    let raw = json!({
-        "id": "dropped",
-        "object": "not-used",
-        "data": [{"object": "embedding", "embedding": [0.1, 0.2], "index": 0}],
-        "model": "m1",
-        "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
-    });
-    let decoded = decode_reply(raw.to_string().as_bytes(), "req-model").unwrap();
+    let raw = r#"{"id": "dropped", "object": "not-used", "data": [{"object": "embedding", "embedding": [0.1, 0.2], "index": 0}], "model": "m1", "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}}"#;
+    let decoded = decode_reply(raw.as_bytes(), "req-model").unwrap();
     assert_eq!(
         decoded,
-        reply(json!({
-            "object": "list",
-            "data": [{"object": "embedding", "embedding": [0.1, 0.2], "index": 0}],
-            "model": "m1",
-            "usage": {
-                "prompt_tokens": 3,
-                "completion_tokens": 1,
-                "total_tokens": 4,
-                "completion_tokens_details": null,
-                "prompt_tokens_details": null,
-            },
-        }))
+        reply(
+            r#"{"object": "list", "data": [{"object": "embedding", "embedding": [0.1, 0.2], "index": 0}], "model": "m1", "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4, "completion_tokens_details": null, "prompt_tokens_details": null}}"#
+        )
     );
 }
 
 #[rstest]
-#[case::missing_model(json!({"data": []}), "req-model")]
-#[case::null_data(json!({"data": null, "model": "m2"}), "m2")]
-#[case::missing_data(json!({"model": "m2"}), "m2")]
+#[case::missing_model(r#"{"data": []}"#, "req-model")]
+#[case::null_data(r#"{"data": null, "model": "m2"}"#, "m2")]
+#[case::missing_data(r#"{"model": "m2"}"#, "m2")]
 fn the_reply_falls_back_to_the_request_model_and_an_empty_data_list(
-    #[case] raw: Value,
+    #[case] raw: &str,
     #[case] model: &str,
 ) {
-    let decoded = decode_reply(raw.to_string().as_bytes(), "req-model").unwrap();
+    let decoded = decode_reply(raw.as_bytes(), "req-model").unwrap();
     assert_eq!(decoded.model, model);
     assert!(decoded.data.is_empty());
     assert_eq!(decoded.object, "list");
@@ -322,9 +298,7 @@ fn a_base64_embedding_stays_a_string() {
     .unwrap();
     assert_eq!(
         decoded.data.first().map(|record| record.embedding.clone()),
-        Some(crate::embedding::EmbeddingVector::Base64(String::from(
-            "Zm9v"
-        )))
+        Some(EmbeddingVector::Base64(String::from("Zm9v")))
     );
 }
 

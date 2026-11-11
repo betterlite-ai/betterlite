@@ -20,10 +20,10 @@ pub struct VolcEngineError {
 // an absent base takes the default while a given one is used as it is
 #[must_use]
 pub fn base_url(api_base: Option<&str>) -> String {
-    match api_base {
-        Some(base) => base.to_owned(),
-        None => DEFAULT_BASE.to_owned(),
-    }
+    let Some(base) = api_base else {
+        return DEFAULT_BASE.to_owned();
+    };
+    base.to_owned()
 }
 
 // the extra headers go on top, so they win over the two defaults on the same key

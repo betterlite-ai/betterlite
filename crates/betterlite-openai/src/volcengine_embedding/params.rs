@@ -1,5 +1,3 @@
-use serde_json::Value;
-
 use crate::openai_base_config::Object;
 
 use super::error::VolcEngineEmbeddingError;
@@ -21,12 +19,13 @@ pub fn map_openai_params(
                     || value
                         .as_str()
                         .is_some_and(|format| ENCODING_FORMATS.contains(&format));
-                if accepted {
-                    optional_params.insert(name.clone(), value.clone());
-                } else if !drop_params {
+                if !accepted && !drop_params {
                     return Err(VolcEngineEmbeddingError::UnsupportedEncodingFormat {
                         value: value.clone(),
                     });
+                }
+                if accepted {
+                    optional_params.insert(name.clone(), value.clone());
                 }
             }
             "user" | "extra_headers" => {
