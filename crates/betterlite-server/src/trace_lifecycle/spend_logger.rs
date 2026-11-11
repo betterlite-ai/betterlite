@@ -50,11 +50,17 @@ pub trait SpendLoggerFactory<Storage: ClickHouseStorage>: Send + Sync {
         &self,
         storage: Arc<Storage>,
     ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, TraceLifecycleError>;
+
+    // B4001's projection marks rows from the Lens context injected here, so one shared context paints them all
+    fn lens(&self) -> LensAnalysis {
+        LensAnalysis::default()
+    }
 }
 
 pub struct ClickHouseSpendLoggers {
     pub settings: ClickHouseSettings,
     pub tasks: TaskTracker,
+    pub lens: LensAnalysis,
 }
 
 impl<Storage: ClickHouseStorage> SpendLoggerFactory<Storage> for ClickHouseSpendLoggers {
@@ -70,6 +76,10 @@ impl<Storage: ClickHouseStorage> SpendLoggerFactory<Storage> for ClickHouseSpend
                 self.tasks.clone(),
             ),
         })
+    }
+
+    fn lens(&self) -> LensAnalysis {
+        self.lens.clone()
     }
 }
 

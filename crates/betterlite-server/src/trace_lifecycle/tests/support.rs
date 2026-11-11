@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::event::LoggerEvent;
+use betterlite_logging::clickhouse::clickhouse_logging::context::LensAnalysis;
 use betterlite_logging::clickhouse::clickhouse_logging::settings::ClickHouseSettings;
 use betterlite_logging::clickhouse::clickhouse_logging::spend_logger::ClickHouseSpendLogger;
 use betterlite_logging::clickhouse::clickhouse_logging::storage::ClickHouseStorage;
@@ -333,6 +334,7 @@ pub(crate) fn spend_loggers(settings: ClickHouseSettings) -> ClickHouseSpendLogg
     ClickHouseSpendLoggers {
         settings,
         tasks: TaskTracker::new(),
+        lens: LensAnalysis::default(),
     }
 }
 

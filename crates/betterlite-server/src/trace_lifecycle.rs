@@ -6,7 +6,6 @@ pub mod spend_logger;
 use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger;
-use betterlite_logging::clickhouse::clickhouse_logging::context::LensAnalysis;
 use betterlite_logging::registry::CallbackRegistry;
 use betterlite_logging::registry::identity::CallbackIdentity;
 use betterlite_logging::registry::phases::CallbackList;
@@ -45,7 +44,7 @@ where
     };
     let logger = Arc::new(TraceSpendLogger {
         spend: loggers.build(receiver.storage())?,
-        lens: LensAnalysis::default(),
+        lens: loggers.lens(),
     });
     let identity = CallbackIdentity {
         class_name: CALLBACK_NAME.to_owned(),

@@ -3,13 +3,15 @@
 use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger;
+use betterlite_logging::clickhouse::clickhouse_logging::context::LensAnalysis;
 use betterlite_logging::registry::CallbackRegistry;
 use betterlite_logging::registry::phases::{CallbackList, CallbackPhase};
+use tokio_util::task::TaskTracker;
 
 use super::error::TraceLifecycleError;
 use super::ports::ReceiverHandle as _;
 use super::session::Started;
-use super::spend_logger::CALLBACK_NAME;
+use super::spend_logger::{CALLBACK_NAME, ClickHouseSpendLoggers};
 use super::{REGISTRATION_LISTS, start};
 
 mod support;
@@ -335,4 +337,35 @@ async fn disabled_logs_nothing() {
     assert!(started.is_none());
     drop(guard);
     assert!(!log_text(&log).contains("Agent tracing enabled"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn lens_scope_marks_the_row() {
+    let (factory, storage, mut registry) = setup();
+    let lens = LensAnalysis::default();
+    let loggers = ClickHouseSpendLoggers {
+        settings: spend_settings(10, 3),
+        tasks: TaskTracker::new(),
+        lens: lens.clone(),
+    };
+    let started = start(true, &factory, &loggers, &mut registry)
+        .await
+        .expect("the lifecycle starts")
+        .expect("the lifecycle keeps its receiver");
+    let logger = started_loggers(&registry, CallbackPhase::Success);
+    let scope = lens.lens_analysis();
+    logger
+        .async_log_success_event(event("completion", "success"))
+        .await
+        .unwrap();
+    drop(scope);
+    drop(logger);
+    started.session.close(&mut registry).await;
+    let insertions = storage.insertions();
+    assert_eq!(insertions.len(), 1);
+    assert!(
+        insertions[0].rows[0]
+            .metadata
+            .contains(r#""litellm_lens_internal":true"#)
+    );
 }
