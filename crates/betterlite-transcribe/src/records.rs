@@ -60,6 +60,11 @@ pub trait JobLookup: Send + Sync {
 pub enum JobLookupError {
     #[error("Transcribe job lookup failed")]
     Unavailable,
+    #[error("Transcribe job lookup was rejected with status {status}")]
+    Rejected {
+        status: u16,
+        aws_error_type: Option<String>,
+    },
     #[error("Transcribe job response is invalid")]
     InvalidResponse(#[source] serde_json::Error),
 }

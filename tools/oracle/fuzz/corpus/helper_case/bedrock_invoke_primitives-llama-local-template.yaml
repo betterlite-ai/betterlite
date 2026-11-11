@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-invoke-primitives-llama-local-template-seed
+call:
+  bedrock_invoke_primitives:
+    llama_local_template:
+      local_assets: false
+      cases:
+        - model: meta.llama3-8b-instruct-v1:0
+          messages: [{role: user, content: hi}]
+env: {}
+compare: {ignore: []}

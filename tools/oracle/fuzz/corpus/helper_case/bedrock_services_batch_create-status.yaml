@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-batch-create-status-seed
+call:
+  bedrock_services_batch_create:
+    operation: create_status_mapping
+    scenarios:
+      - response_body: '{"jobArn": "job", "status": "InProgress"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job"}'
+        clock: [111]
+env: {}
+compare: {ignore: []}

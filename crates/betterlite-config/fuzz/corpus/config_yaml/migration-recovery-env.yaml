@@ -1,0 +1,2 @@
+model_list: []
+# USE_V2_MIGRATION_RESOLVER, USE_PRISMA_DB_PUSH and LITELLM_SET_REPLICA_IDENTITY_FULL are read from the process environment

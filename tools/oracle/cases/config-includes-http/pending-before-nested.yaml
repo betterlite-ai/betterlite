@@ -1,0 +1,61 @@
+name: includes-pending-before-nested
+config: |
+  include:
+    - first.yaml
+    - second.yaml
+  general_settings:
+    master_key: oracle-master
+  model_list:
+    - model_name: pending-model
+      litellm_params:
+        model: openai/gpt-4o
+        api_base: "{{upstream}}"
+        api_key: pending-key
+        max_retries: 0
+  router_settings:
+    num_retries: 0
+env: {}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-pending-model}
+    body:
+      id: chatcmpl-pending-model
+      object: chat.completion
+      created: 1700000107
+      model: gpt-4o
+      choices: [{index: 0, message: {role: assistant, content: Nested first!}, finish_reason: stop}]
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+steps:
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer second-key, x-litellm-call-id: oracle-call-pending-second}
+      body: {model: pending-model, messages: [{role: user, content: second}]}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own message}
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer nested-key, x-litellm-call-id: oracle-call-pending-nested}
+      body: {model: pending-model, messages: [{role: user, content: nested}]}
+    compare:
+      headers: [content-type, llm_provider-content-type, llm_provider-x-request-id, x-litellm-call-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base, x-litellm-attempted-retries, x-litellm-attempted-fallbacks]
+      headers_present: [x-litellm-response-duration-ms, x-litellm-overhead-duration-ms, x-litellm-callback-duration-ms, x-litellm-version]
+      upstream_headers: [authorization, content-type]
+      ignore: []
+config_files:
+  first.yaml: |
+    include:
+      - nested.yaml
+    general_settings:
+      master_key: first-key
+  second.yaml: |
+    general_settings:
+      master_key: second-key
+  nested.yaml: |
+    general_settings:
+      master_key: nested-key

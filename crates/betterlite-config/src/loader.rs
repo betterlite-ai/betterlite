@@ -1,3 +1,4 @@
+use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use std::collections::{BTreeMap, BTreeSet};
@@ -84,7 +85,16 @@ impl<L: EnvironmentLookup> ConfigLoader<L> {
         if !paths.is_empty() {
             return Err(ConfigError::Unsupported { paths });
         }
-        let sections = raw_sections.convert(&self.lookup)?;
+        // LiteLLM's env fallback warns and turns the flag on, unlike the request-level flag which warns and off
+        let drop_params =
+            drop_params_env_flag(self.lookup.lookup("LITELLM_DROP_PARAMS").as_deref());
+        if drop_params.warned {
+            tracing::warn!("LITELLM_DROP_PARAMS is not a flag value, treating it as on");
+        }
+        let sections = raw_sections.convert(&DropParamsLookup {
+            lookup: &self.lookup,
+            enabled: drop_params.enabled,
+        })?;
         convert(raw, sections, &self.lookup)
     }
 }
@@ -130,6 +140,25 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
         .collect()
 }
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
+
+// sections read the drop-params env through this lookup, so the loader resolves it once, warn-and-on included
+struct DropParamsLookup<'lookup, L> {
+    lookup: &'lookup L,
+    enabled: bool,
+}
+
+impl<L: EnvironmentLookup> EnvironmentLookup for DropParamsLookup<'_, L> {
+    fn lookup(&self, name: &str) -> Option<String> {
+        if name == "LITELLM_DROP_PARAMS" {
+            return Some(self.enabled.to_string());
+        }
+        self.lookup.lookup(name)
+    }
+
+    fn system_home(&self) -> Option<PathBuf> {
+        self.lookup.system_home()
+    }
+}
 
 fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Config, ConfigError> {
     let mut model_list = Vec::with_capacity(raw.model_list.len());

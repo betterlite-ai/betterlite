@@ -1,0 +1,23 @@
+kind: helper
+name: base64-image-result
+call:
+  bedrock_other_image_call:
+    function: base64_image_result
+    probes:
+      - credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["b25l", "dHdv"]}'}
+      - model: amazon.nova-canvas-v1:0
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1, response_format: url}
+        reply: {body: '{"images": ["dXJs"]}'}
+      - model: stability.stable-diffusion-xl-v1
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"artifacts": [{"base64": "YQ=="}, {"base64": "Yg=="}]}'}
+      - model: stability.sd3-large-v1:0
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["czM="]}'}
+env: {}
+compare: {ignore: []}

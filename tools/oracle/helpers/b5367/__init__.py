@@ -53,9 +53,9 @@ def install_state(input_value: Input, markers: Markers) -> None:
     STATE.callbacks = markers.entries(input_value.get("callbacks"))
     STATE.input_callback = markers.entries(lists.get("input"))
     STATE.success_callback = markers.entries(lists.get("success"))
-    STATE._async_success_callback = markers.entries(lists.get("async_success"))  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L200-L202
+    STATE._async_success_callback = markers.entries(lists.get("async_success"))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L200-L202
     STATE.failure_callback = markers.entries(lists.get("failure"))
-    STATE._async_failure_callback = markers.entries(lists.get("async_failure"))  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L203-L205
+    STATE._async_failure_callback = markers.entries(lists.get("async_failure"))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L203-L205
     STATE.pre_call_rules = (
         [] if rules is None else [None if r is None else FixedRule(r) for r in rules]
     )
@@ -63,7 +63,7 @@ def install_state(input_value: Input, markers: Markers) -> None:
         [] if provider_map is None else [{"provider": n} for n in provider_map]
     )
     STATE.provider_list = [] if providers is None else providers
-    STATE._custom_providers = [] if custom_providers is None else custom_providers  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1528
+    STATE._custom_providers = [] if custom_providers is None else custom_providers  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1528
     LOGGING._init_custom_logger_compatible_class = Recorder(input_value.get("resolver"), markers)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4502
     UTILS.get_litellm_logging_class = LoggingClassGetter()
     UTILS.callback_list = ["held by the case"]
@@ -73,9 +73,9 @@ def lists_out(markers: Markers) -> Json:
     return {
         "input": [markers.entry_out(item) for item in STATE.input_callback],
         "success": [markers.entry_out(item) for item in STATE.success_callback],
-        "async_success": [markers.entry_out(item) for item in STATE._async_success_callback],  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L200-L202
+        "async_success": [markers.entry_out(item) for item in STATE._async_success_callback],  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L200-L202
         "failure": [markers.entry_out(item) for item in STATE.failure_callback],
-        "async_failure": [markers.entry_out(item) for item in STATE._async_failure_callback],  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L203-L205
+        "async_failure": [markers.entry_out(item) for item in STATE._async_failure_callback],  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L203-L205
     }
 
 
@@ -95,7 +95,7 @@ def run_setup(input_value: Input) -> Json:
         "lists": lists_out(markers),
         "providers": {
             "providers": [*STATE.provider_list],
-            "custom_providers": [*STATE._custom_providers],  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1528
+            "custom_providers": [*STATE._custom_providers],  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1528
         },
         "logging": logging_out(markers, logging_obj),
     }

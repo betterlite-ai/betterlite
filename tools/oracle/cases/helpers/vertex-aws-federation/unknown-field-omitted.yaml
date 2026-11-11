@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-aws-federation-unknown-field-omitted
+call:
+  vertex_aws_federation:
+    audience: //iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/pool/providers/provider
+    token_url: https://sts.googleapis.com/v1/token
+    aws_access_key_id: AKIAORACLEEXAMPLE
+    aws_region_name: eu-west-1
+    aws_unknown_field: ignored
+    aws_session_tags: [{Key: Environment, Value: Test}]
+    credential_source: {environment_id: aws1}
+env: {}
+compare: {ignore: []}

@@ -4,7 +4,8 @@ use thiserror::Error;
 
 use crate::records::{StartedJob, TranscriptionJobResponse};
 
-const MAX_MEDIA_DURATION_SECONDS: u64 = 3600;
+// LiteLLM's TRANSCRIBE_MAX_MEDIA_DURATION_SECONDS, Amazon Transcribe's audio length quota
+const MAX_MEDIA_DURATION_SECONDS: u64 = 28800;
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum TranscribeCostError {

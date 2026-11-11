@@ -1,0 +1,21 @@
+kind: helper
+name: billing-text-unicode-whitespace-and-combining-characters
+call:
+  billing_text:
+    calls:
+      - function: count_characters
+        text: " a\tb\nc\r"
+      - function: count_characters
+        text: " a　b c"
+      - function: count_characters
+        text: "\u001C\u001D\u001E\u001F"
+      - function: count_characters
+        text: "a​b"
+      - function: count_characters
+        text: "é"
+      - function: count_characters
+        text: "\U0001F600!"
+      - function: count_characters
+        text: ""
+env: {}
+compare: {ignore: []}
