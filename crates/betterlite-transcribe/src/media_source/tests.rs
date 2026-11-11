@@ -1,13 +1,12 @@
 #![cfg(test)]
 
 use std::fs;
-use std::io::{self, Cursor, Read};
+use std::io::Cursor;
 use std::path::PathBuf;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use crate::media_source::mp3::mp3_seconds;
 use crate::media_source::{
     MAX_MEDIA_BYTES, MediaSizeGuard, content_length_within_limit, media_duration_seconds,
     media_predates_job, s3_media_url,
@@ -16,7 +15,6 @@ use crate::media_source::{
 const VALID_WAV: &[u8] = include_bytes!("../../fuzz/corpus/media_duration/valid.wav");
 const VALID_FLAC: &[u8] = include_bytes!("../../fuzz/corpus/media_duration/valid.flac");
 const VALID_OGG: &[u8] = include_bytes!("../../fuzz/corpus/media_duration/valid.ogg");
-const VALID_MP3: &[u8] = include_bytes!("../../fuzz/corpus/media_duration/valid.mp3");
 
 // 2015-10-21T07:28:00Z, the creation time the Last-Modified cases compare against
 const JOB_CREATED_AT: f64 = 1_445_412_480.0;
@@ -59,50 +57,6 @@ fn zero_rate_wav() -> Vec<u8> {
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes
-}
-
-const STEREO_FRAME: [u8; 4] = [0xFF, 0xFB, 0x90, 0x00];
-const STEREO_FRAME_BYTES: usize = 417;
-
-// nonzero filler, so a frame length that is off by one misaligns the next header
-fn frame(header: [u8; 4], length: usize) -> Vec<u8> {
-    let mut bytes = vec![0x01_u8; length];
-    bytes[..4].copy_from_slice(&header);
-    bytes
-}
-
-fn xing_frame(
-    header: [u8; 4],
-    length: usize,
-    side_information: usize,
-    tag: [u8; 4],
-    (flags, frames): (u32, u32),
-) -> Vec<u8> {
-    let mut bytes = frame(header, length);
-    let fields = [
-        tag.as_slice(),
-        flags.to_be_bytes().as_slice(),
-        frames.to_be_bytes().as_slice(),
-    ]
-    .concat();
-    for (slot, value) in bytes.iter_mut().skip(4).skip(side_information).zip(fields) {
-        *slot = value;
-    }
-    bytes
-}
-
-struct FailingAfter {
-    data: Cursor<Vec<u8>>,
-}
-
-impl Read for FailingAfter {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let read = self.data.read(buf)?;
-        if read == 0 && !buf.is_empty() {
-            return Err(io::Error::other("the source went away"));
-        }
-        Ok(read)
-    }
 }
 
 #[test]
@@ -302,205 +256,6 @@ fn media_duration_reads_an_ogg_last_page_granule() {
 }
 
 #[test]
-fn media_duration_reads_an_mp3_frame_count() {
-    // the Xing header declares 16 frames of 576 samples at 8 kHz
-    assert_eq!(
-        media_duration_seconds(Cursor::new(VALID_MP3)),
-        Some(Decimal::new(1152, 3))
-    );
-}
-
-#[rstest]
-#[case::v1_layer3_44k([0xFF, 0xFB, 0x90, 0x00], 417, 2304, 44_100)]
-#[case::v1_layer3_48k([0xFF, 0xFB, 0x94, 0x00], 384, 2304, 48_000)]
-#[case::v1_layer3_32k([0xFF, 0xFB, 0x98, 0x00], 576, 2304, 32_000)]
-#[case::v1_layer2([0xFF, 0xFD, 0x10, 0x00], 104, 2304, 44_100)]
-#[case::v1_layer1([0xFF, 0xFF, 0x40, 0x00], 139, 768, 44_100)]
-#[case::v2_layer3([0xFF, 0xF3, 0x80, 0x00], 208, 1152, 22_050)]
-#[case::v2_layer2([0xFF, 0xF5, 0x18, 0x00], 72, 2304, 16_000)]
-#[case::v25_layer3_mono([0xFF, 0xE3, 0x88, 0xC0], 576, 1152, 8_000)]
-#[case::v25_layer2([0xFF, 0xE5, 0x40, 0x00], 417, 2304, 11_025)]
-fn media_duration_measures_a_frame_of_every_version_and_layer(
-    #[case] header: [u8; 4],
-    #[case] length: usize,
-    #[case] samples_of_both: u64,
-    #[case] sample_rate: u32,
-) {
-    let bytes = [frame(header, length), frame(header, length)].concat();
-    let expected = Decimal::from(samples_of_both).checked_div(Decimal::from(sample_rate));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[test]
-fn media_duration_adds_the_padding_bit_to_the_frame_length() {
-    let padded = [0xFF, 0xFB, 0x92, 0x00];
-    let bytes = [
-        frame(padded, 418),
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-        frame(padded, 418),
-    ]
-    .concat();
-    let expected = Decimal::from(3456_u32).checked_div(Decimal::from(44_100_u32));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[test]
-fn media_duration_sums_each_sample_rate_exactly() {
-    let bytes = [
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-        frame([0xFF, 0xFB, 0x94, 0x00], 384),
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-    ]
-    .concat();
-    let at_44k = Decimal::from(2304_u32).checked_div(Decimal::from(44_100_u32));
-    let at_48k = Decimal::from(1152_u32).checked_div(Decimal::from(48_000_u32));
-    assert_eq!(
-        mp3_seconds(Cursor::new(bytes)),
-        at_44k.unwrap().checked_add(at_48k.unwrap())
-    );
-}
-
-#[rstest]
-#[case::xing(*b"Xing", 1, 115_200)]
-#[case::info(*b"Info", 1, 115_200)]
-#[case::frames_flag_among_others(*b"Xing", 3, 115_200)]
-#[case::frames_flag_clear(*b"Xing", 2, 4608)]
-#[case::other_tag(*b"Xinh", 1, 4608)]
-fn media_duration_trusts_a_xing_frame_count_only_when_flagged(
-    #[case] tag: [u8; 4],
-    #[case] flags: u32,
-    #[case] samples: u64,
-) {
-    let bytes = [
-        xing_frame(STEREO_FRAME, STEREO_FRAME_BYTES, 32, tag, (flags, 100)),
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-    ]
-    .concat();
-    let expected = Decimal::from(samples).checked_div(Decimal::from(44_100_u32));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[rstest]
-#[case::v1_stereo([0xFF, 0xFB, 0x90, 0x00], 417, 32, 11_520, 44_100)]
-#[case::v1_mono([0xFF, 0xFB, 0x90, 0xC0], 417, 17, 11_520, 44_100)]
-#[case::v2_stereo([0xFF, 0xF3, 0x80, 0x00], 208, 17, 5760, 22_050)]
-#[case::v2_mono([0xFF, 0xF3, 0x80, 0xC0], 208, 9, 5760, 22_050)]
-fn media_duration_finds_the_xing_fields_after_the_side_information(
-    #[case] header: [u8; 4],
-    #[case] length: usize,
-    #[case] side_information: usize,
-    #[case] samples: u64,
-    #[case] sample_rate: u32,
-) {
-    let bytes = [
-        xing_frame(header, length, side_information, *b"Xing", (1, 10)),
-        frame(header, length),
-    ]
-    .concat();
-    let expected = Decimal::from(samples).checked_div(Decimal::from(sample_rate));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[rstest]
-#[case::trailing_zeros(vec![0; 5])]
-#[case::partial_header(vec![0xFF])]
-#[case::partial_header_of_three(vec![0xFF, 0xFB, 0x90])]
-fn media_duration_ignores_trailing_padding_and_a_partial_header(#[case] trailer: Vec<u8>) {
-    let bytes = [frame(STEREO_FRAME, STEREO_FRAME_BYTES), trailer].concat();
-    let expected = Decimal::from(1152_u32).checked_div(Decimal::from(44_100_u32));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[test]
-fn media_duration_skips_zero_bytes_before_a_frame() {
-    let bytes = [vec![0; 3], frame(STEREO_FRAME, STEREO_FRAME_BYTES)].concat();
-    let expected = Decimal::from(1152_u32).checked_div(Decimal::from(44_100_u32));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[rstest]
-#[case::no_footer(0x00, 0)]
-#[case::footer(0x10, 10)]
-#[case::other_flags(0xE0, 0)]
-fn media_duration_skips_an_id3v2_tag_and_its_footer(#[case] flags: u8, #[case] footer: usize) {
-    let bytes = [
-        b"ID3\x04\x00".to_vec(),
-        vec![flags, 0, 0, 1, 72],
-        vec![0x01; 200],
-        vec![0x01; footer],
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-    ]
-    .concat();
-    let expected = Decimal::from(1152_u32).checked_div(Decimal::from(44_100_u32));
-    assert_eq!(mp3_seconds(Cursor::new(bytes.clone())), expected);
-    assert_eq!(media_duration_seconds(Cursor::new(bytes)), expected);
-}
-
-#[test]
-fn media_duration_skips_a_trailing_id3v1_tag() {
-    let bytes = [
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-        b"TAG".to_vec(),
-        vec![0x20; 125],
-    ]
-    .concat();
-    let expected = Decimal::from(1152_u32).checked_div(Decimal::from(44_100_u32));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[test]
-fn media_duration_skips_an_ape_tag_by_its_declared_size() {
-    let bytes = [
-        b"APETAGEX".to_vec(),
-        vec![0xD0, 0x07, 0x00, 0x00],
-        100_u32.to_le_bytes().to_vec(),
-        vec![0x01; 116],
-        frame(STEREO_FRAME, STEREO_FRAME_BYTES),
-    ]
-    .concat();
-    let expected = Decimal::from(1152_u32).checked_div(Decimal::from(44_100_u32));
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), expected);
-}
-
-#[rstest]
-#[case::empty(Vec::new())]
-#[case::only_zeros(vec![0; 16])]
-#[case::junk_before_a_frame([b"junk".to_vec(), frame(STEREO_FRAME, STEREO_FRAME_BYTES)].concat())]
-#[case::first_byte_is_not_a_sync(frame([0x41, 0xFB, 0x90, 0x00], STEREO_FRAME_BYTES))]
-#[case::second_byte_is_not_a_sync(frame([0xFF, 0x1B, 0x90, 0x00], STEREO_FRAME_BYTES))]
-#[case::reserved_version(frame([0xFF, 0xEF, 0x90, 0x00], STEREO_FRAME_BYTES))]
-#[case::reserved_layer(frame([0xFF, 0xF9, 0x90, 0x00], STEREO_FRAME_BYTES))]
-#[case::free_bit_rate(frame([0xFF, 0xFB, 0x00, 0x00], STEREO_FRAME_BYTES))]
-#[case::reserved_bit_rate(frame([0xFF, 0xFB, 0xF0, 0x00], STEREO_FRAME_BYTES))]
-#[case::reserved_sample_rate(frame([0xFF, 0xFB, 0x9C, 0x00], STEREO_FRAME_BYTES))]
-#[case::frame_shorter_than_its_fields(frame([0xFF, 0xFF, 0x14, 0x00], 100))]
-#[case::truncated_side_information(frame(STEREO_FRAME, STEREO_FRAME_BYTES)[..20].to_vec())]
-#[case::truncated_xing_fields(frame(STEREO_FRAME, STEREO_FRAME_BYTES)[..40].to_vec())]
-#[case::truncated_body(frame(STEREO_FRAME, STEREO_FRAME_BYTES)[..200].to_vec())]
-#[case::xing_declaring_no_frames(xing_frame(STEREO_FRAME, STEREO_FRAME_BYTES, 32, *b"Xing", (1, 0)))]
-#[case::truncated_id3v2_header(b"ID3\x04\x00".to_vec())]
-#[case::id3v2_size_past_the_end([b"ID3\x04\x00".to_vec(), vec![0, 0, 0, 1, 72], vec![0x01; 10]].concat())]
-#[case::truncated_id3v1([frame(STEREO_FRAME, STEREO_FRAME_BYTES), b"TAG".to_vec(), vec![0x20; 20]].concat())]
-#[case::ape_without_its_magic([b"APETxxxxxxxxxxxx".to_vec(), vec![0x01; 200]].concat())]
-fn media_duration_is_none_for_an_unmeasurable_mp3_stream(#[case] bytes: Vec<u8>) {
-    assert_eq!(mp3_seconds(Cursor::new(bytes)), None);
-}
-
-#[rstest]
-#[case::at_the_header(vec![])]
-#[case::in_the_zero_padding(vec![0])]
-#[case::in_the_header(vec![0xFF])]
-fn media_duration_is_none_when_the_reader_fails_after_a_frame(#[case] trailer: Vec<u8>) {
-    let data = [frame(STEREO_FRAME, STEREO_FRAME_BYTES), trailer].concat();
-    let source = FailingAfter {
-        data: Cursor::new(data),
-    };
-    assert_eq!(mp3_seconds(source), None);
-}
-
-#[test]
 fn media_duration_is_none_for_an_unknown_container() {
     assert_eq!(
         media_duration_seconds(Cursor::new(b"not audio at all".as_slice())),
@@ -513,7 +268,6 @@ fn media_duration_is_none_for_an_unknown_container() {
 #[case::wav(&VALID_WAV[..40])]
 #[case::flac(&VALID_FLAC[..20])]
 #[case::ogg(&VALID_OGG[..5])]
-#[case::mp3(&VALID_MP3[..2])]
 fn media_duration_is_none_for_truncated_input(#[case] bytes: &[u8]) {
     assert_eq!(media_duration_seconds(Cursor::new(bytes)), None);
 }

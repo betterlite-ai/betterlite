@@ -3,8 +3,6 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 use lewton::header::read_header_ident;
 use rust_decimal::Decimal;
 
-use super::mp3::mp3_seconds;
-
 const OGG_HEADER_BYTES: usize = 27;
 const OGG_MAX_SEGMENTS: usize = 255;
 // the three Vorbis headers fit far below this, so an oversized first packet is refused unread
@@ -62,7 +60,8 @@ where
             let ident = read_header_ident(&packet.data).ok()?;
             exact_seconds(last_ogg_granule(&mut media)?, ident.audio_sample_rate)
         }
-        Container::Mp3 => mp3_seconds(media),
+        // mp3-duration 0.1.10 needs thiserror 1.0 beside the lock's 2.0.21, so MP3 has no decoder yet
+        Container::Mp3 => None,
     }
 }
 
