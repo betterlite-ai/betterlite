@@ -1,0 +1,26 @@
+task: B4568
+deviations:
+  - what: The betterlite management CLI runs as a Rust native binary, not a Python process.
+    why: betterlite is a Rust gateway; the CLI must remain compatible as a native executable, not depend on Python.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L768-L821
+  - what: process::replace (or the native equivalent) is called only for the agent binary, never for a proxy process or fallback.
+    why: The betterlite proxy runs out-of-process as a managed child; the CLI does not launch or manage a local gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L713-L745
+  - what: The Codex base instructions are compiled into the binary, so the unreadable-asset skip path codex_model_sync_args has in LiteLLM does not exist.
+    why: B4567 bundles the same asset at build time, and an installation that cannot read its own package asset cannot launch a working agent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L598-L601
+  - what: A missing home directory makes prepare_codex install the hook and codex_model_sync_args report a skip reason, where LiteLLM's Path.home() raises an uncaught RuntimeError.
+    why: A working launch always has HOME or CODEX_HOME set, so no setup relies on the traceback, and betterlite reports the same situations through typed values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L508-L511
+  - what: A failed catalog write removes the staged temporary file, where LiteLLM leaves it beside the catalog when the write itself raises.
+    why: A failed write must not leave a partial temporary file in ~/.codex; the catalog written on a later launch replaces only litellm-models.json.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L514-L521
+  - what: "`codex debug models` output that is not valid UTF-8 becomes a ModelSyncSkipped reason, where LiteLLM's subprocess.run(encoding=\"utf-8\") raises an uncaught UnicodeDecodeError."
+    why: A working Codex prints UTF-8 JSON, and a crash before handoff is worse than launching with the built-in catalog.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L541-L556
+  - what: A resolved agent binary or Codex catalog path that is not valid UTF-8 is refused, where Python carries it through surrogate escapes.
+    why: Rust paths may hold bytes that are not UTF-8; launching a mangled path or writing the catalog override through one would hand the agent a command that cannot work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L683-L710
+  - what: The skip reason for a debug-call OSError or timeout is betterlite's own text instead of Python's exception repr, which names the command list.
+    why: The reason reaches the user as a warning; LiteLLM's exception text contains Python's repr of the argument tuple and the subprocess module, which betterlite does not reproduce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L550-L556

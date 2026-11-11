@@ -1,0 +1,35 @@
+task: B4571
+deviations:
+  - what: >-
+      The target checkbox, the two model pickers and the gateway URL and virtual key prompts are drawn by
+      inquire. Their messages, choices, preselected rows, empty-answer rules and hidden key entry are LiteLLM's,
+      but the look, the key bindings and the fuzzy ranking differ from InquirerPy's and click's.
+    why: >-
+      Porting InquirerPy's terminal widgets is a large job for screens only a person reads. Every non-interactive
+      path takes its values from options and the saved setup, and those stay LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L224-L259
+  - what: >-
+      A /v1/models body larger than 16 MiB gets its own error naming the base URL and asking to check that it
+      is a LiteLLM proxy, where LiteLLM reads whatever size the proxy sends.
+    why: >-
+      The listing is untrusted proxy output and rule bounded-inputs gives every inbound body a cap; a proxy
+      that lists more model ids than fit in 16 MiB is not something a working setup has today, and the error
+      names the proxy as the place to look.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pi.py#L86-L115
+  - what: >-
+      A machine with no home directory gets a typed error naming the target's setup, where LiteLLM's Path.home()
+      raises an uncaught RuntimeError while it resolves the settings path.
+    why: >-
+      Rule no-panics forbids a panic, and a Python traceback is not behavior a working setup can rely on; with no
+      home directory there is no Claude Code or Codex settings file to configure either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L210-L211
+  - what: >-
+      The listing request goes through betterlite-http's proxied client (reqwest over rustls with the platform
+      certificate store) and the proxy variables of the injected environment, where LiteLLM's requests call
+      trusts its bundled CA file and answers REQUESTS_CA_BUNDLE.
+    why: >-
+      betterlite's deny table bans a direct reqwest dependency outside betterlite-http, so the CLI uses the
+      one HTTP client crate; its rustls platform verifier trusts a system-installed CA, its client never
+      follows redirects, and its policy reads HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY the way requests does;
+      a Python-only REQUESTS_CA_BUNDLE path is not read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L143-L152

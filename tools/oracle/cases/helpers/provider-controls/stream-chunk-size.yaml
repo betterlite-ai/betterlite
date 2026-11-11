@@ -1,0 +1,8 @@
+kind: helper
+name: provider-controls-stream-chunk-size-string
+call:
+  provider_controls:
+    operation: parse
+    stream_chunk_size: "000000000000000512"
+env: {}
+compare: {ignore: []}

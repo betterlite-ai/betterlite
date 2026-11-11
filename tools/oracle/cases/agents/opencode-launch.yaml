@@ -1,0 +1,23 @@
+kind: helper
+name: agents-opencode-launch
+call:
+  b4568:
+    steps:
+      - agent: opencode
+        scenario: launch
+        command: ["opencode", "run", "hello"]
+        binary: /usr/local/bin/opencode
+        models:
+          - {id: gpt-4o, mode: chat, max_input_tokens: 128000, max_output_tokens: 4096}
+          - {id: embed, mode: embedding}
+      - agent: opencode
+        scenario: existing-config
+        command: ["opencode"]
+        binary: /usr/local/bin/opencode
+      - agent: opencode
+        scenario: missing-binary
+        command: ["opencode"]
+        binary: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,25 @@
+kind: helper
+name: common-headers
+call:
+  b8175:
+    steps:
+      - kind: base_url
+      - kind: base_url
+        api_base: "https://ark.example.test"
+      - kind: headers
+        api_key: "volc-key"
+      - kind: headers
+        api_key: "volc-key"
+        extra_headers:
+          x-call: "1"
+          Content-Type: "text/plain"
+          Authorization: "Custom"
+      - kind: error_class
+        message: "rate limited"
+        status: 429
+        headers: {retry-after: "2"}
+      - kind: error_class
+        message: "boom"
+        status: 500
+env: {}
+compare: {ignore: []}
