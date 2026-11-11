@@ -30,7 +30,7 @@ use crate::commands::configure::args::{
     UnconfigureArgs, UnconfigureTarget,
 };
 use crate::commands::configure::error::ConfigureCommandError;
-use crate::commands::configure::{SetupPorts, run_configure, run_reconfigure, run_unconfigure};
+use crate::commands::configure::{AgentSetupCommand, SetupPorts, run};
 
 pub(crate) const SAFE_CODEX: &str = "codex-cli 0.129.0";
 pub(crate) const SAVED_KEY: &str = "sk-saved";
@@ -83,13 +83,12 @@ pub(crate) fn group_connection(
     }
 }
 
-pub(crate) fn connection_flags(
-    api_key: Option<&str>,
-    gateway_url: Option<&str>,
-) -> ConnectionFlags {
-    ConnectionFlags {
-        api_key: api_key.map(secret),
-        gateway_url: gateway_url.map(str::to_owned),
+impl From<GroupConnection> for ConnectionFlags {
+    fn from(group: GroupConnection) -> Self {
+        Self {
+            api_key: group.api_key,
+            gateway_url: group.gateway_url,
+        }
     }
 }
 
@@ -104,7 +103,7 @@ pub(crate) fn claude_configure(base_url: &str, api_key: &str, model: &str) -> Co
     ConfigureArgs {
         connection: group_connection(None, None),
         command: Some(ConfigureTarget::Claude {
-            connection: connection_flags(Some(api_key), Some(base_url)),
+            connection: ConnectionFlags::from(group_connection(Some(api_key), Some(base_url))),
             model: Some(model.to_owned()),
             default_model: false,
         }),
@@ -211,7 +210,6 @@ pub(crate) enum Reply {
     Targets(Vec<Target>),
     Model(String),
     Url(String),
-    Secret(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -263,9 +261,7 @@ impl Prompter for ScriptedPrompter {
         };
         match self.answer(call)? {
             Reply::Targets(targets) => Ok(targets),
-            _unused @ (Reply::Model(_) | Reply::Url(_) | Reply::Secret(_)) => {
-                Err(AgentSetupError::ListingTaskStopped)
-            }
+            _unused @ (Reply::Model(_) | Reply::Url(_)) => Err(AgentSetupError::ListingTaskStopped),
         }
     }
 
@@ -282,7 +278,7 @@ impl Prompter for ScriptedPrompter {
         };
         match self.answer(call)? {
             Reply::Model(model) => Ok(model),
-            _unused @ (Reply::Targets(_) | Reply::Url(_) | Reply::Secret(_)) => {
+            _unused @ (Reply::Targets(_) | Reply::Url(_)) => {
                 Err(AgentSetupError::ListingTaskStopped)
             }
         }
@@ -295,22 +291,18 @@ impl Prompter for ScriptedPrompter {
         };
         match self.answer(call)? {
             Reply::Url(url) => Ok(url),
-            _unused @ (Reply::Targets(_) | Reply::Model(_) | Reply::Secret(_)) => {
+            _unused @ (Reply::Targets(_) | Reply::Model(_)) => {
                 Err(AgentSetupError::ListingTaskStopped)
             }
         }
     }
 
     fn prompt_secret(&mut self, message: &str) -> Result<SecretString, AgentSetupError> {
-        let call = Call::Secret {
+        // every test run keeps the saved key, which is what an empty entry at this prompt means
+        self.calls.push(Call::Secret {
             message: message.to_owned(),
-        };
-        match self.answer(call)? {
-            Reply::Secret(value) => Ok(SecretString::from(value)),
-            _unused @ (Reply::Targets(_) | Reply::Model(_) | Reply::Url(_)) => {
-                Err(AgentSetupError::ListingTaskStopped)
-            }
-        }
+        });
+        Ok(SecretString::from(String::new()))
     }
 }
 
@@ -325,7 +317,7 @@ pub(crate) struct Harness {
 }
 
 macro_rules! setup_runner {
-    ($name:ident, $arguments:ty, $run:path) => {
+    ($name:ident, $arguments:ty, $command:path) => {
         pub(crate) async fn $name(
             &mut self,
             args: $arguments,
@@ -343,7 +335,7 @@ macro_rules! setup_runner {
                 stdout: &mut self.stdout,
                 stderr: &mut self.stderr,
             };
-            $run(args, &mut ports).await
+            run($command(args), &mut ports).await
         }
     };
 }
@@ -364,9 +356,9 @@ impl Harness {
         }
     }
 
-    setup_runner!(configure, ConfigureArgs, run_configure);
-    setup_runner!(reconfigure, ReconfigureArgs, run_reconfigure);
-    setup_runner!(unconfigure, UnconfigureArgs, run_unconfigure);
+    setup_runner!(configure, ConfigureArgs, AgentSetupCommand::Configure);
+    setup_runner!(reconfigure, ReconfigureArgs, AgentSetupCommand::Reconfigure);
+    setup_runner!(unconfigure, UnconfigureArgs, AgentSetupCommand::Unconfigure);
 
     pub(crate) fn reply(&mut self, reply: Reply) {
         self.prompter.replies.push_back(reply);

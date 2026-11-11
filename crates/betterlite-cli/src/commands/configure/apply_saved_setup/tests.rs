@@ -9,11 +9,10 @@ use crate::agent_setup::pickers::{
 };
 use crate::agent_setup_profiles::locks::lock_path_for;
 use crate::agent_setup_profiles::{Target, settings_path_for};
-use crate::commands::configure::args::{ConfigureArgs, ConfigureTarget};
+use crate::commands::configure::args::{ConfigureArgs, ConfigureTarget, ConnectionFlags};
 use crate::commands::configure::test_support::{
     Call, FakeEnvironment, Harness, MockProxy, Reply, claude_env, claude_settings, codex_config,
-    connection_flags, context, group_configure, group_connection, implicit_context, listing,
-    save_profile,
+    context, group_configure, group_connection, implicit_context, listing, save_profile,
 };
 
 #[tokio::test]
@@ -173,18 +172,13 @@ async fn subcommand_does_not_apply_saved_setups() {
     let home = TempDir::new().unwrap();
     let environment = FakeEnvironment::with_home(home.path());
     let proxy = MockProxy::start(vec![listing(&[("codex-1", None)])]).await;
-    save_profile(
-        Target::Claude,
-        &environment,
-        &proxy.base_url,
-        Some("claude-1"),
-    )
-    .await;
-    let mut harness = Harness::new(environment, context(&proxy.base_url, None));
+    let url = &proxy.base_url;
+    save_profile(Target::Claude, &environment, url, Some("claude-1")).await;
+    let mut harness = Harness::new(environment, context(url, None));
     let args = ConfigureArgs {
         connection: group_connection(None, None),
         command: Some(ConfigureTarget::Codex {
-            connection: connection_flags(Some("sk-new"), Some(&proxy.base_url)),
+            connection: ConnectionFlags::from(group_connection(Some("sk-new"), Some(url))),
             model: Some("codex-1".to_owned()),
         }),
     };

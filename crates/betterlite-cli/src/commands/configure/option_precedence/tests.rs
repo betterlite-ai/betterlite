@@ -3,19 +3,18 @@
 use clap::Parser as _;
 use secrecy::ExposeSecret as _;
 
-use crate::commands::configure::args::ConfigureTarget;
+use crate::commands::configure::args::{ConfigureTarget, ConnectionFlags};
 use crate::commands::configure::connection::connection_settings;
 use crate::commands::configure::error::ConfigureCommandError;
 use crate::commands::configure::test_support::{
-    TestCli, TestCommand, connection_flags, context, group_connection, implicit_context,
-    token_context,
+    TestCli, TestCommand, context, group_connection, implicit_context, token_context,
 };
 
 #[test]
 fn flag_precedence_subcommand_beats_group_and_root() {
     let root = context("http://root.test", Some("sk-root"));
     let group = group_connection(Some("sk-group"), Some("http://group.test"));
-    let flags = connection_flags(Some("sk-sub"), Some("http://sub.test"));
+    let flags = ConnectionFlags::from(group_connection(Some("sk-sub"), Some("http://sub.test")));
     let merged = connection_settings(
         &root,
         Some(&group),
@@ -33,7 +32,7 @@ fn flag_precedence_subcommand_beats_group_and_root() {
 fn flag_precedence_group_beats_root() {
     let root = context("http://root.test", Some("sk-root"));
     let group = group_connection(Some("sk-group"), Some("http://group.test"));
-    let flags = connection_flags(None, None);
+    let flags = ConnectionFlags::from(group_connection(None, None));
     let merged = connection_settings(
         &root,
         Some(&group),
@@ -49,7 +48,7 @@ fn flag_precedence_group_beats_root() {
 fn flag_precedence_uses_the_root_without_any_flag() {
     let root = context("http://root.test", Some("sk-root"));
     let group = group_connection(None, None);
-    let flags = connection_flags(None, None);
+    let flags = ConnectionFlags::from(group_connection(None, None));
     let merged = connection_settings(
         &root,
         Some(&group),

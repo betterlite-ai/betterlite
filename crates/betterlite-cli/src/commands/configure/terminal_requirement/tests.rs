@@ -3,11 +3,11 @@
 use tempfile::TempDir;
 
 use crate::agent_setup_profiles::Target;
-use crate::commands::configure::args::{ReconfigureArgs, ReconfigureTarget};
+use crate::commands::configure::args::{ConnectionFlags, ReconfigureArgs, ReconfigureTarget};
 use crate::commands::configure::error::ConfigureCommandError;
 use crate::commands::configure::test_support::{
-    FakeEnvironment, Harness, MockProxy, claude_configure, connection_flags, context,
-    group_configure, group_connection, listing, save_profile,
+    FakeEnvironment, Harness, MockProxy, claude_configure, context, group_configure,
+    group_connection, listing, save_profile,
 };
 
 const CONFIGURE_MESSAGE: &str = "`lite configure` asks questions, so it needs a terminal. Non-interactively, run `lite configure claude --api-key <key> --model <model>` or `lite configure codex --api-key <key> --model <model>`";
@@ -69,7 +69,10 @@ async fn reconfigure_with_a_model_runs_without_a_terminal() {
     let args = ReconfigureArgs {
         connection: group_connection(None, None),
         command: Some(ReconfigureTarget::Claude {
-            connection: connection_flags(Some("sk-new"), Some(&proxy.base_url)),
+            connection: ConnectionFlags::from(group_connection(
+                Some("sk-new"),
+                Some(&proxy.base_url),
+            )),
             model: Some("claude-1".to_owned()),
             default_model: false,
         }),

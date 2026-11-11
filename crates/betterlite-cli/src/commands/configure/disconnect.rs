@@ -50,7 +50,10 @@ async fn disconnect(
     let state_path = receipt_path_for(target, &settings_path, ports.environment)?;
     let profile = setup_profile_path(target, &settings_path, ports.environment)?;
     if state_path.exists() {
-        undo(target, &settings_path, &state_path, ports).await?;
+        match target {
+            Target::Claude => undo_claude(&settings_path, &state_path, ports).await?,
+            Target::Codex => undo_codex(&settings_path, ports).await?,
+        }
     } else {
         missing_receipt(target, &settings_path, &state_path, ports)?;
     }
@@ -89,18 +92,6 @@ fn missing_receipt(
         )?;
     }
     Ok(())
-}
-
-async fn undo(
-    target: Target,
-    settings_path: &Path,
-    state_path: &Path,
-    ports: &mut SetupPorts<'_>,
-) -> Result<(), ConfigureCommandError> {
-    match target {
-        Target::Claude => undo_claude(settings_path, state_path, ports).await,
-        Target::Codex => undo_codex(settings_path, ports).await,
-    }
 }
 
 async fn undo_claude(

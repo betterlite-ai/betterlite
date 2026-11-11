@@ -6,11 +6,11 @@ use crate::agent_setup::connection::KEEP_CURRENT_KEY;
 use crate::agent_setup::pickers::{CLAUDE_MODEL_MESSAGE, KEEP_CLAUDE_DEFAULT, TARGET_EDIT_MESSAGE};
 use crate::agent_setup_profiles::locks::lock_path_for;
 use crate::agent_setup_profiles::{Target, settings_path_for};
-use crate::commands::configure::args::{ReconfigureArgs, ReconfigureTarget};
+use crate::commands::configure::args::{ConnectionFlags, ReconfigureArgs, ReconfigureTarget};
 use crate::commands::configure::error::ConfigureCommandError;
 use crate::commands::configure::test_support::{
-    Call, FakeEnvironment, Harness, MockProxy, Reply, claude_env, claude_settings,
-    connection_flags, context, group_connection, implicit_context, listing, save_profile,
+    Call, FakeEnvironment, Harness, MockProxy, Reply, claude_env, claude_settings, context,
+    group_connection, implicit_context, listing, save_profile,
 };
 
 const TERMINAL_MESSAGE: &str = "`lite reconfigure` asks questions, so it needs a terminal. Non-interactively, run `lite reconfigure claude --api-key <key> --model <model>` or `lite reconfigure codex --api-key <key> --model <model>`";
@@ -41,7 +41,7 @@ fn claude_edit(
     ReconfigureArgs {
         connection: group_connection(None, None),
         command: Some(ReconfigureTarget::Claude {
-            connection: connection_flags(api_key, gateway_url),
+            connection: ConnectionFlags::from(group_connection(api_key, gateway_url)),
             model: model.map(str::to_owned),
             default_model,
         }),
@@ -63,7 +63,6 @@ async fn reconfigure_claude_without_model_opens_the_edit_dialog() {
     let mut harness = Harness::new(environment, implicit_context(&proxy.base_url, None));
     harness.stdin_is_terminal = true;
     harness.reply(Reply::Url(proxy.base_url.clone()));
-    harness.reply(Reply::Secret(String::new()));
     harness.reply(Reply::Model("claude-1".to_owned()));
     harness
         .reconfigure(claude_edit(None, None, None, false))
@@ -137,7 +136,10 @@ async fn reconfigure_codex_without_model_requires_a_terminal() {
     let args = ReconfigureArgs {
         connection: group_connection(None, None),
         command: Some(ReconfigureTarget::Codex {
-            connection: connection_flags(Some("sk-new"), Some("http://proxy.test")),
+            connection: ConnectionFlags::from(group_connection(
+                Some("sk-new"),
+                Some("http://proxy.test"),
+            )),
             model: None,
         }),
     };
@@ -178,7 +180,6 @@ async fn reconfigure_group_with_saved_setups_edits_instead_of_reapplying() {
     harness.stdin_is_terminal = true;
     harness.reply(Reply::Targets(vec![Target::Claude]));
     harness.reply(Reply::Url(proxy.base_url.clone()));
-    harness.reply(Reply::Secret(String::new()));
     harness.reply(Reply::Model("claude-1".to_owned()));
     let args = ReconfigureArgs {
         connection: group_connection(None, None),

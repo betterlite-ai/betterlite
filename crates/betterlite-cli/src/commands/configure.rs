@@ -16,10 +16,7 @@ use crate::agent_setup_profiles::locks::Clock;
 use crate::cli_context::CliContext;
 use crate::codex_settings::version::CodexVersion;
 
-use args::{
-    ConfigureArgs, ConfigureTarget, ReconfigureArgs, ReconfigureTarget, UnconfigureArgs,
-    UnconfigureTarget,
-};
+use args::{ConfigureArgs, ConfigureTarget, ReconfigureArgs, UnconfigureArgs, UnconfigureTarget};
 use error::ConfigureCommandError;
 use target::TargetRequest;
 
@@ -54,8 +51,28 @@ pub struct SetupPorts<'ports> {
     pub stderr: &'ports mut (dyn Write + Send),
 }
 
-pub async fn run_configure(
+pub enum AgentSetupCommand {
+    Configure(ConfigureArgs),
+    Reconfigure(ReconfigureArgs),
+    Unconfigure(UnconfigureArgs),
+}
+
+pub async fn run(
+    command: AgentSetupCommand,
+    ports: &mut SetupPorts<'_>,
+) -> Result<(), ConfigureCommandError> {
+    match command {
+        AgentSetupCommand::Configure(args) => configure_command(args, false, ports).await,
+        AgentSetupCommand::Reconfigure(args) => {
+            configure_command(args.into_configure(), true, ports).await
+        }
+        AgentSetupCommand::Unconfigure(args) => unconfigure_command(args, ports).await,
+    }
+}
+
+async fn configure_command(
     args: ConfigureArgs,
+    edit: bool,
     ports: &mut SetupPorts<'_>,
 ) -> Result<(), ConfigureCommandError> {
     let ConfigureArgs {
@@ -63,7 +80,7 @@ pub async fn run_configure(
         command,
     } = args;
     let Some(selected) = command else {
-        return group::configure_group(&group, false, ports).await;
+        return group::configure_group(&group, edit, ports).await;
     };
     let (target, flags, model, default_model) = match selected {
         ConfigureTarget::Claude {
@@ -79,42 +96,12 @@ pub async fn run_configure(
         group: &group,
         model: model.as_deref(),
         default_model,
-        edit: false,
+        edit,
     };
     target::configure_target(&request, ports).await
 }
 
-pub async fn run_reconfigure(
-    args: ReconfigureArgs,
-    ports: &mut SetupPorts<'_>,
-) -> Result<(), ConfigureCommandError> {
-    let ReconfigureArgs {
-        connection: group,
-        command,
-    } = args;
-    let Some(selected) = command else {
-        return group::configure_group(&group, true, ports).await;
-    };
-    let (target, flags, model, default_model) = match selected {
-        ReconfigureTarget::Claude {
-            connection,
-            model,
-            default_model,
-        } => (Target::Claude, connection, model, default_model),
-        ReconfigureTarget::Codex { connection, model } => (Target::Codex, connection, model, false),
-    };
-    let request = TargetRequest {
-        target,
-        connection: &flags,
-        group: &group,
-        model: model.as_deref(),
-        default_model,
-        edit: true,
-    };
-    target::configure_target(&request, ports).await
-}
-
-pub async fn run_unconfigure(
+async fn unconfigure_command(
     args: UnconfigureArgs,
     ports: &mut SetupPorts<'_>,
 ) -> Result<(), ConfigureCommandError> {

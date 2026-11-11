@@ -135,6 +135,28 @@ pub enum ReconfigureTarget {
     },
 }
 
+impl ReconfigureArgs {
+    pub(crate) fn into_configure(self) -> ConfigureArgs {
+        ConfigureArgs {
+            connection: self.connection,
+            command: self.command.map(|command| match command {
+                ReconfigureTarget::Claude {
+                    connection,
+                    model,
+                    default_model,
+                } => ConfigureTarget::Claude {
+                    connection,
+                    model,
+                    default_model,
+                },
+                ReconfigureTarget::Codex { connection, model } => {
+                    ConfigureTarget::Codex { connection, model }
+                }
+            }),
+        }
+    }
+}
+
 #[derive(Args)]
 #[command(about = UNCONFIGURE_ABOUT)]
 pub struct UnconfigureArgs {
