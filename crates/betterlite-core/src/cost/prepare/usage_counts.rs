@@ -85,7 +85,7 @@ fn typed_counts(usage: &Usage) -> Result<UsageCounts, PrepareError> {
     Ok(UsageCounts {
         prompt: usage.prompt_tokens,
         completion: usage.completion_tokens,
-        cache_creation: 0,
+        cache_creation: raw_number(&usage.extras, "cache_creation_input_tokens")?,
         cache_read: detail_cache_read(usage.prompt_tokens_details.as_ref())?,
     })
 }

@@ -295,7 +295,7 @@ async fn anthropic_usage_is_converted_before_counting() {
     let input = base_input(Some(&view));
     let prepared = prepare_attempts(&input).await;
 
-    assert_eq!(counts(&prepared.attempts[0]), (15, 5, 0, 3));
+    assert_eq!(counts(&prepared.attempts[0]), (15, 5, 2, 3));
 }
 
 #[tokio::test]
@@ -356,6 +356,39 @@ async fn typed_chat_details_override_the_cache_read() {
     let prepared = prepare_attempts(&input).await;
 
     assert_eq!(counts(&prepared.attempts[0]), (10, 5, 0, 4));
+}
+
+#[tokio::test]
+async fn typed_chat_usage_reads_the_cache_creation_extra() {
+    let mut usage = chat_usage(10, 5, None);
+    usage.extras.insert(
+        "cache_creation_input_tokens".to_owned(),
+        Json::Number(Number::from(2_i64)),
+    );
+    let view = chat_view(&usage);
+    let input = base_input(Some(&view));
+    let prepared = prepare_attempts(&input).await;
+
+    assert_eq!(counts(&prepared.attempts[0]), (10, 5, 2, 0));
+}
+
+#[tokio::test]
+async fn a_malformed_cache_creation_extra_fails_the_attempt() {
+    let mut usage = chat_usage(10, 5, None);
+    usage.extras.insert(
+        "cache_creation_input_tokens".to_owned(),
+        Json::Text("two".to_owned()),
+    );
+    let view = chat_view(&usage);
+    let input = base_input(Some(&view));
+    let prepared = prepare_attempts(&input).await;
+
+    assert!(matches!(
+        &prepared.attempts[0].outcome,
+        AttemptOutcome::Failed(PrepareError::Count {
+            field: "cache_creation_input_tokens"
+        })
+    ));
 }
 
 #[tokio::test]
