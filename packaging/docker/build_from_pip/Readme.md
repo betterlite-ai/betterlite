@@ -27,6 +27,7 @@ docker build \
 
 ```sh
 docker run --rm -p 4000:4000 \
+  --add-host host.docker.internal:host-gateway \
   -e LITELLM_MASTER_KEY=sk-1234 \
   -e FAKE_OPENAI_API_BASE=http://host.docker.internal:8190 \
   -v "$(pwd)/packaging/docker/build_from_pip/litellm_config.yaml:/app/config.yaml" \
