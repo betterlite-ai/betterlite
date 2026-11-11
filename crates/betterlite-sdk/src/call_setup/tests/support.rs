@@ -311,6 +311,14 @@ pub(crate) fn setup_with(outcomes: &[(&str, Outcome)]) -> Setup {
     Setup::new(Resolver::with(outcomes))
 }
 
+pub(crate) fn setup_message_texts(call_type: &str, extra: &str) -> Vec<String> {
+    let mut fixture = setup();
+    let result = fixture
+        .call(call_type, &[], chat_request(extra))
+        .expect("the setup succeeds");
+    message_texts(result.logging.messages)
+}
+
 pub(crate) fn message_texts(messages: Option<Vec<Json>>) -> Vec<String> {
     let mut texts = Vec::new();
     for message in messages.unwrap_or_default() {

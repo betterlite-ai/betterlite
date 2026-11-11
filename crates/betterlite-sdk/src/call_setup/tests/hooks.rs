@@ -58,6 +58,16 @@ impl Hook {
             depths: Mutex::new(Vec::new()),
         }
     }
+
+    fn fail_if(&self, kind: Fault, message: &str) -> Result<(), HookError> {
+        if self.fault == kind {
+            return Err(HookError::Failed {
+                hook: self.label.clone(),
+                message: message.to_owned(),
+            });
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -78,16 +88,11 @@ impl DeploymentHook for Hook {
         request: &mut RequestMap,
         _call_type: Option<CallType>,
     ) -> Result<Option<RequestMap>, HookError> {
-        bump(&self.pre_calls);
-        if self.fault == Fault::Pre {
-            return Err(HookError::Failed {
-                hook: self.label.clone(),
-                message: String::from("pre-call hook failed"),
-            });
-        }
         if let Some((key, value)) = &self.pre_insert {
             request.insert(key.clone(), value.clone());
         }
+        self.fail_if(Fault::Pre, "pre-call hook failed")?;
+        bump(&self.pre_calls);
         Ok(None)
     }
 
@@ -97,14 +102,10 @@ impl DeploymentHook for Hook {
         _response: &Json,
         _call_type: Option<CallType>,
     ) -> Result<Option<Json>, HookError> {
+        self.fail_if(Fault::Success, "success hook failed")?;
         bump(&self.success_calls);
-        if self.fault == Fault::Success {
-            return Err(HookError::Failed {
-                hook: self.label.clone(),
-                message: String::from("success hook failed"),
-            });
-        }
-        Ok(self.success_replacement.clone())
+        let replacement = self.success_replacement.clone();
+        Ok(replacement)
     }
 
     async fn failure_deployment_hook(
@@ -122,13 +123,7 @@ impl DeploymentHook for Hook {
             .lock()
             .expect("the depth log is free")
             .push(fallback_depth);
-        if self.fault == Fault::FailureHook {
-            return Err(HookError::Failed {
-                hook: self.label.clone(),
-                message: String::from("failure hook failed"),
-            });
-        }
-        Ok(())
+        self.fail_if(Fault::FailureHook, "failure hook failed")
     }
 }
 

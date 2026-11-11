@@ -89,25 +89,24 @@ pub async fn success_deployment_hook(
     response: &Json,
     call_type: &str,
 ) -> Result<Json, HookError> {
-    let typed = hook_call_type(call_type);
-    let mut modified = response.clone();
+    let mut outcome = response.clone();
     for hook in hooks {
-        modified = apply_success_hook(hook.as_ref(), request_data, modified, typed).await?;
+        let typed = hook_call_type(call_type);
+        let hooked = hook
+            .success_deployment_hook(request_data, &outcome, typed)
+            .await;
+        outcome = settle_success(hook.as_ref(), hooked, outcome)?;
     }
-    Ok(modified)
+    Ok(outcome)
 }
 
 // A guardrail's error stops the call, while a broken logger only loses its own hook
-async fn apply_success_hook(
+fn settle_success(
     hook: &dyn DeploymentHook,
-    request_data: &RequestMap,
+    hooked: Result<Option<Json>, HookError>,
     current: Json,
-    call_type: Option<CallType>,
 ) -> Result<Json, HookError> {
-    match hook
-        .success_deployment_hook(request_data, &current, call_type)
-        .await
-    {
+    match hooked {
         Ok(Some(replacement)) => Ok(replacement),
         Ok(None) => Ok(current),
         Err(error) if hook.guardrail().is_some() => Err(error),

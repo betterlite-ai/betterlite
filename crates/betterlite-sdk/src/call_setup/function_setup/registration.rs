@@ -124,22 +124,8 @@ pub(super) fn register_request_callbacks(
     lists: &mut CallbackLists,
 ) {
     for callback in callbacks {
-        let entry = match callback {
-            DynamicCallback::Name(name) => {
-                let Ok(Some(logger)) = loggers.resolver.resolve(name, &BTreeMap::new()) else {
-                    continue;
-                };
-                let entry = DynamicCallback::Logger(logger);
-                if lists
-                    .async_success
-                    .iter()
-                    .any(|existing| is_same_registered_logger(existing, &entry))
-                {
-                    continue;
-                }
-                entry
-            }
-            DynamicCallback::Logger(_) => callback.clone(),
+        let Some(entry) = resolve_request_callback(callback, loggers, lists) else {
+            continue;
         };
         lists.add_input(&entry);
         lists.add_success(&entry);
@@ -147,6 +133,28 @@ pub(super) fn register_request_callbacks(
         lists.add_async_success(&entry);
         lists.add_async_failure(&entry);
     }
+}
+
+fn resolve_request_callback(
+    callback: &DynamicCallback,
+    loggers: &CustomLoggers<'_>,
+    lists: &CallbackLists,
+) -> Option<DynamicCallback> {
+    let DynamicCallback::Name(name) = callback else {
+        return Some(callback.clone());
+    };
+    let Ok(Some(logger)) = loggers.resolver.resolve(name, &BTreeMap::new()) else {
+        return None;
+    };
+    let entry = DynamicCallback::Logger(logger);
+    if lists
+        .async_success
+        .iter()
+        .any(|existing| is_same_registered_logger(existing, &entry))
+    {
+        return None;
+    }
+    Some(entry)
 }
 
 // LiteLLM removes each resolved name from the list it is scanning, so only the last pass touches every name

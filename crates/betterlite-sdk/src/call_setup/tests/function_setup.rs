@@ -11,9 +11,9 @@ use super::support::RecordingBreadcrumbs;
 use super::support::chat_request;
 use super::support::guardrail_hook;
 use super::support::hook;
-use super::support::message_texts;
 use super::support::request;
 use super::support::setup;
+use super::support::setup_message_texts;
 use super::support::setup_with;
 use super::support::value;
 use crate::call_setup::correlation::CorrelationRestore as _;
@@ -485,12 +485,7 @@ fn function_setup_defaults_the_call_type_message(
     #[case] extra: &str,
     #[case] expected: &str,
 ) {
-    let mut fixture = setup();
-    let result = fixture
-        .call(call_type, &[], chat_request(extra))
-        .expect("the setup succeeds");
-
-    assert_eq!(message_texts(result.logging.messages), [expected]);
+    assert_eq!(setup_message_texts(call_type, extra), [expected]);
 }
 
 #[test]
