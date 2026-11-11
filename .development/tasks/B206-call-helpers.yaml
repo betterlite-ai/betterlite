@@ -25,6 +25,7 @@ description: >-
   a context-only leaf.
 scope:
   paths:
+  - "crates/betterlite-config/src/sections/drop_params/tests.rs"
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/call_helpers.rs
