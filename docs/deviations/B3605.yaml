@@ -1,0 +1,11 @@
+task: B3605
+deviations:
+  - what: Python's float() and int() accept underscore digit separators ("1_0") and integers of any size; betterlite treats "1_0" as a parse failure and an integer above i64 as a parse failure.
+    why: No real upstream sends either, and an i64 token count is the type the rest of betterlite uses. Both cases log the failed-parse warning and record 0.
+    link: ""
+  - what: A url_route written as a network-path reference ("//host/path") is treated as a plain path with no hostname.
+    why: The url crate rejects it without a base, and no betterlite caller builds such a route; Python's urlparse would read a hostname.
+    link: https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlparse
+  - what: PassThroughEndpointLogging holds only the injected dispatcher and the route tables. The provider handler instances (transcribe, assemblyai) stay with the tasks that call them.
+    why: Those handlers belong to provider leaves that this task must not depend on, so B3607 owns constructing and holding them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L67-L78

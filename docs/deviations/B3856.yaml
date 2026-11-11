@@ -1,0 +1,17 @@
+task: B3856
+deviations:
+  - what: "`set_attributes` returns `Err(MissingStandardLoggingObject)` and leaves the logging and the callback-failure count to its caller."
+    why: "LiteLLM swallows every exception inside the method with `verbose_logger.exception` and `handle_callback_failure`. Rule errors-surface forbids a swallowed error; the span stays untouched in both versions and the lifecycle (B3859) logs the same message."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2399-L2404"
+  - what: "The callback name, the capture mode, the logger settings and the per-call maps reach these functions through `AttributeContext` and `InferenceCall`, not through the logger instance."
+    why: "Rule no-module-state and constructor wiring; the lifecycle (B3859) owns the logger state and builds the context once per request."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2372-L2375"
+  - what: "The `langfuse_otel` branch calls the writer with an empty environment snapshot, so `LANGFUSE_TRACING_ENVIRONMENT` is not read when the request carries no `langfuse_environment` dynamic param."
+    why: "LiteLLM reads `os.environ` inside `_set_langfuse_specific_attributes`. The logging crate reads no process state and `AttributeContext` has no environment snapshot, so the explicit lookup B3909's writer takes is empty here. The dynamic param path still applies."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L234-L243"
+  - what: "The redaction answer given to the `weave_otel` writer treats the global `turn_off_message_logging` setting as false; only the request's dynamic param and the redaction headers count."
+    why: "LiteLLM's `should_redact_message_logging` falls back to the process-global `litellm.turn_off_message_logging`. That setting lives in betterlite's logging-privacy config section, which neither the OTel legacy logger settings (B3854) nor the context carries; the lifecycle decides redaction globally before the logger sees the request."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L372-L377"
+  - what: "With callback `langtrace` and no response object, `set_attributes` writes the Langtrace request attributes and prompt event and stops, and returns `Ok`. The callback-failure count LiteLLM bumps for that call is left to the caller."
+    why: "LiteLLM raises on `response_obj.get(\"id\")` right after the request attributes, and its handler swallows the error. Rule errors-surface forbids the swallow; the span content written before the raise is the same."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langtrace.py#L73"
