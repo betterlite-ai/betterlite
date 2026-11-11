@@ -19,7 +19,7 @@ mod support;
 use support::{
     BuildBehavior, FailingLoggerError, FailingLoggers, FakeFactory, FakeReceiver,
     FakeReceiverError, RecordingStorage, StartBehavior, assert_only_identity, capture_log, event,
-    log_text, register_operator, setup, spend_loggers, spend_settings,
+    event_with_session, log_text, register_operator, setup, spend_loggers, spend_settings,
 };
 
 async fn start_tracing(
@@ -261,6 +261,24 @@ async fn failure_event_is_logged() {
     assert_eq!(insertions[0].rows[0].status, "failure");
     assert_eq!(insertions[0].rows[0].call_type, "acompletion");
     assert_eq!(insertions[0].rows[0].request_id, "chatcmpl-1");
+}
+
+#[tokio::test(start_paused = true)]
+async fn session_id_falls_back_to_the_payload_trace_id() {
+    let (factory, storage, mut registry) = setup();
+    let started = start_tracing(&factory, &mut registry)
+        .await
+        .expect("the lifecycle starts");
+    let logger = started_loggers(&registry, CallbackPhase::Success);
+    logger
+        .async_log_success_event(event_with_session("", "t1", "s2"))
+        .await
+        .unwrap();
+    drop(logger);
+    started.session.close(&mut registry).await;
+    let insertions = storage.insertions();
+    assert_eq!(insertions.len(), 1);
+    assert_eq!(insertions[0].rows[0].session_id, "t1");
 }
 
 #[tokio::test(start_paused = true)]

@@ -371,14 +371,36 @@ pub(crate) fn spend_loggers(settings: ClickHouseSettings) -> ClickHouseSpendLogg
     }
 }
 
-pub(crate) fn event(call_type: &str, status: &str) -> Arc<LoggerEvent> {
+fn payload(call_type: &str, status: &str) -> StandardLoggingPayload {
     let source = PAYLOAD_TEMPLATE
         .replace("@call_type", call_type)
         .replace("@status", status);
-    let payload: StandardLoggingPayload =
-        serde_json::from_str(&source).expect("the payload fixture parses");
+    serde_json::from_str(&source).expect("the payload fixture parses")
+}
+
+pub(crate) fn event(call_type: &str, status: &str) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
-        payload: Arc::new(payload),
+        payload: Arc::new(payload(call_type, status)),
+        dynamic_params: Arc::new(Json::Null),
+        stream: false,
+        guardrail_snapshot: None,
+    })
+}
+
+pub(crate) fn event_with_session(
+    session_id: &str,
+    trace_id: &str,
+    metadata_session_id: &str,
+) -> Arc<LoggerEvent> {
+    let mut built = payload("completion", "success");
+    built.session_id = session_id.to_owned();
+    built.trace_id = trace_id.to_owned();
+    built.metadata.requester_metadata = Some(Json::Object(IndexMap::from([(
+        "session_id".to_owned(),
+        Json::Text(metadata_session_id.to_owned()),
+    )])));
+    Arc::new(LoggerEvent {
+        payload: Arc::new(built),
         dynamic_params: Arc::new(Json::Null),
         stream: false,
         guardrail_snapshot: None,
