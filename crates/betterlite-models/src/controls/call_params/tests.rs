@@ -29,8 +29,10 @@ enum Scenario {
         session_id: &'static str,
         trace_id: &'static str,
     },
-    FallsBackToLitellmMetadata {
+    ResolvesMetadata {
         request: &'static str,
+        session_id: &'static str,
+        trace_id: &'static str,
     },
     NormalizesDropParams {
         flag: Option<bool>,
@@ -105,6 +107,13 @@ fn trusted_call() -> TrustedCall {
         trace_id: "meta-trace",
     }
 )]
+#[case::session_and_trace_ids_keep_their_own_keys(
+    Scenario::DerivesSessionAndTraceIds {
+        request: r#"{"metadata":{"session_id":"meta-session","trace_id":"meta-trace"}}"#,
+        session_id: "meta-session",
+        trace_id: "meta-trace",
+    }
+)]
 #[case::explicit_ids_win_over_metadata(
     Scenario::DerivesSessionAndTraceIds {
         request: r#"{"litellm_session_id":"explicit-session","litellm_trace_id":"explicit-trace",
@@ -114,13 +123,24 @@ fn trusted_call() -> TrustedCall {
     }
 )]
 #[case::absent_metadata_falls_back_to_litellm_metadata(
-    Scenario::FallsBackToLitellmMetadata {
+    Scenario::ResolvesMetadata {
         request: r#"{"litellm_metadata":{"session_id":"fallback"}}"#,
+        session_id: "fallback",
+        trace_id: "fallback",
     }
 )]
 #[case::empty_metadata_falls_back_to_litellm_metadata(
-    Scenario::FallsBackToLitellmMetadata {
+    Scenario::ResolvesMetadata {
         request: r#"{"metadata":{},"litellm_metadata":{"session_id":"fallback"}}"#,
+        session_id: "fallback",
+        trace_id: "fallback",
+    }
+)]
+#[case::non_empty_metadata_wins_over_litellm_metadata(
+    Scenario::ResolvesMetadata {
+        request: r#"{"metadata":{"session_id":"meta-session"},"litellm_metadata":{"session_id":"fallback"}}"#,
+        session_id: "meta-session",
+        trace_id: "meta-session",
     }
 )]
 #[case::drop_flag_true(Scenario::NormalizesDropParams { flag: Some(true), text: None, expected: Some(true) })]
@@ -285,19 +305,23 @@ fn provider_controls_tests_behavior(#[case] scenario: Scenario) {
             assert_eq!(params.litellm_session_id.as_deref(), Some(session_id));
             assert_eq!(params.litellm_trace_id.as_deref(), Some(trace_id));
         }
-        Scenario::FallsBackToLitellmMetadata { request } => {
+        Scenario::ResolvesMetadata {
+            request,
+            session_id,
+            trace_id,
+        } => {
             let decoded = serde_json::from_str::<RequestCall>(request)
                 .expect("the request identity fields decode");
             let params = call_params(&trusted_call(), &decoded);
-            assert_eq!(params.litellm_session_id.as_deref(), Some("fallback"));
-            assert_eq!(params.litellm_trace_id.as_deref(), Some("fallback"));
+            assert_eq!(params.litellm_session_id.as_deref(), Some(session_id));
+            assert_eq!(params.litellm_trace_id.as_deref(), Some(trace_id));
             assert_eq!(
                 params
                     .metadata
                     .expect("resolved metadata")
                     .session_id
                     .as_deref(),
-                Some("fallback")
+                Some(session_id)
             );
         }
         Scenario::NormalizesDropParams {
