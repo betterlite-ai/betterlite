@@ -1,4 +1,4 @@
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 
 use crate::azure_hosted_identity::environment::HostedEnvironment;
 
@@ -70,30 +70,7 @@ fn hosted_selection(hosted: &HostedEnvironment, identity: Option<&str>) -> Optio
         .as_deref()
         .is_some_and(|value| !value.is_empty())
     {
-        let has_header = hosted
-            .identity_header
-            .as_ref()
-            .is_some_and(|secret| !secret.expose_secret().is_empty());
-        let kind = if has_header {
-            if hosted
-                .identity_server_thumbprint
-                .as_deref()
-                .is_some_and(|value| !value.is_empty())
-            {
-                ManagedIdentityKind::ServiceFabric
-            } else {
-                ManagedIdentityKind::AppService
-            }
-        } else if hosted
-            .imds_endpoint
-            .as_deref()
-            .is_some_and(|value| !value.is_empty())
-        {
-            ManagedIdentityKind::Arc
-        } else {
-            // a truthy IDENTITY_ENDPOINT without its partners selects no credential at all
-            ManagedIdentityKind::Unconfigured
-        };
+        let kind = identity_endpoint_kind(hosted);
         return Some(Selection {
             kind,
             client_id,
@@ -121,6 +98,33 @@ fn hosted_selection(hosted: &HostedEnvironment, identity: Option<&str>) -> Optio
         });
     }
     None
+}
+
+fn identity_endpoint_kind(hosted: &HostedEnvironment) -> ManagedIdentityKind {
+    let has_header = hosted
+        .identity_header
+        .as_ref()
+        .is_some_and(|secret| !secret.expose_secret().is_empty());
+    if has_header {
+        if hosted
+            .identity_server_thumbprint
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
+            ManagedIdentityKind::ServiceFabric
+        } else {
+            ManagedIdentityKind::AppService
+        }
+    } else if hosted
+        .imds_endpoint
+        .as_deref()
+        .is_some_and(|value| !value.is_empty())
+    {
+        ManagedIdentityKind::Arc
+    } else {
+        // a truthy IDENTITY_ENDPOINT without its partners selects no credential at all
+        ManagedIdentityKind::Unconfigured
+    }
 }
 
 fn workload_variables(environment: &ManagedIdentityEnvironment) -> Option<(&str, &str)> {

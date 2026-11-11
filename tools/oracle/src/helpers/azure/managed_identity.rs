@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_azure::azure_arc_identity::error::ArcIdentityError as Arc;
 use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform};
 use betterlite_azure::azure_hosted_identity::error::HostedIdentityError as Hosted;
+use betterlite_azure::azure_hosted_identity::protocol::HostedProtocol;
 use betterlite_azure::azure_managed_identity::ManagedIdentityToken;
 use betterlite_azure::azure_managed_identity::error::ManagedIdentityError as Identity;
 use betterlite_azure::azure_managed_identity::imds::ProbePolicy;
@@ -115,61 +116,67 @@ impl From<Failure> for Box<HelperError> {
     }
 }
 
-fn category(error: &Identity) -> &'static str {
+const fn category(error: &Identity) -> &'static str {
     match error {
         Identity::ImdsUnavailable { .. }
         | Identity::TokenRequest { .. }
         | Identity::ImdsError { .. }
         | Identity::NoEndpoint
         | Identity::NoIdentityAssigned
-        | Identity::AuthenticationUnavailable
-        | Identity::Hosted(
-            Hosted::TokenRequest { .. }
-            | Hosted::CloudShellUnavailable
-            | Hosted::UnsupportedContentType { .. },
-        )
-        | Identity::Arc(Arc::TokenRequest { .. })
-        | Identity::Oidc(Oidc::UnresolvedOidcToken) => "unavailable",
-        Identity::ClientAuthentication { .. }
-        | Identity::Hosted(
-            Hosted::ServiceFabricIdentityConfig
-            | Hosted::NoToken
-            | Hosted::UnexpectedResponse { .. }
-            | Hosted::JsonContentType(_),
-        )
-        | Identity::Arc(
-            Arc::UnrecognizableChallenge { .. }
-            | Arc::UnsupportedPlatform { .. }
-            | Arc::KeyFileTooLarge,
-        )
-        | Identity::Oidc(
-            Oidc::MissingClientTenant
-            | Oidc::AccessTokenMissing
-            | Oidc::ExpiresInMissing
-            | Oidc::TokenStatus { .. },
-        ) => "client_authentication",
+        | Identity::AuthenticationUnavailable => "unavailable",
+        Identity::ClientAuthentication { .. } => "client_authentication",
         Identity::ScopeCount
         | Identity::WorkloadClientId
         | Identity::ImdsReply(_)
-        | Identity::ExpiryOverflow
-        | Identity::Hosted(
-            Hosted::CloudShellClientId
-            | Hosted::CloudShellIdentityConfig
-            | Hosted::MissingField { .. }
-            | Hosted::ReplyValue { .. }
-            | Hosted::ExpiryOverflow,
-        )
-        | Identity::Arc(Arc::UserAssignedIdentity | Arc::ReplyValue { .. }) => "invalid_value",
-        Identity::Hosted(Hosted::ReplyJson(_))
-        | Identity::Oidc(Oidc::TokenJson { .. } | Oidc::TokenFieldType { .. }) => "invalid_json",
-        Identity::TokenFile { .. }
-        | Identity::TokenFileEncoding { .. }
-        | Identity::ArcEndpoint
-        | Identity::Hosted(Hosted::MissingEnvironment { .. } | Hosted::Transport(_))
-        | Identity::Arc(Arc::Transport(_) | Arc::KeyFile(_))
-        | Identity::Oidc(Oidc::TokenTransport { .. } | Oidc::Cache { .. } | Oidc::CachePoisoned) => {
+        | Identity::ExpiryOverflow => "invalid_value",
+        Identity::TokenFile { .. } | Identity::TokenFileEncoding { .. } | Identity::ArcEndpoint => {
             "transport"
         }
+        Identity::Hosted(inner) => hosted_category(inner),
+        Identity::Arc(inner) => arc_category(inner),
+        Identity::Oidc(inner) => oidc_category(inner),
+    }
+}
+
+const fn hosted_category(error: &Hosted) -> &'static str {
+    match error {
+        Hosted::TokenRequest { .. }
+        | Hosted::CloudShellUnavailable
+        | Hosted::UnsupportedContentType { .. } => "unavailable",
+        Hosted::ServiceFabricIdentityConfig
+        | Hosted::NoToken
+        | Hosted::UnexpectedResponse { .. }
+        | Hosted::JsonContentType(_) => "client_authentication",
+        Hosted::CloudShellClientId
+        | Hosted::CloudShellIdentityConfig
+        | Hosted::MissingField { .. }
+        | Hosted::ReplyValue { .. }
+        | Hosted::ExpiryOverflow => "invalid_value",
+        Hosted::ReplyJson(_) => "invalid_json",
+        Hosted::MissingEnvironment { .. } | Hosted::Transport(_) => "transport",
+    }
+}
+
+const fn arc_category(error: &Arc) -> &'static str {
+    match error {
+        Arc::TokenRequest { .. } => "unavailable",
+        Arc::UnrecognizableChallenge { .. }
+        | Arc::UnsupportedPlatform { .. }
+        | Arc::KeyFileTooLarge => "client_authentication",
+        Arc::UserAssignedIdentity | Arc::ReplyValue { .. } => "invalid_value",
+        Arc::Transport(_) | Arc::KeyFile(_) => "transport",
+    }
+}
+
+const fn oidc_category(error: &Oidc) -> &'static str {
+    match error {
+        Oidc::MissingClientTenant
+        | Oidc::AccessTokenMissing
+        | Oidc::ExpiresInMissing
+        | Oidc::TokenStatus { .. } => "client_authentication",
+        Oidc::TokenJson { .. } | Oidc::TokenFieldType { .. } => "invalid_json",
+        Oidc::UnresolvedOidcToken => "unavailable",
+        Oidc::TokenTransport { .. } | Oidc::Cache { .. } | Oidc::CachePoisoned => "transport",
     }
 }
 
@@ -197,7 +204,7 @@ fn select_step(step: &SelectStep) -> Result<Value, Failure> {
         Ok(selection) => json!({
             "kind": "selection",
             "selected": selection.kind.name(),
-            "inner": credential.inner_protocol(&selection).map(|protocol| protocol.name()),
+            "inner": credential.inner_protocol(&selection).map(HostedProtocol::name),
         }),
         Err(error) => json!({"kind": "error", "category": category(&error)}),
     })
@@ -220,20 +227,27 @@ fn token_step(step: &TokenStep) -> Result<Value, Failure> {
     );
     let io = fixture.io();
     let scope = step.scope.as_deref().unwrap_or(DEFAULT_SCOPE);
-    let mut bearer = Value::Null;
-    let mut outcome = match credential.select() {
-        Err(error) => json!({"kind": "error", "category": category(&error)}),
+    let (mut outcome, bearer) = match credential.select() {
+        Err(error) => (
+            json!({"kind": "error", "category": category(&error)}),
+            Value::Null,
+        ),
         Ok(selection) => match credential.token(&io, &[scope]) {
-            Ok(token) => {
-                bearer = json!(token.token.expose_secret());
-                token_outcome(selection.kind, &token)
-            }
-            Err(error) => json!({"kind": "error", "category": category(&error)}),
+            Ok(token) => (
+                token_outcome(selection.kind, &token),
+                json!(token.token.expose_secret()),
+            ),
+            Err(error) => (
+                json!({"kind": "error", "category": category(&error)}),
+                Value::Null,
+            ),
         },
     };
-    outcome["bearer"] = bearer;
-    outcome["requests"] = json!(fixture.shared.requests());
-    outcome["sleeps"] = json!(fixture.shared.sleeps());
+    if let Some(map) = outcome.as_object_mut() {
+        map.insert("bearer".to_owned(), bearer);
+        map.insert("requests".to_owned(), json!(fixture.shared.requests()));
+        map.insert("sleeps".to_owned(), json!(fixture.shared.sleeps()));
+    }
     Ok(outcome)
 }
 

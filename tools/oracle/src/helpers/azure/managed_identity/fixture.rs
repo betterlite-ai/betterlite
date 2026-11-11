@@ -97,18 +97,12 @@ where
         .collect()
 }
 
-fn record(
-    shared: &Shared,
-    method: &str,
-    url: &str,
-    params: BTreeMap<String, String>,
-    headers: BTreeMap<String, String>,
-    form: Option<BTreeMap<String, String>>,
-    timeout: Option<u64>,
-) {
-    shared.requests.lock().unwrap_or_else(PoisonError::into_inner).push(json!({
-        "method": method, "url": url, "params": params, "headers": headers, "form": form, "timeout": timeout,
-    }));
+fn record(shared: &Shared, request: Value) {
+    shared
+        .requests
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(request);
 }
 
 pub(crate) struct SharedTransport {
@@ -119,12 +113,14 @@ impl ImdsTransport for SharedTransport {
     fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
         record(
             &self.shared,
-            "GET",
-            &request.url,
-            BTreeMap::from_iter(request.query.iter().cloned()),
-            header_map(request.headers.iter().cloned()),
-            None,
-            request.timeout_seconds,
+            json!({
+                "method": "GET",
+                "url": request.url,
+                "params": BTreeMap::from_iter(request.query.iter().cloned()),
+                "headers": header_map(request.headers.iter().cloned()),
+                "form": null,
+                "timeout": request.timeout_seconds,
+            }),
         );
         let reply = self.shared.next()?;
         Ok(ImdsResponse {
@@ -137,18 +133,20 @@ impl ImdsTransport for SharedTransport {
 
 impl OidcTransport for SharedTransport {
     fn post_form(&self, url: &str, form: &[(String, SecretString)]) -> io::Result<HttpReply> {
-        let form = form
+        let recorded_form: BTreeMap<String, String> = form
             .iter()
             .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
             .collect();
         record(
             &self.shared,
-            "POST",
-            url,
-            BTreeMap::new(),
-            BTreeMap::new(),
-            Some(form),
-            None,
+            json!({
+                "method": "POST",
+                "url": url,
+                "params": BTreeMap::<String, String>::new(),
+                "headers": BTreeMap::<String, String>::new(),
+                "form": recorded_form,
+                "timeout": null,
+            }),
         );
         let reply = self.shared.next()?;
         Ok(HttpReply {
@@ -233,7 +231,7 @@ impl Fixture {
         })
     }
 
-    pub(crate) fn credential<'fixture>(
+    pub(crate) const fn credential<'fixture>(
         &'fixture self,
         client_id: Option<&'fixture str>,
         exclude_workload_identity: bool,
