@@ -3,12 +3,14 @@ title: HTTP worker options and development reload
 description: >-
   Build typed listener, recycle and reload settings in betterlite-config consumed by the server adapter,
   and keep option construction below the CLI dispatcher so tests can compare settings without starting
-  workers. Host defaults to 0.0.0.0, port to 4000, keepalive_timeout to 30 seconds,
+  workers. Host defaults to 0.0.0.0, port to 4000, keepalive_timeout to absent (LiteLLM leaves it None and
+  uvicorn then uses 5 seconds),
   timeout_worker_healthcheck to 30 seconds, max_requests_before_restart to absent. Implement reload
   development mode with watch directories and includes mirroring LiteLLM's uvicorn reload kwargs
   (*.py, .env, config basename), fallback to polling with extra paths, and a .env override warning.
-  Warn when unsupported Uvicorn options appear on the CLI (timeout_worker_healthcheck,
-  limit_max_requests_jitter), but accept them without mutation of process environment. Preserve option
+  Warn when the unsupported Uvicorn option timeout_worker_healthcheck appears on the CLI, but accept it
+  without mutation of process environment. limit_max_requests_jitter is kept in the settings, since the oracle's
+  uvicorn 0.54.0 applies it. Preserve option
   precedence: explicit flag, then environment variable, then default. Server header is always false,
   log_config precedence is explicit, then JSON_LOGS, then LITELLM_LOG. Max requests jitter only applies
   when max_requests is set. From LiteLLM's ProxyInitializationHelpers class methods, extract pure
@@ -43,7 +45,7 @@ dod:
     proof: [config-types]
   - text: resolve_uvicorn_settings builds settings with precedence log_config > JSON_LOGS env > LITELLM_LOG, server_header always false, and applies timeout_worker_healthcheck when set, warning on unsupported uvicorn versions.
     proof: [uvicorn-settings-tests]
-  - text: apply_max_requests_jitter applies limit_max_requests_jitter when max_requests is set, warns when max_requests is absent; limit_max_requests_jitter is accepted, warned about by literal flag name, and ignored (betterlite has no uvicorn to introspect).
+  - text: apply_max_requests_jitter applies limit_max_requests_jitter when max_requests is set, warns when max_requests is absent; limit_max_requests_jitter is accepted and kept in the settings, with no warning other than the missing max_requests one (betterlite has no uvicorn to introspect).
     proof: [jitter-warning-tests]
   - text: resolve_reload_options watches the current directory, config parent if distinct, *.py, .env, and the config basename.
     proof: [reload-options-tests]
@@ -85,8 +87,8 @@ checks:
         ! grep -rq "std::env::set_var" crates/betterlite-server/src/worker_options.rs crates/betterlite-server/src/worker_options crates/betterlite-config/src/sections/worker_options_reload.rs crates/betterlite-config/src/sections/worker_options_reload 2>/dev/null
 oracle_cases: []
 deviations:
-  - what: betterlite runs on axum/tokio and does not use uvicorn, so timeout_worker_healthcheck and limit_max_requests_jitter are never honored, only warned about and ignored.
-    why: betterlite cannot introspect an installed uvicorn package; it accepts these flags for compatibility but has no effect to apply. The warnings use literal flag names from LiteLLM without version checks.
+  - what: betterlite runs on axum/tokio and does not use uvicorn, so timeout_worker_healthcheck is never honored, only warned about and ignored.
+    why: betterlite cannot introspect an installed uvicorn package; it accepts this flag for compatibility but has no effect to apply. The warning uses the literal flag name from LiteLLM without a version check.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L316-L353
   - what: Native settings do not mutate the process environment. LITELLM_DEV_ENV_HOT_RELOAD setting stays in a config field, not in std::env.
     why: In Python, os.environ.set_var affects the reloader's subprocess. Rust cannot safely mutate the process environment, and the setting can be passed as a data structure instead. When B4175 wires the CLI to B003, it supplies the resolved settings as arguments, not by mutating globals.

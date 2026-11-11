@@ -1,0 +1,133 @@
+id: B100
+title: Native compaction loopback target and request peer address
+description: >-
+  When B336's context compaction needs a summary, LiteLLM's proxy does not call the compactor model directly. It sends a
+  child request to its own app, so the summary call passes the same auth, hooks and spend logging as a client request.
+  B8291 builds the executor that sends that child (`LoopbackExecutor` in crates/betterlite-server/src/compaction_loopback).
+  It needs five things from the parent request: the app to call, the parent URL, the root path, the headers and the peer
+  address. LiteLLM reads them off the Starlette request (`request.scope["app"]`, `scope["root_path"]`, `request.url`,
+  `request.headers.raw`, `request.client`), and asgi_handler.py points an in-memory httpx transport at that app with the
+  parent's root path and client. Nothing in betterlite hands B8291 those values, and no request carries its peer address
+  today: server.rs knows `remote_address` per connection but never puts it on the request. This task adds both.
+
+  Code goes in the new module `app::inference::native_compaction`: crates/betterlite-server/src/app/inference/native_compaction.rs
+  and native_compaction/ (target.rs, request.rs, tests.rs). Its one change outside that module is in
+  crates/betterlite-server/src/server.rs, in `application` and `serve_connection` only.
+
+  Target (target.rs). `LoopbackTarget` holds the application as a cloned axum `Router` and the scalar root path, the
+  config value `general_settings.SERVER_ROOT_PATH` (env SERVER_ROOT_PATH, default "", already loaded as
+  `config.sections.request_root_paths.server_root_path`). `pub fn install(app: Router, scalar_root: String) -> Router`
+  clones `app` once into an `Arc<LoopbackTarget>` and returns `app` with a middleware (`axum::middleware::from_fn_with_state`)
+  that inserts that `Arc` into every request's extensions and calls the next service. No static, no OnceLock: the target is
+  built in `install` and travels in the middleware state. The child therefore runs through the application as it was before
+  `install`, so a child request carries no target of its own. LiteLLM's child sees the same app, but nothing a client sees
+  depends on it: a compaction child that tries to compact again is rejected by B336 (context_compaction.py L157-L159)
+  before an executor is asked for, and with no target the summary goes through B336's direct router dispatch as in
+  LiteLLM with no executor installed.
+
+  Wiring in server.rs. `application` calls `native_compaction::install(app, scalar_root)` as its last step, after the
+  admission stack and after `RootPaths::wrap`, so the target's app is the whole stack a client reaches. That order matters:
+  the child path carries the root prefix and only RootPaths cuts it, and LiteLLM's ASGI child runs every middleware,
+  admission included. `serve_connection` puts `axum::extract::ConnectInfo(remote_address)` on every request of the
+  connection, for example with `axum::Extension(ConnectInfo(remote_address))` used as a tower layer around the router
+  before `TowerToHyperService::new`. Touch nothing else in server.rs.
+
+  Builder (request.rs). `pub fn executor_for(parts: &axum::http::request::Parts) -> Option<LoopbackExecutor>`
+  is what the router call site uses to get the executor for one client request:
+  1. No `Arc<LoopbackTarget>` in `parts.extensions` gives None, and the caller passes no executor.
+  2. The parent URL is `axum::extract::OriginalUri` from the extensions when present (RootPaths stores the URI before it
+     cuts the prefix), else `parts.uri`. B8291 replaces the path and drops the query, so only the rest of it matters.
+  3. The root path is `crate::middleware::request_root_paths::get_request_root_path(&parts.extensions, &target.scalar_root)`:
+     the prefix RootPaths matched, or the scalar root when it did not run. Never derive it from the URI.
+  4. The headers are `parts.headers` as the handler received them, order and repeats kept. B8291 filters them.
+  5. The peer is the `ConnectInfo<SocketAddr>` in the extensions, or None when absent, as Starlette's `request.client` is
+     None without a client.
+  The privacy flag is not an input here: B336 hands it to B8291's execute on each summary call, so the executor is built
+  from the request alone. Read B8291's merged constructor and pass exactly what it takes.
+
+  asgi_handler.py also gives the child httpx client no timeout (`httpx.Timeout(None)`) and no redirect following. The
+  tower call B8291 makes has neither, and B336 puts its own `timeout_seconds` around the executor, so add no timeout here.
+
+  Tests in native_compaction/tests.rs (`app::inference::native_compaction::tests`), names starting with `target_`,
+  `executor_` or `peer_`. Build small axum routers in the test with handlers for POST /v1/chat/completions and POST
+  /v1/messages that answer a JSON object holding the path they saw, the Authorization header and the ConnectInfo address.
+  `target_`: a request through `install` has the target in its extensions, and the target's app answers a request
+  itself without a target in that request's extensions. `executor_`: no target gives None; a parent request with
+  ConnectInfo, Authorization and the scalar root "" gives an executor whose `execute` for protocol chat reaches
+  /v1/chat/completions with the parent's Authorization and peer, and for messages reaches /v1/messages; with the stack built
+  as `application` builds it (RootPaths from SERVER_ROOT_PATHS "/tenant-a", then `install`) and the parent sent to
+  /tenant-a/v1/chat/completions, the child reaches the chat handler through the /tenant-a prefix. `peer_`: bind a
+  `TcpListener` on 127.0.0.1:0, serve one accepted stream with `crate::server::serve_connection` and a router whose handler
+  returns its `ConnectInfo`, connect with a TCP client and check the address it gets back equals the client socket's
+  local address.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/native_compaction.rs
+    - crates/betterlite-server/src/app/inference/native_compaction/**
+    - crates/betterlite-server/src/server.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/asgi_handler.py#L16-L46
+    why: The ASGI target (app, root_path, client), the dispatch that puts the parent's root_path and client on the child scope, and the client with no timeout and no redirects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L38-L64
+    why: What the executor reads from the parent request, the app from scope["app"], the root path, the URL, the raw headers and request.client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L83-L90
+    why: The executor exists only for the length of one LLM call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2617-L2627
+    why: The call site that installs the executor around every routed LLM call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L317-L336
+    why: With no executor the summary goes through direct router dispatch, so None from executor_for is a valid answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L153-L159
+    why: A compaction child that tries to compact again is rejected, so the child needs no target of its own.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1742
+    why: The FastAPI app takes SERVER_ROOT_PATH as its root_path, the scalar fallback the target keeps.
+  - url: https://www.starlette.io/requests/#client-address
+    why: request.client is the (host, port) of the TCP peer, or None.
+  - url: https://docs.rs/axum/0.8.9/axum/extract/struct.ConnectInfo.html
+    why: The extension type handlers read the peer address from.
+dod:
+  - text: A request through install carries the Arc<LoopbackTarget> in its extensions, and the target's app is the router from before install.
+    proof: [target-tests]
+  - text: executor_for gives None without a target, and otherwise builds B8291's executor from OriginalUri or the URI, the root path from get_request_root_path, the received headers and the ConnectInfo peer.
+    proof: [executor-tests]
+  - text: A child sent by the built executor reaches /v1/chat/completions or /v1/messages with the parent's Authorization and peer, also through a SERVER_ROOT_PATHS prefix.
+    proof: [executor-tests]
+  - text: serve_connection gives every request ConnectInfo with the TCP peer address.
+    proof: [peer-tests]
+  - text: application calls install as its last step, outside RootPaths and the admission stack.
+    proof: [install-wired, executor-tests]
+checks:
+  optional: []
+  commands:
+    - id: target-tests
+      why: the target is missing from a request or holds the wrong app
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::native_compaction::tests::target_/)'
+    - id: executor-tests
+      why: the executor is built from the wrong request values or its child misses the route, the auth or the peer
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::native_compaction::tests::executor_/)'
+    - id: peer-tests
+      why: requests carry no peer address
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::native_compaction::tests::peer_/)'
+    - id: install-wired
+      why: the server never installs the target
+      run: grep -Fq 'native_compaction::install(' crates/betterlite-server/src/server.rs
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The executor (child path, header filter, child call, errors and the compaction and privacy scopes): B8291."
+  - "CompactionExecutor, the compaction state, the summary call and the direct router dispatch without an executor: B336."
+  - "Passing the executor from the request into B336's compact_to_fit (common_request_processing.py L2626, the set and reset in native_compaction.py L86-L90): B9810, on the gateway's chat, messages and responses routes. This task stops at executor_for."
+  - "The privacy flag for the child (context_compaction.py L486-L499): B336 decides it and passes it to B8291's execute on each call."
+  - "asgi_handler.py _TRANSPORT (L31), the httpx ASGITransport with raise_app_exceptions=False: B8291 calls the tower service directly, and axum turns handler errors into responses."
+  - "Routing a path under the scalar SERVER_ROOT_PATH: B4200. This task only reads the root path."
+  - "The compression_interception callback name (callback_utils.py L153-L162): B9821 owns the SDK callback list and B9822 the compression callback."
+pitfalls:
+  - "Router::layer wraps every route, not the router as one service, so clone the target's app once in install from the router value before the layer; never rebuild it per request."
+  - "install must be the last wrap in application: inside RootPaths the child's /tenant-a prefix is never cut and the child gets a 404."
+  - "By the time a handler runs, RootPaths has cut the prefix from parts.uri, so the root path comes from RequestRootPath through get_request_root_path and the parent URL from OriginalUri."
+  - "server.rs drives hyper itself, so axum's into_make_service_with_connect_info does not apply; ConnectInfo has to be added per connection in serve_connection."
+  - "The target and the built executor hold the caller's Authorization header; never log the headers or derive Debug output that prints them."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

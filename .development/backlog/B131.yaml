@@ -2,13 +2,10 @@ id: B131
 milestone: M8 platform
 title: Gateway and control plane split deployment
 status: todo
-depends_on: [B4470, B4471, B002, B003, B710, B711, B712]
-file: null
+depends_on: [B4471, B710, B711, B712, B9550]
+file: tasks/B131-gateway-launch.yaml
 covers:
   - "gateway/launch.py"
-  - "gateway/Dockerfile"
-  - "backend/Dockerfile"
-  - "docker/component_entrypoint.sh"
 parent: null
 split_from: null
 resolution: null
