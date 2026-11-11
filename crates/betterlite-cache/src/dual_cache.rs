@@ -71,14 +71,9 @@ impl DualCacheSettings {
     where
         Lookup: EnvironmentLookup,
     {
-        let default = i64::try_from(MAX_REDIS_BATCH_CACHE_SIZE).unwrap_or(i64::MAX);
-        let parsed = get_env_int_in_range(
-            BATCH_CACHE_SIZE_VARIABLE,
-            lookup.lookup(BATCH_CACHE_SIZE_VARIABLE).as_deref(),
-            default,
-            1,
-            i64::MAX,
-        );
+        let raw = lookup.lookup(BATCH_CACHE_SIZE_VARIABLE);
+        let parsed =
+            get_env_int_in_range(BATCH_CACHE_SIZE_VARIABLE, raw.as_deref(), 1000, 1, i64::MAX);
         let size = usize::try_from(parsed).unwrap_or(MAX_REDIS_BATCH_CACHE_SIZE);
         Self {
             default_in_memory_ttl: None,
