@@ -3,7 +3,7 @@ name: safe-divide
 call:
   call_helpers:
     function: safe_divide
-    pairs:
+    values:
       - {numerator: 10, denominator: 4, default: 0}
       - {numerator: 10, denominator: 0, default: 0}
       - {numerator: 10, denominator: 0, default: 7.5}

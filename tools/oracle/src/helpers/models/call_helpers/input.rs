@@ -17,7 +17,7 @@ pub(crate) enum Input {
         values: Vec<Json>,
     },
     ExpectedClientError {
-        facts: Vec<Option<ClientErrorFacts>>,
+        values: Vec<Option<ClientErrorFacts>>,
     },
     MetadataBucket {
         steps: Vec<MetadataSlots>,
@@ -49,10 +49,10 @@ pub(crate) enum Input {
         values: Vec<Json>,
     },
     SafeDivide {
-        pairs: Vec<SafeDivideInput>,
+        values: Vec<SafeDivideInput>,
     },
     SafeDivideSeconds {
-        pairs: Vec<SafeDivideSecondsInput>,
+        values: Vec<SafeDivideSecondsInput>,
     },
     RequestHeaders {
         steps: Vec<Option<RequestParams>>,

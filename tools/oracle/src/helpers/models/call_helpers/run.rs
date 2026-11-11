@@ -33,7 +33,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
     Ok(match input {
         Input::FinishReasons { values } => finish_reasons(values),
         Input::TokenLimits { values } => token_limits(values),
-        Input::ExpectedClientError { facts } => expected_client_errors(facts),
+        Input::ExpectedClientError { values } => expected_client_errors(values),
         Input::MetadataBucket { steps } => metadata_buckets(steps),
         Input::TrustedFlags { steps } => Value::Array(steps.iter().map(trusted_flag).collect()),
         Input::ModelReconstruction { values } => model_names(values),
@@ -57,8 +57,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
         }
         Input::DropEnvInvalid { values } => drop_env_flags(values),
         Input::DropRequestInvalid { values } => drop_request_flags(values),
-        Input::SafeDivide { pairs } => safe_divides(pairs),
-        Input::SafeDivideSeconds { pairs } => safe_divide_seconds_values(pairs),
+        Input::SafeDivide { values } => safe_divides(values),
+        Input::SafeDivideSeconds { values } => safe_divide_seconds_values(values),
         Input::RequestHeaders { steps } => Value::Array(
             steps
                 .iter()

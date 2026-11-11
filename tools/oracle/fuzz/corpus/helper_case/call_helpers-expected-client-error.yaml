@@ -3,7 +3,7 @@ name: call-helpers-expected-client-error
 call:
   call_helpers:
     function: expected_client_error
-    facts:
+    values:
       - null
       - {code: "400"}
       - {llm_provider: openai, status_code: 400}

@@ -3,7 +3,7 @@ name: expected-client-error
 call:
   call_helpers:
     function: expected_client_error
-    facts:
+    values:
       - null
       - {code: "400"}
       - {status_code: 401}

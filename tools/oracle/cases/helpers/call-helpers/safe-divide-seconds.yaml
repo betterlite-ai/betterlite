@@ -3,7 +3,7 @@ name: safe-divide-seconds
 call:
   call_helpers:
     function: safe_divide_seconds
-    pairs:
+    values:
       - {seconds: 10, denominator: 4}
       - {seconds: 10, denominator: 0}
       - {seconds: 10, denominator: 0, default: 0}
