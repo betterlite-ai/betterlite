@@ -175,7 +175,7 @@ def kwargs_for(event: EventInput, metadata: dict[str, Json] | None) -> LoggerKwa
 
 def async_state(logger: LoggerView) -> Json:
     return {
-        "initialized": logger._async_initialized,  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L393-L402
+        "initialized": logger._async_initialized,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L393-L402
         "flush_lock": logger.flush_lock is not None,
     }
 
@@ -193,7 +193,7 @@ def queue_value(logger: LoggerView) -> Json:
 
 
 def credentials_value(logger: LoggerView, kwargs: LoggerKwargs) -> Json:
-    api_key, api_url = logger._get_credentials_for_request(kwargs)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L315-L339
+    api_key, api_url = logger._get_credentials_for_request(kwargs)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L315-L339
     return {"api_key": api_key, "api_url": api_url}
 
 
@@ -234,7 +234,7 @@ async def perform(
         await queue_all(logger, events[:1], metadata)
     elif operation == "exit_flush":
         await queue_all(logger, events, metadata)
-        logger._flush_on_exit()  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L420-L470
+        logger._flush_on_exit()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L420-L470
     return outcome
 
 

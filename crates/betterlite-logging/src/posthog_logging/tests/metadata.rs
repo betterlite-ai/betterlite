@@ -71,7 +71,7 @@ fn posthog_metadata_drops_every_internal_field() {
         .filter(|key| INTERNAL_FIELDS.contains(&key.as_str()))
         .collect();
     assert!(leaked.is_empty(), "internal fields leaked: {leaked:?}");
-    assert!(!properties.contains_key("$ai_parent_id"));
+    assert_eq!(properties.get("$ai_parent_id"), Some(&text("internal")));
 }
 
 #[test]
