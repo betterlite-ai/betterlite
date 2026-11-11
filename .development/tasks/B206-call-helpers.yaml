@@ -25,6 +25,7 @@ description: >-
   a context-only leaf.
 scope:
   paths:
+  - "tools/oracle/src/helpers/azure/chat_base_policy/reports.rs"
   - "crates/betterlite-config/src/sections/drop_params/tests.rs"
   - Cargo.toml
   - crates/betterlite-models/Cargo.toml
