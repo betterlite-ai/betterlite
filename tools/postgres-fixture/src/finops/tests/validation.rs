@@ -6,9 +6,9 @@ use crate::finops::model::{ConfigName, ConfigRow, OrganizationRow, UsageApiKey};
 use crate::seed::{FixtureSeed, KeyRow};
 
 use super::support::{
-    LIMIT, OVER_LIMIT, VANTAGE_SETTINGS, deterministic_rows, fixture_with, metadata_row,
-    organization, sample_seed, secret, seed_with_config_rows, seed_with_daily_usage,
-    seed_with_key_metadata, seed_with_organizations, usage_row,
+    LIMIT, ORPHAN_HASH, OVER_LIMIT, VANTAGE_SETTINGS, deterministic_rows, fixture_with,
+    metadata_row, organization, sample_finops, sample_seed, secret, seed_with_config_rows,
+    seed_with_daily_usage, seed_with_key_metadata, seed_with_organizations, usage_row,
 };
 
 enum Expected {
@@ -16,6 +16,86 @@ enum Expected {
     Redacted,
     Direct(&'static str),
     Fixture(&'static str),
+    Equality,
+}
+
+fn assert_changes(sample: &FinOpsSeed, change: fn(&mut FinOpsSeed)) {
+    let mut changed = sample.clone();
+    change(&mut changed);
+    assert_ne!(sample, &changed);
+}
+
+fn replace_key_token(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.key_metadata.first_mut() {
+        row.token = secret("sk-other");
+    }
+}
+
+fn replace_key_alias(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.key_metadata.first_mut() {
+        row.key_alias = Some("other-key".to_owned());
+    }
+}
+
+fn clear_key_organization(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.key_metadata.first_mut() {
+        row.organization_id = None;
+    }
+}
+
+fn clear_team_organization(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.key_metadata.first_mut() {
+        row.team_organization_id = None;
+    }
+}
+
+fn rename_config(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.config_rows.first_mut() {
+        row.name = ConfigName::CloudzeroSettings;
+    }
+}
+
+fn clear_config_value(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.config_rows.first_mut() {
+        row.serialized_value = None;
+    }
+}
+
+fn replace_config_value(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.config_rows.first_mut() {
+        row.serialized_value = Some(secret("other"));
+    }
+}
+
+fn replace_usage_key(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.daily_usage.first_mut() {
+        row.api_key = UsageApiKey::Key(secret("sk-other"));
+    }
+}
+
+fn orphan_usage_key(seed: &mut FinOpsSeed) {
+    if let Some(row) = seed.daily_usage.first_mut() {
+        row.api_key = UsageApiKey::OrphanHash(ORPHAN_HASH.to_owned());
+    }
+}
+
+fn assert_finops_equality() {
+    let sample = sample_finops();
+    assert_eq!(sample, sample_finops());
+    assert_changes(&sample, replace_key_token);
+    assert_changes(&sample, replace_key_alias);
+    assert_changes(&sample, clear_key_organization);
+    assert_changes(&sample, clear_team_organization);
+    assert_changes(&sample, rename_config);
+    assert_changes(&sample, clear_config_value);
+    assert_changes(&sample, replace_config_value);
+    assert_changes(&sample, replace_usage_key);
+    assert_changes(&sample, orphan_usage_key);
+    assert_eq!(ConfigName::VantageSettings.as_wire(), "vantage_settings");
+    assert_eq!(
+        ConfigName::CloudzeroSettings.as_wire(),
+        "cloudzero_settings"
+    );
 }
 
 fn assert_redacted(fixture: &FixtureSeed) {
@@ -112,6 +192,20 @@ fn conflicting_team_seed() -> FixtureSeed {
         metadata_row("sk-alice-token", None, None, Some("org-team")),
         metadata_row("sk-second-red", None, None, Some("org-other")),
     ])
+}
+
+fn matching_team_seed() -> FixtureSeed {
+    seed_with_key_metadata(vec![
+        metadata_row("sk-alice-token", None, None, Some("org-team")),
+        metadata_row("sk-second-red", None, None, Some("org-team")),
+    ])
+}
+
+fn invalid_orphan_chars_seed() -> FixtureSeed {
+    seed_with_daily_usage(vec![usage_row(
+        "row-orphan",
+        UsageApiKey::OrphanHash("z".repeat(64)),
+    )])
 }
 
 fn duplicate_usage_id_seed() -> FixtureSeed {
@@ -256,6 +350,7 @@ fn boundary_daily_usage_seed() -> FixtureSeed {
 #[case::sample(sample_seed, Expected::Accepted)]
 #[case::empty_usage(empty_usage_seed, Expected::Accepted)]
 #[case::redacted_diagnostics(sample_seed, Expected::Redacted)]
+#[case::equality(sample_seed, Expected::Equality)]
 #[case::null_tuple(null_tuple_seed, Expected::Accepted)]
 #[case::too_many_organizations(
     too_many_organizations_seed,
@@ -326,6 +421,7 @@ fn boundary_daily_usage_seed() -> FixtureSeed {
     conflicting_team_seed,
     Expected::Fixture("finops key metadata rows assign team team-red conflicting organizations")
 )]
+#[case::matching_team(matching_team_seed, Expected::Accepted)]
 #[case::duplicate_usage_id(
     duplicate_usage_id_seed,
     Expected::Fixture("finops daily usage row 1 repeats an id")
@@ -340,6 +436,10 @@ fn boundary_daily_usage_seed() -> FixtureSeed {
 )]
 #[case::invalid_orphan_hash(
     invalid_orphan_hash_seed,
+    Expected::Fixture("finops daily usage row 0 orphan_hash is not a SHA256 hex token")
+)]
+#[case::invalid_orphan_chars(
+    invalid_orphan_chars_seed,
     Expected::Fixture("finops daily usage row 0 orphan_hash is not a SHA256 hex token")
 )]
 #[case::invalid_created_at(
@@ -363,6 +463,7 @@ fn finops_seed_validation_contract(#[case] build: fn() -> FixtureSeed, #[case] e
     match expected {
         Expected::Accepted => fixture.validate().expect("the finops seed validates"),
         Expected::Redacted => assert_redacted(&fixture),
+        Expected::Equality => assert_finops_equality(),
         Expected::Direct(message) => {
             let finops = fixture.finops.as_ref().expect("the seed carries finops");
             let error = finops.validate(&fixture).expect_err("the seed is rejected");
