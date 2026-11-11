@@ -34,6 +34,37 @@ const CONTINUE_OVERWRITE_EXPECTED: &str = r#"[
     {"role":"user","content":[{"text":"c"}]}
 ]"#;
 
+const CONTINUE_RESWAP_TURNS: &str = r#"[
+    {"role":"user","content":"a"},
+    {"role":"assistant","content":""},
+    {"role":"user","content":"b"},
+    {"role":"assistant","content":"y","tool_calls":[
+        {"id":"c2","type":"function","function":{"name":"get.weather","arguments":"{}"}}
+    ]},
+    {"role":"user","content":"c"},
+    {"role":"assistant","content":""},
+    {"role":"user","content":"d"}
+]"#;
+
+const CONTINUE_RESWAP_EXPECTED: &str = r#"[
+    {"role":"user","content":[{"text":"a"}]},
+    {"role":"assistant","content":[
+        {"text":"x"},
+        {"toolUse":{"input":{},"name":"get_weather","toolUseId":"c1"}}
+    ]},
+    {"role":"user","content":[{"text":"b"}]},
+    {"role":"assistant","content":[
+        {"text":"y"},
+        {"toolUse":{"input":{},"name":"get_weather","toolUseId":"c2"}}
+    ]},
+    {"role":"user","content":[{"text":"c"}]},
+    {"role":"assistant","content":[
+        {"text":"x"},
+        {"toolUse":{"input":{},"name":"get_weather","toolUseId":"c1"}}
+    ]},
+    {"role":"user","content":[{"text":"d"}]}
+]"#;
+
 #[tokio::test]
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_an_empty_user_text_takes_the_continue_message()
  {
@@ -256,6 +287,23 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_later_history_call_over
     assert_eq!(
         converted.names.get("get_weather").map(String::as_str),
         Some("get.weather")
+    );
+}
+
+#[tokio::test]
+async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_second_blank_turn_records_the_continue_name_again()
+ {
+    let harness = Harness::new();
+    let continue_message = assistant_continue_with_call();
+    let settings = Settings::default().with_assistant_continue(&continue_message);
+    let converted = harness
+        .convert(&messages(CONTINUE_RESWAP_TURNS), &[], &settings)
+        .await
+        .unwrap();
+    assert_eq!(converted.messages, list(CONTINUE_RESWAP_EXPECTED));
+    assert_eq!(
+        converted.names.get("get_weather").map(String::as_str),
+        Some("get weather")
     );
 }
 

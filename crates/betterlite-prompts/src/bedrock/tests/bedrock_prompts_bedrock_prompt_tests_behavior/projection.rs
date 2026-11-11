@@ -81,7 +81,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_content_parts_keep_their_type_a
 #[test]
 fn bedrock_prompts_bedrock_prompt_tests_behavior_a_user_tool_call_name_is_not_made_valid() {
     let mut names = ToolNameMap::new();
-    let projected = project_messages(
+    let (projected, _) = project_messages(
         &messages(
             r#"[{"role":"user","content":"hi","tool_calls":[
                 {"id":"call_1","type":"function","function":{"name":"get weather","arguments":"{}"}}
@@ -105,7 +105,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_a_user_tool_call_name_is_not_ma
 fn bedrock_prompts_bedrock_prompt_tests_behavior_an_assistant_tool_call_name_is_made_valid_and_mapped()
  {
     let mut names = ToolNameMap::new();
-    let projected = project_messages(
+    let (projected, _) = project_messages(
         &messages(
             r#"[{"role":"assistant","tool_calls":[
                 {"id":"call_1","type":"function","function":{"name":"get weather","arguments":"{}"}}
@@ -131,7 +131,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_an_assistant_tool_call_name_is_
 #[test]
 fn bedrock_prompts_bedrock_prompt_tests_behavior_an_already_valid_tool_call_name_adds_no_mapping() {
     let mut names = ToolNameMap::new();
-    let projected = project_messages(
+    let (projected, _) = project_messages(
         &messages(
             r#"[{"role":"assistant","tool_calls":[
                 {"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{}"}}
@@ -160,10 +160,8 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_tool_call_shapes_without_a_name
     #[case] raw: &str,
 ) {
     let mut names = ToolNameMap::new();
-    assert_eq!(
-        project_messages(&messages(raw), None, &mut names),
-        list(raw)
-    );
+    let (projected, _) = project_messages(&messages(raw), None, &mut names);
+    assert_eq!(projected, list(raw));
     assert!(names.is_empty());
 }
 
@@ -176,7 +174,7 @@ fn bedrock_prompts_bedrock_prompt_tests_behavior_projection_leaves_the_source_me
             ]}]"#,
     );
     let mut names = ToolNameMap::new();
-    let projected = project_messages(&source, None, &mut names);
+    let (projected, _) = project_messages(&source, None, &mut names);
     assert_eq!(names.len(), 1);
     assert_eq!(
         source,

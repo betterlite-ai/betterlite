@@ -32,19 +32,22 @@ pub fn project_message(message: &Message) -> Json {
     Json::Object(fields)
 }
 
-// LiteLLM records the continue message's names at the blank turn it replaces, before later history calls
+// LiteLLM records the continue message's original names at every blank turn it replaces, in message order
 #[must_use]
 pub fn project_messages(
     messages: &[Message],
-    mut continue_message: Option<&mut Json>,
+    continue_message: Option<&Json>,
     names: &mut ToolNameMap,
-) -> Vec<Json> {
+) -> (Vec<Json>, Option<Json>) {
+    let mut effective_continue = continue_message.cloned();
     let mut projected = Vec::with_capacity(messages.len());
     for message in messages {
         if swaps_in_continue(message)
-            && let Some(Json::Object(fields)) = continue_message.as_deref_mut()
+            && let Some(Json::Object(fields)) = continue_message
         {
-            sanitize_tool_call_names(fields, names);
+            let mut sanitized = fields.clone();
+            sanitize_tool_call_names(&mut sanitized, names);
+            effective_continue = Some(Json::Object(sanitized));
         }
         let value = if message.role == ASSISTANT {
             project_message_with_names(message, names)
@@ -53,7 +56,7 @@ pub fn project_messages(
         };
         projected.push(value);
     }
-    projected
+    (projected, effective_continue)
 }
 
 fn project_message_with_names(message: &Message, names: &mut ToolNameMap) -> Json {

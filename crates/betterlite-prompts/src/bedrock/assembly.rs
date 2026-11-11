@@ -61,10 +61,11 @@ where
     Ids: Fn() -> String + Sync,
 {
     let BedrockTools { blocks, mut names } = bedrock_tools(tools, settings.capabilities)?;
-    let mut assistant_continue = settings
+    let continue_message = settings
         .assistant_continue_message
         .map(project_assistant_continue);
-    let projected = project_messages(messages, assistant_continue.as_mut(), &mut names);
+    let (projected, assistant_continue) =
+        project_messages(messages, continue_message.as_ref(), &mut names);
     let user_continue = settings.user_continue_message.map(project_message);
     let conversion = Conversion {
         model: settings.model,
