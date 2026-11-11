@@ -217,6 +217,10 @@ fn restore_on_error() {
     assert_eq!(trace.mcp_transport, Some(transport(3, 4, true)));
     assert_eq!(trace.destinations, vec![destination("arize")]);
     assert!(trace.mcp_carrier.is_some());
+    assert_eq!(
+        trace.root.as_ref().expect("root").context.trace_id(),
+        TraceId::from(7)
+    );
 }
 
 #[tokio::test]
@@ -232,6 +236,10 @@ async fn restore_on_cancel() {
     assert!(outcome.is_err());
     assert_eq!(trace.mcp_transport, Some(transport(3, 4, true)));
     assert_eq!(trace.destinations, vec![destination("arize")]);
+    assert_eq!(
+        trace.root.as_ref().expect("root").context.trace_id(),
+        TraceId::from(7)
+    );
 }
 
 async fn install_and_wait(trace: &mut RequestTraceContext, snapshot: &MessageTrace) {
