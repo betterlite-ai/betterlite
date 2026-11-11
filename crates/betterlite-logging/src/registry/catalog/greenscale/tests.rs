@@ -244,6 +244,37 @@ async fn a_success_event_posts_the_mapped_fields() {
 }
 
 #[tokio::test]
+async fn an_async_success_event_posts_the_mapped_fields_once() {
+    let recorder = Recorder::default();
+    let tracker = TaskTracker::new();
+    let adapter = GreenscaleAdapter {
+        logger: Arc::new(GreenscaleLogger {
+            delivery: recorder.clone(),
+            clock: FixedClock {
+                now: DateTime::from_timestamp(1_767_322_800, 0).expect("a valid fixture time"),
+            },
+            settings: settings(&[
+                ("GREENSCALE_API_KEY", "green-key"),
+                ("GREENSCALE_ENDPOINT", "https://greenscale.example.com/log"),
+            ]),
+        }),
+        tracker: tracker.clone(),
+    };
+    adapter
+        .async_log_success_event(Arc::new(event()))
+        .await
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let bodies = recorder.bodies();
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(
+        field(&bodies[0], "modelId"),
+        &Json::Text("gpt-4o".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn a_missing_endpoint_sends_nothing() {
     let bodies = captured_event(settings(&[("GREENSCALE_API_KEY", "green-key")])).await;
     assert!(bodies.is_empty());

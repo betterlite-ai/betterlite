@@ -10,6 +10,7 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -318,6 +319,93 @@ async fn an_event_without_a_subscription_sends_nothing() {
     tracker.close();
     tracker.wait().await;
     assert!(sender.posts().is_empty());
+}
+
+async fn properties_posted_for(payload: &str) -> Json {
+    let sender = FakeSender::default();
+    let (adapter, tracker) = adapter(settings(&[]), sender.clone());
+    adapter
+        .log_success_event(&event_from(payload))
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let posts = sender.posts();
+    assert_eq!(posts.len(), 1);
+    field(field(&posts[0].body, "event"), "properties").clone()
+}
+
+fn has_field(body: &Json, name: &str) -> bool {
+    let Json::Object(fields) = body else {
+        panic!("the posted properties are a JSON object");
+    };
+    fields.contains_key(name)
+}
+
+#[tokio::test]
+async fn a_call_that_is_not_a_completion_or_embedding_sends_no_usage() {
+    let payload = PAYLOAD.replace(
+        r#""call_type": "completion""#,
+        r#""call_type": "image_generation""#,
+    );
+    let properties = properties_posted_for(&payload).await;
+    assert!(!has_field(&properties, "prompt_tokens"));
+    assert!(!has_field(&properties, "completion_tokens"));
+    assert!(!has_field(&properties, "total_tokens"));
+    assert_eq!(
+        field(&properties, "model"),
+        &Json::Text("gpt-4o".to_owned())
+    );
+}
+
+#[rstest]
+#[case::async_completion("acompletion")]
+#[case::embedding("embedding")]
+#[case::async_embedding("aembedding")]
+#[tokio::test]
+async fn an_async_completion_and_an_embedding_keep_their_usage(#[case] call_type: &str) {
+    let payload = PAYLOAD.replace(
+        r#""call_type": "completion""#,
+        &format!(r#""call_type": "{call_type}""#),
+    );
+    let properties = properties_posted_for(&payload).await;
+    assert_eq!(field(&properties, "total_tokens"), &number(5));
+}
+
+#[tokio::test]
+async fn a_key_end_user_id_hides_the_request_user() {
+    let sender = FakeSender::default();
+    let (adapter, tracker) = adapter(settings(&[]), sender.clone());
+    let payload = PAYLOAD.replace(
+        r#""user_api_key_team_id": "team-1""#,
+        r#""user_api_key_team_id": "team-1", "user_api_key_end_user_id": "key-end-user""#,
+    );
+    adapter
+        .log_success_event(&event_from(&payload))
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    assert!(sender.posts().is_empty());
+}
+
+#[tokio::test]
+async fn an_empty_key_end_user_id_keeps_the_request_user() {
+    let sender = FakeSender::default();
+    let (adapter, tracker) = adapter(settings(&[]), sender.clone());
+    let payload = PAYLOAD.replace(
+        r#""user_api_key_team_id": "team-1""#,
+        r#""user_api_key_team_id": "team-1", "user_api_key_end_user_id": """#,
+    );
+    adapter
+        .log_success_event(&event_from(&payload))
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let posts = sender.posts();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(
+        field(field(&posts[0].body, "event"), "external_subscription_id"),
+        &Json::Text("end-user-1".to_owned())
+    );
 }
 
 #[tokio::test]

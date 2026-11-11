@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use tokio_util::task::TaskTracker;
 
 use super::payload::{callback_kwargs, utc_at};
@@ -23,7 +24,8 @@ fn invalid_time(field: &str) -> LoggerError {
     }
 }
 
-// LiteLLM runs the greenscale logger inside the sync success handler, which also serves async calls
+// LiteLLM runs the greenscale logger inside the sync success handler, which also serves async calls, so betterlite starts the same delivery from both hooks
+#[async_trait]
 impl<D: Delivery + 'static, C: WallClock + 'static> CallbackLogger for GreenscaleAdapter<D, C> {
     fn callback_name(&self) -> &'static str {
         "greenscale"
@@ -46,5 +48,9 @@ impl<D: Delivery + 'static, C: WallClock + 'static> CallbackLogger for Greenscal
             logger.log_event(&call).await;
         });
         Ok(())
+    }
+
+    async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        self.log_success_event(&event)
     }
 }

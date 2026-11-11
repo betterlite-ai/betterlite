@@ -11,6 +11,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, TimeZone as _, Utc};
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -314,6 +315,77 @@ async fn an_async_success_event_posts_the_mapped_cloud_event() {
     let posts = sender.posts();
     assert_eq!(posts.len(), 1);
     cloud_event_fields(&posts[0].body);
+}
+
+async fn body_posted_for(payload: &str) -> Json {
+    let sender = FakeSender::default();
+    let (adapter, tracker) = adapter(settings(&[]), sender.clone());
+    adapter
+        .log_success_event(&event_from(payload))
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let posts = sender.posts();
+    assert_eq!(posts.len(), 1);
+    posts[0].body.clone()
+}
+
+fn has_field(body: &Json, name: &str) -> bool {
+    let Json::Object(fields) = body else {
+        panic!("the posted data is a JSON object");
+    };
+    fields.contains_key(name)
+}
+
+#[tokio::test]
+async fn a_call_that_is_not_a_completion_or_embedding_sends_no_usage() {
+    let payload = PAYLOAD.replace(
+        r#""call_type": "completion""#,
+        r#""call_type": "image_generation""#,
+    );
+    let body = body_posted_for(&payload).await;
+    let data = field(&body, "data");
+    assert!(!has_field(data, "prompt_tokens"));
+    assert!(!has_field(data, "completion_tokens"));
+    assert!(!has_field(data, "total_tokens"));
+    assert_eq!(field(data, "model"), &Json::Text("gpt-4o".to_owned()));
+}
+
+#[rstest]
+#[case::async_completion("acompletion")]
+#[case::embedding("embedding")]
+#[case::async_embedding("aembedding")]
+#[tokio::test]
+async fn an_async_completion_and_an_embedding_keep_their_usage(#[case] call_type: &str) {
+    let payload = PAYLOAD.replace(
+        r#""call_type": "completion""#,
+        &format!(r#""call_type": "{call_type}""#),
+    );
+    let body = body_posted_for(&payload).await;
+    assert_eq!(field(field(&body, "data"), "total_tokens"), &number(5));
+}
+
+#[tokio::test]
+async fn a_key_end_user_id_hides_the_request_user() {
+    let payload = PAYLOAD.replace(
+        r#""user_api_key_team_id": "team-1""#,
+        r#""user_api_key_team_id": "team-1", "user_api_key_end_user_id": "key-end-user""#,
+    );
+    let body = body_posted_for(&payload).await;
+    assert_eq!(field(&body, "subject"), &Json::Text("user-1".to_owned()));
+}
+
+#[tokio::test]
+async fn an_empty_key_end_user_id_keeps_the_request_user() {
+    let payload = PAYLOAD.replace(
+        r#""user_api_key_team_id": "team-1""#,
+        r#""user_api_key_team_id": "team-1", "user_api_key_end_user_id": """#,
+    );
+    let body = body_posted_for(&payload).await;
+    assert_eq!(
+        field(&body, "subject"),
+        &Json::Text("end-user-1".to_owned())
+    );
 }
 
 #[tokio::test]

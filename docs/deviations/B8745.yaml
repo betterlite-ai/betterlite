@@ -1,0 +1,8 @@
+task: B8745
+deviations:
+  - what: Lago and OpenMeter take the request's user from the standard logging payload's end_user, and treat it as absent when the key carries a user_api_key_end_user_id.
+    why: The payload stores the key's end user id ahead of the request body's user in end_user, so the body's own user cannot be recovered once the key has an end user id. Taking end_user then would bill the key's end user instead of the request's user.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L80-L81
+  - what: Lago and OpenMeter copy usage for the completion, acompletion, embedding and aembedding call types instead of testing the response object's Python class.
+    why: The standard logging payload carries no response class, and the call type is the closest declared field to LiteLLM's ModelResponse and EmbeddingResponse check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L68-L77

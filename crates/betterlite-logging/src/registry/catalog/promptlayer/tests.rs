@@ -297,6 +297,21 @@ async fn a_success_event_posts_the_mapped_fields() {
 }
 
 #[tokio::test]
+async fn an_async_success_event_posts_the_mapped_fields_once() {
+    let capture = Capture::answering(SUCCESS);
+    let adapter = adapter(capture.clone(), settings(Some("pl-key")));
+    adapter
+        .async_log_success_event(Arc::new(event(false)))
+        .await
+        .expect("the event is accepted");
+    adapter.tracker.close();
+    adapter.tracker.wait().await;
+    let requests = capture.requests();
+    assert_eq!(requests.len(), 1);
+    assert_track_request(&requests[0]);
+}
+
+#[tokio::test]
 async fn a_success_event_posts_the_metadata_when_a_request_id_comes_back() {
     let capture = Capture::answering(SUCCESS_WITH_REQUEST);
     let adapter = adapter(capture.clone(), settings(Some("pl-key")));

@@ -315,6 +315,28 @@ async fn a_success_event_posts_the_mapped_fields() {
     assert_mapped_body(&requests[0].body);
 }
 
+#[tokio::test]
+async fn an_async_success_event_posts_the_mapped_fields_once() {
+    let capture = Captured::default();
+    let tracker = TaskTracker::new();
+    let adapter = AthinaAdapter {
+        logger: Arc::new(AthinaLogger {
+            delivery: capture.clone(),
+            settings: settings(Some("athina-key")),
+        }),
+        tracker: tracker.clone(),
+    };
+    adapter
+        .async_log_success_event(Arc::new(event(false)))
+        .await
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_eq!(requests.len(), 1);
+    assert_mapped_body(&requests[0].body);
+}
+
 #[test]
 fn the_catalog_environment_reaches_the_settings() {
     let inputs = inputs(&[("ATHINA_API_KEY", "athina-key")]);
