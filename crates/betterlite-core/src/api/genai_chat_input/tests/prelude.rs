@@ -66,7 +66,11 @@ pub(super) fn translate_request(
         globals: GlobalCredentials::default(),
     };
     let capabilities = CatalogCapabilities {
-        chat_models: BTreeSet::from([String::from("gpt-4"), String::from("gpt-4o")]),
+        chat_models: BTreeSet::from([
+            String::from("gpt-4"),
+            String::from("gpt-4o"),
+            String::from("o3"),
+        ]),
         text_models: BTreeSet::new(),
     };
     let context = TranslationContext {

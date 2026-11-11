@@ -16,17 +16,19 @@ pub(super) fn response_format(
     let Some(fields) = config else {
         return Ok(None);
     };
-    if fields
+    let mime = fields
         .response_mime_type
-        .as_deref()
-        .is_some_and(|mime| mime != JSON_MIME_TYPE)
-    {
+        .as_ref()
+        .or(fields.response_mime_type_snake.as_ref());
+    if mime.is_some_and(|given| given != JSON_MIME_TYPE) {
         return Ok(None);
     }
     let schema = fields
         .response_json_schema
         .as_ref()
-        .or(fields.response_schema.as_ref());
+        .or(fields.response_json_schema_snake.as_ref())
+        .or(fields.response_schema.as_ref())
+        .or(fields.response_schema_snake.as_ref());
     let Some(given) = schema.filter(|value| value.is_object()) else {
         return Ok(None);
     };

@@ -94,12 +94,15 @@ pub struct GenerationConfig {
     pub max_output_tokens: Option<u32>,
     pub top_p: Option<Number>,
     pub stop_sequences: Option<Vec<String>>,
-    #[serde(alias = "response_mime_type")]
     pub response_mime_type: Option<String>,
-    #[serde(alias = "response_json_schema")]
+    #[serde(rename = "response_mime_type")]
+    pub response_mime_type_snake: Option<String>,
     pub response_json_schema: Option<Value>,
-    #[serde(alias = "response_schema")]
+    #[serde(rename = "response_json_schema")]
+    pub response_json_schema_snake: Option<Value>,
     pub response_schema: Option<Value>,
+    #[serde(rename = "response_schema")]
+    pub response_schema_snake: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

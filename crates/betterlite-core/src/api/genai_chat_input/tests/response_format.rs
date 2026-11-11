@@ -156,6 +156,7 @@ fn provider_params(provider: Option<&str>) -> GenerateLiteLLMParams {
 #[case::azure_prefix("azure/gpt-4", None, true)]
 #[case::openai_prefix("openai/gpt-4", None, false)]
 #[case::unknown_prefix("my-org/gpt-4", None, true)]
+#[case::o_series_response_schema("o3", None, true)]
 fn the_provider_response_format_support_decides_the_field(
     #[case] model: &str,
     #[case] provider: Option<&str>,
@@ -256,4 +257,25 @@ fn the_gemini_key_filter_counts_a_list_as_no_extra_level() {
             .get("property_ordering")
             .is_some()
     );
+}
+
+#[test]
+fn the_camel_case_response_keys_win_over_the_snake_case_ones() {
+    let request = translate(body(&json!({
+        "responseMimeType": "application/json",
+        "response_mime_type": "text/plain",
+        "responseJsonSchema": {"type": "object", "chosen": "camel"},
+        "response_json_schema": {"type": "object", "chosen": "snake"},
+    })));
+    assert_eq!(schema_of(&request)["chosen"], "camel");
+}
+
+#[test]
+fn a_camel_case_non_json_mime_type_drops_the_snake_case_schema() {
+    let request = translate(body(&json!({
+        "responseMimeType": "text/plain",
+        "response_mime_type": "application/json",
+        "responseSchema": {"type": "object", "properties": {}},
+    })));
+    assert_eq!(request.response_format, None);
 }
