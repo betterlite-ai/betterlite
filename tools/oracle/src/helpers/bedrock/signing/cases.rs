@@ -1,17 +1,18 @@
 use super::input::{
-    BatchDataInput, BatchRequest as BatchRequestInput, OffLoop,
-    RequestTarget as RequestTargetInput, ServiceRequest as ServiceRequestInput,
+    BatchRequest as BatchRequestInput, OffLoop, RequestTarget as RequestTargetInput,
+    ServiceRequest as ServiceRequestInput,
 };
-use super::ops::{credentials_json, credentials_of, epoch, input_error, runtime, signed_result};
+use super::ops::{
+    credentials_json, credentials_of, epoch, input_error, optional_headers, runtime, signed_result,
+};
 use crate::helpers::HelperError;
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::signing::batch::{BatchData, BatchRequest, sign_batch_request};
+use betterlite_bedrock::signing::batch::sign_batch_request;
 use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::executor::{AwsSigningExecutor, sign_request_off_loop_if_aws};
-use betterlite_bedrock::signing::service::{ServiceRequest, sign_service_request};
+use betterlite_bedrock::signing::service::sign_service_request;
 use betterlite_bedrock::signing::target::{RegionInputs, TargetRequest, request_target};
-use secrecy::SecretString;
 use serde_json::{Value, json};
 use std::future::ready;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,96 +21,47 @@ use tracing::subscriber::with_default;
 use tracing_subscriber::registry;
 pub(super) fn service_request_case(case: &ServiceRequestInput) -> Result<Value, Box<HelperError>> {
     let fixture = credentials_of(&case.credentials);
-    let headers = case
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect::<Vec<_>>();
-    let api_key = case
-        .api_key
-        .as_deref()
-        .map(|text| SecretString::from(text.to_owned()));
-    let configured = case
-        .configured_bearer_token
-        .as_deref()
-        .map(|text| SecretString::from(text.to_owned()));
-    let now = epoch(case.now)?;
-    let runtime = runtime()?;
-    let result = runtime.block_on(sign_service_request(
-        ServiceRequest {
-            service: case.service_name,
-            headers: &headers,
-            optional_params: &case.optional_params,
-            request_data: &case.request_data,
-            api_base: &case.api_base,
-            model: case.model.as_deref(),
-            api_key: api_key.as_ref(),
-            configured_bearer: configured.as_ref(),
-            region_inputs: RegionInputs::default(),
-            now,
-        },
-        |_settings, _region| ready(Ok::<Credentials, CredentialError>(fixture.clone())),
-    ));
+    let headers = optional_headers(&case.headers);
+    let request = case.request(&headers, epoch(case.now)?);
+    let result = runtime()?.block_on(sign_service_request(request, |_settings, _region| {
+        ready(Ok::<Credentials, CredentialError>(fixture.clone()))
+    }));
     Ok(signed_result(result))
 }
 pub(super) fn batch_request_case(case: &BatchRequestInput) -> Result<Value, Box<HelperError>> {
     let fixture = credentials_of(&case.credentials);
-    let data = match &case.data {
-        BatchDataInput::Json(object) => BatchData::Json(object),
-        BatchDataInput::Text(text) => BatchData::Text(text),
-    };
-    let now = epoch(case.now)?;
-    let runtime = runtime()?;
-    let result = runtime.block_on(sign_batch_request(
-        BatchRequest {
-            service_name: &case.service_name,
-            data,
-            endpoint: &case.endpoint_url,
-            optional_params: &case.optional_params,
-            method: case.method.as_deref(),
-            region_inputs: RegionInputs::default(),
-            now,
-        },
-        |_settings, _region| ready(Ok::<Credentials, CredentialError>(fixture.clone())),
-    ));
-    Ok(signed_result(result))
+    let signing = sign_batch_request(case.request(epoch(case.now)?), |_settings, _region| {
+        ready(Ok::<Credentials, CredentialError>(fixture.clone()))
+    });
+    Ok(signed_result(runtime()?.block_on(signing)))
 }
 pub(super) fn request_target_case(case: &RequestTargetInput) -> Result<Value, Box<HelperError>> {
     let fixture = credentials_of(&case.credentials);
-    let bearer = case
-        .bearer_token
-        .as_deref()
-        .map(|text| SecretString::from(text.to_owned()));
     let mut parameters = case.optional_params.clone();
     let resolved = AtomicUsize::new(0);
-    let runtime = runtime()?;
-    let result = runtime.block_on(request_target(
-        TargetRequest {
-            optional_params: &mut parameters,
-            model: case.model.as_deref(),
-            region_inputs: RegionInputs::default(),
-            bearer_token: bearer.as_ref(),
-        },
-        |_settings, _region| {
-            resolved.fetch_add(1, Ordering::Relaxed);
-            ready(Ok::<Credentials, CredentialError>(fixture.clone()))
-        },
-    ));
-    match result {
-        Ok(target) => {
-            let remaining = serde_json::to_value(&parameters)
-                .map_err(|error| input_error(error.to_string()))?;
-            Ok(json!({
-                "ok": true,
-                "region": target.region,
-                "endpoint": target.endpoint,
-                "credentials": target.credentials.as_ref().map(credentials_json),
-                "remaining": remaining,
-                "resolved": resolved.load(Ordering::Relaxed),
-            }))
-        }
-        Err(_error) => Ok(json!({"ok": false, "status": null})),
-    }
+    let request = TargetRequest {
+        optional_params: &mut parameters,
+        model: case.model.as_deref(),
+        region_inputs: RegionInputs::default(),
+        bearer_token: case.bearer_token.as_ref(),
+    };
+    let outcome = runtime()?.block_on(request_target(request, |_settings, _region| {
+        resolved.fetch_add(1, Ordering::Relaxed);
+        ready(Ok::<Credentials, CredentialError>(fixture.clone()))
+    }));
+    let Ok(target) = outcome else {
+        return Ok(json!({"ok": false, "status": null}));
+    };
+    let remaining =
+        serde_json::to_value(&parameters).map_err(|error| input_error(error.to_string()))?;
+    Ok(json!({
+        "ok": true,
+        "region": target.region,
+        "endpoint": target.endpoint,
+        "credentials": target.credentials.as_ref().map(credentials_json),
+        "remaining": remaining,
+        "resolved": resolved.load(Ordering::Relaxed),
+    }))
 }
 pub(super) fn off_loop_case(case: &OffLoop) -> Result<Value, Box<HelperError>> {
     let runtime = runtime()?;

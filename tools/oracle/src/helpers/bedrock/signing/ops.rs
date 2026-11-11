@@ -47,14 +47,6 @@ fn request_headers_case(case: &RequestHeadersInput) -> Result<Value, Box<HelperE
     };
     let headers = optional_headers(&case.headers);
     let extra = resolved_headers(&case.extra_headers);
-    let api_key = case
-        .api_key
-        .as_deref()
-        .map(|text| SecretString::from(text.to_owned()));
-    let configured = case
-        .configured_bearer_token
-        .as_deref()
-        .map(|text| SecretString::from(text.to_owned()));
     let request = EndpointRequest {
         credentials: credentials.as_ref(),
         region: &case.region,
@@ -62,8 +54,8 @@ fn request_headers_case(case: &RequestHeadersInput) -> Result<Value, Box<HelperE
         endpoint: &case.endpoint,
         data,
         headers: &headers,
-        api_key: api_key.as_ref(),
-        configured_bearer: configured.as_ref(),
+        api_key: case.api_key.as_ref(),
+        configured_bearer: case.configured_bearer_token.as_ref(),
         supports_bearer_token: case.supports_bearer_token,
         now: epoch(case.now)?,
     };
@@ -99,13 +91,14 @@ pub(super) fn credentials_of(input: &CredentialInput) -> Credentials {
     }
 }
 pub(super) fn credentials_json(credentials: &Credentials) -> Value {
-    json!([
-        credentials.access_key_id.expose_secret(),
-        credentials.secret_access_key.expose_secret(),
-        credentials
-            .session_token
-            .as_ref()
-            .map(|token| token.expose_secret().to_owned()),
+    let session_token = credentials
+        .session_token
+        .as_ref()
+        .map_or(Value::Null, |token| Value::from(token.expose_secret()));
+    Value::Array(vec![
+        Value::from(credentials.access_key_id.expose_secret()),
+        Value::from(credentials.secret_access_key.expose_secret()),
+        session_token,
     ])
 }
 pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
@@ -148,7 +141,9 @@ fn headers_json(headers: &[(String, String)]) -> Value {
             .collect(),
     )
 }
-fn optional_headers(headers: &BTreeMap<String, Option<String>>) -> Vec<(String, Option<String>)> {
+pub(super) fn optional_headers(
+    headers: &BTreeMap<String, Option<String>>,
+) -> Vec<(String, Option<String>)> {
     headers
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))

@@ -1,9 +1,13 @@
-use betterlite_bedrock::signing::service::ServiceName;
+use betterlite_bedrock::signing::batch::{BatchData, BatchRequest as SignBatch};
+use betterlite_bedrock::signing::service::{ServiceName, ServiceRequest as SignService};
+use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
+use std::time::SystemTime;
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
     pub(crate) calls: Vec<Call>,
@@ -38,8 +42,8 @@ pub(crate) struct RequestHeaders {
     pub(crate) endpoint: String,
     pub(crate) data: DataInput,
     pub(crate) headers: BTreeMap<String, Option<String>>,
-    pub(crate) api_key: Option<String>,
-    pub(crate) configured_bearer_token: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
+    pub(crate) configured_bearer_token: Option<SecretString>,
     #[serde(default = "default_supports_bearer_token")]
     pub(crate) supports_bearer_token: bool,
     pub(crate) now: i64,
@@ -52,8 +56,8 @@ pub(crate) struct ServiceRequest {
     pub(crate) request_data: IndexMap<String, Json>,
     pub(crate) api_base: String,
     pub(crate) model: Option<String>,
-    pub(crate) api_key: Option<String>,
-    pub(crate) configured_bearer_token: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
+    pub(crate) configured_bearer_token: Option<SecretString>,
     pub(crate) now: i64,
     pub(crate) credentials: CredentialInput,
 }
@@ -71,7 +75,7 @@ pub(crate) struct JsonPost {
 pub(crate) struct RequestTarget {
     pub(crate) optional_params: BTreeMap<String, Box<RawValue>>,
     pub(crate) model: Option<String>,
-    pub(crate) bearer_token: Option<String>,
+    pub(crate) bearer_token: Option<SecretString>,
     pub(crate) credentials: CredentialInput,
 }
 #[derive(Debug, Deserialize)]
@@ -83,6 +87,43 @@ pub(crate) struct BatchRequest {
     pub(crate) method: Option<String>,
     pub(crate) now: i64,
     pub(crate) credentials: CredentialInput,
+}
+impl ServiceRequest {
+    pub(crate) fn request<'source>(
+        &'source self,
+        headers: &'source [(String, Option<String>)],
+        now: SystemTime,
+    ) -> SignService<'source> {
+        SignService {
+            service: self.service_name,
+            headers,
+            optional_params: &self.optional_params,
+            request_data: &self.request_data,
+            api_base: &self.api_base,
+            model: self.model.as_deref(),
+            api_key: self.api_key.as_ref(),
+            configured_bearer: self.configured_bearer_token.as_ref(),
+            region_inputs: RegionInputs::default(),
+            now,
+        }
+    }
+}
+impl BatchRequest {
+    pub(crate) fn request(&self, now: SystemTime) -> SignBatch<'_> {
+        let data = match &self.data {
+            BatchDataInput::Json(object) => BatchData::Json(object),
+            BatchDataInput::Text(text) => BatchData::Text(text),
+        };
+        SignBatch {
+            service_name: &self.service_name,
+            data,
+            endpoint: &self.endpoint_url,
+            optional_params: &self.optional_params,
+            method: self.method.as_deref(),
+            region_inputs: RegionInputs::default(),
+            now,
+        }
+    }
 }
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
