@@ -1,16 +1,16 @@
 use std::collections::VecDeque;
 use std::io::Read as _;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_logging::datadog::metrics::clock::Clock;
+use betterlite_logging::datadog_logging::clock::Clock;
 use betterlite_logging::datadog_logging::transport::{
     PostRequest, Transport, TransportFailure, TransportResponse,
 };
 use flate2::read::GzDecoder;
-use rust_decimal::Decimal;
 use serde_json::{Map, Value, json};
 
 use super::ReplyInput;
@@ -94,10 +94,10 @@ impl Transport for ScriptedTransport {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct FixedClock(pub(super) Decimal);
+pub(super) struct FixedClock(pub(super) Duration);
 
 impl Clock for FixedClock {
-    fn now_seconds(&self) -> Decimal {
+    fn now_unix(&self) -> Duration {
         self.0
     }
 }

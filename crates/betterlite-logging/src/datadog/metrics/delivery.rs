@@ -15,7 +15,6 @@ use super::series::{DatadogMetricSeries, DatadogMetricsPayload};
 
 const API_KEY_HEADER: HeaderName = HeaderName::from_static("dd-api-key");
 const APPLICATION_KEY_HEADER: HeaderName = HeaderName::from_static("dd-application-key");
-const CLIENT_ERROR_STATUS: u16 = 400;
 
 pub(crate) async fn upload(
     logger: &DatadogMetricsLogger,
@@ -35,7 +34,7 @@ pub(crate) async fn upload(
         timeout: LOGGING_TIMEOUT,
     };
     let response: TransportResponse = logger.transport.post(request).await?;
-    if response.status >= CLIENT_ERROR_STATUS {
+    if !(200..=299).contains(&response.status) {
         return Err(SendError::Status {
             status: response.status,
         });

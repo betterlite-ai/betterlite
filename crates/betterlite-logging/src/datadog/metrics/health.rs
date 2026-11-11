@@ -1,5 +1,3 @@
-use rust_decimal::prelude::ToPrimitive as _;
-
 use crate::exporter_options::health::IntegrationHealthStatus;
 
 use super::datadog_metrics::DatadogMetricsLogger;
@@ -9,7 +7,7 @@ use super::series::{
 };
 
 pub async fn async_health_check(logger: &DatadogMetricsLogger) -> IntegrationHealthStatus {
-    let Some(timestamp) = logger.clock.now_seconds().to_i64() else {
+    let Ok(timestamp) = i64::try_from(logger.clock.now_unix().as_secs()) else {
         return IntegrationHealthStatus::unhealthy(
             "the health check timestamp does not fit a unix timestamp".to_owned(),
         );

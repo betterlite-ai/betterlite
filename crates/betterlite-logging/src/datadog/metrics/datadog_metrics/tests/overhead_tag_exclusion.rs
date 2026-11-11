@@ -61,7 +61,11 @@ fn overhead_tag_exclusion_keeps_the_count_status_tag() {
         &logger,
         &payload,
         "200",
-        RequestTiming::from_payload(&payload),
+        RequestTiming {
+            start_time: Some(payload.start_time),
+            end_time: Some(payload.end_time),
+            api_call_start_time: None,
+        },
     );
     let count = series_for(REQUEST_COUNT_METRIC, &series);
     assert!(count.tags.contains(&"status_code:200".to_owned()));

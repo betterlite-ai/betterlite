@@ -1,14 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rust_decimal::Decimal;
 use tokio::task::yield_now;
 use tokio::time::advance;
 use tokio_util::task::TaskTracker;
 
 use crate::datadog::metrics::flush::flush_queue;
 
-use super::support::{self, FixedClock, MetricsInit, NOW, Outcome};
+use super::support::{self, FixedClock, MetricsInit, NOW_DURATION, Outcome};
 
 const API_KEY: &str = "secret-key";
 
@@ -82,7 +81,7 @@ async fn flush_runs_every_five_seconds() {
         &environment(),
         MetricsInit::default(),
         vec![Outcome::Reply(202)],
-        Arc::new(FixedClock(Decimal::from(NOW))),
+        Arc::new(FixedClock(NOW_DURATION)),
         Some(tasks),
     );
     let payload = support::payload();

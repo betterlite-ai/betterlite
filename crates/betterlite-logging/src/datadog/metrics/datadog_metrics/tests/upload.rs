@@ -29,7 +29,11 @@ async fn upload_gzips_the_payload_and_sets_the_api_key_headers() {
         &logger,
         &payload,
         "200",
-        RequestTiming::from_payload(&payload),
+        RequestTiming {
+            start_time: Some(payload.start_time),
+            end_time: Some(payload.end_time),
+            api_call_start_time: None,
+        },
     );
     let source = support::source(&logger, &payload, "200");
     logger.record(&source).await;
@@ -148,7 +152,7 @@ async fn upload_keeps_the_queue_when_the_transport_fails() {
 }
 
 #[tokio::test]
-async fn upload_counts_a_redirect_as_delivered() {
+async fn upload_keeps_the_queue_when_the_api_answers_a_redirect() {
     let environment = environment(&[("DD_API_KEY", API_KEY)]);
     let (logger, _transport) = support::build(
         &environment,
@@ -159,8 +163,9 @@ async fn upload_counts_a_redirect_as_delivered() {
     let source = support::source(&logger, &payload, "200");
     logger.record(&source).await;
     let report = flush_queue(&logger).await;
-    assert_eq!(report.delivered, 2);
-    assert!(logger.queue.pending().is_empty());
+    assert_eq!(report.delivered, 0);
+    assert_eq!(report.requeued, 2);
+    assert_eq!(logger.queue.pending().len(), 2);
 }
 
 #[tokio::test]

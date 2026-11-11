@@ -4,6 +4,7 @@ mod scripted;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use betterlite_logging::batch::logger::FlushReport;
 use betterlite_logging::datadog::metrics::datadog_metrics::{DatadogMetricsLogger, MetricsDeps};
@@ -17,6 +18,7 @@ use betterlite_logging::datadog::metrics::tags::extract_tags;
 use betterlite_logging::datadog_logging::transport::Transport;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::subscriber::with_default;
@@ -27,6 +29,7 @@ use self::scripted::{FixedClock, ScriptedTransport};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 const DEFAULT_CLOCK: i64 = 1_700_000_000;
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,6 +71,16 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 pub(super) struct ReplyInput {
     pub(super) status: u16,
+}
+
+fn duration_of(seconds: Decimal) -> Result<Duration, Box<HelperError>> {
+    let signed = seconds
+        .checked_mul(Decimal::from(NANOS_PER_SECOND))
+        .and_then(|scaled| scaled.to_i64())
+        .ok_or_else(|| input_error("the clock does not fit a duration"))?;
+    let nanos =
+        u64::try_from(signed).map_err(|_| input_error("the clock is before the unix epoch"))?;
+    Ok(Duration::from_nanos(nanos))
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>
@@ -200,7 +213,9 @@ fn fixture(input: &Input) -> Result<Fixture, Box<HelperError>> {
     let transport = ScriptedTransport::new(&input.replies);
     let concrete: Arc<ScriptedTransport> = Arc::clone(&transport);
     let transport_trait: Arc<dyn Transport> = concrete;
-    let clock = FixedClock(input.clock.unwrap_or_else(|| Decimal::from(DEFAULT_CLOCK)));
+    let clock = FixedClock(duration_of(
+        input.clock.unwrap_or_else(|| Decimal::from(DEFAULT_CLOCK)),
+    )?);
     let logger = with_default(subscriber, || {
         DatadogMetricsLogger::new(
             &input.environment,

@@ -2,15 +2,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
+use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
 use crate::batch::logger::BatchQueue;
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
+use crate::datadog_logging::clock::Clock;
 use crate::datadog_logging::transport::Transport;
 
-use super::clock::Clock;
 use super::error::MetricsError;
 use super::flush::{flush_queue, periodic_flush};
 use super::measurements::{
@@ -64,7 +65,9 @@ impl DatadogMetricsLogger {
     }
 
     pub async fn record(&self, source: &MetricSource<'_>) {
-        let now = self.clock.now_seconds();
+        // LiteLLM's datetime.now() fallback carries microseconds, so epoch seconds keep scale 6
+        let micros = i64::try_from(self.clock.now_unix().as_micros()).unwrap_or(i64::MAX);
+        let now = Decimal::new(micros, 6);
         let series =
             match metrics_from_log(source, self.settings.batch.flush_interval.as_secs(), now) {
                 Ok(series) => series,
@@ -83,10 +86,16 @@ impl DatadogMetricsLogger {
     }
 
     async fn record_event(&self, event: &LoggerEvent, status_code: String) {
+        let payload = event.payload.as_ref();
         let source = MetricSource {
             environment: &self.settings.environment,
-            payload: event.payload.as_ref(),
-            timing: RequestTiming::from_payload(event.payload.as_ref()),
+            payload,
+            // the callback event carries no api_call_start_time, so the adapter cannot name a provider start
+            timing: RequestTiming {
+                start_time: Some(payload.start_time),
+                end_time: Some(payload.end_time),
+                api_call_start_time: None,
+            },
             status_code,
         };
         self.record(&source).await;

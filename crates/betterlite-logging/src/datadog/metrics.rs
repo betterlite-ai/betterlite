@@ -1,4 +1,3 @@
-pub mod clock;
 pub mod datadog_metrics;
 pub mod delivery;
 pub mod error;

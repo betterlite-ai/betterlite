@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::io::Read as _;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_http::error::HttpError;
@@ -12,11 +13,11 @@ use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
 use crate::callback_logger::event::LoggerEvent;
-use crate::datadog::metrics::clock::Clock;
 use crate::datadog::metrics::datadog_metrics::{DatadogMetricsLogger, MetricsDeps};
 use crate::datadog::metrics::measurements::{MetricSource, RequestTiming, metrics_from_log};
 use crate::datadog::metrics::series::DatadogMetricSeries;
 pub(super) use crate::datadog::metrics::settings::MetricsInit;
+use crate::datadog_logging::clock::Clock;
 use crate::datadog_logging::transport::{
     PostRequest, Transport, TransportFailure, TransportResponse,
 };
@@ -28,6 +29,8 @@ pub(super) type Environment = BTreeMap<String, String>;
 
 pub(super) const FLUSH_INTERVAL: u64 = 5;
 pub(super) const NOW: i64 = 1_700_000_000;
+// the same instant as NOW, as a Duration for the fixed clock
+pub(super) const NOW_DURATION: Duration = Duration::from_secs(1_700_000_000);
 
 const PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
@@ -113,7 +116,11 @@ pub(super) fn source<'source>(
     MetricSource {
         environment: &logger.settings.environment,
         payload,
-        timing: RequestTiming::from_payload(payload),
+        timing: RequestTiming {
+            start_time: Some(payload.start_time),
+            end_time: Some(payload.end_time),
+            api_call_start_time: None,
+        },
         status_code: status_code.to_owned(),
     }
 }
@@ -248,10 +255,10 @@ impl Transport for ScriptedTransport {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct FixedClock(pub(super) Decimal);
+pub(super) struct FixedClock(pub(super) Duration);
 
 impl Clock for FixedClock {
-    fn now_seconds(&self) -> Decimal {
+    fn now_unix(&self) -> Duration {
         self.0
     }
 }
@@ -265,7 +272,7 @@ pub(super) fn build(
         environment,
         init,
         replies,
-        Arc::new(FixedClock(Decimal::from(NOW))),
+        Arc::new(FixedClock(NOW_DURATION)),
         None,
     )
 }

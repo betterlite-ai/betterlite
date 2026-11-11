@@ -1,6 +1,5 @@
 use std::sync::Arc;
-
-use rust_decimal::Decimal;
+use std::time::Duration;
 
 use crate::datadog::metrics::health::async_health_check;
 use crate::datadog::metrics::series::{
@@ -9,7 +8,7 @@ use crate::datadog::metrics::series::{
 };
 use crate::exporter_options::health::{HealthState, IntegrationHealthStatus};
 
-use super::support::{self, FixedClock, MetricsInit, NOW, Outcome};
+use super::support::{self, FixedClock, MetricsInit, NOW, NOW_DURATION, Outcome};
 
 const API_KEY: &str = "secret-key";
 
@@ -64,13 +63,30 @@ async fn health_truncates_the_clock_to_whole_seconds() {
         &environment,
         MetricsInit::default(),
         vec![Outcome::Reply(202)],
-        Arc::new(FixedClock(Decimal::new(1_700_000_000_750, 3))),
+        Arc::new(FixedClock(
+            NOW_DURATION
+                .checked_add(Duration::from_millis(750))
+                .expect("the health clock duration fits"),
+        )),
         None,
     );
     let status = async_health_check(&logger).await;
     assert_eq!(status, IntegrationHealthStatus::healthy());
     let expected = serde_json::to_vec(&health_series(NOW)).expect("the health payload serializes");
     assert_eq!(transport.calls()[0].body, expected);
+}
+
+#[tokio::test]
+async fn health_is_unhealthy_when_the_api_answers_a_redirect() {
+    let environment = support::environment(&[("DD_API_KEY", API_KEY)]);
+    let (logger, _transport) = support::build(
+        &environment,
+        MetricsInit::default(),
+        vec![Outcome::Reply(302)],
+    );
+    let status = async_health_check(&logger).await;
+    assert_eq!(status.status, HealthState::Unhealthy);
+    assert!(status.error_message.is_some());
 }
 
 #[tokio::test]

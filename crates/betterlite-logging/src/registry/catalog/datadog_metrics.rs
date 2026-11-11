@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
-use crate::datadog::metrics::clock::SystemClock;
 use crate::datadog::metrics::datadog_metrics::{DatadogMetricsLogger, MetricsDeps};
 use crate::datadog::metrics::settings::MetricsInit;
+use crate::datadog_logging::clock::SystemClock;
 use crate::datadog_logging::transport::PooledTransport;
 
 mod tests;

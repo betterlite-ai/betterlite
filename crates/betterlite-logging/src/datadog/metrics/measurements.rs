@@ -25,18 +25,6 @@ pub struct RequestTiming {
     pub api_call_start_time: Option<Decimal>,
 }
 
-impl RequestTiming {
-    #[must_use]
-    pub const fn from_payload(payload: &StandardLoggingPayload) -> Self {
-        Self {
-            start_time: Some(payload.start_time),
-            end_time: Some(payload.end_time),
-            // the callback event carries no api_call_start_time, so the adapter cannot name a provider start
-            api_call_start_time: None,
-        }
-    }
-}
-
 pub struct MetricSource<'source> {
     pub environment: &'source MetricsEnvironment,
     pub payload: &'source StandardLoggingPayload,

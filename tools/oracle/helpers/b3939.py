@@ -22,7 +22,7 @@ Fields: TypeAlias = dict[str, Json]
 Kwargs: TypeAlias = dict[str, object]
 
 GZIP_MAGIC = b"\x1f\x8b"
-CLIENT_ERROR = 400
+SUCCESS_STATUSES = range(200, 300)
 DEFAULT_CLOCK = 1_700_000_000.0
 DEFAULT_STATUS = "200"
 
@@ -133,7 +133,7 @@ class _Response:
         self.status_code = status
 
     def raise_for_status(self) -> None:
-        if self.status_code < CLIENT_ERROR:
+        if self.status_code in SUCCESS_STATUSES:
             return
         request = httpx.Request("POST", "https://api.datadoghq.com/api/v2/series")
         response = httpx.Response(self.status_code, request=request)
