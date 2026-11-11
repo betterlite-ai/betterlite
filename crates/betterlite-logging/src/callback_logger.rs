@@ -10,6 +10,8 @@ use async_trait::async_trait;
 use error::LoggerError;
 use event::LoggerEvent;
 
+use crate::mcp_tool_hook::types::{McpPostCallResponse, McpToolHookCall};
+
 // CustomLogger's own body is pass, so a logger overrides only the events it handles
 #[async_trait]
 pub trait CallbackLogger: Send + Sync {
@@ -50,5 +52,13 @@ pub trait CallbackLogger: Send + Sync {
 
     async fn async_log_stream_event(&self, _event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         Ok(())
+    }
+
+    // CustomLogger.async_post_mcp_tool_call_hook answers None, so a logger opts in by overriding it
+    async fn async_post_mcp_tool_call_hook(
+        &self,
+        _call: McpToolHookCall<'_>,
+    ) -> Result<Option<McpPostCallResponse>, LoggerError> {
+        Ok(None)
     }
 }

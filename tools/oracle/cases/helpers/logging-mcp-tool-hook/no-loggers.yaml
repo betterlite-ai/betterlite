@@ -1,0 +1,11 @@
+kind: helper
+name: logging-mcp-tool-hook-no-loggers
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+      structured_content: {answer: 42}
+    dynamic_success: []
+    global_success: []
+env: {}
+compare: {ignore: []}
