@@ -10,7 +10,7 @@ use super::{CriterionWeight, EventHookParameter, GuardrailMode, Settings, TagVal
 
 const JUDGE_ENTRY: &str = "guardrails:\n  - guardrail_name: quality\n    litellm_params:\n      guardrail: llm_as_a_judge\n      judge_model: gpt-4o-mini\n      criteria:\n        - {name: accuracy, description: is it right, weight: 60}\n        - {name: safety, description: is it safe, weight: 40}\n      overall_threshold: 85\n      on_failure: log\n      mode: pre_call\n      default_on: true\n";
 
-const MIXED_GUARDRAILS: &str = "guardrails:\n  - guardrail_name: other\n    litellm_params:\n      guardrail: grayswan\n  - guardrail_name: quality\n    litellm_params:\n      guardrail: llm_as_a_judge\n      judge_model: gpt-4o-mini\n";
+const MIXED_GUARDRAILS: &str = "guardrails:\n  - guardrail_name: other\n    litellm_params:\n      guardrail: not_a_guardrail\n  - guardrail_name: quality\n    litellm_params:\n      guardrail: llm_as_a_judge\n      judge_model: gpt-4o-mini\n";
 
 const ENVIRONMENT_THRESHOLD: &str = "guardrails:\n  - guardrail_name: quality\n    litellm_params:\n      guardrail: llm_as_a_judge\n      overall_threshold: os.environ/JUDGE_THRESHOLD\n";
 
@@ -84,6 +84,14 @@ fn judge_config_tests_behavior(#[case] source: &str, #[case] expectation: Expect
             assert_eq!(criteria[0].description, "is it right");
             assert!(matches!(criteria[0].weight, CriterionWeight::Integer(60)));
             assert_eq!(criteria[0].weight.to_prompt_text(), "60");
+            assert_eq!(
+                CriterionWeight::Integer(60).to_decimal(),
+                Some(rust_decimal::Decimal::from(60_i64))
+            );
+            assert_eq!(
+                CriterionWeight::Float(60.0).to_decimal(),
+                Some(rust_decimal::Decimal::from(60_i64))
+            );
         }
         Expectation::OtherGuardrailSkipped => {
             let settings = load(source, expectation).expect("config");

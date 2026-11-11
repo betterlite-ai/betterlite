@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_judge::{Criterion, CriterionWeight, JudgeParams};
-use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::message_content::{Content, Message};
+use betterlite_prompts::arguments::json::{Json as ContentJson, Object};
+use betterlite_prompts::message_content::{Content, ContentPart, Message};
 use serde::Serialize;
 
 use crate::judge::apply::{
@@ -49,6 +49,36 @@ pub(crate) fn message(role: &str, content: &str) -> Message {
     Message {
         role: role.to_owned(),
         content: Some(Content::Text(content.to_owned())),
+        name: None,
+        provider_specific_fields: Object::new(),
+    }
+}
+
+pub(crate) fn text_part(text: &str) -> ContentPart {
+    let mut fields = Object::new();
+    fields.insert("text".to_owned(), ContentJson::Text(text.to_owned()));
+    ContentPart {
+        kind: "text".to_owned(),
+        fields,
+    }
+}
+
+pub(crate) fn image_part() -> ContentPart {
+    let mut fields = Object::new();
+    fields.insert(
+        "image_url".to_owned(),
+        ContentJson::Text("data:image/png;base64,AAAA".to_owned()),
+    );
+    ContentPart {
+        kind: "image_url".to_owned(),
+        fields,
+    }
+}
+
+pub(crate) fn multipart(role: &str, parts: Vec<ContentPart>) -> Message {
+    Message {
+        role: role.to_owned(),
+        content: Some(Content::Parts(parts)),
         name: None,
         provider_specific_fields: Object::new(),
     }

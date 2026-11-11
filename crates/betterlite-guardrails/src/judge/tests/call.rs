@@ -6,6 +6,7 @@ use rstest::rstest;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::judge::apply::JudgeInputs;
 use crate::judge::call::{JudgeMessage, JudgeResponseFormat};
 use crate::judge::hooks::{INTERNAL_CALL_ORIGIN, JUDGE_CALL_ORIGIN};
 use crate::judge::prompt::{JUDGE_SYSTEM_PROMPT_REQUEST, JUDGE_SYSTEM_PROMPT_RESPONSE};
@@ -51,6 +52,7 @@ enum Case {
     RequestCall,
     ResponseCall,
     NoChoices,
+    EmptyStructuredMessages,
     EmptyContent,
     NullContent,
     UnparsableReply,
@@ -61,6 +63,7 @@ enum Case {
 #[case::request_call(Case::RequestCall)]
 #[case::response_call(Case::ResponseCall)]
 #[case::no_choices(Case::NoChoices)]
+#[case::empty_structured_messages(Case::EmptyStructuredMessages)]
 #[case::empty_content(Case::EmptyContent)]
 #[case::null_content(Case::NullContent)]
 #[case::unparsable_reply(Case::UnparsableReply)]
@@ -144,6 +147,28 @@ async fn judge_call_tests_behavior(#[case] case: Case) {
             assert_eq!(returned.texts, Some(vec!["response".to_owned()]));
             assert_eq!(data.metadata.eval_information, None);
             assert_eq!(completion.call_count(), 1);
+        }
+        Case::EmptyStructuredMessages => {
+            let completion = RecordingCompletion::new(Outcome::Reply(Some(reply_with_score(90.0))));
+            let guardrail = guardrail_with(Arc::clone(&completion));
+            let inputs = JudgeInputs {
+                texts: Some(vec!["response".to_owned()]),
+                structured_messages: Some(Vec::new()),
+                rest: BTreeMap::default(),
+            };
+            let mut data = request_data(vec![message("user", "hi")]);
+            guardrail
+                .apply_guardrail(inputs, &mut data, GuardrailInputType::Response)
+                .await
+                .expect("judge passes");
+            let request = completion.only_request();
+            let prompt = &request.messages[1].content;
+            assert!(
+                prompt.contains(
+                    "Conversation:\nUSER: hi\n\nAssistant response to evaluate:\nresponse"
+                ),
+                "{prompt}"
+            );
         }
         Case::EmptyContent => {
             let guardrail = guardrail_with(RecordingCompletion::new(Outcome::Reply(Some(

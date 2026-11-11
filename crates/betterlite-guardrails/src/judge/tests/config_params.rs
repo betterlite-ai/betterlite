@@ -30,6 +30,7 @@ enum Case {
     CoerceMany,
     CoerceTagged,
     CoerceUnknown,
+    ParseEveryHook,
 }
 
 fn value_map(entries: &[(&str, GuardrailValue)]) -> BTreeMap<String, GuardrailValue> {
@@ -79,6 +80,7 @@ fn text(value: &str) -> GuardrailValue {
 #[case::coerce_many(Case::CoerceMany)]
 #[case::coerce_tagged(Case::CoerceTagged)]
 #[case::coerce_unknown(Case::CoerceUnknown)]
+#[case::parse_every_hook(Case::ParseEveryHook)]
 fn judge_config_tests_behavior(#[case] case: Case) {
     match case {
         Case::TypedAttributeWins => {
@@ -261,6 +263,30 @@ fn judge_config_tests_behavior(#[case] case: Case) {
                 error,
                 JudgeError::InvalidEventHook { value } if value == "sometimes"
             ));
+        }
+        Case::ParseEveryHook => {
+            let hooks = [
+                ("pre_call", GuardrailEventHook::PreCall),
+                ("post_call", GuardrailEventHook::PostCall),
+                ("during_call", GuardrailEventHook::DuringCall),
+                ("logging_only", GuardrailEventHook::LoggingOnly),
+                ("pre_mcp_call", GuardrailEventHook::PreMcpCall),
+                ("during_mcp_call", GuardrailEventHook::DuringMcpCall),
+                ("post_mcp_call", GuardrailEventHook::PostMcpCall),
+                (
+                    "realtime_input_transcription",
+                    GuardrailEventHook::RealtimeInputTranscription,
+                ),
+            ];
+            for (name, hook) in hooks {
+                assert_eq!(
+                    GuardrailEventHook::parse(name).expect("known hook"),
+                    hook,
+                    "{name}"
+                );
+                assert_eq!(hook.as_str(), name);
+            }
+            GuardrailEventHook::parse("sometimes").expect_err("unknown hook");
         }
     }
 }

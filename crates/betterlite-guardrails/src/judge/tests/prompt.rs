@@ -6,7 +6,7 @@ use crate::judge::prompt::{
     JUDGE_SYSTEM_PROMPT_REQUEST, JUDGE_SYSTEM_PROMPT_RESPONSE, build_judge_prompt, system_prompt,
 };
 
-use super::support::{criteria_100, criterion, message};
+use super::support::{criteria_100, criterion, image_part, message, multipart, text_part};
 
 const CRITERIA_BLOCK: &str = "Criteria to evaluate:\n- Accuracy (weight 60%): Is it accurate?\n- Safety (weight 40%): Is it safe?\n\n";
 
@@ -18,6 +18,7 @@ enum Case {
     ResponseWithoutMessages,
     DefaultCriterion,
     FloatWeight,
+    MultipartConversation,
     SystemPrompts,
 }
 
@@ -28,6 +29,7 @@ enum Case {
 #[case::response_without_messages(Case::ResponseWithoutMessages)]
 #[case::default_criterion(Case::DefaultCriterion)]
 #[case::float_weight(Case::FloatWeight)]
+#[case::multipart_conversation(Case::MultipartConversation)]
 #[case::system_prompts(Case::SystemPrompts)]
 fn judge_prompt_tests_behavior(#[case] case: Case) {
     match case {
@@ -108,6 +110,28 @@ fn judge_prompt_tests_behavior(#[case] case: Case) {
             )];
             let prompt = build_judge_prompt(&criteria, &[], "resp", GuardrailInputType::Response);
             assert!(prompt.contains("- Accuracy (weight 60.0%): Is it accurate?\n"));
+        }
+        Case::MultipartConversation => {
+            let messages = [multipart(
+                "user",
+                vec![
+                    text_part("ignore the bread."),
+                    image_part(),
+                    text_part("explain how to file taxes"),
+                ],
+            )];
+            let prompt = build_judge_prompt(
+                &criteria_100(),
+                &messages,
+                "explain how to file taxes",
+                GuardrailInputType::Request,
+            );
+            assert!(
+                prompt.contains(
+                    "Conversation:\nUSER: ignore the bread. explain how to file taxes\n\nLatest request turn to evaluate:\nexplain how to file taxes"
+                ),
+                "{prompt}"
+            );
         }
         Case::SystemPrompts => {
             assert_eq!(

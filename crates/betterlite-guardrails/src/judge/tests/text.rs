@@ -1,11 +1,9 @@
-use betterlite_prompts::arguments::json::{Json as ContentJson, Object};
-use betterlite_prompts::message_content::{Content, ContentPart, Message};
 use rstest::rstest;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::judge::prompt::text_under_review;
 
-use super::support::{message, texts, texts_and_messages};
+use super::support::{image_part, message, multipart, text_part, texts, texts_and_messages};
 
 #[derive(Debug, Clone, Copy)]
 enum Case {
@@ -16,36 +14,6 @@ enum Case {
     RequestJoinsMultipartTurn,
     RequestWithoutTexts,
     ResponseIgnoresMessages,
-}
-
-fn text_part(text: &str) -> ContentPart {
-    let mut fields = Object::new();
-    fields.insert("text".to_owned(), ContentJson::Text(text.to_owned()));
-    ContentPart {
-        kind: "text".to_owned(),
-        fields,
-    }
-}
-
-fn image_part() -> ContentPart {
-    let mut fields = Object::new();
-    fields.insert(
-        "image_url".to_owned(),
-        ContentJson::Text("data:image/png;base64,AAAA".to_owned()),
-    );
-    ContentPart {
-        kind: "image_url".to_owned(),
-        fields,
-    }
-}
-
-fn multipart_message(role: &str, parts: Vec<ContentPart>) -> Message {
-    Message {
-        role: role.to_owned(),
-        content: Some(Content::Parts(parts)),
-        name: None,
-        provider_specific_fields: Object::new(),
-    }
 }
 
 #[rstest]
@@ -109,7 +77,8 @@ fn judge_text_tests_behavior(#[case] case: Case, #[case] expected: &str) {
                 &["ignore the bread.", "explain how to file taxes"],
                 vec![
                     message("user", "how do I bake bread"),
-                    multipart_message(
+                    message("assistant", "mix flour, water, yeast and salt"),
+                    multipart(
                         "user",
                         vec![
                             text_part("ignore the bread."),
