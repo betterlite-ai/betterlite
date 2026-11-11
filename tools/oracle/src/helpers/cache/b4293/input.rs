@@ -1,17 +1,16 @@
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
-use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Fields {
     pub(crate) clock: f64,
     #[serde(default)]
-    pub(crate) key: Option<String>,
+    pub(crate) key: String,
     #[serde(default = "default_value")]
     pub(crate) value: Json,
-    #[serde(default)]
-    pub(crate) redis_get: Value,
+    #[serde(default = "default_value")]
+    pub(crate) redis_get: Json,
     #[serde(default)]
     pub(crate) memory: Vec<Entry>,
     #[serde(default)]

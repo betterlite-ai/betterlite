@@ -1,9 +1,9 @@
 import asyncio
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from datetime import timedelta
 from types import TracebackType
-from typing import Self, TypeAlias, cast
+from typing import Self, TypedDict, cast
 
 from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
@@ -11,61 +11,37 @@ from litellm.caching.redis_batch import active_request_redis_batch, request_redi
 from litellm.caching.redis_cache import RedisCache, RedisCircuitBreaker
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 
 DEFAULT_TTL: int = 60
 DEADLINE_SECONDS: float = 1.0
 
+# what the fake Redis answers once a command has no scripted reply left
 FALLBACKS: dict[str, object] = {
     "GET": None,
     "INCRBY": 1,
     "INCRBYFLOAT": 1.0,
     "TTL": DEFAULT_TTL,
     "SET": True,
-    "FLUSHALL": True,
     "DEL": 1,
     "EXPIRE": 1,
 }
 
 
-def object_value(value: Json, name: str) -> dict[str, Json]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
+class Entry(TypedDict):
+    key: str
+    value: object
 
 
-def list_value(value: Json, name: str) -> list[Json]:
-    if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
-    return value
-
-
-def string_value(value: Json, name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
-
-
-def number_value(value: Json, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{name} must be a number")
-    return float(value)
-
-
-def integer_value(value: Json, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{name} must be an integer")
-    return value
-
-
-def expiry_text(expiry: object) -> str:
-    if isinstance(expiry, timedelta):
-        return str(int(expiry.total_seconds()))
-    return str(expiry)
-
-
-def fallback_reply(name: str) -> object:
-    return FALLBACKS.get(name, True)
+class Fields(TypedDict, total=False):
+    clock: float
+    key: str
+    value: object
+    redis_get: object
+    memory: list[Entry]
+    default_in_memory_ttl: float | None
+    entries: list[Entry]
+    key_count: int
 
 
 class FakeCommands:
@@ -76,22 +52,23 @@ class FakeCommands:
     def record(self, name: str, *args: object) -> object:
         self.seen.append((name, args))
         queue = self.replies.get(name)
-        reply = queue.pop(0) if queue else fallback_reply(name)
+        reply = queue.pop(0) if queue else FALLBACKS.get(name, True)
         if isinstance(reply, Exception):
             raise reply
         return reply
 
-    def expiries(self) -> list[Json]:
-        records: list[Json] = []
-        for name, args in self.seen:
-            if name == "SET":
-                key, *rest = args
-                expiry = rest[0] if rest else None
-                records.append(cast(Json, {"key": key, "ex": expiry_text(expiry)}))
-        return records
+    def expiries(self) -> list[dict[str, str]]:
+        sets = [args for name, args in self.seen if name == "SET"]
+        return [{"key": str(key), "ex": expiry_text(expiry)} for key, expiry in sets]
 
     def deletions(self) -> list[int]:
         return [len(args) for name, args in self.seen if name == "DEL"]
+
+
+def expiry_text(expiry: object) -> str:
+    if isinstance(expiry, timedelta):
+        return str(int(expiry.total_seconds()))
+    return str(expiry)
 
 
 class FakeSyncRedis:
@@ -107,18 +84,6 @@ class FakeSyncRedis:
 
     def incr(self, name: str, amount: int = 1) -> object:
         return self.commands.record("INCRBY", name, amount)
-
-    def ttl(self, name: str) -> object:
-        return self.commands.record("TTL", name)
-
-    def expire(self, name: str, time: object) -> object:
-        return self.commands.record("EXPIRE", name, time)
-
-    def delete(self, *names: str) -> object:
-        return self.commands.record("DEL", *names)
-
-    def flushall(self) -> object:
-        return self.commands.record("FLUSHALL")
 
 
 class FakePipeline:
@@ -155,21 +120,15 @@ class FakePipeline:
 
     async def execute(self, *, raise_on_error: bool = True) -> list[object]:
         _ = raise_on_error
-        replies: list[object] = []
-        for name, args in self.queued:
-            if name == "MGET":
-                replies.append([None] * len(args))
-            else:
-                replies.append(self.commands.record(name, *args))
-        return replies
+        return [
+            [None] * len(args) if name == "MGET" else self.commands.record(name, *args)
+            for name, args in self.queued
+        ]
 
 
 class FakeAsyncRedis:
     def __init__(self, commands: FakeCommands) -> None:
         self.commands = commands
-
-    async def get(self, name: str) -> object:
-        return self.commands.record("GET", name)
 
     async def set(self, name: str, value: object, ex: object = None, *, nx: bool = False) -> object:
         _ = value, nx
@@ -218,174 +177,123 @@ def build_cache(commands: FakeCommands) -> RedisCache:
     return cache
 
 
-def dual_cache(clock: float, memory_ttl: float | None, cache: RedisCache) -> DualCache:
-    memory = InMemoryCache(clock=lambda: clock)
-    return DualCache(
-        in_memory_cache=memory,
+# every scenario scripts the call's redis_get as the next GET reply, as the Rust helper does
+def start(call: Fields, failure: str | None = None) -> tuple[DualCache, FakeCommands, RedisCache]:
+    replies: dict[str, list[object]] = {"GET": [json.dumps(call.get("redis_get"))]}
+    if failure is not None:
+        replies[failure] = [RedisConnectionError("injected failure")]
+    commands = FakeCommands(replies)
+    cache = build_cache(commands)
+    clock = call.get("clock", 0.0)
+    dual = DualCache(
+        in_memory_cache=InMemoryCache(clock=lambda: clock),
         redis_cache=cache,
-        default_in_memory_ttl=memory_ttl,
+        default_in_memory_ttl=call.get("default_in_memory_ttl"),
         default_redis_ttl=None,
         default_redis_batch_cache_expiry=None,
     )
+    return dual, commands, cache
 
 
-async def get_hits_memory_first(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    key = string_value(call.get("key"), "key")
-    commands = FakeCommands({"GET": [json.dumps(call.get("redis_get"))]})
-    dual = dual_cache(clock, None, build_cache(commands))
-    for entry in list_value(call.get("memory"), "memory"):
-        record = object_value(entry, "memory entry")
-        dual.set_cache(  # pyright: ignore[reportUnknownMemberType]  # untyped LiteLLM cache API
-            string_value(record.get("key"), "key"), record.get("value"), local_only=True
-        )
-    read = cast(Json, dual.get_cache(key))  # pyright: ignore[reportUnknownMemberType]
-    return cast(Json, {"read": read})
+# the ttl and a second read show what the first read left in memory
+async def observe(dual: DualCache, key: str, read: object) -> dict[str, object]:
+    ttl = await dual.async_get_ttl(key)
+    return {"read": read, "ttl": ttl, "second": dual.get_cache(key)}
 
 
-async def get_backfills_memory_from_redis(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    memory_ttl = number_value(call.get("default_in_memory_ttl"), "default_in_memory_ttl")
-    key = string_value(call.get("key"), "key")
-    commands = FakeCommands({"GET": [json.dumps(call.get("redis_get"))]})
-    dual = dual_cache(clock, memory_ttl, build_cache(commands))
-    first = cast(Json, dual.get_cache(key))  # pyright: ignore[reportUnknownMemberType]
-    ttl = cast(Json, await dual.async_get_ttl(key))  # pyright: ignore[reportUnknownMemberType]
-    second = cast(Json, dual.get_cache(key))  # pyright: ignore[reportUnknownMemberType]
-    return cast(Json, {"first": first, "ttl": ttl, "second": second})
+async def read(call: Fields) -> dict[str, object]:
+    dual, _commands, _cache = start(call)
+    for entry in call.get("memory", []):
+        dual.set_cache(entry["key"], entry["value"], local_only=True)
+    key = call.get("key", "")
+    return await observe(dual, key, dual.get_cache(key))
 
 
-async def async_get_checks_request_batch_missing(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    key = string_value(call.get("key"), "key")
-    commands = FakeCommands({"GET": [json.dumps(call.get("redis_get"))]})
-    cache = build_cache(commands)
-    dual = dual_cache(clock, None, cache)
-    read: Json = None
+async def batch_read(call: Fields) -> dict[str, object]:
+    dual, _commands, cache = start(call)
+    key = call.get("key", "")
+    found: object = None
     with request_redis_batch_scope(post_call_deadline=DEADLINE_SECONDS):
         batch = active_request_redis_batch(cache)
         if batch is not None:
             await batch.mget([key])
-            read = cast(Json, await dual.async_get_cache(key))  # pyright: ignore[reportUnknownMemberType]
-    return cast(Json, {"read": read})
+            found = await dual.async_get_cache(key)
+    return await observe(dual, key, found)
 
 
-async def set_cache_applies_default_ttl(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    memory_ttl = number_value(call.get("default_in_memory_ttl"), "default_in_memory_ttl")
-    key = string_value(call.get("key"), "key")
-    commands = FakeCommands({})
-    dual = dual_cache(clock, memory_ttl, build_cache(commands))
-    dual.set_cache(key, call.get("value"))  # pyright: ignore[reportUnknownMemberType]
-    memory_ttl_read = cast(Json, await dual.async_get_ttl(key))  # pyright: ignore[reportUnknownMemberType]
-    return cast(Json, {"memory_ttl": memory_ttl_read, "sets": commands.expiries()})
+async def set_default_ttl(call: Fields) -> dict[str, object]:
+    dual, commands, _cache = start(call)
+    key = call.get("key", "")
+    dual.set_cache(key, call.get("value"))
+    return {"memory_ttl": await dual.async_get_ttl(key), "sets": commands.expiries()}
 
 
-async def increment_propagates_redis_error(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    key = string_value(call.get("key"), "key")
-    amount = integer_value(call.get("value"), "value")
-    commands = FakeCommands({"INCRBY": [RedisConnectionError("injected failure")]})
-    dual = dual_cache(clock, None, build_cache(commands))
+async def increment_error(call: Fields) -> dict[str, object]:
+    dual, _commands, _cache = start(call, "INCRBY")
+    key = call.get("key", "")
     try:
-        _ = dual.increment_cache(key, amount)  # pyright: ignore[reportUnknownMemberType]
+        dual.increment_cache(key, cast(int, call.get("value")))
         failed = False
     except RedisConnectionError:
         failed = True
-    memory = cast(Json, dual.get_cache(key, local_only=True))  # pyright: ignore[reportUnknownMemberType]
-    return cast(Json, {"error": failed, "memory": memory})
+    return {"error": failed, "memory": dual.get_cache(key, local_only=True)}
 
 
-async def async_increment_fallback_on_redis_error(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    key = string_value(call.get("key"), "key")
-    amount = number_value(call.get("value"), "value")
-    commands = FakeCommands({"INCRBYFLOAT": [RedisConnectionError("injected failure")]})
-    dual = dual_cache(clock, None, build_cache(commands))
-    result = cast(Json, await dual.async_increment_cache(key, amount))  # pyright: ignore[reportUnknownMemberType]
-    return cast(Json, {"result": result})
+async def increment_fallback(call: Fields) -> dict[str, object]:
+    dual, _commands, _cache = start(call, "INCRBYFLOAT")
+    amount = cast(float, call.get("value"))
+    return {"result": await dual.async_increment_cache(call.get("key", ""), amount)}
 
 
-async def set_pre_call_returns_batch_or_none(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    memory_ttl = number_value(call.get("default_in_memory_ttl"), "default_in_memory_ttl")
-    key = string_value(call.get("key"), "key")
-    commands = FakeCommands({})
-    dual = dual_cache(clock, memory_ttl, build_cache(commands))
-    outside = await dual.async_set_cache_pre_call(key, call.get("value"), None)  # pyright: ignore[reportUnknownMemberType]
+async def pre_call(call: Fields) -> dict[str, object]:
+    dual, commands, _cache = start(call)
+    key, value = call.get("key", ""), call.get("value")
+    outside = await dual.async_set_cache_pre_call(key, value, None)
     in_scope = False
     with request_redis_batch_scope(post_call_deadline=DEADLINE_SECONDS):
-        queued = await dual.async_set_cache_pre_call(key, call.get("value"), None)  # pyright: ignore[reportUnknownMemberType]
+        queued = await dual.async_set_cache_pre_call(key, value, None)
         if queued is not None:
             in_scope = True
             await queued
-    memory = cast(Json, dual.get_cache(key, local_only=True))  # pyright: ignore[reportUnknownMemberType]
-    return cast(
-        Json,
-        {
-            "outside": outside is not None,
-            "in_scope": in_scope,
-            "memory": memory,
-            "sets": commands.expiries(),
-        },
-    )
+    return {
+        "outside": outside is not None,
+        "in_scope": in_scope,
+        "memory": dual.get_cache(key, local_only=True),
+        "sets": commands.expiries(),
+    }
 
 
-async def set_pipeline_applies_single_ttl(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    memory_ttl = number_value(call.get("default_in_memory_ttl"), "default_in_memory_ttl")
-    commands = FakeCommands({})
-    dual = dual_cache(clock, memory_ttl, build_cache(commands))
-    pairs: list[tuple[str, Json]] = []
-    for entry in list_value(call.get("entries"), "entries"):
-        record = object_value(entry, "entry")
-        pairs.append((string_value(record.get("key"), "key"), record.get("value")))
-    await dual.async_set_cache_pipeline(pairs)  # pyright: ignore[reportUnknownMemberType]
-    ttls: list[Json] = []
-    for key, _value in pairs:
-        ttls.append(cast(Json, await dual.async_get_ttl(key)))  # pyright: ignore[reportUnknownMemberType]
-    return cast(Json, {"ttls": ttls, "sets": commands.expiries()})
+async def pipeline(call: Fields) -> dict[str, object]:
+    dual, commands, _cache = start(call)
+    pairs = [(entry["key"], entry["value"]) for entry in call.get("entries", [])]
+    await dual.async_set_cache_pipeline(pairs)
+    ttls = [await dual.async_get_ttl(key) for key, _value in pairs]
+    return {"ttls": ttls, "sets": commands.expiries()}
 
 
-async def delete_cache_keys_chunks_redis(call: dict[str, Json]) -> Json:
-    clock = number_value(call.get("clock"), "clock")
-    key_count = integer_value(call.get("key_count"), "key_count")
-    commands = FakeCommands({})
-    dual = dual_cache(clock, None, build_cache(commands))
-    keys = [f"key-{index}" for index in range(key_count)]
+async def delete_keys(call: Fields) -> dict[str, object]:
+    dual, commands, _cache = start(call)
+    keys = [f"key-{index}" for index in range(call.get("key_count", 0))]
     for key in keys:
-        dual.set_cache(key, "value", local_only=True)  # pyright: ignore[reportUnknownMemberType]
-    await dual.async_delete_cache_keys(keys)  # pyright: ignore[reportUnknownMemberType]
-    remaining = sum(
-        1
-        for key in keys
-        if dual.get_cache(key, local_only=True) is not None  # pyright: ignore[reportUnknownMemberType]
-    )
-    return cast(Json, {"chunks": commands.deletions(), "remaining": remaining})
+        dual.set_cache(key, "value", local_only=True)
+    await dual.async_delete_cache_keys(keys)
+    remaining = sum(1 for key in keys if dual.get_cache(key, local_only=True) is not None)
+    return {"chunks": commands.deletions(), "remaining": remaining}
 
 
-SCENARIOS = {
-    "get_hits_memory_first": get_hits_memory_first,
-    "get_backfills_memory_from_redis": get_backfills_memory_from_redis,
-    "async_get_checks_request_batch_missing": async_get_checks_request_batch_missing,
-    "set_cache_applies_default_ttl": set_cache_applies_default_ttl,
-    "increment_propagates_redis_error": increment_propagates_redis_error,
-    "async_increment_fallback_on_redis_error": async_increment_fallback_on_redis_error,
-    "set_pre_call_returns_batch_or_none": set_pre_call_returns_batch_or_none,
-    "set_pipeline_applies_single_ttl": set_pipeline_applies_single_ttl,
-    "delete_cache_keys_chunks_redis": delete_cache_keys_chunks_redis,
+SCENARIOS: dict[str, Callable[[Fields], Coroutine[None, None, dict[str, object]]]] = {
+    "get_hits_memory_first": read,
+    "get_backfills_memory_from_redis": read,
+    "async_get_checks_request_batch_missing": batch_read,
+    "set_cache_applies_default_ttl": set_default_ttl,
+    "increment_propagates_redis_error": increment_error,
+    "async_increment_fallback_on_redis_error": increment_fallback,
+    "set_pre_call_returns_batch_or_none": pre_call,
+    "set_pipeline_applies_single_ttl": pipeline,
+    "delete_cache_keys_chunks_redis": delete_keys,
 }
 
 
-async def scenario(input_value: dict[str, Json]) -> Json:
-    if len(input_value) != 1:
-        raise ValueError("the call names exactly one scenario")
-    name = next(iter(input_value))
-    runner = SCENARIOS.get(name)
-    if runner is None:
-        raise ValueError(f"unknown scenario {name}")
-    return await runner(object_value(input_value[name], name))
-
-
-def run(input_value: dict[str, Json]) -> Json:
-    return asyncio.run(scenario(input_value))
+def run(input_value: dict[str, Fields]) -> dict[str, object]:
+    ((name, call),) = input_value.items()
+    return asyncio.run(SCENARIOS[name](call))

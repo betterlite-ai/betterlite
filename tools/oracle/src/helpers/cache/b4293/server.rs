@@ -19,7 +19,7 @@ use tokio::io::{
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
-use super::scenario::Failure;
+use crate::helpers::{HelperError, OrHelperError as _};
 
 pub(crate) const DEFAULT_TTL: i64 = 60;
 const SOCKET_TIMEOUT_SECONDS: f64 = 2.0;
@@ -73,9 +73,9 @@ impl Drop for FakeRedis {
 }
 
 impl FakeRedis {
-    pub(crate) async fn start() -> Result<Self, Failure> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let addr = listener.local_addr()?;
+    pub(crate) async fn start() -> Result<Self, Box<HelperError>> {
+        let listener = TcpListener::bind("127.0.0.1:0").await.or_value_error()?;
+        let addr = listener.local_addr().or_value_error()?;
         let state = Arc::new(Mutex::new(State::default()));
         let mut tasks = JoinSet::new();
         let accepting = Arc::clone(&state);
@@ -198,12 +198,14 @@ async fn read_args(reader: &mut BufReader<ReadHalf<TcpStream>>) -> Option<Vec<St
     Some(args)
 }
 
+type Cause<'error> = dyn std::error::Error + Send + Sync + 'error;
+
 struct Allow;
 
 impl ServiceHooks for Allow {
     fn success(&self, _event: &ServiceEvent) {}
 
-    fn failure(&self, _event: &ServiceEvent, _error: &(dyn std::error::Error + Send + Sync)) {}
+    fn failure(&self, _event: &ServiceEvent, _error: &Cause<'_>) {}
 }
 
 impl BreakerGate for Allow {
@@ -213,17 +215,12 @@ impl BreakerGate for Allow {
 
     fn exit(&self, _admission: BreakerAdmission) {}
 
-    fn record_failure(&self, _error: &(dyn std::error::Error + Send + Sync)) {}
+    fn record_failure(&self, _error: &Cause<'_>) {}
 
-    fn swallowed(
-        &self,
-        _admission: &BreakerAdmission,
-        _error: &(dyn std::error::Error + Send + Sync),
-    ) {
-    }
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &Cause<'_>) {}
 }
 
-pub(crate) async fn connect_cache(addr: SocketAddr) -> Result<Arc<RedisCache>, Failure> {
+pub(crate) async fn connect_cache(addr: SocketAddr) -> Result<Arc<RedisCache>, Box<HelperError>> {
     // every field left out keeps LiteLLM's Redis default; only the fake endpoint and its timeouts are set
     let overrides: RedisOverrides = serde_json::from_value(json!({
         "host": addr.ip().to_string(),
@@ -231,7 +228,7 @@ pub(crate) async fn connect_cache(addr: SocketAddr) -> Result<Arc<RedisCache>, F
         "socket_timeout": SOCKET_TIMEOUT_SECONDS,
         "socket_connect_timeout": SOCKET_TIMEOUT_SECONDS,
     }))
-    .map_err(|error| Failure::Cache(error.to_string()))?;
+    .or_value_error()?;
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
@@ -245,8 +242,5 @@ pub(crate) async fn connect_cache(addr: SocketAddr) -> Result<Arc<RedisCache>, F
         gate: Arc::new(Allow),
     };
     let env = BTreeMap::<String, String>::new();
-    connect(options, &env)
-        .await
-        .map(Arc::new)
-        .map_err(|error| Failure::Cache(error.to_string()))
+    connect(options, &env).await.map(Arc::new).or_value_error()
 }

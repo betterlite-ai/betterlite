@@ -1,11 +1,9 @@
-mod deferred;
 mod increments;
-mod lifecycle;
 pub mod limited_size;
 mod operations;
-pub(crate) mod reads;
-pub(crate) mod value;
-pub(crate) mod writes;
+mod reads;
+mod value;
+mod writes;
 
 #[path = "dual_cache/tests.rs"]
 mod tests;
@@ -13,6 +11,7 @@ mod tests;
 use std::fmt::Display;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
@@ -31,33 +30,20 @@ pub const DEFAULT_BATCH_CACHE_EXPIRY: f64 = 10.0;
 // litellm.caching.in_memory_cache.DEFAULT_MAX_SIZE_IN_MEMORY
 pub const DEFAULT_MAX_SIZE_IN_MEMORY: usize = 200;
 
+pub type Deferred = Result<Option<BatchResult<()>>, DualCacheError>;
+
 #[derive(Debug, Error)]
 pub enum DualCacheError {
     #[error("the in-memory cache tier failed")]
-    Memory {
-        #[from]
-        source: BackendError,
-    },
+    Memory(#[from] BackendError),
     #[error("the Redis increment failed")]
-    RedisIncrement {
-        #[from]
-        source: RedisCountersError,
-    },
+    RedisIncrement(#[from] RedisCountersError),
     #[error("the Redis ttl read failed")]
-    RedisTtl {
-        #[from]
-        source: RedisCacheError,
-    },
+    RedisTtl(#[from] RedisCacheError),
     #[error("the Redis set add failed")]
-    RedisSetAdd {
-        #[from]
-        source: RedisCacheValuesError,
-    },
+    RedisSetAdd(#[from] RedisCacheValuesError),
     #[error("the Redis delete failed")]
-    RedisDelete {
-        #[from]
-        source: RedisAdminError,
-    },
+    RedisDelete(#[from] RedisAdminError),
     #[error("the increment of {value} is not a whole number Redis can add")]
     FractionalIncrement { value: f64 },
     #[error("the Redis count of {value} has no finite float form")]
