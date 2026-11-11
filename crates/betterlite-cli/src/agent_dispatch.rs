@@ -35,6 +35,8 @@ use launch::launch_agent;
 
 pub const SKIP_VERIFY_HELP: &str = "Skip the pre-launch key check against the proxy.";
 pub const SKIP_VERIFY: &str = "skip-verify";
+const SKIP_VERIFY_FLAG: &str = "--skip-verify";
+const TERMINATOR: &str = "--";
 const FORWARDED_ARGS: &str = "args";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -78,12 +80,28 @@ fn build_command(binary: &'static str, display_name: &str, hidden: bool) -> Comm
 
 #[must_use]
 pub fn parse_agent_args(matches: &ArgMatches) -> AgentCommandArgs {
+    let mut skip_verify = matches.get_flag(SKIP_VERIFY);
+    let mut forwarded = Vec::new();
+    let mut terminated = false;
+    for value in matches
+        .get_many::<String>(FORWARDED_ARGS)
+        .into_iter()
+        .flatten()
+    {
+        let token = value.as_str();
+        if terminated {
+            forwarded.push(value.clone());
+        } else if token == TERMINATOR {
+            terminated = true;
+        } else if token == SKIP_VERIFY_FLAG {
+            skip_verify = true;
+        } else {
+            forwarded.push(value.clone());
+        }
+    }
     AgentCommandArgs {
-        skip_verify: matches.get_flag(SKIP_VERIFY),
-        forwarded: matches
-            .get_many::<String>(FORWARDED_ARGS)
-            .map(|values| values.cloned().collect())
-            .unwrap_or_default(),
+        skip_verify,
+        forwarded,
     }
 }
 

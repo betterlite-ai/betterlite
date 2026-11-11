@@ -148,17 +148,53 @@ fn agent_commands_forward_unknown_options_to_the_agent() {
 }
 
 #[test]
-fn agent_commands_forward_skip_verify_once_a_forwarded_argument_starts() {
+fn agent_commands_consume_skip_verify_after_forwarded_values() {
     let commands = agent_commands();
     let matches = commands[0]
         .clone()
-        .try_get_matches_from(["claude", "run", "--skip-verify"])
+        .try_get_matches_from(["claude", "-p", "hi", "--skip-verify"])
+        .expect("parses the agent command");
+    let args = parse_agent_args(&matches);
+    assert!(args.skip_verify);
+    assert_eq!(args.forwarded, vec![String::from("-p"), String::from("hi")]);
+}
+
+#[test]
+fn agent_commands_consume_skip_verify_after_an_unknown_option() {
+    let commands = agent_commands();
+    let matches = commands[0]
+        .clone()
+        .try_get_matches_from(["claude", "--resume", "--skip-verify"])
+        .expect("parses the agent command");
+    let args = parse_agent_args(&matches);
+    assert!(args.skip_verify);
+    assert_eq!(args.forwarded, vec![String::from("--resume")]);
+}
+
+#[test]
+fn agent_commands_drop_the_terminator_and_forward_what_follows() {
+    let commands = agent_commands();
+    let matches = commands[0]
+        .clone()
+        .try_get_matches_from(["claude", "x", "--", "y"])
+        .expect("parses the agent command");
+    let args = parse_agent_args(&matches);
+    assert!(!args.skip_verify);
+    assert_eq!(args.forwarded, vec![String::from("x"), String::from("y")]);
+}
+
+#[test]
+fn agent_commands_keep_skip_verify_after_the_terminator_as_a_value() {
+    let commands = agent_commands();
+    let matches = commands[0]
+        .clone()
+        .try_get_matches_from(["claude", "x", "--", "--skip-verify"])
         .expect("parses the agent command");
     let args = parse_agent_args(&matches);
     assert!(!args.skip_verify);
     assert_eq!(
         args.forwarded,
-        vec![String::from("run"), String::from("--skip-verify")]
+        vec![String::from("x"), String::from("--skip-verify")]
     );
 }
 
