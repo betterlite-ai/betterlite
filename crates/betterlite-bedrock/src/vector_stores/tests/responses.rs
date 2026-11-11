@@ -517,11 +517,6 @@ fn sign_with_credentials(
 
 #[test]
 fn knowledge_base_secret_safe_failure() {
-    assert_decode_failure_is_secret_safe();
-    assert_signing_failure_is_secret_safe();
-}
-
-fn assert_decode_failure_is_secret_safe() {
     let fixture_secret = "fixture-secret-value-9f2c";
     let headers = [
         (
@@ -530,19 +525,16 @@ fn assert_decode_failure_is_secret_safe() {
         ),
         ("X-Credential".to_owned(), fixture_secret.to_owned()),
     ];
-    let error = decode_knowledge_base_reply(200, &headers, b"{", "q").unwrap_err();
-    assert_secret_absent(&error, fixture_secret);
-}
+    let decode_error = decode_knowledge_base_reply(200, &headers, b"{", "q").unwrap_err();
+    assert_secret_absent(&decode_error, fixture_secret);
 
-fn assert_signing_failure_is_secret_safe() {
-    let fixture_secret = "fixture-secret-value-9f2c";
     let signing_headers = [(
         "Authorization".to_owned(),
         Some(format!("Bearer {fixture_secret}")),
     )];
     let params = optional_params(&[("aws_region_name", r#""us-east-1""#)]);
     let data = object(r#"{"retrievalQuery":{"text":"secret"}}"#);
-    let error = runtime()
+    let signing_error = runtime()
         .block_on(sign_request(
             SignRequest {
                 headers: &signing_headers,
@@ -557,7 +549,7 @@ fn assert_signing_failure_is_secret_safe() {
             |_settings, _region| ready(Err::<Credentials, _>(CredentialError::MissingCredentials)),
         ))
         .unwrap_err();
-    assert_secret_absent(&error, fixture_secret);
+    assert_secret_absent(&signing_error, fixture_secret);
 }
 
 fn assert_secret_absent(error: &VectorStoreError, secret: &str) {

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -373,53 +374,62 @@ fn user_context_in_request() {
     assert_eq!(call.query, "a question");
 }
 
+const FILE_ID_CASES: &[(&str, &str)] = &[
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#,
+        r#""s3://bucket/dir/report.txt""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-chunk-id":"chunk-1"}"#,
+        r#""bedrock-kb-chunk-1""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-chunk-id":null}"#,
+        r#""bedrock-kb-None""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":""}"#,
+        r#""bedrock-kb-unknown""#,
+    ),
+];
+
+const FILENAME_CASES: &[(&str, &str)] = &[
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#,
+        r#""report.txt""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/"}"#,
+        r#""bucket""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket"}"#,
+        r#""bucket""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"https://example.com/a/b.pdf"}"#,
+        r#""b.pdf""#,
+    ),
+    (
+        r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/a%20b.txt"}"#,
+        r#""a%20b.txt""#,
+    ),
+    (r#"{"x-amz-bedrock-kb-source-uri":"a/b"}"#, r#""b""#),
+];
+
 fn location_file_id_name() {
-    for (metadata, expected) in [
-        (
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#,
-            r#""s3://bucket/dir/report.txt""#,
-        ),
-        (
-            r#"{"x-amz-bedrock-kb-chunk-id":"chunk-1"}"#,
-            r#""bedrock-kb-chunk-1""#,
-        ),
-        (
-            r#"{"x-amz-bedrock-kb-chunk-id":null}"#,
-            r#""bedrock-kb-None""#,
-        ),
-        (
-            r#"{"x-amz-bedrock-kb-source-uri":""}"#,
-            r#""bedrock-kb-unknown""#,
-        ),
-    ] {
-        assert_eq!(file_id_from_metadata(&object(metadata)), json(expected));
-    }
-    for (metadata, expected) in [
-        (
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/report.txt"}"#,
-            r#""report.txt""#,
-        ),
-        (
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/dir/"}"#,
-            r#""bucket""#,
-        ),
-        (
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket"}"#,
-            r#""bucket""#,
-        ),
-        (
-            r#"{"x-amz-bedrock-kb-source-uri":"https://example.com/a/b.pdf"}"#,
-            r#""b.pdf""#,
-        ),
-        (
-            r#"{"x-amz-bedrock-kb-source-uri":"s3://bucket/a%20b.txt"}"#,
-            r#""a%20b.txt""#,
-        ),
-        (r#"{"x-amz-bedrock-kb-source-uri":"a/b"}"#, r#""b""#),
-    ] {
-        assert_eq!(filename_from_metadata(&object(metadata)), json(expected));
-    }
+    assert_metadata_projections(file_id_from_metadata, FILE_ID_CASES);
+    assert_metadata_projections(filename_from_metadata, FILENAME_CASES);
     metadata_fallbacks();
+}
+
+fn assert_metadata_projections(
+    project: fn(&IndexMap<String, Json>) -> Json,
+    cases: &[(&str, &str)],
+) {
+    for (metadata, expected) in cases {
+        assert_eq!(project(&object(metadata)), json(expected));
+    }
 }
 
 fn metadata_fallbacks() {

@@ -91,29 +91,27 @@ fn retrieval_configuration(extra_body: Option<&IndexMap<String, Json>>) -> Json 
 
 fn apply_max_results(retrieval: &mut Json, max_results: i64) -> Result<(), VectorStoreError> {
     let configuration = search_configuration(retrieval)?;
+    let value = Json::Number(serde_json::Number::from(max_results));
     if let Some(existing) = configuration
         .get("numberOfResults")
-        .filter(|value| !matches!(value, Json::Null))
-        && existing != &Json::Number(serde_json::Number::from(max_results))
+        .filter(|prior| !matches!(prior, Json::Null))
+        .filter(|prior| *prior != &value)
     {
         tracing::debug!(
             "Overriding extra_body retrievalConfiguration.vectorSearchConfiguration.numberOfResults ({}) with max_num_results={max_results}",
             dumps(existing)
         );
     }
-    configuration.insert(
-        "numberOfResults".to_owned(),
-        Json::Number(serde_json::Number::from(max_results)),
-    );
+    configuration.insert("numberOfResults".to_owned(), value);
     Ok(())
 }
 
 fn apply_filters(retrieval: &mut Json, filters: &Json) -> Result<(), VectorStoreError> {
     let configuration = search_configuration(retrieval)?;
-    if let Some(existing) = configuration
+    if configuration
         .get("filter")
-        .filter(|value| !matches!(value, Json::Null))
-        && existing != filters
+        .filter(|prior| !matches!(prior, Json::Null))
+        .is_some_and(|existing| existing != filters)
     {
         tracing::debug!(
             "Overriding extra_body retrievalConfiguration.vectorSearchConfiguration.filter with filters from vector_store_search_optional_params"
