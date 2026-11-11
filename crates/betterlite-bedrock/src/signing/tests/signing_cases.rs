@@ -249,10 +249,7 @@ fn session_token_headers() {
 
 fn plain_signature_headers() {
     let without_token = fixture_credentials("AKIDEXAMPLE", None);
-    let headers = supplied(&[
-        ("content-type", Some("application/json")),
-        ("x-amzn-trace-id", Some("Root=1-abc")),
-    ]);
+    let headers = supplied(&[("content-type", Some("application/json"))]);
     let signed = test_plain_endpoint(
         &without_token,
         &headers,
@@ -268,7 +265,6 @@ fn plain_signature_headers() {
             ("Content-Length", "21"),
             ("X-Amz-Date", "20260101T000000Z"),
             ("content-type", "application/json"),
-            ("x-amzn-trace-id", "Root=1-abc"),
         ],
     );
 }

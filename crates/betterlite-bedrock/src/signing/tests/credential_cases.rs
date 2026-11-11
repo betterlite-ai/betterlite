@@ -15,6 +15,7 @@ use crate::signing::body::Body;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
 use crate::signing::error::SigningError;
 use crate::signing::executor::AwsSigningExecutor;
+use crate::signing::headers::prepare;
 use crate::signing::json_post::{JsonPost, sign_aws_json_post};
 use crate::signing::request::AwsSignedRequest;
 use crate::signing::target::{RegionInputs, TargetRequest, request_target};
@@ -184,6 +185,69 @@ async fn bedrock_signing_credential_identity_isolation() {
     test_stale_token_is_replaced();
     test_concurrent_signatures().await;
     test_cancelled_signature();
+}
+
+fn test_json_post_authorization(extra: &[(String, String)]) -> String {
+    let credentials = test_fixture_credentials("AKIDEXAMPLE", "fixture-secret", None);
+    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+    headers.extend_from_slice(extra);
+    let signed = sign_aws_json_post(JsonPost {
+        service_name: "bedrock",
+        region: Some("us-west-2"),
+        url: ENDPOINT,
+        body: "{}",
+        headers: &headers,
+        credentials: &credentials,
+        now: now(),
+    })
+    .unwrap();
+    test_header(&signed, "Authorization").unwrap()
+}
+
+fn test_credential_settings() {
+    let mut params: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
+        r#"{"aws_region_name":"us-west-2","aws_access_key_id":"AKIDEXAMPLE"}"#,
+    )
+    .unwrap();
+    let target = runtime()
+        .block_on(request_target(
+            TargetRequest {
+                optional_params: &mut params,
+                model: None,
+                region_inputs: RegionInputs::default(),
+                bearer_token: None,
+            },
+            |settings, region| {
+                let key = settings.access_key_id.clone().unwrap();
+                let echoed = format!("{:?}/{region}", settings.region_name);
+                ready(Ok::<Credentials, CredentialError>(Credentials {
+                    access_key_id: key,
+                    secret_access_key: SecretString::from(echoed),
+                    session_token: None,
+                }))
+            },
+        ))
+        .unwrap();
+    let credentials = target.credentials.unwrap();
+    assert_eq!(credentials.access_key_id.expose_secret(), "AKIDEXAMPLE");
+    assert_eq!(
+        credentials.secret_access_key.expose_secret(),
+        "Some(\"us-west-2\")/us-west-2"
+    );
+}
+
+#[test]
+fn bedrock_signing_unsigned_headers_and_settings() {
+    let plain = test_json_post_authorization(&[]);
+    let unsigned = [
+        ("connection".to_owned(), "keep-alive".to_owned()),
+        ("te".to_owned(), "trailers".to_owned()),
+        ("upgrade".to_owned(), "h2c".to_owned()),
+    ];
+    assert_eq!(test_json_post_authorization(&unsigned), plain);
+    let chunked = vec![("Transfer-Encoding".to_owned(), "chunked".to_owned())];
+    assert_eq!(prepare(chunked.clone(), 5, "POST"), chunked);
+    test_credential_settings();
 }
 
 fn test_no_credentials_failure() -> SigningError {
