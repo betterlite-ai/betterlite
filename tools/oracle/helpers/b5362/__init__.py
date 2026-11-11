@@ -19,6 +19,8 @@ class Utils(Protocol):
     _get_non_default_params: Callable[..., Json]
     add_provider_specific_params_to_optional_params: Callable[..., Json]
     filter_out_litellm_params: Callable[..., Json]
+    get_non_default_completion_params: Callable[..., Json]
+    get_non_default_transcription_params: Callable[..., Json]
     get_optional_params_image_gen: Callable[..., Json]
     get_optional_params_transcription: Callable[..., Json]
     peek_reasoning_summary_aliases: Callable[..., Json]
@@ -203,6 +205,12 @@ _HANDLERS: Final[dict[str, Callable[[Fields], Json]]] = {
     "filter_out_litellm": lambda fields: _UTILS.filter_out_litellm_params(
         kwargs=_obj(fields, "kwargs"),
         excluding=frozenset(_strs(fields, "excluding")),
+    ),
+    "non_default_completion": lambda fields: _UTILS.get_non_default_completion_params(
+        kwargs=_obj(fields, "kwargs")
+    ),
+    "non_default_transcription": lambda fields: _UTILS.get_non_default_transcription_params(
+        kwargs=_obj(fields, "kwargs")
     ),
     "bedrock_route": _bedrock_route,
     "pre_process": _pre_process,

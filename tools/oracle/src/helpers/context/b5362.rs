@@ -21,6 +21,8 @@ pub(crate) struct BatchInput {
 enum Function {
     SelectNonDefault,
     FilterOutLitellm,
+    NonDefaultCompletion,
+    NonDefaultTranscription,
     BedrockRoute,
     PreProcess,
     RemoveSensitiveKeys,

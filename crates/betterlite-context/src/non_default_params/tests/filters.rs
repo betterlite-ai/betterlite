@@ -5,12 +5,9 @@ use rstest::rstest;
 
 use super::params;
 use crate::non_default_params::filters::{
-    apply_openai_param_overrides, bedrock_route_for_request, filter_out_litellm_params,
-    get_non_default_params, get_standard_openai_params, provider_rejectable_params,
-    remove_unsupported_params, select_non_default_params,
-};
-use crate::non_default_params::names::{
-    OPENAI_CHAT_COMPLETION_PARAMS, OPENAI_TRANSCRIPTION_PARAMS,
+    Endpoint, apply_openai_param_overrides, bedrock_route_for_request, filter_out_litellm_params,
+    get_non_default_params, get_standard_openai_params, non_default_kwargs,
+    provider_rejectable_params, remove_unsupported_params, select_non_default_params,
 };
 use crate::non_default_params::schema_cleanup::{
     point_refs_at_root_defs, remove_additional_properties, remove_strict_from_schema,
@@ -112,18 +109,17 @@ fn filter_out_litellm_params_filter_cases(
     );
 }
 
-#[test]
-fn filter_out_litellm_params_filter_uses_the_endpoint_name_lists() {
-    let kwargs = params(r#"{"temperature": 1, "language": "de", "extra": 3}"#);
-    let chat: Vec<&str> = OPENAI_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
-    assert_eq!(
-        filter_out_litellm_params(&kwargs, &chat),
-        params(r#"{"extra": 3, "language": "de"}"#)
+#[rstest]
+#[case::completion(Endpoint::Completion, r#"{"extra": 3, "language": "de"}"#)]
+#[case::transcription(Endpoint::Transcription, r#"{"extra": 3, "temperature": 1}"#)]
+fn non_default_kwargs_filter_uses_the_endpoint_name_list(
+    #[case] endpoint: Endpoint,
+    #[case] expected: &str,
+) {
+    let kwargs = params(
+        r#"{"temperature": 1, "language": "de", "extra": 3, "api_key": "k", "_litellm_x": 1}"#,
     );
-    assert_eq!(
-        filter_out_litellm_params(&kwargs, OPENAI_TRANSCRIPTION_PARAMS),
-        params(r#"{"extra": 3, "temperature": 1}"#)
-    );
+    assert_eq!(non_default_kwargs(&kwargs, endpoint), params(expected));
 }
 
 #[rstest]

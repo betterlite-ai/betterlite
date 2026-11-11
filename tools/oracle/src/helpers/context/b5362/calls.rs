@@ -6,6 +6,7 @@ use betterlite_context::media_optional_params::image_generation::{
 use betterlite_context::media_optional_params::transcription::{
     TranscriptionRequest, transcription_optional_params,
 };
+use betterlite_context::non_default_params::filters::Endpoint;
 use betterlite_context::non_default_params::function_fallback::pre_process_optional_params;
 use betterlite_context::non_default_params::mapper::OptionalParamsMapper as Cfg;
 use betterlite_context::non_default_params::reasoning_aliases::{
@@ -100,17 +101,38 @@ fn media_params(call: &Call) -> Result<Value, Failure> {
     answer(transcription_optional_params(&request).map_err(|error| error.status_code()))
 }
 
+fn ollama_fallback(call: &Call) -> Result<Value, Failure> {
+    let provider = required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?;
+    let mut remaining = call.non_default_params.clone();
+    let processed = pre_process_optional_params(&call.passed_params, &mut remaining, provider);
+    Ok(json!({
+        "optional_params": processed.optional_params,
+        "non_default_params": remaining,
+        "add_function_to_prompt": processed.add_function_to_prompt,
+    }))
+}
+
+fn select_non_default(call: &Call) -> Result<Value, Failure> {
+    let names: Vec<&str> = call.default_names.iter().map(String::as_str).collect();
+    let drops = call.additional_drop_params.as_deref().unwrap_or_default();
+    let selected = filters::select_non_default_params(&call.passed_params, &names, drops);
+    Ok(to_value(selected)?)
+}
+
 pub(super) fn run(call: &Call) -> Result<Value, Failure> {
     match call.function {
-        Function::SelectNonDefault => {
-            let names: Vec<&str> = call.default_names.iter().map(String::as_str).collect();
-            let drops = call.additional_drop_params.as_deref().unwrap_or_default();
-            let selected = filters::select_non_default_params(&call.passed_params, &names, drops);
-            Ok(to_value(selected)?)
-        }
+        Function::SelectNonDefault => select_non_default(call),
         Function::FilterOutLitellm => {
             let excluding: Vec<&str> = call.excluding.iter().map(String::as_str).collect();
             let kept = filters::filter_out_litellm_params(&call.kwargs, &excluding);
+            Ok(to_value(kept)?)
+        }
+        Function::NonDefaultCompletion => {
+            let kept = filters::non_default_kwargs(&call.kwargs, Endpoint::Completion);
+            Ok(to_value(kept)?)
+        }
+        Function::NonDefaultTranscription => {
+            let kept = filters::non_default_kwargs(&call.kwargs, Endpoint::Transcription);
             Ok(to_value(kept)?)
         }
         Function::RemoveSensitiveKeys => {
@@ -127,17 +149,7 @@ pub(super) fn run(call: &Call) -> Result<Value, Failure> {
         }
         Function::BedrockRoute => route_for_request(call),
         Function::PreProcess => pre_process_call(call),
-        Function::OllamaFallback => {
-            let provider = required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?;
-            let mut remaining = call.non_default_params.clone();
-            let processed =
-                pre_process_optional_params(&call.passed_params, &mut remaining, provider);
-            Ok(json!({
-                "optional_params": processed.optional_params,
-                "non_default_params": remaining,
-                "add_function_to_prompt": processed.add_function_to_prompt,
-            }))
-        }
+        Function::OllamaFallback => ollama_fallback(call),
         Function::AddProviderSpecific => add_provider_specific(call),
         Function::Transcription | Function::ImageGeneration => media_params(call),
     }

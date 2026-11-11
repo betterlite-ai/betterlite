@@ -4,7 +4,8 @@ use betterlite_models::controls::json_value::JsonValue;
 
 use super::Params;
 use super::names::{
-    DEFAULT_CHAT_COMPLETION_PARAMS, OPENAI_CHAT_COMPLETION_PARAMS, PROVIDER_UNVALIDATED_PARAMS,
+    DEFAULT_CHAT_COMPLETION_PARAMS, OPENAI_CHAT_COMPLETION_PARAMS, OPENAI_TRANSCRIPTION_PARAMS,
+    PROVIDER_UNVALIDATED_PARAMS,
 };
 use crate::owned_parameter_names::is_litellm_owned_kwarg;
 
@@ -73,6 +74,24 @@ pub fn filter_out_litellm_params(kwargs: &Params, excluding: &[&str]) -> Params 
     let mut kept = kwargs.clone();
     kept.retain(|key, _| !excluding.contains(&key.as_str()) && !is_litellm_owned_kwarg(key));
     kept
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Endpoint {
+    Completion,
+    Transcription,
+}
+
+// LiteLLM's get_non_default_completion_params and get_non_default_transcription_params.
+#[must_use]
+pub fn non_default_kwargs(kwargs: &Params, endpoint: Endpoint) -> Params {
+    match endpoint {
+        Endpoint::Completion => {
+            let chat_names: Vec<&str> = OPENAI_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
+            filter_out_litellm_params(kwargs, &chat_names)
+        }
+        Endpoint::Transcription => filter_out_litellm_params(kwargs, OPENAI_TRANSCRIPTION_PARAMS),
+    }
 }
 
 // Without a supported list there is nothing to send, so the result is empty.

@@ -20,6 +20,14 @@ call:
       - function: filter_out_litellm
         kwargs: {}
         excluding: []
+      - function: non_default_completion
+        kwargs: {temperature: 0.5, language: de, my_param: 2, api_key: sk-1, _litellm_x: 1, top_k: null}
+      - function: non_default_completion
+        kwargs: {}
+      - function: non_default_transcription
+        kwargs: {temperature: 0.5, language: de, response_format: json, timestamp_granularities: [word], metadata: {a: 1}, my_param: 2}
+      - function: non_default_transcription
+        kwargs: {}
       - function: bedrock_route
         model: us.anthropic.claude-3-sonnet-20240229-v1:0
         passed_params: {temperature: 0.1, aws_region_name: us-east-1}
