@@ -700,8 +700,7 @@ fn decision_probability_order() {
     let response = ordering_response!();
     let converted = ir_to_openai_response(&response, &request, "requested").unwrap();
     let payload = serde_json::to_value(&converted).unwrap();
-    // choice probabilities follow the option order, the last duplicate wins, and a text
-    // "true" answers the boolean option
+    // option order, the last duplicate wins, and a text "true" answers the boolean option
     assert_eq!(
         payload["answers"][0]["probabilities"],
         value(
@@ -711,8 +710,7 @@ fn decision_probability_order() {
                 {"value": "d", "probability": 0.0}]"#
         )
     );
-    // score probabilities follow the level index order, the last duplicate wins, and a
-    // missing level answers 0.0
+    // level index order, the last duplicate wins, and a missing level answers 0.0
     assert_eq!(
         payload["answers"][1]["probabilities"],
         value(
