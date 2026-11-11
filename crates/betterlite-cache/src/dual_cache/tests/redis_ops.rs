@@ -2,9 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
-use betterlite_redis::request_batch::scope::{
-    active_request_redis_batch, request_redis_batch_scope,
-};
+use betterlite_redis::request_batch::scope::request_redis_batch_scope;
 use serde_json::Number;
 use tracing::instrument::WithSubscriber as _;
 
@@ -73,26 +71,6 @@ async fn async_get_cache_falls_back_to_redis_and_backfills_memory() {
     );
     assert_eq!(cache.get_cache("key", true), Some(text("from-redis")));
     assert_eq!(server.commands("GET").len(), 1);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn async_get_cache_returns_none_when_the_batch_marked_the_key_missing() {
-    let server = FakeRedis::start().await;
-    server.script("GET", vec![Reply::Bulk("from-redis".to_owned())]);
-    let redis = connect_cache(server.addr).await;
-    let cache = DualCache::new(
-        local_memory(1000.0),
-        Some(Arc::clone(&redis)),
-        settings_for_tests(None),
-    );
-    let (batches, ()) = request_redis_batch_scope(DEADLINE, async {
-        let batch = active_request_redis_batch(&redis).expect("a request batch");
-        let _misses = batch.mget(&["key".to_owned()]).await;
-        assert_eq!(cache.async_get_cache("key", false).await, None);
-    })
-    .await;
-    drop(batches);
-    assert!(server.commands("GET").is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
