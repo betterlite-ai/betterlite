@@ -111,3 +111,15 @@ async fn missing_credentials_are_refused() {
         .expect_err("no credentials are configured");
     assert!(matches!(error, CredentialError::Unavailable));
 }
+
+#[test]
+fn debug_output_names_the_struct_without_the_secrets() {
+    let rendered = format!(
+        "{:?}",
+        credentials(Some("hunter2"), Some("swordfish"), Some("token-x"), &[])
+    );
+    assert!(rendered.contains("ConfiguredCredentials"), "{rendered}");
+    assert!(!rendered.contains("hunter2"), "{rendered}");
+    assert!(!rendered.contains("swordfish"), "{rendered}");
+    assert!(!rendered.contains("token-x"), "{rendered}");
+}

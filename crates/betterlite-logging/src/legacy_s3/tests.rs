@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::future::Future;
+use std::io::{Result as IoResult, Write};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
@@ -10,6 +11,9 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 use url::Url;
 
 use crate::callback_logger::CallbackLogger as _;
@@ -175,6 +179,48 @@ fn body(request: &S3Request) -> Json {
     serde_json::from_str(&text).expect("the body is JSON")
 }
 
+#[derive(Clone, Default)]
+struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+impl Buffer {
+    fn contents(&self) -> String {
+        let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        String::from_utf8(bytes.clone()).expect("the log is UTF-8")
+    }
+}
+
+impl Write for Buffer {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for Buffer {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn subscribe(buffer: &Buffer) -> DefaultGuard {
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::ERROR)
+        .with_writer(buffer.clone())
+        .finish();
+    set_default(subscriber)
+}
+
 fn assert_upload_headers(request: &S3Request) {
     assert_eq!(header(request, "content-type"), Some("application/json"));
     assert_eq!(header(request, "content-language"), Some("en"));
@@ -241,23 +287,39 @@ async fn callback_logger_skips_when_no_bucket_is_configured() {
 #[tokio::test]
 async fn callback_logger_swallows_a_rejected_upload() {
     let harness = harness_answering(&[("s3_bucket_name", "logs")], &[], Answer::Status(400));
+    let buffer = Buffer::default();
+    let guard = subscribe(&buffer);
     harness
         .logger
         .async_log_success_event(event(payload()))
         .await
         .expect("the callback never propagates a failure");
+    drop(guard);
     assert_eq!(recorded(&harness.requests).len(), 1);
+    assert!(
+        buffer.contents().contains("s3 Layer Error"),
+        "{}",
+        buffer.contents()
+    );
 }
 
 #[tokio::test]
 async fn callback_logger_swallows_an_unreachable_upload() {
     let harness = harness_answering(&[("s3_bucket_name", "logs")], &[], Answer::Unreachable);
+    let buffer = Buffer::default();
+    let guard = subscribe(&buffer);
     harness
         .logger
         .async_log_success_event(event(payload()))
         .await
         .expect("the callback never propagates a failure");
+    drop(guard);
     assert_eq!(recorded(&harness.requests).len(), 1);
+    assert!(
+        buffer.contents().contains("s3 Layer Error"),
+        "{}",
+        buffer.contents()
+    );
 }
 
 #[tokio::test]
