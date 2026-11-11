@@ -1,4 +1,6 @@
+import io
 from collections.abc import Callable
+from contextlib import redirect_stdout
 from typing import NotRequired, TypeAlias, TypedDict
 
 import litellm
@@ -88,4 +90,5 @@ def run_step(step: Step) -> Json:
 def run(input_value: Json) -> Json:
     parsed = INPUT.validate_python(input_value)
     litellm.model_cost = model_cost_of(parsed.get("fixture"))
-    return [run_step(step) for step in parsed["steps"]]
+    with redirect_stdout(io.StringIO()):
+        return [run_step(step) for step in parsed["steps"]]
