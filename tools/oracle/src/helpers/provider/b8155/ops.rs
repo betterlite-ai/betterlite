@@ -78,8 +78,9 @@ struct CallValue<'call> {
     index: Option<u32>,
 }
 
-fn calls_json<'call>(
-    calls: impl Iterator<
+fn calls_json<'call, Calls>(calls: Calls) -> Value
+where
+    Calls: Iterator<
         Item = (
             Option<String>,
             &'call str,
@@ -88,7 +89,7 @@ fn calls_json<'call>(
             Option<u32>,
         ),
     >,
-) -> Value {
+{
     let values: Vec<CallValue<'call>> = calls
         .map(|(id, kind, name, arguments, index)| CallValue {
             id,
