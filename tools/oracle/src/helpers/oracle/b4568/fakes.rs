@@ -79,6 +79,11 @@ impl DebugModels for Debug {
                 "unexpected batch debug command",
             )));
         };
+        if !invocation.env.contains_key("CODEX_HOME") {
+            return Err(DebugFailure::Io(io::Error::other(
+                "the debug command ran without the launch environment",
+            )));
+        }
         let answer = self
             .answers
             .lock()

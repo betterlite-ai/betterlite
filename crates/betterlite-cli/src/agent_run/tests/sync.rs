@@ -139,6 +139,8 @@ fn codex_model_sync_args_returns_the_catalog_override() {
         )
     );
     assert_eq!(debug_calls[1].timeout, Duration::from_secs(10));
+    assert_eq!(debug_calls[0].env, fixture.case.base_env);
+    assert_eq!(debug_calls[1].env, fixture.case.base_env);
     let http_calls = fixture.get.calls();
     assert_eq!(http_calls.len(), 1);
     assert_eq!(http_calls[0].url, "http://gateway.test:4000/v1/models");
