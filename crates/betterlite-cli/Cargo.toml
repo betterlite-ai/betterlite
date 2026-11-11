@@ -20,8 +20,10 @@ betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 clap = { version = "4.6.7", features = ["derive"] }
+comfy-table = { version = "8.0.1", default-features = false }
 console = "0.16.6"
 hex.workspace = true
+http = "1.5.0"
 httparse = "1.10.1"
 indexmap = "2.14.2"
 inquire = { version = "0.9.4", default-features = false, features = ["console", "fuzzy"] }
