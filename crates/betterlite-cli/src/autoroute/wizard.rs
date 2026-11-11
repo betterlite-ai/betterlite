@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use betterlite_logging::private_json::files::PrivateFiles;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use self::error::{ModelDiscoveryError, WizardError};
 use self::keywords::prompt_keyword_tier_rules;
@@ -88,7 +88,7 @@ pub fn run_configure_wizard(request: ConfigureRequest<'_>) -> Result<PathBuf, Wi
     let config = collect_config(prompter, base_url, api_key, &chat_pool, &embedding_pool)?;
     validate_config(&config, &discovered)?;
     let general_settings = persisted_master_key(home).map(|master_key| GeneralSettings {
-        master_key: Some(master_key.expose_secret().to_owned()),
+        master_key: Some(master_key),
     });
     let document = GeneratedConfigDocument {
         model_list: build_generated_model_list(&config),

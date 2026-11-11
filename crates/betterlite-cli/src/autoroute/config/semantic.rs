@@ -4,12 +4,17 @@ use super::tier::Tier;
 
 pub const DEFAULT_MATCH_THRESHOLD: f64 = 0.5;
 
-// a const cannot hold the rule's Vec<String>, so each tier pairs with its keyword slice
+const SIMPLE_KEYWORDS: &[&str] = &["hi", "hello", "thanks"];
+const MEDIUM_KEYWORDS: &[&str] = &["explain", "how does"];
+const COMPLEX_KEYWORDS: &[&str] = &["refactor", "implement", "debug"];
+const REASONING_KEYWORDS: &[&str] = &["step by step", "think through", "prove"];
+
+// a const cannot hold KeywordTierRule's Vec<String>, so each tier pairs with its keyword slice
 pub const DEFAULT_KEYWORD_TIER_RULES: [(&[&str], Tier); 4] = [
-    (&["hi", "hello", "thanks"], Tier::Simple),
-    (&["explain", "how does"], Tier::Medium),
-    (&["refactor", "implement", "debug"], Tier::Complex),
-    (&["step by step", "think through", "prove"], Tier::Reasoning),
+    (SIMPLE_KEYWORDS, Tier::Simple),
+    (MEDIUM_KEYWORDS, Tier::Medium),
+    (COMPLEX_KEYWORDS, Tier::Complex),
+    (REASONING_KEYWORDS, Tier::Reasoning),
 ];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -32,9 +37,11 @@ pub enum SemanticMatchingChoice {
 }
 
 #[must_use]
-pub fn default_keywords(tier: Tier) -> &'static [&'static str] {
-    DEFAULT_KEYWORD_TIER_RULES
-        .iter()
-        .find_map(|(keywords, ruled_tier)| (*ruled_tier == tier).then_some(*keywords))
-        .unwrap_or_default()
+pub const fn default_keywords(tier: Tier) -> &'static [&'static str] {
+    match tier {
+        Tier::Simple => SIMPLE_KEYWORDS,
+        Tier::Medium => MEDIUM_KEYWORDS,
+        Tier::Complex => COMPLEX_KEYWORDS,
+        Tier::Reasoning => REASONING_KEYWORDS,
+    }
 }

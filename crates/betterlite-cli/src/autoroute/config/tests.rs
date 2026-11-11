@@ -421,7 +421,7 @@ fn build_generated_model_list_forwards_every_referenced_model_to_the_proxy() {
             DeploymentParams::Proxy(params) => Some((
                 params.model.as_str(),
                 params.api_base.as_str(),
-                params.api_key.as_str(),
+                params.api_key.expose_secret(),
             )),
             DeploymentParams::AutoRouter(_params) => None,
         })
@@ -479,11 +479,11 @@ fn build_generated_model_list_serializes_the_complexity_router_config() {
             timeout_ms: 3000,
         })
     );
-    assert_eq!(router.semantic_keyword_matching, Some(true));
-    assert_eq!(router.embedding_model.as_deref(), Some("embed"));
-    assert_eq!(router.match_threshold, Some(0.75_f64));
-    assert_eq!(router.keyword_tier_rules, Some(default_rules()));
-    assert_eq!(router.adaptive, Some(true));
+    assert!(router.semantic.semantic_keyword_matching);
+    assert_eq!(router.semantic.embedding_model.as_deref(), Some("embed"));
+    assert_eq!(router.semantic.match_threshold, Some(0.75_f64));
+    assert_eq!(router.semantic.keyword_tier_rules, Some(default_rules()));
+    assert!(router.adaptive);
 }
 
 #[test]
@@ -514,7 +514,7 @@ fn master_key_from_config_returns_the_key_verbatim() {
     let document = GeneratedConfigDocument {
         model_list: Vec::new(),
         general_settings: Some(GeneralSettings {
-            master_key: Some(" sk-untouched ".to_owned()),
+            master_key: Some(secret(" sk-untouched ")),
         }),
     };
     let key = master_key_from_config(&document).expect("a persisted key");
@@ -547,7 +547,7 @@ fn master_key_from_config_returns_none_for_a_blank_key(#[case] raw: &str) {
     let document = GeneratedConfigDocument {
         model_list: Vec::new(),
         general_settings: Some(GeneralSettings {
-            master_key: Some(raw.to_owned()),
+            master_key: Some(secret(raw)),
         }),
     };
     assert!(master_key_from_config(&document).is_none());
@@ -567,7 +567,7 @@ fn generated_document_serializes_model_list_before_general_settings() {
     let document = GeneratedConfigDocument {
         model_list: build_generated_model_list(&config()),
         general_settings: Some(GeneralSettings {
-            master_key: Some("sk-persisted".to_owned()),
+            master_key: Some(secret("sk-persisted")),
         }),
     };
     let rendered = serde_saphyr::to_string(&document).expect("the generated document");
@@ -590,7 +590,7 @@ fn generated_document_round_trips_through_yaml() {
     let document = GeneratedConfigDocument {
         model_list: build_generated_model_list(&config()),
         general_settings: Some(GeneralSettings {
-            master_key: Some("sk-persisted".to_owned()),
+            master_key: Some(secret("sk-persisted")),
         }),
     };
     let rendered = serde_saphyr::to_string(&document).expect("the generated document");

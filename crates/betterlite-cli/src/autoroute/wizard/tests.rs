@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use betterlite_logging::private_json::files::{FileAccess, PrivateFiles};
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tempfile::TempDir;
 
 use super::error::WizardError;
@@ -187,7 +187,7 @@ fn run_configure_wizard_discovers_models_and_builds_tiers_in_tier_order() {
     let router = complexity_router(&document);
     assert_eq!(router.default_model, "alpha");
     assert!(router.return_raw_model_name);
-    assert_eq!(router.adaptive, None);
+    assert!(!router.adaptive);
     assert_eq!(
         router.tiers.get(&Tier::Simple),
         Some(&vec!["beta".to_owned()])
@@ -256,11 +256,17 @@ fn assert_classifier_and_semantic_settings(router: &ComplexityRouterConfig) {
             .map(|config| config.timeout_ms),
         Some(3000)
     );
-    assert_eq!(router.semantic_keyword_matching, Some(true));
-    assert_eq!(router.embedding_model.as_deref(), Some("embed-b"));
-    assert_eq!(router.match_threshold, Some(0.5_f64));
+    assert!(router.semantic.semantic_keyword_matching);
+    assert_eq!(router.semantic.embedding_model.as_deref(), Some("embed-b"));
+    assert_eq!(router.semantic.match_threshold, Some(0.5_f64));
     assert_eq!(
-        rule_list(router.keyword_tier_rules.as_deref().expect("keyword rules")),
+        rule_list(
+            router
+                .semantic
+                .keyword_tier_rules
+                .as_deref()
+                .expect("keyword rules")
+        ),
         vec![
             (Tier::Simple, vec!["hi", "hello", "thanks"]),
             (Tier::Medium, vec!["custom", "explain"]),
@@ -268,7 +274,7 @@ fn assert_classifier_and_semantic_settings(router: &ComplexityRouterConfig) {
             (Tier::Reasoning, vec!["prove", "step by step"]),
         ]
     );
-    assert_eq!(router.adaptive, Some(true));
+    assert!(router.adaptive);
 }
 
 #[test]
@@ -321,7 +327,7 @@ fn run_configure_wizard_skips_semantic_prompts_without_embedding_models() {
         "\nEnable adaptive (bandit) selection on top of tiering?"
     );
     let router = complexity_router(&read_document(home.path()));
-    assert_eq!(router.semantic_keyword_matching, None);
+    assert!(!router.semantic.semantic_keyword_matching);
     assert_eq!(router.classifier_type, None);
 }
 
@@ -442,7 +448,8 @@ fn run_configure_wizard_writes_a_persisted_master_key_into_general_settings() {
         .general_settings
         .as_ref()
         .expect("the general settings");
-    assert_eq!(settings.master_key.as_deref(), Some("sk-old"));
+    let key = settings.master_key.as_ref().expect("the persisted key");
+    assert_eq!(key.expose_secret(), "sk-old");
     assert_eq!(
         deployment_names(&document),
         vec!["alpha", AUTOROUTER_MODEL_NAME]
