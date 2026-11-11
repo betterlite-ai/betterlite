@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,15 +8,27 @@ use betterlite_redis::batch::MgetValues;
 use betterlite_redis::batch::RedisBatch;
 use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::request_batch::batches::RequestRedisBatches;
 use betterlite_redis::request_batch::scope::{
     active_request_redis_batches, request_redis_batch_scope,
 };
 use serde_json::{Value as Json, json};
+use thiserror::Error;
 
 use super::input::{CacheSpec, Call};
 use super::server::{FakeServer, connect_cache};
 use crate::helpers::{HelperError, HelperResult};
+
+#[derive(Debug, Error)]
+pub(crate) enum Failure {
+    #[error("cannot start the helper runtime: {0}")]
+    Runtime(#[source] io::Error),
+    #[error("cannot start the fake Redis server: {0}")]
+    Server(#[from] io::Error),
+    #[error("cannot connect the fake Redis cache: {0}")]
+    Cache(#[source] RedisCacheError),
+}
 
 pub(crate) fn invalid<M>(message: M) -> Box<HelperError>
 where
@@ -110,9 +123,7 @@ impl<'call> Scenario<'call> {
 
     async fn connect(&mut self, spec: &CacheSpec) -> Result<(), Box<HelperError>> {
         if !self.servers.contains_key(&spec.setting) {
-            let server = FakeServer::start()
-                .await
-                .map_err(|error| invalid(error.to_string()))?;
+            let server = FakeServer::start().await.map_err(invalid)?;
             if let Some(scripts) = self.call.replies.get(&spec.setting) {
                 for (command, replies) in scripts {
                     for reply in replies {

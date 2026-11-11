@@ -44,28 +44,33 @@ where
     (batches, output)
 }
 
+#[rustfmt::skip]
+pub async fn with_request_redis_batches<F: Future>(batches: Arc<RequestRedisBatches>, operation: F) -> F::Output {
+    ACTIVE_REQUEST_BATCHES
+        .scope(batches, operation)
+        .await
+}
+
 #[must_use]
+#[rustfmt::skip]
 pub fn active_request_redis_batches() -> Option<Arc<RequestRedisBatches>> {
-    if let Ok(active) = ACTIVE_REQUEST_BATCHES.try_with(Arc::clone) {
-        return Some(active);
-    }
-    None
+    ACTIVE_REQUEST_BATCHES
+        .try_with(Arc::clone)
+        .ok()
 }
 
 #[must_use]
 pub fn active_request_redis_batch(redis_cache: &Arc<RedisCache>) -> Option<Arc<RedisBatch>> {
-    if let Ok(batch) = ACTIVE_REQUEST_BATCHES.try_with(|active| active.batch(redis_cache)) {
-        return Some(batch);
-    }
-    None
+    ACTIVE_REQUEST_BATCHES
+        .try_with(|active| active.batch(redis_cache))
+        .ok()
 }
 
 #[must_use]
 pub fn active_post_call_redis_batch(redis_cache: &Arc<RedisCache>) -> Option<Arc<RedisBatch>> {
-    if let Ok(batch) = ACTIVE_REQUEST_BATCHES.try_with(|active| active.post_call(redis_cache)) {
-        return Some(batch);
-    }
-    None
+    ACTIVE_REQUEST_BATCHES
+        .try_with(|active| active.post_call(redis_cache))
+        .ok()
 }
 
 pub async fn flush_post_call_redis_batches() {

@@ -77,11 +77,12 @@ impl RequestRedisBatches {
     }
 
     #[must_use]
+    #[rustfmt::skip]
     pub fn batches(&self) -> Vec<Arc<RedisBatch>> {
-        match self.batches.lock() {
-            Ok(batches) => batches.values().cloned().collect(),
-            Err(poisoned) => poisoned.into_inner().values().cloned().collect(),
-        }
+        lock(&self.batches)
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub async fn flush_all(&self) {
@@ -111,43 +112,32 @@ impl RequestRedisBatches {
         self.discard_if_idle();
     }
 
+    #[rustfmt::skip]
     pub fn arm_prefetch(&self, name: &str, value: PrefetchSlot) -> Option<PrefetchSlot> {
-        match self.prefetched.lock() {
-            Ok(mut slots) => slots.insert(name.to_owned(), value),
-            Err(poisoned) => poisoned.into_inner().insert(name.to_owned(), value),
-        }
+        lock(&self.prefetched)
+            .insert(name.to_owned(), value)
     }
 
     #[must_use]
+    #[rustfmt::skip]
     pub fn take_prefetch(&self, name: &str) -> Option<PrefetchSlot> {
-        match self.prefetched.lock() {
-            Ok(mut slots) => slots.remove(name),
-            Err(poisoned) => poisoned.into_inner().remove(name),
-        }
+        lock(&self.prefetched)
+            .remove(name)
     }
 
     #[must_use]
+    #[rustfmt::skip]
     pub fn prefetch_armed(&self, name: &str) -> bool {
-        match self.prefetched.lock() {
-            Ok(slots) => slots.contains_key(name),
-            Err(poisoned) => poisoned.into_inner().contains_key(name),
-        }
+        lock(&self.prefetched)
+            .contains_key(name)
     }
 
     fn pending(slots: &Mutex<IndexMap<BackendKey, Arc<RedisBatch>>>) -> Vec<Arc<RedisBatch>> {
-        match slots.lock() {
-            Ok(batches) => batches
-                .values()
-                .filter(|batch| batch.pending() > 0)
-                .cloned()
-                .collect(),
-            Err(poisoned) => poisoned
-                .into_inner()
-                .values()
-                .filter(|batch| batch.pending() > 0)
-                .cloned()
-                .collect(),
-        }
+        lock(slots)
+            .values()
+            .filter(|batch| batch.pending() > 0)
+            .cloned()
+            .collect()
     }
 
     fn cancel_deadline(&self) {

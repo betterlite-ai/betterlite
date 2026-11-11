@@ -14,7 +14,7 @@ impl Helper for Op {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|source| scenario::invalid(source.to_string()))?;
+            .map_err(|source| scenario::invalid(scenario::Failure::Runtime(source)))?;
         runtime.block_on(scenario::run(input))
     }
 }

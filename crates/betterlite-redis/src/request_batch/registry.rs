@@ -1,6 +1,9 @@
 use std::sync::{Arc, Mutex, Weak};
 
+use futures_util::future::join_all;
+
 use super::batches::RequestRedisBatches;
+use super::lock;
 
 // litellm.caching.redis_batch._open_post_call: requests with declared post-call writes, held weakly so a finished request leaves the registry by itself.
 static OPEN_POST_CALL: Mutex<Vec<Weak<RequestRedisBatches>>> = Mutex::new(Vec::new());
@@ -12,10 +15,7 @@ pub(super) enum Change {
 }
 
 pub(super) fn apply(request: &Arc<RequestRedisBatches>, change: Change) {
-    let mut open = match OPEN_POST_CALL.lock() {
-        Ok(open) => open,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut open = lock(&OPEN_POST_CALL);
     let held = Arc::downgrade(request);
     match change {
         Change::Register => {
@@ -29,15 +29,10 @@ pub(super) fn apply(request: &Arc<RequestRedisBatches>, change: Change) {
 
 pub async fn drain_post_call_redis_batches() {
     let open: Vec<Arc<RequestRedisBatches>> = {
-        let mut open = match OPEN_POST_CALL.lock() {
-            Ok(open) => open,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut open = lock(&OPEN_POST_CALL);
         open.retain(|held| held.strong_count() > 0);
         open.iter().filter_map(Weak::upgrade).collect()
     };
-    for request in &open {
-        request.flush_post_call().await;
-        request.drain_follow_ups().await;
-    }
+    join_all(open.iter().map(RequestRedisBatches::flush_post_call)).await;
+    join_all(open.iter().map(|request| request.drain_follow_ups())).await;
 }

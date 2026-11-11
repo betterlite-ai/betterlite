@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error;
-use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -22,6 +21,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
 use super::input::Reply;
+use super::scenario::Failure;
 
 const DEFAULT_TTL: i64 = 60;
 const SOCKET_TIMEOUT_SECONDS: f64 = 1.0;
@@ -44,7 +44,7 @@ impl Drop for FakeServer {
 }
 
 impl FakeServer {
-    pub(crate) async fn start() -> io::Result<Self> {
+    pub(crate) async fn start() -> Result<Self, Failure> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
         let shared = Arc::new(Shared::default());
@@ -162,7 +162,7 @@ impl BreakerGate for Allow {
 pub(crate) async fn connect_cache(
     server: &FakeServer,
     namespace: Option<&str>,
-) -> Result<Arc<RedisCache>, String> {
+) -> Result<Arc<RedisCache>, Failure> {
     let mut overrides = RedisOverrides::default();
     set_endpoint(&mut overrides, server.addr);
     let options = RedisCacheOptions {
@@ -181,7 +181,7 @@ pub(crate) async fn connect_cache(
     connect(options, &env)
         .await
         .map(Arc::new)
-        .map_err(|error| error.to_string())
+        .map_err(Failure::Cache)
 }
 
 fn set_endpoint(overrides: &mut RedisOverrides, addr: SocketAddr) {

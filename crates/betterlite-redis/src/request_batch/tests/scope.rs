@@ -1,11 +1,49 @@
 use std::sync::Arc;
 
+use tokio::task::JoinSet;
+
 use super::support::cache;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use crate::request_batch::scope::{
-    active_request_redis_batch, active_request_redis_batches, request_redis_batch_scope,
+    active_post_call_redis_batch, active_request_redis_batch, active_request_redis_batches,
+    flush_post_call_redis_batches, request_redis_batch_scope, with_request_redis_batches,
 };
+
+#[tokio::test]
+async fn request_batch_spawned_task_can_join_the_request_scope() {
+    let server = FakeServer::start().await;
+    server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
+    let cached = cache(&server, Some("ns")).await;
+
+    let (_, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
+        let request = active_request_redis_batches().expect("a request scope");
+        let writes = active_post_call_redis_batch(&cached).expect("the request's post-call batch");
+        let carried = Arc::clone(&request);
+        let expected = Arc::clone(&writes);
+        let target = Arc::clone(&cached);
+        let mut tasks = JoinSet::new();
+        tasks.spawn(with_request_redis_batches(carried, async move {
+            let joined = active_post_call_redis_batch(&target)
+                .expect("the carried request's post-call batch");
+            assert!(Arc::ptr_eq(&joined, &expected));
+            joined.increment("counter", 1.5, None);
+            flush_post_call_redis_batches().await;
+        }));
+        tasks
+            .join_next()
+            .await
+            .expect("the spawned write")
+            .expect("the spawned write panicked");
+        assert_eq!(
+            writes.pending(),
+            0,
+            "the task flushed the request's own post-call batch"
+        );
+        assert_eq!(writes.flushes(), 1);
+    })
+    .await;
+}
 
 #[tokio::test]
 async fn request_batch_nested_scopes_join_the_outer_batches() {
