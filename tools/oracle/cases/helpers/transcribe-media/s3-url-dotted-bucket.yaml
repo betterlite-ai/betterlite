@@ -1,0 +1,9 @@
+kind: helper
+name: s3-url-dotted-bucket
+call:
+  b3645:
+    function: s3_url
+    media_uri: s3://my.audio/meeting.wav
+    region: eu-west-1
+env: {}
+compare: {ignore: []}
