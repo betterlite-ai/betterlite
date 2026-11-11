@@ -81,11 +81,17 @@ impl<'trace> MessageTraceScope<'trace> {
         carrier: Option<BTreeMap<String, String>>,
         message: Option<&MessageTrace>,
     ) -> Self {
-        // a message with no span leaves the transport the operation already had instead of clearing it
-        let transport = message
-            .and_then(|snapshot| snapshot.transport.clone())
-            .or_else(|| trace.mcp_transport.clone());
+        let transport = message.and_then(|snapshot| snapshot.transport.clone());
+        // LiteLLM's setter returns early on None, so an absent span keeps the slot without re-anchoring the root
+        let inherited = if transport.is_none() {
+            trace.mcp_transport.clone()
+        } else {
+            None
+        };
         let previous = trace.enter_mcp_message(carrier, transport);
+        if let Some(slot) = inherited {
+            trace.mcp_transport = Some(slot);
+        }
         if let Some(destinations) = message.and_then(|snapshot| snapshot.destinations.as_ref()) {
             trace.destinations.clone_from(destinations);
         }

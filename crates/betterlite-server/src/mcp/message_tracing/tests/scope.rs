@@ -70,6 +70,10 @@ fn absent_transport_preserves() {
         mcp_transport: Some(transport(7, 8, true)),
         destinations: vec![destination("arize")],
     };
+    trace.anchor_request_root(AnchoredSpan {
+        context: span_context(1, 2),
+        http_route: Some("/session".to_owned()),
+    });
     let snapshot = MessageTrace {
         context: None,
         transport: None,
@@ -79,9 +83,15 @@ fn absent_transport_preserves() {
     assert_eq!(scope.as_ref().mcp_transport, Some(transport(7, 8, true)));
     assert!(scope.as_ref().mcp_message_transport_span().is_some());
     assert_eq!(scope.as_ref().destinations, vec![destination("langfuse")]);
+    let anchored = scope.as_ref().root.as_ref().expect("root");
+    assert_eq!(anchored.context.trace_id(), TraceId::from(1));
+    assert_eq!(anchored.http_route.as_deref(), Some("/session"));
     drop(scope);
     assert_eq!(trace.mcp_transport, Some(transport(7, 8, true)));
     assert_eq!(trace.destinations, vec![destination("arize")]);
+    let kept = trace.root.as_ref().expect("root");
+    assert_eq!(kept.context.trace_id(), TraceId::from(1));
+    assert_eq!(kept.context.span_id(), SpanId::from(2));
 }
 
 #[test]
