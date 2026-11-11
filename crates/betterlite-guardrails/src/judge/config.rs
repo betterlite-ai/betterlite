@@ -43,135 +43,90 @@ pub struct GuardrailEntry<'guardrail> {
     pub litellm_params: Option<LitellmParamsSource<'guardrail>>,
 }
 
-pub(crate) trait ParamKind: Clone {
-    fn from_value(value: &GuardrailValue) -> Option<Self>;
-    fn from_attributes(params: &JudgeParams, key: ParamKey) -> Option<Self>;
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ParamValue {
+    Text(String),
+    Number(f64),
+    Boolean(bool),
+    Criteria(Vec<Criterion>),
+    EventHook(EventHookParameter),
 }
 
-impl ParamKind for String {
-    fn from_value(value: &GuardrailValue) -> Option<Self> {
-        match value {
-            GuardrailValue::Text(text) => Some(text.clone()),
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_) => None,
-        }
-    }
-
-    fn from_attributes(params: &JudgeParams, key: ParamKey) -> Option<Self> {
-        match key {
-            ParamKey::JudgeModel => params.judge_model.clone(),
-            ParamKey::OnFailure => params.on_failure.clone(),
-            ParamKey::Criteria
-            | ParamKey::OverallThreshold
-            | ParamKey::Mode
-            | ParamKey::DefaultOn => None,
-        }
+fn attribute(params: &JudgeParams, key: ParamKey) -> Option<ParamValue> {
+    match key {
+        ParamKey::JudgeModel => params.judge_model.clone().map(ParamValue::Text),
+        ParamKey::Criteria => params.criteria.clone().map(ParamValue::Criteria),
+        ParamKey::OverallThreshold => params.overall_threshold.map(ParamValue::Number),
+        ParamKey::OnFailure => params.on_failure.clone().map(ParamValue::Text),
+        ParamKey::Mode => params.mode.clone().map(ParamValue::EventHook),
+        ParamKey::DefaultOn => params.default_on.map(ParamValue::Boolean),
     }
 }
 
-impl ParamKind for Vec<Criterion> {
-    fn from_value(value: &GuardrailValue) -> Option<Self> {
-        let encoded = serde_json::to_string(value).ok()?;
-        serde_json::from_str(&encoded).ok()
-    }
-
-    fn from_attributes(params: &JudgeParams, key: ParamKey) -> Option<Self> {
-        match key {
-            ParamKey::Criteria => params.criteria.clone(),
-            ParamKey::JudgeModel
-            | ParamKey::OverallThreshold
-            | ParamKey::OnFailure
-            | ParamKey::Mode
-            | ParamKey::DefaultOn => None,
+fn parse_value(key: ParamKey, value: &GuardrailValue) -> Option<ParamValue> {
+    match key {
+        ParamKey::JudgeModel | ParamKey::OnFailure => text_value(value).map(ParamValue::Text),
+        ParamKey::Criteria => {
+            serde_json::from_str::<Vec<Criterion>>(&serde_json::to_string(value).ok()?)
+                .ok()
+                .map(ParamValue::Criteria)
         }
+        ParamKey::OverallThreshold => number_value(value).map(ParamValue::Number),
+        ParamKey::Mode => {
+            serde_json::from_str::<EventHookParameter>(&serde_json::to_string(value).ok()?)
+                .ok()
+                .map(ParamValue::EventHook)
+        }
+        ParamKey::DefaultOn => boolean_value(value).map(ParamValue::Boolean),
     }
 }
 
-impl ParamKind for f64 {
-    fn from_value(value: &GuardrailValue) -> Option<Self> {
-        match value {
-            GuardrailValue::SignedInteger(integer) => Decimal::from(*integer).try_into().ok(),
-            GuardrailValue::UnsignedInteger(integer) => Decimal::from(*integer).try_into().ok(),
-            GuardrailValue::Decimal(float) => Some(*float),
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_) => None,
-        }
-    }
-
-    fn from_attributes(params: &JudgeParams, key: ParamKey) -> Option<Self> {
-        match key {
-            ParamKey::OverallThreshold => params.overall_threshold,
-            ParamKey::JudgeModel
-            | ParamKey::Criteria
-            | ParamKey::OnFailure
-            | ParamKey::Mode
-            | ParamKey::DefaultOn => None,
-        }
+fn text_value(value: &GuardrailValue) -> Option<String> {
+    match value {
+        GuardrailValue::Text(text) => Some(text.clone()),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
     }
 }
 
-impl ParamKind for bool {
-    fn from_value(value: &GuardrailValue) -> Option<Self> {
-        match value {
-            GuardrailValue::Boolean(flag) => Some(*flag),
-            GuardrailValue::Null
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_) => None,
-        }
-    }
-
-    fn from_attributes(params: &JudgeParams, key: ParamKey) -> Option<Self> {
-        match key {
-            ParamKey::DefaultOn => params.default_on,
-            ParamKey::JudgeModel
-            | ParamKey::Criteria
-            | ParamKey::OverallThreshold
-            | ParamKey::OnFailure
-            | ParamKey::Mode => None,
-        }
+fn number_value(value: &GuardrailValue) -> Option<f64> {
+    match value {
+        GuardrailValue::SignedInteger(integer) => Decimal::from(*integer).try_into().ok(),
+        GuardrailValue::UnsignedInteger(integer) => Decimal::from(*integer).try_into().ok(),
+        GuardrailValue::Decimal(float) => Some(*float),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
     }
 }
 
-impl ParamKind for EventHookParameter {
-    fn from_value(value: &GuardrailValue) -> Option<Self> {
-        let encoded = serde_json::to_string(value).ok()?;
-        serde_json::from_str(&encoded).ok()
-    }
-
-    fn from_attributes(params: &JudgeParams, key: ParamKey) -> Option<Self> {
-        match key {
-            ParamKey::Mode => params.mode.clone(),
-            ParamKey::JudgeModel
-            | ParamKey::Criteria
-            | ParamKey::OverallThreshold
-            | ParamKey::OnFailure
-            | ParamKey::DefaultOn => None,
-        }
+const fn boolean_value(value: &GuardrailValue) -> Option<bool> {
+    match value {
+        GuardrailValue::Boolean(flag) => Some(*flag),
+        GuardrailValue::Null
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
     }
 }
 
-pub(crate) fn get_param<T>(
-    typed: Option<&T>,
+pub(crate) fn get_param(
+    params: &JudgeParams,
     guardrail: &GuardrailEntry<'_>,
     key: ParamKey,
-) -> Result<Option<T>, JudgeError>
-where
-    T: ParamKind,
-{
-    if let Some(value) = typed {
-        return Ok(Some(value.clone()));
+) -> Result<Option<ParamValue>, JudgeError> {
+    if let Some(value) = attribute(params, key) {
+        return Ok(Some(value));
     }
     let Some(source) = &guardrail.litellm_params else {
         return Ok(None);
@@ -180,11 +135,76 @@ where
         LitellmParamsSource::Mapping(mapping) => mapping.get(key.name()).map_or_else(
             || Ok(None),
             |raw| {
-                T::from_value(raw)
+                parse_value(key, raw)
                     .map(Some)
                     .ok_or(JudgeError::InvalidParam { key: key.name() })
             },
         ),
-        LitellmParamsSource::Parsed(params) => Ok(T::from_attributes(params, key)),
+        LitellmParamsSource::Parsed(parsed) => Ok(attribute(parsed, key)),
+    }
+}
+
+pub(crate) fn text_param(value: Option<ParamValue>) -> Option<String> {
+    match value {
+        Some(ParamValue::Text(text)) => Some(text),
+        Some(
+            ParamValue::Number(_)
+            | ParamValue::Boolean(_)
+            | ParamValue::Criteria(_)
+            | ParamValue::EventHook(_),
+        )
+        | None => None,
+    }
+}
+
+pub(crate) const fn number_param(value: Option<&ParamValue>) -> Option<f64> {
+    match value {
+        Some(ParamValue::Number(number)) => Some(*number),
+        Some(
+            ParamValue::Text(_)
+            | ParamValue::Boolean(_)
+            | ParamValue::Criteria(_)
+            | ParamValue::EventHook(_),
+        )
+        | None => None,
+    }
+}
+
+pub(crate) const fn boolean_param(value: Option<&ParamValue>) -> Option<bool> {
+    match value {
+        Some(ParamValue::Boolean(flag)) => Some(*flag),
+        Some(
+            ParamValue::Text(_)
+            | ParamValue::Number(_)
+            | ParamValue::Criteria(_)
+            | ParamValue::EventHook(_),
+        )
+        | None => None,
+    }
+}
+
+pub(crate) fn criteria_param(value: Option<ParamValue>) -> Option<Vec<Criterion>> {
+    match value {
+        Some(ParamValue::Criteria(criteria)) => Some(criteria),
+        Some(
+            ParamValue::Text(_)
+            | ParamValue::Number(_)
+            | ParamValue::Boolean(_)
+            | ParamValue::EventHook(_),
+        )
+        | None => None,
+    }
+}
+
+pub(crate) fn hook_param(value: Option<ParamValue>) -> Option<EventHookParameter> {
+    match value {
+        Some(ParamValue::EventHook(hook)) => Some(hook),
+        Some(
+            ParamValue::Text(_)
+            | ParamValue::Number(_)
+            | ParamValue::Boolean(_)
+            | ParamValue::Criteria(_),
+        )
+        | None => None,
     }
 }

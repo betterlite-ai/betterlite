@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
-use betterlite_config::sections::guardrail_judge::{Criterion, EventHookParameter, JudgeParams};
+use betterlite_config::sections::guardrail_judge::{Criterion, JudgeParams};
 use rust_decimal::Decimal;
 
 use super::apply::{LLMAsAJudgeGuardrail, OnFailure};
 use super::call::JudgeCompletion;
-use super::config::{GuardrailEntry, ParamKey, get_param};
+use super::config::{
+    GuardrailEntry, ParamKey, boolean_param, criteria_param, get_param, hook_param, number_param,
+    text_param,
+};
 use super::error::JudgeError;
 use super::hooks::{EventHookConfig, coerce_event_hook, validate_event_hook};
 
@@ -54,13 +57,11 @@ fn resolve(params: &JudgeParams, guardrail: &GuardrailEntry<'_>) -> Result<Resol
     let Some(guardrail_name) = guardrail.guardrail_name.map(str::to_owned) else {
         return Err(JudgeError::MissingGuardrailName);
     };
-    let Some(judge_model) =
-        get_param(params.judge_model.as_ref(), guardrail, ParamKey::JudgeModel)?
-    else {
+    let Some(judge_model) = text_param(get_param(params, guardrail, ParamKey::JudgeModel)?) else {
         return Err(JudgeError::MissingJudgeModel);
     };
     let criteria =
-        get_param(params.criteria.as_ref(), guardrail, ParamKey::Criteria)?.unwrap_or_default();
+        criteria_param(get_param(params, guardrail, ParamKey::Criteria)?).unwrap_or_default();
     if criteria.is_empty() {
         return Err(JudgeError::MissingCriteria);
     }
@@ -70,14 +71,12 @@ fn resolve(params: &JudgeParams, guardrail: &GuardrailEntry<'_>) -> Result<Resol
         judge_model,
         criteria,
         on_failure: resolve_on_failure(params, guardrail)?,
-        overall_threshold: get_param(
-            params.overall_threshold.as_ref(),
-            guardrail,
-            ParamKey::OverallThreshold,
-        )?
+        overall_threshold: number_param(
+            get_param(params, guardrail, ParamKey::OverallThreshold)?.as_ref(),
+        )
         .unwrap_or(DEFAULT_THRESHOLD),
         event_hook: resolve_event_hook(params, guardrail)?,
-        default_on: get_param(params.default_on.as_ref(), guardrail, ParamKey::DefaultOn)?
+        default_on: boolean_param(get_param(params, guardrail, ParamKey::DefaultOn)?.as_ref())
             .unwrap_or(false),
     })
 }
@@ -86,7 +85,7 @@ fn resolve_on_failure(
     params: &JudgeParams,
     guardrail: &GuardrailEntry<'_>,
 ) -> Result<OnFailure, JudgeError> {
-    let text = get_param(params.on_failure.as_ref(), guardrail, ParamKey::OnFailure)?
+    let text = text_param(get_param(params, guardrail, ParamKey::OnFailure)?)
         .unwrap_or_else(|| DEFAULT_ON_FAILURE.to_owned());
     OnFailure::parse(&text).ok_or(JudgeError::InvalidOnFailure { value: text })
 }
@@ -95,7 +94,7 @@ fn resolve_event_hook(
     params: &JudgeParams,
     guardrail: &GuardrailEntry<'_>,
 ) -> Result<EventHookConfig, JudgeError> {
-    let mode = get_param::<EventHookParameter>(params.mode.as_ref(), guardrail, ParamKey::Mode)?;
+    let mode = hook_param(get_param(params, guardrail, ParamKey::Mode)?);
     let event_hook = coerce_event_hook(mode.as_ref())?;
     validate_event_hook(&event_hook)?;
     Ok(event_hook)
