@@ -46,6 +46,8 @@ description: >-
   same Arc twice.
 scope:
   paths:
+    - "crates/betterlite-logging/src/**/tests/support.rs"
+    - "crates/betterlite-logging/src/**/tests.rs"
     - "crates/betterlite-logging/src/callback_logger/event.rs"
     - "crates/betterlite-logging/src/registry/catalog/tests.rs"
     - crates/betterlite-logging/src/langsmith_logger.rs
