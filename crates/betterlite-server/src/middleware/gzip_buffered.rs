@@ -6,7 +6,6 @@ use std::io::{self, Write as _};
 use std::mem;
 use std::pin::Pin;
 use std::str;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use axum::body::{Body, to_bytes};
@@ -161,20 +160,16 @@ fn no_transform(headers: &HeaderMap) -> bool {
     })
 }
 
-// Starlette's add_vary_header joins every existing value and the new one, duplicate or not
+// Starlette's add_vary_header reads the first Vary value and its __setitem__ drops any duplicate
 fn append_vary(headers: &mut HeaderMap) {
-    let mut value = Vec::new();
-    let mut existing = headers.get_all(header::VARY).iter().peekable();
-    while let Some(part) = existing.next() {
-        value.extend_from_slice(part.as_bytes());
-        if existing.peek().is_some() {
-            value.extend_from_slice(b", ");
-        }
-    }
-    if headers.contains_key(header::VARY) {
-        value.extend_from_slice(b", ");
-    }
-    value.extend_from_slice(b"Accept-Encoding");
+    let value = headers.get(header::VARY).map_or_else(
+        || b"Accept-Encoding".to_vec(),
+        |existing| {
+            let mut joined = existing.as_bytes().to_vec();
+            joined.extend_from_slice(b", Accept-Encoding");
+            joined
+        },
+    );
     if let Ok(vary) = HeaderValue::from_bytes(&value) {
         headers.insert(header::VARY, vary);
     }
@@ -185,10 +180,8 @@ async fn compress_body(response: &mut Response, size: u64) -> Option<Vec<u8>> {
     let limit = usize::try_from(size).ok()?;
     let bytes = to_bytes(body, limit).await.ok()?;
     if size >= OFF_LOOP_SIZE_BYTES {
-        let shared = Arc::new(bytes);
-        let input = Arc::clone(&shared);
         let mut tasks = JoinSet::new();
-        tasks.spawn_blocking(move || gzip_bytes(&input));
+        tasks.spawn_blocking(move || gzip_bytes(&bytes));
         tasks.join_next().await?.ok()?.ok()
     } else {
         gzip_bytes(&bytes).ok()

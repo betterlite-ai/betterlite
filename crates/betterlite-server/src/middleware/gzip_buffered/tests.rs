@@ -40,7 +40,7 @@ fn status_app(
                 let mut response = Response::new(Body::from("a".repeat(size)));
                 *response.status_mut() = status;
                 for (name, value) in owned_headers {
-                    response.headers_mut().insert(
+                    response.headers_mut().append(
                         HeaderName::from_static(name),
                         HeaderValue::from_static(value),
                     );
@@ -199,6 +199,25 @@ async fn gzip_does_not_deduplicate_vary() {
     assert_eq!(
         header_value(response.headers(), header::VARY),
         Some(&b"Accept-Encoding, Accept-Encoding"[..])
+    );
+}
+
+#[tokio::test]
+async fn gzip_keeps_only_the_first_vary_value() {
+    let app = status_app(
+        StatusCode::OK,
+        vec![("vary", "Origin"), ("vary", "User-Agent")],
+        500,
+    );
+    let response = send(app, Method::GET, Some("gzip")).await;
+    assert_eq!(
+        header_value(response.headers(), header::VARY),
+        Some(&b"Origin, Accept-Encoding"[..])
+    );
+    assert_eq!(
+        response.headers().get_all(header::VARY).iter().count(),
+        1,
+        "Starlette's __setitem__ drops the duplicate Vary headers"
     );
 }
 

@@ -129,8 +129,6 @@ pub(crate) fn application(
             &config.sections.admission_control,
         )),
         in_flight: Arc::new(InFlightRequests::default()),
-        // the outer RootPaths layer does the stripping, so the stack installs no second one
-        scalar_root: String::new(),
     };
     let application = stack.wrap(stacked);
     Ok(
