@@ -1,6 +1,6 @@
 task: B3645
 deviations:
-  - what: Media length is read from the container headers (WAV fmt/data, FLAC STREAMINFO, the Ogg last page granule, MP3 Xing/Info or VBRI frame count) with Rust crates instead of libsndfile. Ogg Opus files, which libsndfile 1.2 can read, give None and are charged the maximum.
+  - what: Media length is read from the container headers (WAV fmt/data, FLAC STREAMINFO, the Ogg last page granule, MP3 Xing/Info or VBRI frame count) with Rust crates instead of libsndfile; an MP3 with no Xing/Info or VBRI header has its duration estimated from the average length of its first frames and the byte length. Ogg Opus files, which libsndfile 1.2 can read, give None and are charged the maximum.
     why: libsndfile has no maintained pure-Rust equivalent, so betterlite uses hound, claxon, ogg with lewton, and symphonia's MP3 demuxer; an Opus file is billed high rather than free.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L512-L518
   - what: The longest-media charge uses B3644's transcribe_max_job_cost at LiteLLM's 28800 seconds, and the media length is exact Decimal arithmetic (frames divided by sample rate, then rounded up) instead of a float.

@@ -69,10 +69,27 @@ where
     }
 }
 
-fn mp3_seconds<R>(media: R) -> Option<Decimal>
+fn mp3_seconds<R>(mut media: R) -> Option<Decimal>
 where
     R: MediaSource,
 {
+    media.seek(SeekFrom::Start(0)).ok()?;
+    let mut header = [0_u8; 10];
+    media.read_exact(&mut header).ok()?;
+    if header.starts_with(b"ID3") {
+        let size = header.get(6..10)?.iter().try_fold(0_u64, |size, byte| {
+            size.checked_mul(128)?.checked_add(u64::from(byte & 0x7F))
+        })?;
+        let footer = if *header.get(5)? & 0x10 == 0 {
+            0_u64
+        } else {
+            10_u64
+        };
+        let skip = i64::try_from(size.checked_add(footer)?).ok()?;
+        media.seek(SeekFrom::Current(skip)).ok()?;
+    } else {
+        media.seek(SeekFrom::Start(0)).ok()?;
+    }
     let mss = MediaSourceStream::new(Box::new(media), MediaSourceStreamOptions::default());
     let mut probe = Probe::new();
     probe.register_format::<MpaReader<'_>>();

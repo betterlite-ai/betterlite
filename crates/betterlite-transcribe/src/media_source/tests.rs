@@ -266,6 +266,20 @@ fn media_duration_reads_an_mp3_frame_count() {
 }
 
 #[test]
+fn media_duration_skips_an_id3v2_tag_larger_than_the_probe_depth() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"ID3");
+    bytes.extend_from_slice(&[4, 0, 0]); // version 2.4, no footer flag
+    bytes.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // synchsafe 2 MiB, past the 1 MiB probe depth
+    bytes.resize(bytes.len() + 2 * 1024 * 1024, 0);
+    bytes.extend_from_slice(VALID_MP3);
+    assert_eq!(
+        media_duration_seconds(Cursor::new(bytes)),
+        Some(Decimal::ONE)
+    );
+}
+
+#[test]
 fn media_duration_is_none_for_an_unknown_container() {
     assert_eq!(
         media_duration_seconds(Cursor::new(b"not audio at all".as_slice())),
