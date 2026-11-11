@@ -126,13 +126,17 @@ async fn a_malformed_body_answers_500() {
 
 #[tokio::test]
 async fn keys_of_the_wrong_type_answer_500() {
+    let mut cache = fake_cache();
+    cache.kind = "redis".to_owned();
+    let case = Arc::new(cache);
     let (status, body): (StatusCode, DetailBody) = call_json(
-        admin_router(FakeLive::with(Arc::new(fake_cache()))),
+        admin_router(FakeLive::with(Arc::<FakeCache>::clone(&case))),
         "POST",
         "/cache/delete",
         r#"{"keys": 7}"#,
     )
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(body.detail.contains("keys"));
+    assert!(body.detail.starts_with("Cache Delete Failed("));
+    assert!(case.deleted.lock().unwrap().is_empty());
 }
