@@ -214,6 +214,7 @@ async fn create_blocked_owners(test: &PostgresTest) -> Owners {
              CREATE ROLE \"{}\" NOLOGIN;
              CREATE ROLE \"{}\" NOLOGIN;
              GRANT \"{}\" TO \"{}\";
+             GRANT USAGE ON SCHEMA \"{}\" TO \"{}\";
              CREATE TABLE \"LiteLLM_OwnedA\" (id text);
              CREATE TABLE \"LiteLLM_OwnedB\" (id text);
              CREATE TABLE \"LiteLLM_Blocked\" (id text);
@@ -224,6 +225,8 @@ async fn create_blocked_owners(test: &PostgresTest) -> Owners {
             owners.blocked,
             owners.viewer,
             owners.owner,
+            owners.viewer,
+            test.schema,
             owners.viewer,
             owners.owner,
             owners.owner,

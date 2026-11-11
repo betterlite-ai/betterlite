@@ -100,9 +100,11 @@ async fn replica_identity_already_full_unchanged() {
         .batch_execute(&format!(
             "CREATE ROLE \"{owner}\" NOLOGIN;
              CREATE ROLE \"{viewer}\" NOLOGIN;
+             GRANT USAGE ON SCHEMA \"{}\" TO \"{viewer}\";
              CREATE TABLE \"LiteLLM_Full\" (id text PRIMARY KEY);
              ALTER TABLE \"LiteLLM_Full\" OWNER TO \"{owner}\";
-             ALTER TABLE \"LiteLLM_Full\" REPLICA IDENTITY FULL;"
+             ALTER TABLE \"LiteLLM_Full\" REPLICA IDENTITY FULL;",
+            test.schema
         ))
         .await
         .unwrap();
