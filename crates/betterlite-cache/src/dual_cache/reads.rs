@@ -15,7 +15,7 @@ where
 {
     match cache.in_memory_cache.get_cache(key)? {
         None | Some(CacheValue::Null) => Ok(None),
-        Some(stored) => value::json_from_cache(&stored).map(Some),
+        Some(stored) => value::convert(&stored).map(Some),
     }
 }
 

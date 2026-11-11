@@ -1,21 +1,25 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
+use betterlite_redis::cache_primitives::decode::CachedValue;
+use indexmap::IndexMap;
 use serde_json::Number;
 
 use super::support::{ResizableMemory, local_memory};
 use crate::dual_cache::limited_size::LimitedSizeOrderedDict;
+use crate::dual_cache::value::{cache_from_json, json_from_cached};
 use crate::dual_cache::{
     BATCH_CACHE_SIZE_VARIABLE, CacheOptions, DEFAULT_BATCH_CACHE_EXPIRY,
-    DEFAULT_MAX_SIZE_IN_MEMORY, DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, Ttl,
-    lock_read, lock_write,
+    DEFAULT_MAX_SIZE_IN_MEMORY, DualCache, DualCacheError, DualCacheSettings,
+    MAX_REDIS_BATCH_CACHE_SIZE, Ttl, lock_read, lock_write,
 };
 use crate::types::pipeline::RedisPipelineIncrement;
 
 fn limited(max_size: usize) -> LimitedSizeOrderedDict<f64> {
     LimitedSizeOrderedDict {
-        entries: indexmap::IndexMap::new(),
+        entries: IndexMap::new(),
         max_size,
     }
 }
@@ -382,4 +386,64 @@ async fn async_increment_cache_honours_local_only() {
             .await,
         Some(2.0_f64)
     );
+}
+
+fn number_marker(extra: Option<(&str, CachedValue)>, digits: &str) -> CachedValue {
+    let mut fields = BTreeMap::from([(
+        "$serde_json::private::Number".to_owned(),
+        CachedValue::Text(digits.to_owned()),
+    )]);
+    fields.extend(extra.map(|(key, entry)| (key.to_owned(), entry)));
+    CachedValue::Object(fields)
+}
+
+#[test]
+fn a_decoded_float_marker_becomes_a_number() {
+    let number = Number::from_f64(12.5).expect("a finite float");
+    assert_eq!(
+        json_from_cached(number_marker(None, "12.5")),
+        Json::Number(number)
+    );
+}
+
+#[test]
+fn a_marker_with_a_sibling_or_without_digits_stays_an_object() {
+    let sibling = json_from_cached(number_marker(Some(("other", CachedValue::Null)), "1"));
+    let Json::Object(fields) = sibling else {
+        panic!("a marker with a sibling is a plain object");
+    };
+    assert_eq!(fields.len(), 2);
+    let broken = json_from_cached(number_marker(None, "not a number"));
+    assert!(matches!(broken, Json::Object(_)));
+}
+
+#[test]
+fn cache_from_json_keeps_a_nested_float_a_float() {
+    let spend = Number::from_f64(12.5).expect("a finite float");
+    let value = Json::List(vec![Json::Object(IndexMap::from([(
+        "spend".to_owned(),
+        Json::Number(spend),
+    )]))]);
+    let stored = cache_from_json(&value).expect("a storable value");
+    let CacheValue::Array(items) = stored else {
+        panic!("a list stores as an array");
+    };
+    let CacheValue::Object(fields) = &items[0] else {
+        panic!("an object stores as an object");
+    };
+    assert_eq!(fields["spend"], CacheValue::Float(12.5));
+}
+
+#[test]
+fn cache_from_json_stores_whole_numbers_as_integers_and_refuses_a_wide_one() {
+    let whole = Json::Number(Number::from(7_i64));
+    assert_eq!(
+        cache_from_json(&whole).expect("an integer"),
+        CacheValue::Integer(7)
+    );
+    let wide = Json::Number(Number::from(u64::MAX));
+    assert!(matches!(
+        cache_from_json(&wide),
+        Err(DualCacheError::UnrepresentableValue)
+    ));
 }
