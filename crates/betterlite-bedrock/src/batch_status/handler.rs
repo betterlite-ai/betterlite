@@ -23,24 +23,37 @@ pub fn to_epoch(input: Option<EpochInput<'_>>) -> Result<Option<i64>, BatchStatu
         None => Ok(None),
         Some(EpochInput::DateTime(moment)) => Ok(Some(epoch_seconds(moment))),
         Some(EpochInput::Float(number)) => truncate(number).map(Some),
-        Some(EpochInput::Json(json)) => json_epoch(json),
+        Some(EpochInput::Json(json)) => integer_of(json, NumberRule::Epoch),
     }
 }
 
-fn json_epoch(value: &Json) -> Result<Option<i64>, BatchStatusError> {
+// LiteLLM reads a count only from a Python int, while an epoch also truncates a Python float
+#[derive(Clone, Copy)]
+enum NumberRule {
+    Count { field: &'static str },
+    Epoch,
+}
+
+fn integer_of(value: &Json, rule: NumberRule) -> Result<Option<i64>, BatchStatusError> {
     match value {
         Json::Bool(flag) => Ok(Some(i64::from(*flag))),
-        Json::Number(number) => {
-            if let Some(seconds) = number.as_i64() {
-                return Ok(Some(seconds));
-            }
-            if number.as_u64().is_some() {
-                return Err(BatchStatusError::EpochRange);
-            }
+        Json::Number(number) => number_value(number, rule),
+        Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => Ok(None),
+    }
+}
+
+fn number_value(number: &Number, rule: NumberRule) -> Result<Option<i64>, BatchStatusError> {
+    if let Some(count) = number.as_i64() {
+        return Ok(Some(count));
+    }
+    match rule {
+        NumberRule::Count { .. } if number.to_string().contains(['.', 'e', 'E']) => Ok(None),
+        // an integer beyond i64 stays an int in Python, which the count record cannot hold
+        NumberRule::Count { field } => Err(BatchStatusError::CountRange { field }),
+        NumberRule::Epoch => {
             let float = number.as_f64().ok_or(BatchStatusError::EpochRange)?;
             truncate(float).map(Some)
         }
-        Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => Ok(None),
     }
 }
 
@@ -71,23 +84,10 @@ fn integer_field(
     value: Option<&Json>,
     field: &'static str,
 ) -> Result<Option<i64>, BatchStatusError> {
-    match value {
-        Some(Json::Bool(flag)) => Ok(Some(i64::from(*flag))),
-        Some(Json::Number(number)) => integer_value(number, field),
-        None | Some(Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_)) => Ok(None),
-    }
-}
-
-// LiteLLM accepts only Python ints here, so a fraction or exponent reads as missing instead of truncating
-fn integer_value(number: &Number, field: &'static str) -> Result<Option<i64>, BatchStatusError> {
-    if let Some(count) = number.as_i64() {
-        return Ok(Some(count));
-    }
-    if !number.to_string().contains(['.', 'e', 'E']) {
-        // an integer beyond i64 stays an int in Python, which the count record cannot hold
-        return Err(BatchStatusError::CountRange { field });
-    }
-    Ok(None)
+    let Some(entry) = value else {
+        return Ok(None);
+    };
+    integer_of(entry, NumberRule::Count { field })
 }
 
 #[must_use]

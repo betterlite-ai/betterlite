@@ -25,9 +25,8 @@ pub fn parse_iso_timestamp(text: &str) -> Option<i64> {
         .or_else(|| NaiveDateTime::parse_from_str(&normalized, "%Y-%m-%dT%H:%M").ok())
         .or_else(|| NaiveDateTime::parse_from_str(&normalized, "%Y-%m-%d %H:%M").ok())
         .or_else(|| {
-            NaiveDate::parse_from_str(&normalized, "%Y-%m-%d")
-                .ok()
-                .and_then(|date| date.and_hms_opt(0, 0, 0))
+            let date = NaiveDate::parse_from_str(&normalized, "%Y-%m-%d").ok()?;
+            date.and_hms_opt(0, 0, 0)
         })?;
     Some(epoch_seconds(naive.and_utc()))
 }
