@@ -494,6 +494,24 @@ fn azure_default_chain_secret_safe_failure() {
     failures_hide_secrets();
 }
 
+#[test]
+fn provider_debug_names_the_credential_and_scope_only() {
+    let grants = FixtureGrants::new();
+    let env = environment(&[]);
+    let built = provider(
+        Some("https://example.test/.default"),
+        Some(AzureCredentialType::ManagedIdentityCredential),
+        &env,
+        &grants,
+    )
+    .unwrap();
+    let text = format!("{built:?}");
+    assert!(text.starts_with("AzureTokenProvider {"));
+    assert!(text.contains("ManagedIdentityCredential"));
+    assert!(text.contains("https://example.test/.default"));
+    assert!(!text.contains("inner"));
+}
+
 fn records_hide_secrets() {
     let secret = SecretString::from("fixture-super-secret");
     let client_secret = ClientSecretRecord {
