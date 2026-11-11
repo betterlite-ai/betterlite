@@ -1,0 +1,145 @@
+id: B9741
+title: Prove log filters, drawers and unavailable trace services with page-shaped requests
+description: >-
+  B9090 retains the pinned logs page and view_logs tree; B8663 already mounts B1732/B1729/B1731
+  list, payload and session routes. Add only their missing page-shaped HTTP transcripts and
+  a reviewed logs-page patch. Read B147-route-audit.md beside this plan for the complete caller
+  and ownership inventory. No route, SQL query, handler adapter or second log store belongs here.
+  B8663's existing planned cases already cover visibility, collisions, grouping and pagination
+  limits; B1705 owns the facet query cases and B1654 the two compliance endpoints. Reuse their
+  exact HTTP cases when materialized; the new flows below prove combinations those cases do not.
+
+  Use B9740 database.seed.dashboard and B860 users/keys/teams to seed two callers and bounded
+  request logs. Put two visible rows in one session, one unrelated row with a different key/user,
+  and one row with cache and guardrail metadata. Use fixed ISO timestamps and configured model
+  aliases whose model_info.id matches the log filter. Send real key authentication through each
+  booted proxy. Set database URLs only through the ordinary fixture runner and use B5076's
+  pinned Prisma environment. Empty upstream transcripts are expected; no provider is called.
+  Use the HTTP case schema that the runner reads, including steps and per-peer captures, not
+  a helper that invokes a FastAPI handler. The current ordinary HTTP format omits kind.
+
+  initial-and-filtered-list.yaml sends GET /spend/logs/ui with UTC start_date/end_date formatted
+  as YYYY-MM-DD HH:mm:ss, page=1,page_size=25,sort_by=startTime,sort_order=desc,group_by_session=true.
+  The fresh session omits exclude_internal_health_checks; enabling the stored toggle sends true.
+  Follow with a selected team/model/status/search request and a group_by_session=true request,
+  forwarding the returned session_cursor exactly when present. Assert complete pagination and
+  visible row fields, not merely 200. False optional booleans are omitted, as uiSpendLogsCall
+  does; request_id and session_id are strings, never duplicated broad search parameters.
+  deep-link-details-session.yaml first sends the deep-link query with page_size=1 and request_id,
+  repeat the span-to-log request with UTC YYYY-MM-DD HH:mm:ss bounds thirty minutes either
+  side of its span start, then GET /spend/logs/ui/{request_id}?start_date=<that row's startTime> and GET
+  /spend/logs/session/ui?session_id=<row session>&page=1&page_size=100. Compare messages,
+  response, metadata and lean-session fields. The second caller's equivalent requests must not
+  reveal the first caller's payload; retain the existing owner task's actual status/envelope.
+  Do not accidentally test a nonexistent start_time query parameter instead of start_date.
+
+  filter-selectors.yaml exercises GET /key/aliases with the filter's page/size/search/team_id,
+  GET /v2/model/info with include_team_models=true,page=1,size=50 and optional search, and
+  GET /user/list with page=1,page_size=1 and selected user_ids. Also send the table's sorted,
+  distinct comma-separated user_ids with page_size equal to their count, capped at 100.
+  Key aliases use page=1,size=50 and return aliases[], not key objects. Follow actual
+  response pagination once. Include reserved characters in a search value to test URL encoding,
+  without claiming that arbitrary SQL wildcard rules are a new dashboard behavior. Team-list,
+  archived-key and deleted-team requests remain the B9730/B9731 cases; facet gte/lte requests
+  remain B1705. Component tests verify those calls are connected, without adding rival cases.
+
+  trace-page-disabled-queries.yaml calls GET /v1/traces?start_ms=0 for onboarding, then the
+  start_ms/end_ms range request and a cursor form, plus trace/span/span-error paths with the
+  component's trace_ref and error cursor. Leave general_settings.tracing absent. B110/B3867's
+  unavailable service returns 501; retain each route's JSON envelope and content type. These
+  request forms complement B110's generic seven-method disabled suite. No populated trace or
+  ClickHouse success can be claimed: B110 currently has no native storage factory. The page
+  must show its unavailable/setup state without a stuck spinner or a successful sample badge.
+  tracing-key-form.yaml sends POST /key/generate with key_alias Agent tracing, allowed_routes
+  [/v1/traces], metadata purpose agent_tracing; assert the returned key and allowed route record,
+  masking only the generated secret/id/timestamps. This exact form is not B055's generic
+  generation case. audit-unavailable.yaml sends the page's GET /audit query as an authenticated
+  administrator and records the OSS 404; do not build an enterprise listing behind that path.
+
+  Add 50-log-pages.patch and its B9090 preimage/postimage JSON. In AuditLogsPanel replace the
+  premiumUser advertisement with a plain unavailable-in-this-build state and stop its polling
+  when no OSS audit route exists; do not confuse B065 audit delivery with readable audit history.
+  Keep request logs, deleted tabs and trace-disabled error handling usable for authorized users.
+  Preserve genuine role restrictions. Correct any navigation within these covered components
+  that directly constructs /ui links by using the retained uiHref helper, with query values
+  encoded separately. Do not rewrite shared networking.tsx or replace retained log renderers.
+  List each changed component in the patch metadata so upstream preimage drift fails intake.
+
+  Production component tests in ui/dashboard/tests/logs render RequestLogsPanel, the drawer,
+  AuditLogsPanel and trace setup through the existing auth/query providers. Name tests
+  emitsLogPageRequests, opensLogPayloadAndSession, logFiltersUseSelectors, showsUnavailableAudit
+  and traceUnavailableDoesNotReportSuccess. They assert the concrete URL/query/body and consumed
+  values using fetched fixture responses, and call the real networking functions. Exercise a
+  non-root proxy base and custom auth header with no stale root-origin request. Through
+  upstream-tests.json rerun retained log-filter, payload/drawer, compliance and trace tests
+  affected by the patch. Browser service/DOM proof stays B147, not a mocked-browser substitute.
+  Compare HTTP status, content-type, pagination and all stable payload fields; for auth errors
+  compare type/param/code and ignore only message wording, and for HTTPException compare detail
+  structure while ignoring only its text. Never erase data or metadata wholesale. This task
+  translates zero retained functions and adds roughly 500 case lines, 60 patch lines and tests.
+scope:
+  paths:
+    - ui/dashboard/patches/50-log-pages.patch
+    - ui/dashboard/patches/50-log-pages.json
+    - ui/dashboard/tests/logs/**
+    - tools/oracle/cases/ui/logs/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/view_logs/log_filter_logic.tsx#L143-L207
+    why: Exact page/date/filter and session grouping request composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1923-L2030
+    why: Optional boolean omission, trace request shapes and error handling are retained, not ported.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4677-L4710
+    why: Payload reads send start_date, distinct from the row's startTime field name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/view_logs/AuditLogsPanel.tsx#L47-L145
+    why: The licensed listing and upsell cannot become an invented OSS audit endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/view_logs/TraceView/TracingSetupCard.tsx#L28-L39
+    why: The restricted trace-ingestion key form differs from ordinary key generation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2458-L2474
+    why: B1732 owns /spend/logs/v2 and /spend/logs/ui; only /ui is a page request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3385-L3475
+    why: B1729 owns the payload decorator and authorization order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4505-L4525
+    why: B1731 owns both session paths; the drawer calls only /spend/logs/session/ui.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L97-L256
+    why: B3867 owns trace HTTP routes, including disabled storage behavior; B110 mounts them.
+dod:
+  - text: The retained log table, deep link, payload drawer, session and filter selectors send their exact requests and consume real proxy response shapes without widening visibility.
+    proof: [log-http-cases, oracle, log-components]
+  - text: Audit and tracing unavailable states are honest, with no paid upsell, false sample success or root-path request regression.
+    proof: [log-components, log-http-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: log-http-cases
+      why: The page-specific HTTP transcripts are absent, or a helper was substituted for real requests.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/logs)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/logs
+    - id: log-components
+      why: The retained log components emit a wrong request, ignore their response, or misrepresent an unavailable service.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/logs
+oracle_cases:
+  - tools/oracle/cases/ui/logs/initial-and-filtered-list.yaml
+  - tools/oracle/cases/ui/logs/deep-link-details-session.yaml
+  - tools/oracle/cases/ui/logs/filter-selectors.yaml
+  - tools/oracle/cases/ui/logs/trace-page-disabled-queries.yaml
+  - tools/oracle/cases/ui/logs/tracing-key-form.yaml
+  - tools/oracle/cases/ui/logs/audit-unavailable.yaml
+deviations:
+  - what: The audit tab says the listing is unavailable instead of advertising an enterprise subscription; its backend path remains 404.
+    why: No audit-list handler exists in the pinned OSS checkout, and README forbids paid-tier features and enterprise implementation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/view_logs/AuditLogsPanel.tsx#L99-L124
+out_of_scope:
+  - All unchanged functions in logs and view_logs are retained by B9090; only the small patch and its client-contract tests are authored here.
+  - B8663 composes B1732/B1729/B1731; B1705 owns facet routes, B1654 compliance, B110/B3867 tracing and B055 trace-key generation.
+  - B782, B850 and B796 own key-alias/model/user selectors; B9730/B9731 own deleted-key/team workflows outside these covered components.
+  - B144 owns auth/discovery/base URL setup and B147 owns the real-browser flow; native ClickHouse storage remains B110's recorded prerequisite.
+pitfalls:
+  - Serializing false optional log booleans changes the request uiSpendLogsCall actually emits.
+  - Payload lookup needs the selected row's start_date query as well as its request_id.
+  - A trace endpoint returning 501 is evidence for an unavailable UI state, not working tracing.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

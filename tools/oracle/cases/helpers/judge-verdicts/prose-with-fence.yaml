@@ -1,0 +1,13 @@
+kind: helper
+name: judge-verdict-prose-with-fence
+call:
+  b4080:
+    check: parse
+    raw: |
+      Here is my verdict:
+      ```json
+      {"score": 2}
+      ```
+      Thanks for asking!
+env: {}
+compare: {ignore: []}

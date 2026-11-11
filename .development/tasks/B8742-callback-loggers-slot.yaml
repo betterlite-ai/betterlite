@@ -36,9 +36,11 @@ description: >-
 
   Startup. LiteLLM resolves and registers the callbacks before the server takes requests. In
   crates/betterlite-server/src/app/callbacks.rs add one line to `start(state)` (the file is B8656's; touch nothing
-  else): `state.shared.proxy_logging.init_callbacks(state.callback_loggers.resolver(), hooks::configured(&state)?)`,
+  else; B8891's `alerting::bindings::install` runs first): `state.shared.proxy_logging.init_callbacks(state.callback_loggers.resolver(), hooks::configured(&state)?)`,
   awaited once before the listener opens. A RegistryError from it stops startup with the message that names the
-  callback. app/callbacks/hooks.rs (the skeleton declares it) holds `pub fn configured(state: &ServerState) ->
+  callback. The slot also exposes the ordered collection of loggers it constructed (the order B8910's selection and
+  publication read) and the one shared B8910 runtime, and B8910's publication runs after init_callbacks finishes, so
+  every configured V2 logger is in the collection when the provider is published. app/callbacks/hooks.rs (the skeleton declares it) holds `pub fn configured(state: &ServerState) ->
   Result<Vec<(String, Arc<dyn ProxyCallback>)>, RegistryError>`: for each name of litellm_settings.callbacks that is
   one of the five hook names, in list order, call `hook_for(name, state)`. Here every hook_for arm returns
   UnavailableAdapter naming the hook, so a configured hook name stops startup until B8747 or B8749 fills its arm; any

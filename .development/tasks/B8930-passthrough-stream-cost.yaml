@@ -1,0 +1,139 @@
+id: B8930
+title: Optional usage cost in pass-through SSE frames
+description: >-
+  B3609 calls ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection, but no planned task
+  builds it or its seven pricing/frame helpers. Implement those eight functions from
+  common_request_processing.py L4056-L4272 in betterlite-server::stream_usage_cost. Expose
+  StreamCostInjector with constructor-injected B068 CostCalculator and B1717 CostRecorder, and
+  process_bytes, process_text and process_object entry points. The logging context is an optional
+  mutable B247 call log supplied per call, never stored across requests. B8931 connects the byte
+  entry to B3609; B102 supplies the HTTP cases once the area mounts exist. No route reaches this
+  new module at its own gate, so its oracle cases exercise these transformations as helpers.
+
+  The section stream_usage_cost in betterlite-config reads
+  litellm_settings.include_cost_in_streaming_usage, a boolean defaulting to false, with no new
+  environment variable. Export it as config.sections.stream_usage_cost.enabled. Loading the key
+  must succeed through B002's real loader; do not silently accept unrelated keys. The injector
+  receives this value rather than reading global configuration. Disabled injection returns the
+  input untouched and calls neither pricing service.
+
+  For bytes, require strict UTF-8 and a final LF-LF or CRLF-CRLF before attempting SSE injection;
+  incomplete bytes, invalid UTF-8 and all failures return the original bytes. Text takes the SSE
+  path without that terminator check, and a changed text result gets LF-LF appended unless it
+  already ends in LF-LF. Split frames on LF, inspect lines in order after trimming, and inspect
+  data: lines whose value is neither empty nor [DONE]. Parse the value as JSON. A malformed value
+  or a non-object stops this attempt with no modification, even if a later line is valid. An
+  object that has no injectable usage allows scanning subsequent lines. Replace only the first
+  line for which pricing succeeds, using data: followed by one space and B192's compact JSON;
+  preserve that line's CR and all other lines. Do not rebuild a whole stream or inject every
+  event in one input buffer: LiteLLM returns after the first successful replacement.
+
+  An object must have object-valued usage and either type=message_delta or
+  object=chat.completion.chunk. The Anthropic type check wins when both are present. Use B579's
+  calculate_usage for message_delta, including cache-read and both cache-creation durations.
+  For OpenAI, project prompt_tokens and completion_tokens with default zero, total_tokens with
+  the sum as its default, and preserve nonnull prompt_tokens_details and completion_tokens_details
+  using B031's Usage record. Inputs follow LiteLLM's declared numeric types and docs/compatibility.md.
+  A string service_tier is passed to model-name pricing. Build B031's ModelResponse from this
+  usage and try the call's B1717 recorder first, so deployment prices apply. Before that call,
+  save cost_breakdown and the presence and value of
+  model_call_details.response_cost_failure_debug_information; restore both on success and on
+  failure, preserving an absent diagnostic as absent. Other effects of the recorder remain as
+  the source leaves them. A missing cost or recorder failure falls back to B068 completion_cost
+  with model_name and service_tier. A valid zero cost must win without fallback. If both attempts
+  fail, return the original object with no warning, as LiteLLM does. On success, copy the object
+  and usage, replace usage.cost with the Decimal charge, and preserve all other fields.
+
+  decode_cost_frame is the external-byte decoder. Limit bytes and text inspection to 1 MiB per
+  call; larger buffers are relayed unchanged with no cost insertion, without first copying or parsing them.
+  Reuse serde_json and the existing serializer, not a new SSE parser dependency. Add the cargo-fuzz
+  target stream_usage_cost in betterlite-server, with malformed UTF-8, LF and CRLF, multiple data
+  lines, nested JSON, [DONE] and incomplete-frame seeds. Its normal replay test calls the same
+  decoder with deterministic pricing. Add stream-usage-cost-* seeds to the existing config_yaml
+  corpus for the new key. Cases use kind: helper and the skeleton's b8930 operation. These pure
+  helper cases call the pinned static functions with the flag set
+  explicitly, a local price map and an optional controlled logging object; compare the result
+  and restored diagnostic state, without calling FastAPI handlers or recreating the algorithm.
+
+  The owned functions contain 176 nonblank, noncomment source lines including overloads and
+  docstrings. Keep the implementation, config section, adapters and fuzz target around 650
+  changed lines; the parameterized native behavior function is stream_cost_behavior in
+  stream_usage_cost::tests, separate from replays_the_stream_usage_cost_corpus. Config behavior
+  tests live in sections::stream_usage_cost::tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/stream_usage_cost.rs
+    - crates/betterlite-server/src/stream_usage_cost/**
+    - crates/betterlite-config/src/sections/stream_usage_cost.rs
+    - crates/betterlite-config/src/sections/stream_usage_cost/**
+    - crates/betterlite-server/fuzz/fuzz_targets/stream_usage_cost.rs
+    - crates/betterlite-server/fuzz/corpus/stream_usage_cost/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/stream-usage-cost-*
+    - tools/oracle/cases/helpers/stream-usage-cost/**
+    - tools/oracle/helpers/b8930.py
+    - tools/oracle/helpers/b8930/**
+    - tools/oracle/src/helpers/server/b8930.rs
+    - tools/oracle/src/helpers/server/b8930/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4056-L4152
+    why: Own the optional chunk and SSE-line transformations, including byte/text termination differences and first successful line only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4154-L4272
+    why: Own usage projection, both pricing attempts, diagnostic restoration and usage.cost replacement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L373-L373
+    why: The default false value of include_cost_in_streaming_usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L175-L226
+    why: Caller context only; B3609 owns model and endpoint eligibility and complete-frame accumulation.
+dod:
+  - text: The real config loader recognizes include_cost_in_streaming_usage with absent, false and true values, and disabled injection makes no pricing calls.
+    proof: [config-tests, behavior-tests, config-corpus, oracle, helper-python]
+  - text: Byte and text termination rules, first eligible data line, CRLF preservation, malformed-frame fallback and all unrelated fields match LiteLLM.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: Anthropic cache usage and OpenAI detail usage reach the real pricing services, call-specific zero wins, failed call pricing falls back, and breakdown and diagnostic presence are restored on every exit.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: The bounded decoder replays its new corpus, does not price over-limit frames and never turns optional cost injection into a stream error.
+    proof: [frame-corpus, behavior-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: A frame rewrite, pricing fallback or call-log restoration is missing or incorrect.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::stream_cost_behavior(::|$)/) - test(replays_the_stream_usage_cost_corpus)'
+    - id: config-tests
+      why: The supported flag is not loaded with its real default or explicit boolean value.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::stream_usage_cost::/)'
+    - id: frame-corpus
+      why: There are no new adversarial inputs or the production frame decoder cannot replay them.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/stream_usage_cost)" && test -f crates/betterlite-server/fuzz/fuzz_targets/stream_usage_cost.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_stream_usage_cost_corpus)'
+    - id: config-corpus
+      why: No new supported-key seed reaches the existing YAML decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/stream-usage-cost-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The newly added independent oracle comparisons or their strict adapters are missing or invalid.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/stream-usage-cost)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/stream-usage-cost/disabled-and-unrecognized.yaml
+  - tools/oracle/cases/helpers/stream-usage-cost/byte-text-termination.yaml
+  - tools/oracle/cases/helpers/stream-usage-cost/first-data-line-and-crlf.yaml
+  - tools/oracle/cases/helpers/stream-usage-cost/openai-usage-details.yaml
+  - tools/oracle/cases/helpers/stream-usage-cost/anthropic-cache-usage.yaml
+  - tools/oracle/cases/helpers/stream-usage-cost/call-pricing-and-restoration.yaml
+  - tools/oracle/cases/helpers/stream-usage-cost/fallback-zero-and-failure.yaml
+deviations:
+  - what: An SSE buffer larger than 1 MiB passes through without optional usage.cost insertion; status and the original bytes are unchanged.
+    why: Optional inspection must have a fixed allocation bound, while the pin parses buffers of any size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4134-L4152
+out_of_scope:
+  - "B3609 owns stream eligibility, frame accumulation and chunk_processor; B8931 supplies this injector to its production seam, and B102 owns the HTTP proof."
+  - "B068 owns completion_cost, B1717 owns the call's cost recorder, B579 owns Anthropic usage calculation and B031 owns Usage/ModelResponse; none is reimplemented here."
+  - "All other common_request_processing.py functions retain B004, B7324, B8605, B8693, B8694 and B8800-B8805 ownership; no request-processing pipeline or route is added."
+  - "All other litellm/__init__.py settings and initialization remain with their existing consuming tasks, including B198's shared settings."
+pitfalls:
+  - A zero from call-specific pricing is a successful charge and must not fall back to catalog pricing.
+  - The first malformed data line aborts injection for this buffer; scanning past it changes the source behavior.
+  - Restoring response_cost_failure_debug_information to null when it was absent still changes the spend record.
+  - A text frame ending in CRLF-CRLF receives the source's extra LF-LF after modification, while bytes keep their original separator.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

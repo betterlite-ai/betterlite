@@ -251,9 +251,9 @@ deviations:
   - what: Summaries read the typed paginated response, with no JSON dump in between.
     why: Same numbers and text, one less conversion; the oracle cases feed the dump shape and compare the text.
 out_of_scope:
-  - "The `/usage/ai/chat` route, its request body (ChatMessage, UsageAIChatRequest), admin detection, `require_caller_user_id_for_non_admin` and the SSE keep-alive wrapper are in endpoints.py and sse_keepalive.py. No entry covers endpoints.py at the pin of this planning pass; see the notes."
+  - "The `/usage/ai/chat` route, its request body (ChatMessage, UsageAIChatRequest), admin detection, `require_caller_user_id_for_non_admin` and the SSE keep-alive wrapper are in endpoints.py and sse_keepalive.py. B8271 owns that route and endpoints.py, and B8673 builds the production factory wiring."
   - "The default model name `gpt-4o-mini` is defined here only because no task owns litellm/constants.py's constant."
-  - "`litellm.acompletion` and the router are B158 and B6020; the model client trait is wired to them by the route task."
+  - "`litellm.acompletion` and the router are B158 and B6020; the direct SDK completion client is B5656, and B8673 wires the model client trait to it."
   - "`get_daily_activity`, `get_daily_activity_aggregated`, `daily_activity_scope` and `daily_activity_repository` are B3091, B3093 and B3092. This task calls them."
   - "`TOP_N_KEYS` and the `_UsageDump` overload protocol have no caller at the pin and no Rust meaning."
 pitfalls:

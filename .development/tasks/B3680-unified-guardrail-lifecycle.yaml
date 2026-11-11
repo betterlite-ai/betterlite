@@ -194,7 +194,8 @@ out_of_scope:
   - The A2A handler; B6163 owns it.
   - The incremental stream loop; B6164 owns it.
   - "`async_post_call_streaming_iterator_hook`, the stream chunk predicates' use in buffering, `resolve_streaming_flag` and guardrail_initializers.py; B3681 owns them."
-  - HTTP cases for streamed responses; B3681 adds them with the iterator hook.
+  - HTTP cases for speech, transcription, video and rerank; B8991 adds them. Google, A2A and MCP cases are B8992's, and native Responses and Anthropic stream cases are B8993's.
+  - Built-in content-filter stream cases come from B105. B3681 owns initializer arguments, not stream cases.
   - The registry type, `infer_call_type`, `ensure_request_metadata` and the stream emit helpers; B3679 owns them.
   - "`should_run_guardrail`; B3665 owns it."
   - "The x-litellm-applied-guardrails header case through the booted proxy: B8399."

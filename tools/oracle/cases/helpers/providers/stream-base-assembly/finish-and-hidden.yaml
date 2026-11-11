@@ -1,0 +1,38 @@
+kind: helper
+name: finish-and-hidden
+call:
+  stream_base_assembly:
+    function: batch
+    cases:
+      - function: finish_and_hidden
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: length}], _hidden_params: {a: 1}}
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: null}]}
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: ''}], _hidden_params: {b: 2}}
+      - function: finish_and_hidden
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: end_turn}]}
+      - function: finish_and_hidden
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: max_tokens}]}
+      - function: finish_and_hidden
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: orig, choices: [], _hidden_params: {provider_response_model: real-1}}
+          - {object: chat.completion.chunk, id: a, created: 1, model: orig, choices: [], _hidden_params: {provider_response_model: real-2, last: true}}
+      - function: finish_and_hidden
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: orig, choices: [], _hidden_params: {provider_response_model: orig}}
+          - {object: chat.completion.chunk, id: a, created: 1, model: orig, choices: [], _hidden_params: {provider_response_model: ''}}
+      - function: finish_and_hidden
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 1, model: m, choices: [{finish_reason: null}]}
+      - function: update_hidden_params
+        response: {model: m, hidden_params: {keep: 1}}
+      - function: update_hidden_params
+        response: {model: m, hidden_params: {keep: 1}}
+        chunk: {_hidden_params: {replaced: true}}
+      - function: update_hidden_params
+        response: {model: m, hidden_params: {keep: 1}}
+        chunk: {form: model_response_stream, _hidden_params: {sdk: true}}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

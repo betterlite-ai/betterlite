@@ -175,7 +175,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1354-L1361
 
 out_of_scope:
-  - "Guardrail initialization and configuration loading are owned by B104 (CustomGuardrail framework)."
+  - "Guardrail construction and configuration updates are owned by B5471, and live class dispatch by B8666."
   - "Webhook context and identity extraction are owned by B3795 (Straiker records)."
   - "V3 payload and response building are owned by B3796 (Straiker v3 envelopes)."
   - "HTTP request pooling, client creation and transport are owned by B173 (HTTP client)."

@@ -1,0 +1,13 @@
+id: B8870
+milestone: M8 platform
+title: Connect authenticated tenant destinations to the live OTel fan-out
+status: todo
+depends_on: [B855, B1100, B1109, B3842, B3847, B3849, B3851, B8910]
+file: tasks/B8870-tenant-destination-adapter.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

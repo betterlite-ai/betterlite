@@ -148,7 +148,7 @@ out_of_scope:
   - "B3155 owns SyncStore lease operations and the SpendReader contract implementation."
   - "B3150 owns ROISyncStatus and ROIReport type definitions and validators."
   - "B725 owns ConfigRepository.get_param and .set_param contracts."
-  - "The demo report generation and scheduled sync routes (B076) are not part of this task."
+  - "Demo report generation (B8273), the demo and scheduled-step handlers (B8588) and scheduling (B8677) are not part of this task."
 pitfalls:
   - "PR_CONCURRENCY must be 3; workers start at offsets 0, 1, 2 and process every third pull. Stride iteration is off-by-one when range(offset, len, PR_CONCURRENCY) is not used."
   - "The monitor task must be created before _run starts so it outlives all workers. Cancelling the monitor in finally will cause it to exit before the coordinator.finish call if the timing is tight."

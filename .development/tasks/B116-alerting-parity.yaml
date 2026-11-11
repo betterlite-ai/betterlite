@@ -1,0 +1,171 @@
+id: B116
+title: Verify composed Slack, Teams and legacy email alerting
+description: >-
+  Finish the alerting umbrella with HTTP parity and composition tests over the runtime B8890
+  constructs and B8891 binds. The alert producers already belong to B4020-B4030. B8540 owns
+  GET /health/services, B8675 owns GET /alerting/settings, and B8742 invokes the alert binding
+  from its callback startup. No route, alias, callback registry entry or report job is registered
+  here. Put the native composition tests in crates/betterlite-server/src/alerting/parity/tests.rs,
+  declared by alerting/parity.rs; fixtures beneath parity/tests/ keep implementation modules free
+  of test code. Use the production area mounts and startup over the same Shared values.
+
+  The HTTP oracle cases live in tools/oracle/cases/alerting/composed/. Use master_key
+  oracle-master, model_list [] for service tests, and no database except the settings case.
+  The health route has one path, /health/services, with service query values slack,
+  slack_budget_alerts, ms_teams, webhook and email; slack_budget_alerts is a service-name alias,
+  not another route. Missing authorization is 401. With neither destination configured, slack
+  and slack_budget_alerts each return 422. Configured slack with no per-type map and neither
+  SLACK_WEBHOOK_URL nor ALERTING_WEBHOOK_URL returns 500; an explicitly empty per-type map
+  returns success without sending, and a map containing only inactive alert types also sends
+  nothing. These cases must distinguish None from {}, which the old normalized config view
+  alone could not do. For handler failures compare status, error type auth_error, param and
+  code, ignoring only /error/message with the repository's wording reason. Keep the actual
+  authentication pipeline's envelope for the no-key case.
+
+  Exercise real Slack delivery without a clock-dependent body: select alert_types [daily_reports],
+  set alert_to_webhook_url.daily_reports to os.environ/ALERT_DAILY_URL, set ALERT_DAILY_URL to
+  {{upstream}}/slack-daily, and DEFAULT_BATCH_SIZE to 1. GET /health/services?service=slack
+  then sends the stable text "Alert type: `daily_reports`Daily Reports test alert" and returns
+  the selected alert type. Set DEFAULT_FLUSH_INTERVAL_SECONDS to 86400 so the timer cannot race
+  the explicit flush. One case uses a string mapping, another a one-element URL list. A third
+  repeats the string case with a 503 mock webhook reply: batch delivery swallows the transport
+  failure and the route still succeeds. Compare the captured POST path, JSON body and
+  content-type header; do not ignore the upstream body.
+
+  For real Teams batching, use destinations [slack, ms_teams], the same daily_reports selection,
+  alert_to_webhook_url {daily_reports: []}, MS_TEAMS_WEBHOOK_URL {{upstream}}/teams-daily and
+  batch size 1. Invoke the slack service probe: it queues one timestamp-free Teams card and
+  zero Slack messages, so the flush has exactly one upstream request. Compare Adaptive Card
+  version 1.4, attachment contentType, wrapped TextBlock and content-type header. Separately
+  exercise service=ms_teams when ms_teams is not configured (422). B8540 already owns its
+  configured-but-missing-webhook oracle case; do not duplicate that file or claim its route.
+  A Slack-only daily_reports digest case uses digest true and digest_interval 86400,
+  the mapped URL and a long flush interval; the route succeeds with no immediate POST.
+
+  For service=webhook, configure alerting [webhook], alert_types [budget_alerts] and WEBHOOK_URL
+  {{upstream}}/budget. The admin probe creates spend 1, max_budget 0 and a KEY event through
+  B4025 and responds with JSON null after the structured POST; capture the event and its
+  content-type. Repeat with WEBHOOK_URL absent (500) and with alert_types [] (200 null with
+  no POST). service=email returns its success JSON both without email alerting and with email
+  configured but SMTP_SENDER_EMAIL absent, because the route ignores B4023's false result.
+  Set TEST_EMAIL_ADDRESS to receiver@example.test in the latter case and do not contact a real
+  SMTP server. The positive SMTP effect is verified by the native HTTP test below.
+
+  GET /alerting/settings with a temporary oracle database and an empty seed proves live startup
+  settings: configure alerting [slack] and alerting_args {budget_alert_ttl: 37,
+  minor_outage_alert_threshold: 2}, then compare the returned values, defaults, source and
+  stored_in_db fields. Reuse the existing Postgres fixture schema. Its no-database and no-key
+  cases remain B8675's. Finally boot a chat case with litellm_settings.callbacks [pagerduty],
+  model openai/gpt-4o-mini behind the mock provider and a normal successful completion; compare
+  the response and sole provider request. No PagerDuty request is made without enterprise:
+  B8741's catalog correctly resolves it to the base do-nothing logger. Use the existing chat
+  case's ignores for generated response identifiers, not an invented PagerDuty endpoint.
+
+  Native tests add the effects the oracle cannot compare across two wall clocks. With a local
+  webhook fixture and paused time, invoke the mounted health route and assert ordinary Slack
+  text, direct Teams-probe text and a digest flush, including Teams delivery before Slack digest
+  admission. Drive real B250/B251 dispatch from the composed request lifecycle: a successful
+  call updates daily metrics once, a fifth provider 500 produces the configured outage alert,
+  a proxy-only 500 does not, and slow/hanging request alerts use the runtime's current threshold.
+  Observe the webhook or internal usage cache after a bounded drain, never just a successful
+  LLM response. Reload settings through ProxyLogging.update_values between calls and prove the
+  registered adapters see the change while an existing digest and hanging entry survive.
+  With a local SMTP fixture, service=email sends B4023's key-created MIME through B8891 and
+  B8400, including a customized logo without a license; invalid SMTP setup still leaves the
+  route's success response unchanged. Use no production-only switch to freeze a clock.
+
+  Complete the handoff tests with B4025.customer_spend_alert and B4030.send_virtual_key_event_slack
+  over the runtime's real sender, asserting a structured spend_tracked webhook and one enabled
+  management alert without reimplementing B069's spend callback or B1228's nine-event mapping.
+  SMTP failures must not expose the key token. Bound fixture waits and shut down their owned
+  tasks. No new decoder is introduced: request parsing remains with the health/admin handlers,
+  config parsing with B4020, and oracle parsing with the existing harness. The private email
+  templates and PagerDuty payload classes retained in B116's coverage are accounted for below;
+  they do not justify recreating enterprise delivery code.
+scope:
+  paths:
+    - crates/betterlite-server/src/alerting/parity.rs
+    - crates/betterlite-server/src/alerting/parity/**
+    - tools/oracle/cases/alerting/composed/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L264-L612
+    why: HTTP parity through B8540's existing GET /health/services mount, including the two Slack service names and swallowed email result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16633-L16754
+    why: B8675 already mounts this GET /alerting/settings handler; the new database-backed case checks the composed runtime values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L92-L171
+    why: B8890's construction/update semantics are exercised through the live server, not reimplemented here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1430-L1683
+    why: The B4024/B4021 dispatch, digest and delivery behavior behind the mounted health probe.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1685-L1749
+    why: B8891 binds these B8656 events to actual callback dispatch; native tests observe metrics and outage effects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L701-L733
+    why: B4025 owns the customer spend method handed up by B069; this task tests its composed transport.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L2051-L2092
+    why: B4030 owns the management alert producer behind B1228's mapping; verify the shared sender reaches the webhook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L236-L289
+    why: Enterprise import fallback binds PagerDuty to CustomLogger; B8741/B8742 own that resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/Readme.md#L1-L45
+    why: Documentation context for batching and budget alert composition, not additional executable behavior.
+dod:
+  - text: The mounted Slack and Teams probes deliver stable daily-report payloads to the mock HTTP provider, preserve content-type and distinguish absent maps, empty maps and inactive types.
+    proof: [oracle, case-files, parity-tests]
+  - text: Structured budget delivery, missing destinations, no authorization, swallowed batch errors and email false-result handling match LiteLLM's HTTP response envelopes.
+    proof: [oracle, case-files]
+  - text: Existing config/admin mounting exposes the live alert args and configured PagerDuty remains a no-op callback without enterprise code.
+    proof: [oracle, case-files]
+  - text: Real logger dispatch drives metrics, outage and latency/hanging effects once, sees reloaded settings and shares pending state with the flush runtime.
+    proof: [parity-tests]
+  - text: Mounted email delivery reaches the real SMTP adapter with permitted custom branding, and direct spend/management producers use the same runtime without leaking secrets.
+    proof: [parity-tests]
+checks:
+  optional: []
+  commands:
+    - id: parity-tests
+      why: alerting still works only behind fake ports, loses reload state or duplicates delivery
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::parity::/)'
+    - id: case-files
+      why: the final umbrella has no newly added HTTP parity cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/alerting/composed)"
+oracle_cases:
+  - tools/oracle/cases/alerting/composed/slack-no-key.yaml
+  - tools/oracle/cases/alerting/composed/slack-disabled.yaml
+  - tools/oracle/cases/alerting/composed/slack-budget-alias-disabled.yaml
+  - tools/oracle/cases/alerting/composed/slack-missing-url.yaml
+  - tools/oracle/cases/alerting/composed/slack-empty-map.yaml
+  - tools/oracle/cases/alerting/composed/slack-inactive-map.yaml
+  - tools/oracle/cases/alerting/composed/slack-daily-string.yaml
+  - tools/oracle/cases/alerting/composed/slack-daily-list.yaml
+  - tools/oracle/cases/alerting/composed/slack-batch-rejection.yaml
+  - tools/oracle/cases/alerting/composed/teams-daily-card.yaml
+  - tools/oracle/cases/alerting/composed/teams-disabled.yaml
+  - tools/oracle/cases/alerting/composed/slack-digest-admission.yaml
+  - tools/oracle/cases/alerting/composed/webhook-budget.yaml
+  - tools/oracle/cases/alerting/composed/webhook-missing-url.yaml
+  - tools/oracle/cases/alerting/composed/webhook-budget-filtered.yaml
+  - tools/oracle/cases/alerting/composed/email-disabled.yaml
+  - tools/oracle/cases/alerting/composed/email-missing-sender.yaml
+  - tools/oracle/cases/alerting/composed/settings-configured.yaml
+  - tools/oracle/cases/alerting/composed/pagerduty-noop.yaml
+deviations: []
+out_of_scope:
+  - "email_footer.py, key_created_email.py, key_rotated_email.py and user_invitation_email.py contain constants, not functions, and have no open-source caller at the pin; only enterprise email implementations use this template family, so no renderer or cases are built for it."
+  - "pagerduty.py's LinkDict, ImageDict, PagerDutyPayload, PagerDutyRequestBody, AlertingConfig and PagerDutyInternalEvent are Python public types owned by B7939; no open-source PagerDuty transport consumes them, and B8741 owns the no-op logger fallback."
+  - "Within slack_alerting.py, B8890 supplies __init__ and update_values, B4020 supplies _all_possible_alert_types, and B4021 supplies _ensure_periodic_flush_task, send_webhook_alert, _enqueue_ms_teams_alert, async_send_batch, _flush_digest_buckets and periodic_flush."
+  - "The same class delegates _check_if_using_premium_email_feature and send_email_alert_using_smtp to B4022, _construct_user_invitation_link and send_key_created_or_user_invited_email to B4023, and send_alert to B4024; B8891 only binds their production dependencies."
+  - "B4025 implements failed_tracking_alert, budget_alerts, _get_event_and_event_message, _get_percent_of_max_budget_left, _get_user_info_str and customer_spend_alert; B4026 implements _prepare_outage_value_for_cache, _restore_outage_value_from_cache, _count_outage_alerts, _outage_alert_msg_factory, region_outage_alerts and outage_alerts."
+  - "B4027 owns _response_taking_too_long_callback_helper, _get_deployment_latencies_to_alert, response_taking_too_long_callback and response_taking_too_long; B4028 owns async_update_daily_reports, send_daily_reports, async_log_success_event, _run_scheduler_helper and _run_scheduled_daily_report, with B8656's async_log_failure_event and success-event composition and B8891's logger binding."
+  - "B4029 builds send_weekly_spend_report, send_monthly_spend_report and send_user_spend_alerts; B4030 builds model_added_alert, _deprecation_alerts_enabled, send_model_deprecation_alert, _claimed_deprecation_alert_window, _deprecation_alert_sent_within_a_day, _run_deprecation_alert_pass, run_scheduled_deprecation_check, send_fallback_stats_from_prometheus and send_virtual_key_event_slack, replacing _proxy_llm_router with its injected getter."
+  - "No caller at the pin reaches deployment_in_cooldown, deployment_removed_from_cooldown, model_removed_alert or _request_is_completed; their empty/unused implementations add no remainder."
+  - "B8399 retains ProxyLogging and its registration/startup policies; B8656 retains outage/spend ports, B8372 retains scheduler registration, B8540/B8675 retain all health/admin mounts, and B8610 retains application composition."
+  - "B898 schedules key-created email, B797 schedules invitation email and creates invitations, B1228 maps management events to B4030, and B069 calls B4025 customer_spend_alert; their old B116 mentions do not transfer those implementations here."
+pitfalls:
+  - "The HTTP oracle compares upstream bodies directly, so use daily_reports for timestamp-free positive Slack/Teams captures instead of ignoring all alert text."
+  - "The per-type digest window is alert_type_config.daily_reports.digest_interval, independently of the global alerting_args.digest_interval fallback."
+  - "Setting a per-type Slack URL to [] still admits Teams before the empty Slack enqueue and gives a deterministic single-card capture."
+  - "The webhook service probe answers JSON null on success, while the email probe answers success even when its producer returns false."
+  - "Configuring email alone does not create the enterprise budget-email logger; legacy budget mail is reachable through send_alert when its Slack/Teams/webhook caller runs."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

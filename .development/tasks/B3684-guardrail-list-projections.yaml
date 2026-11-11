@@ -80,7 +80,7 @@ out_of_scope:
   - "Create, update, patch and delete routes and the mutation checks: B3685."
   - "Submission routes and the custom-code test route: B3686."
   - "category_yaml, major_airlines, validate_blocked_words_file and apply_guardrail routes (L1450-L1620 and L2337-L2457): B3687."
-  - "The usage routes mounted by `router.include_router(guardrails_usage_router)` (L2457): B3689 builds the projections, B104 mounts them."
+  - "The usage routes mounted by `router.include_router(guardrails_usage_router)` (L2457): B3689 builds the projections, B8772 mounts them."
   - "get_all_guardrails_from_db and the in-memory handler methods: B3682. IN_MEMORY_GUARDRAIL_HANDLER and the reconcile pair: B3683."
   - "Form types, projection and the core tables: B6560. The other tables: B6561 and B6562."
   - "The module-level GUARDRAIL_REGISTRY object and the `_create_guardrail_row`, `_delete_guardrail_row` and `_find_team_guardrail_rows` helpers: used only by mutation and submission routes (B3685, B3686)."

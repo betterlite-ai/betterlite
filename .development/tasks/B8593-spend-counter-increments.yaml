@@ -68,7 +68,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Counter initialization, warm checks, apply and settle: B3015. Reservation reconcile and stamp: B3003. Batch scope and post_call_counter_keys: B2316. Window start: B2361. Cache key builders: B733."
+  - "Counter initialization, warm checks, apply and settle: B3015. Reservation reconcile and stamp: B3003. Batch scope and post_call_counter_keys: B2316. Window start: B2325 (budget_primitives). Cache key builders: B733."
   - "build_window_spend_transaction and the window spend queue sit behind the WindowSpendQueue port; the wiring passes B1734's queue."
   - "The cost callback that awaits increment_spend_counters: B1719."
 pitfalls:

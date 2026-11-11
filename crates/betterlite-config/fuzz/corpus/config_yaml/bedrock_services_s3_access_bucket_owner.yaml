@@ -1,0 +1,9 @@
+# AWS_S3_BUCKET_OWNER backs s3_bucket_owner when the deployment leaves it out
+model_list:
+  - model_name: bedrock/batch-owner
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      s3_bucket_name: batch-input-bucket
+      s3_bucket_owner: "123456789012"
+litellm_settings:
+  drop_params: true

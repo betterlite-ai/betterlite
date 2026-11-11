@@ -1,0 +1,38 @@
+kind: helper
+name: billing-context-explicit-base-versus-provider-response-model
+call:
+  billing_context:
+    calls:
+      - function: identity
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          response:
+            kind: object
+            model: response-model
+            hidden_params:
+              provider_response_model: hidden-provider-model
+              region_name: hidden-region
+      - function: identity
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          base_model: explicit-base
+          response:
+            kind: object
+            model: response-model
+            hidden_params:
+              provider_response_model: hidden-provider-model
+              region_name: hidden-region
+      - function: identity
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          base_model: ""
+          response:
+            kind: object
+            model: response-model
+            hidden_params:
+              provider_response_model: hidden-provider-model
+env: {}
+compare: {ignore: []}
