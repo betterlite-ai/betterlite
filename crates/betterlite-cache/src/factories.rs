@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::configuration::cache::{Backend, Cache as CacheFacade};
 use crate::configuration::callback_registration::CacheCallbacks;
 use crate::native_adapter::{
-    MemoryHandleOptions, NativeBackend, NativeHandleFactory, RedisHandleOptions,
+    MemoryHandleOptions, NativeBackend, NativeCacheHandle, NativeHandleFactory, RedisHandleOptions,
 };
 use crate::types::cache_type::{CacheMode, LiteLlmCacheType};
 use crate::types::call_type::SUPPORTED_CALL_TYPES;
@@ -39,15 +39,13 @@ impl Cache {
     where
         Factory: NativeHandleFactory,
     {
-        if !options.ttl.is_finite() || options.ttl <= 0.0_f64 {
-            return Err(FactoryError::Ttl { value: options.ttl });
-        }
+        checked_ttl(options.ttl)?;
         let handle = factory
             .memory_handle(options)
             .map_err(|source| FactoryError::Handle { source })?;
-        callbacks.register_cache();
-        Ok(facade(
-            Arc::new(NativeBackend { handle }),
+        Ok(finish(
+            handle,
+            callbacks,
             LiteLlmCacheType::Local,
             None,
             options.ttl,
@@ -64,18 +62,16 @@ impl Cache {
     where
         Factory: NativeHandleFactory,
     {
-        if !options.ttl.is_finite() || options.ttl <= 0.0_f64 {
-            return Err(FactoryError::Ttl { value: options.ttl });
-        }
+        checked_ttl(options.ttl)?;
         if namespace.is_empty() {
             return Err(FactoryError::Namespace);
         }
         let handle = factory
             .redis_handle(url, namespace, options)
             .map_err(|source| FactoryError::Handle { source })?;
-        callbacks.register_cache();
-        Ok(facade(
-            Arc::new(NativeBackend { handle }),
+        Ok(finish(
+            handle,
+            callbacks,
             LiteLlmCacheType::Redis,
             Some(namespace.to_owned()),
             options.ttl,
@@ -83,15 +79,28 @@ impl Cache {
     }
 }
 
+// the native handle refuses a zero or non-finite duration, so the factory refuses it before the handle exists
+fn checked_ttl<HandleError>(ttl: f64) -> Result<(), FactoryError<HandleError>>
+where
+    HandleError: Error + 'static,
+{
+    if !ttl.is_finite() || ttl <= 0.0_f64 {
+        return Err(FactoryError::Ttl { value: ttl });
+    }
+    Ok(())
+}
+
 // the state CacheFacade.__init__ stores for an injected _backend, with the defaults the v2 factories leave alone
-fn facade(
-    native: Arc<NativeBackend>,
+fn finish(
+    handle: Arc<dyn NativeCacheHandle>,
+    callbacks: &mut CacheCallbacks,
     cache_type: LiteLlmCacheType,
     namespace: Option<String>,
     ttl: f64,
 ) -> CacheFacade {
+    callbacks.register_cache();
     CacheFacade {
-        backend: Backend::Injected(native),
+        backend: Backend::Injected(Arc::new(NativeBackend { handle })),
         cache_type,
         namespace,
         redis_flush_size: None,

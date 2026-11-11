@@ -110,11 +110,19 @@ struct HostState {
 #[derive(Default)]
 struct RecordingHost {
     state: Mutex<HostState>,
+    refusing: bool,
 }
 
 impl RecordingHost {
     fn state(&self) -> MutexGuard<'_, HostState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn record_new(&self) -> Arc<RecordingHandle> {
+        let handle = Arc::new(RecordingHandle::default());
+        let retained: Arc<RecordingHandle> = Arc::clone(&handle);
+        self.state().handles.push(retained);
+        handle
     }
 }
 
@@ -129,10 +137,11 @@ impl NativeHandleFactory for RecordingHost {
         &self,
         options: MemoryHandleOptions,
     ) -> Result<Arc<dyn NativeCacheHandle>, HostError> {
-        let handle = Arc::new(RecordingHandle::default());
-        let retained: Arc<RecordingHandle> = Arc::clone(&handle);
+        if self.refusing {
+            return Err(HostError);
+        }
         self.state().memory.push(options);
-        self.state().handles.push(retained);
+        let handle: Arc<dyn NativeCacheHandle> = self.record_new();
         Ok(handle)
     }
 
@@ -142,35 +151,12 @@ impl NativeHandleFactory for RecordingHost {
         namespace: &str,
         options: RedisHandleOptions,
     ) -> Result<Arc<dyn NativeCacheHandle>, HostError> {
-        let handle = Arc::new(RecordingHandle::default());
-        let retained: Arc<RecordingHandle> = Arc::clone(&handle);
-        self.state()
-            .redis
-            .push((url.to_owned(), namespace.to_owned(), options));
-        self.state().handles.push(retained);
-        Ok(handle)
-    }
-}
-
-struct RefusingHost;
-
-impl NativeHandleFactory for RefusingHost {
-    type Error = HostError;
-
-    fn memory_handle(
-        &self,
-        _options: MemoryHandleOptions,
-    ) -> Result<Arc<dyn NativeCacheHandle>, HostError> {
-        Err(HostError)
-    }
-
-    fn redis_handle(
-        &self,
-        _url: &str,
-        _namespace: &str,
-        _options: RedisHandleOptions,
-    ) -> Result<Arc<dyn NativeCacheHandle>, HostError> {
-        Err(HostError)
+        let recorded = (url.to_owned(), namespace.to_owned(), options);
+        if self.refusing {
+            return Err(HostError);
+        }
+        self.state().redis.push(recorded);
+        Ok(self.record_new())
     }
 }
 
@@ -340,70 +326,73 @@ fn redis_rejects_an_empty_namespace_before_the_handle_is_created() {
     assert!(host.state().handles.is_empty());
 }
 
+#[derive(Clone, Copy, Debug)]
+enum FactoryKind {
+    Memory,
+    Redis,
+}
+
 #[rstest]
-#[case::zero(0.0_f64)]
-#[case::negative(-1.0_f64)]
-fn a_non_positive_ttl_is_rejected_before_the_handle_is_created(#[case] ttl: f64) {
+#[case::memory_zero(FactoryKind::Memory, 0.0_f64)]
+#[case::memory_negative(FactoryKind::Memory, -1.0_f64)]
+#[case::redis_nan(FactoryKind::Redis, f64::NAN)]
+#[case::redis_positive_infinity(FactoryKind::Redis, f64::INFINITY)]
+#[case::redis_negative_infinity(FactoryKind::Redis, f64::NEG_INFINITY)]
+fn an_invalid_ttl_is_rejected_before_the_handle_is_created(
+    #[case] factory: FactoryKind,
+    #[case] ttl: f64,
+) {
     let host = RecordingHost::default();
     let mut callbacks = CacheCallbacks::default();
-    let Err(error) = Cache::memory(
-        &host,
-        &mut callbacks,
-        MemoryHandleOptions {
-            ttl,
-            capacity: 200,
-            max_entry_bytes: 0x0040_0000,
-        },
-    ) else {
-        panic!("the factory must reject a non-positive ttl")
+    let result = match factory {
+        FactoryKind::Memory => Cache::memory(
+            &host,
+            &mut callbacks,
+            MemoryHandleOptions {
+                ttl,
+                capacity: 200,
+                max_entry_bytes: 0x0040_0000,
+            },
+        ),
+        FactoryKind::Redis => Cache::redis(
+            &host,
+            &mut callbacks,
+            "redis://cache:6379",
+            "shared",
+            RedisHandleOptions {
+                ttl,
+                max_entry_bytes: 0x0040_0000,
+            },
+        ),
+    };
+    let Err(error) = result else {
+        panic!("the factory must reject an invalid ttl")
     };
     let FactoryError::Ttl { value } = error else {
-        panic!("the factory must reject a non-positive ttl")
+        panic!("the factory must report the invalid ttl")
     };
     assert_eq!(value.to_bits(), ttl.to_bits());
     assert_eq!(callbacks, CacheCallbacks::default());
     assert!(host.state().memory.is_empty());
-    assert!(host.state().handles.is_empty());
-}
-
-#[rstest]
-#[case::nan(f64::NAN)]
-#[case::positive_infinity(f64::INFINITY)]
-#[case::negative_infinity(f64::NEG_INFINITY)]
-fn a_non_finite_ttl_is_rejected_before_the_handle_is_created(#[case] ttl: f64) {
-    let host = RecordingHost::default();
-    let mut callbacks = CacheCallbacks::default();
-    let Err(error) = Cache::redis(
-        &host,
-        &mut callbacks,
-        "redis://cache:6379",
-        "shared",
-        RedisHandleOptions {
-            ttl,
-            max_entry_bytes: 0x0040_0000,
-        },
-    ) else {
-        panic!("the factory must reject a non-finite ttl")
-    };
-    let FactoryError::Ttl { value } = error else {
-        panic!("the factory must reject a non-finite ttl")
-    };
-    assert_eq!(value.to_bits(), ttl.to_bits());
-    assert_eq!(callbacks, CacheCallbacks::default());
     assert!(host.state().redis.is_empty());
     assert!(host.state().handles.is_empty());
 }
 
 #[test]
 fn a_host_failure_is_returned_with_its_source() {
+    let host = RecordingHost {
+        state: Mutex::new(HostState::default()),
+        refusing: true,
+    };
     let Err(error) = Cache::memory(
-        &RefusingHost,
+        &host,
         &mut CacheCallbacks::default(),
         MemoryHandleOptions::default(),
     ) else {
         panic!("the factory must return the host failure")
     };
     assert!(matches!(error, FactoryError::Handle { source: HostError }));
+    assert!(host.state().handles.is_empty());
 }
 
 #[test]
