@@ -1,0 +1,67 @@
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use super::error::ProcessError;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct PidRecord {
+    pub pid: u32,
+    pub port: u16,
+    pub config_path: PathBuf,
+    pub log_path: PathBuf,
+}
+
+pub fn read_pid_record(path: &Path) -> Result<Option<PidRecord>, ProcessError> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let bytes = fs::read(path).map_err(|source| ProcessError::ReadPidRecord {
+        path: path.to_owned(),
+        source,
+    })?;
+    let record: PidRecord =
+        serde_json::from_slice(&bytes).map_err(|source| ProcessError::CorruptPidRecord {
+            path: path.to_owned(),
+            source,
+        })?;
+    // kill(0) signals the caller's own process group, so pid 0 can never name the proxy
+    if record.pid == 0 {
+        return Err(ProcessError::CorruptPidRecord {
+            path: path.to_owned(),
+            source: serde_json::Error::io(io::Error::other("pid 0 names no process")),
+        });
+    }
+    Ok(Some(record))
+}
+
+pub fn write_pid_record(path: &Path, record: &PidRecord) -> Result<(), ProcessError> {
+    if let Some(directory) = path.parent() {
+        fs::create_dir_all(directory).map_err(|source| ProcessError::PidRecordDirectory {
+            path: path.to_owned(),
+            source,
+        })?;
+    }
+    let bytes =
+        serde_json::to_vec_pretty(record).map_err(|source| ProcessError::EncodePidRecord {
+            path: path.to_owned(),
+            source,
+        })?;
+    fs::write(path, bytes).map_err(|source| ProcessError::WritePidRecord {
+        path: path.to_owned(),
+        source,
+    })
+}
+
+pub fn clear_pid_record(path: &Path) -> Result<(), ProcessError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(ProcessError::ClearPidRecord {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
