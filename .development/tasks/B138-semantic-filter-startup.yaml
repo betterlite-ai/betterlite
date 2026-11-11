@@ -1,0 +1,197 @@
+id: B138
+title: Start the MCP semantic tool filter and make it a proxy callback
+description: >-
+  LiteLLM turns the MCP semantic tool filter on at startup. When litellm_settings.mcp_semantic_tool_filter is set and
+  its enabled flag is true, ProxyStartupEvent._initialize_semantic_tool_filter builds a SemanticToolFilterHook through
+  SemanticToolFilterHook.initialize_from_config and adds it to litellm.callbacks, where ProxyLogging runs its pre-call
+  hook and its response header hook on every request. B4685 built the filter and B8201 the hook with its
+  initialize_from_config. Nothing yet calls them at startup or puts the hook where the proxy runs callbacks: B8373 left
+  _initialize_semantic_tool_filter without an owner. This task builds that startup step, the holder that stands in for
+  the hook's place in litellm.callbacks, and the ProxyCallback type that lets ProxyLogging run the hook.
+
+
+  Where the code goes. betterlite-server, the new module hooks::semantic_filter_proxy:
+  crates/betterlite-server/src/hooks/semantic_filter_proxy.rs and its folder. The architect's skeleton creates the empty
+  file and adds `pub mod semantic_filter_proxy;` to hooks.rs, so do not touch hooks.rs. Read
+  crates/betterlite-server/src/hooks/mcp_semantic_filter.rs and its folder (B8201) and
+  crates/betterlite-server/src/mcp/semantic_filter.rs (B4685) first, and use their types as they are: SemanticToolFilterHook,
+  SemanticToolFilterConfig, initialize_from_config, the hook's pre-call method (the port of async_pre_call_hook) and its
+  response header method (the port of async_post_call_response_headers_hook). Change none of their files. Request maps
+  are `betterlite_openai::openai_base_config::Object`, the map ProxyCallback::pre_call receives.
+
+
+  The holder. LiteLLM keeps the hook in the module list litellm.callbacks. betterlite has no module-level state, so
+  `SemanticFilterSlot` holds `std::sync::RwLock<Option<Arc<SemanticToolFilterHook>>>` and is shared as one
+  Arc<SemanticFilterSlot>. Never hold the lock across an await. Methods, each the Rust form of a
+  LoggingCallbackManager call for this one class:
+  - `new()` is empty.
+  - `add(&self, hook: Arc<SemanticToolFilterHook>) -> bool` is add_litellm_callback. When a hook is already held, keep
+  that first one, log at debug "Custom logger of type SemanticToolFilterHook already exists in callbacks, not adding
+  again" and return false; otherwise store the hook and return true. LiteLLM skips the second one because every
+  SemanticToolFilterHook gets the same _get_custom_logger_key (its class name plus the base CustomLogger flags, since
+  the filter attribute is not a str, bool or int).
+  - `remove_all(&self) -> bool` is remove_callbacks_by_type(litellm.callbacks, SemanticToolFilterHook): empty the slot
+  and return whether a hook was there.
+  - `current(&self) -> Option<Arc<SemanticToolFilterHook>>` is get_custom_loggers_for_type(SemanticToolFilterHook),
+  which can hold at most one here.
+  - `callback(&self) -> Option<Arc<dyn ProxyCallback>>` gives a SemanticFilterCallback over the held hook, or None
+  while the slot is empty, so a proxy without the filter lists no extra callback.
+  - The slot implements B8399's `ProxyCallbackSource`, answering with callback() as a list of at most one. B8610 holds
+  the one Arc<SemanticFilterSlot> and passes it to ProxyLogging::add_proxy_callbacks, so ProxyLogging asks it every time
+  it lists callbacks and a reload that empties or refills the slot shows at once.
+
+
+  The proxy callback. `SemanticFilterCallback` holds an Arc<SemanticToolFilterHook> and implements B8390's
+  ProxyCallback (crates/betterlite-server/src/guardrails/callback_caps/traits.rs). class_name is
+  "SemanticToolFilterHook". overrides() sets request.pre_call, headers.response_headers and headers.accepts_call_info
+  (LiteLLM's class defines async_pre_call_hook and async_post_call_response_headers_hook with the litellm_call_info
+  parameter) and nothing else. is_base_logger, enforces_request_content and use_native_lifecycle_hooks are false, and
+  guardrail() is None. pre_call calls the hook's pre-call method with the principal, the request map and the call type.
+  When B8201's method edits the map in place, answer Ok(PreCallReturn::Unchanged); when it hands back a new map, answer
+  Ok(PreCallReturn::Data(map)); when it gives nothing, answer Ok(PreCallReturn::Unchanged). The one error the hook lets
+  out is the context window block (LiteLLM raises HTTPException(status_code=400, detail={"error": str(e)})); map it to
+  ProxyHookError::Http with status 400 and the error's message as detail. response_headers calls the hook's header
+  method with the request map and returns its headers (x-litellm-semantic-filter and x-litellm-semantic-filter-tools),
+  or an empty map when it gives none. Every other ProxyCallback method keeps its default.
+
+
+  The startup step. `initialize_semantic_tool_filter(settings: Option<&SemanticToolFilterConfig>, router, slot:
+  &SemanticFilterSlot)` is _initialize_semantic_tool_filter, async, returning nothing. router is the Option of the router
+  handle B8201's initialize_from_config takes; pass it through unchanged. In order:
+  1. settings is None, or its enabled is absent or false: log at debug "Semantic tool filter not configured or not
+  enabled, skipping initialization" and return. initialize_from_config is not called.
+  2. Log at debug "Initializing semantic tool filter: llm_router={router.is_some()}, config=..." with the settings.
+  3. Await initialize_from_config(settings, router). It already logs and swallows every failure (no router, a failed
+  router build) and returns None for them.
+  4. A hook came back: slot.add(hook) and log at debug "Semantic tool filter hook registered". None: log at warning
+  "Semantic tool filter hook was configured but failed to initialize".
+  LiteLLM wraps the call in the lifespan with a try that logs "Semantic filter init failed: %s" at error. Here the step
+  cannot fail, so the step has no error type and the caller needs no such branch.
+
+
+  The caller passes the typed litellm_settings.mcp_semantic_tool_filter block (B1663 parses it) converted into B8201's
+  SemanticToolFilterConfig, with the router the proxy built. That call sits in the proxy lifespan (B8374) after the mock
+  testing warning and before JWT setup, and ProxyLogging (B8399) lists slot.callback() after its registered callbacks.
+  Neither is in this task's scope; the architect wires them.
+
+
+  Oracle helper. The skeleton registers this task's helper operation b138 in the server group and adds its files to the
+  scope. Input: litellm_settings (the mapping that would hold mcp_semantic_tool_filter) and router (bool). The Python
+  adapter builds a Router with one embedding deployment (model_name "embed", litellm_params model
+  openai/text-embedding-3-small, api_key "oracle-key") when router is true and None otherwise, removes every
+  SemanticToolFilterHook from litellm.callbacks, awaits ProxyStartupEvent._initialize_semantic_tool_filter(llm_router=...,
+  litellm_settings=...), reads litellm.logging_callback_manager.get_custom_loggers_for_type(SemanticToolFilterHook), removes
+  them again and answers {"registered": n, "embedding_model", "top_k", "similarity_threshold"} from the first hook's
+  filter (null when none). The MCP registry is empty in the helper process, so the filter's startup build returns at "MCP
+  registry is empty" and no embedding call happens. The Rust adapter runs initialize_semantic_tool_filter against a fresh
+  slot with an empty MCP registry and the same router choice, and answers the same fields from slot.current().
+
+
+  Size. The owned LiteLLM spans are about 35 non-blank lines in proxy_server.py plus the three callback manager rules this
+  class needs. Estimated 220 lines of Rust and 250 of tests, plus the adapters the skeleton adds. Nothing here parses
+  outside bytes, so there is no fuzz target.
+scope:
+  paths:
+    - crates/betterlite-server/src/hooks/semantic_filter_proxy.rs
+    - crates/betterlite-server/src/hooks/semantic_filter_proxy/**
+    - tools/oracle/cases/helpers/semantic-filter-startup/**
+    - "tools/oracle/fuzz/corpus/helper_case/semantic_filter_startup-*"
+    - tools/oracle/helpers/b138.py
+    - tools/oracle/helpers/b138/**
+    - tools/oracle/src/helpers/server/b138.rs
+    - tools/oracle/src/helpers/server/b138/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10323-L10355
+    why: _initialize_semantic_tool_filter, its enabled gate, the two debug lines, the add_litellm_callback call and the warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1459-L1477
+    why: Where the lifespan calls it (after the mock testing warning, before JWT setup) and the try that logs a failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/hook.py#L475-L536
+    why: initialize_from_config, which this step calls and which returns None for every failure it catches (B8201 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/hook.py#L292-L460
+    why: The two methods the proxy callback forwards to, the 400 HTTPException for the context window error and the header names (B8201 builds them).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L57-L66
+    why: add_litellm_callback, the call the slot's add stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L247-L329
+    why: The capacity check and the duplicate rule by _get_custom_logger_key that keeps the first hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L121-L141
+    why: remove_callbacks_by_type, the call remove_all stands for (B8383's reload uses it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L389-L398
+    why: get_custom_loggers_for_type, the call current stands for (B8383's reload uses it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8303-L8370
+    why: The database reload of the same block (B8383), which removes every hook before it adds a new one; read it so the slot fits both callers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/ARCHITECTURE.md#L1-L96
+    why: Design notes for the hook. They are older than the code (they list only completion and acompletion, and say failures always pass all tools); follow the code where they differ.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L572-L614
+    why: How the route renders the hook's dict-detail HTTPException (message from detail.error, the dict as provider_specific_fields).
+dod:
+  - text: initialize_semantic_tool_filter does nothing for an absent block, a block without enabled and enabled false, and calls initialize_from_config only when enabled is true.
+    proof: [startup-step, oracle, helper-python, helper-case-corpus, new-oracle-cases]
+  - text: A hook that comes back is added to the slot with LiteLLM's settings and defaults, and a None (for example with no router) leaves the slot empty and logs the warning.
+    proof: [startup-step, oracle, helper-python, helper-case-corpus, new-oracle-cases]
+  - text: SemanticFilterSlot keeps the first hook on a second add, empties on remove_all and reports whether it held one, and callback() is None while empty.
+    proof: [slot]
+  - text: SemanticFilterCallback reports class_name SemanticToolFilterHook with only pre_call, response_headers and accepts_call_info overridden, forwards pre_call and response_headers to the hook, and answers the context window block as ProxyHookError::Http with status 400.
+    proof: [proxy-callback]
+  - text: Every mutant in the module is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: startup-step
+      why: the enabled gate, the call to initialize_from_config or the slot add after it is wrong or untested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::semantic_filter_proxy::tests::startup_/)'
+    - id: slot
+      why: the slot's add, remove_all, current or callback rule is wrong or untested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::semantic_filter_proxy::tests::slot_/)'
+    - id: proxy-callback
+      why: the ProxyCallback flags, the forwarding or the 400 mapping is wrong or untested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::semantic_filter_proxy::tests::callback_/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b138)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b138 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b138/pyrightconfig.json
+    - id: helper-case-corpus
+      why: the added helper cases have no seed in the helper corpus or the shared parser rejects them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/semantic_filter_startup-*")" &&
+        grep -lE '^[[:space:]]+b138:' tools/oracle/fuzz/corpus/helper_case/semantic_filter_startup-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: new-oracle-cases
+      why: no new oracle case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/semantic-filter-startup)"
+oracle_cases:
+  - tools/oracle/cases/helpers/semantic-filter-startup/block-absent.yaml
+  - tools/oracle/cases/helpers/semantic-filter-startup/enabled-false.yaml
+  - tools/oracle/cases/helpers/semantic-filter-startup/enabled-missing.yaml
+  - tools/oracle/cases/helpers/semantic-filter-startup/enabled-defaults.yaml
+  - tools/oracle/cases/helpers/semantic-filter-startup/enabled-custom-values.yaml
+  - tools/oracle/cases/helpers/semantic-filter-startup/enabled-without-router.yaml
+deviations:
+  - what: The hook lives in a SemanticFilterSlot that ProxyLogging lists next to its callbacks, not in the module list litellm.callbacks.
+    why: The repository forbids module-level state. The add, remove and lookup rules for this class are LiteLLM's, so the hooks that run are the same.
+  - what: The semantic filter hook does not count against LITELLM_MAX_CALLBACKS (default 100).
+    why: LiteLLM skips the add with a warning when litellm.callbacks already holds that many entries; the slot sits outside that list, so the filter still starts on such a proxy.
+  - what: "The 400 for a context window block carries the message but no provider_specific_fields {\"error\": message}."
+    why: ProxyHookError::Http holds a string detail, so the dict detail LiteLLM raises has no field to carry its copy. Status, error type and message match.
+out_of_scope:
+  - "SemanticToolFilterHook, SemanticToolFilterConfig, initialize_from_config, _truncate_csv_at_tool_name_boundary and the rest of hooks/mcp_semantic_filter/hook.py and __init__.py: B8201."
+  - "SemanticMCPToolFilter, SemanticToolFilterContextWindowError and the rest of _experimental/mcp_server/semantic_tool_filter.py: B4685."
+  - "Parsing litellm_settings.mcp_semantic_tool_filter and its admin routes: B1663. The database reload of the block (_init_semantic_filter_settings_in_db): B8383."
+  - "The lifespan call of the startup step (proxy_server.py L1461-L1474): B8374. Listing slot.callback() in ProxyLogging's callback list and running pre-call and header hooks on the routes: B8399."
+  - "LoggingCallbackManager itself is B189's (logging_callback_manager.py); the slot copies only its add, remove and lookup rules for this one class."
+  - "HTTP oracle cases through /v1/chat/completions and /v1/responses come with the task that calls the step at startup and lists the callback, since no route reaches it before that."
+  - "The other B138 parts: the tool registry (B4680), toolset storage (B4681), catalog guards (B4682), OpenAPI tools (B4683), search primitives (B4684) and search handlers (B4686). Their startup and route wiring is B8620, B8701, B6591, B6592, B8462, B4727 and B4728."
+pitfalls:
+  - The gate is on enabled alone. A block with embedding_model, top_k or similarity_threshold but no enabled key starts nothing, and those values never reach initialize_from_config.
+  - A second add keeps the first hook. Only B8383's reload replaces it, and it calls remove_all first.
+  - initialize_from_config with no router returns None after its own warning, so this step logs a second warning ("configured but failed to initialize"). Both lines are LiteLLM's.
+  - The hook runs for completion, acompletion and aresponses call types only; the callback passes every call type on and lets B8201's method skip the rest.
+  - callback() must give None while the slot is empty. A callback that is always listed but does nothing would still show SemanticToolFilterHook in the proxy's callback lists and capability flags.
+  - Clone the Arc out of the RwLock before awaiting the hook; the lock guard must not live across the await.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

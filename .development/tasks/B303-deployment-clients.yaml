@@ -22,7 +22,7 @@ description: 'Connect B302 catalog identities to B009 clients and B010 provider 
   is_clientside_credential (L69-L73), get_dynamic_litellm_params (L76-L105). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports.
-  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B016 wires this service into RouteContext.'
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B016 wires this service into RouteContext. _handle_clientside_credential (L3937-L3970, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3937-L3970) calls the register_deployment_pricing that B9710 builds.'
 scope:
   paths:
   - crates/betterlite-router/src/deployment_clients.rs

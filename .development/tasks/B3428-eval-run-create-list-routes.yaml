@@ -100,7 +100,7 @@ checks:
 oracle_cases: []
 deviations:
   - what: "For create_run: request body decoding (JSON parse errors) occurs before the try/catch block so malformed bodies return 400 with a parse error, not a 500 from the handler."
-    why: "LiteLLM's FastAPI route handler implicitly parses bodies as part of the request lifecycle; betterlite's explicit decode before try/catch preserves the same error surface (400 on bad JSON) without changing the visible contract."
+    why: "LiteLLM decodes the body outside the try block, so a non-JSON or non-object body gets Starlette's plain 500; betterlite answers 400 invalid_request_error with param request_body for the whole eval family."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L629"
   - what: "For list_runs: request data is built entirely from path and query parameters; the body is never read, even if present."
     why: "LiteLLM's list_runs GET route in FastAPI does not accept a request body parameter, so no body is available. Betterlite's implementation avoids reading request bytes when the operation does not use them, matching LiteLLM's behavior."

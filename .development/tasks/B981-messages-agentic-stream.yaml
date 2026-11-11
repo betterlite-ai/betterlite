@@ -3,7 +3,7 @@ title: Messages agentic stream
 description: >-
   Implement the native agentic stream buffer/rebuilder and follow-up control using a statically injected interceptor
   outcome. Hold server-fulfilled tool calls until the interceptor runs, preserve pings and cancellation, and expose
-  the seam for B119's later web-search/code-interpreter implementation without depending on B119.
+  the seam for the later web-search/code-interpreter interceptors (B9823 and B9824, through B1118) without depending on them.
 
 
   Implement crates/betterlite-core/src/api/messages_agentic_stream.rs. Use MessagesAgenticStreamInput and MessagesAgenticStreamResult
