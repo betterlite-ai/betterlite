@@ -1,0 +1,128 @@
+#![cfg(test)]
+
+use std::error::Error as _;
+use std::sync::Arc;
+
+use betterlite_cache::backend::CacheBackend as _;
+use betterlite_cache::cache_key::value::KeyValue;
+use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
+use betterlite_redact::structured::Payload;
+
+use super::super::support_tests::{local_cache, unreachable_redis_cache};
+use super::{ErrorLogger, RedisValues, SilentConsole, add_test_key, now_seconds, test_messages};
+
+fn local_bridge() -> RedisValues {
+    RedisValues {
+        cache: Arc::new(local_cache()),
+    }
+}
+
+#[tokio::test]
+async fn the_bridge_refuses_a_cache_without_a_redis_backend() {
+    let bridge = local_bridge();
+    let error = bridge
+        .async_set_cache("key", CacheValue::Text("value".to_owned()), None)
+        .await
+        .expect_err("a local cache has no redis values");
+    assert_eq!(
+        error.to_string(),
+        "the async_set_cache operation is not implemented by this cache backend"
+    );
+    let batch_error = bridge
+        .batch_cache_write("key", CacheValue::Text("value".to_owned()), None)
+        .await
+        .expect_err("a local cache has no redis values");
+    assert_eq!(
+        batch_error.to_string(),
+        "the batch_cache_write operation is not implemented by this cache backend"
+    );
+}
+
+#[tokio::test]
+async fn the_bridge_swallows_a_redis_write_failure() {
+    let bridge = RedisValues {
+        cache: Arc::new(unreachable_redis_cache().await),
+    };
+    bridge
+        .async_set_cache("key", CacheValue::Text("value".to_owned()), None)
+        .await
+        .expect("a failed write is logged, not raised");
+    bridge
+        .batch_cache_write("key", CacheValue::Text("value".to_owned()), None)
+        .await
+        .expect("a failed write is logged, not raised");
+}
+
+#[test]
+fn the_bridge_reports_the_redis_default_ttl() {
+    assert_eq!(local_bridge().default_ttl(), 60_i64);
+}
+
+#[test]
+fn the_logger_only_reports_errors() {
+    assert!(!ErrorLogger.debug(&Payload::Null));
+    assert!(!ErrorLogger.info(&Payload::Null));
+    assert!(!ErrorLogger.debug_enabled());
+    assert!(ErrorLogger.error(&Payload::String("boom".to_owned())));
+}
+
+#[test]
+fn the_console_prints_nothing() {
+    assert!(!SilentConsole.print(&Payload::Null));
+}
+
+#[test]
+fn the_clock_is_the_current_time() {
+    let now = now_seconds();
+    assert!(now > 1_700_000_000.0_f64);
+    assert!(now < 2_100_000_000.0_f64);
+}
+
+#[test]
+fn the_test_message_has_litellms_shape() {
+    let KeyValue::Array(items) = test_messages() else {
+        panic!("the test messages are an array");
+    };
+    assert_eq!(items.len(), 1);
+    let KeyValue::Object(message) = &items[0] else {
+        panic!("a message is an object");
+    };
+    assert_eq!(
+        message.get("role"),
+        Some(&KeyValue::String("user".to_owned()))
+    );
+    assert_eq!(
+        message.get("content"),
+        Some(&KeyValue::String("test from litellm".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn add_test_key_accepts_a_redis_cache() {
+    add_test_key(Arc::new(unreachable_redis_cache().await))
+        .await
+        .expect("the test write completes");
+}
+
+#[tokio::test]
+async fn add_test_key_accepts_a_cache_without_redis() {
+    add_test_key(Arc::new(local_cache()))
+        .await
+        .expect("the test write completes");
+}
+
+#[tokio::test]
+async fn a_flush_size_past_the_envelope_range_is_reported() {
+    let mut cache = local_cache();
+    cache.redis_flush_size = Some(usize::MAX);
+    let error = add_test_key(Arc::new(cache))
+        .await
+        .expect_err("the flush size does not fit an i64");
+    assert!(
+        error
+            .to_string()
+            .contains("does not fit the cache envelope")
+    );
+    assert!(error.source().is_some());
+}
