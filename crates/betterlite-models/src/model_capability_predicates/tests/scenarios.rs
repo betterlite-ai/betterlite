@@ -37,6 +37,8 @@ const DECLARED_STRING_VALUE: &str = r#"{
     "bool-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": "bare-text"},
     "deepseek/number-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": 7},
     "number-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": "bare-number"},
+    "deepseek/own-text-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": "own-text"},
+    "own-text-model": {"litellm_provider": "deepseek", "mode": "chat", "supports_custom": 5},
     "deepseek/missing-model": {"litellm_provider": "deepseek", "mode": "chat"}
 }"#;
 
@@ -234,6 +236,11 @@ const DECLARED_CUSTOM_STEPS: &[(&str, Option<&str>, Expected)] = &[
         "deepseek/number-model",
         Some("deepseek"),
         Expected::text("bare-number"),
+    ),
+    (
+        "deepseek/own-text-model",
+        Some("deepseek"),
+        Expected::text("own-text"),
     ),
     (
         "deepseek/missing-model",
