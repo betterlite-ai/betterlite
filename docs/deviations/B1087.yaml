@@ -1,0 +1,5 @@
+task: B1087
+deviations:
+  - what: API JSON input is capped at 16 MiB, each provider streaming event at 1 MiB and each collected request collection at 65536 items; an over-limit observation returns a typed limit error with 413 invalid_request_error/body/request_too_large, 502 bad_gateway/stream/event_too_large or 400 invalid_request_error/input/too_many_items instead of being buffered and parsed. File and audio byte streams and batch JSONL stay incremental and are not subject to the JSON cap.
+    why: The bounded-inputs rule requires finite memory use, and the pinned open-source response iterator parses every provider event and every request body without a size check (the proxy's request-size limit middleware runs only with a premium license). A gateway exposed to the public internet cannot allocate in proportion to untrusted input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L300-L532
