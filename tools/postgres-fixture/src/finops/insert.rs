@@ -17,23 +17,35 @@ const DAILY_USAGE_INSERT: &str = "INSERT INTO \"LiteLLM_DailyUserSpend\" (\"id\"
 
 const CONFIG_INSERT: &str = "INSERT INTO \"LiteLLM_Config\" (\"param_name\",\"param_value\") VALUES ($1, to_jsonb($2::text))";
 
+async fn execute(
+    client: &Client,
+    statement: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Result<(), FinOpsFixtureError> {
+    client
+        .execute(statement, params)
+        .await
+        .map_err(FinOpsFixtureError::Database)?;
+    Ok(())
+}
+
 pub(super) async fn organization(
     client: &Client,
     row: &OrganizationRow,
 ) -> Result<(), FinOpsFixtureError> {
-    let params: &[&(dyn ToSql + Sync)] = &[
-        &row.organization_id,
-        &row.organization_alias,
-        &row.budget_id,
-        &row.models,
-        &row.created_by,
-        &row.updated_by,
-    ];
-    client
-        .execute(ORGANIZATION_INSERT, params)
-        .await
-        .map_err(FinOpsFixtureError::Database)?;
-    Ok(())
+    execute(
+        client,
+        ORGANIZATION_INSERT,
+        &[
+            &row.organization_id,
+            &row.organization_alias,
+            &row.budget_id,
+            &row.models,
+            &row.created_by,
+            &row.updated_by,
+        ],
+    )
+    .await
 }
 
 pub(super) async fn key_metadata(
@@ -41,12 +53,12 @@ pub(super) async fn key_metadata(
     row: &KeyMetadataRow,
 ) -> Result<(), FinOpsFixtureError> {
     let token = FixtureSeed::key_hash(row.token.expose_secret());
-    let params: &[&(dyn ToSql + Sync)] = &[&row.key_alias, &row.organization_id, &token];
-    client
-        .execute(KEY_METADATA_UPDATE, params)
-        .await
-        .map_err(FinOpsFixtureError::Database)?;
-    Ok(())
+    execute(
+        client,
+        KEY_METADATA_UPDATE,
+        &[&row.key_alias, &row.organization_id, &token],
+    )
+    .await
 }
 
 pub(super) async fn team_metadata(
@@ -54,13 +66,15 @@ pub(super) async fn team_metadata(
     row: &KeyMetadataRow,
     organization_id: &str,
 ) -> Result<(), FinOpsFixtureError> {
-    let token = FixtureSeed::key_hash(row.token.expose_secret());
-    let params: &[&(dyn ToSql + Sync)] = &[&organization_id, &token];
-    client
-        .execute(TEAM_METADATA_UPDATE, params)
-        .await
-        .map_err(FinOpsFixtureError::Database)?;
-    Ok(())
+    execute(
+        client,
+        TEAM_METADATA_UPDATE,
+        &[
+            &organization_id,
+            &FixtureSeed::key_hash(row.token.expose_secret()),
+        ],
+    )
+    .await
 }
 
 pub(super) async fn daily_usage(
@@ -76,39 +90,39 @@ pub(super) async fn daily_usage(
     let gateway_injected_savings = row.gateway_injected_savings.to_string();
     let autorouter_savings = row.autorouter_savings_spend.to_string();
     let spend = row.spend.to_string();
-    let params: &[&(dyn ToSql + Sync)] = &[
-        &row.id,
-        &row.user_id,
-        &row.date,
-        &api_key,
-        &row.model,
-        &row.model_group,
-        &row.custom_llm_provider,
-        &row.mcp_namespaced_tool_name,
-        &row.endpoint,
-        &row.prompt_tokens,
-        &row.completion_tokens,
-        &row.cache_read_input_tokens,
-        &row.cache_creation_input_tokens,
-        &row.compression_saved_tokens,
-        &compression_savings,
-        &prompt_caching_savings,
-        &gateway_injected_savings,
-        &autorouter_savings,
-        &spend,
-        &row.api_requests,
-        &row.successful_requests,
-        &row.failed_requests,
-        &row.total_response_time_ms,
-        &row.timed_requests,
-        &row.created_at,
-        &row.updated_at,
-    ];
-    client
-        .execute(DAILY_USAGE_INSERT, params)
-        .await
-        .map_err(FinOpsFixtureError::Database)?;
-    Ok(())
+    execute(
+        client,
+        DAILY_USAGE_INSERT,
+        &[
+            &row.id,
+            &row.user_id,
+            &row.date,
+            &api_key,
+            &row.model,
+            &row.model_group,
+            &row.custom_llm_provider,
+            &row.mcp_namespaced_tool_name,
+            &row.endpoint,
+            &row.prompt_tokens,
+            &row.completion_tokens,
+            &row.cache_read_input_tokens,
+            &row.cache_creation_input_tokens,
+            &row.compression_saved_tokens,
+            &compression_savings,
+            &prompt_caching_savings,
+            &gateway_injected_savings,
+            &autorouter_savings,
+            &spend,
+            &row.api_requests,
+            &row.successful_requests,
+            &row.failed_requests,
+            &row.total_response_time_ms,
+            &row.timed_requests,
+            &row.created_at,
+            &row.updated_at,
+        ],
+    )
+    .await
 }
 
 pub(super) async fn config(client: &Client, row: &ConfigRow) -> Result<(), FinOpsFixtureError> {
@@ -116,10 +130,5 @@ pub(super) async fn config(client: &Client, row: &ConfigRow) -> Result<(), FinOp
         .serialized_value
         .as_ref()
         .map(|secret| secret.expose_secret().as_str());
-    let params: &[&(dyn ToSql + Sync)] = &[&row.name.as_wire(), &value];
-    client
-        .execute(CONFIG_INSERT, params)
-        .await
-        .map_err(FinOpsFixtureError::Database)?;
-    Ok(())
+    execute(client, CONFIG_INSERT, &[&row.name.as_wire(), &value]).await
 }

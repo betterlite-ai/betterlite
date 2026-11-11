@@ -230,16 +230,17 @@ fn unique_tuple(row: &FinOpsUsageRow, api_key: String) -> Option<Vec<String>> {
 }
 
 fn check_timestamps(row: &FinOpsUsageRow, row_index: usize) -> Result<(), FinOpsFixtureError> {
-    for (field, value) in [
-        ("created_at", &row.created_at),
-        ("updated_at", &row.updated_at),
-    ] {
-        if !is_timestamp(value) {
-            return Err(FinOpsFixtureError::InvalidTimestamp {
-                row: row_index,
-                field,
-            });
-        }
+    if !is_timestamp(&row.created_at) {
+        return Err(FinOpsFixtureError::InvalidTimestamp {
+            row: row_index,
+            field: "created_at",
+        });
+    }
+    if !is_timestamp(&row.updated_at) {
+        return Err(FinOpsFixtureError::InvalidTimestamp {
+            row: row_index,
+            field: "updated_at",
+        });
     }
     Ok(())
 }
