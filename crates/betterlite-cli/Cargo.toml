@@ -21,9 +21,11 @@ clap = { version = "4.6.7", features = ["derive"] }
 hex.workspace = true
 httparse = "1.10.1"
 indexmap = "2.14.2"
+inquire = { version = "0.9.4", default-features = false, features = ["crossterm", "fuzzy"] }
 keyring-core = { version = "1.0.1", optional = true }
 num-traits = "0.2.19"
 regex.workspace = true
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls", "system-proxy"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["float_roundtrip", "raw_value"] }
@@ -51,6 +53,7 @@ secret-service-store = { package = "dbus-secret-service-keyring-store", version 
 windows-native-keyring-store = { version = "1.1.0", optional = true }
 
 [dev-dependencies]
+axum = { workspace = true }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tokio = { workspace = true }
