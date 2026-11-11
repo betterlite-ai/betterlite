@@ -1,0 +1,42 @@
+name: includes-included-master-key-required
+config: |
+  include:
+    - master.yaml
+  model_list:
+    - model_name: required-key-model
+      litellm_params:
+        model: openai/gpt-4o
+        api_base: "{{upstream}}"
+        api_key: required-key
+        max_retries: 0
+  router_settings:
+    num_retries: 0
+env: {}
+upstream: []
+steps:
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, x-litellm-call-id: oracle-call-required-missing}
+      body: {model: required-key-model, messages: [{role: user, content: missing}]}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: "", why: LiteLLM returns an unstructured internal-server-error body for a missing key}
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-required-wrong}
+      body: {model: required-key-model, messages: [{role: user, content: wrong}]}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own message}
+config_files:
+  master.yaml: |
+    general_settings:
+      master_key: included-master

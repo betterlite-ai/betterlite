@@ -1,0 +1,17 @@
+task: B5074
+deviations:
+  - what: BETTERLITE_VERSION defaults to a literal published release and is never read from the checkout; LiteLLM's recipe pins LITELLM_VERSION the same way.
+    why: This image tests the artifact a package index serves, so a source change must not move the version it installs. Operators set the build arg to test another published release.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L6
+  - what: The packages that moved out of the base proxy distribution are installed explicitly next to the betterlite extras, with LiteLLM's pinned versions.
+    why: The published betterlite package may not carry the proxy-runtime extra yet, and the image must still cover google-cloud-aiplatform, google-genai, anthropic[vertex], opentelemetry, ddtrace, sentry and the rest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L27-L48
+  - what: prod_entrypoint.sh comes from B5070 and execs the installed betterlite console script; the USE_DDTRACE branch prints one line instead of wrapping the process in ddtrace-run.
+    why: betterlite keeps the container contract of the source image, and the native server has no ddtrace tracer to start.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L58
+  - what: The Prisma client is generated from the pinned schema in crates/betterlite-db/src/schema_contract/fixtures/root/schema.prisma, which is a byte-identical copy of LiteLLM's schema.prisma, instead of a schema.prisma the operator places at the build context root.
+    why: The repository has no root schema.prisma, and the published package does not ship one yet. The contract fixture is the pinned copy the database tests already compare against, so the image builds from the checkout without an extra file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L21
+  - what: The recipe lives in packaging/docker/build_from_pip/ and copies the entrypoint from packaging/docker/prod_entrypoint.sh; LiteLLM keeps both under docker/.
+    why: The container scripts live in packaging/docker/ in betterlite, and only the folder differs, not the file names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_from_pip/Dockerfile.build_from_pip#L58

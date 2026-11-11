@@ -1,0 +1,30 @@
+task: B717
+deviations:
+  - what: >-
+      Legacy resolver requests warn and run native v2; --use_prisma_db_push and a truthy
+      USE_PRISMA_DB_PUSH stop startup before any database mutation with guidance to apply the pinned
+      migrations or baseline an already-current schema. The v1 diff-and-force and accept-data-loss
+      paths, and Prisma's `migrate deploy` subprocess, have no native implementation.
+    why: >-
+      The native plan has no destructive schema-diff engine and cannot spawn a Prisma CLI, so the
+      legacy resolver and db push are refused instead of being emulated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L993-L1037
+  - what: >-
+      Prisma P3005, P3009, P3018 and P1002 are native typed deploy outcomes carrying SQLSTATE and the
+      exact ledger identity instead of Prisma CLI stderr and P-code text. A nonempty namespace without
+      migration history is detected from the catalog before deployment, unfinished history is read from
+      _prisma_migrations by name and started_at, a failed step keeps its database SQLSTATE, and
+      advisory-lock contention is a deploy deadline with the Prisma lock still held by another session.
+      A statement canceled at the deploy deadline (SQLSTATE 57014) is the native equivalent of the
+      subprocess timeout.
+    why: >-
+      Native deployment preserves the recovery decisions, retry budgets and manual-recovery guidance
+      without fabricating subprocess failures or parsing a CLI the gateway cannot run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1041-L1282
+  - what: >-
+      The REPLICA IDENTITY FULL step has no migration-directory discovery, so its OSError branch and
+      the "Could not resolve the migrations directory" log cannot occur. The enabled step delegates to
+      the native REPLICA IDENTITY FULL statement unchanged, and its nonfatal result is forwarded.
+    why: >-
+      Compiled migration catalogs remove the filesystem lookup that produced the discovery failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1252-L1282

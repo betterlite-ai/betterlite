@@ -1,0 +1,19 @@
+kind: helper
+name: call-setup-guardrail-lists
+call:
+  b5367:
+    action: setup
+    call_type: completion
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      litellm_call_id: call-4
+      metadata: {requester_metadata: {guardrails: ["requested"]}}
+    callbacks:
+      - {logger: "g-default", guardrail: {name: "default-guardrail", default_on: true}}
+      - {logger: "g-requested", guardrail: {name: "requested", default_on: false}}
+      - {logger: "g-off", guardrail: {name: "off", default_on: false}}
+      - {logger: "g-unnamed", guardrail: {default_on: true}}
+      - {logger: "plain"}
+env: {}
+compare: {ignore: []}
