@@ -47,7 +47,8 @@ struct SystemOneToRequestCall {
 #[serde(deny_unknown_fields)]
 struct RequestRoundtripCall {
     model: String,
-    request: openai::DecisionRequestBody,
+    // validated per call so a case can compare a rejected request body instead of failing to parse
+    request: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +129,10 @@ fn call_systemone_to_request(call: &SystemOneToRequestCall) -> Value {
 }
 
 fn call_request_roundtrip(call: &RequestRoundtripCall) -> Value {
-    let request = openai_request_to_ir(&call.request);
+    let Ok(body) = serde_json::from_value::<openai::DecisionRequestBody>(call.request.clone()) else {
+        return json!({"ok": false});
+    };
+    let request = openai_request_to_ir(&body);
     match ir_to_openai_request(&call.model, &request) {
         Ok(wire) => wire_value(wire),
         Err(_unsupported) => json!({"ok": false}),

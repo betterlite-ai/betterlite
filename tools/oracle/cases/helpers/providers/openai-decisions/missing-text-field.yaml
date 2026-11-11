@@ -11,5 +11,14 @@ call:
               choices:
                 - {value: a}
                 - {value: b}
+      - model: gpt-4o
+        request:
+          input: the input
+          questions:
+            - type: choice
+              instructions: pick
+              choices:
+                - {value: a}
+                - {value: b}
 env: {}
 compare: {ignore: []}

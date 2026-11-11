@@ -119,7 +119,10 @@ def systemone_to_request(call: dict[str, Json]) -> Json:
 
 
 def request_roundtrip(call: dict[str, Json]) -> Json:
-    body = OpenAIDecisionRequestBody.model_validate(call["request"])
+    try:
+        body = OpenAIDecisionRequestBody.model_validate(call["request"])
+    except ValidationError:
+        return failed()
     return request_value(ir_to_openai_request(cast(str, call["model"]), openai_request_to_ir(body)))
 
 
