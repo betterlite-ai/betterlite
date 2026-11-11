@@ -203,6 +203,13 @@ const SQL_DIR: &str = concat!(
     "/src/schema_contract/fixtures/sql"
 );
 
+// The fixture seeds a partial baseline for its row seeds; a full history starts from an empty public schema
+pub(super) async fn reset_public(pool: &Pool) {
+    let reset = "DROP SCHEMA public CASCADE; CREATE SCHEMA public";
+    let client = pool.get().await.unwrap();
+    client.batch_execute(reset).await.unwrap();
+}
+
 pub(super) async fn apply_pinned(pool: &Pool) {
     let manifest = include_str!("../schema_contract/fixtures/sql.sha256");
     let client = pool.get().await.unwrap();

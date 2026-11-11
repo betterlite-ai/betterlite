@@ -3,6 +3,8 @@ async fn postgres_pinned_rows() {
     Box::pin(with_databases(2, |mut databases| async move {
         let live = databases.remove(0);
         let pinned = databases.remove(0);
+        reset_public(&live.pool).await;
+        reset_public(&pinned.pool).await;
         apply_compiled(&live.pool).await;
         apply_pinned(&pinned.pool).await;
         let expected = read_contract(&pinned.pool, PUBLIC_SCHEMA).await;

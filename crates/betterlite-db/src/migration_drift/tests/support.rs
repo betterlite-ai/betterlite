@@ -8,7 +8,7 @@ use super::ahead::{hostile_names, shown, warn_if_db_ahead_of_head};
 use super::comparison::{SchemaCheck, check_schema, evaluate, summary};
 use super::fixtures::{
     CapturedLogs, PUBLIC_SCHEMA, READ_TIMEOUT, TestDatabase, apply_compiled, apply_pinned, capture,
-    read_contract, with_databases, with_schema,
+    read_contract, reset_public, with_databases, with_schema,
 };
 use super::guard::{LensGuardError, raise_if_lens_rename_pending, spend_logs_is_partitioned};
 use super::index_repair::{
