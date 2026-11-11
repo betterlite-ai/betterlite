@@ -117,29 +117,29 @@ fn user_messages(parts: &[Value], messages: &mut Vec<Value>) -> Result<(), GenAi
     let mut content_parts = Vec::new();
     let mut tool_messages = Vec::new();
     for part in parts {
-        match part {
-            Value::String(text) => content_parts.push(json!({"type": "text", "text": text})),
-            Value::Object(fields) => match (
-                fields.get("text"),
-                fields.get("inline_data"),
-                fields.get("functionResponse"),
-            ) {
-                (Some(Value::String(text)), _, _) => {
-                    content_parts.push(json!({"type": "text", "text": text}));
-                }
-                (_, Some(inline), _) => {
-                    let mime = inline.get("mime_type").and_then(Value::as_str);
-                    let data = inline
-                        .get("data")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    let url = format!("data:{};base64,{data}", mime.unwrap_or("image/jpeg"));
-                    content_parts.push(json!({"type": "image_url", "image_url": {"url": url}}));
-                }
-                (_, _, Some(response)) => tool_messages.push(tool_message(response)?),
-                (Some(_) | None, None, None) => {}
-            },
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {}
+        if let Some(text) = part.as_str() {
+            content_parts.push(json!({"type": "text", "text": text}));
+            continue;
+        }
+        let Some(fields) = part.as_object() else {
+            continue;
+        };
+        if let Some(text) = fields.get("text").and_then(Value::as_str) {
+            content_parts.push(json!({"type": "text", "text": text}));
+            continue;
+        }
+        if let Some(inline) = fields.get("inline_data") {
+            let mime = inline.get("mime_type").and_then(Value::as_str);
+            let data = inline
+                .get("data")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let url = format!("data:{};base64,{data}", mime.unwrap_or("image/jpeg"));
+            content_parts.push(json!({"type": "image_url", "image_url": {"url": url}}));
+            continue;
+        }
+        if let Some(response) = fields.get("functionResponse") {
+            tool_messages.push(tool_message(response)?);
         }
     }
     if !content_parts.is_empty() {
@@ -173,14 +173,14 @@ fn model_message(parts: &[Value], messages: &mut Vec<Value>) -> Result<(), GenAi
     let mut text = String::new();
     let mut tool_calls = Vec::new();
     for part in parts {
-        match part {
-            Value::String(part_text) => text.push_str(part_text),
-            Value::Object(fields) => match (fields.get("text"), fields.get("functionCall")) {
-                (Some(Value::String(part_text)), _) => text.push_str(part_text),
-                (_, Some(call)) => tool_calls.push(tool_call(call)?),
-                (Some(_) | None, None) => {}
-            },
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => {}
+        match part.get("functionCall") {
+            Some(call) if part.get("text").is_none() => tool_calls.push(tool_call(call)?),
+            _ => {
+                let part_text = part
+                    .as_str()
+                    .or_else(|| part.get("text").and_then(Value::as_str));
+                text.push_str(part_text.unwrap_or_default());
+            }
         }
     }
     let content = (!text.is_empty()).then_some(Value::String(text));
