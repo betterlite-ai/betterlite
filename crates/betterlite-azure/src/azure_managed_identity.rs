@@ -160,29 +160,34 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
         io: &ManagedIdentityIo<'_>,
         resource: &str,
     ) -> Result<ManagedIdentityToken, ManagedIdentityError> {
-        let hosted = HostedCredential {
-            environment: self.environment.hosted.clone(),
-            identity: self.hosted_identity(),
-        };
-        let token = match select_hosted_protocol(&self.environment.hosted, self.host) {
-            HostedProtocol::ServiceFabric => {
-                hosted.acquire(MsalKind::ServiceFabric, &io.hosted, resource)?
+        let protocol = select_hosted_protocol(&self.environment.hosted, self.host);
+        match msal_kind(protocol) {
+            Some(kind) => {
+                let hosted = HostedCredential {
+                    environment: self.environment.hosted.clone(),
+                    identity: self.hosted_identity(),
+                };
+                Ok(ManagedIdentityToken::from(
+                    hosted.acquire(kind, &io.hosted, resource)?,
+                ))
             }
-            HostedProtocol::AppService => {
-                hosted.acquire(MsalKind::AppService, &io.hosted, resource)?
+            None if protocol == HostedProtocol::Arc => {
+                arc::acquire(self.host, io.arc, self.client_id, resource)
             }
-            HostedProtocol::AzureMl => hosted.acquire(MsalKind::AzureMl, &io.hosted, resource)?,
-            HostedProtocol::Arc => {
-                return arc::acquire(self.host, io.arc, self.client_id, resource);
+            None => {
+                let (env, probe) = (self.environment, self.probe);
+                let token = imds::acquire(env, &io.imds, resource, self.client_id, probe)?;
+                Ok(ManagedIdentityToken::from(token))
             }
-            HostedProtocol::Vm => imds::acquire(
-                self.environment,
-                &io.imds,
-                resource,
-                self.client_id,
-                self.probe,
-            )?,
-        };
-        Ok(ManagedIdentityToken::from(token))
+        }
+    }
+}
+
+const fn msal_kind(protocol: HostedProtocol) -> Option<MsalKind> {
+    match protocol {
+        HostedProtocol::ServiceFabric => Some(MsalKind::ServiceFabric),
+        HostedProtocol::AppService => Some(MsalKind::AppService),
+        HostedProtocol::AzureMl => Some(MsalKind::AzureMl),
+        HostedProtocol::Arc | HostedProtocol::Vm => None,
     }
 }
