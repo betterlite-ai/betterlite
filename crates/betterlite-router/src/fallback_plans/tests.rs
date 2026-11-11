@@ -371,6 +371,10 @@ fn the_litellm_metadata_bucket_wins_when_present() {
     assert_eq!(get_pre_routing_selection(&snapshot), Some("metadata-tier"));
     clear_pre_routing_selection(&mut snapshot);
     assert_eq!(get_pre_routing_selection(&snapshot), None);
+    let live = request_state(Bucket::default(), bucket(Some("live-tier"), None, None));
+    let mut carried = request_state(Bucket::default(), bucket(Some("old-tier"), None, None));
+    carry_pre_routing_selection(&live, &mut carried);
+    assert_eq!(get_pre_routing_selection(&carried), Some("live-tier"));
 }
 
 #[test]
