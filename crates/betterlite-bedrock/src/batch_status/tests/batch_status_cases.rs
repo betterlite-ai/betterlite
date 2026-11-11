@@ -22,7 +22,7 @@ use crate::batch_status::tests::support::{
 };
 use crate::bedrock_settings::{ErrorHeaders, HeaderValue};
 use crate::credentials::error::CredentialError;
-use crate::request_policy::Params;
+use crate::request_policy::{Params, RequestValue};
 use crate::signing::request::AwsSignedRequest;
 
 #[rstest]
@@ -150,6 +150,7 @@ fn timestamps_and_null_fields() {
     running_timestamps();
     terminal_timestamps();
     timestamp_fallbacks();
+    timestamp_fractions();
     timestamp_formats();
 }
 
@@ -233,7 +234,7 @@ fn timestamp_fallbacks() {
     assert_eq!(numbers.expires_at, None);
 }
 
-fn timestamp_formats() {
+fn timestamp_fractions() {
     let fractions = decode(
         r#"{"jobArn":"a","status":"Submitted","jobExpirationTime":"1969-12-31T23:59:59.5Z"}"#,
     )
@@ -244,6 +245,19 @@ fn timestamp_formats() {
     )
     .expect("the negative fraction decodes");
     assert_eq!(negative.expires_at, Some(-1));
+    let positive = decode(
+        r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00.250Z","jobExpirationTime":"1970-01-01T00:00:00.5Z"}"#,
+    )
+    .expect("the positive fraction decodes");
+    assert_eq!(positive.created_at, 1_705_314_600);
+    assert_eq!(positive.expires_at, Some(0));
+    let whole =
+        decode(r#"{"jobArn":"a","status":"Submitted","jobExpirationTime":"1969-12-31T23:59:58Z"}"#)
+            .expect("the whole negative second decodes");
+    assert_eq!(whole.expires_at, Some(-2));
+}
+
+fn timestamp_formats() {
     let naive = decode(
         r#"{"jobArn":"a","status":"Submitted","submitTime":"2024-01-15T10:30:00","jobExpirationTime":"2024-01-15 10:30:00"}"#,
     )
@@ -512,6 +526,8 @@ fn error_class_mapping() {
 fn retrieve_signed_request_case() {
     signed_get_request();
     signing_region_selection();
+    signing_region_from_params();
+    malformed_signing_params();
     arn_validation_errors();
 }
 
@@ -587,6 +603,44 @@ fn signing_region_selection() {
         china.url,
         "https://bedrock.cn-north-1.amazonaws.com.cn/model-invocation-job/arn%3Aaws-cn%3Abedrock%3Acn-north-1%3A1%3Amodel-invocation-job%2Fx"
     );
+}
+
+fn signing_region_from_params() {
+    let deployment = params(&[
+        ("aws_access_key_id", "AKIDEXAMPLE"),
+        ("aws_secret_access_key", SECRET),
+    ]);
+    let request_region = params(&[("aws_region_name", "eu-west-1")]);
+    let signed = signed_get(JOB_ARN, &deployment, &request_region);
+    let headers = header_map(&signed);
+    assert!(
+        headers
+            .get("Authorization")
+            .is_some_and(|value| value.contains("/eu-west-1/bedrock/aws4_request")),
+        "{headers:?}"
+    );
+}
+
+fn malformed_signing_params() {
+    let mut malformed = params(&[("aws_secret_access_key", SECRET)]);
+    malformed.insert(
+        "aws_access_key_id".to_owned(),
+        RequestValue::Mapping(IndexMap::new()),
+    );
+    let empty = Params::new();
+    let attempt = retrieve_signed_request(
+        RetrieveRequest {
+            batch_id: JOB_ARN,
+            litellm_params: &malformed,
+            optional_params: &empty,
+            now: signing_now(),
+        },
+        |_settings, _region| ready(Ok::<Credentials, CredentialError>(credentials())),
+    );
+    assert!(matches!(
+        runtime().block_on(attempt),
+        Err(BatchStatusError::Signing { .. })
+    ));
 }
 
 fn retrieve(batch_id: &str, deployment: &Params) -> Result<AwsSignedRequest, BatchStatusError> {
