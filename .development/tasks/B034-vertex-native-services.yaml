@@ -13,7 +13,7 @@ description: >-
   family and B1388 RAG-vector/B1389 Discovery Engine search to B1064 execution and B1058 records.
   Export B1385 RAG ingestion, B1386 Agent Engine config, B1368 Vertex native generateContent and
   B1369 Interactions as typed provider capabilities. Supply B206 response-header projection to
-  Interactions. B097/B098 later own their public API paths; Agent Engine chat is installed by
+  Interactions. B3465 owns the RAG routes and B097 mounts them, and B3506, B3507 and B3508 (mounted by B8774) own the public Google paths; Agent Engine chat is installed by
   B031. No generic RAG, native Google or agent route is invented in this task.
   Integration uses the existing native files/batches APIs with the enterprise hook absent.
   Exercise POST /{provider}/v1/files, /v1/files and /files; GET and DELETE
@@ -108,7 +108,7 @@ deviations:
 out_of_scope:
   - B1368/B1369/B1371-B1377/B1383-B1389/B1393 own service callables and their declared records; the retained empty interactions initializer introduces no method.
   - B1032-B1034/B087, B1050/B1051/B1133/B086, B088 and B1067 own the routes invoked by these fixtures.
-  - B097/B098/B141 retain public RAG, native Google and agent APIs; SDK PathLike/stream wrappers belong to B157-B161.
+  - B3465/B097 (RAG), B3506/B3507/B3508 (native Google) and B4784 to B4787, B8589 and B8647 (agents) retain the public APIs; SDK PathLike/stream wrappers belong to B157-B161.
 pitfalls:
   - Native GCS output conversion must not be mistaken for the unavailable enterprise-managed output-ID hook.
   - A batch cancel performs a second GET after its POST; returning the cancel body loses the observed job state.

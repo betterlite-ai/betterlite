@@ -1,0 +1,191 @@
+id: B9690
+title: Prove the deployed-model table, detail, credential, health and price requests through the booted proxy
+description: >-
+  Add HTTP oracle cases for the exact requests the Models + Endpoints page sends from its
+  Deployed Models table, the model detail and edit view, the LLM Credentials, Health Status,
+  Price Data and Access Group Budgets tabs, and the model storage settings modal. B9090 takes
+  in every covered file unchanged from the hash-checked archive and B9091 builds it, so no
+  React function is ported and no patch is needed: none of these components gates an MIT
+  control on premiumUser. Every route below already has a backend owner. This task registers
+  no handler and adds no product code; it adds case files under tools/oracle/cases/ui/model-deployments.
+
+  Default auth is Authorization: Bearer <session key>; the retained client swaps in the
+  discovered auth_header_name. GETs carry no body. JSON writes send Content-Type
+  application/json. Compare status, content-type, error type/param/code and the full stable
+  response projection the page reads; capture only generated ids, timestamps and the session
+  key. Use B860's per-peer Postgres fixture with B5076's Prisma bootstrap, master key
+  oracle-master, store_model_in_db true, a fixed proxy_admin, a proxy_admin_viewer and an
+  internal_user from the existing key seeds, and the local upstream mock as api_base.
+
+  Table and detail reads. AllModelsTab calls useModelsInfo, and it sends GET /v2/model/info
+  with include_team_models=true, page=<pageIndex+1>, size=<pageSize> (default 50) and
+  exclude_auto_routers=true, plus search, teamId, sortBy, sortOrder, model, access_group and
+  wildcard_only=true only when set; trimmed empty values are omitted. HealthStatusPanel sends
+  the same path without exclude_auto_routers, and the detail view sends page=1,size=50 with
+  modelId=<id>. The page reads data[].model_name, litellm_params.model/custom_llm_provider/
+  api_base/litellm_credential_name/tags, model_info.id/db_model/team_id/access_groups/mode/
+  created_at/updated_at/created_by and the total_count/current_page/total_pages envelope.
+  B850 owns the route. Its planned v2-info-page, v2-filter-sort and v2-team-scope cases are
+  generic; none sends include_team_models with exclude_auto_routers, so add the default page,
+  a search+sort page, a team filter, an access_group filter and wildcard_only over a config
+  holding a plain deployment, a db deployment, a team deployment, a wildcard openai/* and an
+  auto_router/complexity_router deployment that the table must not count. model_info_view then
+  sends GET /v1/model/info?litellm_model_id=<id> (B851) and reads data[0] including
+  litellm_model_name and model_info, and GET /credentials/by_model/<id> (B1601) reading
+  credential_name, credential_values and credential_info. B851's v1-info and B1601's
+  model-id-precedence cases use other ids; add the detail sequence for one db model.
+
+  Writes from the table and detail. The pause switch sends PATCH /model/<id>/update with
+  exactly {blocked:true} or {blocked:false}. The edit form sends PATCH /model/<id>/update with
+  {model_name, litellm_params, model_info}: per-million prices divided by 1e6 into
+  input_cost_per_token/output_cost_per_token, an explicit null when a touched price is cleared,
+  cache_read_input_token_cost following input cost when only that changed,
+  cache_creation_input_token_cost null when cleared, vector_store_ids [] when cleared,
+  cache_control_injection_points null when control was removed, and model_info.access_groups,
+  health_check_model and team_id from the form. Masked secrets are stripped before sending.
+  Credential rotation in update_model_credentials_modal sends the same PATCH with only the new
+  litellm_params secret fields. B835 owns PATCH; its blocked-admin-policy, clear-credential
+  and patch-preserves-secret cases do not send these page bodies, so add pause/resume, a
+  price set then clear followed by a /v2/model/info read-back, and a rotation that keeps the
+  stored secret masked in every response. Delete sends POST /model/delete with {id} (B838)
+  from both the table and the detail; add a delete followed by the table read. A config-only
+  model's patch and delete must keep B835/B838's real refusal, never a client-side success.
+
+  Credentials tab. CredentialsPanel lists through useCredentials, GET /credentials reading
+  credentials[].credential_name/credential_info, creates with POST /credentials
+  {credential_name, credential_values, credential_info:{custom_llm_provider}}, updates with
+  PATCH /credentials/<name> and the same shape, and deletes with DELETE /credentials/<name>.
+  The detail's reuse action POSTs {credential_name, model_id, credential_info:
+  {custom_llm_provider}} with no credential_values. B1601 owns all of these (create, list,
+  by_model, delete, patch decorators); its create-and-duplicate and patch-rename cases are
+  close but use other bodies. Add one create, rename, model-id reuse and delete transcript
+  and check that credential_values never come back unmasked in the list.
+
+  Health. The detail's Test Connection sends POST /health/test_connection with
+  {litellm_params:{custom_llm_provider, litellm_credential_name, model}, model_info:{id, mode},
+  mode}. The page treats an HTTP 200 whose status is "error" as a failure, so compare a
+  success and a 200-with-error body. B4446 owns this route; reuse its
+  deployment-id-lookup-preferred case only if its body is identical. HealthCheckComponent
+  sends GET /health/latest, reading latest_health_checks keyed by model id (status,
+  error_message, response_time_ms, checked_at) and total_models, and per model GET
+  /health?model_id=<encodeURIComponent(id)>, reading healthy_count, unhealthy_count and
+  unhealthy_endpoints[0].error. B4445 owns both and B8540 mounts them; B4445 plans only the
+  no-database and unknown-id cases, so add a populated latest table after one stored check
+  and a single-model check against the healthy and a failing mock deployment.
+
+  Price data. PriceDataManagementTab and price_data_reload send GET
+  /public/litellm_model_cost_map without auth (B077, reuse its cost-map-local case), GET
+  /schedule/model_cost_map_reload/status reading scheduled, interval_hours, last_run,
+  next_run, GET /model/cost_map/source, POST /reload/model_cost_map with no body, POST
+  /schedule/model_cost_map_reload?hours=<n> and DELETE /schedule/model_cost_map_reload.
+  B8586 owns them and B8676 mounts them; B8676's cases only cover missing database, zero
+  hours, non-admin and source. Point LITELLM_MODEL_COST_MAP_URL (default the GitHub raw
+  model_prices_and_context_window.json) at the case's upstream mock so no case fetches the
+  internet, then compare reload, schedule 6 hours, status, cancel and status again.
+
+  Access group budgets and storage. AccessGroupBudgetsPanel reads GET /access_group/list
+  (B2341) through the typed client and its rows' access_group, model_names and budget fields;
+  saving sends PUT /access_group/<name>/budget with only the filled max_budget, soft_budget and
+  budget_duration (blank fields omitted, numbers not strings) and clearing sends DELETE
+  /access_group/<name>/budget with no body (B825). Add set, partial update and clear with list
+  read-backs. ModelSettingsModal reads GET /config/list?config_type=general_settings and
+  toggles storage with POST /config/field/update {field_name:"store_model_in_db",
+  field_value:<bool>, config_type:"general_settings"} (B8595, mounted by B8675); add the
+  toggle and its list read-back. general_settings.store_model_in_db defaults to false.
+
+  Shared lookups are not duplicated: /model_group/info, /tag/list, /v2/guardrails/list and
+  the /models scope=expand selector reuse B9735's cases, and /team/list belongs to B9731.
+  Finish with one viewer case and one internal-user case that send the pause PATCH, the
+  credential POST and the budget PUT and keep the real server denial. About 600 case lines.
+scope:
+  paths:
+    - tools/oracle/cases/ui/model-deployments/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1533-L1654
+    why: The /v2/model/info query builder with its omitted empty parameters and the /v1/model/info litellm_model_id read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/components/AllModelsTab.tsx#L125-L145
+    why: The table always excludes auto-routers and passes team, model, access-group and wildcard filters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/components/AllModelsTab.tsx#L240-L275
+    why: Delete by id and the pause switch that patches only blocked.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/model_info_view.tsx#L248-L497
+    why: Credential reuse body, the edit PATCH with explicit null pricing and the connection-test body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L2515-L2614
+    why: Credential create, list, by-name/by-model read, delete and patch requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L2705-L2738
+    why: PATCH /model/{id}/update sends the form body as is.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3409-L3498
+    why: Single-model health by encoded model_id and the latest health table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L546-L669
+    why: Public cost map read and the reload, schedule, cancel, source and status requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/components/accessGroupBudgetPayload.ts#L1-L30
+    why: Blank budget fields are left out of the PUT body rather than sent as null.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/storeModelInDB/useStoreModelInDB.ts#L13-L42
+    why: The storage toggle is a general_settings field update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15295-L15529
+    why: B850's /v2/model/info decorator and query parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16051-L16275
+    why: B851's /v1/model/info route and its litellm_model_id lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1088-L1320
+    why: B835's PATCH decorator, blocked handling and secret preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2177-L2310
+    why: B838's delete decorator and config-model refusal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L76-L400
+    why: B1601's six credential decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1123-L1366
+    why: B4445's /health and /health/latest handlers and the latest_health_checks envelope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2016-L2234
+    why: B4446's connection test returns 200 with an error status on provider failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19335-L19584
+    why: B8586's reload, schedule, cancel, status and source decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L426-L429
+    why: LITELLM_MODEL_COST_MAP_URL decides where a reload fetches from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L715-L821
+    why: B2341's access-group list with joined budgets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L1088-L1244
+    why: B825's GET, PUT and DELETE budget decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18258-L18370
+    why: B8595's /config/field/update used by the storage toggle.
+dod:
+  - text: The table's page, search, sort, team, access-group and wildcard queries and the detail's v1 and credential reads return the fields the page reads, with auto-routers excluded.
+    proof: [model-table-cases, oracle]
+  - text: Pause, edit with cleared prices, credential rotation, credential CRUD, delete, connection test, health reads, cost map reload and schedule, access-group budgets and the storage toggle match LiteLLM and persist on read-back.
+    proof: [model-table-cases, oracle]
+  - text: Viewer and internal-user sessions get the server's denial for the same writes.
+    proof: [model-table-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: model-table-cases
+      why: No booted-proxy case sends the page's exact model table, detail, credential, health, price or budget requests.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/model-deployments)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/model-deployments
+oracle_cases:
+  - tools/oracle/cases/ui/model-deployments/table-page-filters.yaml
+  - tools/oracle/cases/ui/model-deployments/detail-v1-and-credential-lookup.yaml
+  - tools/oracle/cases/ui/model-deployments/pause-edit-and-price-clear.yaml
+  - tools/oracle/cases/ui/model-deployments/credential-rotation-masked.yaml
+  - tools/oracle/cases/ui/model-deployments/credentials-tab-crud.yaml
+  - tools/oracle/cases/ui/model-deployments/connection-test-and-delete.yaml
+  - tools/oracle/cases/ui/model-deployments/health-latest-and-single.yaml
+  - tools/oracle/cases/ui/model-deployments/price-data-reload-schedule.yaml
+  - tools/oracle/cases/ui/model-deployments/access-group-budget-set-clear.yaml
+  - tools/oracle/cases/ui/model-deployments/storage-setting-toggle.yaml
+  - tools/oracle/cases/ui/model-deployments/viewer-and-member-denials.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every unchanged function in the covered page, panel, table, detail and credential files; B9091 builds them and B146 drives them in the browser.
+  - B850, B851, B835, B838, B1601, B4445, B4446, B8586, B2341, B825 and B8595 own the handlers; B8540, B8676 and B8675 own their mounts. No route is registered here.
+  - B9735 owns the shared /model_group/info, /tag/list, guardrail and /models selector cases; B9731 owns /team/list and TeamInfoView; PassThroughPanel's requests belong to B150's pass-through child.
+  - Auto-router listing, creation and editing, the add-model form and its provider fields are B9691's; router, alias and retry settings are B9692's.
+pitfalls:
+  - The table always sends exclude_auto_routers=true but HealthStatusPanel does not, so the two lists count different rows.
+  - The edit PATCH sends explicit null to remove a price override; dropping the key leaves the old price in place.
+  - POST /health/test_connection can answer 200 with status "error", and the page treats that as a failed test.
+  - /health/latest keys rows by model_id and falls back to model_name only when the stored row has no id.
+  - A cost map reload with the default LITELLM_MODEL_COST_MAP_URL reaches GitHub, so every case must point it at the mock.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

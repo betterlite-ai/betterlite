@@ -11,5 +11,6 @@ pub mod jwt_auth;
 pub mod jwt_keys;
 pub mod jwt_team_authorization;
 pub mod key_rotation;
+pub mod sdk_callbacks;
 pub mod shared;
 pub mod virtual_key_auth;

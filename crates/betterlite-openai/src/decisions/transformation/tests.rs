@@ -18,7 +18,7 @@ use super::questions::{ir_question, systemone_keys, systemone_question};
 use super::requests::{RequestConversionError, ir_to_systemone_request, systemone_request_to_ir};
 use super::responses::to_ir::{parse_systemone_response, systemone_response_to_ir};
 use super::responses::to_systemone::ir_to_systemone_response;
-use super::wire::RequestWire;
+use super::wire::{ProviderRequestWire, RequestWire};
 use crate::openai_base_config::Headers;
 
 struct BareProviderConfig;
@@ -794,7 +794,7 @@ fn base_config_sign_request_returns_headers_unchanged_and_no_signed_body() {
     let mut headers: Headers = Headers::new();
     headers.insert("X-Custom".to_owned(), "kept".to_owned());
     let built = sample_systemone_request();
-    let body = RequestWire::from(&built);
+    let body = ProviderRequestWire::SystemOne(RequestWire::from(&built));
     let litellm_params = Extra::default();
     let context = SigningContext {
         url: "https://api.example.com/v1/systemone",
@@ -856,7 +856,10 @@ fn base_config_transform_decisions_request_builds_systemone_request_from_ir() {
     let built = config
         .transform_decisions_request("model-1", &request, "typesafe")
         .unwrap();
-    assert_eq!(built.model, "model-1");
+    let ProviderRequestWire::SystemOne(systemone) = built else {
+        panic!("expected a SystemOne wire body")
+    };
+    assert_eq!(systemone.model, "model-1");
 }
 
 #[test]

@@ -20,6 +20,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 fancy-regex = "0.19.2"
+hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 rand = { version = "0.10.3", default-features = false, features = ["alloc", "std_rng"] }
 redis.workspace = true
@@ -28,6 +29,8 @@ rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+sha2.workspace = true
+strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }

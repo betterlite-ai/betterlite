@@ -1,0 +1,197 @@
+id: B107
+title: Third-party guardrails A to L over HTTP and the legacy Lakera and Aporia callbacks
+description: >-
+  B107 is the last part of the A to L guardrail family. Its parts built every class (AIM, Akto, Alice,
+  Aporia, Cato, Cisco AI Defense, CrowdStrike AIDR, DeepKeep, DynamoAI, EnkryptAI, the Generic Guardrail
+  API, Gray Swan, Guardrails AI, HiddenLayer, Javelin, Lakera v1 and v2, Lasso), B8217 and B8521 turn a
+  configured guardrail into a class, and B8666 runs the held classes from ProxyLogging. Three things are
+  left: the two legacy callback names of initialize_callbacks_on_proxy that build an A to L class
+  (lakera_prompt_injection and aporia_prompt_injection), a check that LiteLLM's Generic Guardrail API
+  example config means what it says, and HTTP oracle cases through the booted proxy for the family,
+  since every part was planned before a route reached its code. Register no route and no callback list.
+
+
+  Binding. A new module of betterlite-server, app::callbacks::third_party_legacy
+  (crates/betterlite-server/src/app/callbacks/third_party_legacy.rs with third_party_legacy/ holding
+  lakera.rs, aporia.rs, error.rs and tests.rs), following B8850's prompt_injection module. The architect
+  installs the shared entries first, as for detect_prompt_injection: callback_settings accepts both names
+  in litellm_settings.callbacks only (B8741 still refuses them with ConfigError::Unsupported), the
+  callback logger resolver answers Ok(None) for them, and app::callbacks::hooks::configured calls this
+  module's lakera::build(state) or aporia::build(state) lazily at the first occurrence, keeps the Arc for
+  later occurrences and puts it at each list position. The skeleton declares the module with failing build
+  stubs. No shared name table, hooks.rs, app/callbacks.rs or parent module is in this task's scope.
+
+
+  lakera::build(state: &ServerState) reads config.sections.lakera_callback (below) and builds B3777's
+  LegacyLakeraModeration from moderation_check, category_thresholds, api_base and api_key (its
+  constructor applies LAKERA_API_KEY, LAKERA_API_BASE and the https://api.lakera.ai default), then
+  B9451's LegacyLakeraHooks with config.sections.legacy_guardrails (B3683) and add_function_to_prompt.
+  The callback reports class_name lakeraAI_Moderation, guardrail_name from the params (none when absent),
+  and HookOverrides with pre_call and moderation true and the rest false. LiteLLM's class is a
+  CustomGuardrail without its own apply_guardrail, so implement B8390's GuardrailCallback as well as
+  ProxyCallback and let B8392 call the class hooks directly. Without an event_hook in the params both hooks
+  call B9451 with LakeraGate::Legacy; with one they ask B3665's should_run_guardrail for pre_call and
+  during_call and pass Checked(answer). Map ThirdPartyHookError's rejection to ProxyHookError::Http with
+  its status and detail and a plain failure to a 500.
+
+
+  aporia::build(state) builds B3753's AporiaGuardrail the way LiteLLM's AporiaGuardrail() does: no
+  params, the key and base from APORIO_API_KEY and APORIO_API_BASE (LiteLLM's spelling, read through the
+  Settings::resolve B3753 wrote). A missing variable stops startup with this module's typed error naming
+  the variable, as LiteLLM's os.environ[...] KeyError does. HookOverrides has moderation and
+  post_call_success true. Its hooks call B3753's async_moderation_hook and async_post_call_success_hook
+  with the gate answers for during_call and post_call, and record the guardrail in applied_guardrails
+  through B3680's recorder when the class says it ran.
+
+
+  Config. A new section crates/betterlite-config/src/sections/lakera_callback.rs with lakera_callback/
+  reads its own view of the file: the map callback_settings.lakera_prompt_injection (top-level
+  callback_settings, the map LiteLLM passes as callback_specific_params) and
+  litellm_settings.add_function_to_prompt (bool, false when absent). From the map it takes
+  moderation_check ("pre_call" or "in_parallel", default "in_parallel"), category_thresholds (an object
+  with optional jailbreak and prompt_injection numbers), api_base, api_key (secret, os.environ/
+  references resolved), guardrail_name, event_hook (one hook name) and default_on (false). Any other key
+  is ignored, because LiteLLM passes the map as keyword arguments and CustomLogger swallows unknown ones;
+  a map that is not an object is ignored as LiteLLM's isinstance check does. Absent map and empty map
+  both give the defaults. Its tests in lakera_callback/tests.rs load each key through ConfigLoader in a
+  test named loaded_lakera_callback_config.
+
+
+  Example config. LiteLLM ships litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/
+  example_config.yaml with a v2 guardrail entry (guardrail_name plus litellm_params) placed under
+  litellm_settings.guardrails, the legacy list. LiteLLM's initialize_guardrails reads that list as
+  {name: spec} maps, so GuardrailItem(**"my-generic-guardrail", ...) raises and the proxy does not start.
+  Add an integration test crates/betterlite-config/tests/generic_guardrail_example.rs with two fixtures
+  in crates/betterlite-config/tests/fixtures/generic_guardrail_example/: verbatim.yaml, the file as
+  shipped, must fail to load with an error that names litellm_settings.guardrails (B3683's
+  deny_unknown_fields spec); top_level.yaml, the same entry under the top-level guardrails key, must load
+  through B3662's guardrail section with guardrail generic_guardrail_api, mode pre_call, api_base
+  http://localhost:8080, unreachable_fallback fail_closed, default_on false, the api key from
+  GENERIC_GUARDRAIL_API_KEY and additional_provider_specific_params {api_version: "v1", custom_param:
+  "value"}.
+
+
+  HTTP cases. Put them in tools/oracle/cases/guardrails/third-party-a-l-http/. Every case configures one
+  OpenAI model gpt-4o with api_base {{upstream}}, general_settings.master_key, sends the master key, and
+  gives each guardrail api_base {{upstream}} (or its own base key) so the vendor call and the model call
+  both reach the mock in a known order: a pre_call guardrail's answer comes first, a post_call
+  guardrail's answer after the model's. Use only pre_call and post_call modes; a during_call guardrail
+  races the model call for the ordered answer queue. The vendor answers are the shapes each part's task
+  and LiteLLM's code read. Compare status, content-type, error type, param and code, the response body,
+  and the upstream request each side sent to the vendor (path, auth header, body); ignore only
+  human-readable error strings and generated ids and times, each with a why. Set
+  native_feature_eligibility true where LiteLLM gates the path on premium_user (dynamic extra_body for a
+  guardrail). The cases: generic-example-pass (the top_level fixture's entry, requested in the body),
+  generic-dynamic-extra-body, generic-blocked, generic-unreachable-fail-open (vendor 503), aim-block,
+  aim-output-anonymize, akto-allowed, akto-unreachable-fail-closed, lakera-v1-flagged,
+  lakera-v1-threshold, lakera-v2-flagged, lasso-block, lasso-mask (fixed lasso_conversation_id),
+  cisco-pre-call-block, cisco-stream-block (stream true, the SSE error event), aporia-post-call-block,
+  deepkeep-block, dynamoai-block, crowdstrike-block, grayswan-block, guardrails-ai-fail,
+  hiddenlayer-block (a non-SaaS api_base, so no token call), javelin-block, alice-block, cato-block,
+  enkryptai-block, lakera-callback-flagged and lakera-callback-pass (litellm_settings.callbacks
+  [lakera_prompt_injection] with callback_settings moderation_check pre_call, so the check runs before
+  the model call), and no-auth (no key with master_key set fails before any vendor or model call).
+  The chat handler on main serves POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions; use the
+  unprefixed alias in generic-example-pass and the canonical path elsewhere.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/third_party_legacy.rs
+    - crates/betterlite-server/src/app/callbacks/third_party_legacy/**
+    - crates/betterlite-config/src/sections/lakera_callback.rs
+    - crates/betterlite-config/src/sections/lakera_callback/**
+    - crates/betterlite-config/tests/generic_guardrail_example.rs
+    - crates/betterlite-config/tests/fixtures/generic_guardrail_example/**
+    - tools/oracle/cases/guardrails/third-party-a-l-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L247-L265
+    why: The lakera_prompt_injection and aporia_prompt_injection arms built here, with callback_specific_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6283-L6285
+    why: callback_settings is a top-level config key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6419-L6426
+    why: litellm_settings.callbacks passes callback_settings as callback_specific_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L57-L71
+    why: The legacy Lakera constructor, its env vars and moderation_check default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py#L47-L52
+    why: AporiaGuardrail() reads APORIO_API_KEY and APORIO_API_BASE and raises when either is missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L190-L209
+    why: CustomGuardrail's keyword arguments the callback params may carry; others fall through to CustomLogger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/example_config.yaml
+    why: The example file the integration test loads verbatim and moved.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L101-L160
+    why: The legacy list is read as name to spec maps, so the shipped example fails to start.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1802-L1849
+    why: A guardrail without its own apply_guardrail gets its own hooks called; the binding relies on that.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11957
+    why: The chat route and its aliases the cases use; this task registers none.
+dod:
+  - text: litellm_settings.callbacks with lakera_prompt_injection builds the legacy Lakera callback from callback_settings and runs its check before the model call when moderation_check is pre_call.
+    proof: [binding-tests, section-tests, oracle]
+  - text: aporia_prompt_injection builds Aporia from APORIO_API_KEY and APORIO_API_BASE and stops startup when either is missing.
+    proof: [binding-tests]
+  - text: The lakera_callback section loads every key with LiteLLM's defaults and ignores unknown keys and a non-object map.
+    proof: [section-tests]
+  - text: The shipped Generic Guardrail API example fails to load as LiteLLM fails to start, and the same entry loads under top-level guardrails with every value it sets.
+    proof: [example-config]
+  - text: Each A to L guardrail blocks, passes or rewrites a chat request through the booted proxy with LiteLLM's status, error fields, body and vendor request.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: binding-tests
+      why: a legacy callback is not built, has the wrong hook flags or maps a hook outcome to the wrong error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::third_party_legacy::/)'
+    - id: section-tests
+      why: a lakera_callback key is not loaded or gets the wrong default
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::lakera_callback::/)'
+    - id: example-config
+      why: the example config test is missing or the two forms load differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'binary(generic_guardrail_example)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/third-party-a-l-http/generic-example-pass.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/generic-dynamic-extra-body.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/generic-blocked.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/generic-unreachable-fail-open.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/aim-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/aim-output-anonymize.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/akto-allowed.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/akto-unreachable-fail-closed.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/lakera-v1-flagged.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/lakera-v1-threshold.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/lakera-v2-flagged.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/lasso-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/lasso-mask.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/cisco-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/cisco-stream-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/aporia-post-call-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/deepkeep-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/dynamoai-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/crowdstrike-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/grayswan-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/guardrails-ai-fail.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/hiddenlayer-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/javelin-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/alice-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/cato-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/enkryptai-block.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/lakera-callback-flagged.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/lakera-callback-pass.yaml
+  - tools/oracle/cases/guardrails/third-party-a-l-http/no-auth.yaml
+deviations: []
+out_of_scope:
+  - "Every class, initializer argument and registry arm: B3750 to B3779, B8217, B8521 and B8522. Hook bodies: B9450 and B9451. Running held guardrails from ProxyLogging: B8666, assembled by B8399 and B8613."
+  - "Headroom and Compresr get no HTTP case here: B8666 runs no hook for the Compression variant, and B3546 owns those requests."
+  - "Conduct gets no HTTP case: LiteLLM does not start with a Conduct guardrail unless a separate package is installed (B9451)."
+  - "callback_utils.py: the other initialize_callbacks_on_proxy arms stay with B189 and B8850 (detect_prompt_injection); add_guardrail_to_applied_guardrails_header is B3680; the helpers B8850's out_of_scope lists keep their owners."
+  - "Starting lakera_prompt_injection or aporia_prompt_injection from litellm_settings.guardrails goes through B3683's RegistryStarter. It can't reach this module and drops callback_args, so the architect routes it."
+pitfalls:
+  - "The Aporia variables are APORIO_API_KEY and APORIO_API_BASE, with an O; APORIA_ spellings are not read."
+  - "Without moderation_check pre_call the legacy Lakera callback only runs in the during-call hook. That hook races the model call, so HTTP cases must set pre_call."
+  - "callback_settings sits at the top level of the config file, not under litellm_settings."
+  - "The shipped example puts guardrail_name and litellm_params under litellm_settings.guardrails; a loader that accepts it hides a startup failure LiteLLM has."
+  - "Lakera's enabled roles come from a legacy guardrail named prompt_injection, so a case that sets no legacy list sends system, user and assistant."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
