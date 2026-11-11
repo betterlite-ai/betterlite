@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use num_traits::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
+use thiserror::Error;
 
 use crate::credential_lifecycle::files::CredentialFiles;
 use crate::credential_lifecycle::load::load_cli_token;
@@ -19,7 +20,7 @@ use crate::token_records::freshness::is_token_fresh;
 use super::contracts::CliTokenData;
 use super::login::pkce_token_record;
 use super::notice::{MessageSink, storage_notice};
-use super::worker::run_blocking;
+use super::worker::{WorkerError, run_blocking};
 
 pub struct RefreshInputs {
     pub token_endpoint: String,
@@ -156,13 +157,8 @@ where
         return still_valid;
     };
     let base_url = request.record.base_url.clone();
-    let refreshed = refresh_off_thread(
-        base_url,
-        inputs,
-        Arc::clone(&request.http),
-        Arc::clone(&request.clock),
-    )
-    .await;
+    let refreshed =
+        refresh_off_thread(base_url, inputs, request.http, Arc::clone(&request.clock)).await;
     match refreshed {
         Ok(credential) => Some(
             save_renewed_credential(request.store, request.record, credential, &*request.clock)
@@ -182,12 +178,23 @@ where
     }
 }
 
+#[derive(Debug, Error)]
+pub enum RenewalFailure {
+    #[error(transparent)]
+    Refresh(#[from] PkceFailure),
+    #[error("the renewal worker failed: {source}")]
+    Worker {
+        #[source]
+        source: WorkerError,
+    },
+}
+
 async fn refresh_off_thread<H, W>(
     base_url: String,
     inputs: RefreshInputs,
     http: Arc<H>,
     clock: Arc<W>,
-) -> Result<PkceCredential, PkceFailure>
+) -> Result<PkceCredential, RenewalFailure>
 where
     H: Http + Send + Sync + 'static,
     W: WallClock + Send + Sync + 'static,
@@ -195,8 +202,8 @@ where
     let joined =
         run_blocking(move || refresh_stored_credential(&base_url, &inputs, &*http, &*clock)).await;
     match joined {
-        Ok(result) => result,
-        Err(error) => Err(PkceFailure::Protocol(error.to_string())),
+        Ok(result) => result.map_err(RenewalFailure::Refresh),
+        Err(source) => Err(RenewalFailure::Worker { source }),
     }
 }
 
@@ -240,7 +247,7 @@ async fn sibling_after_failed_refresh<W>(
     record: &CliTokenData,
     clock: &W,
     warn: MessageSink<'_>,
-    failure: &PkceFailure,
+    failure: &RenewalFailure,
 ) -> Option<SecretString>
 where
     W: WallClock + Sync,

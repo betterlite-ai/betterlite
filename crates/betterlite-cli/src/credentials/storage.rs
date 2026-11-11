@@ -8,7 +8,6 @@ use crate::credential_lifecycle::load::load_cli_token;
 use crate::keyring::SecretVault;
 use crate::pkce_login::{Http, WallClock};
 
-use super::contracts::CliTokenData;
 use super::notice::MessageSink;
 use super::renewal::{FreshApiKeyRequest, RenewalVault, fresh_api_key};
 
@@ -30,7 +29,7 @@ where
     H: Http + Send + Sync + 'static,
     W: WallClock + Send + Sync + 'static,
 {
-    let record: CliTokenData = load_cli_token(request.files, request.vault).await?;
+    let record = load_cli_token(request.files, request.vault).await?;
     if let Some(expected) = request.expected_base_url
         && record.base_url != expected.trim_end_matches('/')
     {

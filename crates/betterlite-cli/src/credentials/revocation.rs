@@ -5,14 +5,15 @@ use crate::credential_lifecycle::load::load_cli_token;
 use crate::credential_lifecycle::outcome::SecretSave;
 use crate::credential_lifecycle::save::save_cli_token;
 use crate::keyring::SecretVault;
+use thiserror::Error;
+
 use crate::pkce_login::Http;
-use crate::pkce_login::models::PkceFailure;
 use crate::pkce_login::revoke::{RevocationUnavailableOrFailure, revoke_credential};
 
 use super::contracts::CliTokenData;
 use super::notice::MessageSink;
 use super::renewal::{refresh_inputs, renewal_contract};
-use super::worker::run_blocking;
+use super::worker::{WorkerError, run_blocking};
 
 pub struct ReplaceStoredTokenRequest<'store, H> {
     pub record: CliTokenData,
@@ -32,32 +33,38 @@ where
     let revocation = if let Some(previous_login) = previous
         && !matches!(&stored, SecretSave::CredentialNotSaved(_))
     {
-        revoke_off_thread(previous_login, Arc::clone(&request.http)).await
+        revoke_off_thread(previous_login, request.http).await
     } else {
         None
     };
     if let Some(failure) = revocation {
         (request.echo)(&format!(
-            "Could not revoke the previous login's refresh token on the proxy ({}); it expires on its own.",
-            revocation_reason(&failure)
+            "Could not revoke the previous login's refresh token on the proxy ({failure}); it expires on its own."
         ));
     }
     stored
 }
 
-async fn revoke_off_thread<H>(
-    record: CliTokenData,
-    http: Arc<H>,
-) -> Option<RevocationUnavailableOrFailure>
+#[derive(Debug, Error)]
+pub enum RevocationFailure {
+    #[error("{}", proxy_reason(.0))]
+    Proxy(RevocationUnavailableOrFailure),
+    #[error("the revocation worker failed: {source}")]
+    Worker {
+        #[source]
+        source: WorkerError,
+    },
+}
+
+async fn revoke_off_thread<H>(record: CliTokenData, http: Arc<H>) -> Option<RevocationFailure>
 where
     H: Http + Send + Sync + 'static,
 {
     let joined = run_blocking(move || revoke_stored_credential(&record, &*http)).await;
     match joined {
-        Ok(outcome) => outcome,
-        Err(error) => Some(RevocationUnavailableOrFailure::Failure(
-            PkceFailure::Protocol(error.to_string()),
-        )),
+        Ok(None) => None,
+        Ok(Some(failure)) => Some(RevocationFailure::Proxy(failure)),
+        Err(source) => Some(RevocationFailure::Worker { source }),
     }
 }
 
@@ -79,7 +86,7 @@ where
     .err()
 }
 
-fn revocation_reason(failure: &RevocationUnavailableOrFailure) -> String {
+fn proxy_reason(failure: &RevocationUnavailableOrFailure) -> String {
     match failure {
         RevocationUnavailableOrFailure::Unavailable(unavailable) => unavailable.reason.clone(),
         RevocationUnavailableOrFailure::Failure(failed) => failed.to_string(),
