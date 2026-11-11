@@ -11,7 +11,7 @@ use crate::credentials::error::CredentialError;
 #[test]
 fn bedrock_services_batch_create_credential_identity_isolation() {
     let deployment = Sources::new(
-        r#"{"aws_access_key_id": "DEPLOYKEY", "aws_secret_access_key": "deploy-secret", "aws_region_name": "us-east-1", "aws_role_name": "deploy-role"}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "aws_access_key_id": "DEPLOYKEY", "aws_secret_access_key": "deploy-secret", "aws_region_name": "us-east-1", "aws_role_name": "deploy-role"}"#,
         r#"{"aws_access_key_id": "REQUESTKEY", "aws_secret_access_key": "request-secret", "aws_profile_name": "request-profile"}"#,
         &[],
     );
@@ -19,7 +19,7 @@ fn bedrock_services_batch_create_credential_identity_isolation() {
         assert_eq!(settings.profile_name, None);
     });
     let request_only = Sources::new(
-        "{}",
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
         r#"{"aws_access_key_id": "REQUESTKEY", "aws_secret_access_key": "request-secret", "aws_region_name": "eu-west-1"}"#,
         &[],
     );
@@ -61,7 +61,7 @@ fn bedrock_services_batch_create_secret_safe_failure() {
 
 fn secret_fixture() -> Sources {
     Sources::new(
-        r#"{"aws_access_key_id": "LEAKEDACCESS", "aws_secret_access_key": "leaked-secret-key", "aws_session_token": "session-token-fixture"}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "aws_access_key_id": "LEAKEDACCESS", "aws_secret_access_key": "leaked-secret-key", "aws_session_token": "session-token-fixture"}"#,
         "{}",
         &[],
     )

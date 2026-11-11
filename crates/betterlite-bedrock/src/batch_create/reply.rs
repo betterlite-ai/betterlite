@@ -4,6 +4,7 @@ use betterlite_openai::batches::records::{
     BatchFailures, BatchObjectKind, BatchStatus, BatchUsage, RequestCounts,
 };
 use indexmap::IndexMap;
+use serde::de::Error as DeserializeError;
 use serde::{Deserialize, Serialize};
 
 use super::BatchCreateError;
@@ -91,7 +92,17 @@ struct RawCreatedBatch {
 }
 
 pub fn decode_created_batch(body: &[u8]) -> Result<CreatedBatch, BatchCreateError> {
-    let raw: RawCreatedBatch = serde_json::from_slice(body)
+    let document: Json = serde_json::from_slice(body)
+        .map_err(|source| BatchCreateError::ResponseParse { source })?;
+    // a derived struct with only optional fields would also accept a top-level JSON array
+    let Json::Object(_) = document else {
+        return Err(BatchCreateError::ResponseParse {
+            source: DeserializeError::custom("the response body must be a JSON object"),
+        });
+    };
+    let value = serde_json::to_value(document)
+        .map_err(|source| BatchCreateError::ResponseParse { source })?;
+    let raw: RawCreatedBatch = serde_json::from_value(value)
         .map_err(|source| BatchCreateError::ResponseParse { source })?;
     let (status, in_progress) = match raw.status {
         Some(Json::Text(text)) if text == "InProgress" => (BatchStatus::InProgress, true),

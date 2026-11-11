@@ -11,6 +11,8 @@ pub(crate) enum Operation {
     BatchRoleRequired,
     OutputBucketFallback,
     TagsValidation,
+    // serde's snake_case turns the digits into input24h_window, but the wire name keeps the underscore
+    #[serde(rename = "input_24h_window")]
     Input24hWindow,
     CreateStatusMapping,
     MetadataSanitization,

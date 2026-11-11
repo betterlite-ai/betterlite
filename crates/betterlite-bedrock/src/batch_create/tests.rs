@@ -265,7 +265,7 @@ fn output_bucket_fallback() {
 
 fn output_bucket_precedence() {
     let configured = Sources::new(
-        r#"{"s3_output_bucket_name": "out-bucket"}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "s3_output_bucket_name": "out-bucket"}"#,
         "{}",
         &[("AWS_S3_OUTPUT_BUCKET_NAME", "env-bucket")],
     );
@@ -278,7 +278,7 @@ fn output_bucket_precedence() {
     );
 
     let empty_deployment = Sources::new(
-        r#"{"s3_output_bucket_name": ""}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "s3_output_bucket_name": ""}"#,
         "{}",
         &[("AWS_S3_OUTPUT_BUCKET_NAME", "env-bucket")],
     );
@@ -291,7 +291,7 @@ fn output_bucket_precedence() {
     );
 
     let request_only = Sources::new(
-        "{}",
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
         r#"{"s3_output_bucket_name": "request-bucket"}"#,
         &[("AWS_S3_OUTPUT_BUCKET_NAME", "env-bucket")],
     );
@@ -305,7 +305,11 @@ fn output_bucket_precedence() {
 }
 
 fn output_bucket_defaults() {
-    let from_environment = Sources::new("{}", "{}", &[("AWS_S3_OUTPUT_BUCKET_NAME", "env-bucket")]);
+    let from_environment = Sources::new(
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
+        "{}",
+        &[("AWS_S3_OUTPUT_BUCKET_NAME", "env-bucket")],
+    );
     assert_eq!(
         build(&from_environment.input("m", Some("s3://in-bucket/in.jsonl")))
             .output_data_config
@@ -314,7 +318,11 @@ fn output_bucket_defaults() {
         "s3://env-bucket/litellm-batch-outputs/litellm-batch-00000000/"
     );
 
-    let empty_environment = Sources::new("{}", "{}", &[("AWS_S3_OUTPUT_BUCKET_NAME", "")]);
+    let empty_environment = Sources::new(
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
+        "{}",
+        &[("AWS_S3_OUTPUT_BUCKET_NAME", "")],
+    );
     assert_eq!(
         build(&empty_environment.input("m", Some("s3://in-bucket/in.jsonl")))
             .output_data_config
@@ -323,7 +331,11 @@ fn output_bucket_defaults() {
         "s3://in-bucket/litellm-batch-outputs/litellm-batch-00000000/"
     );
 
-    let input_bucket = Sources::new("{}", "{}", &[]);
+    let input_bucket = Sources::new(
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
+        "{}",
+        &[],
+    );
     let request = build(&input_bucket.input("m", Some("s3://in-bucket/in.jsonl")));
     assert_eq!(
         request.input_data_config.s3_input_data_config.s3_uri,
@@ -343,7 +355,7 @@ fn tags_validation() {
 
 fn tag_precedence() {
     let optional = Sources::new(
-        "{}",
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
         r#"{"bedrock_tags": [{"key": "env", "value": "prod"}]}"#,
         &[],
     );
@@ -356,7 +368,7 @@ fn tag_precedence() {
     );
 
     let both = Sources::new(
-        r#"{"bedrock_tags": [{"key": "team", "value": "genai", "extra": "dropped"}]}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "bedrock_tags": [{"key": "team", "value": "genai", "extra": "dropped"}]}"#,
         r#"{"bedrock_tags": [{"key": "env", "value": "prod"}]}"#,
         &[],
     );
@@ -371,7 +383,7 @@ fn tag_precedence() {
 
 fn tags_fall_back_and_override() {
     let empty_override = Sources::new(
-        r#"{"bedrock_tags": []}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "bedrock_tags": []}"#,
         r#"{"bedrock_tags": [{"key": "env", "value": "prod"}]}"#,
         &[],
     );
@@ -381,7 +393,7 @@ fn tags_fall_back_and_override() {
     );
 
     let null_falls_through = Sources::new(
-        r#"{"bedrock_tags": null}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "bedrock_tags": null}"#,
         r#"{"bedrock_tags": [{"key": "env", "value": "prod"}]}"#,
         &[],
     );
@@ -392,7 +404,11 @@ fn tags_fall_back_and_override() {
         Some(1)
     );
 
-    let request_null = Sources::new("{}", r#"{"bedrock_tags": null}"#, &[]);
+    let request_null = Sources::new(
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
+        r#"{"bedrock_tags": null}"#,
+        &[],
+    );
     assert_eq!(build(&request_null.input("m", Some("s3://b/k"))).tags, None);
 }
 
@@ -405,7 +421,11 @@ fn invalid_tags_are_rejected() {
         r#"{"key": "application", "value": "genai"}"#,
         r#""application=genai""#,
     ] {
-        let sources = Sources::new("{}", &format!(r#"{{"bedrock_tags": {invalid}}}"#), &[]);
+        let sources = Sources::new(
+            r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
+            &format!(r#"{{"bedrock_tags": {invalid}}}"#),
+            &[],
+        );
         let error = build_error(&sources.input("m", Some("s3://b/k")));
         assert!(
             matches!(error, BatchCreateError::InvalidTags { .. }),
@@ -415,7 +435,11 @@ fn invalid_tags_are_rejected() {
 }
 
 fn input_24h_window() {
-    let sources = Sources::new("{}", "{}", &[]);
+    let sources = Sources::new(
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
+        "{}",
+        &[],
+    );
     let mut input = sources.input("m", Some("s3://b/k"));
     assert_eq!(build(&input).timeout_duration_in_hours, None);
     input.completion_window = Some("");
@@ -475,6 +499,17 @@ fn status_defaults() {
         decode_created_batch(br#"{"jobArn": 7, "status": "Submitted"}"#),
         Err(BatchCreateError::ResponseParse { .. })
     ));
+    let array = decode_created_batch(b"[]").expect_err("an array is not a batch response");
+    assert!(matches!(array, BatchCreateError::ResponseParse { .. }));
+    assert!(
+        array
+            .to_string()
+            .contains("the response body must be a JSON object")
+    );
+    assert!(matches!(
+        decode_created_batch(br#"{"jobArn": "first", "jobArn": "second"}"#),
+        Err(BatchCreateError::ResponseParse { .. })
+    ));
 }
 
 fn metadata_sanitization() {
@@ -524,7 +559,11 @@ fn metadata_shapes() {
 }
 
 fn generated_job_name() {
-    let sources = Sources::new("{}", "{}", &[]);
+    let sources = Sources::new(
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
+        "{}",
+        &[],
+    );
     let request = build(&sources.input("bedrock/anthropic.claude", Some("s3://b/k")));
     assert_eq!(request.job_name, "litellm-batch-00000000");
     assert_eq!(request.model_id, "bedrock/anthropic.claude");
@@ -546,7 +585,7 @@ fn owner_and_kms() {
 
 fn owner_precedence() {
     let configured = Sources::new(
-        r#"{"s3_bucket_owner": "111111111111", "s3_encryption_key_id": "kms-key"}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "s3_bucket_owner": "111111111111", "s3_encryption_key_id": "kms-key"}"#,
         "{}",
         &[],
     );
@@ -561,7 +600,7 @@ fn owner_precedence() {
     );
 
     let optional = Sources::new(
-        "{}",
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
         r#"{"s3_bucket_owner": "222222222222", "s3_encryption_key_id": "optional-key"}"#,
         &[],
     );
@@ -579,7 +618,7 @@ fn owner_precedence() {
 
 fn empty_owner_falls_back() {
     let empty = Sources::new(
-        r#"{"s3_bucket_owner": "", "s3_encryption_key_id": ""}"#,
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "s3_bucket_owner": "", "s3_encryption_key_id": ""}"#,
         "{}",
         &[
             ("AWS_S3_BUCKET_OWNER", "444444444444"),
@@ -599,7 +638,7 @@ fn empty_owner_falls_back() {
 
 fn kms_is_output_only() {
     let environment = Sources::new(
-        "{}",
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r"}"#,
         "{}",
         &[
             ("AWS_S3_BUCKET_OWNER", "333333333333"),
@@ -629,7 +668,11 @@ fn kms_is_output_only() {
 }
 
 fn builder_omissions() {
-    let unset = Sources::new(r#"{"s3_bucket_owner": ""}"#, "{}", &[]);
+    let unset = Sources::new(
+        r#"{"aws_batch_role_arn": "arn:aws:iam::1:role/r", "s3_bucket_owner": ""}"#,
+        "{}",
+        &[],
+    );
     let request = build(&unset.input("m", Some("s3://b/k")));
     assert_eq!(
         request
