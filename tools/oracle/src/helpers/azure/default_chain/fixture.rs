@@ -15,7 +15,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ScriptStep {
+pub(crate) struct ScriptStep {
     credential: String,
     outcome: OutcomeName,
     #[serde(default)]
@@ -90,12 +90,10 @@ impl Recorder {
                 message: message.clone(),
             });
         }
-        let mut object = fields;
-        object["credential"] = Value::String(credential.to_owned());
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(object);
+            .push(fields);
         Ok(())
     }
 
@@ -111,7 +109,7 @@ impl Recorder {
     }
 }
 
-struct Scripted<'recorder> {
+pub(crate) struct Scripted<'recorder> {
     recorder: &'recorder Recorder,
     credential: String,
 }
@@ -160,6 +158,7 @@ impl Grants for Recorder {
                 "tenant_id": record.tenant_id,
                 "client_id": record.client_id,
                 "client_secret": record.client_secret.expose_secret().to_owned(),
+                "credential": "ClientSecretCredential",
             }),
         )?;
         Ok(Scripted {
@@ -183,6 +182,7 @@ impl Grants for Recorder {
                     .as_ref()
                     .map(|secret| secret.expose_secret().to_owned()),
                 "send_certificate_chain": record.send_certificate_chain,
+                "credential": "CertificateCredential",
             }),
         )?;
         Ok(Scripted {
@@ -202,6 +202,7 @@ impl Grants for Recorder {
                 "client_id": record.client_id,
                 "username": record.username,
                 "password": record.password.expose_secret().to_owned(),
+                "credential": "UsernamePasswordCredential",
             }),
         )?;
         Ok(Scripted {
@@ -220,6 +221,7 @@ impl Grants for Recorder {
                 "tenant_id": record.tenant_id,
                 "client_id": record.client_id,
                 "token_file": record.token_file,
+                "credential": "WorkloadIdentityCredential",
             }),
         )?;
         Ok(Scripted {
@@ -241,6 +243,7 @@ impl Grants for Recorder {
                 "imds_probe": record.imds_probe,
                 "within_credential_chain": record.placement.within_credential_chain(),
                 "within_default_credential": record.placement.within_default_credential(),
+                "credential": "ManagedIdentityCredential",
             }),
         )?;
         Ok(Scripted {
@@ -258,7 +261,9 @@ struct RawMessage(String);
 impl Visit for RawMessage {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
-            self.0 = format!("{value:?}").trim_matches('"').to_owned();
+            format!("{value:?}")
+                .trim_matches('"')
+                .clone_into(&mut self.0);
         }
     }
 }

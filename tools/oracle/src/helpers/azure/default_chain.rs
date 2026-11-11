@@ -6,7 +6,8 @@ use betterlite_config::sections::azure_default_chain::{AzureCredentialType, Sett
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError};
+use crate::helpers::OrHelperError as _;
+use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod fixture;
 mod report;
@@ -127,10 +128,9 @@ fn unsupported(name: &str) -> Box<HelperError> {
 pub(super) fn requested(
     name: Option<&str>,
 ) -> Result<Option<AzureCredentialType>, Box<HelperError>> {
-    match name {
-        Some(value) => AzureCredentialType::parse(value)
+    name.map_or(Ok(None), |value| {
+        AzureCredentialType::parse(value)
             .map(Some)
-            .ok_or_else(|| unsupported(value)),
-        None => Ok(None),
-    }
+            .ok_or_else(|| unsupported(value))
+    })
 }

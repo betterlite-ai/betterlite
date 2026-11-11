@@ -110,7 +110,7 @@ pub(super) fn chain_value(step: &ChainStep) -> Result<Value, Box<crate::helpers:
             "constructed": recorder.records(),
             "log": log,
         })),
-        Ok(provider) => Ok(chain_result(&provider, &recorder, &logs, log)),
+        Ok(provider) => Ok(chain_result(&provider, &recorder, &logs, log.as_deref())),
     }
 }
 
@@ -118,7 +118,7 @@ fn chain_result(
     provider: &AzureTokenProvider<'_, Recorder>,
     recorder: &Recorder,
     logs: &[String],
-    log: Option<String>,
+    log: Option<&str>,
 ) -> Value {
     let chain = match &provider.inner {
         ProviderInner::Chain(chain) => chain.name.as_str(),
@@ -138,13 +138,20 @@ fn chain_result(
     let all_logs: Vec<String> = logs.iter().chain(&execution_logs).cloned().collect();
     match result {
         Ok(token) => {
-            report["token"] = json!(secrecy::ExposeSecret::expose_secret(&token.token));
-            report["acquired"] = json!(success_log(&all_logs));
+            if let Some(map) = report.as_object_mut() {
+                map.insert(
+                    "token".to_owned(),
+                    json!(secrecy::ExposeSecret::expose_secret(&token.token)),
+                );
+                map.insert("acquired".to_owned(), json!(success_log(&all_logs)));
+            }
         }
         Err(error) => {
-            report["kind"] = json!("chain_error");
-            report["message"] = json!(error.to_string());
-            report["warning"] = json!(warning_log(&all_logs));
+            if let Some(map) = report.as_object_mut() {
+                map.insert("kind".to_owned(), json!("chain_error"));
+                map.insert("message".to_owned(), json!(error.to_string()));
+                map.insert("warning".to_owned(), json!(warning_log(&all_logs)));
+            }
         }
     }
     report
@@ -193,16 +200,23 @@ pub(super) fn boundary_value(step: &TryStep) -> Result<Value, Box<crate::helpers
         "result": Value::Null,
     });
     if let Some(provider) = boundary.provider {
-        report["warnings"] = json!(provider.warnings);
+        if let Some(map) = report.as_object_mut() {
+            map.insert("warnings".to_owned(), json!(provider.warnings));
+        }
         if step.invoke {
             let (result, _invoke_logs) = capture(|| provider.token());
-            report["result"] = match result {
-                Ok(token) => json!({
-                    "kind": "token",
-                    "token": secrecy::ExposeSecret::expose_secret(&token.token)
-                }),
-                Err(error) => invocation_result(&error),
-            };
+            if let Some(map) = report.as_object_mut() {
+                map.insert(
+                    "result".to_owned(),
+                    match result {
+                        Ok(token) => json!({
+                            "kind": "token",
+                            "token": secrecy::ExposeSecret::expose_secret(&token.token)
+                        }),
+                        Err(error) => invocation_result(&error),
+                    },
+                );
+            }
         }
     }
     Ok(report)

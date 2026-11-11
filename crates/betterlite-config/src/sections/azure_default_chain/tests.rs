@@ -44,9 +44,9 @@ fn read(settings: &Settings, field: Field) -> Option<String> {
             .as_ref()
             .map(|secret| secret.expose_secret().to_owned()),
         Field::TokenCredentials => Some(settings.azure_token_credentials.clone()),
-        Field::ClientCertificatePath => settings.client_certificate_path.clone(),
+        Field::ClientCertificatePath => settings.azure_client_certificate_path.clone(),
         Field::ClientCertificatePassword => settings
-            .azure_client_certificate_password
+            .client_certificate_password
             .as_ref()
             .map(|secret| secret.expose_secret().to_owned()),
         Field::ClientSendCertificateChain => {
