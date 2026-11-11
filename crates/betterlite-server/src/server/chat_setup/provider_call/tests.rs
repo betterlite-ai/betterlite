@@ -21,6 +21,8 @@ use crate::server::chat_setup::chat_executor;
 
 mod stream;
 
+const PLAIN: &str = r#"{"model":"g","messages":[]}"#;
+
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
 
 #[derive(Deserialize)]
@@ -54,7 +56,7 @@ async fn upstream(listener: TcpListener) -> String {
     String::from_utf8(received).unwrap().to_lowercase()
 }
 
-async fn call(model: &str) -> (u16, Vec<u8>, String) {
+async fn call(model: &str, sent_body: &'static str) -> (u16, Vec<u8>, String) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let source = format!(
@@ -71,7 +73,7 @@ async fn call(model: &str) -> (u16, Vec<u8>, String) {
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"model":"g","messages":[]}"#))
+        .body(Body::from(sent_body))
         .unwrap();
     let router = chat_routes_with_call_id(Arc::new(executor), false).unwrap();
     let (sent, answered) = tokio::join!(upstream(listener), router.oneshot(request));
@@ -85,16 +87,24 @@ async fn call(model: &str) -> (u16, Vec<u8>, String) {
 }
 
 #[rstest]
-#[case::openai_keeps_usage_and_environment_organization("openai/up", 200, Some((true, true)))]
-#[case::aiohttp_drops_usage_and_environment_organization("aiohttp_openai/up", 200, Some((false, false)))]
-#[case::unavailable_adapter_fails_before_http("azure/up", 501, None)]
+#[case::openai_keeps_usage_and_environment_organization("openai/up", PLAIN, 200, Some((true, true)))]
+#[case::aiohttp_drops_usage_and_environment_organization("aiohttp_openai/up", PLAIN, 200, Some((false, false)))]
+#[case::unavailable_adapter_fails_before_http("azure/up", PLAIN, 501, None)]
+#[case::a_valid_chunk_size_reaches_the_provider("openai/up", r#"{"model":"g","messages":[],"stream_chunk_size":4}"#, 200, Some((true, true)))]
+#[case::a_zero_chunk_size_fails_before_http(
+    "openai/up",
+    r#"{"model":"g","messages":[],"stream_chunk_size":0}"#,
+    400,
+    None
+)]
 #[tokio::test]
 async fn provider_framework_tests_behavior(
     #[case] model: &str,
+    #[case] sent_body: &'static str,
     #[case] status: u16,
     #[case] reached: Option<(bool, bool)>,
 ) {
-    let (answered, body, sent) = call(model).await;
+    let (answered, body, sent) = call(model, sent_body).await;
     assert_eq!(answered, status);
     let Some((has_usage, sends_organization)) = reached else {
         assert_eq!(sent, "");

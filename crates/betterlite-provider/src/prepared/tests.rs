@@ -1,9 +1,12 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_models::controls::call_params::DropParams;
 use betterlite_models::controls::json_value::JsonValue;
 use indexmap::IndexMap;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
 use super::deployment::{Deployment, DeploymentError};
@@ -98,6 +101,31 @@ fn rejects_bad_timeout(result: &Result<Deployment, DeploymentError>) {
     }
 }
 
+fn defaults_to_the_openai_base_and_long_timeout(result: &Result<Deployment, DeploymentError>) {
+    let deployment = result.as_ref().expect("valid");
+    assert_eq!(deployment.api_base, "https://api.openai.com/v1");
+    assert_eq!(
+        deployment.endpoint.as_str(),
+        "https://api.openai.com/v1/chat/completions"
+    );
+    assert_eq!(deployment.timeout, Duration::from_mins(100));
+    assert!(deployment.api_key.is_none());
+    assert!(deployment.organization.is_none());
+    assert!(deployment.max_retries.is_none());
+    assert!(deployment.drop_params.is_none());
+}
+
+fn reads_the_given_connection_values(result: &Result<Deployment, DeploymentError>) {
+    let deployment = result.as_ref().expect("valid");
+    assert_eq!(
+        deployment.endpoint.as_str(),
+        "http://h:1/base/chat/completions"
+    );
+    assert_eq!(deployment.api_key.as_ref().unwrap().expose_secret(), "k");
+    assert_eq!(deployment.organization.as_deref(), Some("o"));
+    assert_eq!(deployment.timeout, Duration::from_secs(12));
+}
+
 fn rejects_negative_timeout(result: &Result<Deployment, DeploymentError>) {
     assert!(matches!(result, Err(DeploymentError::Timeout { .. })));
 }
@@ -113,6 +141,8 @@ fn rejects_negative_timeout(result: &Result<Deployment, DeploymentError>) {
 #[case::affinity_header(params(&[("model", text("m")), ("provider_affinity_header", text("x-session-id"))]), keeps_affinity_header)]
 #[case::forbidden_affinity(params(&[("model", text("m")), ("provider_affinity_header", text("authorization"))]), rejects_forbidden_affinity)]
 #[case::reserved_keys(params(&[("self", text("x")), ("params", text("y")), ("__class__", text("z")), ("model", text("m"))]), accepts_params)]
+#[case::default_connection(params(&[("model", text("m"))]), defaults_to_the_openai_base_and_long_timeout)]
+#[case::given_connection(params(&[("model", text("m")), ("api_base", text("http://h:1/base/")), ("api_key", text("k")), ("organization", text("o")), ("timeout", number(12))]), reads_the_given_connection_values)]
 #[case::missing_model(params(&[]), rejects_missing_model)]
 #[case::bad_api_base(params(&[("model", text("m")), ("api_base", text("not a url"))]), rejects_bad_api_base)]
 #[case::bad_timeout(params(&[("model", text("m")), ("timeout", text("60"))]), rejects_bad_timeout)]

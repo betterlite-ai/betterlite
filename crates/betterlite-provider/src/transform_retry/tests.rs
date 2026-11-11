@@ -23,6 +23,18 @@ mod bounds;
 
 struct Rewrite;
 
+struct Always;
+
+struct Declines;
+
+impl TransformOnUnprocessable for Declines {}
+
+impl TransformOnUnprocessable for Always {
+    fn should_retry(&self, _response: &UpstreamResponse, _deployment: &Deployment) -> bool {
+        true
+    }
+}
+
 impl TransformOnUnprocessable for Rewrite {
     fn should_retry(&self, response: &UpstreamResponse, _deployment: &Deployment) -> bool {
         response.status == 422
@@ -92,13 +104,16 @@ fn deployment() -> Deployment {
 }
 
 #[rstest]
-#[case::disabled_makes_one_attempt(TransformRetry::DISABLED, vec![422], 422, vec!["original"])]
-#[case::retries_until_success(TransformRetry::bounded(3).unwrap(), vec![422, 422, 200], 200, vec!["original", "rewritten", "rewritten"])]
-#[case::stops_at_the_bound(TransformRetry::bounded(2).unwrap(), vec![422, 422], 422, vec!["original", "rewritten"])]
-#[case::hook_declines_other_statuses(TransformRetry::bounded(3).unwrap(), vec![500], 500, vec!["original"])]
+#[case::disabled_makes_one_attempt(TransformRetry::DISABLED, &Rewrite, vec![422], 422, vec!["original"])]
+#[case::retries_until_success(TransformRetry::bounded(3).unwrap(), &Rewrite, vec![422, 422, 200], 200, vec!["original", "rewritten", "rewritten"])]
+#[case::stops_at_the_bound(TransformRetry::bounded(2).unwrap(), &Rewrite, vec![422, 422], 422, vec!["original", "rewritten"])]
+#[case::hook_declines_other_statuses(TransformRetry::bounded(3).unwrap(), &Rewrite, vec![500], 500, vec!["original"])]
+#[case::hook_declines_by_default(TransformRetry::bounded(3).unwrap(), &Declines, vec![422], 422, vec!["original"])]
+#[case::a_success_is_never_retried(TransformRetry::bounded(3).unwrap(), &Always, vec![200], 200, vec!["original"])]
 #[tokio::test]
 async fn provider_framework_tests_behavior(
     #[case] retry: TransformRetry,
+    #[case] hook: &dyn TransformOnUnprocessable,
     #[case] statuses: Vec<u16>,
     #[case] last: u16,
     #[case] sent: Vec<&str>,
@@ -114,7 +129,7 @@ async fn provider_framework_tests_behavior(
     let inputs = deployment();
     let (bodies, answer) = tokio::join!(
         serve(listener, statuses),
-        send_with_retry(&client, &request, &inputs, &Rewrite)
+        send_with_retry(&client, &request, &inputs, hook)
     );
     let Upstream::Buffered(response) = answer.unwrap() else {
         panic!("a plain buffered chat answers buffered");

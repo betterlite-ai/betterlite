@@ -123,6 +123,24 @@ fn response_copies_only_the_projected_fields() {
     assert_eq!(written, wanted);
 }
 
+fn missing_finish_reason_is_stop_and_choice_nulls_are_dropped() {
+    let prepared = prepared("https://host", Some("k"), false);
+    let answer = r#"{"id":"c1","object":"chat.completion","created":7,"model":"m","choices":[{"index":0,"foo":null,"bar":1,"message":{"role":"assistant","content":null,"baz":null}}]}"#;
+    let decoded = AiohttpOpenAi
+        .decode(&prepared, buffered(200, answer))
+        .unwrap();
+    let OperationResult::Chat(ChatCompletion::AiohttpOpenAi(completion)) = decoded else {
+        panic!("the aiohttp projection decodes to its own completion");
+    };
+    let written: JsonValue =
+        serde_json::from_slice(&serde_json::to_vec(&*completion).unwrap()).unwrap();
+    let wanted: JsonValue = serde_json::from_str(
+        r#"{"id":"c1","object":"chat.completion","created":7,"model":"m","choices":[{"index":0,"bar":1,"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(written, wanted);
+}
+
 fn provider_error_status_is_a_provider_error() {
     let prepared = prepared("https://host", Some("k"), false);
     let Err(OperationError::Provider { response }) =
@@ -162,6 +180,7 @@ fn embedding_is_unsupported_before_http() {
 #[case::bare_base(bare_base_gets_the_chat_path)]
 #[case::bearer_without_fallback(bearer_never_falls_back_to_the_environment)]
 #[case::projection_drops_usage(response_copies_only_the_projected_fields)]
+#[case::defaults_and_null_extras(missing_finish_reason_is_stop_and_choice_nulls_are_dropped)]
 #[case::provider_error(provider_error_status_is_a_provider_error)]
 #[case::stream_variant(stream_request_keeps_the_stream_variant)]
 #[case::embedding_unsupported(embedding_is_unsupported_before_http)]
