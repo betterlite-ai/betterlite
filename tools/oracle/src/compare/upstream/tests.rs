@@ -285,11 +285,15 @@ fn filename_selector_keeps_part_fields(
 fn header_selector_checks_presence(#[case] name: &str, #[case] listed: bool) {
     let selector = format!("/upstream/0/headers/{name}");
     let upstream_headers: Vec<&str> = if listed { vec![name] } else { Vec::new() };
-    let body = value(r#"{"prompt": "same"}"#);
-    let left = vec![authorized(body, Some("first-token"))];
-    let right = vec![authorized(
-        value(r#"{"prompt": "same"}"#),
-        Some("second-token"),
+    let left = vec![with_header(
+        request(value(r#"{"prompt": "same"}"#)),
+        name,
+        "first-token",
+    )];
+    let right = vec![with_header(
+        request(value(r#"{"prompt": "same"}"#)),
+        name,
+        "second-token",
     )];
     let rules = comparing(&[selector.as_str()], &upstream_headers);
     assert_eq!(failure(&left, &right, &rules), None);

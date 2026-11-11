@@ -17,6 +17,7 @@ use crate::routing_mock_scripts::MockScript;
 const BASE: &str = "http://127.0.0.1:4010";
 const CARD: &str = r#"{"url": "http://127.0.0.1:4010/a2a"}"#;
 const BINARY_ANSWER: &str = r#"{"body_kind": "bytes", "fixture": "binary-response.bin", "content_type": "application/octet-stream"}"#;
+const MARKED_BINARY_ANSWER: &str = r#"{"body_kind": "bytes", "fixture": "{{upstream}}.bin", "content_type": "application/octet-stream"}"#;
 
 fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
@@ -82,7 +83,7 @@ fn fill_keeps_unmarked_answers(#[case] body: &str, #[case] events: &[&str]) {
 
 #[test]
 fn fill_never_touches_bytes_answers() {
-    let mut bytes_answer = upstream_answer(Some(value(BINARY_ANSWER)), None);
+    let mut bytes_answer = upstream_answer(Some(value(MARKED_BINARY_ANSWER)), None);
     let before = bytes_answer.body.clone();
     fill(&mut bytes_answer, BASE);
     assert_eq!(bytes_answer.body, before);
