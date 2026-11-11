@@ -24,6 +24,8 @@ call:
         duo: {litellm_provider: groq, mode: chat, input_cost_per_token: 16}
         target: {litellm_provider: groq, mode: chat, input_cost_per_token: 17}
         groq/groq/target-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 18}
+        split-pair-2024-01-01: {litellm_provider: groq, mode: chat, input_cost_per_token: 21}
+        groq/split-pair: {litellm_provider: groq, mode: chat, input_cost_per_token: 22}
         converse/x: {litellm_provider: bedrock, mode: chat, input_cost_per_token: 19}
         x: {litellm_provider: bedrock, mode: chat, input_cost_per_token: 20}
       fallback_generalizations:
@@ -41,6 +43,7 @@ call:
       - {model: bare-entry}
       - {model: duo-2024-01-01, custom_llm_provider: groq}
       - {model: groq/target-2024-01-01, custom_llm_provider: groq}
+      - {model: groq/split-pair-2024-01-01, custom_llm_provider: groq}
       - {model: converse/x, custom_llm_provider: bedrock}
 env: {}
 compare: {ignore: []}

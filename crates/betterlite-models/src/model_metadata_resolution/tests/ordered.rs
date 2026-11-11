@@ -82,6 +82,8 @@ async fn later_candidate_order_case() {
             "duo": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 2},
             "target": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 3},
             "groq/groq/target-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 4},
+            "split-pair-2024-01-01": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 7},
+            "groq/split-pair": {"litellm_provider": "groq", "mode": "chat", "input_cost_per_token": 8},
             "converse/x": {"litellm_provider": "bedrock", "mode": "chat", "input_cost_per_token": 5},
             "x": {"litellm_provider": "bedrock", "mode": "chat", "input_cost_per_token": 6}
         }"#,
@@ -90,6 +92,8 @@ async fn later_candidate_order_case() {
     assert_eq!(string_field(&combined_stripped, "key"), "groq/duo");
     let stripped = lookup(&fixture, "groq/target-2024-01-01").await;
     assert_eq!(string_field(&stripped, "key"), "target");
+    let split = lookup(&fixture, "groq/split-pair-2024-01-01").await;
+    assert_eq!(string_field(&split, "key"), "split-pair-2024-01-01");
     let model = resolve(&fixture, "converse/x", Some("bedrock"), &NeverDynamic)
         .await
         .unwrap();

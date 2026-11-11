@@ -19,6 +19,7 @@ call:
           model_info: {max_tokens: 11}
     queries:
       - {model: claude-future, custom_llm_provider: anthropic}
+      - {model: claude-future-2024-01-01, custom_llm_provider: anthropic}
       - {model: mystery-model-2024-01-01}
       - {model: mystery-model-2024-01-01, custom_llm_provider: other}
       - {model: empty-rule, custom_llm_provider: acme}

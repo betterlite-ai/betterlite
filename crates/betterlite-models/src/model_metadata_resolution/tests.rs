@@ -675,6 +675,17 @@ async fn generalization_rules_case(fixture: &Fixture) {
     assert_eq!(number_field(&projected, "max_tokens"), Some(4096));
     assert_eq!(string_field(&projected, "litellm_provider"), "anthropic");
 
+    let first_match = resolve(
+        fixture,
+        "claude-future-2024-01-01",
+        Some("anthropic"),
+        &NeverDynamic,
+    )
+    .await
+    .unwrap();
+    assert_eq!(string_field(&first_match, "key"), "anthropic/claude-future");
+    assert_eq!(number_field(&first_match, "max_tokens"), Some(4096));
+
     let retained = resolve(fixture, "mystery-model-2024-01-01", None, &NeverDynamic)
         .await
         .unwrap();
