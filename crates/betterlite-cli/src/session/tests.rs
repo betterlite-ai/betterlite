@@ -425,14 +425,14 @@ fn print_token_renews_a_stale_credential_with_a_refresh_token() {
             ),
         ]
     );
-    let committed = fixture.files.committed();
+    assert_saved_renewal(&fixture.files, &fixture.vault);
+}
+
+fn assert_saved_renewal(files: &FakeFiles, vault: &FakeVault) {
+    let committed = files.committed();
     let renewed = committed.last().expect("saves the renewed credential");
     assert_eq!(renewed.expires_at, Some(4_600.0_f64));
-    let blob = fixture
-        .vault
-        .writes
-        .last()
-        .expect("stores the renewed secret");
+    let blob = vault.writes.last().expect("stores the renewed secret");
     let decoded = decode_secret(exposed(blob), SERVER).expect("decodes the renewed secret");
     assert_eq!(decoded.key.as_ref().map(exposed), Some("sk-renewed"));
     assert_eq!(
@@ -508,45 +508,21 @@ fn print_token_rejects_a_missing_context_key_for_this_server() {
     assert!(fixture.stdout().is_empty());
 }
 
-struct WhoamiFixture {
-    files: FakeFiles,
-    vault: FakeVault,
-    expiration_hours: i64,
-    stdout: Vec<u8>,
-}
-
-impl WhoamiFixture {
-    fn new(files: FakeFiles) -> Self {
-        Self {
-            files,
-            vault: FakeVault::unreachable_read(),
-            expiration_hours: 24,
-            stdout: Vec::new(),
-        }
-    }
-
-    fn run(&mut self, now: i64) -> Result<(), SessionError> {
-        let mut request = WhoamiRequest {
-            files: &self.files,
-            vault: &mut self.vault,
-            clock: Arc::new(FixedWallClock(now)),
-            expiration_hours: self.expiration_hours,
-            stdout: &mut self.stdout,
-        };
-        whoami(&mut request)
-    }
-
-    fn stdout(&self) -> &str {
-        text(&self.stdout)
-    }
-}
-
 #[test]
 fn whoami_reports_when_nothing_is_stored() {
-    let mut fixture = WhoamiFixture::new(FakeFiles::empty());
-    fixture.run(1_000).expect("reports");
+    let files = FakeFiles::empty();
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
     assert_eq!(
-        fixture.stdout(),
+        text(&stdout),
         "Not authenticated. Run 'lite login' to authenticate.\n"
     );
 }
@@ -557,10 +533,19 @@ fn whoami_prints_the_identity_with_unknown_placeholders() {
     stored.user_id = String::new();
     stored.user_email = String::new();
     stored.user_role = String::new();
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.run(1_000).expect("reports");
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
     assert_eq!(
-        fixture.stdout(),
+        text(&stdout),
         "Authenticated\n\
          User Email: Unknown\n\
          User ID: Unknown\n\
@@ -576,20 +561,38 @@ fn whoami_prints_the_identity_with_unknown_placeholders() {
 fn whoami_prints_the_team_only_when_set(#[case] team_id: Option<&str>, #[case] printed: bool) {
     let mut stored = record();
     stored.team_id = team_id.map(str::to_owned);
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.run(1_000).expect("reports");
-    assert_eq!(fixture.stdout().contains("Team ID: team-1\n"), printed);
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
+    assert_eq!(text(&stdout).contains("Team ID: team-1\n"), printed);
 }
 
 #[test]
 fn whoami_prints_a_keychain_notice_when_the_key_is_missing() {
     let mut stored = record();
     stored.key = None;
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.vault.read_failure = Some(KeyringUnusable::KeyringUnreachable);
-    fixture.run(1_000).expect("reports");
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    vault.read_failure = Some(KeyringUnusable::KeyringUnreachable);
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
     assert_eq!(
-        fixture.stdout(),
+        text(&stdout),
         "Signed in, but the credential cannot be read\n\
          User Email: user@example.com\n\
          User ID: user-1\n\
@@ -604,26 +607,36 @@ fn whoami_prints_the_expired_line_without_a_final_period() {
     let mut stored = record();
     stored.expires_at = Some(1_000.0_f64);
     stored.refresh_token = None;
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.run(1_000).expect("reports");
-    assert!(
-        fixture
-            .stdout()
-            .ends_with("Key expired. Run 'lite login' again\n")
-    );
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
+    assert!(text(&stdout).ends_with("Key expired. Run 'lite login' again\n"));
 }
 
 #[test]
 fn whoami_names_the_pkce_login_for_an_expired_renewable_credential() {
     let mut stored = record();
     stored.expires_at = Some(999.0_f64);
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.run(1_000).expect("reports");
-    assert!(
-        fixture
-            .stdout()
-            .ends_with("Key expired. Run 'lite login --pkce' again\n")
-    );
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
+    assert!(text(&stdout).ends_with("Key expired. Run 'lite login --pkce' again\n"));
 }
 
 #[test]
@@ -631,22 +644,36 @@ fn whoami_prints_the_remaining_hours() {
     let mut stored = record();
     stored.expires_at = Some(8_200.0_f64);
     stored.refresh_token = None;
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.run(1_000).expect("reports");
-    assert!(fixture.stdout().ends_with("Key expires in: 2.0 hours\n"));
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
+    assert!(text(&stdout).ends_with("Key expires in: 2.0 hours\n"));
 }
 
 #[test]
 fn whoami_appends_renewed_on_next_use() {
     let mut stored = record();
     stored.expires_at = Some(8_200.0_f64);
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.run(1_000).expect("reports");
-    assert!(
-        fixture
-            .stdout()
-            .ends_with("Key expires in: 2.0 hours, renewed on next use\n")
-    );
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
+    assert!(text(&stdout).ends_with("Key expires in: 2.0 hours, renewed on next use\n"));
 }
 
 #[rstest]
@@ -662,12 +689,20 @@ fn whoami_warns_when_the_token_is_older_than_the_expiry_hours(
     let mut stored = record();
     stored.timestamp = timestamp;
     stored.expires_at = None;
-    let mut fixture = WhoamiFixture::new(FakeFiles::holding(stored));
-    fixture.expiration_hours = expiration_hours;
-    fixture.run(1_000).expect("reports");
+    let files = FakeFiles::holding(stored);
+    let mut vault = FakeVault::unreachable_read();
+    let mut stdout = Vec::new();
+    let mut request = WhoamiRequest {
+        files: &files,
+        vault: &mut vault,
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours,
+        stdout: &mut stdout,
+    };
+    whoami(&mut request).expect("reports");
     let warning =
         format!("Warning: Token is more than {expiration_hours} hours old and may have expired.\n");
-    assert_eq!(fixture.stdout().contains(&warning), warned);
+    assert_eq!(text(&stdout).contains(&warning), warned);
 }
 
 fn configure_request<'request>(
