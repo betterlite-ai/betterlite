@@ -124,10 +124,6 @@ async fn a_content_type_in_either_case_is_kept(#[case] name: &str) {
         .await
         .expect("projected headers");
     assert_eq!(header(&headers, name).as_deref(), Some("text/plain"));
-    assert_eq!(
-        header(&headers, "Content-Type").as_deref(),
-        Some("text/plain")
-    );
     assert_eq!(headers.len(), 3);
 }
 

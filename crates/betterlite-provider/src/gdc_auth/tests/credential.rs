@@ -169,8 +169,8 @@ fn certificate_pem_of_length(length: usize) -> String {
         .saturating_add(16_000);
     let padding = length.saturating_sub(fixed);
     let body = "A".repeat(16_000);
-    let blank_lines = "\n".repeat(padding);
-    format!("{header}{body}{blank_lines}{footer}")
+    let spaces = " ".repeat(padding);
+    format!("{header}{body}{spaces}{footer}")
 }
 
 #[test]
