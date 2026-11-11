@@ -19,13 +19,11 @@ pub(crate) enum Step {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RuntimeStep {
     pub(crate) api_base: String,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct SignStep {
     pub(crate) api_base: String,
     #[serde(default)]
@@ -42,7 +40,6 @@ pub(crate) struct SignStep {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct TransformStep {
     pub(crate) api_base: String,
     pub(crate) body: String,
