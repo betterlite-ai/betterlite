@@ -1,3 +1,4 @@
+mod arc;
 pub mod decode;
 pub mod environment;
 pub mod error;
@@ -14,10 +15,7 @@ use std::io::Result as IoResult;
 
 use secrecy::SecretString;
 
-use crate::azure_arc_identity::{
-    ArcHost, ArcIdentity, ArcRequest, ArcResponse, ArcTransport, acquire_arc_token,
-    select_arc_endpoint,
-};
+use crate::azure_arc_identity::{ArcHost, ArcRequest, ArcResponse, ArcTransport};
 use crate::azure_client_secret::token::AccessToken;
 use crate::azure_hosted_identity::credential::{
     CloudShellCredential, HostedCredential, HostedIdentity,
@@ -112,7 +110,9 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
         match selection.kind {
             ManagedIdentityKind::Unconfigured => Err(ManagedIdentityError::NoEndpoint),
             ManagedIdentityKind::Workload => Self::workload(io, &selection, scope),
-            ManagedIdentityKind::CloudShell => self.cloud_shell(io, resource),
+            ManagedIdentityKind::CloudShell => Ok(ManagedIdentityToken::from(
+                self.shell().acquire(&io.hosted, resource)?,
+            )),
             ManagedIdentityKind::ServiceFabric
             | ManagedIdentityKind::AppService
             | ManagedIdentityKind::Arc
@@ -139,19 +139,12 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
         })
     }
 
-    fn cloud_shell(
-        &self,
-        io: &ManagedIdentityIo<'_>,
-        resource: &str,
-    ) -> Result<ManagedIdentityToken, ManagedIdentityError> {
-        let shell = CloudShellCredential {
+    fn shell(&self) -> CloudShellCredential {
+        CloudShellCredential {
             environment: self.environment.hosted.clone(),
             identity: self.hosted_identity(),
             within_default_credential: self.within_default_credential,
-        };
-        Ok(ManagedIdentityToken::from(
-            shell.acquire(&io.hosted, resource)?,
-        ))
+        }
     }
 
     fn hosted_identity(&self) -> HostedIdentity {
@@ -179,7 +172,9 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
                 hosted.acquire(MsalKind::AppService, &io.hosted, resource)?
             }
             HostedProtocol::AzureMl => hosted.acquire(MsalKind::AzureMl, &io.hosted, resource)?,
-            HostedProtocol::Arc => return self.arc(io, resource),
+            HostedProtocol::Arc => {
+                return arc::acquire(self.host, io.arc, self.client_id, resource);
+            }
             HostedProtocol::Vm => imds::acquire(
                 self.environment,
                 &io.imds,
@@ -189,24 +184,5 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
             )?,
         };
         Ok(ManagedIdentityToken::from(token))
-    }
-
-    fn arc(
-        &self,
-        io: &ManagedIdentityIo<'_>,
-        resource: &str,
-    ) -> Result<ManagedIdentityToken, ManagedIdentityError> {
-        let endpoint = select_arc_endpoint(self.host).ok_or(ManagedIdentityError::ArcEndpoint)?;
-        let identity = match self.client_id {
-            Some(client_id) if !client_id.is_empty() => ArcIdentity::UserAssigned,
-            Some(_) | None => ArcIdentity::SystemAssigned,
-        };
-        let token = acquire_arc_token(self.host, &io.arc, &endpoint, resource, identity)?;
-        Ok(ManagedIdentityToken::issued(
-            token.token,
-            token.expires_on,
-            token.token_type,
-            token.refresh_on,
-        ))
     }
 }
