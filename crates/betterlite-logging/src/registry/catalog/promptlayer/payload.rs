@@ -10,10 +10,9 @@ use crate::fields::payload::StandardLoggingPayload;
 pub(super) fn callback_kwargs(payload: &StandardLoggingPayload) -> Json {
     let mut fields = IndexMap::new();
     fields.insert("model".to_owned(), Json::Text(payload.model.clone()));
-    fields.insert(
-        "messages".to_owned(),
-        payload.messages.clone().unwrap_or(Json::Null),
-    );
+    if let Some(messages) = payload.messages.as_ref() {
+        fields.insert("messages".to_owned(), messages.clone());
+    }
     fields.insert(
         "optional_params".to_owned(),
         Json::Object(payload.model_parameters.clone()),
@@ -39,7 +38,7 @@ fn metadata_object(payload: &StandardLoggingPayload) -> Json {
                 return Json::Object(IndexMap::new());
             }
         };
-    fields.retain(|name, value| name != "requester_metadata" && !matches!(value, Json::Null));
+    fields.retain(|_name, value| !matches!(value, Json::Null));
     if let Some(Json::Object(requester)) = payload.metadata.requester_metadata.as_ref() {
         for (name, value) in requester {
             fields.insert(name.clone(), value.clone());

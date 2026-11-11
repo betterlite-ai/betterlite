@@ -5,7 +5,6 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::fields::payload::StandardLoggingPayload;
-use crate::http_analytics_loggers::athina::ADDITIONAL_KEYS;
 
 // the standard logging payload stands in for LiteLLM's model_call_details; only the keys athina reads are built
 pub(super) fn callback_kwargs(payload: &StandardLoggingPayload, stream: bool) -> Json {
@@ -45,10 +44,8 @@ fn metadata_object(payload: &StandardLoggingPayload) -> Json {
         };
     fields.retain(|_name, value| !matches!(value, Json::Null));
     if let Some(Json::Object(requester)) = payload.metadata.requester_metadata.as_ref() {
-        for key in ADDITIONAL_KEYS {
-            if let Some(value) = requester.get(key) {
-                fields.insert((*key).to_owned(), value.clone());
-            }
+        for (name, value) in requester {
+            fields.insert(name.clone(), value.clone());
         }
     }
     Json::Object(fields)

@@ -269,15 +269,15 @@ fn assert_track_request(request: &Recorded) {
     let kwargs = field(body, "kwargs");
     assert_eq!(field(kwargs, "model"), &Json::Text("gpt-4o".to_owned()));
     assert_eq!(
-        serde_json::to_string(field(kwargs, "temperature")).expect("a printable number"),
-        "0.2"
+        field(kwargs, "messages"),
+        &Json::List(vec![Json::Object(IndexMap::from([
+            ("role".to_owned(), Json::Text("user".to_owned())),
+            ("content".to_owned(), Json::Text("Hello".to_owned())),
+        ]))])
     );
     assert_eq!(
-        field(field(kwargs, "litellm_params"), "metadata"),
-        &Json::Object(IndexMap::from([(
-            "user_api_key_user_id".to_owned(),
-            Json::Text("user-1".to_owned())
-        )]))
+        serde_json::to_string(field(kwargs, "temperature")).expect("a printable number"),
+        "0.2"
     );
     assert_eq!(
         field(body, "request_response"),
@@ -311,10 +311,22 @@ async fn a_success_event_posts_the_metadata_when_a_request_id_comes_back() {
     assert_eq!(field(body, "api_key"), &Json::Text("pl-key".to_owned()));
     assert_eq!(
         field(body, "metadata"),
-        &Json::Object(IndexMap::from([(
-            "user_api_key_user_id".to_owned(),
-            Json::Text("user-1".to_owned())
-        )]))
+        &Json::Object(IndexMap::from([
+            (
+                "user_api_key_user_id".to_owned(),
+                Json::Text("user-1".to_owned())
+            ),
+            (
+                "requester_metadata".to_owned(),
+                Json::Object(IndexMap::from([(
+                    "pl_tags".to_owned(),
+                    Json::List(vec![
+                        Json::Text("tag-1".to_owned()),
+                        Json::Text("tag-2".to_owned())
+                    ])
+                )]))
+            ),
+        ]))
     );
 }
 
@@ -324,6 +336,21 @@ async fn an_unsuccessful_response_sends_no_metadata() {
     let adapter = adapter(capture.clone(), settings(Some("pl-key")));
     deliver(&event(false), &adapter).await;
     assert_eq!(capture.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn an_event_without_messages_posts_nothing() {
+    let capture = Capture::answering(SUCCESS);
+    let adapter = adapter(capture.clone(), settings(Some("pl-key")));
+    let without_messages = event_from(
+        &PAYLOAD.replace(
+            "\n    \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}],",
+            "",
+        ),
+        false,
+    );
+    deliver(&without_messages, &adapter).await;
+    assert!(capture.requests().is_empty());
 }
 
 #[tokio::test]

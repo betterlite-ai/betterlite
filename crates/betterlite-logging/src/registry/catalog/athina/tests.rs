@@ -216,7 +216,7 @@ fn the_logger_still_builds_without_an_api_key() {
     assert_eq!(logger.callback_name(), "athina");
 }
 
-fn assert_mapped_body(body: &Json) {
+fn assert_athina_fields(body: &Json) {
     assert_eq!(
         field(body, "language_model_id"),
         &Json::Text("gpt-4o".to_owned())
@@ -233,15 +233,35 @@ fn assert_mapped_body(body: &Json) {
         field(&prompt[0], "content"),
         &Json::Text("Hello".to_owned())
     );
+}
+
+fn assert_request_fields(body: &Json) {
     let request = field(body, "request");
     assert_eq!(field(request, "model"), &Json::Text("gpt-4o".to_owned()));
     assert_eq!(field(request, "stream"), &Json::Bool(false));
     assert_eq!(
-        field(
-            field(field(request, "litellm_params"), "metadata"),
-            "user_api_key_user_id"
-        ),
-        &Json::Text("user-1".to_owned())
+        field(field(request, "litellm_params"), "metadata"),
+        &Json::Object(IndexMap::from([
+            (
+                "user_api_key_user_id".to_owned(),
+                Json::Text("user-1".to_owned())
+            ),
+            (
+                "requester_metadata".to_owned(),
+                Json::Object(IndexMap::from([
+                    (
+                        "environment".to_owned(),
+                        Json::Text("production".to_owned())
+                    ),
+                    ("prompt_slug".to_owned(), Json::Text("greeting".to_owned())),
+                ]))
+            ),
+            (
+                "environment".to_owned(),
+                Json::Text("production".to_owned())
+            ),
+            ("prompt_slug".to_owned(), Json::Text("greeting".to_owned())),
+        ]))
     );
     assert_eq!(
         field(field(body, "response"), "id"),
@@ -255,6 +275,11 @@ fn assert_mapped_body(body: &Json) {
         field(body, "prompt_slug"),
         &Json::Text("greeting".to_owned())
     );
+}
+
+fn assert_mapped_body(body: &Json) {
+    assert_athina_fields(body);
+    assert_request_fields(body);
 }
 
 #[tokio::test]
