@@ -14,8 +14,7 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::task::yield_now;
-use tokio::time::{advance, timeout};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -434,7 +433,7 @@ async fn the_flush_loop_stops_on_shutdown() {
     awaited.expect("the flush loop stops on shutdown");
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn the_flush_loop_resolves_the_dataset_on_its_first_tick() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a free port");
     let address = listener.local_addr().expect("the bound address");
@@ -444,12 +443,14 @@ async fn the_flush_loop_resolves_the_dataset_on_its_first_tick() {
         &[
             ("ARGILLA_API_KEY", "argilla-key"),
             ("ARGILLA_BASE_URL", base.as_str()),
+            // one tick is a real second, so the test waits on the loop instead of on a paused clock
+            ("DEFAULT_FLUSH_INTERVAL_SECONDS", "1"),
         ],
     );
     let _logger = build(&inputs).expect("the logger builds");
 
     let serve = async {
-        let accepted = timeout(Duration::from_secs(30), listener.accept()).await;
+        let accepted = timeout(Duration::from_secs(10), listener.accept()).await;
         let (mut stream, _) = accepted
             .expect("the flush loop connects")
             .expect("one request");
@@ -457,11 +458,7 @@ async fn the_flush_loop_resolves_the_dataset_on_its_first_tick() {
         answer(&mut stream, DATASET_BODY).await;
         head
     };
-    let tick = async {
-        yield_now().await;
-        advance(Duration::from_secs(5)).await;
-    };
-    let (head, ()) = tokio::join!(serve, tick);
+    let head = serve.await;
     assert!(head.contains("GET /api/v1/me/datasets?name=litellm-completion"));
 }
 
