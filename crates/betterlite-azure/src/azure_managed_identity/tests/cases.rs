@@ -1,14 +1,22 @@
+use std::env::temp_dir;
+use std::fs;
 use std::iter::repeat_n;
+use std::process::id;
 use std::time::Duration;
 
+use betterlite_config::sections::azure_managed_identity::Settings;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::azure_arc_identity::error::ArcIdentityError;
+use crate::azure_hosted_identity::error::HostedIdentityError;
 use crate::azure_hosted_identity::protocol::HostedProtocol;
 
-use super::super::error::{NO_ENDPOINT, NO_RESPONSE_PREFIX};
+use super::super::environment::ManagedIdentityEnvironment;
+use super::super::error::{ManagedIdentityError, NO_ENDPOINT, NO_RESPONSE_PREFIX};
 use super::super::imds::{CLIENT_SKU, CLIENT_VERSION, ProbePolicy};
-use super::super::selection::ManagedIdentityKind;
+use super::super::runtime::{FsTokenFiles, TokenFiles as _};
+use super::super::selection::{ManagedIdentityKind, select};
 use super::fixture::{APP_SERVICE, Fixture, NOW, REQUEST_ID, Reply};
 
 const SCOPE: &str = "https://cognitiveservices.azure.com/.default";
@@ -98,13 +106,14 @@ fn imds_unavailable() {
     probe_forbidden_other();
     status_400();
     status_500();
+    status_403();
     malformed_text();
     pod_authority_skips_probe();
 }
 
 fn chained_probe(
     fixture: &Fixture,
-) -> Result<super::super::ManagedIdentityToken, super::super::error::ManagedIdentityError> {
+) -> Result<super::super::ManagedIdentityToken, ManagedIdentityError> {
     let credential = super::super::ManagedIdentityCredential {
         environment: &fixture.environment,
         host: &fixture.host,
@@ -183,7 +192,7 @@ fn status_500() {
     let error = fixture.acquire(&[SCOPE]).unwrap_err();
     assert!(matches!(
         error,
-        super::super::error::ManagedIdentityError::ClientAuthentication { .. }
+        ManagedIdentityError::ClientAuthentication { .. }
     ));
     assert_eq!(fixture.imds.recorded().len(), 6);
     assert_eq!(
@@ -195,6 +204,29 @@ fn status_500() {
             Duration::from_millis(12800),
         ]
     );
+}
+
+fn status_403() {
+    let unreachable = Fixture::new(&[]);
+    unreachable.imds.push(Reply::bare(403, "unreachable host"));
+    assert_eq!(
+        unreachable.acquire(&[SCOPE]).unwrap_err().to_string(),
+        "ManagedIdentityCredential authentication unavailable. Error: Unexpected response \"unreachable host\""
+    );
+    let denied = Fixture::new(&[]);
+    denied.imds.push(Reply::bare(403, "denied"));
+    assert!(matches!(
+        denied.acquire(&[SCOPE]).unwrap_err(),
+        ManagedIdentityError::ClientAuthentication { .. }
+    ));
+    let retried = Fixture::new(&[]);
+    retried
+        .imds
+        .push_all(repeat_n(Reply::bare(500, "unreachable"), 6).collect());
+    assert!(matches!(
+        retried.acquire(&[SCOPE]).unwrap_err(),
+        ManagedIdentityError::ClientAuthentication { .. }
+    ));
 }
 
 fn malformed_text() {
@@ -301,6 +333,18 @@ fn workload_selection() {
     workload_selection_details();
     workload_selection_rejections();
     workload_file_is_read_each_time();
+    filesystem_token_file();
+}
+
+fn filesystem_token_file() {
+    let path = temp_dir().join(format!("betterlite-b676-{}", id()));
+    fs::write(&path, b"fixture-jwt").unwrap();
+    let read = FsTokenFiles.read(path.to_str().unwrap());
+    fs::remove_file(&path).unwrap();
+    assert_eq!(read.unwrap(), b"fixture-jwt");
+    FsTokenFiles
+        .read("/nonexistent/betterlite-b676")
+        .unwrap_err();
 }
 
 fn workload_grant() {
@@ -384,10 +428,7 @@ fn workload_selection_rejections() {
 
     let missing_file = Fixture::new(&workload_environment());
     let file_error = missing_file.acquire(&[SCOPE]).unwrap_err();
-    assert!(matches!(
-        file_error,
-        super::super::error::ManagedIdentityError::TokenFile { .. }
-    ));
+    assert!(matches!(file_error, ManagedIdentityError::TokenFile { .. }));
 }
 
 fn workload_file_is_read_each_time() {
@@ -480,6 +521,12 @@ fn hosted_selection_order() {
     presence_over_truthiness();
     arc_file_probe();
     arc_token();
+    arc_client_id();
+    hosted_tokens();
+    hosted_client_id();
+    kind_names();
+    empty_partner_values();
+    settings_environment();
 }
 
 fn selection_of(fixture: &Fixture) -> (ManagedIdentityKind, Option<&'static str>) {
@@ -522,6 +569,186 @@ fn hosted_variants() {
         selection_of(&azure_ml),
         (ManagedIdentityKind::AzureMl, Some("azure_ml"))
     );
+}
+
+fn hosted_tokens() {
+    let azure_ml = Fixture::new(&[
+        ("MSI_ENDPOINT", "http://ml.test/token"),
+        ("MSI_SECRET", "ml-secret"),
+    ]);
+    azure_ml.hosted.push(Reply::ok(
+        r#"{"access_token":"ml-token","expires_on":1700003600}"#,
+    ));
+    let ml_token = azure_ml.acquire(&[SCOPE]).unwrap();
+    assert_eq!(ml_token.token.expose_secret(), "ml-token");
+    assert_eq!(azure_ml.hosted.recorded()[0].url, "http://ml.test/token");
+    let service_fabric = Fixture::new(&[
+        ("IDENTITY_ENDPOINT", "http://sf.test/token"),
+        ("IDENTITY_HEADER", "header-secret"),
+        ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
+    ]);
+    service_fabric.hosted.push(Reply::ok(
+        r#"{"access_token":"sf-token","expires_on":1700003600,"token_type":"Bearer"}"#,
+    ));
+    let fabric_token = service_fabric.acquire(&[SCOPE]).unwrap();
+    assert_eq!(fabric_token.token.expose_secret(), "sf-token");
+    assert_eq!(
+        service_fabric.hosted.recorded()[0].url,
+        "http://sf.test/token"
+    );
+    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://shell.test/token")]);
+    cloud_shell.hosted.push(Reply::ok(
+        r#"{"access_token":"shell-token","expires_in":3600,"resource":"https://cognitiveservices.azure.com","token_type":"Bearer"}"#,
+    ));
+    let shell_token = cloud_shell.acquire(&[SCOPE]).unwrap();
+    assert_eq!(shell_token.token.expose_secret(), "shell-token");
+    assert_eq!(
+        cloud_shell.hosted.recorded()[0].url,
+        "http://shell.test/token"
+    );
+}
+
+// the client id reaches the hosted protocols, which reject it for Service Fabric and Cloud Shell
+fn hosted_client_id() {
+    let service_fabric = Fixture::new(&[
+        ("IDENTITY_ENDPOINT", "http://sf.test/token"),
+        ("IDENTITY_HEADER", "header-secret"),
+        ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
+    ]);
+    let fabric_error = service_fabric
+        .credential(Some("user-client"))
+        .token(&service_fabric.io(), &[SCOPE])
+        .unwrap_err();
+    assert!(matches!(
+        fabric_error,
+        ManagedIdentityError::Hosted(HostedIdentityError::ServiceFabricIdentityConfig)
+    ));
+    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://shell.test/token")]);
+    let shell_error = cloud_shell
+        .credential(Some("user-client"))
+        .token(&cloud_shell.io(), &[SCOPE])
+        .unwrap_err();
+    assert!(matches!(
+        shell_error,
+        ManagedIdentityError::Hosted(HostedIdentityError::CloudShellClientId)
+    ));
+    assert!(cloud_shell.hosted.recorded().is_empty());
+}
+
+// the configured settings select the same protocols as the process environment
+fn settings_environment() {
+    fabric_settings_environment();
+    arc_settings_environment();
+    ml_settings_environment();
+}
+
+fn fabric_settings_environment() {
+    let fabric_settings = Settings {
+        identity_endpoint: Some("http://sf.test/token".to_owned()),
+        identity_header: Some(SecretString::from("header-secret")),
+        identity_server_thumbprint: Some(THUMBPRINT.to_owned()),
+        imds_endpoint: None,
+        msi_endpoint: None,
+        msi_secret: None,
+        pod_identity_authority_host: Some("http://pod.test".to_owned()),
+    };
+    let fabric = ManagedIdentityEnvironment::from_settings(&fabric_settings);
+    assert_eq!(
+        select(&fabric, None, false).unwrap().kind,
+        ManagedIdentityKind::ServiceFabric
+    );
+    assert_eq!(
+        fabric.pod_identity_authority_host.as_deref(),
+        Some("http://pod.test")
+    );
+}
+
+fn arc_settings_environment() {
+    let arc_settings = Settings {
+        identity_endpoint: Some("http://arc.test/token".to_owned()),
+        identity_header: None,
+        identity_server_thumbprint: None,
+        imds_endpoint: Some("http://arc.test/imds".to_owned()),
+        msi_endpoint: None,
+        msi_secret: None,
+        pod_identity_authority_host: None,
+    };
+    let arc = ManagedIdentityEnvironment::from_settings(&arc_settings);
+    assert_eq!(
+        select(&arc, None, false).unwrap().kind,
+        ManagedIdentityKind::Arc
+    );
+}
+
+fn ml_settings_environment() {
+    let ml_settings = Settings {
+        identity_endpoint: None,
+        identity_header: None,
+        identity_server_thumbprint: None,
+        imds_endpoint: None,
+        msi_endpoint: Some("http://ml.test/token".to_owned()),
+        msi_secret: Some(SecretString::from("ml-secret")),
+        pod_identity_authority_host: None,
+    };
+    let ml = ManagedIdentityEnvironment::from_settings(&ml_settings);
+    assert_eq!(
+        select(&ml, None, false).unwrap().kind,
+        ManagedIdentityKind::AzureMl
+    );
+}
+
+fn kind_names() {
+    let names = [
+        (ManagedIdentityKind::ServiceFabric, "service_fabric"),
+        (ManagedIdentityKind::AppService, "app_service"),
+        (ManagedIdentityKind::Arc, "arc"),
+        (ManagedIdentityKind::AzureMl, "azure_ml"),
+        (ManagedIdentityKind::CloudShell, "cloud_shell"),
+        (ManagedIdentityKind::Workload, "workload"),
+        (ManagedIdentityKind::Imds, "imds"),
+        (ManagedIdentityKind::Unconfigured, "none"),
+    ];
+    for (kind, name) in names {
+        assert_eq!(kind.name(), name);
+    }
+}
+
+// the outer selector treats an empty partner value as absent
+fn empty_partner_values() {
+    let shell = Fixture::new(&[
+        ("MSI_ENDPOINT", "http://shell.test/token"),
+        ("MSI_SECRET", ""),
+    ]);
+    assert_eq!(selection_of(&shell).0, ManagedIdentityKind::CloudShell);
+    let arc = Fixture::new(&[
+        ("IDENTITY_ENDPOINT", APP_SERVICE),
+        ("IDENTITY_HEADER", ""),
+        ("IMDS_ENDPOINT", "http://arc.test/imds"),
+    ]);
+    assert_eq!(selection_of(&arc).0, ManagedIdentityKind::Arc);
+    let app_service = Fixture::new(&[
+        ("IDENTITY_ENDPOINT", APP_SERVICE),
+        ("IDENTITY_HEADER", "header-secret"),
+        ("IDENTITY_SERVER_THUMBPRINT", ""),
+    ]);
+    assert_eq!(
+        selection_of(&app_service).0,
+        ManagedIdentityKind::AppService
+    );
+    for empty in [
+        "AZURE_AUTHORITY_HOST",
+        "AZURE_TENANT_ID",
+        "AZURE_FEDERATED_TOKEN_FILE",
+    ] {
+        let mut variables = workload_environment();
+        for pair in &mut variables {
+            if pair.0 == empty {
+                pair.1 = "";
+            }
+        }
+        let fixture = Fixture::new(&variables);
+        assert_eq!(selection_of(&fixture).0, ManagedIdentityKind::Imds);
+    }
 }
 
 fn workload_and_unconfigured() {
@@ -588,7 +815,7 @@ fn arc_file_probe() {
     );
 }
 
-fn arc_token() {
+fn arc_fixture() -> Fixture {
     let fixture = Fixture::new(&[
         ("IDENTITY_ENDPOINT", "http://arc.test/token"),
         ("IMDS_ENDPOINT", "http://arc.test/imds"),
@@ -602,11 +829,35 @@ fn arc_token() {
     fixture.arc.push(Reply::ok(
         r#"{"access_token":"arc-token","expires_in":3600}"#,
     ));
+    fixture
+}
+
+fn arc_token() {
+    let fixture = arc_fixture();
     let token = fixture.acquire(&[SCOPE]).unwrap();
     assert_eq!(token.token.expose_secret(), "arc-token");
     assert_eq!(token.expires_on, Some(NOW + 3600));
     assert_eq!(token.refresh_on, None);
     assert!(fixture.imds.recorded().is_empty());
+}
+
+// Arc takes a user-assigned identity only through a non-empty client id, which the SDK rejects
+fn arc_client_id() {
+    let user = arc_fixture();
+    let rejected = user
+        .credential(Some("user-client"))
+        .token(&user.io(), &[SCOPE])
+        .unwrap_err();
+    assert!(matches!(
+        rejected,
+        ManagedIdentityError::Arc(ArcIdentityError::UserAssignedIdentity)
+    ));
+    let system = arc_fixture();
+    let accepted = system
+        .credential(Some(""))
+        .token(&system.io(), &[SCOPE])
+        .unwrap();
+    assert_eq!(accepted.token.expose_secret(), "arc-token");
 }
 
 fn partial_identity_endpoint() {

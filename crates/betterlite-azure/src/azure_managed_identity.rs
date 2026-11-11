@@ -107,18 +107,17 @@ impl<H: ArcHost> ManagedIdentityCredential<'_, H> {
         };
         let selection = self.select()?;
         let resource = scope.strip_suffix("/.default").unwrap_or(scope);
-        match selection.kind {
-            ManagedIdentityKind::Unconfigured => Err(ManagedIdentityError::NoEndpoint),
-            ManagedIdentityKind::Workload => Self::workload(io, &selection, scope),
-            ManagedIdentityKind::CloudShell => Ok(ManagedIdentityToken::from(
-                self.shell().acquire(&io.hosted, resource)?,
-            )),
-            ManagedIdentityKind::ServiceFabric
-            | ManagedIdentityKind::AppService
-            | ManagedIdentityKind::Arc
-            | ManagedIdentityKind::AzureMl
-            | ManagedIdentityKind::Imds => self.msal_backed(io, resource),
+        if selection.kind == ManagedIdentityKind::Unconfigured {
+            return Err(ManagedIdentityError::NoEndpoint);
         }
+        if selection.kind == ManagedIdentityKind::Workload {
+            return Self::workload(io, &selection, scope);
+        }
+        if selection.kind == ManagedIdentityKind::CloudShell {
+            let acquired = self.shell().acquire(&io.hosted, resource)?;
+            return Ok(ManagedIdentityToken::from(acquired));
+        }
+        self.msal_backed(io, resource)
     }
 
     fn workload(
