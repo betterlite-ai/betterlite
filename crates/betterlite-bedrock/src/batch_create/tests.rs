@@ -314,6 +314,15 @@ fn output_bucket_defaults() {
         "s3://env-bucket/litellm-batch-outputs/litellm-batch-00000000/"
     );
 
+    let empty_environment = Sources::new("{}", "{}", &[("AWS_S3_OUTPUT_BUCKET_NAME", "")]);
+    assert_eq!(
+        build(&empty_environment.input("m", Some("s3://in-bucket/in.jsonl")))
+            .output_data_config
+            .s3_output_data_config
+            .s3_uri,
+        "s3://in-bucket/litellm-batch-outputs/litellm-batch-00000000/"
+    );
+
     let input_bucket = Sources::new("{}", "{}", &[]);
     let request = build(&input_bucket.input("m", Some("s3://in-bucket/in.jsonl")));
     assert_eq!(
@@ -382,6 +391,9 @@ fn tags_fall_back_and_override() {
             .map(|tags| tags.len()),
         Some(1)
     );
+
+    let request_null = Sources::new("{}", r#"{"bedrock_tags": null}"#, &[]);
+    assert_eq!(build(&request_null.input("m", Some("s3://b/k"))).tags, None);
 }
 
 fn invalid_tags_are_rejected() {

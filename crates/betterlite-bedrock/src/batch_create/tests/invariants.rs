@@ -122,6 +122,7 @@ fn successful_debug_keeps_secrets_out() {
     for secret in ["LEAKEDACCESS", "leaked-secret-key", SESSION_TOKEN] {
         assert!(!rendered.contains(secret), "{secret} reached Debug");
     }
+    assert!(rendered.contains("model-invocation-job"));
     assert!(
         signed
             .headers
