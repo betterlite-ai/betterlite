@@ -96,30 +96,23 @@ fn branch_params(
     drop_policy: DropPolicy,
 ) -> Result<(Params, Vec<String>), MediaParamsError> {
     let drop = drop_policy.litellm_drop_params || drop_policy.drop_params == Some(true);
+    let model = request.model.unwrap_or_default();
     match (request.provider_config, request.custom_llm_provider) {
         (Some(config), _) => {
             let supported = supported_by_config.unwrap_or_default();
             let dropped = drop_unsupported(request, &mut non_default_params, supported, drop)?;
-            let mapped = config.map_openai_params(
-                &non_default_params,
-                Params::new(),
-                request.model.unwrap_or_default(),
-                drop,
-            )?;
+            let mapped =
+                config.map_openai_params(&non_default_params, Params::new(), model, drop)?;
             Ok((mapped, dropped))
         }
         (None, Some("bedrock")) => {
             let config = request
                 .bedrock_config
                 .ok_or(MediaParamsError::MissingBedrockConfig)?;
-            let supported = config.supported_openai_params(request.model.unwrap_or_default());
+            let supported = config.supported_openai_params(model);
             let dropped = drop_unsupported(request, &mut non_default_params, &supported, drop)?;
-            let mapped = config.map_openai_params(
-                &non_default_params,
-                Params::new(),
-                request.model.unwrap_or_default(),
-                false,
-            )?;
+            let mapped =
+                config.map_openai_params(&non_default_params, Params::new(), model, false)?;
             Ok((mapped, dropped))
         }
         (None, Some("vertex_ai")) => {
