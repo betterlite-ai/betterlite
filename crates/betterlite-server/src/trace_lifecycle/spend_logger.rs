@@ -96,6 +96,28 @@ fn delivery_error(source: &serde_json::Error) -> LoggerError {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Outcome {
+    Success,
+    Failure,
+}
+
+impl<Storage: ClickHouseStorage> TraceSpendLogger<Storage> {
+    async fn log(&self, event: &LoggerEvent, outcome: Outcome) -> Result<(), LoggerError> {
+        let kwargs = callback_kwargs(event)?;
+        let callback = CallbackEvent {
+            kwargs: &kwargs,
+            redact: false,
+            lens: &self.lens,
+        };
+        match outcome {
+            Outcome::Success => self.spend.async_log_success_event(&callback).await,
+            Outcome::Failure => self.spend.async_log_failure_event(&callback).await,
+        }
+        Ok(())
+    }
+}
+
 #[async_trait::async_trait]
 impl<Storage: ClickHouseStorage> CallbackLogger for TraceSpendLogger<Storage> {
     fn callback_name(&self) -> &'static str {
@@ -103,24 +125,10 @@ impl<Storage: ClickHouseStorage> CallbackLogger for TraceSpendLogger<Storage> {
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let kwargs = callback_kwargs(&event)?;
-        let callback = CallbackEvent {
-            kwargs: &kwargs,
-            redact: false,
-            lens: &self.lens,
-        };
-        self.spend.async_log_success_event(&callback).await;
-        Ok(())
+        self.log(&event, Outcome::Success).await
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let kwargs = callback_kwargs(&event)?;
-        let callback = CallbackEvent {
-            kwargs: &kwargs,
-            redact: false,
-            lens: &self.lens,
-        };
-        self.spend.async_log_failure_event(&callback).await;
-        Ok(())
+        self.log(&event, Outcome::Failure).await
     }
 }
