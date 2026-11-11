@@ -94,14 +94,10 @@ def run(input_value: dict[str, Json]) -> Json:
             )
             result = cast(Json, returned)
         except HTTPException as error:
-            blocked = {
-                "status": error.status_code,
-                "detail": cast(Json, error.detail),
-            }
+            blocked = {"status": error.status_code, "detail": cast(Json, error.detail)}
     metadata = cast(dict[str, Json], request_data.get("metadata") or {})
     entries = cast(
-        list[dict[str, Json]],
-        metadata.get("standard_logging_guardrail_information") or [],
+        list[dict[str, Json]], metadata.get("standard_logging_guardrail_information") or []
     )
     records: list[Json] = [{key: entry[key] for key in RECORD_KEYS} for entry in entries]
     return {

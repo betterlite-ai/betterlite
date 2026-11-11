@@ -11,9 +11,6 @@ pub const JUDGE_SYSTEM_PROMPT_REQUEST: &str = "You are a quality judge. Evaluate
 
 pub const JUDGE_SYSTEM_PROMPT_RESPONSE: &str = "You are a quality judge. Evaluate the assistant's response against the criteria provided.\nFor each criterion, assign a score from 0 to 100 and provide concise reasoning.\nReturn ONLY valid JSON in this exact format:\n{\n  \"verdicts\": [\n    {\"criterion_name\": \"<name>\", \"score\": <0-100>, \"reasoning\": \"<one sentence>\", \"passed\": <true|false>, \"weight\": <weight>}\n  ],\n  \"overall_score\": <weighted average 0-100>\n}";
 
-const REQUEST_SUBJECT: &str = "Latest request turn to evaluate";
-const RESPONSE_SUBJECT: &str = "Assistant response to evaluate";
-
 #[must_use]
 pub const fn system_prompt(input_type: GuardrailInputType) -> &'static str {
     match input_type {
@@ -84,8 +81,8 @@ pub fn build_judge_prompt(
         .collect::<Vec<String>>()
         .join("\n");
     let subject = match input_type {
-        GuardrailInputType::Request => REQUEST_SUBJECT,
-        GuardrailInputType::Response => RESPONSE_SUBJECT,
+        GuardrailInputType::Request => "Latest request turn to evaluate",
+        GuardrailInputType::Response => "Assistant response to evaluate",
     };
     let conversation = conversation_block(messages, input_type);
     format!(
