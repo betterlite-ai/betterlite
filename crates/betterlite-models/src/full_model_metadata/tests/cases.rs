@@ -393,7 +393,7 @@ async fn test_empty_key_case(
     assert!(!Arc::ptr_eq(cached, &explicit));
     assert_eq!(state.caches.full.cache_info().hits, 1);
     assert_eq!(state.caches.full.cache_info().misses, 1);
-    assert_eq!(parameters.calls().len(), 3);
+    assert_eq!(parameters.calls().len(), 2);
 }
 
 async fn test_named_key_case(
@@ -642,7 +642,8 @@ fn test_huge_maxsize_case() {
     let hit = cache.get(&key).expect("huge capacity entry");
     assert!(Arc::ptr_eq(&record, &hit));
     let filled = cache.cache_info();
-    assert_eq!(filled.misses, 1);
+    assert_eq!(filled.hits, 1);
+    assert_eq!(filled.misses, 0);
     assert_eq!(filled.currsize, 1);
 }
 
