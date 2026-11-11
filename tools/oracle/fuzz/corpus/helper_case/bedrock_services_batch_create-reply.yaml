@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-batch-create-reply-seed
+call:
+  bedrock_services_batch_create:
+    operation: create_reply_defaults
+    scenarios:
+      - response_body: '{"jobArn": "job", "status": "Completed"}'
+        clock: [111]
+        original_batch_request:
+          endpoint: /v1/embeddings
+          input_file_id: s3://b/in.jsonl
+env: {}
+compare: {ignore: []}

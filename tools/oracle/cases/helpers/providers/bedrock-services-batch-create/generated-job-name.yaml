@@ -1,0 +1,17 @@
+kind: helper
+name: generated-job-name
+call:
+  bedrock_services_batch_create:
+    operation: generated_job_name
+    scenarios:
+      - model: bedrock/anthropic.claude-3-5-sonnet
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+      - model: m
+        input_file_id: s3://b/k
+        uuid: 11111111-2222-4333-8444-555555555555
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+env: {}
+compare: {ignore: []}

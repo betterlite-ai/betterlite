@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-batch-create-owner-seed
+call:
+  bedrock_services_batch_create:
+    operation: owner_and_kms
+    scenarios:
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+        environment:
+          AWS_S3_BUCKET_OWNER: "333333333333"
+          AWS_S3_ENCRYPTION_KEY_ID: env-key
+env: {}
+compare: {ignore: []}

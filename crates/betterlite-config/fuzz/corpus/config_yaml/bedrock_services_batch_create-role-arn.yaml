@@ -1,0 +1,8 @@
+# AWS_BATCH_ROLE_ARN backs aws_batch_role_arn when the deployment leaves it out
+model_list:
+  - model_name: bedrock/batch-create
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_batch_role_arn: arn:aws:iam::123456789012:role/batch
+litellm_settings:
+  aws_batch_role_arn: os.environ/AWS_BATCH_ROLE_ARN

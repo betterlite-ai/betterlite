@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-batch-create-buckets-seed
+call:
+  bedrock_services_batch_create:
+    operation: output_bucket_fallback
+    scenarios:
+      - model: m
+        input_file_id: s3://in-bucket/in.jsonl
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          s3_output_bucket_name: ""
+        environment:
+          AWS_S3_OUTPUT_BUCKET_NAME: env-bucket
+env: {}
+compare: {ignore: []}

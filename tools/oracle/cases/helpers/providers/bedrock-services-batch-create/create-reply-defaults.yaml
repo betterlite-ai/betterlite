@@ -1,0 +1,33 @@
+kind: helper
+name: create-reply-defaults
+call:
+  bedrock_services_batch_create:
+    operation: create_reply_defaults
+    scenarios:
+      - response_body: '{"jobArn": "arn:aws:bedrock:us-west-2:1:model-invocation-job/job", "status": "Submitted"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Completed"}'
+        clock: [111]
+        original_batch_request:
+          endpoint: /v1/embeddings
+          input_file_id: s3://b/in.jsonl
+          completion_window: 48h
+          metadata:
+            user: alice
+            none: null
+            count: 2
+            standard_logging_guardrail_information:
+              x: 1
+      - response_body: '{"jobArn": "job", "status": "InProgress"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Scheduled"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job"}'
+        clock: [5]
+        original_batch_request:
+          endpoint: ""
+          input_file_id: ""
+          completion_window: ""
+          metadata: null
+env: {}
+compare: {ignore: []}

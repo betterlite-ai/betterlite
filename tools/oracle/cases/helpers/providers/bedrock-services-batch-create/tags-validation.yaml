@@ -1,0 +1,81 @@
+kind: helper
+name: tags-validation
+call:
+  bedrock_services_batch_create:
+    operation: tags_validation
+    scenarios:
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+        optional_params:
+          bedrock_tags:
+            - key: env
+              value: prod
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags:
+            - key: team
+              value: genai
+              extra: dropped
+        optional_params:
+          bedrock_tags:
+            - key: env
+              value: prod
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags: []
+        optional_params:
+          bedrock_tags:
+            - key: env
+              value: prod
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags: null
+        optional_params:
+          bedrock_tags:
+            - key: env
+              value: prod
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags:
+            - application=genai
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags:
+            - key: application
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags:
+            - key: application
+              value: 42
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags:
+            key: application
+            value: genai
+      - model: m
+        input_file_id: s3://b/k
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+          bedrock_tags: application=genai
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-batch-create-role-seed
+call:
+  bedrock_services_batch_create:
+    operation: batch_role_required
+    scenarios:
+      - model: m
+        input_file_id: s3://bucket/key
+        optional_params:
+          aws_batch_role_arn: arn:aws:iam::222:role/request
+      - model: m
+        input_file_id: s3://bucket/key
+        environment:
+          AWS_BATCH_ROLE_ARN: arn:aws:iam::333:role/environment
+env: {}
+compare: {ignore: []}
