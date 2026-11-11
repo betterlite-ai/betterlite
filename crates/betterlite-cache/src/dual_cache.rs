@@ -1,1 +1,127 @@
+mod deferred;
+mod increments;
+mod lifecycle;
+pub(crate) mod limited_size;
+mod operations;
+pub(crate) mod reads;
+pub(crate) mod value;
+pub(crate) mod writes;
 
+#[path = "dual_cache/tests.rs"]
+mod tests;
+
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_cache_admin::RedisAdminError;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use betterlite_redis::redis_counters::RedisCountersError;
+use thiserror::Error;
+
+use self::limited_size::LimitedSizeOrderedDict;
+use crate::backend::BackendError;
+use crate::backend::memory::MemoryCacheOps;
+
+// litellm.constants.DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE
+pub const MAX_REDIS_BATCH_CACHE_SIZE: usize = 1000;
+// DualCache.__init__'s fallback when litellm.default_redis_batch_cache_expiry is unset
+pub const DEFAULT_BATCH_CACHE_EXPIRY: f64 = 10.0;
+// litellm.caching.in_memory_cache.DEFAULT_MAX_SIZE_IN_MEMORY
+pub const DEFAULT_MAX_SIZE_IN_MEMORY: usize = 200;
+
+#[derive(Debug, Error)]
+pub enum DualCacheError {
+    #[error("the in-memory cache tier failed")]
+    Memory {
+        #[from]
+        source: BackendError,
+    },
+    #[error("the Redis increment failed")]
+    RedisIncrement {
+        #[from]
+        source: RedisCountersError,
+    },
+    #[error("the Redis increment pipeline failed")]
+    RedisIncrementPipeline { source: RedisCacheError },
+    #[error("the Redis ttl read failed")]
+    RedisTtl { source: RedisCacheError },
+    #[error("the Redis set add failed")]
+    RedisSetAdd {
+        #[from]
+        source: RedisCacheValuesError,
+    },
+    #[error("the Redis delete failed")]
+    RedisDelete {
+        #[from]
+        source: RedisAdminError,
+    },
+    #[error("the increment of {value} is not a whole number Redis can add")]
+    FractionalIncrement { value: f64 },
+    #[error("the ttl of {seconds} seconds is not a whole number Redis can use")]
+    TtlOutOfRange { seconds: f64 },
+    #[error("the Redis count of {value} has no finite float form")]
+    CountOutOfRange { value: i64 },
+    #[error("an integer of {value} does not fit the in-memory tier")]
+    IntegerOutOfRange { value: u64 },
+    #[error("the cached number {value} is not finite")]
+    NonFiniteNumber { value: f64 },
+    #[error("this cache value has no JSON representation")]
+    UnrepresentableValue,
+    #[error("the value under {key} is not a set of strings")]
+    NotASet { key: String },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DualCacheSettings {
+    pub default_in_memory_ttl: Option<f64>,
+    pub default_redis_ttl: Option<f64>,
+    pub batch_cache_expiry: Option<f64>,
+    pub max_redis_batch_cache_size: usize,
+}
+
+impl Default for DualCacheSettings {
+    fn default() -> Self {
+        Self {
+            default_in_memory_ttl: None,
+            default_redis_ttl: None,
+            batch_cache_expiry: None,
+            max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CacheOptions {
+    pub ttl: Option<f64>,
+    pub local_only: bool,
+    pub refresh_ttl: bool,
+}
+
+// InMemoryCache.max_size_in_memory is a plain attribute in LiteLLM; a tier that can resize implements this
+pub trait MemoryMaxSize {
+    fn set_max_size(&self, max_size: usize);
+}
+
+pub struct DualCache<Memory: MemoryCacheOps> {
+    pub(crate) in_memory_cache: Arc<Memory>,
+    pub(crate) redis_cache: RwLock<Option<Arc<RedisCache>>>,
+    pub(crate) last_redis_batch_access_time: Mutex<LimitedSizeOrderedDict<f64>>,
+    pub(crate) redis_batch_cache_expiry: f64,
+    pub(crate) default_in_memory_ttl: RwLock<Option<f64>>,
+    pub(crate) default_redis_ttl: RwLock<Option<f64>>,
+}
+
+pub(crate) fn lock_read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    match lock.read() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+pub(crate) fn lock_write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    match lock.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
