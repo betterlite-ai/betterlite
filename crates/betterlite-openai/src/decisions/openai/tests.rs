@@ -11,7 +11,7 @@ use betterlite_models::decisions::openai::{self, ChoiceValue, MessageContent};
 use betterlite_models::decisions::systemone::NoulLabel;
 use betterlite_models::decisions::{DecisionsJson, Extra, Json, TokenCount};
 
-use super::config::OpenAiDecisionsConfig;
+use super::config::{Credential, OpenAiDecisionsConfig};
 use super::request::{SINGLE_OPTION_REASON, ir_to_openai_request, openai_request_to_ir};
 use super::response::ResponseConversionError;
 use super::response::to_ir::openai_response_to_ir;
@@ -873,20 +873,20 @@ fn lookup(name: &str) -> String {
 
 fn explicit_values_win() {
     let config = OpenAiDecisionsConfig::default();
-    let base = config.resolve_api_base_with(Some("explicit"), &lookup);
+    let base = config.resolve(Some("explicit"), Credential::Base, &lookup);
     assert_eq!(base, Some("explicit".to_owned()));
-    let key = config.resolve_api_key_with(Some("explicit-key"), &lookup);
+    let key = config.resolve(Some("explicit-key"), Credential::Key, &lookup);
     assert_eq!(key, Some("explicit-key".to_owned()));
 }
 
 fn environment_values_answer() {
     let config = OpenAiDecisionsConfig::default();
     assert_eq!(
-        config.resolve_api_base_with(None, &lookup),
+        config.resolve(None, Credential::Base, &lookup),
         Some("env-base".to_owned())
     );
     assert_eq!(
-        config.resolve_api_key_with(None, &lookup),
+        config.resolve(None, Credential::Key, &lookup),
         Some("env-key".to_owned())
     );
     assert_eq!(
@@ -907,7 +907,7 @@ fn empty_environment_names_fall_through() {
         _ => String::new(),
     };
     assert_eq!(
-        config.resolve_api_base_with(None, &empty_base_url),
+        config.resolve(None, Credential::Base, &empty_base_url),
         Some("legacy-base".to_owned())
     );
 }
@@ -922,11 +922,11 @@ fn globals_beat_the_environment() {
         },
     };
     assert_eq!(
-        config.resolve_api_base_with(None, &lookup),
+        config.resolve(None, Credential::Base, &lookup),
         Some("litellm-base".to_owned())
     );
     assert_eq!(
-        config.resolve_api_key_with(None, &lookup),
+        config.resolve(None, Credential::Key, &lookup),
         Some("litellm-key".to_owned())
     );
     let only_openai_key = OpenAiDecisionsConfig {
@@ -938,7 +938,7 @@ fn globals_beat_the_environment() {
         },
     };
     assert_eq!(
-        only_openai_key.resolve_api_key_with(None, &lookup),
+        only_openai_key.resolve(None, Credential::Key, &lookup),
         Some("openai-key".to_owned())
     );
 }
@@ -947,10 +947,10 @@ fn defaults_apply() {
     let config = OpenAiDecisionsConfig::default();
     let empty = |_: &str| String::new();
     assert_eq!(
-        config.resolve_api_base_with(None, &empty),
+        config.resolve(None, Credential::Base, &empty),
         Some("https://api.openai.com".to_owned())
     );
-    assert_eq!(config.resolve_api_key_with(None, &empty), None);
+    assert_eq!(config.resolve(None, Credential::Key, &empty), None);
 }
 
 fn the_provider_body_uses_the_openai_wire() {

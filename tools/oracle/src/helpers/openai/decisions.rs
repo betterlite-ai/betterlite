@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::openai;
 use betterlite_models::decisions::systemone;
 use betterlite_openai::credentials::LiteLlmGlobals;
-use betterlite_openai::decisions::openai::config::OpenAiDecisionsConfig;
+use betterlite_openai::decisions::openai::config::{Credential, OpenAiDecisionsConfig};
 use betterlite_openai::decisions::openai::request::{ir_to_openai_request, openai_request_to_ir};
 use betterlite_openai::decisions::openai::response::to_ir::openai_response_to_ir;
 use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_response;
@@ -182,8 +182,8 @@ fn call_settings(call: &SettingsCall) -> Value {
     };
     let lookup = |name: &str| call.env.get(name).cloned().unwrap_or_default();
     json!({
-        "api_base": config.resolve_api_base_with(call.api_base.as_deref(), &lookup),
-        "api_key": config.resolve_api_key_with(call.api_key.as_deref(), &lookup),
+        "api_base": config.resolve(call.api_base.as_deref(), Credential::Base, &lookup),
+        "api_key": config.resolve(call.api_key.as_deref(), Credential::Key, &lookup),
     })
 }
 

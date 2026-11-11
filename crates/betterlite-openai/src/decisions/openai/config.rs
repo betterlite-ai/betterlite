@@ -19,47 +19,30 @@ pub struct OpenAiDecisionsConfig {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum Resolution {
+pub enum Credential {
     Base,
     Key,
 }
 
 impl OpenAiDecisionsConfig {
     #[must_use]
-    pub fn resolve_api_base_with(
-        &self,
-        api_base: Option<&str>,
-        get_secret_str: &dyn Fn(&str) -> String,
-    ) -> Option<String> {
-        self.resolve(api_base, Resolution::Base, get_secret_str)
-    }
-
-    #[must_use]
-    pub fn resolve_api_key_with(
-        &self,
-        api_key: Option<&str>,
-        get_secret_str: &dyn Fn(&str) -> String,
-    ) -> Option<String> {
-        self.resolve(api_key, Resolution::Key, get_secret_str)
-    }
-
-    fn resolve(
+    pub fn resolve(
         &self,
         explicit: Option<&str>,
-        resolution: Resolution,
+        credential: Credential,
         get_secret_str: &dyn Fn(&str) -> String,
     ) -> Option<String> {
         if let Some(given) = explicit {
             return Some(given.to_owned());
         }
-        match resolution {
-            Resolution::Base => self
+        match credential {
+            Credential::Base => self
                 .globals
                 .api_base
                 .clone()
                 .or_else(|| first_secret(&BASE_ENV, get_secret_str))
                 .or_else(|| self.get_default_api_base()),
-            Resolution::Key => {
+            Credential::Key => {
                 let secrets = [
                     self.globals.api_key.as_ref(),
                     self.globals.openai_key.as_ref(),
@@ -86,7 +69,7 @@ impl DecisionsProviderConfig for OpenAiDecisionsConfig {
         api_base: Option<&str>,
         get_secret_str: fn(&str) -> String,
     ) -> Option<String> {
-        self.resolve_api_base_with(api_base, &get_secret_str)
+        self.resolve(api_base, Credential::Base, &get_secret_str)
     }
 
     fn resolve_api_key(
@@ -94,7 +77,7 @@ impl DecisionsProviderConfig for OpenAiDecisionsConfig {
         api_key: Option<&str>,
         get_secret_str: fn(&str) -> String,
     ) -> Option<String> {
-        self.resolve_api_key_with(api_key, &get_secret_str)
+        self.resolve(api_key, Credential::Key, &get_secret_str)
     }
 
     fn transform_decisions_request(
