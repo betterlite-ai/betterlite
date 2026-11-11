@@ -176,24 +176,31 @@ def workspace_alias_precedence(payload: Json) -> Json:
     return {"workspaces": workspaces}
 
 
+def resolution_outcome(key: str, resolve: Callable[[], str]) -> Json:
+    try:
+        return {key: resolve()}
+    except AuthenticationError:
+        return {"error": "missing_region"}
+    except ValueError:
+        return {"error": "invalid_region"}
+    except Exception:  # noqa: BLE001 - a step reports every fixture failure
+        return {"error": "other"}
+
+
 def explicit_region_required(payload: Json) -> Json:
     cases = list_value(object_value(payload, "payload").get("cases"), "cases")
     regions: list[Json] = []
     for value in cases:
         case = RegionCase.model_validate(value)
         with patch.dict(os.environ, case.environment, clear=True):
-            try:
-                region = BedrockClaudePlatformMixin()._get_required_aws_region_name(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-                    dict(case.optional_params)
+            regions.append(
+                resolution_outcome(
+                    "region",
+                    lambda case=case: BedrockClaudePlatformMixin()._get_required_aws_region_name(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+                        dict(case.optional_params)
+                    ),
                 )
-            except AuthenticationError:
-                regions.append({"error": "missing_region"})
-            except ValueError:
-                regions.append({"error": "invalid_region"})
-            except Exception:  # noqa: BLE001 - a step reports every fixture failure
-                regions.append({"error": "other"})
-            else:
-                regions.append({"region": region})
+            )
     return {"regions": regions}
 
 
@@ -206,22 +213,18 @@ def api_base_before_region(payload: Json) -> Json:
             patch.dict(os.environ, case.environment, clear=True),
             patch.object(litellm, "api_base", case.litellm_api_base),
         ):
-            try:
-                url = BedrockClaudePlatformMixin().get_complete_url(  # pyright: ignore[reportUnknownMemberType]
-                    case.api_base,
-                    None,
-                    "",
-                    dict(case.optional_params),
-                    {},
+            urls.append(
+                resolution_outcome(
+                    "url",
+                    lambda case=case: BedrockClaudePlatformMixin().get_complete_url(  # pyright: ignore[reportUnknownMemberType]
+                        case.api_base,
+                        None,
+                        "",
+                        dict(case.optional_params),
+                        {},
+                    ),
                 )
-            except AuthenticationError:
-                urls.append({"error": "missing_region"})
-            except ValueError:
-                urls.append({"error": "invalid_region"})
-            except Exception:  # noqa: BLE001 - a step reports every fixture failure
-                urls.append({"error": "other"})
-            else:
-                urls.append({"url": url})
+            )
     return {"urls": urls}
 
 
