@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -26,12 +27,11 @@ impl Logs {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let mut counts = serde_json::Map::new();
-        for (_, name) in EVENTS {
-            let total = seen.iter().filter(|logged| **logged == name).count();
-            counts.insert(name.to_owned(), json!(total));
-        }
-        Value::Object(counts)
+        let counts: BTreeMap<&str, usize> = EVENTS
+            .iter()
+            .map(|(_, name)| (*name, seen.iter().filter(|logged| *logged == name).count()))
+            .collect();
+        json!(counts)
     }
 }
 

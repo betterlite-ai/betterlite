@@ -192,19 +192,6 @@ async def _perform(action: Object, logger: AzureSentinelLogger, clock: _Clock) -
             raise ValueError(message)
 
 
-def _initial(arguments: Object) -> AzureSentinelLogger:
-    return AzureSentinelLogger(
-        dcr_immutable_id=cast("str | None", arguments.get("dcr_immutable_id")),
-        stream_name=cast("str | None", arguments.get("stream_name")),
-        endpoint=cast("str | None", arguments.get("endpoint")),
-        tenant_id=cast("str | None", arguments.get("tenant_id")),
-        client_id=cast("str | None", arguments.get("client_id")),
-        client_secret=cast("str | None", arguments.get("client_secret")),
-        audit_stream_name=cast("str | None", arguments.get("audit_stream_name")),
-        authority_host=cast("str | None", arguments.get("authority_host")),
-    )
-
-
 async def _run_scenario(scenario: Object) -> Json:
     clock = _Clock()
     capture = _Capture()
@@ -220,7 +207,8 @@ async def _run_scenario(scenario: Object) -> Json:
                 if name not in environment:
                     del os.environ[name]
             try:
-                logger = _initial(_object(scenario.get("init")))
+                init = cast("dict[str, str | None]", scenario.get("init") or {})
+                logger = AzureSentinelLogger(**init)
             except ValueError as error:
                 return {"initialized": False, "error": str(error)}
             logger.async_httpx_client = cast(AsyncHTTPHandler, client)
