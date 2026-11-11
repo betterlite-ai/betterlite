@@ -15,8 +15,8 @@ use crate::langfuse_observations::requested_ids::RequestedIds;
 
 use super::cache::TRACING;
 use super::support::{
-    Failing, Gated, Recording, acquire_mock, acquire_with, end_span, lookup, request, schedule,
-    settings, spec, wait_until,
+    Failing, Gated, Recording, acquire_with, end_span, lookup, request, schedule, settings, spec,
+    wait_until,
 };
 use super::{
     ChannelSpec, LangfuseChannelError, acquire_langfuse_tracing, build_langfuse_tracing,
@@ -236,8 +236,8 @@ async fn an_exporter_that_cannot_be_built_fails_the_acquisition() {
 
 #[tokio::test]
 async fn flushing_all_channels_returns_true_when_every_queue_drains() {
-    let first = acquire_mock(&request("pk-flush-all-a"));
-    let second = acquire_mock(&request("pk-flush-all-b"));
+    let first = acquire_with(&request("pk-flush-all-a"), Recording::default());
+    let second = acquire_with(&request("pk-flush-all-b"), Recording::default());
     end_span(&first, "first");
     end_span(&second, "second");
     assert!(flush_langfuse_tracing(5_000).await);
@@ -281,7 +281,7 @@ async fn flushing_all_channels_returns_false_when_one_misses_the_deadline() {
 
 #[tokio::test]
 async fn flushing_all_channels_reports_a_channel_whose_delivery_failed() {
-    let healthy = acquire_mock(&request("pk-flush-mixed-a"));
+    let healthy = acquire_with(&request("pk-flush-mixed-a"), Recording::default());
     let mut failing_request = request("pk-flush-mixed-b");
     failing_request.mock_mode = false;
     let failing = acquire_with(&failing_request, Failing::default());

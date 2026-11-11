@@ -18,8 +18,8 @@ use tracing::Level;
 use tracing_subscriber::filter::LevelFilter;
 
 use super::support::{
-    PUBLIC_KEY, Recording, SECRET, acquire_counting, acquire_mock, acquire_with, cached, capture,
-    end_span, linked_context, lookup, request, retire_id, secret, settings, spec, wait_until,
+    PUBLIC_KEY, Recording, SECRET, acquire_counting, acquire_with, cached, capture, end_span,
+    linked_context, lookup, request, retire_id, secret, settings, spec, wait_until,
 };
 use super::{
     CHANNEL_RETIRE_GRACE_SECONDS, ChannelSpec, DEFAULT_FLUSH_TIMEOUT_MILLIS, LangfuseChannelError,
@@ -238,7 +238,7 @@ async fn the_same_credentials_hand_out_one_channel() {
 
 #[tokio::test(start_paused = true)]
 async fn the_last_release_retires_the_channel_after_the_grace_period() {
-    let tracing = acquire_mock(&request("pk-retire"));
+    let tracing = acquire_with(&request("pk-retire"), Recording::default());
     release_langfuse_tracing(&tracing, None).await;
     yield_now().await;
     assert!(cached(&tracing).is_some());
@@ -252,11 +252,11 @@ async fn the_last_release_retires_the_channel_after_the_grace_period() {
 #[tokio::test(start_paused = true)]
 async fn reacquisition_before_the_deadline_cancels_the_retirement() {
     let request = request("pk-reacquire");
-    let first = acquire_mock(&request);
+    let first = acquire_with(&request, Recording::default());
     release_langfuse_tracing(&first, None).await;
     yield_now().await;
     advance(Duration::from_secs(30)).await;
-    let second = acquire_mock(&request);
+    let second = acquire_with(&request, Recording::default());
     assert!(Arc::ptr_eq(&first.ledger.exporter, &second.ledger.exporter));
     assert_eq!(cached(&first), Some(1));
     assert_eq!(retire_id(&first), None);
@@ -279,7 +279,7 @@ async fn the_retirement_timer_shuts_the_provider_down() {
 #[tokio::test]
 async fn a_stale_retirement_does_not_remove_a_reacquired_channel() {
     let request = request("pk-stale-retire");
-    let tracing = acquire_mock(&request);
+    let tracing = acquire_with(&request, Recording::default());
     let spec = super::key::channel_spec(&settings(&[]), &request);
     let key = super::key::tracing_key(&request, &spec);
     super::cache::retire_unless_reacquired(key, 99, tracing.clone(), Duration::ZERO).await;
@@ -288,7 +288,7 @@ async fn a_stale_retirement_does_not_remove_a_reacquired_channel() {
 
 #[tokio::test(start_paused = true)]
 async fn a_release_while_retirement_is_pending_changes_nothing() {
-    let tracing = acquire_mock(&request("pk-double-release"));
+    let tracing = acquire_with(&request("pk-double-release"), Recording::default());
     release_langfuse_tracing(&tracing, None).await;
     yield_now().await;
     let pending = retire_id(&tracing);
@@ -301,11 +301,11 @@ async fn a_release_while_retirement_is_pending_changes_nothing() {
 #[tokio::test]
 async fn releasing_without_grace_shuts_the_channel_down_and_forgets_it() {
     let request = request("pk-immediate");
-    let tracing = acquire_mock(&request);
+    let tracing = acquire_with(&request, Recording::default());
     release_langfuse_tracing(&tracing, Some(Duration::ZERO)).await;
     assert_eq!(cached(&tracing), None);
     assert!(!tracing.flush(1_000).await);
-    let again = acquire_mock(&request);
+    let again = acquire_with(&request, Recording::default());
     assert!(!Arc::ptr_eq(
         &tracing.ledger.exporter,
         &again.ledger.exporter

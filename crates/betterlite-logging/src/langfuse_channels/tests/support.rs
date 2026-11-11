@@ -103,17 +103,6 @@ pub(super) fn acquire_counting(
     .expect("the channel is acquired")
 }
 
-pub(super) fn acquire_mock(request: &LangfuseChannelRequest) -> LangfuseTracing {
-    acquire_langfuse_tracing(
-        &settings(&[]),
-        &lookup(&[]),
-        &Handle::current(),
-        request,
-        || Ok(Recording::default()),
-    )
-    .expect("the mock channel is acquired")
-}
-
 pub(super) fn acquire_with<E>(request: &LangfuseChannelRequest, exporter: E) -> LangfuseTracing
 where
     E: SpanExporter + 'static,
