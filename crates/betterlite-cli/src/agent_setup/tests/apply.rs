@@ -107,6 +107,25 @@ async fn apply_preflights_every_target_before_listing() {
 }
 
 #[tokio::test]
+async fn apply_reports_a_missing_home_before_listing() {
+    let environment = FakeEnvironment::without_home();
+    let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[("claude-1", None)]))]).await;
+    let ctx = context(&proxy.base_url, Some("sk-test"));
+    let mut prompter = ScriptedPrompter::new(Vec::new());
+    let run = claude_run(&ctx, &environment, Some("claude-1"));
+    let (result, _stdout, _stderr) = execute(&run, &mut prompter).await;
+    let error = result.unwrap_err();
+    let AgentSetupError::Profile(source) = &error else {
+        panic!("expected a profile error, got {error:?}");
+    };
+    assert!(matches!(
+        **source,
+        AgentSetupProfilesError::Path(Target::Claude)
+    ));
+    assert!(proxy.requests().is_empty());
+}
+
+#[tokio::test]
 async fn apply_prepares_every_target_before_saving_any() {
     let home = TempDir::new().unwrap();
     let environment = FakeEnvironment::with_home(home.path());

@@ -21,6 +21,7 @@ use crate::agent_setup::pickers::{
     TARGET_EDIT_MESSAGE, TARGET_ROUTE_MESSAGE, pick_claude_model, pick_codex_model,
 };
 use crate::agent_setup::{MODEL_OPTION_HELP, pick_targets, resolve_credential};
+use crate::agent_setup_profiles::error::AgentSetupProfilesError;
 use crate::agent_setup_profiles::{Target, read_saved_setup, settings_path_for};
 use crate::claude_settings::choices::{STARTING_MODEL_ROLE, StaticToken};
 use crate::cli_context::CliContext;
