@@ -20,7 +20,9 @@ use super::support::{
 enum Case {
     ValidRegisters,
     MissingName,
+    EmptyName,
     MissingJudgeModel,
+    EmptyJudgeModel,
     MissingCriteria,
     EmptyCriteria,
     WeightBelowTolerance,
@@ -78,7 +80,9 @@ fn initialize(params: &JudgeParams, mapping: &BTreeMap<String, GuardrailValue>) 
 #[rstest]
 #[case::valid_registers(Case::ValidRegisters)]
 #[case::missing_name(Case::MissingName)]
+#[case::empty_name(Case::EmptyName)]
 #[case::missing_judge_model(Case::MissingJudgeModel)]
+#[case::empty_judge_model(Case::EmptyJudgeModel)]
 #[case::missing_criteria(Case::MissingCriteria)]
 #[case::empty_criteria(Case::EmptyCriteria)]
 #[case::weight_below_tolerance(Case::WeightBelowTolerance)]
@@ -126,12 +130,44 @@ fn judge_initialize_tests_behavior(#[case] case: Case) {
             assert!(matches!(error, JudgeError::MissingGuardrailName));
             assert!(registry.registered.is_empty());
         }
+        Case::EmptyName => {
+            let mapping = valid_mapping();
+            let mut registry = RecordingRegistry::default();
+            let entry = GuardrailEntry {
+                guardrail_name: Some(""),
+                litellm_params: Some(LitellmParamsSource::Mapping(&mapping)),
+            };
+            let error = initialize_guardrail(
+                &params,
+                &entry,
+                RecordingCompletion::new(Outcome::NoChoices),
+                &mut registry,
+            )
+            .err()
+            .expect("an empty name is rejected like a missing one");
+            assert!(matches!(error, JudgeError::MissingGuardrailName));
+            assert!(registry.registered.is_empty());
+        }
         Case::MissingJudgeModel => {
             let mut mapping = valid_mapping();
             mapping.remove("judge_model");
             let error = initialize(&params, &mapping).result;
             assert!(matches!(
                 error.err().expect("judge_model is required"),
+                JudgeError::MissingJudgeModel
+            ));
+        }
+        Case::EmptyJudgeModel => {
+            let mut mapping = valid_mapping();
+            mapping.insert(
+                "judge_model".to_owned(),
+                GuardrailValue::Text(String::new()),
+            );
+            let error = initialize(&params, &mapping).result;
+            assert!(matches!(
+                error
+                    .err()
+                    .expect("an empty judge_model is rejected like a missing one"),
                 JudgeError::MissingJudgeModel
             ));
         }
