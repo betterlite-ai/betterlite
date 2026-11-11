@@ -510,6 +510,9 @@ fn status_defaults() {
         decode_created_batch(br#"{"jobArn": "first", "jobArn": "second"}"#),
         Err(BatchCreateError::ResponseParse { .. })
     ));
+    let padded = decode_created_batch(b" \n {\"jobArn\": \"job\"}")
+        .expect("whitespace before the object is allowed");
+    assert_eq!(padded.job_arn, "job");
 }
 
 fn metadata_sanitization() {
