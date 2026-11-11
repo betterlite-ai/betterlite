@@ -135,7 +135,7 @@ fn a_complete_tool_call_gets_an_id_and_json_arguments() {
 
 #[rstest]
 #[case::empty_object("{}", false)]
-#[case::incomplete_string(r#""{\"a\":"#, false)]
+#[case::incomplete_string(r#""{\"a\":""#, false)]
 #[case::complete_string(r#""{}""#, true)]
 #[case::empty_string(r#""""#, false)]
 fn tool_call_ids_depend_on_complete_arguments(#[case] arguments: &str, #[case] has_id: bool) {
