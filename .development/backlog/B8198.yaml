@@ -2,7 +2,7 @@ id: B8198
 milestone: M9 agents and mcp
 title: "MCP operations: tool execution, guardrails and logging"
 status: todo
-depends_on: [B8190, B8196, B8197, B4731, B6591, B8464, B8465]
+depends_on: [B8190, B8196, B8197, B4731, B6591, B8464, B8465, B9650]
 file: tasks/B8198-mcp-ops-execution.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/operations.py"

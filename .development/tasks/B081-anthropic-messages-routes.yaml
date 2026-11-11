@@ -1,59 +1,52 @@
 id: B081
 title: Anthropic messages routes
 description: >-
-  Mount POST /v1/messages and POST /claude_code_gateway/v1/messages once, sharing the Messages handler.
-  The gateway alias is hidden from OpenAPI and uses B1132's enable_claude_code_gateway guard; both paths
-  authenticate through B756/B855. Own endpoints.py's complete _with_provider_specific_fields,
-  _anthropic_error_detail, _anthropic_error_json_response, _strip_total_tokens_from_anthropic_response and
-  anthropic_response, including its nested blocked-response generator. Keep request reading through B1100
-  before the handler's try block. Neither route reads query parameters or an environment variable directly.
+  Mount POST /v1/messages and POST /claude_code_gateway/v1/messages once, sharing LiteLLM's anthropic_response handler (litellm/proxy/anthropic_endpoints/endpoints.py L120-L286). The handler reads the body, runs ProxyBaseLLMRequestProcessing.base_process_llm_request with route type anthropic_messages, optionally strips usage.total_tokens, and answers three kinds of failure its own way. The earlier plan handed the processing, the response headers, the exception logging and the SSE answer to B004. B004 built none of them for this route, and B7324 records that no task builds the shared ProxyBaseLLMRequestProcessing class. So this route builds its own messages pipeline from parts that exist or are planned: B8801's pre-call step, B9800's call steps and route choice, B9720's stream generator, B9801's first-chunk answer, B9802's custom headers and B7324's keepalive wrap, keepalive interval and error payload helpers. Do not build a shared processor class or another dispatch to every adapter.
 
-  Implement betterlite-server::api::anthropic_messages_routes with a typed MessagesRouteServices constructor.
-  Run B8801's PreCall step with route type anthropic_messages (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step), then delegate base_process_llm_request, response headers, exception logging and SSE serialization to B004;
-  pass route_type=anthropic_messages, select_data_generator=null, model=null and the resolved user_model,
-  user_temperature, user_request_timeout, user_max_tokens, user_api_base and version unchanged. B1134 owns
-  the public dispatch operation registered with that processor. Do not dispatch separately to every adapter.
-  B003 supplies shared HTTP error payload helpers, B011 supplies call-id policy, B958 the Anthropic mapper.
-  B5471 owns ModifyResponseException (GuardrailFailure::ModifyResponse) and B3663 blocked_response_usage; call both directly. The failure hook is B8395's post_call_failure_hook; take it as an injected
-  interface. B8389 owns general_settings_view and dangling OTel
-  span closure; consume a typed settings snapshot and close_error_span(status, error) seam pending that task.
 
-  litellm_settings.strip_anthropic_total_tokens defaults false. When true, mutate only a dictionary-valued
-  root usage, whether on a dictionary response or an object attribute; remove only total_tokens. Preserve
-  strongly typed Usage objects, streaming handles and nested iterations. B011's
-  general_settings.include_call_id_in_error_body defaults false and requires literal true. Provider-specific
-  error fields are included only when nonempty. Error code strings consisting of digits become the HTTP status;
-  absent or nondigit codes fall back to 500. Forward exception headers unchanged, close the error span and
-  transform the raw message with request.headers.x-request-id, absent null.
+  Files. The handler, the pipeline and the error answers go in module `api::anthropic_messages_routes` (crates/betterlite-server/src/api/anthropic_messages_routes.rs and anthropic_messages_routes/: handler.rs, pipeline.rs, errors.rs, hooks.rs, tests.rs). B1100 registers crates/betterlite-server/src/routes/anthropic_messages.rs as a stub: fill only that file (and its folder) with the router and the route state, and leave routes.rs and state.rs as they are. Every name stays at 30 characters or fewer.
 
-  Use B2401 HTTP cases against booted proxies with general_settings.master_key=sk-route-test, a fixed
-  mock deployment and no enterprise package. Both route aliases, downstream requests, status/body/headers
-  and captured failure-hook calls are compared. Fault scenarios use a fixture callback installed in each
-  booted proxy to raise typed failures at the same processing boundary, never a helper calling FastAPI.
-  A normal request sends model=messages-test,max_tokens=16,messages=[{role:user,content:hello}].
-  Module tests cover non-JSON object shapes that cannot be sent over HTTP. B1100 already decodes JSON;
-  do not create another parser or helper operation for this route.
 
-  The endpoint functions plus decorator contain 194 nonblank/non-comment physical lines; the gateway
-  registration adds 7. Allow 205 implementation, 165 tests, 235 HTTP fixtures, 55 fixture callbacks,
-  45 config tests/seeds and 45 wiring lines, 750 total. The package exports and architecture documents
-  describe wiring only and add no separate implementation of their referenced functions.
-  B1100 registers routes/anthropic_messages.rs as a stub, so fill only crates/betterlite-server/src/routes/anthropic_messages.rs and leave routes.rs and state.rs as they are.
+  Routes. Both paths are POST only and share one handler; the gateway alias is hidden from OpenAPI and goes through B1132's enable_claude_code_gateway guard (404 with detail "Claude Code gateway is not enabled" when the setting is omitted or false). Both authenticate through B756/B855, and the body is read through B1100 before anything else, as LiteLLM reads it before the handler's try block. /messages is not an alias. Neither route reads query parameters or an environment variable.
+
+
+  Route state, built in routes/anthropic_messages.rs from the server state. `MessagesRouteServices::new(...)` takes, as typed constructor arguments: the pre-call step as `Arc<dyn PreCall<UserAPIKeyAuth>>`, built with B8801's `PreCallStep::standalone(settings)` (B8804 swaps in the production step); the generator `SharedStreamGenerator::standalone(redactor)` (B7980 swaps in the production ports); B9800's `MessagesCallSteps::new(dispatch, routing, None, mock, user_model)` with `B1134Dispatch` as the dispatch, `standalone_routing(executor, dispatch)` as the routing when the config has a model_list and None otherwise (LiteLLM's llm_router is None without one), no read-through, the `mock_testing_params` section and the user_model value of B8800's CliOverrides; the hooks port below with its pass-through implementation; and a settings snapshot (this task's section, B011's include_call_id_in_error_body, B1132's gateway setting, B8389's general_settings_view, the version the chat route on main sends and the WireDecodeLimits B9720's standalone generator uses).
+
+
+  Config. Section `anthropic_messages_routes` (crates/betterlite-config/src/sections/anthropic_messages_routes.rs and its folder) reads litellm_settings.strip_anthropic_total_tokens (bool, default false, LiteLLM's litellm/__init__.py L265) and litellm_settings.sse_keepalive_ping_interval_seconds (L267: default null, kept as the raw number or string so B7324's coerce_keepalive_interval applies LiteLLM's rules; absent or null is None). No environment variable feeds either key. Seeds go in crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*.
+
+
+  Hooks port (hooks.rs). `MessagesHooks` is the slice of LiteLLM's ProxyLogging this route calls, as async methods taking the request data, the key and the route type where LiteLLM passes them: `during_call_hook` (Result<(), HookError>), `update_request_status(call_id, "success")` (sync; a production implementation spawns its write the way LiteLLM's create_task does), `post_call_success_hook` (returns the body or a HookError), `post_call_response_headers_hook` (returns an optional header map; it gets the body on the non-stream path and None on the stream path, plus the request headers) and `post_call_failure_hook` (B8395's FailureHook contract; the route ignores a returned replacement, as endpoints.py does). `HookError` is `ModifyResponse` (B5471's GuardrailFailure::ModifyResponse), `Http { status, detail }` or `Other`. `PassThroughHooks` answers Ok, returns the body unchanged, gives no headers and records nothing; the route state uses it until a later task swaps in B8399's ProxyLogging.
+
+
+  Pipeline (pipeline.rs), common_request_processing.py L2461-L2978 for this route type. `MessagesPipeline::respond(&self, parts, key, data) -> Response`:
+  1. The client model is the body's `model` when it is a string. The keepalive interval is B7324's `ttft_interval_for(routing as DeploymentLookup, data, the section's setting)` over the body as read.
+  2. Build the produce future below, mapping any `MessagesFailure` to the error answer of the handler section inside the future, and hand it to `open_sse_before_first_byte(produce, setting, "text/event-stream", None)`. Since the future then never fails, an Err from open_sse_before_first_byte can only come from the wrap itself; answer it with sse_error_payload's body as JSON under its status.
+  3. Produce: run the pre-call step with route type anthropic_messages, version and no separate model; from here on the request data is the pre-call output's data and the call id is its logging state's id (request_litellm_call_id, L1606-L1610). Then run `hooks.during_call_hook` and B9800's `calls.call(data, is_proxy_admin)` together, where is_proxy_admin is true when the key's user_role is proxy_admin; the first error ends both, as LiteLLM's gather and _cancel_pending_gather_tasks do. Then `hooks.update_request_status(call id, "success")`.
+  4. Stream outcome (L2665-L2823): take `hooks.post_call_response_headers_hook` with no body, build the headers with B9802's `custom_headers` (key view from the key, the call id, model id from the hidden params' model_id else the data's litellm_metadata.model_info.id, cache_key, api_base, response_cost, model_region the key's allowed_model_region, fastest_response_batch_completion, the request data, the hidden params and the hidden additional_headers as extra pairs, no logging view) and put the callback headers over them. Write `_litellm_client_requested_model` into the data when the client model is set. Call B9720's `messages_stream(SharedCall { source, key, request_data: data, request: Some(parts) }, client model)` and hand the body to B9801's `first_chunk_answer(body, headers, None, include_call_id_in_error_body)`.
+  5. Message outcome (L2859-L2978): body = `hooks.post_call_success_hook(...)`. The response cost for the headers is the hidden response_cost, else "" (see deviations). When the client model is set and B9720's return_raw_model_name(data) is false, restamp the body's model the way _override_openai_response_model does for a dict (L1312-L1420): skip it when the hidden additional_headers' x-litellm-attempted-fallbacks is a number above 0, when the hidden params name an Azure model router call (a non-empty azure_model_router_selected_model, or the hidden litellm_model_name or model, or the client model, routed to model_router by betterlite-context's get_azure_ai_route), or when the body has no `model` key; otherwise set it to the client model. Build the headers with custom_headers as in step 4 with this response cost, remove `_hidden_params` from the body, and when include_guardrail_response is the JSON bool true in the data's metadata or litellm_metadata, add `guardrail_information`: the first standard_logging_guardrail_information list found in those two buckets, keeping its object entries with B3688's redact_nested_match_and_regex_keys over the keys keyword, snippet, match and regex (L1427-L1456). Put `hooks.post_call_response_headers_hook` with the body over the headers, run B744's check_response_size_is_safe on the body, then strip usage.total_tokens when the section asks for it (below), and answer JSON 200 with the headers as `ProducedResponse::Plain`.
+
+
+  Handler pieces (errors.rs, endpoints.py L46-L117 and L182-L286). `strip_total_tokens(body)` removes `total_tokens` only from a root `usage` that is an object; a missing or null usage and a stream are untouched. `MessagesFailure` carries the failure and the request data the processor held when it happened, and its sources map as follows: B9800's MissingParam and B8801's ProxyException-shaped failures are a ProxyException; MockParamsDisabled, NotFound, B8801's HTTP failure and HookError::Http are an HTTPException with status and detail; Context is the context error; HookError::ModifyResponse is the blocked response; Blocked, MissingModel, CallFailure and HookError::Other are an ordinary exception with LiteLLM's status (error_status_code, default 500), message and timeout.
+  - Blocked response (L182-L228): call the failure hook with the exception's request_data, build `{id: "msg_" + a v4 UUID, type: "message", role: "assistant", content: [{type: "text", text: message}], model, stop_reason: "end_turn", usage: B3663's blocked_response_usage(original response)}` in that key order with no stop_sequence. When the body's `stream` is the JSON bool true, run B9720's `sse_data_generator(SharedCall { source: one Plain chunk holding that message, key, request_data: the exception's request_data, request: None }, None)` and answer `first_chunk_answer(body, empty headers, None, false)`; otherwise answer that message as JSON 200 with no custom headers and no strip.
+  - Context error (L229-L243): call the failure hook with the processor's data only when the status is 500 or more, and answer B958's transform_to_anthropic_error(status, message, x-request-id) as JSON with that status and no headers; no exception log and no span close.
+  - Any other failure (L244-L286): call the failure hook with the processor's data, then log at error "litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm_call_id={call id} - {error}" (log_llm_api_exception, L1613-L1632; a 499 with detail "Client disconnected the request" logs at info instead). A ProxyException gets x-litellm-call-id set in its headers when absent and the call id is known (with_litellm_call_id) and goes to the JSON answer below. Otherwise build headers with custom_headers (call id, model id from the request data's litellm_metadata.model_info.id or "", version, response cost 0, model region the key's allowed_model_region or "", the request data, the failure's timeout, no logging view). An HTTPException becomes a ProxyException the way proxy_exception_from_http_exception does (L601-L614): message and structured fields from B7324's exception_detail_parts(detail), the structured fields over any existing provider fields, status error_status_code with default 400, and those headers. Anything else becomes ProxyException::new with its message, its status as code and those headers.
+  - JSON answer (_anthropic_error_json_response, L65-L83): status is the code when it is all ASCII digits, else 500; call B8389's close_error_span(status, error) seam; envelope = transform_to_anthropic_error(status, message, the request's x-request-id or None); the error object gets provider_specific_fields when non-empty and then litellm_call_id when error_body_call_id(include_call_id_in_error_body, the exception's x-litellm-call-id header) gives one; answer JSON with that status and the exception's headers.
+
+
+  Tests. api::anthropic_messages_routes::tests drive the router through tower's oneshot with fakes for the pre-call step, the dispatch, the routing and the hooks, and cover every DoD item, including the three failure kinds no HTTP case can reach before production hooks exist (blocked response, context error, ProxyException with headers). Use `tokio::time::pause` for the keepalive. The HTTP oracle cases run against booted proxies with general_settings.master_key sk-route-test, a mock upstream deployment and no enterprise package; a normal request sends model messages-test, max_tokens 16 and messages [{role: user, content: hello}].
 scope:
   paths:
   - crates/betterlite-server/src/api/anthropic_messages_routes.rs
   - crates/betterlite-server/src/api/anthropic_messages_routes/**
-  - crates/betterlite-server/src/api.rs
-  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/routes/anthropic_messages.rs
   - crates/betterlite-server/src/routes/anthropic_messages/**
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*
-  - tools/oracle/cases/api/anthropic-messages-routes/**
-  - tools/oracle/fixtures/anthropic-messages-routes/**
   - Cargo.lock
   - crates/betterlite-config/src/sections/anthropic_messages_routes.rs
   - crates/betterlite-config/src/sections/anthropic_messages_routes/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*
+  - tools/oracle/cases/api/anthropic-messages-routes/**
   - tools/oracle/helpers/b081.py
   - tools/oracle/helpers/b081/**
   - tools/oracle/src/helpers/server/b081.rs
@@ -61,134 +54,133 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L46-L117
-  why: Own error detail augmentation, HTTP error construction and the deliberately shallow usage mutation.
+  why: Error detail augmentation, the JSON error answer and the shallow usage strip.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L286
-  why: Own the decorated route, complete processing call and all three exception handlers.
+  why: The decorated route, the processing call and all three exception branches.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L136-L150
-  why: The alias inherits /claude_code_gateway, is POST-only and attaches the enable guard to the same handler.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L255-L265
-  why: strip_anthropic_total_tokens is opt-in at this pin despite the comment proposing a future default change.
+  why: The alias inherits /claude_code_gateway, is POST only and attaches the enable guard to the same handler.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L255-L267
+  why: strip_anthropic_total_tokens is opt-in, and sse_keepalive_ping_interval_seconds defaults to None.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2461-L2640
+  why: base_process_llm_request's keepalive wrap, the client model, the pre-call, the during-call hook next to route_request and the gather.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2641-L2823
+  why: The success status update, the stream headers, the client model key and the anthropic_messages stream branch into create_response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2859-L2978
+  why: The non-stream tail in order, from the success hook to the response size check.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1312-L1456
+  why: _override_openai_response_model for a dict and attach_guardrail_information.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L570-L614
+  why: proxy_exception_from_http_exception and its default status 400.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1598-L1632
+  why: request_litellm_call_id and log_llm_api_exception.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/error_body_call_id.py#L6-L20
-  why: B011 contributes literal-true opt-in and suppression of an empty header value.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3780-L3806
-  why: B004 serializes the synthetic dictionary as one data frame without an event line.
+  why: B011's literal-true opt-in and suppression of an empty header value.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L84-L103
-  why: B104 supplies paid usage for a post-call block and zero usage for a pre-call block.
+  why: B3663 supplies paid usage for a post-call block and zero usage for a pre-call block.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/readme.md#L1-L116
   why: Public examples use x-api-key, anthropic-version and max_tokens on /v1/messages.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/architecture.md#L1-L51
   why: Native provider and chat adapter execution converge before this route returns the response.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/README.md#L1-L62
-  why: Interceptor short circuits precede the backend, while request mutation belongs to hooks owned by B1118/B987.
 dod:
 - text: >-
-    routes_share_authenticated_processing sends the normal request with x-api-key=sk-route-test and
-    anthropic-version=2023-06-01 to each alias, enabling the gateway explicitly. Both return 200 with
-    type=message,role=assistant,content=[{type:text,text:hello}],stop_reason=end_turn and usage 2 input/1 output.
-    Assert one matching provider request and x-litellm-call-id on each response. Repeat with the configured
-    OpenAI chat deployment and Responses deployment to prove B1134 composition; conversion belongs to those
-    dependencies. GET on either path is 405 with detail=Method Not Allowed and no provider request; /messages
-    is not an alias and returns 404 with detail=Not Found. Query foo=bar does not alter the provider request.
+    routes_share_authenticated_processing sends the normal request with x-api-key sk-route-test and anthropic-version 2023-06-01 to each alias, enabling the gateway explicitly.
+    Both return 200 with type message, role assistant, content [{type: text, text: hello}], stop_reason end_turn and usage 2 input and 1 output, one matching provider request
+    and x-litellm-call-id on each response. Repeat with a configured OpenAI chat deployment and a Responses deployment to prove B1134's composition. GET on either path is 405
+    with detail "Method Not Allowed" and no provider request; /messages returns 404 with detail "Not Found". Query foo=bar does not change the provider request.
   proof: [behavior-tests, oracle]
 - text: >-
-    gateway_and_auth_rejections covers both routes with valid JSON and no key: 401,error.type=auth_error,
-    error.param="None",error.code="401",message="Authentication Error, No api key passed in." and no provider call.
-    With no database configured, x-api-key=sk-wrong yields 400,type=no_db_connection,param=null,code="400",
-    message="No connected db." from auth. These are shared envelopes, without top-level type=error.
-    With valid auth and gateway setting omitted or false, the gateway alias returns 404,
-    detail="Claude Code gateway is not enabled", no error.type/param/code and no upstream request;
-    the ordinary route still succeeds. Malformed body handling remains B1100/B756, outside this mapper.
+    gateway_and_auth_rejections covers both routes with valid JSON and no key: 401, error.type auth_error, error.param "None", error.code "401", message
+    "Authentication Error, No api key passed in." and no provider call. With no database configured, x-api-key sk-wrong gives 400, type no_db_connection, param null,
+    code "400", message "No connected db.". With valid auth and the gateway setting omitted or false, the gateway alias returns 404 with detail
+    "Claude Code gateway is not enabled" and no upstream request, while the ordinary route still succeeds.
   proof: [behavior-tests, oracle]
 - text: >-
-    strips_only_dictionary_usage sends a response with usage={input_tokens:2,output_tokens:1,total_tokens:3,
-    cache_read_input_tokens:4} and iterations=[{usage:{total_tokens:9}}]. Default/false preserves all fields;
-    true removes only root total_tokens. Unit cases repeat with an object carrying dictionary usage; null,
-    missing usage, usage=null, a typed Usage object and a streaming handle are unchanged. Streaming HTTP
-    still yields the same message_start and message_delta events under either setting.
+    strips_only_dictionary_usage: with strip_anthropic_total_tokens omitted or false the response keeps usage.total_tokens and nested iterations; with true only the root
+    total_tokens goes. Module cases cover a missing usage, a null usage and a stream, all unchanged, and a streamed request yields the same message_start and message_delta
+    events under either setting.
   proof: [behavior-tests, config-tests, oracle]
 - text: >-
-    blocked_response_preserves_paid_usage raises ModifyResponseException(message=blocked,model=messages-test,
-    request_data={model:blocked-context}) with original usage input_tokens=5/output_tokens=2, then null original.
-    Expect HTTP 200,id beginning msg_,type=message,role=assistant,model=messages-test,
-    content=[{type:text,text:blocked}],stop_reason=end_turn and usage respectively 5/2 or 0/0.
-    stop_sequence is not inserted. The failure hook receives blocked-context rather than processor data.
-    stream omitted/null/false returns JSON; literal true returns text/event-stream containing exactly one
-    data frame holding that full message, with no invented message_start/delta/stop lifecycle and no custom
-    x-litellm headers from this branch. Assert the synthetic generator is exhausted.
+    The pipeline runs in LiteLLM's order: pre-call, the during-call hook next to B9800's call, the success status, then for a stream the callback headers over the custom
+    headers, the client model key and B9801's answer, and for a message the success hook, the model restamp with its three skips, the custom headers, the removed _hidden_params,
+    guardrail_information only on request, the response headers hook, the size check and the strip.
+  proof: [behavior-tests]
+- text: >-
+    A streamed request answers 200 text/event-stream with Cache-Control no-cache, X-Accel-Buffering no and the custom headers, and with sse_keepalive_ping_interval_seconds
+    set a slow upstream gets ": ping" comments before the first event.
   proof: [behavior-tests, oracle]
 - text: >-
-    context_errors_use_their_status raises AnthropicContextManagementError(message=bad-context,status_code=400),
-    then status_code=503. Expect respectively 400/invalid_request_error and 503/api_error, top-level type=error,
-    error.message=bad-context, no param/code and no custom headers. x-request-id=req_context appears as
-    request_id=req_context; omission or empty request id omits it. The failure hook sees processor data exactly
-    once for 503 and never for 400; neither case uses generic exception logging or the dangling-span seam.
+    blocked_response_preserves_paid_usage (module tests, a hook raising ModifyResponse with message blocked, model messages-test, request_data {model: blocked-context} and
+    original usage 5 input and 2 output, then no original) answers 200 with an id starting msg_, type message, role assistant, model messages-test, content
+    [{type: text, text: blocked}], stop_reason end_turn, usage 5/2 or 0/0 and no stop_sequence; the failure hook gets blocked-context. stream omitted, null or false answers
+    JSON; the literal true answers text/event-stream with exactly one data frame holding that message and no custom x-litellm headers.
+  proof: [behavior-tests]
+- text: >-
+    context_errors_use_their_status (module tests, a dispatch failing with the context error, bad-context at 400 and then 503) answers 400 invalid_request_error and
+    503 api_error with top-level type error, error.message bad-context, no param or code and no custom headers; x-request-id req_context appears as request_id; the failure
+    hook runs once for 503 and never for 400, and neither logs the generic exception nor closes the span.
+  proof: [behavior-tests]
+- text: >-
+    proxy_errors_keep_headers_and_optional_details (module tests, a ProxyException with message limited, type rate_limit_error, code "429", headers retry-after 2 and
+    x-litellm-call-id call_fixed, provider fields {zone: west}) answers 429 with error {type: rate_limit_error, message: limited, provider_specific_fields: {zone: west}},
+    retry-after 2 and x-litellm-call-id call_fixed. include_call_id_in_error_body true adds error.litellm_call_id call_fixed, and false, unset or an empty header omits it;
+    empty provider fields are omitted; code null or "bad" answers 500 api_error and "0400" answers 400. The failure hook, the exception log and close_error_span see the
+    original error in that order.
+  proof: [behavior-tests, config-tests]
+- text: >-
+    ordinary_errors_use_shared_header_projection: an unknown model answers 400 with B9800's not-found text and provider_specific_fields holding the detail, a mock_timeout
+    param without the opt-in answers 400 with the mock gate text, and an upstream 500 answers 500 api_error, each with x-litellm-call-id, x-litellm-key-spend and
+    x-litellm-response-cost "0" from B9802's headers. Module cases check the header input (model id "" or the data's litellm_metadata.model_info.id, timeout absent or 7)
+    and that a ProxyException keeps its own headers.
   proof: [behavior-tests, oracle]
 - text: >-
-    proxy_errors_keep_headers_and_optional_details injects ProxyException(message=limited,type=rate_limit_error,
-    param=ignored,code="429",headers={retry-after:2,x-litellm-call-id:call_fixed},provider_specific_fields={zone:west}).
-    Expect 429,type=error,error={type:rate_limit_error,message:limited,provider_specific_fields:{zone:west}},
-    retry-after=2 and x-litellm-call-id=call_fixed; param/code are absent. Setting include_call_id_in_error_body=true
-    adds error.litellm_call_id=call_fixed; false/unset omits it, and an empty header never adds it. Empty provider
-    fields are omitted. x-request-id=req_error adds request_id=req_error; missing/empty omits it. code=null or
-    "bad" produces 500/api_error with the same message; "0400" produces 400/invalid_request_error.
-    Unit-test _anthropic_error_detail with call_id="" separately: that helper includes the empty string.
-    Failure hook, exception logging and close_error_span receive the original error in that order.
-  proof: [behavior-tests, config-tests, oracle]
-- text: >-
-    ordinary_errors_use_shared_header_projection injects HTTPException(418,detail=teapot) and ValueError(broken).
-    Expect 418/api_error/message=teapot and 500/api_error/message=broken, top-level type=error and no param/code.
-    Capture the header-builder input: response_cost=0, logging object=null, missing model id="", missing allowed
-    region="", missing timeout=null, with the same request data/version/call id/principal. A second exception
-    with timeout=7 and data.litellm_metadata.model_info.id=deployment-a passes those values. Both paths forward
-    the resulting headers and call failure hook, generic logger and close_error_span once. A ProxyException
-    case bypasses new header construction and keeps its existing headers.
-  proof: [behavior-tests, oracle]
-- text: >-
-    loads_message_route_settings uses the production config loader for strip_anthropic_total_tokens omitted/false/true,
-    include_call_id_in_error_body omitted/false/true and enable_claude_code_gateway omitted/false/true; the defaults
-    are all false and the explicit settings reach the route. Reuse B011/B1132 fields and assert these valid keys
-    are absent from unsupported-key reports. Commit those configurations to the existing config_yaml corpus.
+    loads_message_route_settings uses the production config loader for strip_anthropic_total_tokens omitted, false and true and sse_keepalive_ping_interval_seconds omitted,
+    null, a number and a numeric string, with the defaults false and None, and the settings reach the route. Those configurations are committed to the config_yaml corpus.
   proof: [config-tests, config-corpus]
 checks:
   optional: [mutants]
   commands:
   - id: behavior-tests
-    why: Route integration, synthetic response branches or precise exception projections are absent.
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::/) - test(/::replays_corpus$/)'
+    why: the routes, the pipeline order, the stream answer or an error branch is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::/)'
   - id: config-tests
-    why: The settings load but never reach this handler or have the wrong pinned defaults.
+    why: the route settings do not load with LiteLLM's defaults or never reach the handler
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::anthropic_messages_routes::tests::loads_message_route_settings($|::)/)'
   - id: config-corpus
-    why: No new route setting seed is accepted by the production YAML parser.
+    why: no new route setting seed is accepted by the production YAML parser
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
 - tools/oracle/cases/api/anthropic-messages-routes/routes-share-authenticated-processing.yaml
 - tools/oracle/cases/api/anthropic-messages-routes/gateway-and-auth-rejections.yaml
 - tools/oracle/cases/api/anthropic-messages-routes/strips-only-dictionary-usage.yaml
-- tools/oracle/cases/api/anthropic-messages-routes/blocked-response-preserves-paid-usage.yaml
-- tools/oracle/cases/api/anthropic-messages-routes/context-errors-use-their-status.yaml
-- tools/oracle/cases/api/anthropic-messages-routes/proxy-errors-keep-headers-and-optional-details.yaml
 - tools/oracle/cases/api/anthropic-messages-routes/ordinary-errors-use-shared-header-projection.yaml
-deviations: []
+- tools/oracle/cases/api/anthropic-messages-routes/stream-answers-with-sse-headers.yaml
+deviations:
+- what: A /v1/messages success does not carry x-litellm-response-cost, and the cost header leaves out guardrail cost, until production logging state reaches the route; LiteLLM recovers the cost from its logging object.
+  why: The route runs with B8801's standalone pre-call and pass-through hooks until B8804 and the logging tasks swap them in; there is no cost source before that.
+- what: When sse_keepalive_ping_interval_seconds is set and the request fails after the first keepalive went out, the closing data frame holds the Anthropic error envelope this route builds, where LiteLLM writes the OpenAI-shaped error object of sse_error_payload.
+  why: The route maps its typed failures inside the future it hands to open_sse_before_first_byte, since that wrap only carries an SseFailure back and the three failure branches need the typed error; the fast path, without keepalives, answers exactly as LiteLLM does.
 out_of_scope:
 - B996 owns endpoints.py count_tokens and event_logging_batch, and the gateway count_tokens alias.
 - B1132 owns gateway_endpoints.py _general_settings, _is_gateway_enabled, ensure_gateway_enabled and _managed_settings.
-- B989 owns gateway OAuth records, _oauth_error_response, oauth_authorization_server, device_authorization,
-  _validate_login, _mint_access_token, _claim_device_code, _handle_device_code_grant and oauth_token.
+- B989 owns gateway OAuth records, _oauth_error_response, oauth_authorization_server, device_authorization, _validate_login, _mint_access_token, _claim_device_code, _handle_device_code_grant and oauth_token.
 - B990 owns gateway managed_settings, _skip_otlp_body_parsing, _accept_otlp, otlp_metrics, otlp_logs and otlp_traces.
-- B1134 owns every callable in messages/dispatch.py and anthropic_interface/messages/__init__.py, including
-  _python_messages, _python_amessages, _public_request, _resolved_provider, _context, anthropic_messages_handler,
-  anthropic_messages, acreate and create; this task composes their public exports, not another implementation.
-- Other covered __init__.py files contain only exports. Their implementations remain in B967 (chat adapter),
-  B968/B972 (context edits), B983/B984/B985/B986 (Responses adapter), and B991 (marketplace router).
-- B004 owns processing, shared SSE transport and stream model restamping integration; B980 owns the restamper.
-  B003/B756/B855 own admission failures before this try block. B8389 owns OTel span behavior behind the injected seam (close_error_span).
+- B1134 owns every callable in messages/dispatch.py and anthropic_interface/messages/__init__.py, including _python_messages, _python_amessages, _public_request, _resolved_provider, _context, anthropic_messages_handler, anthropic_messages, acreate and create; this task composes their public exports through B9800, not another implementation.
+- Other covered __init__.py files contain only exports. Their implementations remain in B967 (chat adapter), B968/B972 (context edits), B983/B984/B985/B986 (Responses adapter), and B991 (marketplace router).
+- B9720 owns the shared SSE generator and the stream model restamp integration and B7980 its production ports; B980 owns the restamper.
+- B9800 owns route_request, _route_request_single_attempt and the shared call steps; B9801 owns create_response and the first-chunk checks; B9802 owns get_custom_headers; B7324 owns open_sse_before_first_byte, ttft_keepalive_interval, sse_error_payload and serialize_http_exception_detail.
+- B003/B756/B855 own admission failures before the handler. B8389 owns OTel span behavior behind the injected close_error_span seam. B744 owns check_response_size_is_safe. B3688 owns redact_nested_match_and_regex_keys.
+- "The production MessagesHooks (B8399's ProxyLogging), MessagesRouting (B8611 and B8631) and model read-through (B8231) and their swap into routes/anthropic_messages.rs: see B081's plan notes. The header refresh after a router fallback stream adopts another deployment's headers: B312 and B6021, passed to B9801 by that swap."
+- "_arm_detached_stream_failure_hook (L3135-L3161): betterlite has no detached upstream drain; dropping the body drops the upstream and B9720's drop guard runs the cleanup."
+- "The deferred logging around post-call guardrails (_has_post_call_guardrails, _arm_deferred_stream_dispatch, _flush_deferred_async_logging, record_served_output_texts): B6370 and B8399 behind the hooks port. with_proxy_compaction_executor: B8291, B100 and B9810. cancel_on_disconnect: axum drops the handler future when the client leaves."
 pitfalls:
-- A blocked stream contains one full message data frame; inventing a native lifecycle changes the pinned wire format.
-- Only literal data.stream=true selects the blocked streaming branch, and only dictionary-valued usage is stripped.
-- Context errors do not acquire generic custom headers or call-id decoration, even when their status is 500 or greater.
-- The two registrations share authentication but only /claude_code_gateway/v1/messages checks the gateway setting.
-- Generic failures call the failure hook before inspecting their exception class; ProxyException headers survive intact.
+- 'A blocked stream holds one full message data frame; inventing a native message_start to message_stop lifecycle changes the pinned wire format.'
+- 'Only the literal stream true selects the blocked streaming branch, and only an object-valued root usage is stripped.'
+- 'Context errors get no custom headers or call-id decoration, even at 500 or above.'
+- 'The two registrations share authentication, but only /claude_code_gateway/v1/messages checks the gateway setting.'
+- 'Ordinary failures call the failure hook before the exception class is looked at, and a ProxyException keeps its own headers instead of the custom ones.'
+- 'The not-found and mock-gate failures are HTTPExceptions with a dict detail, so the Anthropic error carries provider_specific_fields with that dict and its "error" text as the message.'
+- 'The ordinary-failure headers read litellm_metadata.model_info.id from the request data and pass response cost 0, so x-litellm-response-cost is "0", not absent.'
+- 'The blocked branch answers with empty headers and never includes the call id in its first-chunk JSON, because endpoints.py calls create_response without request or settings.'
 review_level: security
 budget:
   max_changed_lines: 1500

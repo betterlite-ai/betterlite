@@ -1,7 +1,7 @@
 id: B133
 milestone: M8 platform
 title: Memory API
-status: todo
+status: done
 depends_on: [B726, B732, B4530]
 file: null
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/memory/__init__.py"
 parent: null
 split_from: null
-resolution: null
-superseded_by: null
+resolution: superseded
+superseded_by: B8541
 blocked_reason: null
 pr: null

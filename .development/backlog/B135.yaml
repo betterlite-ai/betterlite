@@ -1,14 +1,14 @@
 id: B135
 milestone: M8 platform
 title: Setup wizard and CLI login
-status: todo
+status: done
 depends_on: [B4590, B4591, B4592, B4593, B4594, B003]
 file: null
 covers:
   - "litellm/setup_wizard.py"
 parent: null
 split_from: null
-resolution: null
-superseded_by: null
+resolution: superseded
+superseded_by: B8542
 blocked_reason: null
 pr: null

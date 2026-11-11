@@ -9,7 +9,7 @@ description: >-
   _scannable_text to flatten structured message content for v1 scanning, _interaction_body to decode v1 response JSON, _proxy_server_request
   to access proxy request headers and _header_value to read response headers with defaults. Implement version dispatch via initialize_guardrail
   that selects v1 or v2 based on version config parameter (default v1). Both versions build Authorization Bearer header from jwt_token
-  and retry with token refresh on 401 response. V2's config model accessor remains with B107 to keep this part bounded.
+  and retry with token refresh on 401 response. V2's config model accessor is left out because nothing calls it at the pin.
 scope:
   paths:
     - crates/betterlite-guardrails/src/hiddenlayer.rs
@@ -170,7 +170,7 @@ out_of_scope:
   - ">-
     Guardrail callback registration (add_litellm_callback): Callback pipeline registration; no assigned task owner yet.
     Used as injected dependency from logging callback manager."
-  - V2 config model accessor that determines which HiddenlayerGuardrailConfigModel to return based on request context; owned by B107.
+  - V2 config model accessor that determines which HiddenlayerGuardrailConfigModel to return based on request context; it has no caller at the pin, so nobody owns it.
 pitfalls:
   - ">-
     V1 scans only the last message from structured_messages (role and content flattened via _scannable_text) or texts array.

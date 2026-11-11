@@ -1,7 +1,7 @@
 id: B4920
 milestone: M10 admin ui
 title: Model insights metric aggregation, time buckets and ranking
-status: todo
+status: done
 depends_on: [B144]
 file: tasks/B4920-model-insights-data.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "ui/litellm-dashboard/src/app/(dashboard)/model-insights/_components/modelInsightsData.test.ts"
 parent: B146
 split_from: B146
-resolution: null
-superseded_by: null
+resolution: superseded
+superseded_by: B9090
 blocked_reason: null
 pr: null
