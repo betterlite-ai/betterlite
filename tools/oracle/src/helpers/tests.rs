@@ -104,6 +104,33 @@ fn helper_case_cannot_disable_the_local_cost_map() {
 }
 
 #[rstest::rstest]
+#[case::nested_number("/value/interval/ms", "5")]
+#[case::object("/value/interval", "{\"ms\":5}")]
+#[case::missing("/value/missing", "absent")]
+fn a_failed_helper_case_shows_the_value_at_the_pointer(#[case] pointer: &str, #[case] shown: &str) {
+    let output = super::HelperOutput {
+        ok: true,
+        value: Some(json!({"interval": {"ms": 5_i32}})),
+        error: None,
+        warnings: Vec::new(),
+        effects: Vec::new(),
+    };
+    assert_eq!(super::value_at(&output, pointer), shown);
+}
+
+#[test]
+fn a_failed_helper_case_shows_at_most_400_characters() {
+    let output = super::HelperOutput {
+        ok: true,
+        value: Some(json!("x".repeat(1000))),
+        error: None,
+        warnings: Vec::new(),
+        effects: Vec::new(),
+    };
+    assert_eq!(super::value_at(&output, "/value").chars().count(), 400);
+}
+
+#[rstest::rstest]
 #[case::at_limit(0x0010_0000, false)]
 #[case::over_limit(0x0010_0001, true)]
 fn helper_output_limit_is_enforced(#[case] size: usize, #[case] excess: bool) {

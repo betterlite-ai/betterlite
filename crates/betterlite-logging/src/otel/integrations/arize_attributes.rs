@@ -2,7 +2,7 @@ mod identity;
 pub mod keys;
 mod mcp;
 mod passthrough;
-mod truthy;
+pub(crate) mod truthy;
 
 #[path = "arize_attributes/tests.rs"]
 mod tests;

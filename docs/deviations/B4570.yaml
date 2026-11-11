@@ -1,0 +1,14 @@
+task: B4570
+deviations:
+  - what: setup_locks measures its 10-second budget through an injected Clock instead of a timeout parameter on the locking call itself.
+    why: File::try_lock is immediate and non-blocking only; there is no timeout argument to hand it the way Python's FileLock(timeout=10) takes one. Measuring the budget through this module's own injected Clock, the same local-trait shape agent_launch, codex_settings and pkce_login.rs each define, keeps the 10-second boundary testable without a real wait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L105-L121
+  - what: read_saved_setup and lock_path_for resolve the settings path with the soft-canonicalize crate instead of std::fs::canonicalize.
+    why: canonicalize errors on a path whose settings file does not exist yet, the common case on a machine's first `lite configure` run; Python's Path.resolve() has no such restriction. soft-canonicalize resolves symlinks on the path components that exist and leaves the rest lexically normalized, matching Path.resolve() exactly; pinning the new direct dependency to the already-resolved 0.5.6 keeps cargo deny from seeing two versions of the crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L78-L102
+  - what: read_saved_setup compares the resolved live settings path with a resolved copy of the stored path, so a hand-edited profile that stores a symlinked or relative settings_path still matches; LiteLLM compares the stored string verbatim with the resolved live path and rejects it.
+    why: The task asks for both sides to go through soft-canonicalize, and LiteLLM's own save path (configure_setup.py) always writes the resolved path, so a profile either tool wrote is unaffected. Only a profile written by hand, or by a tool that did not resolve the path, sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L91-L96
+  - what: A machine with no home directory gets AgentSetupProfilesError::Path ("the environment has no home directory for the <target> setup") where LiteLLM's Path.home() raises an uncaught RuntimeError.
+    why: Rule no-panics forbids a panic, and a Python traceback is not behavior a working setup can rely on. Every other setup has a home, so the message is the only thing that changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_profiles.py#L65-L66

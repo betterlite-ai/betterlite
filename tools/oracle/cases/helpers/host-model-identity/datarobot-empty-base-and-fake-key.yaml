@@ -1,0 +1,18 @@
+kind: helper
+name: datarobot-empty-base-and-fake-key
+call:
+  host_model_identity:
+    calls:
+      - {kind: identity, host: datarobot, env: {}, api_base: null}
+      - {kind: identity, host: datarobot, env: {DATAROBOT_ENDPOINT: ""}, api_base: ""}
+      - kind: identity
+        host: datarobot
+        env: {DATAROBOT_ENDPOINT: https://env.example, DATAROBOT_API_TOKEN: env-token}
+        api_base: null
+      - kind: identity
+        host: datarobot
+        env: {DATAROBOT_ENDPOINT: https://env.example, DATAROBOT_API_TOKEN: env-token}
+        api_base: https://explicit.example
+        api_key: explicit-key
+compare: {ignore: []}
+env: {}
