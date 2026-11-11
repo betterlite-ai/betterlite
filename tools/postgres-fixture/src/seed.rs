@@ -186,17 +186,16 @@ impl FixtureSeed {
 
     fn validate_extensions(&self) -> Result<(), FixtureError> {
         if let Some(rows) = &self.daily_usage {
-            daily_usage::validate(rows, &self.keys).map_err(FixtureError::DailyUsage)?;
+            daily_usage::validate(rows, &self.keys)?;
         }
         if let Some(finops) = &self.finops {
-            finops.validate(self).map_err(FixtureError::FinOps)?;
+            finops.validate(self)?;
         }
         if let Some(dashboard_seed) = &self.dashboard {
-            dashboard::validate(dashboard_seed, self).map_err(FixtureError::Dashboard)?;
+            dashboard::validate(dashboard_seed, self)?;
         }
         if let Some(governance) = &self.dashboard_governance {
-            dashboard_governance::validate(governance, self)
-                .map_err(FixtureError::DashboardGovernance)?;
+            dashboard_governance::validate(governance, self)?;
         }
         Ok(())
     }

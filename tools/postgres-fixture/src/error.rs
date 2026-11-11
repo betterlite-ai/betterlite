@@ -86,15 +86,15 @@ pub enum FixtureError {
     #[error("user {user_id} has conflicting roles")]
     ConflictingUserRole { user_id: String },
     #[error("daily usage fixture seed failed: {0}")]
-    DailyUsage(#[source] DailyUsageError),
+    DailyUsage(#[from] DailyUsageError),
     #[error("finops fixture seed failed: {0}")]
-    FinOps(#[source] FinOpsFixtureError),
+    FinOps(#[from] FinOpsFixtureError),
     #[error("discovery skills fixture seed failed: {0}")]
-    DiscoverySkills(#[source] DiscoveryError),
+    DiscoverySkills(#[from] DiscoveryError),
     #[error("search tools fixture seed failed: {0}")]
-    SearchTools(#[source] SearchSeedError),
+    SearchTools(#[from] SearchSeedError),
     #[error("dashboard fixture seed failed: {0}")]
-    Dashboard(#[source] DashboardFixtureError),
+    Dashboard(#[from] DashboardFixtureError),
     #[error("dashboard governance fixture seed failed: {0}")]
-    DashboardGovernance(#[source] DashboardGovernanceError),
+    DashboardGovernance(#[from] DashboardGovernanceError),
 }
