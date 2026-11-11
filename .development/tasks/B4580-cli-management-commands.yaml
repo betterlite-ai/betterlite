@@ -40,6 +40,11 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-http/src/proxy/buffered.rs"
+    - "crates/betterlite-http/src/proxy/**"
+    - "crates/betterlite-cli/src/commands/tables.rs"
+    - "crates/betterlite-cli/src/commands/credentials/tests.rs"
+    - "crates/betterlite-cli/src/commands/**"
     - crates/betterlite-cli/Cargo.toml
     - Cargo.lock
     - crates/betterlite-cli/src/commands.rs
