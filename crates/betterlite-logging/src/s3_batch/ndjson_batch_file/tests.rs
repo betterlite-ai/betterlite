@@ -1,30 +1,10 @@
 #![cfg(test)]
 
-use std::sync::{Mutex, PoisonError};
-
 use betterlite_models::decisions::Json;
 
 use crate::s3_batch::Element;
-use crate::s3_batch::ndjson_batch_file::{
-    BatchIdSource, batch_file_elements, batch_file_mode_active,
-};
+use crate::s3_batch::ndjson_batch_file::{batch_file_elements, batch_file_mode_active};
 use crate::s3_transport::batch_element::ContentType;
-
-#[derive(Debug)]
-struct FixedIds(Mutex<usize>);
-
-impl BatchIdSource for FixedIds {
-    fn next_batch_id(&self) -> String {
-        let mut next = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let id = format!("id{}", *next);
-        *next = next.saturating_add(1);
-        id
-    }
-}
-
-fn ids() -> FixedIds {
-    FixedIds(Mutex::new(0))
-}
 
 fn payload(text: &str) -> Json {
     serde_json::from_str(text).expect("the payload is JSON")
@@ -41,10 +21,15 @@ fn element(key: &str, payload_text: &str, retrying_since: Option<f64>) -> Elemen
     }
 }
 
-fn keys(batch: &[Element]) -> Vec<&str> {
+fn parents(batch: &[Element]) -> Vec<&str> {
     batch
         .iter()
-        .map(|element| element.s3_object_key.as_str())
+        .map(|element| {
+            element
+                .s3_object_key
+                .rsplit_once('/')
+                .map_or("", |(parent, _name)| parent)
+        })
         .collect()
 }
 
@@ -55,14 +40,10 @@ fn groups_by_parent() {
         element("logs/2026-01-02/b.json", r#"{"b":2}"#, None),
         element("logs/2026-01-03/c.json", r#"{"c":3}"#, None),
     ];
-    let files = batch_file_elements(&batch, "03-04-05", &ids()).expect("the batch files build");
-    assert_eq!(
-        keys(&files),
-        vec![
-            "logs/2026-01-02/batch_03-04-05_id0.jsonl",
-            "logs/2026-01-03/batch_03-04-05_id1.jsonl"
-        ]
-    );
+    let files = batch_file_elements(&batch, "03-04-05").expect("the batch files build");
+    assert_eq!(parents(&files), vec!["logs/2026-01-02", "logs/2026-01-03"]);
+    assert!(files[0].s3_object_key.contains("/batch_03-04-05_"));
+    assert_eq!(files[0].s3_object_key.rsplit('.').next(), Some("jsonl"));
     assert_eq!(files[0].body.as_deref(), Some("{\"a\":1}\n{\"b\":2}"));
     assert_eq!(
         files[0].s3_object_download_filename,
@@ -79,15 +60,8 @@ fn sorts_parents() {
         element("a/two.json", r#"{"a":2}"#, None),
         element("m/three.json", r#"{"m":3}"#, None),
     ];
-    let files = batch_file_elements(&batch, "00-00-00", &ids()).expect("the batch files build");
-    assert_eq!(
-        keys(&files),
-        vec![
-            "a/batch_00-00-00_id0.jsonl",
-            "m/batch_00-00-00_id1.jsonl",
-            "z/batch_00-00-00_id2.jsonl"
-        ]
-    );
+    let files = batch_file_elements(&batch, "00-00-00").expect("the batch files build");
+    assert_eq!(parents(&files), vec!["a", "m", "z"]);
 }
 
 #[test]
@@ -97,7 +71,7 @@ fn combines_payloads_to_ndjson() {
         element("logs/b.json", r#"{"two":2}"#, None),
         element("logs/c.json", r#"{"three":3}"#, None),
     ];
-    let files = batch_file_elements(&batch, "12-00-00", &ids()).expect("the batch files build");
+    let files = batch_file_elements(&batch, "12-00-00").expect("the batch files build");
     assert_eq!(
         files[0].body.as_deref(),
         Some("{\"one\":1}\n{\"two\":2}\n{\"three\":3}")
@@ -111,15 +85,14 @@ fn earliest_retrying_since() {
         element("logs/b.json", r#"{"b":2}"#, Some(10.0_f64)),
         element("logs/c.json", r#"{"c":3}"#, None),
     ];
-    let files = batch_file_elements(&batch, "12-00-00", &ids()).expect("the batch files build");
+    let files = batch_file_elements(&batch, "12-00-00").expect("the batch files build");
     assert_eq!(files[0].retrying_since, Some(10.0_f64));
 
     let fresh = [
         element("logs/a.json", r#"{"a":1}"#, None),
         element("logs/b.json", r#"{"b":2}"#, None),
     ];
-    let fresh_files =
-        batch_file_elements(&fresh, "12-00-00", &ids()).expect("the batch files build");
+    let fresh_files = batch_file_elements(&fresh, "12-00-00").expect("the batch files build");
     assert_eq!(fresh_files[0].retrying_since, None);
 }
 
@@ -129,8 +102,9 @@ fn keys_files_at_the_root_without_a_parent() {
         element("a.json", r#"{"a":1}"#, None),
         element("b.json", r#"{"b":2}"#, None),
     ];
-    let files = batch_file_elements(&batch, "12-00-00", &ids()).expect("the batch files build");
-    assert_eq!(keys(&files), vec!["batch_12-00-00_id0.jsonl"]);
+    let files = batch_file_elements(&batch, "12-00-00").expect("the batch files build");
+    assert!(!files[0].s3_object_key.contains('/'));
+    assert_eq!(files[0].s3_object_key.rsplit('.').next(), Some("jsonl"));
 }
 
 #[test]
@@ -139,14 +113,9 @@ fn keeps_uploaded_batch_files_out_of_grouping() {
     existing.body = Some("{\"a\":1}".to_owned());
     existing.content_type = ContentType::Ndjson;
     let batch = [existing, element("logs/b.json", r#"{"b":2}"#, None)];
-    let files = batch_file_elements(&batch, "12-00-00", &ids()).expect("the batch files build");
-    assert_eq!(
-        keys(&files),
-        vec![
-            "logs/batch_01-00-00_old.jsonl",
-            "logs/batch_12-00-00_id0.jsonl"
-        ]
-    );
+    let files = batch_file_elements(&batch, "12-00-00").expect("the batch files build");
+    assert_eq!(files[0].s3_object_key, "logs/batch_01-00-00_old.jsonl");
+    assert_eq!(parents(&files), vec!["logs", "logs"]);
 }
 
 #[test]

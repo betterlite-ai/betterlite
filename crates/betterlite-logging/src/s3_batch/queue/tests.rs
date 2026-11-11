@@ -1,10 +1,19 @@
 #![cfg(test)]
 
+use std::sync::Mutex;
+
 use betterlite_models::decisions::Json;
 
 use crate::s3_batch::Element;
-use crate::s3_batch::queue::BatchQueue;
+use crate::s3_batch::queue::{BatchQueue, QueueState};
 use crate::s3_transport::batch_element::ContentType;
+
+fn queue(capacity: usize) -> BatchQueue {
+    BatchQueue {
+        state: Mutex::new(QueueState::default()),
+        max_queue_size: capacity,
+    }
+}
 
 fn element(key: &str) -> Element {
     let payload: Json = serde_json::from_str(r#"{"id":"request"}"#).expect("the payload is JSON");
@@ -29,7 +38,7 @@ fn keys(queue: &BatchQueue) -> Vec<String> {
 
 #[test]
 fn finish_success_keeps_events_added_meanwhile() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element("a"));
     queue.enqueue(element("b"));
     queue.enqueue(element("arrival"));
@@ -40,7 +49,7 @@ fn finish_success_keeps_events_added_meanwhile() {
 
 #[test]
 fn restore_puts_requeued_ahead_of_arrivals() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element("a"));
     queue.enqueue(element("arrival"));
     let restored = queue.restore_after_failure(1, vec![element("b")]);
@@ -51,7 +60,7 @@ fn restore_puts_requeued_ahead_of_arrivals() {
 
 #[test]
 fn restore_trims_the_oldest_and_adjusts_the_requeued_count() {
-    let queue = BatchQueue::with_capacity(2);
+    let queue = queue(2);
     queue.enqueue(element("a"));
     queue.enqueue(element("arrival"));
     let restored = queue.restore_after_failure(1, vec![element("b"), element("c")]);
@@ -62,7 +71,7 @@ fn restore_trims_the_oldest_and_adjusts_the_requeued_count() {
 
 #[test]
 fn trim_overflow_drops_the_oldest_entries() {
-    let queue = BatchQueue::with_capacity(2);
+    let queue = queue(2);
     queue.enqueue(element("a"));
     queue.enqueue(element("b"));
     queue.enqueue(element("c"));

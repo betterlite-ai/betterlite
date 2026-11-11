@@ -8,12 +8,11 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use crate::s3_batch::Element;
-use crate::s3_batch::error::S3BatchUploadError;
+use crate::s3_batch::S3BatchUploadError;
 use crate::s3_batch::flush::{
     FlushContext, FlushError, FlushSettings, UploadOperation, send_batch,
 };
-use crate::s3_batch::ndjson_batch_file::UuidBatchIds;
-use crate::s3_batch::queue::BatchQueue;
+use crate::s3_batch::queue::{BatchQueue, QueueState};
 use crate::s3_transport::batch_element::ContentType;
 use crate::s3_transport::signing::Clock;
 use crate::s3_transport::transport::UploadOutcome;
@@ -114,6 +113,13 @@ impl Clock for FixedClock {
     }
 }
 
+fn queue(capacity: usize) -> BatchQueue {
+    BatchQueue {
+        state: Mutex::new(QueueState::default()),
+        max_queue_size: capacity,
+    }
+}
+
 fn element(key: &str, id: &str) -> Element {
     element_since(key, id, None)
 }
@@ -154,12 +160,10 @@ async fn run(
     now: f64,
     upload: &dyn UploadOperation,
 ) -> Result<usize, FlushError> {
-    let ids = UuidBatchIds;
     let clock = clock();
     let context = FlushContext {
         queue,
         settings,
-        batch_ids: &ids,
         clock: &clock,
         now,
     };
@@ -177,7 +181,7 @@ fn keys(queue: &BatchQueue) -> Vec<String> {
 
 #[tokio::test]
 async fn fresh_work_ordered() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element("a", "a"));
     queue.enqueue(element("b", "b"));
     let settings = settings(Some(Duration::from_secs(3_600)), 10);
@@ -203,7 +207,7 @@ async fn fresh_work_ordered() {
 
 #[tokio::test]
 async fn requeued_preserved_on_total_failure() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element_since("stale", "stale", Some(0.0_f64)));
     queue.enqueue(element("terminal", "terminal"));
     queue.enqueue(element("transient", "transient"));
@@ -236,7 +240,7 @@ async fn requeued_preserved_on_total_failure() {
 
 #[tokio::test]
 async fn partial_success_drops_stale_and_terminal() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element("delivered", "delivered"));
     queue.enqueue(element_since("stale", "stale", Some(1_000.0_f64)));
     queue.enqueue(element("terminal", "terminal"));
@@ -263,7 +267,7 @@ async fn partial_success_drops_stale_and_terminal() {
 
 #[tokio::test]
 async fn overflow_trims_oldest() {
-    let queue = BatchQueue::with_capacity(2);
+    let queue = queue(2);
     queue.enqueue(element("a", "a"));
     queue.enqueue(element("b", "b"));
     queue.enqueue(element("c", "c"));
@@ -286,7 +290,7 @@ async fn overflow_trims_oldest() {
 
 #[tokio::test]
 async fn preserve_retrying_since_on_requeue() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element("delivered", "delivered"));
     queue.enqueue(element_since("remembered", "remembered", Some(100.0_f64)));
     queue.enqueue(element("first", "first"));
@@ -312,7 +316,7 @@ async fn preserve_retrying_since_on_requeue() {
 
 #[tokio::test]
 async fn raises_only_on_survivors() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element("a", "a"));
     queue.enqueue(element("b", "b"));
     let settings = settings(Some(Duration::from_secs(3_600)), 10);
@@ -347,7 +351,7 @@ async fn raises_only_on_survivors() {
 
 #[tokio::test]
 async fn preserve_events_added_during_flush() {
-    let queue = BatchQueue::with_capacity(10);
+    let queue = queue(10);
     queue.enqueue(element("a", "a"));
     queue.enqueue(element("b", "b"));
     let settings = settings(Some(Duration::from_secs(3_600)), 10);

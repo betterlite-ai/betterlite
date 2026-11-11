@@ -1,32 +1,14 @@
-use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::time::UNIX_EPOCH;
-
-use betterlite_models::decisions::Json;
-use chrono::{DateTime, Utc};
-use indexmap::IndexMap;
-
 use crate::private_json::error::PrivateJsonError;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 use crate::s3_batch::Element;
 use crate::s3_transport::batch_element::ContentType;
 use crate::s3_transport::signing::Clock;
-
+use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
+use indexmap::IndexMap;
+use std::collections::BTreeMap;
+use std::time::UNIX_EPOCH;
 pub const COLD_STORAGE_LOGGER: &str = "s3_v2";
-
-pub trait BatchIdSource: Send + Sync + Debug {
-    fn next_batch_id(&self) -> String;
-}
-
-#[derive(Debug, Default)]
-pub struct UuidBatchIds;
-
-impl BatchIdSource for UuidBatchIds {
-    fn next_batch_id(&self) -> String {
-        uuid::Uuid::new_v4().simple().to_string()
-    }
-}
-
 #[must_use]
 pub fn batch_file_mode_active(enabled: bool, cold_storage_logger: Option<&str>) -> bool {
     if !enabled {
@@ -40,11 +22,9 @@ pub fn batch_file_mode_active(enabled: bool, cold_storage_logger: Option<&str>) 
     }
     true
 }
-
 pub fn batch_file_elements(
     batch: &[Element],
     stamp: &str,
-    ids: &dyn BatchIdSource,
 ) -> Result<Vec<Element>, PrivateJsonError> {
     let mut individual = Vec::new();
     let mut groups: BTreeMap<&str, Vec<&Element>> = BTreeMap::new();
@@ -61,11 +41,10 @@ pub fn batch_file_elements(
     }
     let mut files = individual;
     for (parent, elements) in groups {
-        files.push(build_batch_file(&elements, parent, stamp, ids)?);
+        files.push(build_batch_file(&elements, parent, stamp)?);
     }
     Ok(files)
 }
-
 pub fn batch_stamp(clock: &dyn Clock) -> String {
     let elapsed = clock.now().duration_since(UNIX_EPOCH).unwrap_or_default();
     let seconds = i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX);
@@ -74,14 +53,12 @@ pub fn batch_stamp(clock: &dyn Clock) -> String {
         |moment| moment.format("%H-%M-%S").to_string(),
     )
 }
-
 fn build_batch_file(
     elements: &[&Element],
     parent: &str,
     stamp: &str,
-    ids: &dyn BatchIdSource,
 ) -> Result<Element, PrivateJsonError> {
-    let name = format!("batch_{stamp}_{}", ids.next_batch_id());
+    let name = format!("batch_{stamp}_{}", uuid::Uuid::new_v4().simple());
     let mut lines = Vec::with_capacity(elements.len());
     for element in elements {
         lines.push(safe_dumps(
@@ -108,5 +85,4 @@ fn build_batch_file(
         retrying_since,
     })
 }
-
 mod tests;

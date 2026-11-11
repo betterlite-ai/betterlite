@@ -1,27 +1,25 @@
-use std::sync::Arc;
-use std::time::Duration;
-
-use betterlite_config::loader::EnvironmentLookup;
-
 use crate::s3_batch::flush::FlushSettings;
 use crate::s3_batch::logger::{InitError, S3BatchDeps};
 use crate::s3_batch::upload_bounded::UploadLimiter;
 use crate::s3_transport::error::S3TransportError;
+use crate::s3_transport::signing::{Credentials, StaticCredentials};
 use crate::s3_transport::transport::{S3Transport, ThrottleSink};
 use crate::s3_transport::url_construction::{EndpointInputs, S3Endpoint, resolve_endpoint};
+use crate::s3_v2::connection::Credentials as ConnectionCredentials;
 use crate::s3_v2::{Feature, S3Parameters};
-
+use betterlite_config::loader::EnvironmentLookup;
+use secrecy::SecretString;
+use std::sync::Arc;
+use std::time::Duration;
 const BATCH_SIZE_VARIABLE: &str = "DEFAULT_S3_BATCH_SIZE";
 const FLUSH_INTERVAL_VARIABLE: &str = "DEFAULT_S3_FLUSH_INTERVAL_SECONDS";
 const DEFAULT_BATCH_SIZE: usize = 512;
 const DEFAULT_FLUSH_INTERVAL_SECONDS: usize = 10;
-
 #[derive(Debug)]
 struct LimiterSink {
     limiter: Arc<UploadLimiter>,
     observer: Option<Arc<dyn ThrottleSink>>,
 }
-
 impl ThrottleSink for LimiterSink {
     fn record(&self, throttled: bool) {
         self.limiter.record(throttled);
@@ -29,6 +27,61 @@ impl ThrottleSink for LimiterSink {
             observer.record(throttled);
         }
     }
+}
+// the profile, AssumeRole and web-identity flows need a credential chain no logging task has
+#[must_use]
+pub(super) fn unsupported_flow(credentials: &ConnectionCredentials) -> Option<&'static str> {
+    [
+        (
+            "s3_aws_profile_name",
+            credentials.aws_profile_name.is_some(),
+        ),
+        ("s3_aws_role_name", credentials.aws_role_name.is_some()),
+        (
+            "s3_aws_web_identity_token",
+            credentials.aws_web_identity_token.is_some(),
+        ),
+        (
+            "s3_aws_sts_endpoint",
+            credentials.aws_sts_endpoint.is_some(),
+        ),
+    ]
+    .into_iter()
+    .find_map(|(setting, configured)| configured.then_some(setting))
+}
+fn secret(
+    configured: Option<&SecretString>,
+    environment: &dyn EnvironmentLookup,
+    variable: &str,
+) -> SecretString {
+    configured
+        .cloned()
+        .or_else(|| environment.lookup(variable).map(SecretString::from))
+        .unwrap_or_else(|| SecretString::from(String::new()))
+}
+fn configured_credentials(
+    source: &ConnectionCredentials,
+    environment: &dyn EnvironmentLookup,
+) -> Arc<StaticCredentials> {
+    Arc::new(StaticCredentials {
+        credentials: Credentials {
+            access_key_id: secret(
+                source.aws_access_key_id.as_ref(),
+                environment,
+                "AWS_ACCESS_KEY_ID",
+            ),
+            secret_access_key: secret(
+                source.aws_secret_access_key.as_ref(),
+                environment,
+                "AWS_SECRET_ACCESS_KEY",
+            ),
+            session_token: source.aws_session_token.clone().or_else(|| {
+                environment
+                    .lookup("AWS_SESSION_TOKEN")
+                    .map(SecretString::from)
+            }),
+        },
+    })
 }
 
 fn endpoint(
@@ -45,7 +98,6 @@ fn endpoint(
         environment,
     )
 }
-
 pub(super) fn schedule(environment: &dyn EnvironmentLookup) -> (usize, Duration) {
     let batch_size = positive_setting(environment, BATCH_SIZE_VARIABLE, DEFAULT_BATCH_SIZE);
     let seconds = positive_setting(
@@ -58,7 +110,6 @@ pub(super) fn schedule(environment: &dyn EnvironmentLookup) -> (usize, Duration)
         Duration::from_secs(u64::try_from(seconds).unwrap_or(10)),
     )
 }
-
 fn positive_setting(
     environment: &dyn EnvironmentLookup,
     setting: &'static str,
@@ -70,22 +121,15 @@ fn positive_setting(
     match text.trim().parse::<usize>() {
         Ok(value) if value > 0 => value,
         _ => {
-            tracing::warn!(
-                setting,
-                value = %text,
-                fallback,
-                "s3 logging: setting is not a positive integer, using the default"
-            );
+            tracing::warn!(setting, value = %text, fallback, "s3 logging: setting is not a positive integer");
             fallback
         }
     }
 }
-
 pub(super) fn transport(
     parameters: &S3Parameters<()>,
     deps: &S3BatchDeps,
 ) -> Result<(S3Transport, Arc<UploadLimiter>), InitError> {
-    let endpoint = endpoint(parameters, deps.environment.as_ref())?;
     let adaptive = parameters.features.contains(&Feature::AdaptiveConcurrency);
     let uploads = Arc::new(UploadLimiter::new(
         parameters.max_concurrent_uploads,
@@ -99,8 +143,11 @@ pub(super) fn transport(
     });
     let transport = S3Transport {
         client: Arc::clone(&deps.client),
-        endpoint,
-        credentials: Arc::clone(&deps.credentials),
+        endpoint: endpoint(parameters, deps.environment.as_ref())?,
+        credentials: configured_credentials(
+            &parameters.connection.credentials,
+            deps.environment.as_ref(),
+        ),
         encryption: parameters.encryption.clone(),
         drop_on_terminal_error: parameters.features.contains(&Feature::DropOnTerminalError),
         throttle,
@@ -108,7 +155,6 @@ pub(super) fn transport(
     };
     Ok((transport, uploads))
 }
-
 pub(super) fn flush_settings(
     parameters: &S3Parameters<()>,
     cold_storage_logger: Option<String>,

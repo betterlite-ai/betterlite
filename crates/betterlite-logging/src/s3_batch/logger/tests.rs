@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use tokio::time::{advance, timeout};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -21,11 +20,10 @@ use crate::fields::payload::StandardLoggingPayload;
 use crate::s3_batch::Element;
 use crate::s3_batch::flush::SystemMonotonic;
 use crate::s3_batch::logger::{S3BatchDeps, S3BatchLogger};
-use crate::s3_batch::ndjson_batch_file::UuidBatchIds;
 use crate::s3_transport::batch_element::ContentType;
 use crate::s3_transport::error::S3TransportError;
 use crate::s3_transport::options::PartitionGranularity;
-use crate::s3_transport::signing::{Clock, Credentials, StaticCredentials};
+use crate::s3_transport::signing::Clock;
 use crate::s3_transport::transport::{S3HttpClient, S3Request, S3Response};
 use crate::s3_v2::parameters::resolve_s3_parameters;
 use crate::s3_v2::source::Source;
@@ -111,16 +109,6 @@ impl Clock for FixedClock {
     }
 }
 
-fn credentials() -> Arc<StaticCredentials> {
-    Arc::new(StaticCredentials {
-        credentials: Credentials {
-            access_key_id: SecretString::from("access"),
-            secret_access_key: SecretString::from("secret"),
-            session_token: None,
-        },
-    })
-}
-
 fn source(extra: &str) -> Source<()> {
     serde_json::from_str(&format!(
         r#"{{"s3_bucket_name":"logs","s3_region_name":"us-east-1","s3_endpoint_url":"http://127.0.0.1:9000"{extra}}}"#
@@ -141,10 +129,8 @@ fn logger(
         parameters,
         S3BatchDeps {
             client,
-            credentials: credentials(),
             clock: Arc::new(FixedClock(SystemTime::UNIX_EPOCH)),
             monotonic: Arc::new(SystemMonotonic::default()),
-            batch_ids: Arc::new(UuidBatchIds),
             environment: lookup,
             throttle_observer: None,
             cold_storage_logger: None,
@@ -206,7 +192,17 @@ async fn callback_logger_uses_the_configured_partition_granularity() {
         None,
         CancellationToken::new(),
     );
-    assert_eq!(logger.partition_granularity(), PartitionGranularity::Hour);
+    let mut cache = logger
+        .partition_cache
+        .lock()
+        .expect("the partition cache is free");
+    let resolved = cache.resolve(
+        logger.parameters.connection.partition_granularity.as_ref(),
+        logger.environment.as_ref(),
+    );
+    assert_eq!(resolved, PartitionGranularity::Hour);
+    drop(cache);
+    drop(logger);
 }
 
 #[tokio::test(start_paused = true)]

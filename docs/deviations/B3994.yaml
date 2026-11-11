@@ -15,9 +15,6 @@ deviations:
   - what: The `_in_flush` context variable is an in-flight flush upload counter on the logger, not a task-local.
     why: tokio's task_local expands to a RefCell, which the repository denies. Every betterlite S3 upload runs through the bounded flush path, so the counter answers the same "is this upload inside a flush" question.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L715-L721
-  - what: A malformed DEFAULT_S3_BATCH_SIZE or DEFAULT_S3_FLUSH_INTERVAL_SECONDS falls back to 512 or 10 with a warning.
-    why: LiteLLM reads both with int(os.getenv(...)) at import, so a bad value stops the whole process; no running deployment can rely on that crash.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L61-L62
   - what: A non-empty s3_config fails the logger build instead of being handed to boto3.
     why: betterlite's signed transport does not apply a boto client config, and dropping the setting silently would hide that. B3995 refuses the unused sqs_config the same way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L337

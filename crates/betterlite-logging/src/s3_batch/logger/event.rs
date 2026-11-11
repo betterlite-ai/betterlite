@@ -1,12 +1,3 @@
-use std::fmt::Display;
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use betterlite_models::decisions::Json;
-use chrono::{DateTime, NaiveDateTime, Utc};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
-
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
@@ -14,7 +5,13 @@ use crate::s3_batch::Element;
 use crate::s3_batch::logger::{CALLBACK_NAME, S3BatchLogger};
 use crate::s3_batch::ndjson_batch_file::COLD_STORAGE_LOGGER;
 use crate::s3_v2::events::{Event, create_batch_element};
-
+use async_trait::async_trait;
+use betterlite_models::decisions::Json;
+use chrono::{DateTime, NaiveDateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
+use std::fmt::Display;
+use std::sync::Arc;
 fn element_for(
     logger: &S3BatchLogger,
     event: &LoggerEvent,
@@ -44,7 +41,6 @@ fn element_for(
     )
     .map_err(|source| delivery_error(&source))
 }
-
 pub(super) fn enqueue_event(
     logger: &S3BatchLogger,
     event: &LoggerEvent,
@@ -71,22 +67,18 @@ pub(super) fn enqueue_event(
     );
     Ok(())
 }
-
 #[async_trait]
 impl CallbackLogger for S3BatchLogger {
     fn callback_name(&self) -> &str {
         CALLBACK_NAME
     }
-
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         enqueue_event(self, &event)
     }
-
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.async_log_success_event(event).await
     }
 }
-
 fn naive_utc(seconds: Decimal) -> Option<NaiveDateTime> {
     seconds
         .checked_mul(Decimal::from(1_000_i64))
@@ -94,7 +86,6 @@ fn naive_utc(seconds: Decimal) -> Option<NaiveDateTime> {
         .and_then(DateTime::<Utc>::from_timestamp_millis)
         .map(|moment| moment.naive_utc())
 }
-
 fn delivery_error<Source>(source: &Source) -> LoggerError
 where
     Source: Display,

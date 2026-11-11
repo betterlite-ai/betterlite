@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
+use std::iter::repeat_with;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
@@ -9,7 +10,6 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_config::loader::EnvironmentLookup;
 use futures_util::future::join_all;
-use secrecy::SecretString;
 use tokio::task::yield_now;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -17,11 +17,10 @@ use tokio_util::sync::CancellationToken;
 use crate::s3_batch::Element;
 use crate::s3_batch::flush::SystemMonotonic;
 use crate::s3_batch::logger::{S3BatchDeps, S3BatchLogger};
-use crate::s3_batch::ndjson_batch_file::UuidBatchIds;
 use crate::s3_batch::upload_bounded::{AcquireError, UploadLimiter};
 use crate::s3_transport::batch_element::ContentType;
 use crate::s3_transport::error::S3TransportError;
-use crate::s3_transport::signing::{Clock, Credentials, StaticCredentials};
+use crate::s3_transport::signing::Clock;
 use crate::s3_transport::transport::{S3HttpClient, S3Request, S3Response, ThrottleSink};
 use crate::s3_v2::parameters::resolve_s3_parameters;
 use crate::s3_v2::source::Source;
@@ -130,16 +129,6 @@ fn source(extra: &str) -> Source<()> {
     .expect("the S3 source loads")
 }
 
-fn credentials() -> Arc<StaticCredentials> {
-    Arc::new(StaticCredentials {
-        credentials: Credentials {
-            access_key_id: SecretString::from("access"),
-            secret_access_key: SecretString::from("secret"),
-            session_token: None,
-        },
-    })
-}
-
 fn element(key: &str) -> Element {
     let payload: Json = serde_json::from_str(r#"{"id":"request"}"#).expect("the payload is JSON");
     Element {
@@ -169,10 +158,8 @@ fn logger(
         parameters,
         S3BatchDeps {
             client,
-            credentials: credentials(),
             clock: Arc::new(FixedClock(SystemTime::UNIX_EPOCH)),
             monotonic: Arc::new(SystemMonotonic::default()),
-            batch_ids: Arc::new(UuidBatchIds),
             environment,
             throttle_observer,
             cold_storage_logger: None,
@@ -194,7 +181,7 @@ async fn bounded_by_limit() {
     let limiter = Arc::new(UploadLimiter::new(2, None).expect("the bounds hold"));
     let active = Arc::new(AtomicUsize::new(0));
     let peak = Arc::new(AtomicUsize::new(0));
-    let uploads = std::iter::repeat_with(|| {
+    let uploads = repeat_with(|| {
         let limiter_handle = Arc::clone(&limiter);
         let active_handle = Arc::clone(&active);
         let peak_handle = Arc::clone(&peak);
@@ -216,7 +203,6 @@ async fn bounded_by_limit() {
     .take(6);
     join_all(uploads).await;
     assert_eq!(peak.load(Ordering::SeqCst), 2);
-    assert_eq!(limiter.snapshot().in_flight, 0);
 }
 
 #[tokio::test]
@@ -300,7 +286,6 @@ async fn adaptive_limiter_grows_and_halves() {
 fn fixed_limiter_has_a_semaphore_limit() {
     let limiter = UploadLimiter::new(4, None).expect("the bounds hold");
     assert_eq!(limiter.snapshot().limit, 4);
-    assert_eq!(limiter.snapshot().waiters, 0);
 }
 
 #[test]

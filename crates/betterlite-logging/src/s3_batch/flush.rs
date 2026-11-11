@@ -1,30 +1,24 @@
+use crate::private_json::error::PrivateJsonError;
+use crate::s3_batch::ndjson_batch_file::{
+    batch_file_elements, batch_file_mode_active, batch_stamp,
+};
+use crate::s3_batch::queue::BatchQueue;
+use crate::s3_batch::upload_bounded::MAX_WAITERS;
+use crate::s3_batch::{Element, S3BatchUploadError};
+use crate::s3_transport::signing::Clock;
+use crate::s3_transport::transport::UploadOutcome;
+use futures_util::future::join_all;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
-
-use futures_util::future::join_all;
-
-use crate::private_json::error::PrivateJsonError;
-use crate::s3_batch::Element;
-use crate::s3_batch::error::S3BatchUploadError;
-use crate::s3_batch::ndjson_batch_file::{
-    BatchIdSource, batch_file_elements, batch_file_mode_active, batch_stamp,
-};
-use crate::s3_batch::queue::BatchQueue;
-use crate::s3_batch::upload_bounded::MAX_WAITERS;
-use crate::s3_transport::signing::Clock;
-use crate::s3_transport::transport::UploadOutcome;
-
 pub trait MonotonicClock: Send + Sync + Debug {
     fn seconds(&self) -> f64;
 }
-
 #[derive(Debug)]
 pub struct SystemMonotonic {
     start: Instant,
 }
-
 impl Default for SystemMonotonic {
     fn default() -> Self {
         Self {
@@ -32,13 +26,11 @@ impl Default for SystemMonotonic {
         }
     }
 }
-
 impl MonotonicClock for SystemMonotonic {
     fn seconds(&self) -> f64 {
         self.start.elapsed().as_secs_f64()
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct FlushSettings {
     pub max_retry_age: Option<Duration>,
@@ -47,22 +39,18 @@ pub struct FlushSettings {
     pub cold_storage_logger: Option<String>,
     pub max_concurrent_uploads: usize,
 }
-
 pub struct FlushContext<'flush> {
     pub queue: &'flush BatchQueue,
     pub settings: &'flush FlushSettings,
-    pub batch_ids: &'flush dyn BatchIdSource,
     pub clock: &'flush dyn Clock,
     pub now: f64,
 }
-
 pub trait UploadOperation: Send + Sync {
     fn upload<'operation>(
         &'operation self,
         element: &'operation Element,
     ) -> Pin<Box<dyn Future<Output = UploadOutcome> + Send + 'operation>>;
 }
-
 #[derive(Debug, thiserror::Error)]
 pub enum FlushError {
     #[error(transparent)]
@@ -70,8 +58,6 @@ pub enum FlushError {
     #[error("an S3 batch file could not be serialized")]
     Serialize(#[source] PrivateJsonError),
 }
-
-// returns the number of queued elements the flush snapshotted, so the caller can settle that prefix
 pub async fn send_batch(
     context: &FlushContext<'_>,
     upload: &dyn UploadOperation,
@@ -81,18 +67,13 @@ pub async fn send_batch(
     if batch_len == 0 {
         return Ok(0);
     }
-    tracing::debug!(records = batch_len, "s3_v2 logger - sending batch");
     let grouped = batch_file_mode_active(
         context.settings.batch_file_upload,
         context.settings.cold_storage_logger.as_deref(),
     );
     let uploads = if grouped {
-        batch_file_elements(
-            &snapshot.entries,
-            &batch_stamp(context.clock),
-            context.batch_ids,
-        )
-        .map_err(FlushError::Serialize)?
+        batch_file_elements(&snapshot.entries, &batch_stamp(context.clock))
+            .map_err(FlushError::Serialize)?
     } else {
         snapshot.entries
     };
@@ -107,7 +88,6 @@ pub async fn send_batch(
     reconcile(context, batch_len, &uploads, &outcomes)?;
     Ok(batch_len)
 }
-
 fn upload_order(uploads: usize, batch: usize, requeued: usize) -> Vec<usize> {
     let stale = if uploads == batch {
         requeued.min(uploads)
@@ -116,7 +96,6 @@ fn upload_order(uploads: usize, batch: usize, requeued: usize) -> Vec<usize> {
     };
     (stale..uploads).chain(0..stale).collect()
 }
-
 async fn run_uploads(
     queue: &[Element],
     order: &[usize],
@@ -139,7 +118,6 @@ async fn run_uploads(
     }
     outcomes
 }
-
 fn reconcile(
     context: &FlushContext<'_>,
     batch_len: usize,
@@ -157,14 +135,10 @@ fn reconcile(
         .filter(|(_element, outcome)| **outcome != UploadOutcome::Delivered)
         .map(|(element, outcome)| (element, *outcome))
         .collect();
-    let requeued = requeue_plan(context, &failed, bucket_wide);
+    let requeued = survivors(context, &failed, bucket_wide);
     let dropped = failed.len().saturating_sub(requeued.len());
     if dropped > 0 {
-        tracing::warn!(
-            dropped,
-            max_retry_age = ?context.settings.max_retry_age,
-            "s3 logging: uploads dropped (terminal or retrying longer than s3_max_retry_age_seconds)"
-        );
+        tracing::warn!(dropped, max_retry_age = ?context.settings.max_retry_age, "s3 logging: uploads dropped (terminal, stale or over the retry age)");
     }
     if requeued.is_empty() {
         return Ok(());
@@ -174,7 +148,7 @@ fn reconcile(
         tracing::warn!(
             max_queue_size = context.settings.max_queue_size,
             dropped = restored.dropped_oldest,
-            "s3 logging: queue exceeded max_queue_size after a failed flush, dropped the oldest events"
+            "s3 logging: queue exceeded max_queue_size; dropped the oldest events"
         );
     }
     Err(FlushError::Upload(S3BatchUploadError {
@@ -183,19 +157,17 @@ fn reconcile(
     }))
 }
 
-fn requeue_plan(
+fn survivors(
     context: &FlushContext<'_>,
     failed: &[(&Element, UploadOutcome)],
     bucket_wide: bool,
 ) -> Vec<Element> {
-    if bucket_wide {
-        return failed
-            .iter()
-            .map(|(element, _outcome)| (*element).clone())
-            .collect();
-    }
     let mut requeued = Vec::new();
     for (element, outcome) in failed {
+        if bucket_wide {
+            requeued.push((*element).clone());
+            continue;
+        }
         if *outcome == UploadOutcome::Dropped {
             continue;
         }
@@ -219,5 +191,4 @@ fn survivor(element: &Element, max_retry_age: Option<Duration>, now: f64) -> Opt
     }
     Some(kept)
 }
-
 mod tests;
