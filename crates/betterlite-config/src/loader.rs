@@ -1,3 +1,4 @@
+use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use std::collections::{BTreeMap, BTreeSet};
@@ -177,6 +178,7 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
+    let drop_params = Some(drop_params_setting(raw.drop_params, lookup));
     Ok(LiteLlmSettings {
         ssl_verify: raw.ssl_verify,
         ssl_certificate: raw.ssl_certificate,
@@ -185,7 +187,7 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
         ssl_security_level: raw.ssl_security_level,
         num_retries,
         request_timeout,
-        drop_params: raw.drop_params,
+        drop_params,
         proxy_trust: ProxyTrust {
             aiohttp_trust_env: raw.aiohttp_trust_env,
             disable_aiohttp_trust_env: raw.disable_aiohttp_trust_env,
@@ -194,6 +196,18 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
         modify_params,
         default_max_tokens,
     })
+}
+
+// LiteLLM's env fallback warns and turns the flag on, unlike the request-level flag which warns and off
+fn drop_params_setting(configured: Option<bool>, lookup: Lookup<'_>) -> bool {
+    if let Some(value) = configured {
+        return value;
+    }
+    let flag = drop_params_env_flag(lookup.lookup("LITELLM_DROP_PARAMS").as_deref());
+    if flag.warned {
+        tracing::warn!("LITELLM_DROP_PARAMS is not a flag value, treating it as on");
+    }
+    flag.enabled
 }
 
 fn environment_defaults(

@@ -55,6 +55,32 @@ fn provider_base_config_cases(
     }
 }
 
+#[rstest]
+#[case::loads_drop_params("litellm_settings:\n  drop_params: true\n", &[], true)]
+#[case::loads_drop_params(
+    "litellm_settings:\n  drop_params: false\n",
+    &[("LITELLM_DROP_PARAMS", "true")],
+    false
+)]
+#[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "yes")], true)]
+#[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", " 0 ")], false)]
+#[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "off")], false)]
+#[case::loads_litellm_drop_params("", &[], false)]
+#[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "")], false)]
+#[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", " ")], false)]
+fn provider_base_config_drop_params_cases(
+    #[case] source: &str,
+    #[case] environment: &[(&str, &str)],
+    #[case] expected: bool,
+) {
+    let lookup: BTreeMap<String, String> = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    let loaded = ConfigLoader { lookup }.load(source).unwrap();
+    assert_eq!(loaded.litellm_settings.drop_params, Some(expected));
+}
+
 #[test]
 fn shared_env_modify_params() {
     let configured = ConfigLoader {
