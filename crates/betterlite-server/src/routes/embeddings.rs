@@ -21,7 +21,8 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
-use crate::server::chat_setup::provider_call::{CallError, embedding_error};
+use crate::server::chat_setup::provider_call::CallError;
+use crate::server::chat_setup::provider_call::embedding::embedding_error;
 
 use super::chat::headers::{failure_headers, success_headers};
 

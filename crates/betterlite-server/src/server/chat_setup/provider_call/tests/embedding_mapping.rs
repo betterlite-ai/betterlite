@@ -8,7 +8,8 @@ use betterlite_provider::transform_retry::TransformRetryError;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
 
-use super::super::{CallError, embedding_error};
+use super::super::CallError;
+use super::super::embedding::embedding_error;
 
 fn provider_error() -> OperationError {
     OperationError::Provider {

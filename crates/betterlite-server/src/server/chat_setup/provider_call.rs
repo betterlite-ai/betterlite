@@ -1,5 +1,4 @@
 use betterlite_config::sections::mock_response::selection::resolve_mock;
-use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::controls::control_options::{
     ControlOptions, InvalidControlOption, parse_control_options,
@@ -8,7 +7,6 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
-use betterlite_openai::embedding::EmbeddingError;
 use betterlite_provider::operation::{
     ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
 };
@@ -112,31 +110,6 @@ pub(crate) enum CallError<Route> {
     Mismatched,
 }
 
-pub(crate) fn embedding_error(error: OperationError) -> CallError<EmbeddingError> {
-    let route = match error {
-        OperationError::Provider { response } => EmbeddingError::Provider { response },
-        OperationError::MissingApiKey => EmbeddingError::MissingApiKey,
-        OperationError::Encode { source } => EmbeddingError::Encode { source },
-        OperationError::Decode { source, .. } => EmbeddingError::Decode { source },
-        OperationError::UnavailableAdapter { provider }
-        | OperationError::UnsupportedOperation { provider, .. } => {
-            EmbeddingError::UnsupportedProvider { model: provider }
-        }
-        OperationError::Timeout => EmbeddingError::Http {
-            source: HttpError::Timeout,
-        },
-        OperationError::TooLarge { limit } => EmbeddingError::Http {
-            source: HttpError::TooLarge { limit },
-        },
-        kept @ (OperationError::Http { .. }
-        | OperationError::InvalidHeader { .. }
-        | OperationError::TransformRetry(_)) => {
-            return CallError::Operation { source: kept };
-        }
-    };
-    CallError::Route(route)
-}
-
 pub(crate) fn chat_error(error: OperationError) -> CallError<ChatError> {
     let route = match error {
         OperationError::Provider { response } => ChatError::Provider { response },
@@ -162,4 +135,5 @@ pub(crate) fn chat_error(error: OperationError) -> CallError<ChatError> {
     CallError::Route(route)
 }
 
+pub(crate) mod embedding;
 mod tests;
