@@ -82,7 +82,7 @@ fn default_fallbacks_become_the_generic_chain() {
 
 #[test]
 fn parameterized_targets_keep_their_overrides() {
-    let source = "router_settings:\n  fallbacks: [{gpt-4: [{model: claude, messages: []}]}]\n";
+    let source = "litellm_settings:\n  fallbacks: [{gpt-4: [{model: claude, messages: []}]}]\n";
     let loaded = settings(source, &[]).unwrap();
     let FallbackChainEntry::Group(chain) = &loaded.fallbacks[0] else {
         panic!("the entry is not a group");
@@ -130,8 +130,10 @@ fn max_fallbacks_reads_the_setting_then_the_environment(
     #[case] environment: Option<&str>,
     #[case] expected: i64,
 ) {
-    let setting =
-        configured.map_or_else(String::new, |value| format!("  max_fallbacks: {value}\n"));
+    let setting = configured.map_or_else(
+        || String::from("  {}"),
+        |value| format!("  {{max_fallbacks: {value}}}"),
+    );
     let source = format!("router_settings:\n{setting}");
     let variables: Vec<(&str, &str)> = environment
         .map(|value| vec![("ROUTER_MAX_FALLBACKS", value)])
