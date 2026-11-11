@@ -579,7 +579,10 @@ fn agentcore_stream_body_cap(#[values(HandlerKind::Sync, HandlerKind::Async)] ki
     let at_limit = Scenario::json(&format!("{padding}{{}}"));
     assert_eq!(run(kind, &at_limit, &ids(2)).emitted.unwrap().len(), 2);
     let mut over = Scenario::json("{}");
-    over.reads = vec!["x".repeat(MAX_BODY_BYTES.saturating_add(1))];
+    over.reads = vec![
+        " ".repeat(MAX_BODY_BYTES.saturating_sub(1)),
+        "{}".to_owned(),
+    ];
     let (status, headers, response_status) =
         provider_fields(&run(kind, &over, &ids(2)).emitted.unwrap_err());
     assert_eq!(status, 200);
