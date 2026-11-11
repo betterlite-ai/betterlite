@@ -126,6 +126,27 @@ fn constructor_params_override_the_global_newrelic_params(
 }
 
 #[test]
+fn constructor_turn_off_wins_over_the_global_params() {
+    let mut fixture = enabled_fixture();
+    fixture.turn_off(true);
+    fixture.init.turn_off_message_logging = Some(false);
+    let logger = fixture.build();
+    assert!(!logger.settings.turn_off_message_logging);
+}
+
+#[test]
+fn an_unavailable_version_becomes_unknown() {
+    let mut fixture = enabled_fixture();
+    fixture.version = None;
+    let logger = fixture.build();
+    logger.log_success_event(&event(payload())).unwrap();
+    assert_eq!(
+        fixture.application.supportability_metrics(),
+        vec![format!("{SUPPORTABILITY_METRIC_PREFIX}unknown")]
+    );
+}
+
+#[test]
 fn a_supportability_metric_is_shared_across_loggers_and_emitted_once_per_window() {
     let fixture = enabled_fixture();
     let first = fixture.build();
