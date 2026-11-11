@@ -186,10 +186,9 @@ where
         [b'I', b'D', b'3', _] => {
             let mut rest = [0_u8; 6];
             media.read_exact(&mut rest).ok()?;
-            let size = rest
-                .get(2..6)?
-                .iter()
-                .fold(0_u64, |size, byte| (size << 7_u32) | u64::from(*byte));
+            let size = rest.get(2..6)?.iter().try_fold(0_u64, |size, byte| {
+                size.checked_mul(128)?.checked_add(u64::from(*byte))
+            })?;
             let footer = if rest.get(1)? & 0b0001_0000 == 0 {
                 0
             } else {

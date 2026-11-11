@@ -1,7 +1,7 @@
 task: B3645
 deviations:
-  - what: Media length is read from the container headers (WAV fmt/data, FLAC STREAMINFO, the Ogg last page granule, MP3 frame counts) with Rust crates instead of libsndfile. Ogg Opus files, which libsndfile 1.2 can read, give None and are charged the maximum.
-    why: libsndfile has no maintained pure-Rust equivalent that passes deny.toml (symphonia is MPL-2.0), and the four crates cover the formats B3644 admits; an Opus file is billed high rather than free.
+  - what: Media length is read from the container headers (WAV fmt/data, FLAC STREAMINFO, the Ogg last page granule, MP3 frame counts) with Rust crates and an in-crate MP3 frame walker instead of libsndfile. Ogg Opus files, which libsndfile 1.2 can read, give None and are charged the maximum.
+    why: libsndfile has no maintained pure-Rust equivalent that passes deny.toml (symphonia is MPL-2.0), and the three crates plus the MP3 walker cover the formats B3644 admits; an Opus file is billed high rather than free.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L512-L518
   - what: The longest-media charge uses B3644's transcribe_max_job_cost at LiteLLM's 28800 seconds, and the media length is exact Decimal arithmetic (frames divided by sample rate, then rounded up) instead of a float.
     why: Money is Decimal in betterlite, and an exact quotient never rounds a whole number of seconds up by float error.
@@ -12,8 +12,8 @@ deviations:
   - what: The GetTranscriptionJob body is serialized compactly, and the media download carries a total deadline of two hours on top of the pooled client's connect and read timeouts.
     why: docs/compatibility.md leaves json.dumps spacing open, and B173's client requires a total deadline where httpx has none.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L458-L472
-  - what: An MP3 length comes from mp3-duration's frame count, which ignores the LAME gapless tag, so the encoder padding can add up to one second to the charge after rounding up.
-    why: mp3-duration is the maintained MIT crate for MP3 frame counts; libsndfile's gapless-aware decode has no pure-Rust counterpart that passes deny.toml, and billing high keeps an unreadable job from being free.
+  - what: An MP3 length is the Xing or Info frame count when the first frame declares one, otherwise the sum of every frame's samples over its sample rate, walked by a small in-crate reader. Neither reads the LAME gapless tag, so the encoder padding can add up to one second to the charge after rounding up.
+    why: The mp3-duration crate does the same walk but pulls thiserror 1, which duplicates thiserror 2 and fails deny.toml's multiple-versions rule, so the walker is written in the crate; libsndfile's gapless-aware decode has no pure-Rust counterpart, and billing high keeps an unreadable job from being free.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L512-L518
   - what: A media URI that is not a URL is returned as an error and retried three times, whereas LiteLLM's httpx.URL accepts a relative string and s3_media_url returns None for it.
     why: The task requires the unparsable case to be an error so the caller retries it; both paths end in the maximum charge, so only the retry count differs.
