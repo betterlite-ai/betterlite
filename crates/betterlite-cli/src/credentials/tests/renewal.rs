@@ -351,6 +351,26 @@ async fn fresh_api_key_returns_none_when_the_failed_key_is_expired() {
 }
 
 #[tokio::test]
+async fn fresh_api_key_returns_none_when_the_failed_key_expires_at_the_same_moment() {
+    let mut store = ScriptedStore::default();
+    let http = scripted_http(vec![Reply::Transport]);
+    let clock = frozen_clock();
+    let log = Mutex::new(Vec::new());
+    let warn = warn_sink(&log);
+
+    let key = fresh_api_key(FreshApiKeyRequest {
+        record: &record_expiring_at(1_000_000.0_f64),
+        store: &mut store,
+        http: &http,
+        clock: &clock,
+        warn: &warn,
+    })
+    .await;
+
+    assert!(key.is_none());
+}
+
+#[tokio::test]
 async fn fresh_api_key_uses_a_sibling_key_without_warning() {
     let files = test_files();
     let mut vault = FakeVault::working();
