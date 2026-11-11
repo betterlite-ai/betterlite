@@ -38,11 +38,12 @@ class CredentialSpec(TypedDict):
     credential_values: dict[str, str]
 
 
-class SetupInput(TypedDict, total=False):
-    action: Required[Literal["setup"]]
+class Input(TypedDict, total=False):
+    action: Required[Literal["setup", "credentials", "request_flags"]]
     request: Required[dict[str, Json]]
     call_type: Required[str]
     is_async_call: bool
+    is_pass_through: bool
     lists: ListsSpec
     callbacks: list[Entry]
     resolver: dict[str, Outcome]
@@ -50,22 +51,7 @@ class SetupInput(TypedDict, total=False):
     provider_map: list[str]
     providers: list[str]
     custom_providers: list[str]
-
-
-class CredentialsInput(TypedDict, total=False):
-    action: Required[Literal["credentials"]]
-    request: Required[dict[str, Json]]
     credentials: list[CredentialSpec]
-
-
-class FlagsInput(TypedDict, total=False):
-    action: Required[Literal["request_flags"]]
-    request: Required[dict[str, Json]]
-    call_type: Required[str]
-    is_pass_through: bool
-
-
-Input: TypeAlias = SetupInput | CredentialsInput | FlagsInput
 
 
 # LiteLLM passes these keys by name, and four of them pass the name length limit
