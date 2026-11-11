@@ -66,13 +66,10 @@ pub fn media_predates_job(headers: &[(String, String)], job_created_at: f64) -> 
     let Ok(modified) = DateTime::parse_from_rfc2822(value) else {
         return false;
     };
-    let Some(created_at) = Decimal::from_f64_retain(job_created_at) else {
-        return false;
-    };
-    let Some(tolerance) = Decimal::from_f64_retain(MODIFIED_TOLERANCE_SECONDS) else {
-        return false;
-    };
-    let Some(limit) = created_at.checked_add(tolerance) else {
+    let Some(limit) = Decimal::from_f64_retain(job_created_at)
+        .zip(Decimal::from_f64_retain(MODIFIED_TOLERANCE_SECONDS))
+        .and_then(|(created_at, tolerance)| created_at.checked_add(tolerance))
+    else {
         return false;
     };
     Decimal::from(modified.timestamp()) <= limit

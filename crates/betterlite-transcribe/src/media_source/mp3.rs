@@ -11,8 +11,8 @@ const FRAME_HEADER_BYTES: u64 = 4;
 // the frame header and the Xing fields are read before the rest of the frame is skipped
 const FRAME_READ_BYTES: u64 = 16;
 
-// kilobits per second by MPEG version (1, 2, 2.5), layer (I, II, III) and the header's 4-bit index
-const BIT_RATES: [[[u64; 15]; 3]; 3] = [
+// kilobits per second by MPEG version (1, then 2 and 2.5 which share a table), layer (I, II, III) and the header's 4-bit index
+const BIT_RATES: [[[u64; 15]; 3]; 2] = [
     [
         [
             0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448,
@@ -23,13 +23,6 @@ const BIT_RATES: [[[u64; 15]; 3]; 3] = [
         [
             0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
         ],
-    ],
-    [
-        [
-            0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256,
-        ],
-        [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
-        [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
     ],
     [
         [
@@ -145,7 +138,10 @@ fn parse_frame(header: u32) -> Option<Frame> {
     };
     let bitrate_index = usize::try_from((header >> 12_u32) & 0b1111_u32).ok()?;
     let rate_index = usize::try_from((header >> 10_u32) & 0b11_u32).ok()?;
-    let kilobits = *BIT_RATES.get(version)?.get(layer)?.get(bitrate_index)?;
+    let kilobits = *BIT_RATES
+        .get(version.min(1))?
+        .get(layer)?
+        .get(bitrate_index)?;
     let sample_rate = *SAMPLE_RATES.get(version)?.get(rate_index)?;
     let samples = *SAMPLES_PER_FRAME.get(version)?.get(layer)?;
     if kilobits == 0 {

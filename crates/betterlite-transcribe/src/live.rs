@@ -102,14 +102,13 @@ pub async fn price_transcription_job_live(
     let http = PooledHttp { client: deps.http };
     let lookup = TranscribeJobLookup::new(&deps.region, signer, http.clone());
     let probe = S3MediaProbe::new(&deps.region, signer, http, deps.download_slots);
-    let sleeper = TokioSleeper;
     let pricing = JobPricing {
         job_name,
         cost_per_second,
         max_attempts: MAX_POLLING_ATTEMPTS,
         started_job,
     };
-    price_fail_closed(pricing, &lookup, &probe, &sleeper).await
+    price_fail_closed(pricing, &lookup, &probe, &TokioSleeper).await
 }
 
 pub async fn price_fail_closed<L, P, S>(

@@ -88,7 +88,7 @@ where
 }
 
 pub(super) async fn download_and_measure(
-    body: BodyStream,
+    mut body: BodyStream,
     media_uri: &str,
     mut guard: MediaSizeGuard,
 ) -> Result<Option<Decimal>, ProbeError> {
@@ -97,13 +97,8 @@ pub(super) async fn download_and_measure(
     let Some(created) = tasks.join_next().await else {
         return Err(ProbeError::TaskClosed);
     };
-    let created_file = match created.map_err(ProbeError::Task)? {
-        Ok(file) => file,
-        Err(source) => return Err(ProbeError::Io(source)),
-    };
-    let mut file = File::from_std(created_file);
-    let mut chunks = body;
-    while let Some(result) = chunks.next().await {
+    let mut file = File::from_std(created.map_err(ProbeError::Task)?.map_err(ProbeError::Io)?);
+    while let Some(result) = body.next().await {
         let chunk = result?;
         if !guard.accept(chunk.len()) {
             tracing::warn!(
