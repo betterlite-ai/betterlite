@@ -156,57 +156,70 @@ async fn check_updated_bounds(client: &Client, first: &str, last: &str, count: u
     );
 }
 
+struct ExpectedJoin {
+    id: &'static str,
+    organization: Option<&'static str>,
+    key_alias: Option<&'static str>,
+    team_alias: Option<&'static str>,
+    organization_alias: Option<&'static str>,
+}
+
+const EXPECTED_JOINS: [ExpectedJoin; 3] = [
+    ExpectedJoin {
+        id: "row-key",
+        organization: Some("org-key"),
+        key_alias: Some("alice-key"),
+        team_alias: Some("Red Team"),
+        organization_alias: Some("Key Org"),
+    },
+    ExpectedJoin {
+        id: "row-team",
+        organization: Some("org-other"),
+        key_alias: None,
+        team_alias: Some("Blue Team"),
+        organization_alias: Some("Other Org"),
+    },
+    ExpectedJoin {
+        id: "row-orphan",
+        organization: None,
+        key_alias: None,
+        team_alias: None,
+        organization_alias: None,
+    },
+];
+
 async fn check_organization_precedence(admin_url: &SecretString) {
     let fixture = provision(admin_url, &sample_seed()).await;
     let (client, driver) = connect(&fixture.options.url).await;
-    assert_key_join(&client).await;
-    assert_team_join(&client).await;
-    assert_orphan_join(&client).await;
+    assert_organization_joins(&client).await;
     assert_key_identity(&client).await;
     disconnect(client, driver).await;
     fixture.close_async().await.unwrap();
 }
 
-async fn assert_key_join(client: &Client) {
-    let row = client
-        .query_one(ORGANIZATION_JOIN, &[&"row-key"])
-        .await
-        .unwrap();
-    assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("org-key"));
-    assert_eq!(
-        row.get::<_, Option<String>>(1).as_deref(),
-        Some("alice-key")
-    );
-    assert_eq!(row.get::<_, Option<String>>(2).as_deref(), Some("Red Team"));
-    assert_eq!(row.get::<_, Option<String>>(3).as_deref(), Some("Key Org"));
-}
-
-async fn assert_team_join(client: &Client) {
-    let row = client
-        .query_one(ORGANIZATION_JOIN, &[&"row-team"])
-        .await
-        .unwrap();
-    assert_eq!(
-        row.get::<_, Option<String>>(0).as_deref(),
-        Some("org-other")
-    );
-    assert_eq!(
-        row.get::<_, Option<String>>(2).as_deref(),
-        Some("Blue Team")
-    );
-    assert_eq!(
-        row.get::<_, Option<String>>(3).as_deref(),
-        Some("Other Org")
-    );
-}
-
-async fn assert_orphan_join(client: &Client) {
-    let row = client
-        .query_one(ORGANIZATION_JOIN, &[&"row-orphan"])
-        .await
-        .unwrap();
-    assert_eq!(row.get::<_, Option<String>>(0), None);
-    assert_eq!(row.get::<_, Option<String>>(1), None);
+async fn assert_organization_joins(client: &Client) {
+    for expected in &EXPECTED_JOINS {
+        let row = client
+            .query_one(ORGANIZATION_JOIN, &[&expected.id])
+            .await
+            .unwrap();
+        assert_eq!(
+            row.get::<_, Option<String>>(0).as_deref(),
+            expected.organization
+        );
+        assert_eq!(
+            row.get::<_, Option<String>>(1).as_deref(),
+            expected.key_alias
+        );
+        assert_eq!(
+            row.get::<_, Option<String>>(2).as_deref(),
+            expected.team_alias
+        );
+        assert_eq!(
+            row.get::<_, Option<String>>(3).as_deref(),
+            expected.organization_alias
+        );
+    }
 }
 
 async fn assert_key_identity(client: &Client) {

@@ -1,122 +1,33 @@
 use rstest::rstest;
 
 use crate::error::FixtureError;
-use crate::finops::FinOpsFixtureError;
 use crate::finops::FinOpsSeed;
 use crate::finops::model::{ConfigName, ConfigRow, OrganizationRow, UsageApiKey};
 use crate::seed::{FixtureSeed, KeyRow};
 
 use super::support::{
-    LIMIT, OVER_LIMIT, VANTAGE_SETTINGS, deterministic_rows, empty_finops, fixture_with,
-    metadata_row, organization, sample_seed, secret, seed_with_config_rows, seed_with_daily_usage,
+    LIMIT, OVER_LIMIT, VANTAGE_SETTINGS, deterministic_rows, fixture_with, metadata_row,
+    organization, sample_seed, secret, seed_with_config_rows, seed_with_daily_usage,
     seed_with_key_metadata, seed_with_organizations, usage_row,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ExpectedError {
+enum Expected {
     Accepted,
-    RedactedDiagnostics,
-    TooManyRows {
-        list: &'static str,
-        count: usize,
-        limit: usize,
-    },
-    DuplicateOrganization,
-    MissingBudget,
-    MissingUser(&'static str),
-    UnknownKeyMetadata,
-    DuplicateKeyMetadata,
-    MissingOrganization(&'static str),
-    KeyMetadataWithoutTeam,
-    MissingTeam,
-    ConflictingTeamOrganization,
-    DuplicateDailyUsageId,
-    MissingUsageUser,
-    UnknownUsageKey,
-    InvalidOrphanHash,
-    InvalidTimestamp(&'static str),
-    DuplicateUsageTuple,
-    DuplicateConfigName,
+    Redacted,
+    Direct(&'static str),
+    Fixture(&'static str),
 }
 
-fn error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
-    match (source, expected) {
-        (
-            FinOpsFixtureError::TooManyRows { list, count, limit },
-            ExpectedError::TooManyRows {
-                list: wanted_list,
-                count: wanted_count,
-                limit: wanted_limit,
-            },
-        ) => *list == wanted_list && *count == wanted_count && *limit == wanted_limit,
-        (FinOpsFixtureError::MissingUser { field, .. }, ExpectedError::MissingUser(wanted))
-        | (
-            FinOpsFixtureError::MissingOrganization { field, .. },
-            ExpectedError::MissingOrganization(wanted),
-        )
-        | (
-            FinOpsFixtureError::InvalidTimestamp { field, .. },
-            ExpectedError::InvalidTimestamp(wanted),
-        ) => *field == wanted,
-        (other, wanted) => unit_error_matches(other, wanted),
-    }
-}
-
-fn unit_error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
-    organization_error_matches(source, expected) || usage_error_matches(source, expected)
-}
-
-fn organization_error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
-    matches!(
-        (source, expected),
-        (
-            FinOpsFixtureError::DuplicateOrganization { .. },
-            ExpectedError::DuplicateOrganization,
-        ) | (
-            FinOpsFixtureError::MissingBudget { .. },
-            ExpectedError::MissingBudget
-        ) | (
-            FinOpsFixtureError::UnknownKeyMetadata { .. },
-            ExpectedError::UnknownKeyMetadata
-        ) | (
-            FinOpsFixtureError::DuplicateKeyMetadata { .. },
-            ExpectedError::DuplicateKeyMetadata
-        ) | (
-            FinOpsFixtureError::KeyMetadataWithoutTeam { .. },
-            ExpectedError::KeyMetadataWithoutTeam,
-        ) | (
-            FinOpsFixtureError::MissingTeam { .. },
-            ExpectedError::MissingTeam
-        ) | (
-            FinOpsFixtureError::ConflictingTeamOrganization { .. },
-            ExpectedError::ConflictingTeamOrganization,
-        )
-    )
-}
-
-fn usage_error_matches(source: &FinOpsFixtureError, expected: ExpectedError) -> bool {
-    matches!(
-        (source, expected),
-        (
-            FinOpsFixtureError::DuplicateDailyUsageId { .. },
-            ExpectedError::DuplicateDailyUsageId,
-        ) | (
-            FinOpsFixtureError::MissingUsageUser { .. },
-            ExpectedError::MissingUsageUser
-        ) | (
-            FinOpsFixtureError::UnknownUsageKey { .. },
-            ExpectedError::UnknownUsageKey
-        ) | (
-            FinOpsFixtureError::InvalidOrphanHash { .. },
-            ExpectedError::InvalidOrphanHash
-        ) | (
-            FinOpsFixtureError::DuplicateUsageTuple { .. },
-            ExpectedError::DuplicateUsageTuple
-        ) | (
-            FinOpsFixtureError::DuplicateConfigName { .. },
-            ExpectedError::DuplicateConfigName
-        )
-    )
+fn assert_redacted(fixture: &FixtureSeed) {
+    let finops = fixture.finops.as_ref().expect("the seed carries finops");
+    let debug = format!("{finops:?}");
+    assert!(!debug.contains("sk-alice-token"));
+    assert!(!debug.contains(VANTAGE_SETTINGS));
+    assert!(debug.contains("[REDACTED]"));
+    let rejected = unknown_metadata_key_seed();
+    let error = rejected.validate().expect_err("the seed is rejected");
+    assert!(!format!("{error}").contains("sk-missing"));
+    assert!(!format!("{error:?}").contains("sk-missing"));
 }
 
 fn empty_usage_seed() -> FixtureSeed {
@@ -310,7 +221,7 @@ fn boundary_organizations_seed() -> FixtureSeed {
 }
 
 fn boundary_key_metadata_seed() -> FixtureSeed {
-    let mut fixture = fixture_with(empty_finops());
+    let mut fixture = fixture_with(FinOpsSeed::default());
     fixture.keys = (0..LIMIT)
         .map(|index| KeyRow {
             token: secret(&format!("sk-key-{index}")),
@@ -319,10 +230,14 @@ fn boundary_key_metadata_seed() -> FixtureSeed {
             role: None,
         })
         .collect();
-    let mut finops = empty_finops();
-    finops.key_metadata = (0..LIMIT)
-        .map(|index| metadata_row(&format!("sk-key-{index}"), None, None, None))
-        .collect();
+    let finops = FinOpsSeed {
+        organizations: Vec::new(),
+        key_metadata: (0..LIMIT)
+            .map(|index| metadata_row(&format!("sk-key-{index}"), None, None, None))
+            .collect(),
+        daily_usage: Vec::new(),
+        config_rows: Vec::new(),
+    };
     fixture.finops = Some(finops);
     fixture
 }
@@ -342,90 +257,127 @@ fn boundary_daily_usage_seed() -> FixtureSeed {
 }
 
 #[rstest]
-#[case::sample(sample_seed, ExpectedError::Accepted)]
-#[case::empty_usage(empty_usage_seed, ExpectedError::Accepted)]
-#[case::redacted_diagnostics(sample_seed, ExpectedError::RedactedDiagnostics)]
-#[case::null_tuple(null_tuple_seed, ExpectedError::Accepted)]
+#[case::sample(sample_seed, Expected::Accepted)]
+#[case::empty_usage(empty_usage_seed, Expected::Accepted)]
+#[case::redacted_diagnostics(sample_seed, Expected::Redacted)]
+#[case::null_tuple(null_tuple_seed, Expected::Accepted)]
 #[case::too_many_organizations(
     too_many_organizations_seed,
-    ExpectedError::TooManyRows { list: "organizations", count: OVER_LIMIT, limit: LIMIT }
+    Expected::Fixture("finops fixture organizations has 1025 rows, more than the limit of 1024")
 )]
 #[case::too_many_key_metadata(
     too_many_key_metadata_seed,
-    ExpectedError::TooManyRows { list: "key_metadata", count: OVER_LIMIT, limit: LIMIT }
+    Expected::Fixture("finops fixture key_metadata has 1025 rows, more than the limit of 1024")
 )]
 #[case::too_many_daily_usage(
     too_many_daily_usage_seed,
-    ExpectedError::TooManyRows { list: "daily_usage", count: OVER_LIMIT, limit: LIMIT }
+    Expected::Fixture("finops fixture daily_usage has 1025 rows, more than the limit of 1024")
 )]
 #[case::too_many_config_rows(
     too_many_config_rows_seed,
-    ExpectedError::TooManyRows { list: "config_rows", count: OVER_LIMIT, limit: LIMIT }
+    Expected::Fixture("finops fixture config_rows has 1025 rows, more than the limit of 1024")
 )]
-#[case::boundary_organizations(boundary_organizations_seed, ExpectedError::Accepted)]
-#[case::boundary_key_metadata(boundary_key_metadata_seed, ExpectedError::Accepted)]
-#[case::boundary_daily_usage(boundary_daily_usage_seed, ExpectedError::Accepted)]
-#[case::duplicate_organization(duplicate_organization_seed, ExpectedError::DuplicateOrganization)]
-#[case::missing_budget(missing_budget_seed, ExpectedError::MissingBudget)]
-#[case::missing_creator(missing_creator_seed, ExpectedError::MissingUser("created_by"))]
-#[case::missing_updater(missing_updater_seed, ExpectedError::MissingUser("updated_by"))]
-#[case::unknown_metadata_key(unknown_metadata_key_seed, ExpectedError::UnknownKeyMetadata)]
-#[case::duplicate_metadata(duplicate_metadata_seed, ExpectedError::DuplicateKeyMetadata)]
+#[case::boundary_organizations(boundary_organizations_seed, Expected::Accepted)]
+#[case::boundary_key_metadata(boundary_key_metadata_seed, Expected::Accepted)]
+#[case::boundary_daily_usage(boundary_daily_usage_seed, Expected::Accepted)]
+#[case::duplicate_organization(
+    duplicate_organization_seed,
+    Expected::Fixture("finops organization row 1 repeats an organization_id")
+)]
+#[case::missing_budget(
+    missing_budget_seed,
+    Expected::Fixture("finops organization row 0 references missing budget budget-missing")
+)]
+#[case::missing_creator(
+    missing_creator_seed,
+    Expected::Fixture("finops organization row 0 field created_by references missing user carol")
+)]
+#[case::missing_updater(
+    missing_updater_seed,
+    Expected::Fixture("finops organization row 0 field updated_by references missing user carol")
+)]
+#[case::unknown_metadata_key(
+    unknown_metadata_key_seed,
+    Expected::Fixture("finops key metadata row 0 references no fixture key")
+)]
+#[case::duplicate_metadata(
+    duplicate_metadata_seed,
+    Expected::Fixture("finops key metadata row 1 repeats an earlier key target")
+)]
 #[case::missing_metadata_organization(
     missing_metadata_organization_seed,
-    ExpectedError::MissingOrganization("organization_id")
+    Expected::Fixture(
+        "finops key metadata row 0 field organization_id references missing organization org-missing"
+    )
 )]
 #[case::missing_team_organization(
     missing_team_organization_seed,
-    ExpectedError::MissingOrganization("team_organization_id")
+    Expected::Fixture(
+        "finops key metadata row 0 field team_organization_id references missing organization org-missing"
+    )
 )]
-#[case::key_without_team(key_without_team_seed, ExpectedError::KeyMetadataWithoutTeam)]
-#[case::missing_team(missing_team_seed, ExpectedError::MissingTeam)]
-#[case::conflicting_team(conflicting_team_seed, ExpectedError::ConflictingTeamOrganization)]
-#[case::duplicate_usage_id(duplicate_usage_id_seed, ExpectedError::DuplicateDailyUsageId)]
-#[case::missing_usage_user(missing_usage_user_seed, ExpectedError::MissingUsageUser)]
-#[case::unknown_usage_key(unknown_usage_key_seed, ExpectedError::UnknownUsageKey)]
-#[case::invalid_orphan_hash(invalid_orphan_hash_seed, ExpectedError::InvalidOrphanHash)]
-#[case::invalid_created_at(invalid_created_at_seed, ExpectedError::InvalidTimestamp("created_at"))]
-#[case::invalid_updated_at(invalid_updated_at_seed, ExpectedError::InvalidTimestamp("updated_at"))]
-#[case::duplicate_tuple(duplicate_tuple_seed, ExpectedError::DuplicateUsageTuple)]
-#[case::duplicate_config_name(duplicate_config_name_seed, ExpectedError::DuplicateConfigName)]
-fn finops_seed_validation_contract(
-    #[case] build: fn() -> FixtureSeed,
-    #[case] expected: ExpectedError,
-) {
+#[case::key_without_team(
+    key_without_team_seed,
+    Expected::Fixture(
+        "finops key metadata row 0 sets team_organization_id but its key has no team"
+    )
+)]
+#[case::missing_team(
+    missing_team_seed,
+    Expected::Direct("finops key metadata row 0 references missing team team-missing")
+)]
+#[case::conflicting_team(
+    conflicting_team_seed,
+    Expected::Fixture("finops key metadata rows assign team team-red conflicting organizations")
+)]
+#[case::duplicate_usage_id(
+    duplicate_usage_id_seed,
+    Expected::Fixture("finops daily usage row 1 repeats an id")
+)]
+#[case::missing_usage_user(
+    missing_usage_user_seed,
+    Expected::Fixture("finops daily usage row 0 references missing user carol")
+)]
+#[case::unknown_usage_key(
+    unknown_usage_key_seed,
+    Expected::Fixture("finops daily usage row 0 references no fixture key")
+)]
+#[case::invalid_orphan_hash(
+    invalid_orphan_hash_seed,
+    Expected::Fixture("finops daily usage row 0 orphan_hash is not a SHA256 hex token")
+)]
+#[case::invalid_created_at(
+    invalid_created_at_seed,
+    Expected::Fixture("finops daily usage row 0 field created_at is not a valid timestamp")
+)]
+#[case::invalid_updated_at(
+    invalid_updated_at_seed,
+    Expected::Fixture("finops daily usage row 0 field updated_at is not a valid timestamp")
+)]
+#[case::duplicate_tuple(
+    duplicate_tuple_seed,
+    Expected::Fixture("finops daily usage row 1 repeats a non-null unique tuple")
+)]
+#[case::duplicate_config_name(
+    duplicate_config_name_seed,
+    Expected::Fixture("finops config row 1 repeats config name VantageSettings")
+)]
+fn finops_seed_validation_contract(#[case] build: fn() -> FixtureSeed, #[case] expected: Expected) {
     let fixture = build();
-    if expected == ExpectedError::RedactedDiagnostics {
-        let finops: &FinOpsSeed = fixture.finops.as_ref().expect("the seed carries finops");
-        let debug = format!("{finops:?}");
-        assert!(!debug.contains("sk-alice-token"));
-        assert!(!debug.contains(VANTAGE_SETTINGS));
-        assert!(debug.contains("[REDACTED]"));
-        let rejected = unknown_metadata_key_seed();
-        let error = rejected.validate().expect_err("the seed is rejected");
-        assert!(!format!("{error}").contains("sk-missing"));
-        assert!(!format!("{error:?}").contains("sk-missing"));
-        return;
+    match expected {
+        Expected::Accepted => fixture.validate().expect("the finops seed validates"),
+        Expected::Redacted => assert_redacted(&fixture),
+        Expected::Direct(message) => {
+            let finops = fixture.finops.as_ref().expect("the seed carries finops");
+            let error = finops.validate(&fixture).expect_err("the seed is rejected");
+            assert_eq!(error.to_string(), message);
+        }
+        Expected::Fixture(message) => {
+            let error = fixture.validate().expect_err("the finops seed is rejected");
+            let FixtureError::FinOps(source) = error else {
+                panic!("expected a finops fixture error, got {error:?}");
+            };
+            assert_eq!(source.to_string(), message);
+        }
     }
-    if expected == ExpectedError::MissingTeam {
-        let finops = fixture.finops.as_ref().expect("the seed carries finops");
-        let error = finops.validate(&fixture).expect_err("the seed is rejected");
-        assert!(
-            error_matches(&error, expected),
-            "unexpected finops error {error:?}"
-        );
-        return;
-    }
-    if expected == ExpectedError::Accepted {
-        fixture.validate().expect("the finops seed validates");
-        return;
-    }
-    let error = fixture.validate().expect_err("the finops seed is rejected");
-    let FixtureError::FinOps(source) = error else {
-        panic!("expected a finops fixture error, got {error:?}");
-    };
-    assert!(
-        error_matches(&source, expected),
-        "unexpected finops error {source:?}"
-    );
 }

@@ -100,15 +100,6 @@ pub(super) fn fixture_with(finops: FinOpsSeed) -> FixtureSeed {
     }
 }
 
-pub(super) fn empty_finops() -> FinOpsSeed {
-    FinOpsSeed {
-        organizations: Vec::new(),
-        key_metadata: Vec::new(),
-        daily_usage: Vec::new(),
-        config_rows: Vec::new(),
-    }
-}
-
 pub(super) fn organization(id: &str, alias: &str) -> OrganizationRow {
     OrganizationRow {
         organization_id: id.to_owned(),
@@ -212,17 +203,31 @@ fn sample_config_rows() -> Vec<ConfigRow> {
     ]
 }
 
-pub(super) fn sample_finops() -> FinOpsSeed {
+fn with_lists(
+    organizations: Vec<OrganizationRow>,
+    key_metadata: Vec<KeyMetadataRow>,
+    daily_usage: Vec<FinOpsUsageRow>,
+    config_rows: Vec<ConfigRow>,
+) -> FinOpsSeed {
     FinOpsSeed {
-        organizations: sample_organizations(),
-        key_metadata: sample_metadata(),
-        daily_usage: vec![
+        organizations,
+        key_metadata,
+        daily_usage,
+        config_rows,
+    }
+}
+
+pub(super) fn sample_finops() -> FinOpsSeed {
+    with_lists(
+        sample_organizations(),
+        sample_metadata(),
+        vec![
             usage_row("row-key", UsageApiKey::Key(secret("sk-alice-token"))),
             usage_row("row-team", UsageApiKey::Key(secret("sk-bob-token"))),
             orphan_row(),
         ],
-        config_rows: sample_config_rows(),
-    }
+        sample_config_rows(),
+    )
 }
 
 pub(super) fn sample_seed() -> FixtureSeed {
@@ -279,15 +284,16 @@ pub(super) fn expected_page(count: usize, limit: usize) -> Vec<String> {
 }
 
 pub(super) fn seed_with_daily_usage(rows: Vec<FinOpsUsageRow>) -> FixtureSeed {
-    let mut finops = empty_finops();
-    finops.daily_usage = rows;
-    fixture_with(finops)
+    fixture_with(with_lists(Vec::new(), Vec::new(), rows, Vec::new()))
 }
 
 pub(super) fn seed_with_organizations(organizations: Vec<OrganizationRow>) -> FixtureSeed {
-    let mut finops = empty_finops();
-    finops.organizations = organizations;
-    fixture_with(finops)
+    fixture_with(with_lists(
+        organizations,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    ))
 }
 
 pub(super) fn seed_with_key_metadata(key_metadata: Vec<KeyMetadataRow>) -> FixtureSeed {
@@ -297,7 +303,5 @@ pub(super) fn seed_with_key_metadata(key_metadata: Vec<KeyMetadataRow>) -> Fixtu
 }
 
 pub(super) fn seed_with_config_rows(config_rows: Vec<ConfigRow>) -> FixtureSeed {
-    let mut finops = empty_finops();
-    finops.config_rows = config_rows;
-    fixture_with(finops)
+    fixture_with(with_lists(Vec::new(), Vec::new(), Vec::new(), config_rows))
 }

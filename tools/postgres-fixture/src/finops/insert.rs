@@ -29,52 +29,45 @@ async fn execute(
     Ok(())
 }
 
-pub(super) async fn organization(
+pub(super) async fn organizations(
     client: &Client,
-    row: &OrganizationRow,
+    rows: &[OrganizationRow],
 ) -> Result<(), FinOpsFixtureError> {
-    execute(
-        client,
-        ORGANIZATION_INSERT,
-        &[
-            &row.organization_id,
-            &row.organization_alias,
-            &row.budget_id,
-            &row.models,
-            &row.created_by,
-            &row.updated_by,
-        ],
-    )
-    .await
+    for row in rows {
+        execute(
+            client,
+            ORGANIZATION_INSERT,
+            &[
+                &row.organization_id,
+                &row.organization_alias,
+                &row.budget_id,
+                &row.models,
+                &row.created_by,
+                &row.updated_by,
+            ],
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 pub(super) async fn key_metadata(
     client: &Client,
-    row: &KeyMetadataRow,
+    rows: &[KeyMetadataRow],
 ) -> Result<(), FinOpsFixtureError> {
-    let token = FixtureSeed::key_hash(row.token.expose_secret());
-    execute(
-        client,
-        KEY_METADATA_UPDATE,
-        &[&row.key_alias, &row.organization_id, &token],
-    )
-    .await
-}
-
-pub(super) async fn team_metadata(
-    client: &Client,
-    row: &KeyMetadataRow,
-    organization_id: &str,
-) -> Result<(), FinOpsFixtureError> {
-    execute(
-        client,
-        TEAM_METADATA_UPDATE,
-        &[
-            &organization_id,
-            &FixtureSeed::key_hash(row.token.expose_secret()),
-        ],
-    )
-    .await
+    for row in rows {
+        let token = FixtureSeed::key_hash(row.token.expose_secret());
+        execute(
+            client,
+            KEY_METADATA_UPDATE,
+            &[&row.key_alias, &row.organization_id, &token],
+        )
+        .await?;
+        if let Some(organization_id) = &row.team_organization_id {
+            execute(client, TEAM_METADATA_UPDATE, &[&organization_id, &token]).await?;
+        }
+    }
+    Ok(())
 }
 
 struct MoneyText {
@@ -97,13 +90,16 @@ fn money_text(row: &FinOpsUsageRow) -> MoneyText {
 
 pub(super) async fn daily_usage(
     client: &Client,
-    row: &FinOpsUsageRow,
+    rows: &[FinOpsUsageRow],
 ) -> Result<(), FinOpsFixtureError> {
-    let api_key = match &row.api_key {
-        UsageApiKey::Key(token) => FixtureSeed::key_hash(token.expose_secret()),
-        UsageApiKey::OrphanHash(hash) => hash.clone(),
-    };
-    execute_usage(client, row, &api_key, &money_text(row)).await
+    for row in rows {
+        let api_key = match &row.api_key {
+            UsageApiKey::Key(token) => FixtureSeed::key_hash(token.expose_secret()),
+            UsageApiKey::OrphanHash(hash) => hash.clone(),
+        };
+        execute_usage(client, row, &api_key, &money_text(row)).await?;
+    }
+    Ok(())
 }
 
 async fn execute_usage(
@@ -147,10 +143,16 @@ async fn execute_usage(
     .await
 }
 
-pub(super) async fn config(client: &Client, row: &ConfigRow) -> Result<(), FinOpsFixtureError> {
-    let value = row
-        .serialized_value
-        .as_ref()
-        .map(|secret| secret.expose_secret().to_owned());
-    execute(client, CONFIG_INSERT, &[&row.name.as_wire(), &value]).await
+pub(super) async fn config_rows(
+    client: &Client,
+    rows: &[ConfigRow],
+) -> Result<(), FinOpsFixtureError> {
+    for row in rows {
+        let value = row
+            .serialized_value
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned());
+        execute(client, CONFIG_INSERT, &[&row.name.as_wire(), &value]).await?;
+    }
+    Ok(())
 }
