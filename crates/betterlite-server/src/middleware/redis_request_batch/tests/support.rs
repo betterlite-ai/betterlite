@@ -226,3 +226,39 @@ impl Service<Request<Body>> for Inner {
         })
     }
 }
+
+pub(crate) struct NotReadyOnce<S> {
+    inner: S,
+    polled: bool,
+}
+
+impl<S> NotReadyOnce<S> {
+    pub(crate) fn new(inner: S) -> Self {
+        Self {
+            inner,
+            polled: false,
+        }
+    }
+}
+
+impl<S, B> Service<Request<B>> for NotReadyOnce<S>
+where
+    S: Service<Request<B>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if self.polled {
+            return self.inner.poll_ready(cx);
+        }
+        self.polled = true;
+        cx.waker().wake_by_ref();
+        Poll::Pending
+    }
+
+    fn call(&mut self, req: Request<B>) -> Self::Future {
+        self.inner.call(req)
+    }
+}
