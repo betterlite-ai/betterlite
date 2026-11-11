@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
 use betterlite_redis::cache_primitives::decode::CachedValue;
@@ -53,19 +55,19 @@ pub(crate) fn json_from_cached(value: CachedValue) -> Json {
         CachedValue::Number(number) => Json::Number(number),
         CachedValue::Text(text) => Json::Text(text),
         CachedValue::Array(items) => Json::List(items.into_iter().map(json_from_cached).collect()),
-        CachedValue::Object(fields) => {
-            if let Some(CachedValue::Text(digits)) = fields.get(NUMBER_KEY)
-                && fields.len() == 1
-                && let Ok(number) = digits.parse()
-            {
-                return Json::Number(number);
-            }
-            Json::Object(
-                fields
-                    .into_iter()
-                    .map(|(key, entry)| (key, json_from_cached(entry)))
-                    .collect(),
-            )
-        }
+        CachedValue::Object(fields) => json_from_object(fields),
     }
+}
+
+fn json_from_object(fields: BTreeMap<String, CachedValue>) -> Json {
+    if let Some(CachedValue::Text(digits)) = fields.get(NUMBER_KEY)
+        && fields.len() == 1
+        && let Ok(number) = digits.parse()
+    {
+        return Json::Number(number);
+    }
+    let converted = fields
+        .into_iter()
+        .map(|(key, entry)| (key, json_from_cached(entry)));
+    Json::Object(converted.collect())
 }
