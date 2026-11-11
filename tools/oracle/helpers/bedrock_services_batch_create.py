@@ -176,11 +176,6 @@ def _reply_call(scenario: Scenario) -> JsonValue:
     return {"failed": False, "reply": JSON.validate_json(reply.model_dump_json())}
 
 
-def _metadata_value(value: JsonValue) -> JsonValue:
-    sanitized = BedrockBatchesConfig._get_openai_compatible_batch_metadata(value)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L376
-    return JSON.validate_python(sanitized)
-
-
 def _titan_value(value: JsonValue) -> JsonValue:
     usage = None
     match value:
@@ -208,16 +203,20 @@ SCENARIO_OPERATIONS: Final[dict[str, Callable[[Scenario], JsonValue]]] = {
     "create_status_mapping": _reply_call,
     "create_reply_defaults": _reply_call,
 }
-VALUE_OPERATIONS: Final[dict[str, Callable[[JsonValue], JsonValue]]] = {
-    "metadata_sanitization": _metadata_value,
-    "titan_batch_token_usage": _titan_value,
-}
 
 
 def run(argument: JsonValue) -> JsonValue:
     input_value = TypeAdapter(Input).validate_python(argument)
-    if input_value.operation in VALUE_OPERATIONS:
-        value_operation = VALUE_OPERATIONS[input_value.operation]
-        return {"values": [value_operation(value) for value in input_value.values]}
-    scenario_operation = SCENARIO_OPERATIONS[input_value.operation]
-    return {"calls": [scenario_operation(scenario) for scenario in input_value.scenarios]}
+    match input_value.operation:
+        case "metadata_sanitization":
+            return {
+                "values": [
+                    JSON.validate_python(BedrockBatchesConfig._get_openai_compatible_batch_metadata(value))  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L376
+                    for value in input_value.values
+                ]
+            }
+        case "titan_batch_token_usage":
+            return {"values": [_titan_value(value) for value in input_value.values]}
+        case _:
+            scenario_operation = SCENARIO_OPERATIONS[input_value.operation]
+            return {"calls": [scenario_operation(scenario) for scenario in input_value.scenarios]}
