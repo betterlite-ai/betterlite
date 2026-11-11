@@ -1,10 +1,13 @@
 import asyncio
+import contextlib
 import os
 from dataclasses import dataclass, field
 from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
 
-from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion, _normalize_principal_arn
+from litellm.rag.ingestion.bedrock_ingestion import BedrockRAGIngestion
 from litellm.types.rag import RAGIngestOptions
+from pydantic import TypeAdapter
+from typing_extensions import TypedDict as ParsedDict
 from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -13,6 +16,10 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 class PrincipalCase(TypedDict):
     caller_arn: str
     account_id: str
+
+
+class AccessPolicy(ParsedDict):
+    Principal: list[str]
 
 
 class Principal(TypedDict):
@@ -69,7 +76,17 @@ class BucketParams(TypedDict):
     CreateBucketConfiguration: NotRequired[BucketConfiguration]
 
 
+class CollectionCreatedError(Exception):
+    pass
+
+
 class BedrockClient(Protocol):
+    def create_security_policy(self, **_params: Json) -> dict[str, Json]: ...
+
+    def create_access_policy(self, **params: str) -> dict[str, Json]: ...
+
+    def create_collection(self, **_params: Json) -> dict[str, Json]: ...
+
     def list_data_sources(self, **_params: Json) -> dict[str, Json]: ...
 
     def get_data_source(self, **_params: Json) -> dict[str, Json]: ...
@@ -93,6 +110,20 @@ class FakeClient(BedrockClient):
     knowledge_base_params: dict[str, Json] = field(default_factory=dict)
     data_source_params: dict[str, Json] = field(default_factory=dict)
     polls: list[Json] = field(default_factory=list)
+    access_policy: str = ""
+
+    @override
+    def create_security_policy(self, **_params: Json) -> dict[str, Json]:
+        return {}
+
+    @override
+    def create_access_policy(self, **params: str) -> dict[str, Json]:
+        self.access_policy = params["policy"]
+        return {}
+
+    @override
+    def create_collection(self, **_params: Json) -> dict[str, Json]:
+        raise CollectionCreatedError
 
     @override
     def list_data_sources(self, **_params: Json) -> dict[str, Json]:
@@ -148,6 +179,17 @@ class RecordingIngestion(BedrockRAGIngestion):
     def _get_boto3_client(self, service_name: str) -> FakeClient:
         return self.client
 
+    def principal(self, caller_arn: str, account_id: str) -> str:
+        root = f"arn:aws:iam::{account_id}:root"
+        with contextlib.suppress(CollectionCreatedError):
+            asyncio.run(self._create_opensearch_collection("oracle", account_id, caller_arn))
+        policies = TypeAdapter(list[AccessPolicy]).validate_json(self.client.access_policy)
+        principal = root
+        for candidate in policies[0]["Principal"]:
+            if candidate != root:
+                principal = candidate
+        return principal
+
     def detect(self) -> dict[str, Json]:
         self._auto_detect_config()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L141
         return {
@@ -191,10 +233,10 @@ class RecordingIngestion(BedrockRAGIngestion):
 
 def run(input_value: Input) -> Json:
     if input_value["step"] == "principal":
-        arns: list[Json] = [
-            _normalize_principal_arn(case["caller_arn"], case["account_id"])
-            for case in input_value["cases"]
-        ]
+        arns: list[Json] = []
+        for identity in input_value["cases"]:
+            ingestion = RecordingIngestion({}, {}, FakeClient())
+            arns.append(ingestion.principal(identity["caller_arn"], identity["account_id"]))
         return {"principal_arns": arns}
     if input_value["step"] == "detect":
         client = FakeClient(

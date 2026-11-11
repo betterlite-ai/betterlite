@@ -177,8 +177,7 @@ async fn client_signed_request_signs_the_resolved_region_and_service() {
     assert_eq!(request.body, b"payload");
     let authorization = header(request, "Authorization").expect("the request is signed");
     assert!(
-        authorization
-            .contains("Credential=AKIDRAGEXAMPLE/20260101T000000Z/us-west-2/s3/aws4_request"),
+        authorization.contains("Credential=AKIDRAGEXAMPLE/20260101/us-west-2/s3/aws4_request"),
         "{authorization}"
     );
     assert!(
@@ -213,8 +212,7 @@ async fn client_signed_request_with_signs_extra_headers_and_the_signing_region()
     let requests = transport.requests();
     let authorization = header(&requests[0], "Authorization").expect("the request is signed");
     assert!(
-        authorization
-            .contains("Credential=AKIDRAGEXAMPLE/20260101T000000Z/us-east-1/aoss/aws4_request"),
+        authorization.contains("Credential=AKIDRAGEXAMPLE/20260101/us-east-1/aoss/aws4_request"),
         "{authorization}"
     );
     assert!(
@@ -347,8 +345,7 @@ async fn client_list_data_sources_uses_post_with_an_empty_body() {
     assert_eq!(header(&requests[0], "Content-Length"), Some("0"));
     let authorization = header(&requests[0], "Authorization").expect("the request is signed");
     assert!(
-        authorization
-            .contains("Credential=AKIDRAGEXAMPLE/20260101T000000Z/us-west-2/bedrock/aws4_request"),
+        authorization.contains("Credential=AKIDRAGEXAMPLE/20260101/us-west-2/bedrock/aws4_request"),
         "{authorization}"
     );
 }
