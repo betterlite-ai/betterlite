@@ -48,12 +48,21 @@ pub(crate) struct Query {
     pub(crate) hf: Option<HfScript>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum DynamicScript {
-    Value { body: Box<RawValue> },
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DynamicKind {
+    Value,
     None,
     Error,
+}
+
+// A plain struct, because a RawValue field inside an internally tagged enum cannot deserialize.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DynamicScript {
+    pub(crate) kind: DynamicKind,
+    #[serde(default)]
+    pub(crate) body: Option<Box<RawValue>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

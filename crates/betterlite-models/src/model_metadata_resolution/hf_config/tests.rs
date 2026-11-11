@@ -228,6 +228,15 @@ async fn transport_failures_and_oversized_bodies_become_none() {
         delay: None,
     };
     assert_eq!(fetch_from_static(&oversized).await, None);
+
+    let mut padded = br#"{"max_position_embeddings": 4096}"#.to_vec();
+    padded.resize(HF_CONFIG_BODY_LIMIT, b' ');
+    let at_limit = StaticClient {
+        status: 200,
+        body: padded,
+        delay: None,
+    };
+    assert_eq!(fetch_from_static(&at_limit).await, Some(4096));
 }
 
 #[tokio::test]
@@ -255,7 +264,7 @@ fn replays_the_hf_model_config_corpus() {
         if name.starts_with("valid-value") || name.starts_with("boundary-value") {
             assert!(matches!(outcome, Ok(Some(_))), "{name}");
         } else if name.starts_with("valid-empty") {
-            assert_eq!(outcome.ok().flatten(), None, "{name}");
+            assert!(matches!(outcome, Ok(None)), "{name}");
         } else if name.starts_with("malformed")
             || name.starts_with("truncated")
             || name.starts_with("boundary-wrong")

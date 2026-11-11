@@ -858,6 +858,11 @@ fn cost_map_limits_and_vertex_membership_follow_the_source() {
         ModelCostMap::parse(&oversized),
         Err(ModelCostMapError::TooLarge { .. })
     ));
+    let at_limit = vec![b' '; 16 * 1024 * 1024];
+    assert!(matches!(
+        ModelCostMap::parse(&at_limit),
+        Err(ModelCostMapError::Json(_))
+    ));
     let map = ModelCostMap::parse(
         br#"{
             "vertex_ai/meta/llama3-8b-instruct-maas": {"litellm_provider": "vertex_ai-llama_models"},
@@ -883,12 +888,10 @@ fn decode_rejects_wrong_shaped_configs() {
         Some(8)
     );
     assert_eq!(decode_hf_model_config(b"{}").ok().flatten(), None);
-    assert_eq!(
-        decode_hf_model_config(br#"{"max_position_embeddings": null}"#)
-            .ok()
-            .flatten(),
-        None
-    );
+    assert!(matches!(
+        decode_hf_model_config(br#"{"max_position_embeddings": null}"#),
+        Ok(None)
+    ));
     assert!(
         decode_hf_model_config(br#"{"max_position_embeddings": "8"}"#)
             .err()

@@ -6,7 +6,23 @@ pub(super) async fn ordered_exact_lookup_case() {
     provider_match_case(&fixture).await;
     exact_before_generalization_case().await;
     providerless_entry_case().await;
+    null_provider_entry_case().await;
     later_candidate_order_case().await;
+}
+
+async fn null_provider_entry_case() {
+    let fixture =
+        Fixture::raw(r#"{"vertex_ai/null-provider": {"litellm_provider": null, "mode": "chat"}}"#);
+    let value = resolve(
+        &fixture,
+        "vertex_ai/null-provider",
+        Some("vertex_ai"),
+        &NeverDynamic,
+    )
+    .await
+    .unwrap();
+    assert_eq!(string_field(&value, "key"), "vertex_ai/null-provider");
+    assert_eq!(raw_field(&value, "litellm_provider"), "null");
 }
 
 fn ordered_fixture() -> Fixture {

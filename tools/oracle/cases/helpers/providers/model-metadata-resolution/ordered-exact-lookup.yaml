@@ -20,6 +20,7 @@ call:
         exact-model: {litellm_provider: groq, mode: chat, input_cost_per_token: 13}
         Groq/MiXeD-Case: {litellm_provider: groq, mode: chat, input_cost_per_token: 14}
         bare-entry: {mode: chat}
+        vertex_ai/null-provider: {litellm_provider: null, mode: chat}
         groq/duo: {litellm_provider: groq, mode: chat, input_cost_per_token: 15}
         duo: {litellm_provider: groq, mode: chat, input_cost_per_token: 16}
         target: {litellm_provider: groq, mode: chat, input_cost_per_token: 17}
@@ -41,6 +42,7 @@ call:
       - {model: exact-model, custom_llm_provider: groq}
       - {model: groq/mixed-case, custom_llm_provider: groq}
       - {model: bare-entry}
+      - {model: vertex_ai/null-provider, custom_llm_provider: vertex_ai}
       - {model: duo-2024-01-01, custom_llm_provider: groq}
       - {model: groq/target-2024-01-01, custom_llm_provider: groq}
       - {model: groq/split-pair-2024-01-01, custom_llm_provider: groq}

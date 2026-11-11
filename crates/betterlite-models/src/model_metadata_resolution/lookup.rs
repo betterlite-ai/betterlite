@@ -106,12 +106,9 @@ fn fill_missing(
 }
 
 fn fill_mode(fields: &BTreeMap<String, Box<RawValue>>) -> bool {
-    match fields.get("mode") {
-        None => true,
-        Some(value) if value.get() == "null" => false,
-        Some(value) => serde_json::from_str::<&str>(value.get())
-            .is_ok_and(|mode| BACKFILL_MODES.contains(&mode)),
-    }
+    fields.get("mode").is_none_or(|value| {
+        serde_json::from_str::<&str>(value.get()).is_ok_and(|mode| BACKFILL_MODES.contains(&mode))
+    })
 }
 
 pub(super) fn generalization(

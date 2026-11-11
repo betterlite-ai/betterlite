@@ -10,7 +10,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
-use super::input::{DynamicScript, HfScript};
+use super::input::{DynamicKind, DynamicScript, HfScript};
 
 pub(crate) struct ScriptedDynamic {
     script: Option<DynamicScript>,
@@ -52,12 +52,19 @@ impl DynamicMetadataSource for ScriptedDynamic {
                 "api_base": api_base,
                 "api_key": api_key.map(|key| key.expose_secret().to_owned()),
             }));
-        let answer = match &self.script {
-            Some(DynamicScript::Value { body }) => Ok(Some(body.clone())),
-            Some(DynamicScript::Error) => Err(io::Error::other("dynamic model info failed")),
-            Some(DynamicScript::None) | None => Ok(None),
-        };
+        let answer = self.script.as_ref().map_or(Ok(None), scripted_answer);
         ready(answer)
+    }
+}
+
+fn scripted_answer(script: &DynamicScript) -> Result<Option<Box<RawValue>>, io::Error> {
+    match (script.kind, script.body.as_ref()) {
+        (DynamicKind::Value, Some(body)) => Ok(Some(body.clone())),
+        (DynamicKind::Value, None) => {
+            Err(io::Error::other("the fixture dynamic value has no body"))
+        }
+        (DynamicKind::None, _) => Ok(None),
+        (DynamicKind::Error, _) => Err(io::Error::other("dynamic model info failed")),
     }
 }
 
