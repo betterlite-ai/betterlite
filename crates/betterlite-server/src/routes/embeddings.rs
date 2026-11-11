@@ -164,7 +164,12 @@ fn failure(
     redactor: &Redactor,
 ) -> Response {
     let failure = embedding_failure(error, redactor);
-    let message = match error {
+    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
+    respond(failure, route_message(error), response_headers)
+}
+
+fn route_message(error: &EmbeddingError) -> String {
+    match error {
         EmbeddingError::Provider { response } => {
             provider_message(response.status, &response.body, error)
         }
@@ -178,9 +183,7 @@ fn failure(
         | EmbeddingError::MissingApiKey
         | EmbeddingError::Endpoint { .. }
         | EmbeddingError::Mock { .. } => error.to_string(),
-    };
-    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
-    respond(failure, message, response_headers)
+    }
 }
 
 fn respond(failure: ProviderFailure, message: String, headers: HeaderMap) -> Response {
