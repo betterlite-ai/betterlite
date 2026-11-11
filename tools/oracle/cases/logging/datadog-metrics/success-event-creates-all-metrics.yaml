@@ -1,0 +1,45 @@
+kind: helper
+name: datadog-metrics-success-event-creates-all-metrics
+call:
+  b3939:
+    operation: success_event
+    environment:
+      DD_API_KEY: test-key
+      DD_APP_KEY: app-key
+      DD_SITE: datadoghq.eu
+      DD_VERSION: "1.2.3"
+      DD_ENV: production
+      DD_SERVICE: gateway
+      HOSTNAME: host-1
+      POD_NAME: pod-1
+    payload:
+      id: chatcmpl-1
+      trace_id: trace-1
+      session_id: session-1
+      call_type: completion
+      response_cost: 0.5
+      status: success
+      status_fields: {llm_api_status: success, guardrail_status: not_run}
+      total_tokens: 5
+      prompt_tokens: 2
+      completion_tokens: 3
+      startTime: 1704067200.0
+      endTime: 1704067204.5
+      completionStartTime: 1704067200.5
+      response_time: 4.5
+      model_map_information: {}
+      model: gpt-4o
+      model_group: production
+      custom_llm_provider: openai
+      api_base: "https://api.openai.com"
+      metadata: {}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {litellm_overhead_time_ms: 12.5}
+    start_time: 1704067200.0
+    end_time: 1704067204.5
+    api_call_start_time: 1704067201.0
+    clock: 1704067204.5
+env: {}
+compare: {ignore: []}
