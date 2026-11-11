@@ -1,0 +1,14 @@
+kind: helper
+name: strands-error-invalid-request
+call:
+  b3512:
+    steps:
+      - kind: transform
+        api_base: arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+        body: '{"error": {"code": "invalid_request", "message": "the state is required"}}'
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+env: {}
+compare: {ignore: []}
