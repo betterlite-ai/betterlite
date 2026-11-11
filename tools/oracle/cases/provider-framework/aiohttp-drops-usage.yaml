@@ -1,0 +1,38 @@
+name: provider-framework-aiohttp-drops-usage
+config: |
+  model_list:
+    - model_name: usage-model
+      litellm_params:
+        model: aiohttp_openai/gpt-upstream
+        api_base: "{{upstream}}"
+        api_key: configured-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-aiohttp-usage}
+  body:
+    model: usage-model
+    messages: [{role: user, content: Say hello.}]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-aiohttp-usage
+      object: chat.completion
+      created: 1700000012
+      model: gpt-upstream
+      system_fingerprint: fp_aiohttp
+      service_tier: default
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!, refusal: null, annotations: []}
+          finish_reason: stop
+          logprobs: null
+          provider_specific_fields: {}
+      usage: {prompt_tokens: 4, completion_tokens: 2, total_tokens: 6}
+compare:
+  headers: [content-type, x-litellm-call-id, x-litellm-model-group]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

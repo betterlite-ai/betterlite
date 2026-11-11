@@ -2,13 +2,18 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_error::normalize::Normalizer;
 use betterlite_http::error::HttpError;
-use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::stream::SseParser;
+use betterlite_provider::operation::OperationError;
+use betterlite_provider::transform_retry::TransformRetryError;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::{StreamExt as _, stream};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
@@ -17,8 +22,9 @@ use tower::ServiceExt as _;
 use uuid::Uuid;
 
 use super::{RelayState, next_sse};
-use crate::routes::chat::chat_routes_with_call_id;
+use crate::routes::chat::{CallContext, ErrorLayer, call_failure, chat_routes_with_call_id};
 use crate::server::chat_setup::chat_executor;
+use crate::server::chat_setup::provider_call::CallError;
 
 fn executor_for(source: &str) -> ChatExecutor {
     let config = ConfigLoader {
@@ -229,6 +235,7 @@ struct ErrorFields {
     #[serde(rename = "type")]
     error_type: String,
     code: String,
+    litellm_call_id: Option<String>,
 }
 
 fn sentinel_source(sentinel: &str) -> String {
@@ -284,4 +291,30 @@ async fn stream_error_ends_relay(#[case] input: Result<Vec<u8>, HttpError>) {
     let (event, remaining) = next_sse(state).await.unwrap();
     event.unwrap_err();
     assert!(next_sse(remaining).await.is_none());
+}
+
+#[rstest]
+#[case::mismatched_operation(CallError::Mismatched)]
+#[case::transform_retry(CallError::Operation {
+    source: OperationError::TransformRetry(TransformRetryError::Attempts { max_attempts: 0 }),
+})]
+#[tokio::test]
+async fn provider_framework_tests_behavior(#[case] error: CallError<ChatError>) {
+    let layer = ErrorLayer {
+        normalizer: Normalizer::new().unwrap(),
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
+    };
+    let call = CallContext {
+        id: "call-7",
+        include_in_body: true,
+        started: Instant::now(),
+        errors: &layer,
+    };
+    let response = call_failure(&error, &call, None);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: ErrorReply = serde_json::from_slice(&body).unwrap();
+    assert_eq!(reply.error.error_type, "internal_server_error");
+    assert_eq!(reply.error.code, "500");
+    assert_eq!(reply.error.litellm_call_id.as_deref(), Some("call-7"));
 }
