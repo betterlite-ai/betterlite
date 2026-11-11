@@ -32,15 +32,6 @@ struct Counters {
 }
 
 impl Counters {
-    fn new(budget: RetryBudget) -> Self {
-        Self {
-            total: i64::from(budget.total),
-            connect: i64::from(budget.connect),
-            status: i64::from(budget.status),
-            history: 0,
-        }
-    }
-
     // a counter that reaches zero still allows the retry, the next decrement below zero ends them
     const fn increment(&mut self, failure: Failure) -> bool {
         self.total = self.total.saturating_sub(1);
@@ -116,7 +107,12 @@ pub fn send(
     request: &ImdsRequest,
     budget: RetryBudget,
 ) -> Result<ImdsResponse, ManagedIdentityError> {
-    let mut counters = Counters::new(budget);
+    let mut counters = Counters {
+        total: i64::from(budget.total),
+        connect: i64::from(budget.connect),
+        status: i64::from(budget.status),
+        history: 0,
+    };
     let mut factor_millis = BACKOFF_FACTOR_MILLIS;
     loop {
         let Ok(response) = io.transport.get(request) else {
