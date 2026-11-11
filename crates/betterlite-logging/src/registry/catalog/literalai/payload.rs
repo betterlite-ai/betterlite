@@ -40,13 +40,33 @@ fn metadata_fields(payload: &StandardLoggingPayload) -> IndexMap<String, Json> {
 
 const USER_AGENT_TAG: &str = "User-Agent: ";
 
-// request_tags is the logged metadata tags followed by the User-Agent tags _get_request_tags appends, and only the former are metadata.tags
+// _get_request_tags appends the User-Agent tags and then one tag per configured header, and only the metadata tags before them belong here
+fn appended_tag(tag: &Json) -> bool {
+    let Json::Text(text) = tag else {
+        return false;
+    };
+    if text.starts_with(USER_AGENT_TAG) {
+        return true;
+    }
+    match text.split_once(": ") {
+        Some((name, _value)) => {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        }
+        None => false,
+    }
+}
+
 fn metadata_tags(payload: &StandardLoggingPayload) -> Vec<Json> {
-    let logged = payload
+    let appended = payload
         .request_tags
         .iter()
-        .take_while(|tag| !matches!(tag, Json::Text(text) if text.starts_with(USER_AGENT_TAG)))
+        .rev()
+        .take_while(|tag| appended_tag(tag))
         .count();
+    let logged = payload.request_tags.len().saturating_sub(appended);
     payload.request_tags.iter().take(logged).cloned().collect()
 }
 

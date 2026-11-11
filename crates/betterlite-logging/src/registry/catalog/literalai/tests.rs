@@ -382,6 +382,26 @@ async fn the_user_agent_tags_are_not_step_tags() {
 }
 
 #[tokio::test]
+async fn a_configured_header_tag_is_not_a_step_tag() {
+    let (adapter, capture, tracker) = fixture();
+    let with_header_tag = event_from(&PAYLOAD.replace(
+        r#""request_tags": []"#,
+        r#""request_tags": ["x-customer: acme"]"#,
+    ));
+    adapter
+        .log_success_event(&with_header_tag)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_request(&requests);
+    assert_eq!(
+        field(&requests[0].body, "tags_0"),
+        &json(r#"["tier", "prod"]"#)
+    );
+}
+
+#[tokio::test]
 async fn the_requester_tags_win_over_the_request_tags() {
     let (adapter, capture, tracker) = fixture();
     let with_own_tags = event_from(
