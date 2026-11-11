@@ -797,7 +797,8 @@ async fn a_failure_before_the_flush_does_not_taint_the_next_one() {
         &lookup(&[]),
     );
     end_span(&tracing, "scheduled-failure");
-    wait_until(|| exporter.failure_count() == 1).await;
+    wait_until(|| tracing.ledger.failed_batches.load(Ordering::Acquire) == 1).await;
+    assert_eq!(exporter.failure_count(), 1);
     assert!(tracing.flush(5_000).await);
     assert_eq!(tracing.ledger.failed_batches.load(Ordering::Acquire), 1);
     tracing.shutdown();
