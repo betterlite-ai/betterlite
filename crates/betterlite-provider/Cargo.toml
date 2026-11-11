@@ -45,7 +45,7 @@ zeroize = "1.9.1"
 [dev-dependencies]
 mutants = "0.0.4"
 rstest = "=0.27.0"
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
 tracing-subscriber.workspace = true
 
 [lints]
