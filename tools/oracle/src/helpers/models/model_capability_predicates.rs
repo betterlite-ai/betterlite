@@ -76,9 +76,7 @@ const fn named_capability(function: Function) -> Option<NamedCapability> {
         Function::SupportsReasoning => Some(NamedCapability::Reasoning),
         Function::SupportsNoneReasoningEffort => Some(NamedCapability::NoneReasoningEffort),
         Function::SupportsMidConversationSystem => Some(NamedCapability::MidConversationSystem),
-        Function::SupportsNativeStructuredOutput => {
-            Some(NamedCapability::NativeStructuredOutput)
-        }
+        Function::SupportsNativeStructuredOutput => Some(NamedCapability::NativeStructuredOutput),
         Function::SupportsFactory
         | Function::DeclaredValueFactory
         | Function::IsExplicitlyDisabledFactory
@@ -164,8 +162,6 @@ fn missing_key(function: Function) -> Box<HelperError> {
 }
 
 // The three keyed factories read the same declaration; a step without one is a malformed call.
-
-
 
 async fn answer<Source, Transport>(
     step: &Step,
