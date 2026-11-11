@@ -106,7 +106,7 @@ checks:
     - id: helper-python
       why: The strict oracle adapter lint or type checks fail
       run: >-
-        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6411.py)" &&
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6411.py tools/oracle/helpers/b6411)" &&
         uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
         uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
