@@ -11,3 +11,5 @@ impl Clock for SystemClock {
         SystemTime::now()
     }
 }
+
+mod tests;

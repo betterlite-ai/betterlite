@@ -13,6 +13,7 @@ async fn health_check_is_healthy_after_a_successful_send() {
     assert!(status.error_message.is_none());
     records.wait_for(1).await;
     assert!(records.body(0).contains("Action=SendMessage"));
+    assert!(records.body(0).contains("sqs-health-check"));
 }
 
 #[tokio::test]
