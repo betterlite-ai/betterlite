@@ -8,7 +8,7 @@ use serde_json::Number;
 use crate::api::skills::fixtures::kwargs;
 use crate::api::skills::list::call::ListSkillsCall;
 use crate::api::skills::list::error::ListSkillsFailureError;
-use crate::api::skills::list::list_fixtures::{
+use crate::api::skills::list_fixtures::{
     Fixture, call_with, listing, logging, map, params_with_query, query,
 };
 

@@ -6,7 +6,7 @@ use crate::api::skills::fixtures::{kwargs, redactor};
 use crate::api::skills::get_delete::error::SkillsCallError;
 use crate::api::skills::get_delete::handler::SkillsHandlerError;
 use crate::api::skills::list::error::{ListSkillsError, failure};
-use crate::api::skills::list::list_fixtures::{
+use crate::api::skills::list_fixtures::{
     Fixture, call, call_with, hosted_params, listing, logging,
 };
 

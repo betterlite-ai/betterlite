@@ -3,7 +3,7 @@
 use futures_util::future::join;
 
 use crate::api::skills::fixtures::{kwargs, metadata_with, object, text};
-use crate::api::skills::list::list_fixtures::{
+use crate::api::skills::list_fixtures::{
     Fixture, call, call_with, hosted_params, listing, logging, sample_list_response,
 };
 

@@ -6,7 +6,7 @@ use secrecy::SecretString;
 
 use crate::api::skills::fixtures::kwargs;
 use crate::api::skills::get_delete::call::SkillsCallParams;
-use crate::api::skills::list::list_fixtures::{
+use crate::api::skills::list_fixtures::{
     Fixture, call, call_with, listing, logging, unauthenticated_settings,
 };
 

@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use serde_json::Number;
 
 use crate::api::skills::fixtures::{CALL_ID, kwargs, text};
-use crate::api::skills::list::list_fixtures::{
+use crate::api::skills::list_fixtures::{
     Fixture, call, call_with, hosted_params, listing, logging, map, params,
 };
 

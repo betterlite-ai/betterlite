@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::api::skills::fixtures::kwargs;
-use crate::api::skills::list::list_fixtures::{
+use crate::api::skills::list_fixtures::{
     Fixture, call, call_with, hosted_params, listing, logging, params_for, sample_list_response,
 };
 

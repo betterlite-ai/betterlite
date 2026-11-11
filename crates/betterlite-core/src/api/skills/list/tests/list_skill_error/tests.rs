@@ -4,7 +4,7 @@ use betterlite_error::error::ErrorClass;
 
 use crate::api::skills::fixtures::kwargs;
 use crate::api::skills::list::error::ListSkillsError;
-use crate::api::skills::list::list_fixtures::{Fixture, call_with, listing, logging, params_for};
+use crate::api::skills::list_fixtures::{Fixture, call_with, listing, logging, params_for};
 
 #[test]
 fn list_skill_error_message_matches_litellm() {
