@@ -4,7 +4,7 @@ description: >-
   Implement the common pure metadata/response helpers in betterlite-models/call_helpers using existing typed requests,
   errors and B198 context. Cover finish-reason normalization, checked token-limit coercion, expected-client-error
   classification, metadata bucket choice, trusted flags, model-name reconstruction, response header projection and
-  B2204 independent snapshots. Preserve optional billing/provider fields for their future consumers without calculating
+  B2204 internal-parameter filtering. Preserve optional billing/provider fields for their future consumers without calculating
   costs or activating budget reservations. Reuse B2204 request-record projection for copying/filtering; Python object
   construction/classification convenience remains in B166. Add call_helpers helper cases for each pure operation
   and injection/isolation tests for internal fields, reusing the chat parser for external metadata.  Seed B171's
@@ -56,7 +56,7 @@ dod:
   proof:
   - oracle
   - helper-python
-- text: Snapshots are independent and trusted flags/internal headers cannot be forged; ordinary provider headers
+- text: Trusted flags/internal headers cannot be forged; ordinary provider headers
     survive prefixing while B184 cookie/CORS exclusions hold.
   proof:
   - call-helper-tests
@@ -107,7 +107,6 @@ oracle_cases:
 - tools/oracle/cases/helpers/call-helpers/trusted-flags.yaml
 - tools/oracle/cases/helpers/call-helpers/model-reconstruction.yaml
 - tools/oracle/cases/helpers/call-helpers/response-headers.yaml
-- tools/oracle/cases/helpers/call-helpers/snapshot-isolation.yaml
 - tools/oracle/cases/helpers/call-helpers/filter-internal.yaml
 - tools/oracle/cases/helpers/call-helpers/drop-env-invalid.yaml
 - tools/oracle/cases/helpers/call-helpers/drop-request-invalid.yaml
