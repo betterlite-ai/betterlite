@@ -14,6 +14,12 @@ pub enum JsonRpcId {
 #[serde(try_from = "serde_json::Number")]
 pub struct IntegerId(serde_json::Number);
 
+impl From<&IntegerId> for serde_json::Number {
+    fn from(id: &IntegerId) -> Self {
+        id.0.clone()
+    }
+}
+
 impl TryFrom<serde_json::Number> for IntegerId {
     type Error = AgentProviderError;
 

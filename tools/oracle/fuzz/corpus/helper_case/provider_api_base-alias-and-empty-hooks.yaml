@@ -1,0 +1,12 @@
+kind: helper
+name: provider-api-base-alias-and-empty-hooks-seed
+call:
+  b7320:
+    model: my-alias
+    model_alias_map:
+      my-alias: github_copilot/gpt-4
+    environment:
+      GITHUB_COPILOT_API_BASE: https://copilot.test
+    hooks: {}
+env: {}
+compare: {ignore: []}

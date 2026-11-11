@@ -1,0 +1,5 @@
+task: B1679
+deviations:
+  - what: Batch token totals retain exact Decimal arithmetic and fail explicitly on nonfinite prices or checked overflow.
+    why: The legacy fallback's signed results are preserved, but stored batch spend cannot depend on floating-point rounding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2643-L2682
