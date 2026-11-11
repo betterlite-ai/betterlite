@@ -1,11 +1,9 @@
 import base64
-from collections.abc import Callable, Generator, Mapping
-from contextlib import contextmanager
+import logging
 from datetime import UTC, datetime
-from typing import Final, TypeAlias, cast
-from unittest.mock import patch
+from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
-import botocore.auth
+import botocore.auth  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L433
 import httpx
 from litellm._logging import verbose_logger
 from litellm.llms.strands_decider.decisions.transformation import (
@@ -14,105 +12,104 @@ from litellm.llms.strands_decider.decisions.transformation import (
     invoked_runtime,
 )
 from litellm.types.decisions import (
+    DecisionsIRAnswer,
+    DecisionsIRChoiceAnswer,
     DecisionsIRPredicateAnswer,
     DecisionsIRPredicateQuestion,
+    DecisionsIRRefusal,
     DecisionsIRRequest,
     DecisionsIRResponse,
+    DecisionsIRScoreAnswer,
     DecisionsIRState,
     UnsupportedDecisionsRequest,
 )
-from pydantic import JsonValue
-
-Json: TypeAlias = JsonValue
-Object: TypeAlias = dict[str, Json]
+from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 PROVIDER: Final = "strands_decider"
 MODEL: Final = "m"
+DROPPED_MARKER: Final = "header(s) "
+NAMES: Final = TypeAdapter(list[str])
+STUB_URL: Final = "https://strands.invalid/invocations"
+
+Object: TypeAlias = dict[str, JsonValue]
 
 
-def obj(value: Json) -> Object:
-    if not isinstance(value, dict):
-        raise TypeError("expected an object")
-    return value
+class RuntimeStep(TypedDict):
+    kind: Literal["runtime"]
+    api_base: str
 
 
-def obj_or_empty(value: Json | None) -> Object:
-    return {} if value is None else obj(value)
+class ConfigStep(TypedDict):
+    kind: Literal["config"]
 
 
-def text(fields: Object, name: str) -> str:
-    value = fields.get(name)
-    if not isinstance(value, str):
-        raise TypeError(f"{name} must be a string")
-    return value
+class SignStep(TypedDict):
+    kind: Literal["sign"]
+    api_base: str
+    headers: NotRequired[dict[str, str]]
+    api_key: NotRequired[str | None]
+    litellm_params: NotRequired[Object]
+    model: str
+    state: str
+    question: str
+    instructions: str
+    now: int
 
 
-def optional_text(fields: Object, name: str) -> str | None:
-    value = fields.get(name)
-    if value is not None and not isinstance(value, str):
-        raise TypeError(f"{name} must be a string")
-    return value
+class TransformStep(TypedDict):
+    kind: Literal["transform"]
+    body: str
+    model: str
+    state: str
+    question: str
+    instructions: str
 
 
-def expect_int(fields: Object, name: str) -> int:
-    value = fields.get(name)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise TypeError(f"{name} must be an integer")
-    return value
+Step: TypeAlias = RuntimeStep | ConfigStep | SignStep | TransformStep
 
 
-def headers_of(fields: Object, name: str) -> dict[str, str]:
-    value = fields.get(name)
-    if value is None:
-        return {}
-    headers: dict[str, str] = {}
-    for key, item in obj(value).items():
-        if not isinstance(item, str):
-            raise TypeError(f"{name} values must be strings")
-        headers[key] = item
-    return headers
+class Input(TypedDict):
+    steps: list[Step]
 
 
-def ir_request(fields: Object) -> DecisionsIRRequest:
-    return DecisionsIRRequest(
-        input=DecisionsIRState(state=text(fields, "state")),
-        questions=(
-            DecisionsIRPredicateQuestion(
-                name=text(fields, "question"),
-                instructions=text(fields, "instructions"),
-                criteria=None,
-                extra={},
-            ),
-        ),
+class FrozenClock:
+    def __init__(self, epoch: int) -> None:
+        self.moment = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
+
+    def __call__(self) -> datetime:
+        return self.moment
+
+
+class DroppedHeaders(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.names: list[str] = []
+
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
+        _, marker, listed = record.getMessage().partition(DROPPED_MARKER)
+        if marker:
+            self.names.extend(NAMES.validate_json(listed.replace("'", '"')))
+
+
+def ir_request(step: SignStep | TransformStep) -> DecisionsIRRequest:
+    question = DecisionsIRPredicateQuestion(
+        name=step["question"],
+        instructions=step["instructions"],
+        criteria=None,
+        extra={},
     )
+    return DecisionsIRRequest(input=DecisionsIRState(state=step["state"]), questions=(question,))
 
 
-@contextmanager
-def frozen_clock(epoch: int) -> Generator[None, None, None]:
-    frozen = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
-    with patch.object(botocore.auth, "get_current_datetime", lambda: frozen):
-        yield
-
-
-@contextmanager
-def recorded_dropped() -> Generator[list[Json], None, None]:
-    dropped: list[Json] = []
-
-    def capture(_message: str, *args: object, **_kwargs: object) -> None:
-        if args:
-            dropped.extend(cast("list[Json]", args[0]))
-
-    with patch.object(verbose_logger, "warning", capture):
-        yield dropped
-
-
-def runtime_step(fields: Object) -> Json:
-    api_base = text(fields, "api_base")
+def runtime_step(step: RuntimeStep) -> Object:
+    api_base = step["api_base"]
     config = StrandsDeciderDecisionsConfig()
     runtime = agentcore_runtime(api_base)
     complete_url = config.get_complete_url(api_base=api_base, model=MODEL)
     invoked = invoked_runtime(httpx.URL(complete_url))
-    rendered: Json = None
+    rendered: Object | None = None
     if runtime is not None:
         rendered = {
             "arn": runtime.arn,
@@ -128,56 +125,61 @@ def runtime_step(fields: Object) -> Json:
     }
 
 
-def config_step(_fields: Object) -> Json:
+def config_step() -> Object:
     config = StrandsDeciderDecisionsConfig()
-    return {
-        "api_key_env": cast("Json", list(config.api_key_env)),
-        "api_base_env": cast("Json", list(config.api_base_env)),
-        "api_key_required": config.api_key_required,
-        "api_key": config.resolve_api_key(None),
-        "api_base": config.resolve_api_base(None),
-    }
+    shown: Object = {}
+    shown["api_key_env"] = [*config.api_key_env]
+    shown["api_base_env"] = [*config.api_base_env]
+    shown["api_key_required"] = config.api_key_required
+    shown["api_key"] = config.resolve_api_key(None)
+    shown["api_base"] = config.resolve_api_base(None)
+    return shown
 
 
-def sign_step(fields: Object) -> Json:
+def sign_step(step: SignStep) -> Object:
     config = StrandsDeciderDecisionsConfig()
-    api_base = text(fields, "api_base")
-    model = text(fields, "model")
-    headers = headers_of(fields, "headers")
-    api_key = optional_text(fields, "api_key")
-    params: Mapping[str, object] = obj_or_empty(fields.get("litellm_params"))
-    body = config.transform_decisions_request(model, ir_request(fields), PROVIDER)
-    if isinstance(body, UnsupportedDecisionsRequest):
-        raise ValueError(body.reason)
-    url = config.get_complete_url(api_base=api_base, model=model)
-    with frozen_clock(expect_int(fields, "now")), recorded_dropped() as dropped:
-        signed, payload = config.sign_request(
-            headers=headers,
-            url=url,
-            api_base=api_base,
-            body=body,
-            api_key=api_key,
-            litellm_params=params,
-        )
-    forwarded = dict(signed)
-    return {
-        "dropped": cast("Json", list(dropped)),
-        "headers": cast("Json", forwarded),
-        "body": None if payload is None else base64.b64encode(payload).decode(),
-    }
+    api_base = step["api_base"]
+    headers = step.get("headers")
+    params = step.get("litellm_params")
+    match config.transform_decisions_request(step["model"], ir_request(step), PROVIDER):
+        case UnsupportedDecisionsRequest(reason=reason):
+            raise ValueError(reason)
+        case body:
+            dropped = DroppedHeaders()
+            verbose_logger.addHandler(dropped)
+            botocore.auth.get_current_datetime = FrozenClock(step["now"])  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L433
+            signed, payload = config.sign_request(
+                headers={} if headers is None else headers,
+                url=config.get_complete_url(api_base=api_base, model=step["model"]),
+                api_base=api_base,
+                body=body,
+                api_key=step.get("api_key"),
+                litellm_params={} if params is None else params,
+            )
+            return {
+                "dropped": [*dropped.names],
+                "headers": dict(signed),
+                "body": None if payload is None else base64.b64encode(payload).decode(),
+            }
 
 
-def answer_projection(answer: object) -> Json:
-    if isinstance(answer, DecisionsIRPredicateAnswer):
-        return {"kind": "DecisionsIRPredicateAnswer", "probability": answer.probability}
-    return {"kind": type(answer).__name__}
+def answer_projection(answer: DecisionsIRAnswer) -> Object:
+    match answer:
+        case DecisionsIRPredicateAnswer(probability=probability):
+            return {"kind": "DecisionsIRPredicateAnswer", "probability": probability}
+        case DecisionsIRChoiceAnswer():
+            return {"kind": "DecisionsIRChoiceAnswer"}
+        case DecisionsIRScoreAnswer():
+            return {"kind": "DecisionsIRScoreAnswer"}
+        case DecisionsIRRefusal():
+            return {"kind": "DecisionsIRRefusal"}
 
 
-def project_response(response: DecisionsIRResponse) -> Json:
+def project_response(response: DecisionsIRResponse) -> Object:
     usage = response.usage
     return {
         "model": response.model,
-        "answers": cast("Json", [answer_projection(answer) for answer in response.answers]),
+        "answers": [answer_projection(answer) for answer in response.answers],
         "usage": {
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,
@@ -187,35 +189,24 @@ def project_response(response: DecisionsIRResponse) -> Json:
     }
 
 
-def transform_step(fields: Object) -> Json:
+def transform_step(step: TransformStep) -> Object:
     config = StrandsDeciderDecisionsConfig()
-    api_base = text(fields, "api_base")
-    model = text(fields, "model")
-    url = config.get_complete_url(api_base=api_base, model=model)
-    body = text(fields, "body").encode()
-    response = httpx.Response(200, content=body, request=httpx.Request("POST", url))
-    result = config.transform_decisions_response(model, PROVIDER, response, ir_request(fields))
+    request = httpx.Request("POST", STUB_URL)
+    response = httpx.Response(200, content=step["body"].encode(), request=request)
+    answered = ir_request(step)
+    result = config.transform_decisions_response(step["model"], PROVIDER, response, answered)
     return project_response(result)
 
 
-HANDLERS: dict[str, Callable[[Object], Json]] = {
-    "runtime": runtime_step,
-    "config": config_step,
-    "sign": sign_step,
-    "transform": transform_step,
-}
-
-
-def execute(step: Object) -> Json:
-    kind = text(step, "kind")
-    found = HANDLERS.get(kind)
-    if found is None:
-        raise ValueError(f"unknown step kind {kind}")
-    return found(step)
-
-
-def run(value: dict[str, Json]) -> Json:
-    steps = value.get("steps")
-    if not isinstance(steps, list):
-        raise TypeError("steps must be a list")
-    return [execute(obj(step)) for step in steps]
+def run(input_value: Input) -> list[Object]:
+    results: list[Object] = []
+    for step in input_value["steps"]:
+        if step["kind"] == "runtime":
+            results.append(runtime_step(step))
+        elif step["kind"] == "config":
+            results.append(config_step())
+        elif step["kind"] == "sign":
+            results.append(sign_step(step))
+        else:
+            results.append(transform_step(step))
+    return results
