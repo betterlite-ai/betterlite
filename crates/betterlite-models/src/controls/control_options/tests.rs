@@ -46,6 +46,7 @@ fn text(value: &str) -> JsonValue {
 #[case::leading_space(Some(text(" 5")), Err(()))]
 #[case::trailing_space(Some(text("5 ")), Err(()))]
 #[case::negative_string(Some(text("-1")), Err(()))]
+#[case::plus_sign_string(Some(text("+5")), Err(()))]
 #[case::non_ascii_digits(Some(text("\u{661}\u{662}\u{663}")), Err(()))]
 #[case::boolean_true(Some(JsonValue::Bool(true)), Err(()))]
 #[case::boolean_false(Some(JsonValue::Bool(false)), Err(()))]

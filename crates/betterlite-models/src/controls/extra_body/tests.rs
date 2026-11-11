@@ -48,6 +48,8 @@ fn realistic_body() -> JsonValue {
 #[case::size_at_the_limit(Scenario::Accepts(text_body(MAX_EXTRA_BODY_BYTES - 2)))]
 #[case::size_past_the_limit(Scenario::TooLarge(text_body(MAX_EXTRA_BODY_BYTES - 1)))]
 fn provider_controls_tests_behavior(#[case] scenario: Scenario) {
+    assert_eq!(MAX_EXTRA_BODY_BYTES, 0x0010_0000);
+    assert_eq!(MAX_EXTRA_BODY_DEPTH, 100);
     match scenario {
         Scenario::Accepts(body) => check_extra_body(&body).expect("the body is within its bounds"),
         Scenario::TooDeep(body) => {
