@@ -68,30 +68,14 @@ pub(super) async fn key_metadata(client: &Client, rows: &[KeyMetadataRow]) -> Fi
     Ok(())
 }
 
-struct MoneyText {
-    compression: String,
-    prompt_caching: String,
-    gateway_injected: String,
-    autorouter: String,
-    spend: String,
-}
-
-fn money_text(row: &FinOpsUsageRow) -> MoneyText {
-    MoneyText {
-        compression: row.compression_savings_spend.to_string(),
-        prompt_caching: row.prompt_caching_savings_spend.to_string(),
-        gateway_injected: row.gateway_injected_savings.to_string(),
-        autorouter: row.autorouter_savings_spend.to_string(),
-        spend: row.spend.to_string(),
+fn usage_api_key(row: &FinOpsUsageRow) -> String {
+    match &row.api_key {
+        UsageApiKey::Key(token) => FixtureSeed::key_hash(token.expose_secret()),
+        UsageApiKey::OrphanHash(hash) => hash.clone(),
     }
 }
 
 async fn execute_usage(client: &Client, row: &FinOpsUsageRow) -> FixtureResult<()> {
-    let api_key = match &row.api_key {
-        UsageApiKey::Key(token) => FixtureSeed::key_hash(token.expose_secret()),
-        UsageApiKey::OrphanHash(hash) => hash.clone(),
-    };
-    let money = money_text(row);
     execute(
         client,
         DAILY_USAGE_INSERT,
@@ -99,7 +83,7 @@ async fn execute_usage(client: &Client, row: &FinOpsUsageRow) -> FixtureResult<(
             &row.id,
             &row.user_id,
             &row.date,
-            &api_key,
+            &usage_api_key(row),
             &row.model,
             &row.model_group,
             &row.custom_llm_provider,
@@ -110,11 +94,11 @@ async fn execute_usage(client: &Client, row: &FinOpsUsageRow) -> FixtureResult<(
             &row.cache_read_input_tokens,
             &row.cache_creation_input_tokens,
             &row.compression_saved_tokens,
-            &money.compression,
-            &money.prompt_caching,
-            &money.gateway_injected,
-            &money.autorouter,
-            &money.spend,
+            &row.compression_savings_spend.to_string(),
+            &row.prompt_caching_savings_spend.to_string(),
+            &row.gateway_injected_savings.to_string(),
+            &row.autorouter_savings_spend.to_string(),
+            &row.spend.to_string(),
             &row.api_requests,
             &row.successful_requests,
             &row.failed_requests,
