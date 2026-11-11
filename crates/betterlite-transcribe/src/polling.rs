@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use tokio::time::sleep;
 
 use crate::records::{
@@ -40,16 +42,19 @@ impl PollSleeper for TokioSleeper {
 }
 
 #[derive(Deserialize)]
-struct AwsErrorBody {
-    #[serde(rename = "__type")]
-    error_type: Option<String>,
+#[serde(untagged)]
+enum ErrorMember {
+    Text(String),
+    Other(IgnoredAny),
 }
 
 #[must_use]
 pub fn aws_error_type(body: &[u8]) -> Option<String> {
-    let member = serde_json::from_slice::<AwsErrorBody>(body)
-        .ok()?
-        .error_type?;
+    // a map type, since a derived struct would also read a JSON array
+    let mut object = serde_json::from_slice::<HashMap<String, ErrorMember>>(body).ok()?;
+    let ErrorMember::Text(member) = object.remove("__type")? else {
+        return None;
+    };
     let stripped = member
         .rsplit_once('#')
         .map_or(member.as_str(), |(_prefix, suffix)| suffix);

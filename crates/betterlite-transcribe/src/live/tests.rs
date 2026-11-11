@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_bedrock::aws_settings::sources::Credentials;
@@ -19,7 +20,7 @@ use crate::live::exchange::{
     BodyStream, HttpAnswer, HttpMethod, HttpTransport, OutboundHttp, header_pairs, signed_headers,
 };
 use crate::live::probe::download_and_measure;
-use crate::live::signing::{AwsSigner, signed_get};
+use crate::live::signing::{AwsSigner, ClockedSigner, CredentialSource, SigningClock, signed_get};
 use crate::live::{ProbeError, S3MediaProbe, TranscribeJobLookup, price_fail_closed};
 use crate::media_pricing::{JobPricing, MediaDurationProbe, PricingError};
 use crate::media_source::MediaSizeGuard;
@@ -700,4 +701,73 @@ async fn fail_closed_retries_an_unavailable_job_lookup() {
         .unwrap();
     assert_eq!(cost, Decimal::new(576, 1));
     assert_eq!(lookup.calls(), 2);
+}
+
+// each reading is one hour after the last, so a signature built from a stored instant shows
+struct HourlyClock(AtomicU64);
+
+impl SigningClock for HourlyClock {
+    fn now(&self) -> SystemTime {
+        let hours = self.0.fetch_add(1, Ordering::SeqCst);
+        let seconds = hours.saturating_mul(3600).saturating_add(1_700_000_000);
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(seconds))
+            .unwrap()
+    }
+}
+
+struct StaticCredentials;
+
+#[async_trait]
+impl CredentialSource for StaticCredentials {
+    async fn credentials(&self, _region: &str) -> Result<Credentials, ProbeError> {
+        Ok(Credentials {
+            access_key_id: SecretString::from("AKIDEXAMPLE"),
+            secret_access_key: SecretString::from("secret"),
+            session_token: None,
+        })
+    }
+}
+
+fn hourly_signer() -> ClockedSigner<StaticCredentials, HourlyClock> {
+    ClockedSigner {
+        credentials: StaticCredentials,
+        clock: HourlyClock(AtomicU64::new(0)),
+    }
+}
+
+fn signing_date(request: &RecordedRequest) -> &str {
+    let (_name, date) = request
+        .headers
+        .iter()
+        .find(|(name, _)| name == "X-Amz-Date")
+        .unwrap();
+    date
+}
+
+#[tokio::test]
+async fn lookup_signs_each_poll_with_the_clock_reading_at_send_time() {
+    let (http, requests) = ScriptedHttp::new(Vec::new());
+    let lookup = TranscribeJobLookup::new("us-east-1", hourly_signer(), http);
+    let _first = lookup.get_transcription_job(&lookup_request()).await;
+    let _second = lookup.get_transcription_job(&lookup_request()).await;
+    let sent = requests.sent();
+    assert_eq!(signing_date(&sent[0]), "20231114T221320Z");
+    assert_eq!(signing_date(&sent[1]), "20231114T231320Z");
+}
+
+#[tokio::test]
+async fn probe_signs_each_download_with_the_clock_reading_at_send_time() {
+    let (http, requests) = ScriptedHttp::new(vec![Ok(media_answer()), Ok(media_answer())]);
+    let probe = S3MediaProbe::new(
+        "us-east-1",
+        hourly_signer(),
+        http,
+        Arc::new(Semaphore::new(1)),
+    );
+    let _first = probe.media_seconds("s3://audio/a.wav", 100.0).await;
+    let _second = probe.media_seconds("s3://audio/a.wav", 100.0).await;
+    let sent = requests.sent();
+    assert_eq!(signing_date(&sent[0]), "20231114T221320Z");
+    assert_eq!(signing_date(&sent[1]), "20231114T231320Z");
 }

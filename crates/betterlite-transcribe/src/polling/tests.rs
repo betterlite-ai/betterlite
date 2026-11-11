@@ -156,6 +156,7 @@ fn error_type_reads_the_member_after_the_last_hash(
 #[case::plain_text(b"not json")]
 #[case::half_object(b"{\"__type\":")]
 #[case::array(b"[1,2]")]
+#[case::array_of_the_type_string(b"[\"com.amazon.coral.service#NotFoundException\"]")]
 #[case::number(b"42")]
 #[case::string(b"\"text\"")]
 #[case::null(b"null")]

@@ -21,17 +21,6 @@ pub(crate) enum Input {
     },
 }
 
-fn invalid_url(error: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("InvalidURL"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error,
-    })
-}
-
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -44,7 +33,14 @@ impl Helper for Op {
             }
             Input::S3Url { media_uri, region } => match s3_media_url(media_uri, region) {
                 Ok(url) => Ok(url.map_or(Value::Null, Value::String)),
-                Err(error) => Err(invalid_url(error.to_string())),
+                Err(error) => Err(Box::new(HelperError {
+                    class: String::from("InvalidURL"),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })),
             },
             Input::Predates {
                 headers,

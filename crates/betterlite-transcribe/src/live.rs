@@ -1,6 +1,5 @@
 use std::io::Error as IoError;
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use betterlite_bedrock::credentials::AwsCredentialResolver;
 use betterlite_bedrock::credentials::error::CredentialError;
@@ -44,7 +43,6 @@ pub struct S3MediaProbe<S, H> {
 pub struct LiveDeps<'deps> {
     pub resolver: &'deps AwsCredentialResolver<'deps>,
     pub http: ProxiedClient,
-    pub now: SystemTime,
     pub region: String,
     pub download_slots: Arc<Semaphore>,
 }
@@ -95,9 +93,9 @@ pub async fn price_transcription_job_live(
     started_job: StartedJob,
     deps: LiveDeps<'_>,
 ) -> Result<Decimal, PricingError> {
-    let signer = signing::ResolverSigner {
-        resolver: deps.resolver,
-        now: deps.now,
+    let signer = signing::ClockedSigner {
+        credentials: signing::ResolverCredentials(deps.resolver),
+        clock: signing::SystemClock,
     };
     let http = PooledHttp { client: deps.http };
     let lookup = TranscribeJobLookup::new(&deps.region, signer, http.clone());

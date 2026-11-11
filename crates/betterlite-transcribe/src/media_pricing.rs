@@ -88,7 +88,7 @@ where
         );
         return Ok(transcribe_max_job_cost(cost_per_second)?);
     };
-    let job: Option<TranscriptionJobRecord> = match outcome {
+    let job = match outcome {
         PollOutcome::Finished(record) => {
             if record.transcription_job_status.as_deref() == Some("FAILED") {
                 return Ok(Decimal::ZERO);
