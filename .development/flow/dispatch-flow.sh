@@ -35,6 +35,12 @@ other=$(cat "$L/locks/$id.pid" 2>/dev/null)
 if [ -n "$other" ] && [ "$other" != "$$" ] && { tr "\\0" " " < "/proc/$other/cmdline"; } 2>/dev/null | grep -q "dispatch-flow.sh $id "; then echo "$(date +%H:%M) $id already has a flow, so $run did not start" >> "$L/flow-events.log"; exit 0; fi
 echo $$ > "$L/locks/$id.pid"
 exec 7>&-
+# a measured trial gives the next first dispatches the note in logs/trial-note.txt while logs/trial-slots counts above 0
+if [ "$run" = run1 ] && [ -z "$note" ] && [ -z "${LAND_ONLY:-}" ] && [ -s "$L/trial-note.txt" ] \
+  && [ "$(flock "$L/locks/trial.lock" sh -c 'n=$(cat "$1" 2>/dev/null) && [ "${n:-0}" -gt 0 ] && echo $((n - 1)) > "$1" && echo claimed' sh "$L/trial-slots")" = claimed ]; then
+  note=$(cat "$L/trial-note.txt")
+  echo "$(date +%H:%M) $id trial note for $run" >> "$L/flow-events.log"
+fi
 # what the feeder needs to bring this flow back if the machine or the flow dies; a flow that ends on its own removes it
 mkdir -p "$L/flows"
 args=$L/flows/$id.args
