@@ -54,7 +54,7 @@ async fn configure_with_flags_runs_without_a_terminal() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-new", "claude-1"))
+        .configure(claude_configure(&proxy.base_url, "sk-new"))
         .await
         .unwrap();
     assert!(harness.prompter.calls.is_empty());

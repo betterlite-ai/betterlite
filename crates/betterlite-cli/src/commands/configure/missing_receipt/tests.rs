@@ -83,7 +83,7 @@ async fn unconfigure_reports_settings_modified_since_configure() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test", "claude-1"))
+        .configure(claude_configure(&proxy.base_url, "sk-test"))
         .await
         .unwrap();
     let mut settings = claude_settings(&harness.environment);
@@ -117,7 +117,7 @@ async fn unconfigure_reports_when_nothing_is_left_to_restore() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test", "claude-1"))
+        .configure(claude_configure(&proxy.base_url, "sk-test"))
         .await
         .unwrap();
     let mut settings = BTreeMap::new();

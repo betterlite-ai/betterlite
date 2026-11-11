@@ -142,7 +142,7 @@ async fn forget_after_configure_removes_the_profile_and_the_receipt() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test", "claude-1"))
+        .configure(claude_configure(&proxy.base_url, "sk-test"))
         .await
         .unwrap();
     let settings_path = settings_path_for(Target::Claude, &harness.environment).unwrap();

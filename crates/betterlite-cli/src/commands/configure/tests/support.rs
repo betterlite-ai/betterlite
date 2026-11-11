@@ -34,6 +34,7 @@ use crate::commands::configure::{AgentSetupCommand, SetupPorts, run};
 
 pub(crate) const SAFE_CODEX: &str = "codex-cli 0.129.0";
 pub(crate) const SAVED_KEY: &str = "sk-saved";
+pub(crate) const STARTING_MODEL: &str = "claude-1";
 
 #[derive(clap::Parser)]
 pub(crate) struct TestCli {
@@ -99,15 +100,14 @@ pub(crate) fn group_configure() -> ConfigureArgs {
     }
 }
 
-pub(crate) fn claude_configure(base_url: &str, api_key: &str, model: &str) -> ConfigureArgs {
-    ConfigureArgs {
-        connection: group_connection(None, None),
-        command: Some(ConfigureTarget::Claude {
-            connection: ConnectionFlags::from(group_connection(Some(api_key), Some(base_url))),
-            model: Some(model.to_owned()),
-            default_model: false,
-        }),
-    }
+pub(crate) fn claude_configure(base_url: &str, api_key: &str) -> ConfigureArgs {
+    let mut args = group_configure();
+    args.command = Some(ConfigureTarget::Claude {
+        connection: ConnectionFlags::from(group_connection(Some(api_key), Some(base_url))),
+        model: Some(STARTING_MODEL.to_owned()),
+        default_model: false,
+    });
+    args
 }
 
 pub(crate) const fn unconfigure_claude() -> UnconfigureArgs {

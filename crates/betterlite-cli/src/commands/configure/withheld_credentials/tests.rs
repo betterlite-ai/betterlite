@@ -38,7 +38,7 @@ async fn withheld_credentials_report_their_captured_endpoint() {
     .unwrap();
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test", "claude-1"))
+        .configure(claude_configure(&proxy.base_url, "sk-test"))
         .await
         .unwrap();
     set_base_url(&harness.environment, "http://elsewhere.test");
@@ -74,7 +74,7 @@ async fn withheld_credentials_name_the_default_endpoint_when_none_was_captured()
     .unwrap();
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test", "claude-1"))
+        .configure(claude_configure(&proxy.base_url, "sk-test"))
         .await
         .unwrap();
     set_base_url(&harness.environment, "http://elsewhere.test");
@@ -90,7 +90,7 @@ async fn unconfigure_without_a_mismatch_drops_the_receipt() {
     let proxy = MockProxy::start(vec![listing(&[("claude-1", None)])]).await;
     let mut harness = Harness::new(environment, context(&proxy.base_url, None));
     harness
-        .configure(claude_configure(&proxy.base_url, "sk-test", "claude-1"))
+        .configure(claude_configure(&proxy.base_url, "sk-test"))
         .await
         .unwrap();
     let settings_path = settings_path_for(Target::Claude, &harness.environment).unwrap();
