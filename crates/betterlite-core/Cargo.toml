@@ -20,6 +20,7 @@ betterlite-mcp = { path = "../betterlite-mcp" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-provider = { path = "../betterlite-provider" }
+betterlite-redact = { path = "../betterlite-redact" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
@@ -43,7 +44,6 @@ uuid.workspace = true
 [lints]
 workspace = true
 [dev-dependencies]
-betterlite-redact = { path = "../betterlite-redact" }
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng"] }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
