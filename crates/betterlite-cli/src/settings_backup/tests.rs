@@ -368,6 +368,28 @@ fn down_prints_the_removed_line() {
 }
 
 #[test]
+fn down_prints_the_restored_line_for_an_existed_null_backup() {
+    let home = TempDir::new().expect("home");
+    let paths = claude_settings_paths(home.path());
+    fs::create_dir_all(paths.settings.parent().expect("a parent")).expect("settings directory");
+    fs::write(&paths.settings, b"{}").expect("the settings");
+    fs::create_dir_all(paths.backup.parent().expect("a parent")).expect("backup directory");
+    fs::write(&paths.backup, br#"{"existed":true,"content":null}"#).expect("the backup");
+    let files = PrivateFiles::default();
+    let environment = TestEnvironment::at(home.path());
+    let mut stdout = Vec::new();
+    down(&environment, &files, &mut stdout).expect("removes");
+    assert_eq!(
+        text(&stdout),
+        format!(
+            "Restored {} to its original contents.\n",
+            paths.settings.display()
+        )
+    );
+    assert!(!paths.settings.exists());
+}
+
+#[test]
 fn down_ignores_the_config_dir() {
     let home = TempDir::new().expect("home");
     let config_dir = TempDir::new().expect("config directory");
