@@ -3,8 +3,9 @@ GH_TOKEN=$(gh auth token --user HardMax71)
 export GH_TOKEN
 export GH_REPO=betterlite-ai/betterlite
 # Wrong means: a new failed run on its branch (a failed queue run counts once the PR has left the queue, since a PR ahead in the group can cause it), a conflict with main, or leaving the queue without auto-merge.
-# Usage: bash pr-watch.sh <pr>
+# Usage: bash pr-watch.sh <pr> [merge]; with merge it stops at the merge and leaves main's run to a second call
 pr=$1
+mode=${2:-}
 # the land enables auto-merge seconds before this starts, and the queue can drop the PR within that time
 since=$(date -u -d "-2 min" +%Y-%m-%dT%H:%M:%SZ)
 self=$(readlink -f "$0") || exit 1
@@ -50,6 +51,10 @@ while true; do
     exit 1
   fi
   if [[ "${state}" = MERGED ]]; then
+    if [[ "${mode}" = merge ]]; then
+      echo "PR ${pr} merged as ${commit:0:8}"
+      exit 0
+    fi
     polls=0
     while [[ "${polls}" -lt 60 ]]; do
       git fetch -q origin main 2> /dev/null
