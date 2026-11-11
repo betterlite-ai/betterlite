@@ -71,10 +71,8 @@ fn add_provider_specific(call: &Call) -> Result<Value, Failure> {
         openai_params: &openai_params,
         additional_drop_params: call.additional_drop_params.as_deref().unwrap_or_default(),
     };
-    answer(
-        extra_body::add_provider_specific_params(call.optional_params.clone(), &request)
-            .map_err(|error| error.status_code()),
-    )
+    let added = extra_body::add_provider_specific_params(call.optional_params.clone(), &request);
+    answer(added.map_err(|error| error.status_code()))
 }
 
 fn media_params(call: &Call) -> Result<Value, Failure> {
