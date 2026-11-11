@@ -1,0 +1,14 @@
+id: B9775
+milestone: M10 admin ui
+title: Vault and CyberArk settings form HTTP acceptance
+status: todo
+depends_on: [B1647, B1648, B1644, B1630, B860, B5076]
+file: tasks/B9775-dashboard-secret-settings-http.yaml
+covers:
+  - "ui/litellm-dashboard/src/components/Settings/AdminSettings/{CyberArk,HashicorpVault}/**"
+parent: B150
+split_from: B150
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

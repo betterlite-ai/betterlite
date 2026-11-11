@@ -82,7 +82,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "The managers: B4052, B4054, B4056, B3968, B3908 and B4126. Per call selection and the prompt hooks: B8560 and B4058. Passing configured() to B8560's dispatch: the inference wiring (see B8742's notes)."
+  - "The managers: B4052, B4054, B4056, B3968, B3908 and B4126. Per call selection and the prompt hooks: B8560 and B4058. Passing configured() to B8560's dispatch: B117 (the inference wiring)."
 pitfalls:
   - The bitbucket and gitlab arms raise before building, so a missing config never leaves a half built manager in the cache.
   - Keep one instance per name; B8560 compares the factory answer with the registered managers, and a second instance would run the prompt hook twice.

@@ -1,0 +1,17 @@
+id: B9743
+milestone: M10 admin ui
+title: Cost and optimization page forms over real HTTP
+status: todo
+depends_on: [B9090, B9091, B9740, B9260, B5076, B066, B073, B8482, B1607, B355, B356, B357, B8675, B8667, B782, B796, B813, B850]
+file: tasks/B9743-dashboard-cost-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{cost-tracking,cost-optimization}/**"
+  - "ui/litellm-dashboard/src/components/CloudZeroCostTracking/**"
+  - "ui/litellm-dashboard/src/components/cloudzero_export_modal.*"
+  - "ui/litellm-dashboard/src/components/cloudzero_export_modal.integration.test.*"
+parent: B147
+split_from: B147
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

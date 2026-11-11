@@ -1,7 +1,7 @@
 id: B8251
 milestone: M7 observability
 title: Team-scoped Datadog and New Relic logger handlers
-status: todo
+status: done
 depends_on: [B3933, B3944, B3945, B5120]
 file: tasks/B8251-team-datadog-newrelic-loggers.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/newrelic/newrelic_team_handler.py"
 parent: B113
 split_from: B113
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1236

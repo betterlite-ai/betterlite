@@ -1,0 +1,146 @@
+id: B9091
+title: Build a reproducible dashboard sidecar with the upstream npm lockfile
+description: >-
+  Build the retained dashboard into a portable static bundle with tools/dashboard/build.sh and
+  packaging/ui/Dockerfile. Run npm inside the pinned upstream builder image
+  node:24.19-alpine3.24@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43,
+  at a fixed /work/dashboard path on BUILDPLATFORM. This matches .nvmrc 24.19.0 and the package's
+  Node >=24.14.1 and npm >=11.10.0 requirements. B9090 prepares and verifies the source before
+  the image consumes it. Use npm ci --prefer-offline with the original package-lock.json and
+  .npmrc, including ignore-scripts=true and engine-strict=true, then npm run build. Record the
+  actual Node/npm versions and builder digest in the artifact manifest. Do not run npm install,
+  regenerate the lock, disable engine checks or install nvm into a worker's home directory.
+
+  This build-only Dockerfile has a scratch export target containing /bundle. It is used both by
+  the task gate in CI and by distribution images, through the same build.sh entrypoint. B5071
+  consumes its export instead of the no-op enterprise hook packaging/docker/build_admin_ui.sh.
+  BuildKit may cache npm downloads but cache contents are still checked by npm integrity values.
+  No Node, npm, Next server, Python, source cache or node_modules enters a runtime image. Once
+  dependencies have been acquired, the compile/export step has networking disabled. Set
+  NEXT_TELEMETRY_DISABLED=1, npm_config_fund=false and npm_config_audit=false, as the pinned image
+  does, and scrub inherited NEXT_PUBLIC_BASE_URL and NEXT_PUBLIC_USE_REWRITES for the normal
+  same-origin production build. Expose an explicit --api-base build option for an intentional
+  NEXT_PUBLIC_BASE_URL override and include it in the cache key; it does not become a proxy
+  runtime setting. NODE_ENV is production. UI_BASE_PATH is accepted only as the upstream
+  compatibility no-op: next.config.mjs never reads it, so do not invent a second mount prefix.
+
+  The small 10-build.patch keeps output=export, basePath="", assetPrefix="/litellm-asset-prefix",
+  trailingSlash=true and images.unoptimized=true. Give Next a deterministic build ID derived
+  from the verified source hash, all patch hashes and explicit build inputs. Replace
+  next/font/google's unpinned Inter download with the existing CSS system sans-serif stack;
+  this deliberate typography change makes a network-disabled export possible without another
+  fetched font and license. No other application behavior changes. Keep both patch and its
+  preimage/postimage record in ui/dashboard/patches. The task's dependency on B9090 allows this
+  build to work before the branding patch arrives; a later build incorporates that patch and
+  cannot reuse an artifact keyed only by the upstream commit.
+
+  Provide build.sh check <tests-directory>: prepare the same source and pinned npm environment,
+  copy that caller-owned directory beneath the generated application's tests/betterlite directory,
+  run its Vitest files with zero tests treated as failure, and run the upstream eslint and
+  prettier configuration on patched TypeScript and the added tests. A caller-owned
+  upstream-tests.json in that directory may list additional retained test paths to run;
+  reject paths outside the prepared application and fail when any selection has no tests.
+  This is the shared check
+  entrypoint for the branding and page tasks, not a second package.json or test framework.
+
+  Export target/dashboard/dist/ui with index.html, login/index.html, the complete route tree,
+  _next, RSC .txt and __next segment files and public assets. Do not discard files
+  because they are not HTML, CSS or JS. Place .litellm_ui_ready inside ui after verifying this
+  layout, preserving the marker expected by the existing proxy setup. Ship no logo files: the
+  upstream logo.png, logo_dark.png, logo_monogram.png, logo_monogram_dark.png and cached_logo.jpg
+  stay out of the bundle, since B9092 replaces the brand image with a text wordmark. Include ui/notices/LiteLLM-LICENSE.txt verbatim and a generated
+  dependency notice collection containing available npm copyright/license files and retained
+  bundler legal comments; never strip a license as part of minification. The top-level betterlite
+  LICENSE and THIRD_PARTY_NOTICES.md already exist and are not rewritten by this task.
+
+  install.mjs --bundle <dist> --bin <betterlite> copies ui beside that binary, so a container
+  binary at /usr/local/bin/betterlite uses /usr/local/bin/ui, and a local target/debug/betterlite uses target/debug/ui. This directory contract
+  matches B8680 and B8387; the binary itself contains no asset bytes and never runs npm.
+  Replacing the sidecar removes stale content-hashed files instead of merging exports. A bare
+  cargo build remains possible without npm and needs this explicit install command to have UI.
+
+  check-build.sh performs two clean builds, compares sorted path/mode/content digests and a
+  deterministically ordered tar with normalized metadata, checks the notices and every output
+  kind above, installs next to a temporary executable and proves stale chunks disappear. It
+  also asserts that changing a patch changes the cache key and that no runtime secret appears
+  in exported files. The three upstream scripts have 93 noncomment shell lines; add about 250
+  build/install lines, 80 patch/manifest lines and 230 tests/documentation, about 560 total.
+
+  CI rebuilds as little as possible. build.sh key prints the bundle cache key, a SHA-256 over the
+  verified source hash, every patch and its record, package-lock.json, .npmrc, the builder
+  digest, packaging/ui/Dockerfile, build.sh, bundle.mjs and --api-base. build.sh build reuses
+  target/dashboard/dist when its manifest records the same key and rebuilds otherwise; --rebuild
+  forces a fresh build, and check-build.sh uses it for its two clean builds. The Dockerfile
+  copies only package.json, package-lock.json and .npmrc before npm ci, so that layer stays
+  cached until the lock changes. When ACTIONS_RESULTS_URL and ACTIONS_RUNTIME_TOKEN are set (CI
+  exposes them to run steps) and DASHBOARD_BUILDKIT_CACHE is read, build.sh adds --cache-from
+  type=gha,scope=dashboard; read-write adds --cache-to type=gha,scope=dashboard,mode=max too, and
+  CI sets read-write only on main so pull requests never fill the repository cache. Unset, it
+  uses the local BuildKit cache. The token never goes
+  into a build arg, the manifest or a log line. About 40 more lines.
+scope:
+  paths:
+    - packaging/ui/Dockerfile
+    - tools/dashboard/build.sh
+    - tools/dashboard/install.mjs
+    - tools/dashboard/bundle.mjs
+    - tools/dashboard/check-build.sh
+    - tools/dashboard/tests/build/**
+    - ui/dashboard/patches/10-build.patch
+    - ui/dashboard/patches/10-build.json
+    - ui/dashboard/BUILD.md
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/next.config.mjs#L1-L30
+    why: Static export settings, asset prefix, slash behavior and the absent UI_BASE_PATH reader.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/build_ui.sh#L1-L61
+    why: Original Node selection and export copy into the proxy package.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/build_release_ui.sh#L1-L22
+    why: The release helper commits generated output; betterlite instead publishes an untracked build artifact.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/build_ui_custom_path.sh#L1-L68
+    why: The custom-path helper passes UI_BASE_PATH but the current Next configuration ignores it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L10-L45
+    why: Dependency-owned image recipe supplies the exact builder digest, BUILDPLATFORM and npm ci contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/.npmrc#L1-L6
+    why: Lifecycle scripts are disabled and the pinned engine requirement is enforced.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/layout.tsx#L1-L41
+    why: Inter is downloaded by next/font/google during the build and is replaced under the explicit typography deviation.
+  - url: https://docs.npmjs.com/cli/v11/commands/npm-ci/
+    why: npm ci installs the frozen lock and rejects a package/lock mismatch without updating either file.
+dod:
+  - text: The pinned builder installs the original npm lock and produces the same complete export twice with compile-time networking disabled.
+    proof: [dashboard-build, build-tests]
+  - text: The sidecar installer publishes all routes, RSC payloads and notices next to the executable and removes obsolete assets.
+    proof: [dashboard-build, build-tests]
+  - text: Build inputs distinguish patches and explicit API-base overrides without leaking environment secrets or changing wire prefixes, and a matching key reuses the export without running npm.
+    proof: [dashboard-build, build-tests]
+checks:
+  optional: []
+  commands:
+    - id: dashboard-build
+      why: A real locked npm build, reproducibility comparison, output manifest or install test is missing.
+      run: bash tools/dashboard/check-build.sh
+    - id: build-tests
+      why: Artifact replacement, source-input invalidation or legal-notice retention regresses.
+      run: node --test tools/dashboard/tests/build/*.test.mjs
+oracle_cases: []
+deviations:
+  - what: The UI ships as an adjacent static directory, built by a pinned build-only image in CI and image builds; no generated dashboard sources or export are committed.
+    why: Rust has no Python package asset directory and a sidecar keeps rebuilds and native binaries independent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/build_ui.sh#L46-L61
+  - what: Dashboard text uses the system sans-serif stack instead of a Google-downloaded Inter font.
+    why: The upstream font response is outside the pinned lockfile and otherwise makes clean builds network-dependent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/layout.tsx#L1-L12
+out_of_scope:
+  - B9090 verifies fetched inputs; B9092 supplies the betterlite names, the text wordmark and links, and B144 proves the resulting browser experience.
+  - B5071 and B5073 own final runtime image COPY instructions; B5072 owns Compose and does not get a separate npm or nginx service.
+  - No logo file is shipped, since cached_logo.jpg has no caller at the pin and the four upstream logos give way to B9092's text wordmark.
+  - UI_BASE_PATH has no reader in the pinned Next configuration; runtime SERVER_ROOT_PATH handling belongs to B8591 and B9093.
+pitfalls:
+  - Copying only .html and _next omits the .txt flight payloads needed for client-side navigation.
+  - The build_release_ui.sh git add and git commit operations must not run inside a worker or CI build.
+  - The upstream package name litellm-dashboard is private build metadata, so changing it would unnecessarily break the frozen package-lock.json pair.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

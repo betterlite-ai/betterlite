@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-prompt-tool-result-media
+call:
+  bedrock_prompt:
+    messages:
+      - {role: user, content: "weather?"}
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call_1
+            type: function
+            function: {name: get_weather, arguments: '{"city":"Paris"}'}
+      - role: tool
+        tool_call_id: call_1
+        content:
+          - {type: text, text: sunny}
+          - {type: image_url, image_url: {url: "data:image/png;base64,QUJD"}}
+      - {role: tool, content: windy}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+env: {}
+compare: {ignore: []}

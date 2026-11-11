@@ -29,6 +29,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-models/src/lib.rs"
     - crates/betterlite-models/src/judge_primitives.rs
     - crates/betterlite-models/src/judge_primitives/**
     - crates/betterlite-models/fuzz/Cargo.toml

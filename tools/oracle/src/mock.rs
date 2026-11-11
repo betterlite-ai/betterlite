@@ -29,6 +29,8 @@ use crate::routing_mock_scripts::{
     CallGuard, CallOutcome, MockScript, Outcome, ProviderCall, Recording, Ticket, redact,
 };
 
+pub mod mcp_reply;
+
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub(crate) struct ProviderRequest {
     pub(crate) method: String,

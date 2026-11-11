@@ -1,0 +1,61 @@
+kind: helper
+name: message-utilities-trim-with-tools
+call:
+  b5366:
+    calls:
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 10
+        messages:
+          - {role: user, content: "What is the weather in Paris?"}
+          - {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: get_weather, arguments: '{"city": "Paris"}'}}]}
+          - {role: tool, tool_call_id: call_1, content: '{"temperature": 20}'}
+          - {role: tool, tool_call_id: call_2, content: '{"temperature": 21}'}
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 20
+        messages:
+          - {role: user, content: "What is the weather in Paris?"}
+          - {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: get_weather, arguments: '{"city": "Paris"}'}}]}
+          - {role: tool, tool_call_id: call_1, content: '{"temperature": 20}'}
+          - {role: tool, tool_call_id: call_2, content: '{"temperature": 21}'}
+      - function: trim_messages
+        model: gpt-4o
+        max_tokens: 1000
+        messages:
+          - {role: user, content: "What is the weather in Paris?"}
+          - {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: get_weather, arguments: '{"city": "Paris"}'}}]}
+          - {role: tool, tool_call_id: call_1, content: '{"temperature": 20}'}
+          - {role: tool, tool_call_id: call_2, content: '{"temperature": 21}'}
+      - function: process_messages
+        model: gpt-4o
+        max_tokens: 20
+        messages:
+          - {role: user, content: "What is the weather in Paris?"}
+          - {role: assistant, content: null, tool_calls: [{id: call_1, type: function, function: {name: get_weather, arguments: '{"city": "Paris"}'}}]}
+          - {role: tool, tool_call_id: call_1, content: '{"temperature": 20}'}
+          - {role: tool, tool_call_id: call_2, content: '{"temperature": 21}'}
+      - function: can_add_message
+        model: gpt-4o
+        max_tokens: 18
+        message: {role: user, content: hi}
+        messages:
+          - {role: system, content: "You are a helpful assistant."}
+      - function: can_add_message
+        model: gpt-4o
+        max_tokens: 17
+        message: {role: user, content: hi}
+        messages:
+          - {role: system, content: "You are a helpful assistant."}
+      - function: attempt_message_addition
+        model: gpt-4o
+        available_tokens: 40
+        max_tokens: 40
+        final_messages: []
+        message: {role: user, content: alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon }
+      - function: shorten_message_to_fit_limit
+        model: gpt-4o
+        tokens_needed: 15
+        message: {role: user, content: alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon }
+env: {}
+compare: {ignore: []}

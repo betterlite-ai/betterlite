@@ -5,7 +5,7 @@ description: >-
   content methods. The records (ContainerObject, ContainerListResponse, DeleteContainerResult, ContainerFileObject,
   ContainerFileListResponse, the optional param structs) and ContainerError come from B3360 and are not declared here. Use the source query-preserving path join for resource IDs; the initial get_complete_url
   unconditionally appends /containers. Preserve cursor/order fields. Container file uploads and public handlers
-  are B094.
+  are B3363, B3367 and B3368 (uploads), B7430 (router registration), B3371, B3372 and B7326 (handlers) and B8635 (mounts).
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/containers/transformation.py:

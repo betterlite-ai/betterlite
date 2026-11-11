@@ -1,5 +1,5 @@
 [workspace]
-exclude = ["crates/.claude", "crates/betterlite-openapi/fuzz", "tools/.claude", "tools/management-cli"]
+exclude = ["crates/.claude", "crates/betterlite-openapi/fuzz", "tools/.claude", "tools/dashboard", "tools/management-cli"]
 members = [
   "crates/*",
   "crates/*/fuzz",
