@@ -58,7 +58,7 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16278-L16351
     why: Deprecation aliases/default, group metadata conversion and public-group setting read.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16505-L16581
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16354-L16581
     why: Actual group route, infer_model_from_keys read, visibility and callback filtering order.
 dod:
   - text: 'Named cases: deprecation_alias_default30_negative_and_custom_window,

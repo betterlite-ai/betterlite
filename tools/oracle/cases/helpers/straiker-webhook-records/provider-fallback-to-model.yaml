@@ -1,0 +1,10 @@
+kind: helper
+name: provider-fallback-to-model
+call:
+  b3795:
+    provider:
+      request_data:
+        model: openai/gpt-4o
+      model: openai/gpt-4o
+env: {}
+compare: {ignore: []}

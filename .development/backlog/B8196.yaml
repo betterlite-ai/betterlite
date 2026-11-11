@@ -4,7 +4,8 @@ title: "MCP operations: auth headers, BYOK checks and token exchange"
 status: todo
 depends_on: [B8190, B8191, B4667, B8460]
 file: tasks/B8196-mcp-ops-auth.yaml
-covers: []
+covers:
+  - "litellm/proxy/_experimental/mcp_server/operations.py"
 parent: B136
 split_from: B136
 resolution: null

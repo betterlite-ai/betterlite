@@ -51,3 +51,31 @@ path = "fuzz_targets/spend_storage_policy.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "prompt_runtime"
+path = "fuzz_targets/prompt_runtime.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "agent_tracing"
+path = "fuzz_targets/agent_tracing.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vigil_runtime"
+path = "fuzz_targets/vigil_runtime.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "policy_settings"
+path = "fuzz_targets/policy_settings.rs"
+test = false
+doc = false
+bench = false

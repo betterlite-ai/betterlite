@@ -1,0 +1,17 @@
+id: B9280
+milestone: M4 keys, spend and management
+title: Verify native prompt-cache predictions and observed routing over HTTP
+status: todo
+depends_on: [B001, B021, B066, B081, B173, B8742]
+file: tasks/B9280-native-cache-insights-http.yaml
+covers:
+  - "litellm/llms/anthropic/{prompt_cache_prediction,cache_aware_routing}.py"
+  - "litellm/proxy/hooks/prompt_cache_prediction.py"
+  - "litellm/proxy/common_utils/cache_aware_routing.py"
+  - "litellm/proxy/management_endpoints/prompt_cache_prediction.py"
+parent: B075
+split_from: B075
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
