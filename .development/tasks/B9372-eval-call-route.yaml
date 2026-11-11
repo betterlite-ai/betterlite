@@ -1,0 +1,78 @@
+id: B9372
+title: Eval call routing and deployment credential merge
+description: >-
+  After the pre-call step, LiteLLM's route_request picks how an eval call runs. For the eleven eval route types it never calls the router: it checks that the model isn't fully blocked, copies the credentials of the deployment the model names into the call data, and calls the SDK operation (route_llm_request.py L545-L582). No task owns that branch, so the eval routes (B3426, B3427, B3428, B096) would call the operations without the deployment's api_base and api_key, and every eval request would go to https://api.openai.com with the proxy's own key. This task writes the branch once for all eval routes, in betterlite-server.
+
+
+  Module `api::eval_call_route` (crates/betterlite-server/src/api/eval_call_route.rs, tests in eval_call_route/tests.rs).
+  `EvalCallKind` is a closed enum of the eleven route types: CreateEval, ListEvals, GetEval, UpdateEval, DeleteEval, CancelEval, CreateRun, ListRuns, GetRun, CancelRun, DeleteRun. `route_type(self)` gives B8800's `RouteType` variant (acreate_eval, alist_evals, aget_eval, aupdate_eval, adelete_eval, acancel_eval, acreate_run, alist_runs, aget_run, acancel_run, adelete_run) and `endpoint(self)` gives the ROUTE_ENDPOINT_MAPPING text from L134-L145: "/evals" for create and list eval, "/evals/{eval_id}" for get, update and delete eval, "/evals/{eval_id}/cancel", "/evals/{eval_id}/runs" for create and list run, "/evals/{eval_id}/runs/{run_id}" for get and delete run, and "/evals/{eval_id}/runs/{run_id}/cancel" for cancel run.
+  `EvalDeployments` is a trait with two reads: `credentials_for_id(&self, model_id: &str) -> Option<Map<String, Value>>`, Router.get_deployment_credentials (an exact deployment id, None when that deployment is blocked, else CredentialLiteLLMParams without null fields), and `group_params(&self, model_group: &str) -> Option<Map<String, Value>>`, the first deployment under that model_name (Router.get_deployment_by_model_group_name) with its whole litellm_params without null fields, or None when there is none, it has no litellm_params or it is blocked.
+  `EvalCallRoute` holds `deployments: Option<Arc<dyn EvalDeployments>>` (None means no router), `blocked: Arc<dyn BlockedModels>` (B8692's trait in betterlite-core's dispatch::llm_passthrough) and `user_model: Option<String>`, set by `EvalCallRoute::new`. Its one method `prepare(&self, kind: EvalCallKind, data: Map<String, Value>, team_id: Option<&str>) -> Result<Map<String, Value>, EvalRouteError>` returns the data the SDK operation gets, in LiteLLM's order:
+  1. The data has an `api_key` or `api_base` key: with a router, fail with `RouterMethodMissing`; without one, return the data unchanged.
+  2. The data has a `user_config` key: fail with `RouterMethodMissing` (LiteLLM builds a router from it and calls the same missing method).
+  3. The data has a `router_settings_override` key: with a router, `RouterMethodMissing`. Without one, remove the key, copy fallbacks, context_window_fallbacks, content_policy_fallbacks, num_retries, timeout, model_group_retry_policy, routing_strategy and enable_tag_filtering from it into the data where the data lacks them, and return the data.
+  4. With a router: when `model` is a non-empty string and `blocked.all_blocked(model, team_id)` is true, fail with `Blocked { model }`. When `model` is a non-empty string, take `credentials_for_id(model)`; when that is None or empty, take `group_params(model)`; when the result has entries, write every entry into the data, replacing what the caller sent, the model key included. Return the data.
+  5. Without a router: return the data when `user_model` is set, else fail with `NotFound { endpoint: kind.endpoint(), model }`, where model is the data's `model` string or "" when it is absent.
+  `EvalRouteError` carries what the shared exception answer needs, with LiteLLM's texts: `Blocked` is PermissionDeniedError status 403 with message "Model is blocked" and the model; `NotFound` is status 400 with detail `{"error": "<endpoint>: Invalid model name passed in model=<model>. Call `/v1/models` to view available models for your key."}`; `RouterMethodMissing` is an internal error status 500 with message "'Router' object has no attribute '<route type>'". Where B8692 already declares a type for the blocked or not-found error, use it instead of a new one.
+
+
+  Adapter, module `app::inference::eval_deployments` (crates/betterlite-server/src/app/inference/eval_deployments.rs, tests in eval_deployments/tests.rs). `RouterEvalDeployments` implements `EvalDeployments` over the shared router handles B8611 builds: credentials_for_id through B2306's get_deployment_credentials and group_params through B844's model-name index (the first index entry) and B2306's `_is_deployment_blocked`. A lookup that fails returns None, since LiteLLM wraps the whole credential lookup in `except Exception: pass`. `pub fn eval_call_route(state: &ServerState) -> Arc<EvalCallRoute>` builds the value from the server state: the adapter when a router is configured, else None, B8611's `RouteViews` as `BlockedModels`, and the user_model CLI value from B8800's CliOverrides. The route mount tasks call it once and hand the same Arc to every eval router.
+
+
+  Tests. api::eval_call_route::tests are rstest cases with fake deployments and a fake blocked check: each step above in order, api_key in the data with and without a router, user_config with and without a router, the override removed and its keys copied only when absent, a blocked model, credentials found by id, credentials found by group when the id lookup is empty, a deployment value replacing a caller value for api_base and model, no model with a router (data unchanged), no router with and without user_model, and the endpoint text in NotFound for all eleven kinds (CancelRun naming "/evals/{eval_id}/runs/{run_id}/cancel"). app::inference::eval_deployments::tests build a ServerState from a config.yaml with two deployments, one with `model_info.id` and one blocked, and check both reads and eval_call_route with and without a model_list. B096's HTTP cases prove the branch through the booted proxy.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/eval_call_route.rs
+    - crates/betterlite-server/src/api/eval_call_route/**
+    - crates/betterlite-server/src/app/inference/eval_deployments.rs
+    - crates/betterlite-server/src/app/inference/eval_deployments/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L134-L145
+    why: ROUTE_ENDPOINT_MAPPING for the eleven eval route types, including the /cancel suffix on acancel_run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L151-L159
+    why: ProxyModelNotFoundError and its detail text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L38-L73
+    why: _route_user_config_request and _raise_if_model_fully_blocked with its 403 "Model is blocked".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L493-L544
+    why: The branches before the router branch (api_key or api_base, user_config, router_settings_override) and the settings the override copies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L545-L582
+    why: The eval branch, its credential lookup by id then by group, data.update and the swallowed lookup error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L717-L725
+    why: No router and no user_model ends in ProxyModelNotFoundError named by the endpoint mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10286-L10322
+    why: get_deployment_credentials and get_deployment_by_model_group_name, the two reads behind EvalDeployments.
+dod:
+  - text: prepare follows LiteLLM's order for the eleven eval route types, merging the named deployment's credentials over the caller's values.
+    proof: [eval-call-route-tests]
+  - text: Blocked, not-found and missing-router-method outcomes carry LiteLLM's status and text, the not-found text naming the endpoint mapping's path.
+    proof: [eval-call-route-tests]
+  - text: The router adapter reads credentials by id and by group, honors blocked deployments, and eval_call_route builds the value with and without a model_list.
+    proof: [eval-deployments-tests]
+checks:
+  optional: []
+  commands:
+    - id: eval-call-route-tests
+      why: a step is missing or out of order, the merge keeps a caller value, or an error carries the wrong text or status
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_call_route::/)'
+    - id: eval-deployments-tests
+      why: the adapter reads the wrong deployment, ignores the blocked flag, or eval_call_route builds the wrong value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::eval_deployments::/)'
+oracle_cases: []
+deviations:
+  - what: A request whose data carries `user_config` fails with the 500 "'Router' object has no attribute '<route type>'" without building a router from that config, so a user_config the Router constructor would reject still gets this error instead of the constructor's.
+    why: LiteLLM builds a throwaway Router per request and then calls an eval method the Router doesn't have; betterlite has no per-request router, and the outcome a valid config gets is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L38-L50
+out_of_scope:
+  - "The rest of _route_request_single_attempt that every route type runs (the required-param check, the shared aiohttp session, the mock-testing param gate, enable_tag_filtering removal) and the model registry read-through retry around it: B004 and B014, as B7430 records; the read-through itself is B8231."
+  - "The eleven SDK operations prepare feeds: B3421 to B3425. The routes that call prepare: B3426, B3427, B3428 and B096."
+  - "get_deployment_credentials and _is_deployment_blocked: B2306. The model-name index: B844. The shared router handles and RouteViews: B8611. BlockedModels: B8692."
+pitfalls:
+  - "LiteLLM's comment says the merge doesn't override user-provided values, but the code is `data.update(deployment_creds)`, so the deployment's api_base, api_key and model replace the caller's."
+  - "The group lookup returns the deployment's whole litellm_params (model, custom_llm_provider and every non-null setting), while the id lookup returns only the CredentialLiteLLMParams fields; the two shapes differ on purpose."
+  - "acancel_run's endpoint text is \"/evals/{eval_id}/runs/{run_id}/cancel\" although the proxy route has no /cancel suffix; the not-found message must keep the mapping's text."
+  - "With a router, an eval request that sends api_key or api_base in its body fails with 500, because LiteLLM calls the eval method on the Router object, which has none."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

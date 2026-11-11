@@ -154,7 +154,7 @@ out_of_scope:
   - 'add_guardrail_to_applied_guardrails_header; owned by unresolved applied-guardrail header owner (A).'
   - 'add_litellm_callback and callback registration; owned by unresolved callback owner (R).'
   - 'Legacy Lakera moderation logic (the _check method and hooks calling it); belong to B3755 and B3779.'
-  - 'Framework lifecycle and registration beyond initialize_guardrail; belongs to B107.'
+  - 'Framework lifecycle and registration beyond initialize_guardrail; belongs to B3664, B8666 and B8521.'
 pitfalls:
   - Javelin get_secret_str is called for api_key; it returns empty string if not set, unlike get_secret which may raise. Test handles both cases.
   - Javelin's rejection status is hardcoded 500, not 400; oracle cases and tests must use status 500.

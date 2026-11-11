@@ -29,7 +29,10 @@ description: >-
   for litellm_settings success_callback, failure_callback and callbacks, register each string once for its events (known
   custom-logger callbacks per event, others into the success, failure or both lists when missing), remember what each
   registration added or displaced, and undo registrations whose entry left the settings. Router settings: apply the
-  router_settings row to its store and, when the resolved settings are not empty, update the router; invalid
+  router_settings row to its store and, when the resolved settings are not empty, update the router with B9711's
+  RouterRuntimeSettings::update_settings, implementing its RouterSettingsTarget over the live router. As in
+  proxy_server.py L7748-L7759, apply all pairs except routing_groups first, then routing_groups alone, and log and
+  skip only a RouterSettingsError::Target from init_routing_groups; invalid
   routing_groups log "Ignoring invalid router_settings.routing_groups from config/DB, all other router settings still
   apply..." and the rest still applies.
 
