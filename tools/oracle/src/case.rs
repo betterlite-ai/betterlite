@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
+use crate::config_include_fixtures;
 use crate::websocket_oracle::{
     OracleLimits,
     decode::{FilesystemFixtures, decode_ws_case},
@@ -33,6 +34,8 @@ pub(crate) use load::{
 pub struct Case {
     pub(crate) name: String,
     pub(crate) config: String,
+    #[serde(default)]
+    pub(crate) config_files: BTreeMap<String, String>,
     pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) native_feature_eligibility: bool,
@@ -225,6 +228,9 @@ pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
     group::validate_common(path, &case.common())?;
+    config_include_fixtures::validate(path, &case.config_files, |document| {
+        config_inspection::requests_license(path, document)
+    })?;
     validate_request_or_steps(path, case)
 }
 
