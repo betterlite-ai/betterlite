@@ -95,7 +95,7 @@ fn config() -> SapChatConfig {
     }
 }
 
-const SERVICE_KEY: &str = r#"{"client_id":"id","client_secret":"secret","auth_url":"https://auth.example.com/oauth/token","base_url":"https://api.example.com/v2"}"#;
+const SERVICE_KEY: &str = r#"{"clientid":"id","clientsecret":"secret","url":"https://auth.example.com/oauth/token","serviceurls":{"AI_API_URL":"https://api.example.com/v2"},"resource_group":"key-rg"}"#;
 
 #[test]
 fn supported_params_list_the_full_set_in_order() {
@@ -461,8 +461,7 @@ fn a_fallback_module_that_is_not_an_object_is_rejected() {
 
 #[test]
 fn environment_returns_only_the_four_sap_headers() {
-    let environment = FakeEnvironment::default().home("/nowhere");
-    let call = config().prepare(None, &environment).unwrap();
+    let call = config().prepare().unwrap();
     let headers = call.headers;
     assert_eq!(headers.len(), 4);
     assert_eq!(headers.get("authorization").unwrap(), "Bearer case-token");
@@ -473,37 +472,42 @@ fn environment_returns_only_the_four_sap_headers() {
 }
 
 #[test]
-fn environment_checks_the_credentials_a_service_key_names() {
+fn setup_returns_none_when_no_service_key_is_given() {
     let environment = FakeEnvironment::default().home("/nowhere");
-    let service_key = Json::Text(SERVICE_KEY.to_owned());
-    let call = config().prepare(Some(&service_key), &environment).unwrap();
-    assert_eq!(call.headers.len(), 4);
+    let absent = SapChatConfig::setup(None, &environment).unwrap();
+    assert!(absent.is_none());
+    let empty = Json::Text(String::new());
+    let empty_key = SapChatConfig::setup(Some(&empty), &environment).unwrap();
+    assert!(
+        empty_key.is_none(),
+        "an empty service key does not run the setup"
+    );
 }
 
 #[test]
-fn environment_uses_the_configured_credentials_when_no_service_key_is_given() {
+fn a_service_key_supplies_the_resource_group_for_the_headers() {
     let environment = FakeEnvironment::default().home("/nowhere");
-    let call = config().prepare(None, &environment).unwrap();
-    assert_eq!(
-        call.headers.get("authorization").unwrap(),
-        "Bearer case-token"
-    );
-    let empty = config()
-        .prepare(Some(&json(r#""""#)), &environment)
+    let service_key = Json::Text(SERVICE_KEY.to_owned());
+    let credentials = SapChatConfig::setup(Some(&service_key), &environment)
+        .unwrap()
         .unwrap();
-    assert_eq!(
-        empty.headers.get("authorization").unwrap(),
-        "Bearer case-token"
-    );
+    assert_eq!(credentials.resource_group, "key-rg");
+    let call = SapChatConfig {
+        token: SecretString::from("Bearer case-token"),
+        resource_group: credentials.resource_group,
+        deployment_url: String::from("https://dep.example.com/v2"),
+    }
+    .prepare()
+    .unwrap();
+    assert_eq!(call.headers.get("ai-resource-group").unwrap(), "key-rg");
+    assert_ne!(call.headers.get("ai-resource-group").unwrap(), "rg1");
 }
 
 #[test]
 fn environment_turns_missing_credentials_into_a_400() {
     let environment = FakeEnvironment::default().home("/nowhere");
     let empty_key = Json::Text(String::from("{}"));
-    let error = config()
-        .prepare(Some(&empty_key), &environment)
-        .unwrap_err();
+    let error = SapChatConfig::setup(Some(&empty_key), &environment).unwrap_err();
     assert!(matches!(error, SapChatError::Orchestration(_)));
     assert_eq!(error.status(), Some(CREDENTIALS_STATUS));
 }
@@ -513,9 +517,7 @@ fn environment_does_not_wrap_other_setup_failures() {
     let environment = FakeEnvironment::default()
         .home("/nowhere")
         .with_var("AICORE_CONFIG", "/missing/config.json");
-    let error = config()
-        .prepare(Some(&json("x")), &environment)
-        .unwrap_err();
+    let error = SapChatConfig::setup(Some(&json("x")), &environment).unwrap_err();
     assert!(matches!(error, SapChatError::Auth(_)));
     assert_eq!(error.status(), None);
 }
@@ -527,11 +529,8 @@ fn environment_turns_incomplete_credentials_into_a_400() {
         .with_var("AICORE_CLIENT_ID", "id")
         .with_var("AICORE_AUTH_URL", "https://auth.example.com/oauth/token")
         .with_var("AICORE_BASE_URL", "https://api.example.com/v2");
-    let empty = config().prepare(Some(&json(r#""""#)), &environment);
-    assert!(empty.is_ok(), "an empty service key does not run the setup");
-    let with_key = config()
-        .prepare(Some(&json(r#"{"client_id":"id"}"#)), &environment)
-        .unwrap_err();
+    let with_key =
+        SapChatConfig::setup(Some(&json(r#"{"client_id":"id"}"#)), &environment).unwrap_err();
     assert_eq!(with_key.status(), Some(CREDENTIALS_STATUS));
 }
 

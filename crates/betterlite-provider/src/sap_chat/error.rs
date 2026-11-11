@@ -17,21 +17,16 @@ pub enum SapChatError {
     Orchestration(#[from] SapOrchestrationError),
     #[error("{0}")]
     Fallback(&'static str),
-    #[error("`tools` must be a list")]
-    Tools,
-    #[error("`response_format` must be an object")]
-    ResponseFormat,
-    #[error("`placeholder_defaults` must be an object")]
-    PlaceholderDefaults,
-    #[error("`stream_options` must be an object")]
-    StreamOptions,
+    #[error("{0}")]
+    Field(&'static str),
     #[error("the SAP orchestration response is not the JSON a completion returns")]
     Response(#[source] JsonError),
 }
 
 impl SapChatError {
     // LiteLLM wraps a credentials ValueError as a 400 and lets every other setup failure through
-    pub(crate) fn credentials(error: SapAuthError) -> Self {
+    #[must_use]
+    pub fn credentials(error: SapAuthError) -> Self {
         let wrapped = matches!(
             error,
             SapAuthError::NoCredentials

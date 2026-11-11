@@ -1,8 +1,8 @@
-import io
 import json
 import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, cast
@@ -64,26 +64,11 @@ def patched_environment(call: dict[str, Json]) -> Generator[None, None, None]:
         name: string_value(value, name)
         for name, value in object_value(environment.get("vars") or {}, "vars").items()
     }
-    files = {
-        name: string_value(value, name)
-        for name, value in object_value(environment.get("files") or {}, "files").items()
-    }
     home = optional_string(environment.get("home")) or DEFAULT_HOME
-
-    def exists(path: Path) -> bool:
-        return str(path) in files
-
-    def open_path(path: Path, *_args: object, **_kwargs: object) -> io.StringIO:
-        data = files.get(str(path))
-        if data is None:
-            raise FileNotFoundError(str(path))
-        return io.StringIO(data)
-
     with (
         patch.dict(os.environ, variables, clear=True),
         patch.object(sap_credentials, "DEFAULT_HOME_PATH", str(Path(home) / ".aicore")),
-        patch.object(Path, "exists", exists),
-        patch.object(Path, "open", open_path),
+        patch.object(Path, "exists", return_value=False),
         patch.object(litellm, "sap_service_key", None),
     ):
         yield
@@ -99,23 +84,13 @@ def fixed_token_creator(
     return (lambda: token), base_url, resource_group
 
 
-def creator_for(
-    call: dict[str, Json], fallback: str = AUTHORIZATION
-) -> Callable[..., tuple[Callable[[], str], str, str]]:
-    return partial(
-        fixed_token_creator,
-        session_field(call, "token", fallback),
-        session_field(call, "base_url", BASE_URL),
-        session_field(call, "resource_group", RESOURCE_GROUP),
-    )
+def fixed_token_request(**_kwargs: object) -> tuple[str, datetime]:
+    return AUTHORIZATION, datetime.now(UTC) + timedelta(hours=2)
 
 
 @contextmanager
-def patched_creator(call: dict[str, Json]) -> Generator[None, None, None]:
-    if call.get("session") is None:
-        yield
-        return
-    with patch.object(sap_chat, "get_token_creator", creator_for(call)):
+def patched_token_request() -> Generator[None, None, None]:
+    with patch.object(sap_credentials, "_request_token", fixed_token_request):
         yield
 
 
@@ -127,7 +102,7 @@ def header_pairs(headers: dict[str, str]) -> Json:
 
 def chat_environment(call: dict[str, Json]) -> Json:
     service_key = optional_string(call.get("service_key"))
-    with patched_environment(call), patched_creator(call):
+    with patched_environment(call), patched_token_request():
         config = sap_chat.GenAIHubOrchestrationConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
         config.__dict__["deployment_url"] = session_field(call, "deployment_url")  # pyright: ignore[reportUnknownMemberType,reportIndexIssue]
         headers = cast(
@@ -238,7 +213,13 @@ def chat_response(call: dict[str, Json]) -> Json:
 
 
 def embedding_config(call: dict[str, Json]) -> sap_embed.GenAIHubEmbeddingConfig:
-    with patch.object(sap_embed, "get_token_creator", creator_for(call)):
+    creator = partial(
+        fixed_token_creator,
+        session_field(call, "token", AUTHORIZATION),
+        session_field(call, "base_url", BASE_URL),
+        session_field(call, "resource_group", RESOURCE_GROUP),
+    )
+    with patch.object(sap_embed, "get_token_creator", creator):
         config = sap_embed.GenAIHubEmbeddingConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
     config.__dict__["deployment_url"] = session_field(call, "deployment_url")  # pyright: ignore[reportUnknownMemberType,reportIndexIssue]
     return config
@@ -251,6 +232,16 @@ def embedding_call(call: dict[str, Json]) -> Json:
         headers = cast(dict[str, str], config.validate_environment({}))  # pyright: ignore[reportUnknownMemberType]
         url = config.get_complete_url(None, None, "m", {}, {}, None)  # pyright: ignore[reportUnknownMemberType]
         return {"headers": header_pairs(headers), "url": url}
+    if function == "map_params":
+        return cast(
+            Json,
+            config.map_openai_params(  # pyright: ignore[reportUnknownMemberType]
+                cast(dict[str, Json], call.get("non_default_params") or {}),
+                cast(dict[str, Json], call.get("optional_params") or {}),
+                string_value(call.get("model"), "model"),
+                bool(call.get("drop_params")),
+            ),
+        )
     if function == "response":
         response = config.transform_embedding_response(  # pyright: ignore[reportUnknownMemberType]
             model="m",

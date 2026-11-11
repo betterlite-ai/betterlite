@@ -9,36 +9,6 @@ use crate::sap_models::validate_masking_module;
 
 const INPUT_TYPES: [&str; 3] = ["text", "document", "query"];
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(try_from = "i64")]
-pub struct EmbeddingTimeout(i64);
-
-impl TryFrom<i64> for EmbeddingTimeout {
-    type Error = SapEmbeddingError;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        if !(1..=600).contains(&value) {
-            return Err(SapEmbeddingError::Timeout);
-        }
-        Ok(Self(value))
-    }
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(try_from = "i64")]
-pub struct EmbeddingRetries(i64);
-
-impl TryFrom<i64> for EmbeddingRetries {
-    type Error = SapEmbeddingError;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        if !(0..=5).contains(&value) {
-            return Err(SapEmbeddingError::MaxRetries);
-        }
-        Ok(Self(value))
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EmbeddingModel {
     pub name: String,
@@ -47,9 +17,9 @@ pub struct EmbeddingModel {
     #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
     pub params: Field<Object>,
     #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
-    pub timeout: Field<EmbeddingTimeout>,
+    pub timeout: Field<i64>,
     #[serde(default, with = "optional", skip_serializing_if = "Option::is_none")]
-    pub max_retries: Field<EmbeddingRetries>,
+    pub max_retries: Field<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -119,10 +89,26 @@ fn model_fields(model: &str, optional_params: &Object) -> Result<Object, SapEmbe
             .get(name)
             .filter(|value| !matches!(value, Json::Null))
         {
+            bounds(name, given)?;
             fields.insert(name.to_owned(), given.clone());
         }
     }
     Ok(fields)
+}
+
+fn bounds(name: &str, given: &Json) -> Result<(), SapEmbeddingError> {
+    let number = match given {
+        Json::Number(number) => number.as_i64(),
+        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
+    };
+    let (low, high, error) = match name {
+        "timeout" => (1, 600, SapEmbeddingError::Timeout),
+        _ => (0, 5, SapEmbeddingError::MaxRetries),
+    };
+    if number.is_some_and(|value| (low..=high).contains(&value)) {
+        return Ok(());
+    }
+    Err(error)
 }
 
 pub fn transform_embedding_request(

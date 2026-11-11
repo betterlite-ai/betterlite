@@ -23,17 +23,21 @@ fn prompt_parts(model_name: &str, params: &mut Object) -> Result<PromptParts, Sa
             .iter()
             .map(validate_chat_completion_tool)
             .collect::<Result<Vec<_>, _>>()?,
-        Some(_) => return Err(SapChatError::Tools),
+        Some(_) => return Err(SapChatError::Field("`tools` must be a list")),
     };
     let format = match params.shift_remove("response_format") {
         None | Some(Json::Null) => None,
         Some(given @ Json::Object(_)) => response_format(&given)?,
-        Some(_) => return Err(SapChatError::ResponseFormat),
+        Some(_) => return Err(SapChatError::Field("`response_format` must be an object")),
     };
     let defaults = match params.shift_remove("placeholder_defaults") {
         None | Some(Json::Null) => None,
         Some(Json::Object(fields)) => (!fields.is_empty()).then_some(fields),
-        Some(_) => return Err(SapChatError::PlaceholderDefaults),
+        Some(_) => {
+            return Err(SapChatError::Field(
+                "`placeholder_defaults` must be an object",
+            ));
+        }
     };
     Ok((version, tools, format, defaults))
 }

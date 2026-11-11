@@ -8,7 +8,7 @@ use secrecy::SecretString;
 
 use super::environment::SapEmbeddingConfig;
 use super::error::{SapEmbeddingError, get_error_class};
-use super::params::get_supported_openai_params;
+use super::params::{get_supported_openai_params, map_openai_params};
 use super::request::transform_embedding_request;
 use super::response::transform_embedding_response;
 
@@ -37,6 +37,21 @@ fn supported_params_include_dimensions_only_for_text_embedding_3() {
     assert_eq!(
         get_supported_openai_params("text-embedding-ada-002"),
         vec!["encoding_format"]
+    );
+}
+
+#[test]
+fn map_openai_params_returns_optional_params_unchanged() {
+    let optional = object(r#"{"encoding_format":"float","dimensions":3,"type":"text"}"#);
+    let non_default = object(r#"{"encoding_format":"base64","dimensions":5}"#);
+    assert_eq!(
+        map_openai_params(
+            &non_default,
+            optional.clone(),
+            "text-embedding-3-large",
+            true
+        ),
+        optional
     );
 }
 

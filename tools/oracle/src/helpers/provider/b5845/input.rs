@@ -54,7 +54,6 @@ pub(crate) struct SessionInput {
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct EnvironmentInput {
     vars: BTreeMap<String, String>,
-    files: BTreeMap<String, String>,
     home: Option<String>,
 }
 
@@ -75,6 +74,15 @@ pub(crate) enum EmbeddingCall {
         input: EmbeddingInput,
         #[serde(default)]
         optional_params: Object,
+    },
+    MapParams {
+        model: String,
+        #[serde(default)]
+        non_default_params: Object,
+        #[serde(default)]
+        optional_params: Object,
+        #[serde(default)]
+        drop_params: bool,
     },
     Prepare {
         session: Option<SessionInput>,
@@ -118,16 +126,15 @@ impl SapEnvironment for FixtureEnvironment<'_> {
         self.input.vars.get(name).cloned()
     }
 
-    fn file_exists(&self, path: &Path) -> bool {
-        path.to_str()
-            .is_some_and(|text| self.input.files.contains_key(text))
+    fn file_exists(&self, _path: &Path) -> bool {
+        false
     }
 
     fn read_file(&self, path: &Path) -> Result<String, io::Error> {
-        path.to_str()
-            .and_then(|text| self.input.files.get(text))
-            .cloned()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            path.display().to_string(),
+        ))
     }
 
     fn home_dir(&self) -> PathBuf {

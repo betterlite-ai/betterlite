@@ -101,7 +101,7 @@ fn stream_options(value: Option<Json>) -> Result<Object, SapChatError> {
         return Ok(Object::new());
     };
     let Json::Object(fields) = options else {
-        return Err(SapChatError::StreamOptions);
+        return Err(SapChatError::Field("`stream_options` must be an object"));
     };
     let mut stream = Object::new();
     for name in ["chunk_size", "delimiters"] {

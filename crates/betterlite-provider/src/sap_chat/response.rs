@@ -47,9 +47,7 @@ pub fn transform_response(
     let mut response = serde_json::from_str::<ChatReply>(input.raw_response)
         .map_err(SapChatError::Response)?
         .final_result;
-    if wants_fence_strip(input.model, input.response_format) {
-        strip_markdown_json(&mut response);
-    }
+    strip_markdown_json(&mut response, input.model, input.response_format);
     Ok(response)
 }
 
@@ -59,18 +57,14 @@ pub const fn get_model_response_iterator(sync_stream: bool) -> Mode {
     if sync_stream { Mode::Sync } else { Mode::Async }
 }
 
-fn wants_fence_strip(model: &str, response_format: Option<&Json>) -> bool {
-    if !model.starts_with("anthropic") {
-        return false;
-    }
+fn strip_markdown_json(response: &mut ChatResponse, model: &str, response_format: Option<&Json>) {
     let kind = response_format
         .and_then(Json::as_object)
         .and_then(|fields| fields.get("type"))
         .and_then(Json::as_str);
-    kind.is_some_and(|name| JSON_FORMATS.contains(&name))
-}
-
-fn strip_markdown_json(response: &mut ChatResponse) {
+    if !model.starts_with("anthropic") || !kind.is_some_and(|name| JSON_FORMATS.contains(&name)) {
+        return;
+    }
     let Ok(pattern) = Regex::new(FENCE_PATTERN) else {
         return;
     };

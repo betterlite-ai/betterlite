@@ -10,7 +10,9 @@ use betterlite_provider::sap_chat::response::{
 };
 use betterlite_provider::sap_embedding::environment::SapEmbeddingConfig;
 use betterlite_provider::sap_embedding::error::get_error_class;
-use betterlite_provider::sap_embedding::params::get_supported_openai_params as embedding_params;
+use betterlite_provider::sap_embedding::params::{
+    get_supported_openai_params as embedding_params, map_openai_params,
+};
 use betterlite_provider::sap_embedding::request::transform_embedding_request;
 use betterlite_provider::sap_embedding::response::transform_embedding_response;
 use http::HeaderMap;
@@ -166,10 +168,8 @@ fn header_pairs(headers: &HeaderMap) -> Value {
     let mut pairs: Vec<(String, String)> = headers
         .iter()
         .map(|(name, value)| {
-            (
-                name.as_str().to_owned(),
-                value.to_str().unwrap_or_default().to_owned(),
-            )
+            let text = value.to_str().unwrap_or_default().to_owned();
+            (name.as_str().to_owned(), text)
         })
         .collect();
     pairs.sort();
@@ -182,18 +182,23 @@ fn header_pairs(headers: &HeaderMap) -> Value {
 }
 
 fn environment_outcome(call: &EnvironmentCall) -> Value {
-    let (token, resource_group, deployment_url) = session_parts(call.session.as_ref());
-    let config = SapChatConfig {
-        token,
-        resource_group,
-        deployment_url,
-    };
     let environment = FixtureEnvironment {
         input: &call.environment,
     };
+    let credentials = match SapChatConfig::setup(call.service_key.as_ref(), &environment) {
+        Ok(found) => found,
+        Err(error) => return failure(error.status()),
+    };
+    let (token, resource_group, deployment_url) = session_parts(call.session.as_ref());
+    // the key's base_url drives the deployment lookup in B8331; this helper uses the case's URL
+    let config = SapChatConfig {
+        token,
+        resource_group: credentials.map_or(resource_group, |found| found.resource_group),
+        deployment_url,
+    };
     prepared_outcome(
         config
-            .prepare(call.service_key.as_ref(), &environment)
+            .prepare()
             .map(|prepared| (prepared.headers, prepared.url))
             .map_err(|error| error.status()),
     )
@@ -213,6 +218,20 @@ fn embedding_call_output(call: &EmbeddingCall) -> Value {
             optional_params,
         } => transform_embedding_request(model, input, optional_params)
             .map_or_else(|_| failure(None), |body| succeeded(&json!(body))),
+        EmbeddingCall::MapParams {
+            model,
+            non_default_params,
+            optional_params,
+            drop_params,
+        } => {
+            let mapped = map_openai_params(
+                non_default_params,
+                optional_params.clone(),
+                model,
+                *drop_params,
+            );
+            succeeded(&json!(mapped))
+        }
         EmbeddingCall::Prepare { session } => {
             let (token, resource_group, deployment_url) = session_parts(session.as_ref());
             let config = SapEmbeddingConfig {
