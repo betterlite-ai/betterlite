@@ -1,0 +1,11 @@
+kind: helper
+name: call-helpers-metadata-bucket
+call:
+  call_helpers:
+    function: metadata_bucket
+    steps:
+      - {}
+      - {metadata: {a: 1}}
+      - {litellm_metadata: {}}
+env: {}
+compare: {ignore: []}

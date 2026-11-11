@@ -1,0 +1,13 @@
+kind: helper
+name: full-model-metadata-provider-overlay
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        fixture/model: {litellm_provider: xai, mode: chat, supports_web_search: false}
+      cache_maxsize: 4
+    steps:
+      - {op: call, model: fixture/model, custom_llm_provider: xai, parameters: {kind: absent}}
+      - {op: helper_call, model: fixture/model, custom_llm_provider: xai}
+env: {}
+compare: {ignore: []}
