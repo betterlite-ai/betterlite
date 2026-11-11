@@ -591,19 +591,30 @@ fn error_class_mapping() {
         Some(vec![("retry-after".to_owned(), "1".to_owned())])
     );
     assert_eq!(class.headers, Some(headers));
-    let mapped = error_class(
-        "bad".to_owned(),
-        400,
-        ErrorHeaders::Mapping(vec![
-            ("x-bytes".to_owned(), HeaderValue::Bytes(b"ok".to_vec())),
-            ("x-count".to_owned(), HeaderValue::Integer(2)),
-        ]),
-    )
-    .expect("the headers are ASCII");
+    let mapping = ErrorHeaders::Mapping(vec![
+        ("x-text".to_owned(), HeaderValue::Text("kept".to_owned())),
+        ("x-bytes".to_owned(), HeaderValue::Bytes(b"ok".to_vec())),
+        ("x-count".to_owned(), HeaderValue::Integer(2)),
+    ]);
+    let mapped =
+        error_class("bad".to_owned(), 400, mapping.clone()).expect("the headers are ASCII");
     assert_eq!(mapped.error.status_code, 400);
     assert_eq!(
         mapped.error.headers,
-        Some(vec![("x-bytes".to_owned(), "ok".to_owned())])
+        Some(vec![("x-text".to_owned(), "kept".to_owned())]),
+        "the provider error keeps text headers only"
+    );
+    assert_eq!(
+        mapped.response_headers,
+        vec![
+            ("x-text".to_owned(), "kept".to_owned()),
+            ("x-bytes".to_owned(), "ok".to_owned()),
+        ]
+    );
+    assert_eq!(
+        mapped.headers,
+        Some(mapping),
+        "the typed headers stay whole"
     );
 }
 
