@@ -1,12 +1,14 @@
 import os
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
 from uuid import UUID
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1691
 from litellm.llms.bedrock.chat.agentcore.transformation import AmazonAgentCoreConfig
 
 Json: TypeAlias = bool | int | float | str | list["Json"] | dict[str, "Json"] | None
+Params: TypeAlias = dict[str, Json]
+Headers: TypeAlias = dict[str, str]
 
 SESSION_HEADER = "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id"
 GENERATED_SESSION_PREFIX = "litellm-session-"
@@ -15,14 +17,14 @@ GENERATED_SESSION_PREFIX = "litellm-session-"
 class UrlRun(TypedDict):
     model: str
     api_base: NotRequired[str | None]
-    optional_params: NotRequired[dict[str, Json]]
+    optional_params: NotRequired[Params]
 
 
 class TransformRun(TypedDict):
     model: str
     messages: list[Json]
-    optional_params: NotRequired[dict[str, Json]]
-    litellm_params: NotRequired[dict[str, Json]]
+    optional_params: NotRequired[Params]
+    litellm_params: NotRequired[Params]
     headers: NotRequired[list[tuple[str, str]]]
     uuid: str
 
@@ -43,8 +45,8 @@ class SignRun(TypedDict):
     model: str
     api_base: str
     headers: NotRequired[list[tuple[str, str]]]
-    optional_params: NotRequired[dict[str, Json]]
-    request_data: dict[str, Json]
+    optional_params: NotRequired[Params]
+    request_data: Params
     api_key: NotRequired[str | None]
     configured_bearer: NotRequired[str | None]
     credentials: CredentialRun
@@ -68,7 +70,7 @@ class TransformScenario(TypedDict):
 
 class StreamBodyPolicy(TypedDict):
     scenario: Literal["stream_body_policy"]
-    optional_params: dict[str, Json]
+    optional_params: Params
     headers: list[tuple[str, str]]
     error: ErrorRun
 
@@ -81,6 +83,52 @@ class SignScenario(TypedDict):
 Input: TypeAlias = (
     RuntimeArnRequired | UrlScenario | TransformScenario | StreamBodyPolicy | SignScenario
 )
+
+
+class ResponseLike(Protocol):
+    status_code: int
+
+
+class ErrorLike(Protocol):
+    status_code: int
+    status_code_is_synthesized: bool
+    headers: Params
+    response: ResponseLike
+
+
+class AgentCoreApi(Protocol):
+    def get_complete_url(
+        self, base: str | None, key: str | None, model: str, params: Params, extra: Params, /
+    ) -> str: ...
+
+    def transform_request(
+        self, model: str, messages: list[Json], params: Params, extra: Params, headers: Headers, /
+    ) -> Params: ...
+
+    def sign_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L116
+        self,
+        headers: Headers,
+        params: Params,
+        data: Params,
+        base: str,
+        key: str | None,
+        model: str | None,
+        /,
+    ) -> tuple[Headers, bytes | None]: ...
+
+    def get_supported_openai_params(self, model: str, /) -> list[str]: ...
+
+    def map_openai_params(
+        self, non_default: Params, params: Params, model: str, /, *, drop_params: bool
+    ) -> Params: ...
+
+    def validate_environment(
+        self, headers: Headers, model: str, messages: list[Json], params: Params, extra: Params, /
+    ) -> Headers: ...
+
+    def get_error_class(self, message: str, status: int, headers: Headers, /) -> ErrorLike: ...
+
+    def should_fake_stream(self, model: str | None, /, *, stream: bool | None) -> bool: ...
 
 
 class FrozenClock:
@@ -99,53 +147,38 @@ def _error_kind(message: str) -> str:
     raise ValueError(message)
 
 
-def _url_result(config: AmazonAgentCoreConfig, run: UrlRun) -> Json:
+def _url_result(config: AgentCoreApi, run: UrlRun) -> Json:
     api_base = run.get("api_base")
     run_params = run.get("optional_params")
-    optional_params: dict[str, Json] = {} if run_params is None else dict(run_params)
-    litellm_params: dict[str, Json] = {}
+    optional_params: Params = {} if run_params is None else dict(run_params)
+    litellm_params: Params = {}
     try:
-        url: str = config.get_complete_url(
-            api_base=api_base,
-            api_key=None,
-            model=run["model"],
-            optional_params=optional_params,
-            litellm_params=litellm_params,
-        )
+        url = config.get_complete_url(api_base, None, run["model"], optional_params, litellm_params)
     except ValueError as error:
         return {"api_base": api_base, "ok": False, "error": _error_kind(str(error))}
     return {"api_base": api_base, "ok": True, "url": url}
 
 
-def _transform_result(config: AmazonAgentCoreConfig, run: TransformRun) -> Json:
+def _transform_result(config: AgentCoreApi, run: TransformRun) -> Json:
     run_headers = run.get("headers")
-    headers: dict[str, str] = {} if run_headers is None else dict(run_headers)
+    headers: Headers = {} if run_headers is None else dict(run_headers)
     run_params = run.get("optional_params")
-    optional_params: dict[str, Json] = {} if run_params is None else dict(run_params)
+    optional_params: Params = {} if run_params is None else dict(run_params)
     run_litellm_params = run.get("litellm_params")
-    litellm_params: dict[str, Json] = {} if run_litellm_params is None else dict(run_litellm_params)
+    litellm_params: Params = {} if run_litellm_params is None else dict(run_litellm_params)
     try:
-        payload: dict[str, Json] = config.transform_request(
-            model=run["model"],
-            messages=run["messages"],  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L208
-            optional_params=optional_params,
-            litellm_params=litellm_params,
-            headers=headers,
+        payload = config.transform_request(
+            run["model"], run["messages"], optional_params, litellm_params, headers
         )
     except IndexError:
         return {"ok": False, "model": run["model"], "error": "empty_messages"}
     if not optional_params.get("runtimeSessionId"):
         UUID(headers[SESSION_HEADER].removeprefix(GENERATED_SESSION_PREFIX))
         headers[SESSION_HEADER] = f"{GENERATED_SESSION_PREFIX}{run['uuid']}"
-    return {
-        "ok": True,
-        "model": run["model"],
-        "payload": payload,
-        "headers": dict[str, Json](headers),
-    }
+    return {"ok": True, "model": run["model"], "payload": payload, "headers": Params(headers)}
 
 
-def _sign_result(config: AmazonAgentCoreConfig, run: SignRun) -> Json:
+def _sign_result(config: AgentCoreApi, run: SignRun) -> Json:
     os.environ.clear()
     os.environ["AWS_CONFIG_FILE"] = os.devnull
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = os.devnull
@@ -155,22 +188,22 @@ def _sign_result(config: AmazonAgentCoreConfig, run: SignRun) -> Json:
     frozen = datetime.fromtimestamp(run["now"], tz=UTC).replace(tzinfo=None)
     botocore.auth.get_current_datetime = FrozenClock(frozen)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1691
     run_params = run.get("optional_params")
-    optional_params: dict[str, Json] = {} if run_params is None else dict(run_params)
+    optional_params: Params = {} if run_params is None else dict(run_params)
     optional_params["aws_access_key_id"] = run["credentials"]["access_key_id"]
     optional_params["aws_secret_access_key"] = run["credentials"]["secret_access_key"]
     session_token = run["credentials"].get("session_token")
     if session_token is not None:
         optional_params["aws_session_token"] = session_token
     run_headers = run.get("headers")
-    request_headers: dict[str, str] = {} if run_headers is None else dict(run_headers)
+    request_headers: Headers = {} if run_headers is None else dict(run_headers)
     try:
-        signed: tuple[dict[str, str], bytes | None] = config.sign_request(
-            headers=request_headers,
-            optional_params=optional_params,
-            request_data=run["request_data"],
-            api_base=run["api_base"],
-            api_key=run.get("api_key"),
-            model=run["model"],
+        signed = config.sign_request(
+            request_headers,
+            optional_params,
+            run["request_data"],
+            run["api_base"],
+            run.get("api_key"),
+            run["model"],
         )
     except ValueError as error:
         return {"ok": False, "error": _error_kind(str(error))}
@@ -179,58 +212,65 @@ def _sign_result(config: AmazonAgentCoreConfig, run: SignRun) -> Json:
         "ok": True,
         "method": "POST",
         "url": run["api_base"],
-        "headers": dict[str, Json](headers),
+        "headers": Params(headers),
         "body": "" if body is None else body.decode(),
     }
 
 
-def _stream_body_result(config: AmazonAgentCoreConfig, case: StreamBodyPolicy) -> Json:
-    optional_params: dict[str, Json] = dict(case["optional_params"])
-    request_headers: dict[str, str] = dict(case["headers"])
-    error_headers: dict[str, str] = dict(case["error"]["headers"])
-    supported: list[str] = config.get_supported_openai_params(model="agentcore")
+def _stream_body_result(config: AgentCoreApi, case: StreamBodyPolicy, stream_flags: Params) -> Json:
+    optional_params: Params = dict(case["optional_params"])
+    request_headers: Headers = dict(case["headers"])
+    error_headers: Headers = dict(case["error"]["headers"])
+    supported = config.get_supported_openai_params("agentcore")
     no_messages: list[Json] = []
-    no_litellm_params: dict[str, Json] = {}
-    mapped: dict[str, Json] = config.map_openai_params(
+    no_litellm_params: Params = {}
+    mapped = config.map_openai_params(
         no_litellm_params, optional_params, "agentcore", drop_params=False
     )
-    validated: dict[str, str] = config.validate_environment(
-        request_headers,
-        "agentcore",
-        no_messages,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L1063
-        optional_params,
-        no_litellm_params,
+    validated = config.validate_environment(
+        request_headers, "agentcore", no_messages, optional_params, no_litellm_params
     )
     error = config.get_error_class(case["error"]["message"], case["error"]["status"], error_headers)
     return {
         "supported": list[Json](supported),
         "mapped": mapped,
-        "has_custom_stream_wrapper": config.has_custom_stream_wrapper,
-        "supports_stream_param_in_request_body": config.supports_stream_param_in_request_body,
-        "should_fake_stream": config.should_fake_stream(model="agentcore", stream=True),
-        "headers": dict[str, Json](validated),
+        **stream_flags,
+        "should_fake_stream": config.should_fake_stream("agentcore", stream=True),
+        "headers": Params(validated),
         "error": {
             "status_code": error.status_code,
             "status_code_is_synthesized": error.status_code_is_synthesized,
-            "headers": cast(dict[str, Json], error.headers),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L55
+            "headers": error.headers,
             "response_status": error.response.status_code,
         },
     }
 
 
 def run(input_value: Input) -> Json:
-    config: AmazonAgentCoreConfig = AmazonAgentCoreConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L47
+    agent = AmazonAgentCoreConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L47
+    config: AgentCoreApi = agent  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L47
+    results: list[Json]
     if input_value["scenario"] == "runtime_arn_required":
-        models = input_value["models"]
-        return {"results": [_url_result(config, {"model": model}) for model in models]}
-    if input_value["scenario"] == "arn_region" or input_value["scenario"] == "qualifier_query":
-        return {"results": [_url_result(config, item) for item in input_value["runs"]]}
-    if (
+        results = [_url_result(config, {"model": model}) for model in input_value["models"]]
+    elif input_value["scenario"] == "arn_region" or input_value["scenario"] == "qualifier_query":
+        results = [_url_result(config, item) for item in input_value["runs"]]
+    elif (
         input_value["scenario"] == "runtime_session_id"
         or input_value["scenario"] == "runtime_user_id"
         or input_value["scenario"] == "multimodal_forwarding"
     ):
-        return {"results": [_transform_result(config, item) for item in input_value["runs"]]}
-    if input_value["scenario"] == "stream_body_policy":
-        return _stream_body_result(config, input_value)
-    return {"results": [_sign_result(config, item) for item in input_value["runs"]]}
+        results = [_transform_result(config, item) for item in input_value["runs"]]
+    elif input_value["scenario"] == "stream_body_policy":
+        stream_flags: Params = {
+            "has_custom_stream_wrapper": agent.has_custom_stream_wrapper,
+            "supports_stream_param_in_request_body": agent.supports_stream_param_in_request_body,
+        }
+        return _stream_body_result(config, input_value, stream_flags)
+    elif (
+        input_value["scenario"] == "agentcore_bearer_signing"
+        or input_value["scenario"] == "agentcore_iam_signing"
+    ):
+        results = [_sign_result(config, item) for item in input_value["runs"]]
+    else:
+        raise ValueError(input_value["scenario"])
+    return {"results": results}
