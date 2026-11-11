@@ -8,7 +8,7 @@ use super::mp3::mp3_seconds;
 const OGG_HEADER_BYTES: usize = 27;
 const OGG_MAX_SEGMENTS: usize = 255;
 // the three Vorbis headers fit far below this, so an oversized first packet is refused unread
-const OGG_HEADER_PROBE_BYTES: u64 = 128 * 1024;
+const OGG_HEADER_PROBE_BYTES: u64 = 0x0002_0000;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Container {
@@ -24,8 +24,7 @@ impl Container {
             [b'R', b'I', b'F', b'F', .., b'W', b'A', b'V', b'E'] => Some(Self::Wav),
             [b'f', b'L', b'a', b'C', ..] => Some(Self::Flac),
             [b'O', b'g', b'g', b'S', ..] => Some(Self::Ogg),
-            [b'I', b'D', b'3', ..] => Some(Self::Mp3),
-            [0xFF, second, ..] if second & 0xE0 == 0xE0 => Some(Self::Mp3),
+            [b'I', b'D', b'3', ..] | [0xFF, ..] => Some(Self::Mp3),
             _ => None,
         }
     }

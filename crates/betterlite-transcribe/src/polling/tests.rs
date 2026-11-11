@@ -2,11 +2,15 @@
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use rstest::rstest;
+use tokio::time::timeout;
 
-use crate::polling::{PollOutcome, PollSleeper, await_transcription_job, aws_error_type};
+use crate::polling::{
+    PollOutcome, PollSleeper, TokioSleeper, await_transcription_job, aws_error_type,
+};
 use crate::records::{
     GetTranscriptionJobRequest, JobLookup, JobLookupError, JobLookupFuture, TranscriptionJobRecord,
     TranscriptionJobResponse,
@@ -268,4 +272,20 @@ async fn await_stops_at_the_attempt_limit() {
     assert_eq!(outcome, None);
     assert_eq!(lookup.calls(), 2);
     assert_eq!(sleeper.slept(), vec![10.0_f64, 10.0_f64]);
+}
+
+#[tokio::test]
+async fn tokio_sleeper_waits_for_the_requested_seconds() {
+    let started = Instant::now();
+    TokioSleeper.sleep(0.05_f64).await;
+    assert!(started.elapsed() >= Duration::from_millis(50));
+}
+
+#[rstest]
+#[case::negative(-1.0_f64)]
+#[case::not_a_number(f64::NAN)]
+#[tokio::test]
+async fn tokio_sleeper_returns_at_once_for_a_delay_asyncio_would_skip(#[case] seconds: f64) {
+    let outcome = timeout(Duration::from_secs(5), TokioSleeper.sleep(seconds)).await;
+    outcome.unwrap();
 }

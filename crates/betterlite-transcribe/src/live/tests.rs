@@ -7,6 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use futures_util::stream;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
@@ -312,6 +313,23 @@ async fn lookup_maps_a_malformed_success_body_to_invalid_response() {
         lookup.get_transcription_job(&lookup_request()).await,
         Err(JobLookupError::InvalidResponse(_))
     ));
+}
+
+#[rstest]
+#[case::at_the_cap(0x0010_0000, true)]
+#[case::one_byte_over(0x0010_0001, false)]
+#[tokio::test]
+async fn lookup_reads_a_body_up_to_one_mebibyte(#[case] length: usize, #[case] accepted: bool) {
+    let mut body = br#"{"TranscriptionJob":{"TranscriptionJobStatus":"COMPLETED"}}"#.to_vec();
+    body.resize(length, b' ');
+    let (signing, _log) = signer();
+    let (http, _requests) = ScriptedHttp::new(vec![Ok(answer(200, &[], &body))]);
+    let lookup = TranscribeJobLookup::new("us-east-1", signing, http);
+    let result = lookup.get_transcription_job(&lookup_request()).await;
+    assert_eq!(result.is_ok(), accepted);
+    if !accepted {
+        assert!(matches!(result, Err(JobLookupError::Unavailable)));
+    }
 }
 
 #[tokio::test]

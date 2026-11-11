@@ -9,7 +9,7 @@ use crate::live::signing::AwsSigner;
 use crate::polling::aws_error_type;
 use crate::records::{GetTranscriptionJobRequest, JobLookup, JobLookupError, JobLookupFuture};
 
-pub const MAX_LOOKUP_BODY_BYTES: usize = 1024 * 1024;
+pub const MAX_LOOKUP_BODY_BYTES: usize = 0x0010_0000;
 
 const CONTENT_TYPE: &str = "application/x-amz-json-1.1";
 const TARGET: &str = "Transcribe.GetTranscriptionJob";
