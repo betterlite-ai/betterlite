@@ -1,0 +1,20 @@
+task: B3937
+deviations:
+  - what: >-
+      The span metrics record carries total_cost as a rust_decimal Decimal, so the intake payload
+      keeps the exact cost the standard logging payload recorded, where LiteLLM converts it to a
+      float before building LLMMetrics.
+    why: >-
+      betterlite stores money as Decimal everywhere, and a float round-trip can move a cost by a
+      unit in the last place before the sum reaches the intake. The JSON number keeps the recorded
+      decimal text, so ordinary costs read the same as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L745
+  - what: >-
+      A cache token count that does not fit a 64-bit integer fails the span metrics instead of
+      being emitted as a float.
+    why: >-
+      The cache counts come from B1693's extractors as i64 and are subtracted from the prompt
+      count in integer arithmetic, where LiteLLM converts each to float first. A count past
+      9.2e18 is not something a working provider response carries, and clamping it would
+      misreport the cache savings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L748-L749
