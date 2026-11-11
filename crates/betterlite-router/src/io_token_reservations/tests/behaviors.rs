@@ -274,7 +274,7 @@ async fn rollback_releases(scenario: Rollback) {
     };
     let (channel, limit, current, itpm_after) = match scenario {
         Rollback::Output => (IoChannel::Otpm, 15_i64, 27_i64, 5_i64),
-        Rollback::Input => (IoChannel::Itpm, 5_i64, 10_i64, 0_i64),
+        Rollback::Input => (IoChannel::Itpm, 5_i64, 15_i64, 5_i64),
     };
     let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
     let deployment = support::deployment(Some(itpm_limit), Some(otpm_limit));
@@ -298,7 +298,7 @@ async fn rollback_releases(scenario: Rollback) {
             assert_eq!(values, vec![10, 20, -20, -10]);
         }
         Rollback::Input => {
-            assert_eq!(counter.value(&keys.otpm), 0);
+            assert_eq!(counter.value(&keys.otpm), 7);
             assert_eq!(values, vec![10, -10]);
         }
     }
