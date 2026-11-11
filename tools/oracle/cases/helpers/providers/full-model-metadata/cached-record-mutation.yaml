@@ -13,7 +13,7 @@ call:
       - {op: call, model: gpt-4o, custom_llm_provider: openai, api_key: fixture-key, parameters: {kind: absent}}
       - {op: mutate, record: 2, field: max_tokens, value: 999}
       - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
-      - {op: clear}
+      - {op: invalidate}
       - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
       - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
       - {op: mutate, record: 5, field: max_tokens, value: 7}

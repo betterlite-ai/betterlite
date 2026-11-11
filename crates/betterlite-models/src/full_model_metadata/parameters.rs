@@ -39,7 +39,7 @@ impl SupportedParameterSource for ProviderParameterSource<'_> {
     ) -> Result<Option<Vec<String>>, Infallible> {
         let detected = custom_llm_provider.map_or_else(
             || inferred_provider(model, self.resolution),
-            declared_provider,
+            |name| name.parse::<ProviderId>().ok(),
         );
         let Some(provider) = detected else {
             return Ok(None);
@@ -61,13 +61,6 @@ impl SupportedParameterSource for ProviderParameterSource<'_> {
             ParameterCapabilities::Absent => None,
         })
     }
-}
-
-// LiteLLM also accepts a provider string with a suffix, taking the part before the first slash.
-fn declared_provider(name: &str) -> Option<ProviderId> {
-    name.parse::<ProviderId>()
-        .ok()
-        .or_else(|| name.split('/').next()?.parse::<ProviderId>().ok())
 }
 
 // LiteLLM infers the provider from the model when the caller names none; B174 is that resolver.

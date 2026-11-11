@@ -1,23 +1,17 @@
-use std::collections::BTreeSet;
 use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::fetch_policy::response::FetchResponse;
-use betterlite_models::full_model_metadata::parameters::{
-    ProviderParameterSource, SupportedParameterSource,
-};
+use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
-use betterlite_models::params::CallType;
-use betterlite_models::params::capabilities::{ModelProjection, OpenAiCapability, OpenAiConfigTag};
 use betterlite_models::provider_metadata_factory::adapters::DynamicModelInfo;
-use betterlite_models::resolution::ResolutionContext;
 use secrecy::SecretString;
 use serde_json::value::{RawValue, to_raw_value};
 use serde_json::{Value, json};
 
-use super::input::{DynamicScript, ParameterScript};
+use super::input::ParameterScript;
 
 #[derive(Debug, Default)]
 pub(crate) struct CallLog {
@@ -94,46 +88,13 @@ impl SupportedParameterSource for ScriptedSource {
                 }));
                 Err(ParameterFailure)
             }
-            ParameterScript::B175 { .. } => Err(ParameterFailure),
         }
-    }
-}
-
-// B175's answer for a provider, recorded at the same seam the source module uses.
-pub(crate) struct ProviderSource<'source> {
-    pub(crate) resolution: &'source ResolutionContext<'source>,
-    pub(crate) call_type: CallType,
-    pub(crate) config: OpenAiConfigTag,
-    pub(crate) capabilities: &'source BTreeSet<OpenAiCapability>,
-    pub(crate) base_model: Option<ModelProjection<'source>>,
-    pub(crate) log: Arc<CallLog>,
-}
-
-impl SupportedParameterSource for ProviderSource<'_> {
-    type Error = ParameterFailure;
-
-    fn supported_openai_params(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Result<Option<Vec<String>>, ParameterFailure> {
-        let source = ProviderParameterSource {
-            resolution: self.resolution,
-            call_type: self.call_type,
-            config: self.config,
-            capabilities: self.capabilities,
-            base_model: self.base_model,
-        };
-        let Ok(answer) = source.supported_openai_params(model, custom_llm_provider);
-        self.log
-            .parameters(model, custom_llm_provider, answer.as_deref());
-        Ok(answer)
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct RecordingDynamic {
-    pub(crate) script: Option<DynamicScript>,
+    pub(crate) script: Option<Value>,
     pub(crate) log: Arc<CallLog>,
 }
 
@@ -154,14 +115,10 @@ impl DynamicMetadataSource for RecordingDynamic {
             "api_base": api_base,
             "authenticated": api_key.is_some(),
         }));
-        let answer = match &self.script {
-            None => Ok(None),
-            Some(DynamicScript::Value { body }) => {
-                to_raw_value(body).map(Some).map_err(io::Error::other)
-            }
-            Some(DynamicScript::Error) => Err(io::Error::other("dynamic model info failed")),
+        let Some(body) = &self.script else {
+            return ready(Ok(None));
         };
-        ready(answer)
+        ready(to_raw_value(body).map(Some).map_err(io::Error::other))
     }
 }
 

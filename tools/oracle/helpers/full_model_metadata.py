@@ -3,17 +3,13 @@ import json
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager, redirect_stdout
 from functools import lru_cache
-from typing import Literal, Protocol, TypeAlias, TypedDict, cast
+from typing import Protocol, TypeAlias, TypedDict, cast
 from unittest import mock
 
 import httpx
 import litellm
 import litellm.utils as litellm_utils
 from litellm.exceptions import ModelNotMappedError
-from litellm.litellm_core_utils import fallback_generalizations as engine
-from litellm.litellm_core_utils.get_supported_openai_params import (
-    get_supported_openai_params,  # pyright: ignore[reportUnknownVariableType]
-)
 from litellm.llms.lemonade.chat.transformation import LemonadeChatConfig
 from litellm.llms.ollama.common_utils import OllamaModelInfo
 from litellm.utils import (
@@ -24,39 +20,23 @@ from litellm.utils import (
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
 ModelCost: TypeAlias = dict[str, Object]
-RequestType: TypeAlias = Literal["chat_completion", "embeddings", "transcription"]
 
 
 class CacheInfoView(Protocol):
     @property
     def hits(self) -> int: ...
-
     @property
     def misses(self) -> int: ...
-
     @property
     def maxsize(self) -> int | None: ...
-
     @property
     def currsize(self) -> int: ...
 
 
 class CachedLookup(Protocol):
     def __call__(self, *args: object, **kwargs: object) -> Object: ...
-
     def cache_clear(self) -> None: ...
-
     def cache_info(self) -> CacheInfoView: ...
-
-
-class SupportedParamsCall(Protocol):
-    def __call__(
-        self,
-        model: str,
-        custom_llm_provider: str | None = None,
-        request_type: RequestType = "chat_completion",
-        base_model: str | None = None,
-    ) -> list[object] | None: ...
 
 
 class Outcome(TypedDict):
@@ -68,11 +48,7 @@ class ParameterQueryError(Exception):
     """The fixture asked the parameter query to fail before the helper runs."""
 
 
-REAL_PARAMS = cast(SupportedParamsCall, get_supported_openai_params)
 add_known_models = cast(Callable[[ModelCost], None], litellm.add_known_models)
-set_rules = cast(
-    Callable[[list[Json] | None], None], engine.set_fallback_generalizations
-)
 
 
 def object_value(value: Json, name: str) -> Object:
@@ -135,21 +111,9 @@ def model_cost_of(fixture: Object) -> ModelCost:
     }
 
 
-def fixture_rules(fixture: Object) -> list[Json]:
-    rules = fixture.get("fallback_generalizations")
-    if rules is None:
-        return []
-    if not isinstance(rules, list):
-        raise TypeError("fallback_generalizations must be a list")
-    return rules
-
-
 def dynamic_handler(adapter: str, driver: Driver) -> Callable[..., Json]:
     def handler(
-        _self: object,
-        model: str,
-        api_base: str | None = None,
-        api_key: str | None = None,
+        _self: object, model: str, api_base: str | None = None, api_key: str | None = None
     ) -> Json:
         driver.calls.append(
             {
@@ -160,65 +124,12 @@ def dynamic_handler(adapter: str, driver: Driver) -> Callable[..., Json]:
                 "authenticated": api_key is not None,
             }
         )
-        script = driver.dynamic
-        if script is None:
-            return None
-        if string_value(script.get("kind"), "kind") == "error":
-            raise RuntimeError("dynamic model info failed")
-        return json_value(script.get("body"))
-
+        return None if driver.dynamic is None else json_value(driver.dynamic)
     return handler
 
 
-def b175_answer(
-    script: Object,
-    model: str,
-    provider: str | None,
-    request_type: str,
-    base_model: str | None,
-) -> Json:
-    selected_type = string_value(script.get("call_type", request_type), "call_type")
-    selected_base = optional_text(script, "base_model")
-    if selected_base is None:
-        selected_base = base_model
-    result = REAL_PARAMS(
-        model=model,
-        custom_llm_provider=provider,
-        request_type=cast("RequestType", selected_type),
-        base_model=selected_base,
-    )
-    return cast("Json", result)
-
-
-def parameter_answer(
-    script: Object | None,
-    model: str,
-    provider: str | None,
-    request_type: str,
-    base_model: str | None,
-) -> Json:
-    if script is None:
-        return None
-    kind = string_value(script.get("kind"), "kind")
-    if kind == "value":
-        body = script.get("body")
-        if body is None:
-            return None
-        if not isinstance(body, list):
-            raise TypeError("body must be a list")
-        return [string_value(item, "body") for item in body]
-    if kind == "b175":
-        return b175_answer(script, model, provider, request_type, base_model)
-    return None
-
-
 def parameter_probe(driver: Driver) -> Callable[..., Json]:
-    def probe(
-        model: str,
-        custom_llm_provider: str | None = None,
-        request_type: str = "chat_completion",
-        base_model: str | None = None,
-    ) -> Json:
+    def probe(model: str, custom_llm_provider: str | None = None, **_kwargs: object) -> Json:
         script = driver.script
         if script is not None and script.get("kind") == "error":
             driver.calls.append(
@@ -230,9 +141,8 @@ def parameter_probe(driver: Driver) -> Callable[..., Json]:
                 }
             )
             raise ParameterQueryError
-        answer = parameter_answer(
-            script, model, custom_llm_provider, request_type, base_model
-        )
+        body = None if script is None else script.get("body")
+        answer = None if body is None else json_value(body)
         driver.calls.append(
             {
                 "kind": "parameters",
@@ -242,7 +152,6 @@ def parameter_probe(driver: Driver) -> Callable[..., Json]:
             }
         )
         return answer
-
     return probe
 
 
@@ -277,8 +186,6 @@ def installed(fixture: Object, driver: Driver) -> Generator[None]:
         redirect_stdout(io.StringIO()),
     ):
         add_known_models(costs)
-        set_rules(fixture_rules(fixture))
-        litellm_utils._model_cost_lowercase_map = None  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         yield
 
 
@@ -288,9 +195,11 @@ def raised_category(error: Exception) -> str:
     if isinstance(error, ModelNotMappedError):
         return "not_mapped"
     if isinstance(error, TypeError):
-        if "multiple values" in str(error):
-            return "duplicate_supported_openai_params"
-        return "record"
+        return (
+            "duplicate_supported_openai_params"
+            if "multiple values" in str(error)
+            else "record"
+        )
     return "failed"
 
 
@@ -333,22 +242,17 @@ def caches_json() -> Json:
 
 
 def observation(driver: Driver, op: str, outcome: Outcome, start: int) -> Json:
-    calls = driver.calls[start:]
     caches = caches_json()
+    calls = driver.calls[start:]
     if outcome["error"]:
         return {"op": op, "result": outcome["result"], "calls": calls, "caches": caches}
     result = object_value(outcome["result"], "result")
-    same_as = next(
-        (index for index, previous in enumerate(driver.records) if previous is result),
-        None,
-    )
     record = len(driver.records)
     driver.records.append(result)
     return {
         "op": op,
         "result": result,
         "record": record,
-        "same_as": same_as,
         "calls": calls,
         "caches": caches,
     }
@@ -370,12 +274,7 @@ def mutate_step(driver: Driver, step: Object) -> Json:
     field = string_value(step.get("field"), "field")
     target = driver.records[record]
     target[field] = step.get("value")
-    return {
-        "op": "mutate",
-        "record": record,
-        "field": field,
-        "value": target.get(field),
-    }
+    return {"op": "mutate", "record": record, "field": field, "value": target.get(field)}
 
 
 def invalidate_step() -> Json:
@@ -387,16 +286,9 @@ def invalidate_step() -> Json:
     }
 
 
-def clear_step() -> Json:
-    alias = litellm_utils.get_model_info.cache_clear  # pyright: ignore[reportAny, reportFunctionMemberAccess]
-    cast("Callable[[], None]", alias)()
-    return {"op": "clear", "caches": caches_json()}
-
-
 def replace_step(driver: Driver, step: Object) -> Json:
     key = string_value(step.get("key"), "key")
-    entry = object_value(step.get("entry"), "entry")
-    driver.costs[key] = entry
+    driver.costs[key] = object_value(step.get("entry"), "entry")
     return {"op": "replace", "key": key}
 
 
@@ -410,8 +302,6 @@ def apply_step(driver: Driver, step: Object) -> Json:
         result = mutate_step(driver, step)
     elif op == "invalidate":
         result = invalidate_step()
-    elif op == "clear":
-        result = clear_step()
     elif op == "replace":
         result = replace_step(driver, step)
     else:
@@ -424,6 +314,4 @@ def run(data: dict[str, Json]) -> Json:
     driver = Driver(fixture)
     with installed(fixture, driver):
         install_caches(integer_value(fixture.get("cache_maxsize", 64), "cache_maxsize"))
-        return [
-            apply_step(driver, step) for step in object_list(data.get("steps"), "steps")
-        ]
+        return [apply_step(driver, step) for step in object_list(data.get("steps"), "steps")]

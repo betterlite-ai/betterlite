@@ -6,13 +6,13 @@ call:
       model_cost:
         gpt-4o: {litellm_provider: openai, mode: chat, input_cost_per_token: 1, output_cost_per_token: 2}
         llama3.2: {litellm_provider: ollama, mode: chat, input_cost_per_token: 1, output_cost_per_token: 2}
-      dynamic: {kind: value, body: {key: runtime, max_tokens: 32}}
+      dynamic: {key: runtime, max_tokens: 32}
       cache_maxsize: 8
     steps:
       - op: call
         model: gpt-4o
         custom_llm_provider: openai
-        parameters: {kind: b175, call_type: chat_completion, config: gpt, capabilities: [catalog_model]}
+        parameters: {kind: value, body: [temperature, max_tokens, response_format, user]}
       - op: call
         model: llama3.2
         custom_llm_provider: ollama

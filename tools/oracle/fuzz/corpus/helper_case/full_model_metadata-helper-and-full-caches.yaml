@@ -9,6 +9,6 @@ call:
     steps:
       - {op: helper_call, model: fixture/model, custom_llm_provider: openai}
       - {op: call, model: fixture/model, custom_llm_provider: openai, parameters: {kind: absent}}
-      - {op: clear}
+      - {op: invalidate}
 env: {}
 compare: {ignore: []}

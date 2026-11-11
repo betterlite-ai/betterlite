@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::io;
 
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::{CatalogError, ModelCatalog, UnknownFields};
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
 use betterlite_models::entry::ModelFields;
-use betterlite_models::error::ModelsError;
 use betterlite_models::fireworks_catalog_metadata::Catalog as FireworksCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_metadata_resolution::MetadataEnvironment;
@@ -17,7 +15,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use serde_json::Value;
-use serde_json::value::{RawValue, to_raw_value};
+use serde_json::value::to_raw_value;
 
 use super::input::FixtureInput;
 
@@ -44,16 +42,6 @@ pub(crate) enum FixtureError {
         #[source]
         source: CatalogError,
     },
-    #[error("generalization rules: {source}")]
-    Generalizations {
-        #[source]
-        source: ModelsError,
-    },
-    #[error("oracle runtime: {source}")]
-    Runtime {
-        #[source]
-        source: io::Error,
-    },
 }
 
 pub(crate) struct FixtureContext {
@@ -63,7 +51,6 @@ pub(crate) struct FixtureContext {
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) known_model_names: BTreeSet<String>,
     pub(crate) custom_providers: BTreeSet<String>,
-    pub(crate) rules: Vec<Box<RawValue>>,
 }
 
 impl FixtureContext {
@@ -72,14 +59,9 @@ impl FixtureContext {
             .map_err(|source| FixtureError::Json { source })?;
         let map =
             ModelCostMap::parse(&entries).map_err(|source| FixtureError::ModelCost { source })?;
-        let catalog = typed_catalog(fixture)?;
+        let catalog = ModelCatalog::parse(&entries, UnknownFields::Warn)
+            .map_err(|source| FixtureError::Catalog { source })?;
         let fireworks = fireworks_catalog(&map);
-        let rules = fixture
-            .fallback_generalizations
-            .iter()
-            .flatten()
-            .map(|rule| to_raw_value(rule).map_err(|source| FixtureError::Json { source }))
-            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             map,
             catalog,
@@ -87,7 +69,6 @@ impl FixtureContext {
             environment: BTreeMap::new(),
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),
-            rules,
         })
     }
 
@@ -97,10 +78,11 @@ impl FixtureContext {
         Ok(())
     }
 
-    pub(crate) fn harness(&self) -> Result<Harness<'_>, FixtureError> {
-        let (generalizations, warnings) = CatalogGeneralizations::install(self.rules.clone());
-        let Some(first) = warnings.into_iter().next() else {
-            let resolution = ResolutionContext {
+    pub(crate) fn harness(&self) -> Harness<'_> {
+        let (generalizations, _warnings) = CatalogGeneralizations::install(Vec::new());
+        Harness {
+            fixture: self,
+            resolution: ResolutionContext {
                 catalog: &self.catalog,
                 known_model_names: &self.known_model_names,
                 custom_providers: &self.custom_providers,
@@ -108,14 +90,9 @@ impl FixtureContext {
                 registry: JSONProviderRegistry::load(),
                 policies: ProviderPolicies::default(),
                 globals: GlobalCredentials::default(),
-            };
-            return Ok(Harness {
-                fixture: self,
-                resolution,
-                generalizations,
-            });
-        };
-        Err(FixtureError::Generalizations { source: first })
+            },
+            generalizations,
+        }
     }
 }
 
@@ -135,25 +112,6 @@ impl Harness<'_> {
             normalizers: NORMALIZERS,
         }
     }
-}
-
-// The typed catalog is what the provider inference reads; entries it rejects stay only in the cost map.
-fn typed_catalog(fixture: &FixtureInput) -> Result<ModelCatalog, FixtureError> {
-    let mut typed: BTreeMap<String, Value> = BTreeMap::new();
-    for (key, entry) in &fixture.model_cost {
-        typed.insert(key.clone(), entry.clone());
-    }
-    if let Some(rules) = &fixture.fallback_generalizations {
-        // a case input carries the extracted list; the shipped map keeps it under the block's "rules" key
-        let block = BTreeMap::from([("rules", rules.as_slice())]);
-        typed.insert(
-            "fallback_generalizations".to_owned(),
-            serde_json::to_value(block).map_err(|source| FixtureError::Json { source })?,
-        );
-    }
-    let bytes = serde_json::to_vec(&typed).map_err(|source| FixtureError::Json { source })?;
-    ModelCatalog::parse(&bytes, UnknownFields::Warn)
-        .map_err(|source| FixtureError::Catalog { source })
 }
 
 fn fireworks_catalog(map: &ModelCostMap) -> FireworksCatalog {

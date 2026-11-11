@@ -15,7 +15,7 @@ call:
       - {op: helper_call, model: gpt-3.5-turbo, custom_llm_provider: openai}
       - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
       - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
-      - {op: clear}
+      - {op: invalidate}
       - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
 env: {}
 compare: {ignore: []}

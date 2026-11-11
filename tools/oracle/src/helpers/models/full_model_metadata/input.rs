@@ -1,7 +1,3 @@
-use std::collections::BTreeSet;
-
-use betterlite_models::params::CallType;
-use betterlite_models::params::capabilities::{OpenAiCapability, OpenAiConfigTag};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
@@ -19,18 +15,9 @@ pub(crate) struct FixtureInput {
     #[serde(default)]
     pub(crate) model_cost: IndexMap<String, Value>,
     #[serde(default)]
-    pub(crate) fallback_generalizations: Option<Vec<Value>>,
-    #[serde(default)]
     pub(crate) cache_maxsize: Option<i64>,
     #[serde(default)]
-    pub(crate) dynamic: Option<DynamicScript>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum DynamicScript {
-    Value { body: Value },
-    Error,
+    pub(crate) dynamic: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -60,7 +47,6 @@ pub(crate) enum Step {
         value: Value,
     },
     Invalidate,
-    Clear,
     Replace {
         key: String,
         entry: Value,
@@ -76,14 +62,4 @@ pub(crate) enum ParameterScript {
     },
     Absent,
     Error,
-    B175 {
-        call_type: CallType,
-        config: OpenAiConfigTag,
-        #[serde(default)]
-        capabilities: BTreeSet<OpenAiCapability>,
-        #[serde(default)]
-        base_model: Option<String>,
-        #[serde(default)]
-        base_capabilities: Option<BTreeSet<OpenAiCapability>>,
-    },
 }

@@ -8,8 +8,6 @@ use crate::sections::Section;
 mod tests;
 
 pub const DEFAULT_MAX_LRU_CACHE_SIZE: i64 = 64;
-const ENVIRONMENT_NAME: &str = "DEFAULT_MAX_LRU_CACHE_SIZE";
-const SETTING_NAME: &str = "DEFAULT_MAX_LRU_CACHE_SIZE";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -61,7 +59,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let environment = environment_size(lookup)?;
-        let path = format!("litellm_settings.{SETTING_NAME}");
+        let path = "litellm_settings.DEFAULT_MAX_LRU_CACHE_SIZE".to_owned();
         let global = resolve_number(
             self.litellm_settings.default_max_lru_cache_size,
             &path,
@@ -72,7 +70,8 @@ impl Section for Raw {
         .unwrap_or(DEFAULT_MAX_LRU_CACHE_SIZE);
         let mut deployment_max_lru_cache_sizes = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let deployment_path = format!("model_list.{index}.litellm_params.{SETTING_NAME}");
+            let deployment_path =
+                format!("model_list.{index}.litellm_params.DEFAULT_MAX_LRU_CACHE_SIZE");
             let configured = resolve_number(
                 deployment.litellm_params.default_max_lru_cache_size,
                 &deployment_path,
@@ -94,8 +93,8 @@ where
     L: EnvironmentLookup,
 {
     let value = lookup
-        .lookup(ENVIRONMENT_NAME)
-        .map(|text| betterlite_env::number::<i64>(ENVIRONMENT_NAME, &text))
+        .lookup("DEFAULT_MAX_LRU_CACHE_SIZE")
+        .map(|text| betterlite_env::number::<i64>("DEFAULT_MAX_LRU_CACHE_SIZE", &text))
         .transpose()?
         .flatten();
     Ok(value)

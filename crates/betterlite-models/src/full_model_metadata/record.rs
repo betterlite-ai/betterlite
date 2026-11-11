@@ -38,24 +38,12 @@ pub(super) fn build(
 ) -> Result<ModelInfo, ModelRecordError> {
     let mut info = ModelInfo::parse(metadata)?;
     if let Some(configured) = overlay {
-        let entries = [
-            (
-                "supports_function_calling",
-                configured.supports_function_calling,
-            ),
-            (
-                "supports_prompt_caching",
-                configured.supports_prompt_caching,
-            ),
-            ("supports_reasoning", configured.supports_reasoning),
-            ("supports_vision", configured.supports_vision),
-            ("supports_pdf_input", configured.supports_pdf_input),
-            ("supports_web_search", configured.supports_web_search),
-        ];
-        for (name, setting) in entries {
-            if let Some(present) = setting {
-                info.fields.insert(name.to_owned(), Json::Bool(present));
-            }
+        let text = serde_json::to_string(configured)
+            .map_err(|source| ModelRecordError::Json { source })?;
+        let fields: IndexMap<String, Json> =
+            serde_json::from_str(&text).map_err(|source| ModelRecordError::Json { source })?;
+        for (name, value) in fields {
+            info.fields.insert(name, value);
         }
     }
     // the source builds ModelInfo(**_model_info, supported_openai_params=...), which rejects a duplicate key
