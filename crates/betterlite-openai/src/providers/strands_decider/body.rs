@@ -4,7 +4,7 @@ use serde::Serialize as _;
 use serde_json::Serializer;
 use serde_json::ser::Formatter;
 
-use crate::decisions::transformation::wire::RequestWire;
+use crate::decisions::transformation::wire::ProviderRequestWire;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BodyError {
@@ -12,7 +12,7 @@ pub enum BodyError {
     Encode(#[source] serde_json::Error),
 }
 
-pub fn request_body(body: &RequestWire) -> Result<Vec<u8>, BodyError> {
+pub fn request_body(body: &ProviderRequestWire) -> Result<Vec<u8>, BodyError> {
     let mut serializer = Serializer::with_formatter(Vec::new(), PythonFormatter);
     body.serialize(&mut serializer).map_err(BodyError::Encode)?;
     Ok(serializer.into_inner())

@@ -9,14 +9,14 @@ use super::headers::SESSION_HEADER;
 use crate::decisions::transformation::provider_config::{
     DecisionsProviderConfig as _, SigningContext,
 };
-use crate::decisions::transformation::wire::RequestWire;
+use crate::decisions::transformation::wire::ProviderRequestWire;
 use crate::openai_base_config::Headers;
 
 const ARN: &str = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime";
 const RUNTIME_URL: &str = "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/\
                            arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A123456789012%3Aruntime%2Fmy-runtime/invocations";
 
-fn sample_wire(config: &StrandsDeciderDecisionsConfig) -> RequestWire {
+fn sample_wire(config: &StrandsDeciderDecisionsConfig) -> ProviderRequestWire {
     let request = ir::DecisionRequest {
         input: ir::DecisionInput::State(DecisionsJson::Text("the state".to_owned())),
         questions: vec![ir::DecisionQuestion::Predicate(ir::PredicateQuestion {

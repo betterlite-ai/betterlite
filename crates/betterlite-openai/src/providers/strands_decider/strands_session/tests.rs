@@ -15,7 +15,7 @@ use super::headers::SESSION_HEADER;
 use crate::decisions::transformation::provider_config::{
     DecisionsProviderConfig as _, SigningContext,
 };
-use crate::decisions::transformation::wire::RequestWire;
+use crate::decisions::transformation::wire::ProviderRequestWire;
 use crate::openai_base_config::Headers;
 
 const ARN: &str = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime";
@@ -32,7 +32,7 @@ fn fixed_clock() -> Arc<dyn Fn() -> SystemTime + Send + Sync> {
     })
 }
 
-fn sample_wire(config: &StrandsDeciderDecisionsConfig) -> RequestWire {
+fn sample_wire(config: &StrandsDeciderDecisionsConfig) -> ProviderRequestWire {
     let request = ir::DecisionRequest {
         input: ir::DecisionInput::State(DecisionsJson::Text("the state".to_owned())),
         questions: vec![ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
@@ -48,7 +48,7 @@ fn sample_wire(config: &StrandsDeciderDecisionsConfig) -> RequestWire {
         .expect("a systemone body")
 }
 
-fn session_header(api_key: &SecretString, params: &Extra, body: &RequestWire) -> Headers {
+fn session_header(api_key: &SecretString, params: &Extra, body: &ProviderRequestWire) -> Headers {
     let config = StrandsDeciderDecisionsConfig {
         credentials: None,
         clock: fixed_clock(),

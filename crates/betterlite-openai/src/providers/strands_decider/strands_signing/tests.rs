@@ -16,7 +16,7 @@ use super::signing::AwsCredentials;
 use crate::decisions::transformation::provider_config::{
     DecisionsProviderConfig as _, SigningContext,
 };
-use crate::decisions::transformation::wire::RequestWire;
+use crate::decisions::transformation::wire::ProviderRequestWire;
 use crate::openai_base_config::Headers;
 
 const ARN: &str = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime";
@@ -41,7 +41,7 @@ fn with_clock(credentials: Option<AwsCredentials>) -> StrandsDeciderDecisionsCon
     }
 }
 
-fn sample_wire(config: &StrandsDeciderDecisionsConfig) -> RequestWire {
+fn sample_wire(config: &StrandsDeciderDecisionsConfig) -> ProviderRequestWire {
     let request = ir::DecisionRequest {
         input: ir::DecisionInput::State(DecisionsJson::Text("the state".to_owned())),
         questions: vec![ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
@@ -179,7 +179,7 @@ fn aws_signing_without_credentials_leaves_the_request_unsigned() {
 }
 
 #[test]
-fn test_litellm_params_credentials_win_over_injected_credentials() {
+fn litellm_params_credentials_win_over_injected_credentials() {
     let injected = AwsCredentials {
         access_key_id: SecretString::from("INJECTEDKEY"),
         secret_access_key: SecretString::from(SECRET_KEY),
@@ -250,7 +250,7 @@ fn test_unresolved_auth_parameters_are_named_in_an_error(#[case] name: &str) {
 }
 
 #[test]
-fn test_unresolved_auth_parameters_stay_quiet_when_null() {
+fn unresolved_auth_parameters_stay_quiet_when_null() {
     let log = tempfile::NamedTempFile::new().expect("a log file");
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)

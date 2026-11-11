@@ -157,7 +157,7 @@ fn ir_request(state: &str, question: &str, instructions: &str) -> ir::DecisionRe
     }
 }
 
-fn epoch(seconds: u64) -> HelperResult<SystemTime> {
+fn epoch(seconds: u64) -> Result<SystemTime, Box<HelperError>> {
     UNIX_EPOCH
         .checked_add(Duration::from_secs(seconds))
         .ok_or_else(|| helper_error("the signing time overflows SystemTime"))
