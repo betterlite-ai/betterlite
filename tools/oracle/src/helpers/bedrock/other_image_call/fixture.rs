@@ -59,7 +59,6 @@ impl Client {
             seen: Seen::default(),
         }
     }
-
 }
 
 impl ImageTransport for Client {
@@ -104,7 +103,6 @@ impl Factory {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-
 }
 
 impl ClientFactory for Factory {
@@ -207,4 +205,3 @@ pub(super) fn prepost_env<'env>(
         now: state.start_time,
     }
 }
-
