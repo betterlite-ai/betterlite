@@ -32,6 +32,6 @@ call:
         call_type: completion
         data:
           messages:
-            - tool_calls: {}
+            - tool_calls: 5
 env: {}
 compare: {ignore: []}

@@ -1,6 +1,6 @@
 use betterlite_models::billing_text::{
-    ChoiceText, EventText, FormattedPromptData, PromptCallType, ResponseText, count_characters,
-    get_formatted_prompt, get_response_string,
+    BillingTextError, ChoiceText, EventText, FormattedPromptData, PromptCallType, ResponseText,
+    count_characters, get_formatted_prompt, get_response_string,
 };
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
@@ -107,21 +107,20 @@ fn execute(call: &Call) -> Result<Value, Failure> {
 }
 
 fn formatted_prompt(call: &Call) -> Result<Value, Failure> {
-    let kind = call.kind.ok_or_else(|| failure("call_type is required"))?;
-    let data = call
-        .data
-        .as_ref()
-        .ok_or_else(|| failure("data is required"))?;
-    let prompt = get_formatted_prompt(
+    let Some(kind) = call.kind else {
+        return Err(failure("call_type is required"));
+    };
+    let Some(data) = &call.data else {
+        return Err(failure("data is required"));
+    };
+    text_result(get_formatted_prompt(
         &FormattedPromptData {
             messages: data.messages.as_deref(),
             prompt: data.prompt.as_ref(),
             input: data.input.as_ref(),
         },
         kind.prompt_call_type(),
-    )
-    .map_err(|error| failure(&error.to_string()))?;
-    Ok(Value::from(prompt))
+    ))
 }
 
 fn response_string(call: &Call) -> Result<Value, Failure> {
@@ -129,11 +128,6 @@ fn response_string(call: &Call) -> Result<Value, Failure> {
         .response
         .as_ref()
         .ok_or_else(|| failure("response is required"))?;
-    let event = response.event.as_ref().map(|event| EventText {
-        event_type: &event.event_type,
-        output: event.output.as_deref(),
-        delta: event.delta.as_ref(),
-    });
     let choices: Vec<ChoiceText<'_>> = response
         .choices
         .as_deref()
@@ -141,12 +135,24 @@ fn response_string(call: &Call) -> Result<Value, Failure> {
         .iter()
         .map(choice_text)
         .collect();
-    let text = get_response_string(&ResponseText {
-        event,
+    text_result(get_response_string(&ResponseText {
+        event: response.event.as_ref().map(event_text),
         choices: &choices,
-    })
-    .map_err(|error| failure(&error.to_string()))?;
-    Ok(Value::from(text))
+    }))
+}
+
+fn event_text(event: &EventInput) -> EventText<'_> {
+    EventText {
+        event_type: &event.event_type,
+        output: event.output.as_deref(),
+        delta: event.delta.as_ref(),
+    }
+}
+
+fn text_result(result: Result<String, BillingTextError>) -> Result<Value, Failure> {
+    result
+        .map(Value::from)
+        .map_err(|error| failure(&error.to_string()))
 }
 
 const fn choice_text(choice: &ChoiceInput) -> ChoiceText<'_> {

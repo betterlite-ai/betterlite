@@ -26,7 +26,8 @@ fn hidden_value<'hidden>(
     }
 }
 
-pub(super) const fn copied_usage<'usage>(usage: &'usage BillingUsage<'_>) -> BillingUsage<'usage> {
+// Rebuilding per variant keeps the references Copy without a Copy derive on BillingUsage
+const fn copied_usage<'usage>(usage: &'usage BillingUsage<'_>) -> BillingUsage<'usage> {
     match usage {
         BillingUsage::Absent => BillingUsage::Absent,
         BillingUsage::Null => BillingUsage::Null,
@@ -50,12 +51,13 @@ impl<'response> ResponseView<'response> {
     }
 
     pub(super) const fn usage(&self) -> Option<BillingUsage<'_>> {
-        match self {
-            Self::Realtime { usage, .. } => Some(BillingUsage::Chat(usage)),
-            Self::Typed(typed) => Some(copied_usage(&typed.usage)),
-            Self::Dictionary(dictionary) => Some(copied_usage(&dictionary.usage)),
-            Self::Other => None,
-        }
+        let found = match self {
+            Self::Realtime { usage, .. } => BillingUsage::Chat(usage),
+            Self::Typed(typed) => copied_usage(&typed.usage),
+            Self::Dictionary(dictionary) => copied_usage(&dictionary.usage),
+            Self::Other => return None,
+        };
+        Some(found)
     }
 
     pub(super) fn billing(&self) -> BillingResponse<'_> {
@@ -92,22 +94,26 @@ impl<'response> ResponseView<'response> {
     }
 
     pub(super) const fn cost_response(&self) -> Option<CostResponse<'response>> {
-        match self {
-            Self::Typed(typed) => Some(CostResponse::Object {
+        if let Self::Typed(typed) = self {
+            return Some(CostResponse::Object {
                 model: typed.model,
                 hidden_params: typed.hidden_params,
                 response_ms: None,
-            }),
-            Self::Dictionary(dictionary) => Some(CostResponse::Dictionary {
+            });
+        }
+        if let Self::Dictionary(dictionary) = self {
+            return Some(CostResponse::Dictionary {
                 model: dictionary.model,
-            }),
-            Self::Realtime { .. } => Some(CostResponse::Object {
+            });
+        }
+        if let Self::Realtime { .. } = self {
+            return Some(CostResponse::Object {
                 model: None,
                 hidden_params: None,
                 response_ms: None,
-            }),
-            Self::Other => None,
+            });
         }
+        None
     }
 
     pub(super) fn rebind(

@@ -54,24 +54,20 @@ const fn as_object<'value>(
     value: &'value Json,
     field: &'static str,
 ) -> Result<&'value IndexMap<String, Json>, BillingTextError> {
-    match value {
-        Json::Object(fields) => Ok(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(BillingTextError::NotObject { field })
-        }
-    }
+    let Json::Object(fields) = value else {
+        return Err(BillingTextError::NotObject { field });
+    };
+    Ok(fields)
 }
 
 fn as_text<'value>(
     value: &'value Json,
     field: &'static str,
 ) -> Result<&'value str, BillingTextError> {
-    match value {
-        Json::Text(text) => Ok(text),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(BillingTextError::NotText { field })
-        }
+    if let Json::Text(text) = value {
+        return Ok(text);
     }
+    Err(BillingTextError::NotText { field })
 }
 
 pub fn get_formatted_prompt(
@@ -89,28 +85,21 @@ pub fn get_formatted_prompt(
 }
 
 fn required_text(prompt: Option<&Json>) -> Result<String, BillingTextError> {
-    match prompt {
-        None | Some(Json::Null) => Err(BillingTextError::Missing { field: "prompt" }),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(BillingTextError::NotText { field: "prompt" })
-        }
-    }
+    let Some(value) = prompt.filter(|value| !matches!(value, Json::Null)) else {
+        return Err(BillingTextError::Missing { field: "prompt" });
+    };
+    Ok(as_text(value, "prompt")?.to_owned())
 }
 
 fn optional_text(prompt: Option<&Json>) -> Result<String, BillingTextError> {
     match prompt {
         None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(BillingTextError::NotText { field: "prompt" })
-        }
+        Some(value) => Ok(as_text(value, "prompt")?.to_owned()),
     }
 }
 
 fn input_prompt(input: Option<&Json>) -> Result<String, BillingTextError> {
     match input {
-        None | Some(Json::Null) => Err(BillingTextError::Missing { field: "input" }),
         Some(Json::Text(text)) => Ok(text.clone()),
         Some(Json::List(items)) => {
             let mut prompt = String::new();
@@ -119,6 +108,7 @@ fn input_prompt(input: Option<&Json>) -> Result<String, BillingTextError> {
             }
             Ok(prompt)
         }
+        None | Some(Json::Null) => Err(BillingTextError::Missing { field: "input" }),
         Some(Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
             Err(BillingTextError::NotTextOrList { field: "input" })
         }
@@ -137,70 +127,67 @@ fn chat_prompt(messages: Option<&[Json]>) -> Result<String, BillingTextError> {
 }
 
 fn append_content(prompt: &mut String, content: Option<&Json>) -> Result<(), BillingTextError> {
-    match content {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::Text(text)) => {
-            prompt.push_str(text);
-            Ok(())
-        }
-        Some(Json::List(parts)) => append_text_parts(prompt, parts),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
-            Err(BillingTextError::NotTextOrList {
-                field: "messages.content",
-            })
-        }
+    let Some(value) = content else {
+        return Ok(());
+    };
+    if matches!(value, Json::Null) {
+        return Ok(());
     }
+    if let Json::Text(text) = value {
+        prompt.push_str(text);
+        return Ok(());
+    }
+    if let Json::List(parts) = value {
+        return append_text_parts(prompt, parts);
+    }
+    Err(BillingTextError::NotTextOrList {
+        field: "messages.content",
+    })
 }
 
 fn append_text_parts(prompt: &mut String, parts: &[Json]) -> Result<(), BillingTextError> {
     for part in parts {
         let fields = as_object(part, "messages.content")?;
-        let Some(part_type) = fields.get("type") else {
-            return Err(BillingTextError::Missing {
-                field: "messages.content.type",
-            });
-        };
+        let part_type = fields.get("type").ok_or(BillingTextError::Missing {
+            field: "messages.content.type",
+        })?;
         if as_text(part_type, "messages.content.type")? != "text" {
             continue;
         }
-        let Some(part_text) = fields.get("text") else {
-            return Err(BillingTextError::Missing {
-                field: "messages.content.text",
-            });
-        };
+        let part_text = fields.get("text").ok_or(BillingTextError::Missing {
+            field: "messages.content.text",
+        })?;
         prompt.push_str(as_text(part_text, "messages.content.text")?);
     }
     Ok(())
 }
 
 fn append_tool_calls(prompt: &mut String, calls: Option<&Json>) -> Result<(), BillingTextError> {
-    match calls {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::List(entries)) => {
-            for call in entries {
-                let fields = as_object(call, "messages.tool_calls")?;
-                let Some(function) = fields.get("function") else {
-                    continue;
-                };
-                let function_fields = as_object(function, "messages.tool_calls.function")?;
-                let Some(arguments) = function_fields.get("arguments") else {
-                    return Err(BillingTextError::Missing {
-                        field: "messages.tool_calls.function.arguments",
-                    });
-                };
-                prompt.push_str(as_text(
-                    arguments,
-                    "messages.tool_calls.function.arguments",
-                )?);
-            }
-            Ok(())
-        }
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(BillingTextError::NotList {
-                field: "messages.tool_calls",
-            })
-        }
+    let Some(value) = calls.filter(|value| !matches!(value, Json::Null)) else {
+        return Ok(());
+    };
+    let Json::List(entries) = value else {
+        return Err(BillingTextError::NotList {
+            field: "messages.tool_calls",
+        });
+    };
+    for call in entries {
+        let fields = as_object(call, "messages.tool_calls")?;
+        let Some(function) = fields.get("function") else {
+            continue;
+        };
+        let function_fields = as_object(function, "messages.tool_calls.function")?;
+        let Some(arguments) = function_fields.get("arguments") else {
+            return Err(BillingTextError::Missing {
+                field: "messages.tool_calls.function.arguments",
+            });
+        };
+        prompt.push_str(as_text(
+            arguments,
+            "messages.tool_calls.function.arguments",
+        )?);
     }
+    Ok(())
 }
 
 pub fn get_response_string(response: &ResponseText<'_>) -> Result<String, BillingTextError> {

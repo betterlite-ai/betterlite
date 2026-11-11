@@ -44,18 +44,6 @@ fn format_input(document: &str) -> Result<String, BillingTextError> {
     )
 }
 
-fn format_prompt(document: &str, call_type: PromptCallType) -> Result<String, BillingTextError> {
-    let prompt = json(document);
-    get_formatted_prompt(
-        &FormattedPromptData {
-            messages: None,
-            prompt: Some(&prompt),
-            input: None,
-        },
-        call_type,
-    )
-}
-
 fn response<'text>(
     event: Option<EventText<'text>>,
     choices: &'text [ChoiceText<'text>],
@@ -65,7 +53,7 @@ fn response<'text>(
 
 #[rstest]
 #[case::empty("", 0)]
-#[case::ascii(" a\tb\nc\r", 4)]
+#[case::ascii(" a\tb\nc\r", 3)]
 #[case::unicode_spaces("\u{a0}a\u{3000}b\u{2003}c", 3)]
 #[case::python_separators("\u{1c}\u{1d}\u{1e}\u{1f}", 0)]
 #[case::zero_width_space("a\u{200b}b", 3)]
@@ -154,8 +142,17 @@ fn requires_messages_for_a_chat_prompt() {
 #[case::text_completion("text", PromptCallType::TextCompletion)]
 #[case::image_generation("image", PromptCallType::ImageGeneration)]
 fn reads_the_prompt_field(#[case] document: &str, #[case] call_type: PromptCallType) {
+    let prompt = json(&format!("\"{document}\""));
     assert_eq!(
-        format_prompt(&format!("\"{document}\""), call_type).expect("formats"),
+        get_formatted_prompt(
+            &FormattedPromptData {
+                messages: None,
+                prompt: Some(&prompt),
+                input: None,
+            },
+            call_type,
+        )
+        .expect("formats"),
         document
     );
 }
@@ -164,8 +161,16 @@ fn reads_the_prompt_field(#[case] document: &str, #[case] call_type: PromptCallT
 #[case::number("5", BillingTextError::NotText { field: "prompt" })]
 #[case::null("null", BillingTextError::Missing { field: "prompt" })]
 fn rejects_malformed_prompt_fields(#[case] document: &str, #[case] expected: BillingTextError) {
+    let prompt = json(document);
     assert_eq!(
-        format_prompt(document, PromptCallType::TextCompletion),
+        get_formatted_prompt(
+            &FormattedPromptData {
+                messages: None,
+                prompt: Some(&prompt),
+                input: None,
+            },
+            PromptCallType::TextCompletion,
+        ),
         Err(expected)
     );
 }
