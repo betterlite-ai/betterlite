@@ -14,7 +14,7 @@ use betterlite_models::provider_metadata_factory::selection::MetadataQuery;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::input::{ParameterScript, Step};
+use super::input::Step;
 use super::sources::ScriptedSource;
 use super::{FixtureContext, State, error_box};
 use crate::helpers::HelperError;
@@ -45,7 +45,7 @@ pub(super) async fn call_step_for(
         api_key: credential.as_ref(),
     };
     let source = ScriptedSource {
-        script: parameters.clone().unwrap_or(ParameterScript::Absent),
+        script: parameters.clone(),
         log: Arc::clone(&state.log),
     };
     let harness = fixture.harness();

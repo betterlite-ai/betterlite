@@ -57,7 +57,8 @@ impl ModelInfoCache {
     // A negative or zero maxsize disables caching, as functools.lru_cache does
     pub fn new(maxsize: i64) -> Self {
         let capacity = usize::try_from(maxsize).unwrap_or(0);
-        let entries = NonZeroUsize::new(capacity).map(LruCache::new);
+        // sparse keeps the cap without allocating for it, like functools.lru_cache
+        let entries = NonZeroUsize::new(capacity).map(LruCache::sparse);
         Self {
             maxsize: capacity,
             state: Mutex::new(CacheState {

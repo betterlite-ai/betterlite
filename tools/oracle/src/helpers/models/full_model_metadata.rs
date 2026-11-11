@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use betterlite_config::sections::full_model_metadata::DEFAULT_MAX_LRU_CACHE_SIZE;
 use betterlite_models::full_model_metadata::cache::{MetadataCaches, ModelInfoCache};
 use betterlite_models::full_model_metadata::record::ModelInfoHandle;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
@@ -64,11 +65,11 @@ impl State {
 
 async fn run_steps(mut fixture: FixtureContext, input: &Input) -> Result<Value, Box<HelperError>> {
     let log = Arc::new(CallLog::default());
-    let mut state = State::new(
-        input.fixture.cache_maxsize.unwrap_or(64),
-        input.fixture.dynamic.clone(),
-        log,
-    );
+    let maxsize = input
+        .fixture
+        .cache_maxsize
+        .unwrap_or(DEFAULT_MAX_LRU_CACHE_SIZE);
+    let mut state = State::new(maxsize, input.fixture.dynamic.clone(), log);
     let mut observations = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
         let start = state.log.len();

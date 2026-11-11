@@ -1,12 +1,14 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::decisions::Json;
-use crate::full_model_metadata::cache::CacheInfo;
+use crate::full_model_metadata::cache::{CacheInfo, CacheKey, ModelInfoCache};
 use crate::full_model_metadata::error::{FullMetadataError, ModelRecordError};
 use crate::full_model_metadata::parameters::ProviderParameterSource;
+use crate::full_model_metadata::record::ModelInfo;
 use crate::identity::provider_id::ProviderId;
 use crate::params::CallType;
 use crate::params::capabilities::{
@@ -302,6 +304,7 @@ pub(super) async fn test_credential_cache_bypass_case() {
     test_empty_key_case(&harness, &mut state, &parameters, &cached).await;
     test_named_key_case(&harness, &mut state, &parameters, &cached).await;
     test_api_base_key_case(&harness, &mut state, &parameters, &cached).await;
+    test_explicit_dynamic_key_case(&harness).await;
 }
 
 async fn test_cache_fill_case(
@@ -410,6 +413,51 @@ async fn test_api_base_key_case(
     assert_eq!(state.caches.full.cache_info().hits, 2);
 }
 
+// an explicit key still reaches the dynamic metadata query, which must receive it
+async fn test_explicit_dynamic_key_case(harness: &Harness<'_>) {
+    let parameters = ScriptedParameters::default();
+    let mut state = State::new(
+        8,
+        ScriptedDynamic::new(vec![
+            Reply::Value(raw(r#"{"key":"runtime"}"#)),
+            Reply::Value(raw(r#"{"key":"runtime"}"#)),
+        ]),
+    );
+    test_explicit_key(harness, &mut state, &parameters, String::new()).await;
+    test_explicit_key(harness, &mut state, &parameters, "fixture-key".to_owned()).await;
+    let calls = state.dynamic.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls.iter().all(|call| call.authenticated));
+    assert!(
+        calls
+            .iter()
+            .all(|call| call.adapter == DynamicModelInfo::Ollama && call.model == "llama3.2")
+    );
+    // explicit keys read and write neither cache
+    let full = state.caches.full.cache_info();
+    assert_eq!(full.hits, 0);
+    assert_eq!(full.misses, 0);
+    assert_eq!(full.currsize, 0);
+}
+
+async fn test_explicit_key(
+    harness: &Harness<'_>,
+    state: &mut State,
+    parameters: &ScriptedParameters,
+    key: String,
+) {
+    let credential = SecretString::from(key);
+    let record = full_call(
+        harness,
+        state,
+        parameters,
+        &request("llama3.2", Some("ollama"), None, Some(&credential)),
+    )
+    .await
+    .expect("explicit key");
+    assert_eq!(field(&record, "key"), Some(text("runtime")));
+}
+
 pub(super) async fn test_helper_and_full_caches_case() {
     let fixture = Fixture::new(OPENAI_MODELS);
     let harness = fixture.harness();
@@ -422,6 +470,7 @@ pub(super) async fn test_helper_and_full_caches_case() {
         test_zero_capacity_case(&harness, maxsize, &parameters).await;
     }
     test_failed_build_case(&harness).await;
+    test_huge_maxsize_case();
 }
 
 async fn test_helper_hit_case(harness: &Harness<'_>, state: &mut State) {
@@ -542,6 +591,28 @@ async fn test_zero_capacity_case(
     assert_eq!(info.hits, 0);
     assert_eq!(info.misses, 2);
     assert_eq!(info.currsize, 0);
+}
+
+// functools.lru_cache allocates nothing up front, so a huge maxsize must not either
+fn test_huge_maxsize_case() {
+    let cache = ModelInfoCache::new(i64::MAX);
+    let info = cache.cache_info();
+    assert_eq!(info.maxsize, usize::try_from(i64::MAX).unwrap_or(0));
+    assert_eq!(info.currsize, 0);
+    let key = CacheKey {
+        model: "gpt-4o".to_owned(),
+        custom_llm_provider: Some("openai".to_owned()),
+        api_base: None,
+    };
+    let record = Arc::new(Mutex::new(ModelInfo {
+        fields: IndexMap::new(),
+    }));
+    cache.put(key.clone(), Arc::clone(&record));
+    let hit = cache.get(&key).expect("huge capacity entry");
+    assert!(Arc::ptr_eq(&record, &hit));
+    let filled = cache.cache_info();
+    assert_eq!(filled.misses, 1);
+    assert_eq!(filled.currsize, 1);
 }
 
 // a failed build is never cached

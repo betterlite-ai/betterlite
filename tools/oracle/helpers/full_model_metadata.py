@@ -3,12 +3,13 @@ import json
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager, redirect_stdout
 from functools import lru_cache
-from typing import Protocol, TypeAlias, TypedDict, cast
+from typing import Protocol, TypeAlias, cast
 from unittest import mock
 
 import httpx
 import litellm
 import litellm.utils as litellm_utils
+from litellm.constants import DEFAULT_MAX_LRU_CACHE_SIZE
 from litellm.exceptions import ModelNotMappedError
 from litellm.llms.lemonade.chat.transformation import LemonadeChatConfig
 from litellm.llms.ollama.common_utils import OllamaModelInfo
@@ -39,9 +40,7 @@ class CachedLookup(Protocol):
     def cache_info(self) -> CacheInfoView: ...
 
 
-class Outcome(TypedDict):
-    result: Json
-    error: bool
+Outcome: TypeAlias = tuple[Object, bool]
 
 
 class ParameterQueryError(Exception):
@@ -211,8 +210,8 @@ def execute_call(step: Object) -> Outcome:
     try:
         result = litellm_utils.get_model_info(model, provider, api_base, api_key)
     except Exception as error:  # noqa: BLE001 - every source exception is the raised outcome under test
-        return {"result": {"raised": raised_category(error)}, "error": True}
-    return {"result": json_value(result), "error": False}
+        return {"raised": cast("Json", raised_category(error))}, True
+    return cast("Object", result), False
 
 
 def execute_helper_call(step: Object) -> Outcome:
@@ -222,8 +221,8 @@ def execute_helper_call(step: Object) -> Outcome:
     try:
         result = litellm_utils._cached_get_model_info_helper(model, provider, api_base)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     except Exception as error:  # noqa: BLE001 - every source exception is the raised outcome under test
-        return {"result": {"raised": raised_category(error)}, "error": True}
-    return {"result": json_value(cast("object", result)), "error": False}
+        return {"raised": cast("Json", raised_category(error))}, True
+    return cast("Object", result), False
 
 
 def cache_info_json(info: CacheInfoView) -> Json:
@@ -244,14 +243,15 @@ def caches_json() -> Json:
 def observation(driver: Driver, op: str, outcome: Outcome, start: int) -> Json:
     caches = caches_json()
     calls = driver.calls[start:]
-    if outcome["error"]:
-        return {"op": op, "result": outcome["result"], "calls": calls, "caches": caches}
-    result = object_value(outcome["result"], "result")
+    result, error = outcome
+    if error:
+        return {"op": op, "result": result, "calls": calls, "caches": caches}
+    # records keeps the live dict, the observation keeps a snapshot of it
     record = len(driver.records)
     driver.records.append(result)
     return {
         "op": op,
-        "result": result,
+        "result": json_value(result),
         "record": record,
         "calls": calls,
         "caches": caches,
@@ -274,7 +274,7 @@ def mutate_step(driver: Driver, step: Object) -> Json:
     field = string_value(step.get("field"), "field")
     target = driver.records[record]
     target[field] = step.get("value")
-    return {"op": "mutate", "record": record, "field": field, "value": target.get(field)}
+    return {"op": "mutate", "record": record, "field": field}
 
 
 def invalidate_step() -> Json:
@@ -313,5 +313,6 @@ def run(data: dict[str, Json]) -> Json:
     fixture = object_value(data.get("fixture"), "fixture")
     driver = Driver(fixture)
     with installed(fixture, driver):
-        install_caches(integer_value(fixture.get("cache_maxsize", 64), "cache_maxsize"))
+        maxsize = fixture.get("cache_maxsize", DEFAULT_MAX_LRU_CACHE_SIZE)
+        install_caches(integer_value(maxsize, "cache_maxsize"))
         return [apply_step(driver, step) for step in object_list(data.get("steps"), "steps")]

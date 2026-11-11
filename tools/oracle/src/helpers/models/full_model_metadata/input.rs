@@ -32,7 +32,7 @@ pub(crate) enum Step {
         #[serde(default)]
         api_key: Option<String>,
         #[serde(default)]
-        parameters: Option<ParameterScript>,
+        parameters: ParameterScript,
     },
     HelperCall {
         model: String,
@@ -53,13 +53,14 @@ pub(crate) enum Step {
     },
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum ParameterScript {
     Value {
         #[serde(default)]
         body: Option<Vec<String>>,
     },
+    #[default]
     Absent,
     Error,
 }
