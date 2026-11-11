@@ -36,6 +36,7 @@ pub(super) fn llama_local_template() {
     local_assets();
     generic_fallback();
     empty_delimiters();
+    earlier_branches_win();
 }
 
 fn custom_bypass() {
@@ -102,4 +103,24 @@ fn empty_delimiters() {
         .unwrap(),
         "hi"
     );
+}
+
+fn earlier_branches_win() {
+    let exchange = messages(r#"[{"role":"user","content":"hi"}]"#);
+    // each earlier Bedrock branch renders without a template even when llama3 instruct also matches
+    for (mixed, plain) in [
+        (
+            "amazon.titan-text-llama3-instruct",
+            "amazon.titan-text-express-v1",
+        ),
+        ("anthropic.llama3-instruct", "anthropic.claude-v2"),
+        ("mistral.llama3-instruct", "mistral.mixtral-8x7b-instruct"),
+        ("llama2-chat-llama3-instruct", "meta.llama2-13b-chat"),
+    ] {
+        let rendered = convert(mixed, &exchange, &BTreeMap::new(), &empty_factory()).unwrap();
+        assert_eq!(
+            rendered,
+            convert(plain, &exchange, &BTreeMap::new(), &empty_factory()).unwrap()
+        );
+    }
 }

@@ -158,6 +158,25 @@ fn render_with_template(template: &str) -> String {
         .prompt
 }
 
+async fn assert_missing_template(model: &str, prompts: &PromptFactory) {
+    let conversation = messages(r#"[{"role":"user","content":"hi"}]"#);
+    let error = convert_messages_to_prompt(PromptConversion {
+        model,
+        messages: &conversation,
+        provider: Some(BedrockInvokeProvider::Meta),
+        custom_prompt_dict: &BTreeMap::new(),
+        prompts,
+        now: clock(),
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(error.to_string(), "No chat template found");
+    assert!(matches!(
+        error,
+        ConversionError::Factory(FactoryError::NoChatTemplate)
+    ));
+}
+
 #[tokio::test]
 async fn invoke_primitives_never_downloads_templates() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -171,23 +190,11 @@ async fn invoke_primitives_never_downloads_templates() {
             client: ProxiedClient::outbound(&Arc::new(policy)).unwrap(),
         }),
     };
-    let conversation = messages(r#"[{"role":"user","content":"hi"}]"#);
-    let error = convert_messages_to_prompt(PromptConversion {
-        model: "meta.llama3-8b-instruct-v1:0",
-        messages: &conversation,
-        provider: Some(BedrockInvokeProvider::Meta),
-        custom_prompt_dict: &BTreeMap::new(),
-        prompts: &prompts,
-        now: clock(),
-    })
-    .await
-    .unwrap_err();
-    assert_eq!(error.to_string(), "No chat template found");
-    assert!(matches!(
-        error,
-        ConversionError::Factory(FactoryError::NoChatTemplate)
-    ));
-    // the HTTP hub was never asked for the template
+    // llama2 without chat and llama3 or llama4 with instruct all need the local template
+    assert_missing_template("meta.llama3-8b-instruct-v1:0", &prompts).await;
+    assert_missing_template("meta.llama4-17b-instruct-v1:0", &prompts).await;
+    assert_missing_template("meta.llama2-llama3-instruct", &prompts).await;
+    // the HTTP hub was never asked for a template
     match listener.accept() {
         Ok(_stream) => panic!("the local template lookup reached the network"),
         Err(failure) => assert_eq!(failure.kind(), ErrorKind::WouldBlock),
