@@ -540,9 +540,9 @@ fn agentcore_stream_bounded_inputs() {
     decode_agentcore_line(&mut exact, boundary.as_bytes(), &mut events).unwrap();
     let mut complete = Vec::new();
     let over_line = format!("{}\n", "x".repeat(MAX_LINE_BYTES.saturating_add(1)));
-    let error =
+    let complete_error =
         decode_agentcore_line(&mut complete, over_line.as_bytes(), &mut events).unwrap_err();
-    assert!(matches!(error, LineError::TooLarge { .. }));
+    assert!(matches!(complete_error, LineError::TooLarge { .. }));
     let mut at_limit = Vec::new();
     let exact_line = format!("{}\n", "x".repeat(MAX_LINE_BYTES));
     decode_agentcore_line(&mut at_limit, exact_line.as_bytes(), &mut events).unwrap();

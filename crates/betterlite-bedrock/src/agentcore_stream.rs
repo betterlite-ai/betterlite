@@ -189,3 +189,5 @@ fn chunk_for(model: &str, ids: &dyn IdSource, event: LineEvent) -> Chunk {
         service_tier: None,
     }
 }
+
+mod tests;
