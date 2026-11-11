@@ -11,9 +11,9 @@ use secrecy::ExposeSecret as _;
 use crate::claude_settings::SettingsDocument;
 use crate::claude_settings::error::ClaudeSettingsError;
 use crate::credential_lifecycle::outcome::SecretSave;
-use crate::login::LoginArgs;
 use crate::login::error::{FlowError, LoginError, PreflightError};
 use crate::login::finish::LoginFinished;
+use crate::login::{Interrupts as _, LoginArgs, NeverInterrupted};
 
 use support::{World, response, run, secret, start_body, world};
 
@@ -185,6 +185,11 @@ fn login_dispatch_reports_a_cancellation_as_a_message() {
 }
 
 #[test]
+fn login_dispatch_never_reports_an_interruption_by_default() {
+    assert!(!NeverInterrupted.interrupted());
+}
+
+#[test]
 fn login_dispatch_prints_the_failure_when_the_flow_is_not_interrupted() {
     let mut world = world(vec![(support::START, response(404, ""))]);
     let (result, out) = run(&mut world, LoginArgs::default());
@@ -231,6 +236,8 @@ fn pkce_login_saves_the_record_and_finishes_the_login() {
         },
     );
     result.expect("signs in");
+    assert!(out.contains("Opening browser to: https://gateway.example/authorize?"));
+    assert!(out.contains("Approve the sign-in in your browser. Waiting..."));
     assert!(out.contains("\nLogin successful!\nJWT Token: sk-access...\n"));
     assert!(out.contains("Credential stored in your OS keychain."));
     assert!(out.contains("You can now use the CLI without specifying --api-key"));

@@ -1,0 +1,8 @@
+task: B4585
+deviations:
+  - what: A cancellation is reported through an injected Interrupts port, so `lite login` prints "\nAuthentication cancelled by user." only when the CLI root supplies a port that observes the process interrupt; the default NeverInterrupted leaves a Ctrl-C to end the process.
+    why: Python's KeyboardInterrupt is a runtime signal, not a declared type, and a terminal-signal handler belongs to the one CLI entry point that owns the process, not to this module; writing the port into the trait keeps the message and the zero exit code testable and lets the root decide how Ctrl-C is captured.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L955-L957
+  - what: An agent command reads `--skip-verify` only before the first forwarded argument; once a positional value starts the forwarded list, a later `--skip-verify` is forwarded to the agent instead of being consumed, where Click parses the option anywhere in the argument list.
+    why: clap's allow_hyphen_values positional, which is what makes unknown agent options like `--resume` forward without an error, also captures a known flag that follows a positional; forwarding the trailing arguments unchanged is the behavior this task specifies, and treating a flag after those arguments as part of them keeps `lite claude --resume x` working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L873-L884
