@@ -3,8 +3,8 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 
 use crate::callback_logger::CallbackLogger as _;
-use crate::datadog_llm_observability::logger::uuid_id;
 use crate::datadog_llm_observability::tests::support;
+use crate::datadog_logging::logger::uuid_id;
 
 fn logger() -> (Arc<support::Logger>, Arc<support::ScriptedTransport>) {
     support::build(

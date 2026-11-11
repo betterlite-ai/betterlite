@@ -13,20 +13,13 @@ use crate::datadog::apm::Tracer;
 use crate::datadog_llm_metrics::token_counting::ToolTokenCounter;
 use crate::datadog_llm_obs::span_records::LLMObsPayload;
 use crate::datadog_llm_obs::values::Object;
+use crate::datadog_logging::logger::IdGenerator;
 use crate::datadog_logging::transport::Transport;
 
 use super::error::DatadogLlmObsError;
 use super::flush;
 use super::settings::{DatadogLlmObsInit, DatadogLlmObsSettings};
 use super::span::{self, SpanContext, SpanRequest};
-
-pub type IdGenerator = fn() -> String;
-
-#[must_use]
-pub fn uuid_id() -> String {
-    // LiteLLM invents a uuid4 for a span or trace id the caller did not supply
-    uuid::Uuid::new_v4().to_string()
-}
 
 pub struct DatadogLlmObsDeps {
     pub transport: Arc<dyn Transport>,
@@ -84,7 +77,11 @@ where
             Json::Object(fields) => fields,
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => &empty,
         };
-        let redact = span::logging_is_off(&self.settings.options, metadata);
+        let redact = span::logging_is_off(
+            &self.settings.options,
+            metadata,
+            self.settings.global_turn_off,
+        );
         let apm_id = span::apm_trace_id(self.tracer.as_ref());
         let request = SpanRequest {
             payload: event.payload.as_ref(),

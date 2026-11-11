@@ -40,6 +40,8 @@ pub struct DatadogLlmObsInit {
     pub batch_size: Option<usize>,
     pub flush_interval_seconds: Option<f64>,
     pub params: Option<DatadogLlmObsInitParams>,
+    // litellm_settings.turn_off_message_logging, the global flag the request check falls back to
+    pub global_turn_off: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +51,7 @@ pub struct DatadogLlmObsSettings {
     pub batch: BatchSettings,
     pub options: CustomLoggerOptions,
     pub environment: Environment,
+    pub global_turn_off: bool,
 }
 
 impl DatadogLlmObsSettings {
@@ -64,6 +67,7 @@ impl DatadogLlmObsSettings {
             batch: batch(init, environment)?,
             options: options(init),
             environment: tags,
+            global_turn_off: init.global_turn_off,
         })
     }
 }

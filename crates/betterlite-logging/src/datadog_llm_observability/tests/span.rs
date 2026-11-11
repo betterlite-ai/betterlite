@@ -1,8 +1,10 @@
 use std::convert::Infallible;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
+use crate::callback_logger::CallbackLogger as _;
 use crate::datadog_llm_obs::records::DdMessage;
 use crate::datadog_llm_obs::span_records::{LLMObsPayload, SpanKind, SpanStatus};
 use crate::datadog_llm_obs::values::Object;
@@ -314,17 +316,17 @@ fn expected_tags() -> Vec<String> {
 fn datadog_llm_obs_logging_is_off_follows_the_flags_and_the_request() {
     let open = options(false);
     let mut request = Object::new();
-    assert!(!logging_is_off(&open, &request));
+    assert!(!logging_is_off(&open, &request, false));
     request.insert("turn_off_message_logging".to_owned(), Json::Bool(true));
-    assert!(logging_is_off(&open, &request));
+    assert!(logging_is_off(&open, &request, false));
     request.insert("turn_off_message_logging".to_owned(), Json::Bool(false));
-    assert!(!logging_is_off(&open, &request));
-    assert!(logging_is_off(&options(true), &Object::new()));
+    assert!(!logging_is_off(&open, &request, false));
+    assert!(logging_is_off(&options(true), &Object::new(), false));
     let message_logging_off = CustomLoggerOptions {
         turn_off_message_logging: false,
         message_logging: false,
     };
-    assert!(logging_is_off(&message_logging_off, &Object::new()));
+    assert!(logging_is_off(&message_logging_off, &Object::new(), false));
 }
 
 #[tokio::test]
@@ -354,4 +356,56 @@ async fn datadog_llm_obs_embedding_kind_needs_a_caller_parent() {
         child.meta.expect("the span carries meta").kind,
         Some(SpanKind::Embedding)
     );
+}
+
+#[test]
+fn datadog_llm_obs_redaction_headers_and_the_global_flag_are_honored() {
+    let open = options(false);
+    let disabled = object(&[(
+        "headers",
+        Json::Object(IndexMap::from([(
+            "litellm-disable-message-redaction".to_owned(),
+            Json::Bool(true),
+        )])),
+    )]);
+    assert!(!logging_is_off(&open, &disabled, true));
+    let enabled = object(&[(
+        "headers",
+        Json::Object(IndexMap::from([(
+            "x-litellm-enable-message-redaction".to_owned(),
+            Json::Bool(true),
+        )])),
+    )]);
+    assert!(logging_is_off(&open, &enabled, false));
+    assert!(logging_is_off(&open, &Object::new(), true));
+    let request_flag = object(&[("turn_off_message_logging", Json::Bool(false))]);
+    assert!(!logging_is_off(&open, &request_flag, true));
+}
+
+#[tokio::test]
+async fn datadog_llm_obs_global_redaction_drops_tool_definitions() {
+    let mut init = support::agent_init();
+    init.global_turn_off = true;
+    let (logger, _transport) = support::build(&init, &support::environment(&[]), Vec::new());
+    let mut payload = support::standard_payload("chatcmpl-1");
+    payload.model_parameters.insert(
+        "tools".to_owned(),
+        serde_json::from_str(
+            r#"[{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}}]"#,
+        )
+        .expect("the tools parse"),
+    );
+    logger
+        .async_log_success_event(support::event(payload))
+        .await
+        .expect("the event is accepted");
+    let queued = logger.queue.pending();
+    assert_eq!(queued.len(), 1);
+    let meta = queued[0].meta.clone().expect("the span carries meta");
+    assert!(meta.tool_definitions.is_empty());
+    let input = meta.input.expect("the input is present");
+    let DdMessage::Message(message) = &input.messages[0] else {
+        panic!("the redacted message stays a message record");
+    };
+    assert_eq!(message.content, text(REDACTED_TEXT));
 }

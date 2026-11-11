@@ -108,6 +108,7 @@ pub(super) fn init(
         batch_size: None,
         flush_interval_seconds: None,
         params: None,
+        global_turn_off: false,
     }
 }
 

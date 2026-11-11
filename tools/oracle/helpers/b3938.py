@@ -32,6 +32,7 @@ class Init(TypedDict, total=False):
     message_logging: bool
     batch_size: int
     flush_interval: float
+    global_turn_off: bool
 
 
 class Params(TypedDict, total=False):
@@ -138,6 +139,10 @@ def _logger_kwargs(init: Init) -> JsonObject:
 
 def _build_logger(init: Init, environment: Mapping[str, str]) -> DataDogLLMObsLogger:
     _apply_environment(environment)
+    global_turn_off = init.get("global_turn_off")
+    litellm.turn_off_message_logging = (
+        False if global_turn_off is None else global_turn_off
+    )
     logger = DataDogLLMObsLogger(**_logger_kwargs(init))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L441
     batch_size = init.get("batch_size")
     if batch_size is None and environment.get("DEFAULT_BATCH_SIZE"):

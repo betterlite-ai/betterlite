@@ -9,8 +9,9 @@ use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::datadog::apm::NullTracer;
 use crate::datadog_llm_metrics::token_counting::ToolTokenCounter;
-use crate::datadog_llm_observability::logger::{DatadogLlmObsDeps, DatadogLlmObsLogger, uuid_id};
+use crate::datadog_llm_observability::logger::{DatadogLlmObsDeps, DatadogLlmObsLogger};
 use crate::datadog_llm_observability::settings::{DatadogLlmObsInit, DatadogLlmObsInitParams};
+use crate::datadog_logging::logger::uuid_id;
 use crate::datadog_logging::transport::PooledTransport;
 
 mod tests;
@@ -41,6 +42,11 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         batch_size: None,
         flush_interval_seconds: None,
         params: init_params(inputs)?,
+        global_turn_off: inputs
+            .config
+            .sections
+            .logging_privacy
+            .turn_off_message_logging,
     };
     let logger = DatadogLlmObsLogger::new(
         &init,
@@ -76,12 +82,12 @@ fn init_params(inputs: &CatalogInputs) -> Result<Option<DatadogLlmObsInitParams>
                         message: error.to_string(),
                     })?;
             }
-            other => {
-                return Err(CatalogError::Init {
-                    message: format!(
-                        "callback_settings.datadog_llm_observability.{other} is not a DatadogLLMObsInitParams field"
-                    ),
-                });
+            dropped => {
+                // pydantic's DatadogLLMObsInitParams drops a key it does not declare
+                tracing::debug!(
+                    field = %dropped,
+                    "callback_settings.datadog_llm_observability.{dropped} is not an init param"
+                );
             }
         }
     }

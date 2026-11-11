@@ -62,12 +62,20 @@ pub struct SpanContext<'context, Counter> {
     pub generate_id: &'context (dyn Fn() -> String + Send + Sync),
 }
 
-// _payload_logging_is_off: the instance flags first, then the per-request redaction parameter
+// _payload_logging_is_off: the instance flags first, then the per-request redaction parameters
 #[must_use]
-pub fn logging_is_off(options: &CustomLoggerOptions, request_metadata: &Object) -> bool {
+pub fn logging_is_off(
+    options: &CustomLoggerOptions,
+    request_metadata: &Object,
+    global_turn_off: bool,
+) -> bool {
+    let params = Object::from([(
+        "metadata".to_owned(),
+        Json::Object(request_metadata.clone()),
+    )]);
     options.turn_off_message_logging
         || !options.message_logging
-        || should_redact_message_logging(None, Some(request_metadata), false)
+        || should_redact_message_logging(Some(&params), Some(request_metadata), global_turn_off)
 }
 
 // _get_apm_trace_id reads only the current span, so an empty or bare tracer leaves the id off

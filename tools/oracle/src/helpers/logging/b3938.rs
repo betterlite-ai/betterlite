@@ -50,6 +50,7 @@ struct Init {
     message_logging: Option<bool>,
     batch_size: Option<usize>,
     flush_interval: Option<f64>,
+    global_turn_off: Option<bool>,
 }
 
 #[derive(Clone, Copy, Deserialize, Default)]

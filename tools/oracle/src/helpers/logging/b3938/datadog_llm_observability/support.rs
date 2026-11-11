@@ -141,6 +141,7 @@ fn init(scenario: &Scenario) -> DatadogLlmObsInit {
         params: scenario.params.map(|params| DatadogLlmObsInitParams {
             turn_off_message_logging: params.turn_off_message_logging,
         }),
+        global_turn_off: scenario.init.global_turn_off.unwrap_or(false),
     }
 }
 

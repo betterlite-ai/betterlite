@@ -75,15 +75,12 @@ async fn callback_logger_reads_turn_off_message_logging() {
 }
 
 #[tokio::test]
-async fn callback_logger_reports_an_unknown_callback_setting() {
+async fn callback_logger_ignores_an_unknown_callback_setting() {
     let source = "callback_settings:\n  datadog_llm_observability:\n    not_a_field: true\n";
     let environment =
         BTreeMap::from([("LITELLM_DD_AGENT_HOST".to_owned(), "agent.local".to_owned())]);
-    let Err(error) = build(&inputs(source, environment)) else {
-        panic!("an unknown setting must fail the build");
-    };
-    assert!(matches!(error, CatalogError::Init { .. }));
-    assert!(error.to_string().contains("not_a_field"));
+    let logger = build(&inputs(source, environment)).expect("the logger builds");
+    assert!(!logger.turn_off_message_logging());
 }
 
 #[tokio::test]
