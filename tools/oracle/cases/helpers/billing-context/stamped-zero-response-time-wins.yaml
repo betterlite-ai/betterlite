@@ -1,0 +1,38 @@
+kind: helper
+name: billing-context-stamped-zero-response-time-wins
+call:
+  billing_context:
+    calls:
+      - function: response_time
+        response_time:
+          response: {kind: object, response_ms: 0}
+          total_time: 5.0
+          timing:
+            start_time: "2026-01-01T00:00:00+00:00"
+            end_time: "2026-01-01T00:00:01.500+00:00"
+            now: "2026-01-01T00:00:09+00:00"
+      - function: response_time
+        response_time:
+          response: {kind: object, response_ms: false}
+          total_time: 5.0
+      - function: response_time
+        response_time:
+          response: {kind: dictionary, model: dict-model, response_ms: 0}
+          total_time: 5.0
+      - function: response_time
+        response_time:
+          response: {kind: object, response_ms: "12"}
+          total_time: -2.5
+      - function: response_time
+        response_time:
+          response: {kind: object}
+          total_time: 0
+          timing:
+            start_time: "2026-01-01T00:00:00+00:00"
+            end_time: "2026-01-01T00:00:01.500+00:00"
+            now: "2026-01-01T00:00:09+00:00"
+      - function: response_time
+        response_time:
+          response: {kind: object}
+env: {}
+compare: {ignore: []}

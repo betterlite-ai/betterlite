@@ -1,0 +1,42 @@
+kind: helper
+name: billing-context-breakdown-positive-token-lines-and-zero-margin
+call:
+  billing_context:
+    calls:
+      - function: breakdown
+        breakdowns:
+          - input_cost: 0.001
+            output_cost: 0.002
+            total_cost: 0.003
+            tool_usage_cost: 0.0
+            additional_costs: {azure_model_router_flat_cost: 0.00014}
+            original_cost: 0.003
+            discount_percent: 0.0
+            discount_amount: 0.0
+            margin_percent: 0.0
+            margin_fixed_amount: 0.0
+            margin_total_amount: 0.0
+            cache_read_cost: 0.0
+            cache_creation_cost: 0.5
+            reasoning_cost: -1.0
+            service_tier: default
+            vertex_location: global
+            billed_token_rates:
+              input_cost_per_token: 0.1
+              output_cost_per_token: 0.2
+              cache_read_input_token_cost: 0.3
+              audio_read: 0.4
+              cache_write: 0.5
+              cache_write_1h: 0.6
+              reasoning: 0.7
+          - input_cost: 0.0
+            output_cost: 0.0
+            total_cost: 0.0
+            tool_usage_cost: 0.0
+            additional_costs: {}
+            cache_read_cost: 0.25
+            cache_creation_cost: -0.5
+            reasoning_cost: 0.75
+            data_residency: eu
+env: {}
+compare: {ignore: []}
