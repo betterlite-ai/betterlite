@@ -9,4 +9,7 @@ call: {azure_managed_identity: {steps: [
   {action: token, environment: {AZURE_AUTHORITY_HOST: "https://login.contoso.test", AZURE_TENANT_ID: "fixture-tenant", AZURE_FEDERATED_TOKEN_FILE: "/var/run/token", AZURE_CLIENT_ID: "env-client"}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: []}
 ]}}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [
+  {pointer: /value/steps/0/requests/0/headers/x-ms-client-request-id, why: "azure-identity adds x-ms-client-request-id to the workload token POST; the OIDC exchange owned by B530 sends none, listed in docs/deviations/B676.yaml"},
+  {pointer: /value/steps/1/requests/0/headers/x-ms-client-request-id, why: "azure-identity adds x-ms-client-request-id to the workload token POST; the OIDC exchange owned by B530 sends none, listed in docs/deviations/B676.yaml"}
+]}

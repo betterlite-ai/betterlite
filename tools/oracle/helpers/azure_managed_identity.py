@@ -24,7 +24,6 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 NOW = 1_700_000_000
 DEFAULT_SCOPE = "https://cognitiveservices.azure.com/.default"
 REQUEST_ID = "00000000-0000-4000-8000-000000000001"
-REQUEST_ID_HEADER = "x-ms-client-request-id"
 KEPT_HEADERS = frozenset(
     (
         "metadata",
@@ -32,7 +31,7 @@ KEPT_HEADERS = frozenset(
         "x-identity-header",
         "x-client-sku",
         "x-client-ver",
-        REQUEST_ID_HEADER,
+        "x-ms-client-request-id",
     )
 )
 CREDENTIAL_NAMES = {
@@ -163,8 +162,6 @@ def mapping_of(value: object) -> dict[str, str] | None:
 def recorded_request(request: HttpRequestLike, options: Mapping[str, Json]) -> dict[str, Json]:
     parts = urlsplit(request.url)
     timeout = options.get("connection_timeout")
-    # the workload token POST belongs to the OIDC exchange task, which sends no request id
-    kept = KEPT_HEADERS if request.method == "GET" else KEPT_HEADERS - {REQUEST_ID_HEADER}
     return cast(
         "dict[str, Json]",
         {
@@ -174,7 +171,7 @@ def recorded_request(request: HttpRequestLike, options: Mapping[str, Json]) -> d
             "headers": {
                 name.lower(): value
                 for name, value in request.headers.items()
-                if name.lower() in kept
+                if name.lower() in KEPT_HEADERS
             },
             "form": mapping_of(request.body),
             "timeout": timeout
