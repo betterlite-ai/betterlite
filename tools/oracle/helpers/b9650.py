@@ -187,7 +187,12 @@ def run(value: Fields) -> Fields:
         with (
             patch.object(litellm_logging, "get_litellm_params", return_value={}),
             patch.object(litellm_logging, "scrub_sensitive_keys_in_metadata", _identity),
+            patch.object(
+                litellm_logging, "_initialize_standard_callback_dynamic_params", return_value={}
+            ),
+            patch.object(litellm_logging, "get_trusted_callback_params", return_value=()),
             patch.object(Logging, "process_dynamic_callbacks", return_value=None),
+            patch.object(Logging, "initialize_standard_built_in_tools_params", return_value={}),
         ):
             logging_obj = _build(value)
             final = asyncio.run(
