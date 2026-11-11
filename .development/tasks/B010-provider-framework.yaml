@@ -254,5 +254,5 @@ pitfalls:
   std::future::ready(Err(...)) so its owner can make it async later without touching the registry.
 review_level: standard
 budget:
-  max_changed_lines: 2400
+  max_changed_lines: 2900
   max_new_expects: 0
