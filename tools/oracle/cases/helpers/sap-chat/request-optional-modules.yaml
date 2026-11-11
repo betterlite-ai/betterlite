@@ -1,0 +1,42 @@
+kind: helper
+name: sap-chat-request-optional-modules
+call:
+  b5845:
+    operation: requests
+    calls:
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          temperature: 0.2
+          grounding:
+            type: document_grounding_service
+            config:
+              filters:
+                - id: f
+                  data_repository_type: help.sap.com
+                  search_config: {max_chunk_count: 3}
+                  data_repositories: [r]
+              placeholders: {input: [q], output: o}
+          masking:
+            providers:
+              - type: sap_data_privacy_integration
+                method: anonymization
+                entities: [{type: profile-email}]
+          filtering:
+            input:
+              filters:
+                - type: azure_content_safety
+                  config: {hate: 2, prompt_shield: true}
+          translation:
+            input:
+              type: sap_document_translation
+              config: {source_language: en, target_language: de}
+      - model: m
+        messages: [{role: user, content: hi}]
+        optional_params:
+          grounding: null
+          masking: null
+          filtering: null
+          translation: null
+env: {}
+compare: {ignore: []}
