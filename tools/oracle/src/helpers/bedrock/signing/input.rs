@@ -5,7 +5,6 @@ use serde::Deserialize;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     pub(crate) calls: Vec<Call>,
 }
@@ -20,7 +19,6 @@ pub(crate) enum Call {
     OffLoop(OffLoop),
 }
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct CredentialInput {
     pub(crate) access_key_id: String,
     pub(crate) secret_access_key: String,
@@ -33,7 +31,6 @@ pub(crate) enum DataInput {
     Base64(String),
 }
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RequestHeaders {
     pub(crate) credentials: Option<CredentialInput>,
     pub(crate) region: String,
@@ -48,7 +45,6 @@ pub(crate) struct RequestHeaders {
     pub(crate) now: i64,
 }
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ServiceRequest {
     pub(crate) service_name: ServiceName,
     pub(crate) headers: BTreeMap<String, Option<String>>,
@@ -62,7 +58,6 @@ pub(crate) struct ServiceRequest {
     pub(crate) credentials: CredentialInput,
 }
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct JsonPost {
     pub(crate) credentials: CredentialInput,
     pub(crate) service_name: String,
@@ -73,7 +68,6 @@ pub(crate) struct JsonPost {
     pub(crate) now: i64,
 }
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RequestTarget {
     pub(crate) optional_params: BTreeMap<String, Box<RawValue>>,
     pub(crate) model: Option<String>,
@@ -81,7 +75,6 @@ pub(crate) struct RequestTarget {
     pub(crate) credentials: CredentialInput,
 }
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct BatchRequest {
     pub(crate) service_name: String,
     pub(crate) data: BatchDataInput,
@@ -98,7 +91,6 @@ pub(crate) enum BatchDataInput {
     Text(String),
 }
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct OffLoop {
     pub(crate) context: String,
     pub(crate) value: String,

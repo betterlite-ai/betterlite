@@ -74,7 +74,7 @@ where
     let settings = auth_settings(auth, &region);
     let credentials = resolve_credentials(&settings, &region)
         .await
-        .map_err(|source| SigningError::Credential { source })?;
+        .map_err(SigningError::Credential)?;
     sigv4_signed(request, &credentials, &region)
 }
 fn bearer_signed(request: ServiceRequest<'_>, token: &SecretString) -> AwsSignedRequest {

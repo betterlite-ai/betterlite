@@ -34,7 +34,7 @@ impl AwsSigningExecutor {
             .join_next()
             .await
             .ok_or(SigningError::ExecutorClosed)?
-            .map_err(|source| SigningError::Join { source })
+            .map_err(SigningError::Join)
     }
 }
 pub async fn sign_request_off_loop_if_aws<T, F>(

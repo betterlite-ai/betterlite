@@ -109,11 +109,6 @@ def body_json(payload: object) -> str:
     return ""
 def signed_json(method: str, url: str, headers: Mapping[str, object], body: object) -> Json:
     return cast( Json, { "ok": True, "method": method, "url": url, "headers": headers_json(headers), "body": body_json(body) } )  # noqa: E501
-def status_of(error: Exception) -> int | None:
-    carried: object = getattr(error, "status_code", None)
-    return carried if isinstance(carried, int) and not isinstance(carried, bool) else None
-def credentials_list(credentials: Credentials) -> Json:
-    return cast(Json, [credentials.access_key, credentials.secret_key, credentials.token])
 @contextmanager
 def clock(epoch: int) -> Generator[None, None, None]:
     with patch.object(botocore.auth, "get_current_datetime", fixed_clock(epoch)):
@@ -137,42 +132,20 @@ def request_headers(case: Params) -> Json:
         raise ValueError("supports_bearer_token must be a boolean")
     configured = optional_string(case.get("configured_bearer_token"), "configured_bearer_token")
     with harness(configured, None), clock(now_of(case)):
-        prepped = BaseAWSLLM().get_request_headers(  # pyright: ignore[reportUnknownMemberType]
-            credentials=optional_credentials(case.get("credentials")),
-            aws_region_name=string_value(case.get("region"), "region"),
-            extra_headers=resolved_headers_of(case.get("extra_headers")),
-            endpoint_url=string_value(case.get("endpoint"), "endpoint"),
-            data=body_of(case.get("data")),
-            headers=headers_of(case.get("headers")),
-            api_key=optional_string(case.get("api_key"), "api_key"),
-            supports_bearer_token=supports,
-        )
-    return signed_json(
-        "POST", prepped.url, prepped.headers, prepped.body  # pyright: ignore[reportUnknownArgumentType]
-    )
+        prepped = BaseAWSLLM().get_request_headers(credentials=optional_credentials(case.get("credentials")), aws_region_name=string_value(case.get("region"), "region"), extra_headers=resolved_headers_of(case.get("extra_headers")), endpoint_url=string_value(case.get("endpoint"), "endpoint"), data=body_of(case.get("data")), headers=headers_of(case.get("headers")), api_key=optional_string(case.get("api_key"), "api_key"), supports_bearer_token=supports)  # noqa: E501 # pyright: ignore[reportUnknownMemberType]
+    return signed_json("POST", prepped.url, prepped.headers, prepped.body)  # pyright: ignore[reportUnknownArgumentType]
 def service_request(case: Params) -> Json:
     resolver = Resolver(credentials_of(case.get("credentials")))
     configured = optional_string(case.get("configured_bearer_token"), "configured_bearer_token")
     with harness(configured, resolver), clock(now_of(case)):
         headers, body = BaseAWSLLM()._sign_request(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]
-            service_name=cast(ServiceName, string_value(case.get("service_name"), "service_name")),
-            headers=headers_of(case.get("headers")),
-            optional_params=optional_params_of(case.get("optional_params")),
-            request_data=object_value(case.get("request_data"), "request_data"),
-            api_base=string_value(case.get("api_base"), "api_base"),
-            model=optional_string(case.get("model"), "model"),
-            api_key=optional_string(case.get("api_key"), "api_key"),
-        )
-    return signed_json(
-        "POST", string_value(case.get("api_base"), "api_base"), headers, body  # pyright: ignore[reportUnknownArgumentType]
-    )
+            service_name=cast(ServiceName, string_value(case.get("service_name"), "service_name")), headers=headers_of(case.get("headers")), optional_params=optional_params_of(case.get("optional_params")), request_data=object_value(case.get("request_data"), "request_data"), api_base=string_value(case.get("api_base"), "api_base"), model=optional_string(case.get("model"), "model"), api_key=optional_string(case.get("api_key"), "api_key"))  # noqa: E501
+    return signed_json("POST", string_value(case.get("api_base"), "api_base"), headers, body)  # pyright: ignore[reportUnknownArgumentType]
 def json_post(case: Params) -> Json:
     credentials = credentials_of(case.get("credentials"))
     with clock(now_of(case)):
         prepped = sign_aws_json_post( get_credentials=lambda: credentials, service_name=string_value(case.get("service_name"), "service_name"), aws_region_name=optional_string(case.get("region"), "region"), url=string_value(case.get("url"), "url"), body=string_value(case.get("body"), "body"), headers=resolved_headers_of(case.get("headers")) )  # noqa: E501
-    return signed_json(
-        "POST", prepped.url, prepped.headers, prepped.body  # pyright: ignore[reportUnknownArgumentType]
-    )
+    return signed_json("POST", prepped.url, prepped.headers, prepped.body)  # pyright: ignore[reportUnknownArgumentType]
 def request_target(case: Params) -> Json:
     resolver = Resolver(credentials_of(case.get("credentials")))
     with harness(None, resolver):
@@ -182,13 +155,7 @@ def request_target(case: Params) -> Json:
             optional_string(case.get("model"), "model"),
             bearer_token=optional_string(case.get("bearer_token"), "bearer_token"),
         )
-    credentials: Json = (
-        None
-        if isinstance(target, BearerRequestTarget)
-        else credentials_list(  # pyright: ignore[reportUnknownArgumentType]
-            target.credentials  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-        )
-    )
+    credentials: Json = None if isinstance(target, BearerRequestTarget) else cast(Json, [target.credentials.access_key, target.credentials.secret_key, target.credentials.token])  # noqa: E501 # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
     return cast( Json, { "ok": True, "region": target.aws_region_name, "endpoint": target.aws_bedrock_runtime_endpoint, "credentials": credentials, "remaining": cast(Json, params), "resolved": resolver.calls } )  # noqa: E501
 def batch_request(case: Params) -> Json:
     resolver = Resolver(credentials_of(case.get("credentials")))
@@ -196,16 +163,8 @@ def batch_request(case: Params) -> Json:
     data = cast( "str | dict[str, object] | BedrockCreateBatchRequest", batch_data_of(case.get("data")) )  # noqa: E501
     endpoint_url = string_value(case.get("endpoint_url"), "endpoint_url")
     with ( harness(None, resolver), clock(now_of(case)) ):
-        headers, body = CommonBatchFilesUtils().sign_aws_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-            service_name=string_value(case.get("service_name"), "service_name"),
-            data=data,
-            endpoint_url=endpoint_url,
-            optional_params=optional_params_of(case.get("optional_params")),
-            method=method if method is not None else "POST",
-        )
-    return signed_json(
-        method.upper() if method is not None else "POST", endpoint_url, headers, body  # pyright: ignore[reportUnknownArgumentType]
-    )
+        headers, body = CommonBatchFilesUtils().sign_aws_request(service_name=string_value(case.get("service_name"), "service_name"), data=data, endpoint_url=endpoint_url, optional_params=optional_params_of(case.get("optional_params")), method=method if method is not None else "POST")  # noqa: E501 # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    return signed_json(method.upper() if method is not None else "POST", endpoint_url, headers, body)  # noqa: E501 # pyright: ignore[reportUnknownArgumentType]
 def value_json(kind: str, observed: Mapping[str, object]) -> Json:
     return cast( Json, { "kind": kind, "failed": False, "value": observed["value"], "context": observed["context"], "context_preserved": observed["context_preserved"], "off_caller_thread": observed["off_caller_thread"] } )  # noqa: E501
 async def off_loop_steps(context: str, value: str, failure: str) -> list[Json]:
@@ -238,8 +197,8 @@ def run_call(call: Json) -> Json:
         raise ValueError(f"unknown call: {kind}")
     try:
         return handler(object_value(payload, kind))
-    except Exception as error:  # noqa: BLE001 - a step reports every fixture failure
-        return cast(Json, {"ok": False, "status": status_of(error)})
+    except Exception:  # noqa: BLE001 - a step reports every fixture failure
+        return cast(Json, {"ok": False, "status": None})
 def run(input_value: Params) -> Json:
     calls = list_value(input_value.get("calls"), "calls")
     _ = litellm

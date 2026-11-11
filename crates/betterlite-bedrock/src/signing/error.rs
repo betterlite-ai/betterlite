@@ -16,25 +16,13 @@ pub enum SigningError {
     #[error(transparent)]
     Auth(#[from] AuthError),
     #[error("the AWS credential lookup failed")]
-    Credential {
-        #[source]
-        source: CredentialError,
-    },
+    Credential(#[source] CredentialError),
     #[error("the signing parameters are invalid")]
-    Parameters {
-        #[source]
-        source: BuildError,
-    },
+    Parameters(#[source] BuildError),
     #[error("the request cannot be signed")]
-    Signable {
-        #[source]
-        source: SigV4Error,
-    },
+    Signable(#[source] SigV4Error),
     #[error("the signing task failed")]
-    Join {
-        #[source]
-        source: JoinError,
-    },
+    Join(#[source] JoinError),
     #[error("the signing executor is closed")]
     ExecutorClosed,
 }

@@ -43,7 +43,13 @@ where
     )?;
     request.optional_params.remove("aws_region_name");
     let auth = pop_aws_auth_params(request.optional_params)?;
-    let endpoint = take_string(request.optional_params, "aws_bedrock_runtime_endpoint")?;
+    let endpoint = request
+        .optional_params
+        .remove("aws_bedrock_runtime_endpoint")
+        .as_deref()
+        .map_or(Ok(None), |raw| {
+            parse_string(raw, "aws_bedrock_runtime_endpoint")
+        })?;
     if request.bearer_token.is_some() {
         return Ok(RequestTarget {
             region,
@@ -54,7 +60,7 @@ where
     let settings = auth_settings(auth, &region);
     let credentials = resolve_credentials(&settings, &region)
         .await
-        .map_err(|source| SigningError::Credential { source })?;
+        .map_err(SigningError::Credential)?;
     Ok(RequestTarget {
         region,
         endpoint,
@@ -107,12 +113,4 @@ fn read_string(
         return Ok(None);
     };
     parse_string(raw, field)
-}
-fn take_string(
-    parameters: &mut BTreeMap<String, Box<RawValue>>,
-    field: &'static str,
-) -> Result<Option<String>, SigningError> {
-    parameters
-        .remove(field)
-        .map_or_else(|| Ok(None), |raw| parse_string(&raw, field))
 }

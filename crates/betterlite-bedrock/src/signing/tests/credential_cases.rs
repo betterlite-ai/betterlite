@@ -30,7 +30,7 @@ fn now() -> SystemTime {
         .unwrap()
 }
 
-fn fixture_credentials(access: &str, secret: &str, token: Option<&str>) -> Credentials {
+fn test_fixture_credentials(access: &str, secret: &str, token: Option<&str>) -> Credentials {
     Credentials {
         access_key_id: SecretString::from(access.to_owned()),
         secret_access_key: SecretString::from(secret.to_owned()),
@@ -38,7 +38,7 @@ fn fixture_credentials(access: &str, secret: &str, token: Option<&str>) -> Crede
     }
 }
 
-fn base_headers() -> Vec<(String, Option<String>)> {
+fn test_base_headers() -> Vec<(String, Option<String>)> {
     vec![
         (
             "content-type".to_owned(),
@@ -48,7 +48,7 @@ fn base_headers() -> Vec<(String, Option<String>)> {
     ]
 }
 
-fn signed_with(
+fn test_signed_with(
     credentials: &Credentials,
     headers: &[(String, Option<String>)],
 ) -> AwsSignedRequest {
@@ -67,7 +67,7 @@ fn signed_with(
     .unwrap()
 }
 
-fn header(signed: &AwsSignedRequest, name: &str) -> Option<String> {
+fn test_header(signed: &AwsSignedRequest, name: &str) -> Option<String> {
     signed
         .headers
         .iter()
@@ -79,38 +79,38 @@ fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
 }
 
-fn identity_signatures() {
-    let alice = fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
-    let bob = fixture_credentials("AKIDBOB", "bob-secret", Some("bob-token"));
-    let headers = base_headers();
-    let alice_signed = signed_with(&alice, &headers);
-    let bob_signed = signed_with(&bob, &headers);
+fn test_identity_signatures() {
+    let alice = test_fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
+    let bob = test_fixture_credentials("AKIDBOB", "bob-secret", Some("bob-token"));
+    let headers = test_base_headers();
+    let alice_signed = test_signed_with(&alice, &headers);
+    let bob_signed = test_signed_with(&bob, &headers);
     assert!(
-        header(&alice_signed, "Authorization")
+        test_header(&alice_signed, "Authorization")
             .unwrap()
             .contains("Credential=AKIDALICE/")
     );
     assert!(
-        header(&bob_signed, "Authorization")
+        test_header(&bob_signed, "Authorization")
             .unwrap()
             .contains("Credential=AKIDBOB/")
     );
     assert_eq!(
-        header(&alice_signed, "X-Amz-Security-Token").as_deref(),
+        test_header(&alice_signed, "X-Amz-Security-Token").as_deref(),
         Some("alice-token")
     );
     assert_eq!(
-        header(&bob_signed, "X-Amz-Security-Token").as_deref(),
+        test_header(&bob_signed, "X-Amz-Security-Token").as_deref(),
         Some("bob-token")
     );
     assert_ne!(
-        header(&alice_signed, "Authorization"),
-        header(&bob_signed, "Authorization")
+        test_header(&alice_signed, "Authorization"),
+        test_header(&bob_signed, "Authorization")
     );
 }
 
-fn stale_token_is_replaced() {
-    let alice = fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
+fn test_stale_token_is_replaced() {
+    let alice = test_fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
     let stale = vec![
         (
             "content-type".to_owned(),
@@ -121,72 +121,72 @@ fn stale_token_is_replaced() {
             Some("bob-token".to_owned()),
         ),
     ];
-    let refreshed = signed_with(&alice, &stale);
+    let refreshed = test_signed_with(&alice, &stale);
     assert_eq!(
-        header(&refreshed, "X-Amz-Security-Token").as_deref(),
+        test_header(&refreshed, "X-Amz-Security-Token").as_deref(),
         Some("alice-token")
     );
 }
 
-async fn concurrent_signatures() {
-    let alice = fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
-    let bob = fixture_credentials("AKIDBOB", "bob-secret", Some("bob-token"));
+async fn test_concurrent_signatures() {
+    let alice = test_fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
+    let bob = test_fixture_credentials("AKIDBOB", "bob-secret", Some("bob-token"));
     let executor = AwsSigningExecutor::default();
-    let alice_headers = base_headers();
-    let bob_headers = base_headers();
+    let alice_headers = test_base_headers();
+    let bob_headers = test_base_headers();
     let (first_result, second_result) = tokio::join!(
-        executor.run(move || signed_with(&alice, &alice_headers)),
-        executor.run(move || signed_with(&bob, &bob_headers))
+        executor.run(move || test_signed_with(&alice, &alice_headers)),
+        executor.run(move || test_signed_with(&bob, &bob_headers))
     );
     let first = first_result.unwrap();
     let second = second_result.unwrap();
     assert!(
-        header(&first, "Authorization")
+        test_header(&first, "Authorization")
             .unwrap()
             .contains("Credential=AKIDALICE/")
     );
     assert!(
-        header(&second, "Authorization")
+        test_header(&second, "Authorization")
             .unwrap()
             .contains("Credential=AKIDBOB/")
     );
 }
 
-fn cancelled_signature_keeps_identity() {
-    let alice = fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
-    let bob = fixture_credentials("AKIDBOB", "bob-secret", Some("bob-token"));
+fn test_cancelled_signature() {
+    let alice = test_fixture_credentials("AKIDALICE", "alice-secret", Some("alice-token"));
+    let bob = test_fixture_credentials("AKIDBOB", "bob-secret", Some("bob-token"));
     let executor = AwsSigningExecutor::default();
-    let bob_headers = base_headers();
+    let bob_headers = test_base_headers();
     let mut cancelled: Pin<
         Box<dyn Future<Output = Result<AwsSignedRequest, SigningError>> + Send>,
-    > = Box::pin(executor.run(move || signed_with(&bob, &bob_headers)));
+    > = Box::pin(executor.run(move || test_signed_with(&bob, &bob_headers)));
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
     assert!(cancelled.as_mut().poll(&mut context).is_pending());
     drop(cancelled);
-    let after = signed_with(&alice, &base_headers());
+    let after = test_signed_with(&alice, &test_base_headers());
     assert_eq!(
-        header(&after, "X-Amz-Security-Token").as_deref(),
+        test_header(&after, "X-Amz-Security-Token").as_deref(),
         Some("alice-token")
     );
 }
 
 #[tokio::test]
 async fn bedrock_signing_credential_identity_isolation() {
-    identity_signatures();
-    stale_token_is_replaced();
-    concurrent_signatures().await;
-    cancelled_signature_keeps_identity();
+    test_identity_signatures();
+    test_stale_token_is_replaced();
+    test_concurrent_signatures().await;
+    test_cancelled_signature();
 }
 
-fn no_credentials_failure() -> SigningError {
+fn test_no_credentials_failure() -> SigningError {
     request_headers(RequestHeaders {
         credentials: None,
         region: "us-west-2",
         extra_headers: &[],
         endpoint: ENDPOINT,
         data: Body::Text("{}"),
-        headers: &base_headers(),
+        headers: &test_base_headers(),
         api_key: None,
         configured_bearer: None,
         supports_bearer_token: true,
@@ -195,14 +195,14 @@ fn no_credentials_failure() -> SigningError {
     .unwrap_err()
 }
 
-fn bad_region_failure(credentials: &Credentials) -> SigningError {
+fn test_bad_region_failure(credentials: &Credentials) -> SigningError {
     request_headers(RequestHeaders {
         credentials: Some(credentials),
         region: "NOT-A-REGION",
         extra_headers: &[],
         endpoint: ENDPOINT,
         data: Body::Text("{}"),
-        headers: &base_headers(),
+        headers: &test_base_headers(),
         api_key: None,
         configured_bearer: None,
         supports_bearer_token: true,
@@ -211,7 +211,7 @@ fn bad_region_failure(credentials: &Credentials) -> SigningError {
     .unwrap_err()
 }
 
-fn bad_header_failure(credentials: &Credentials) -> SigningError {
+fn test_bad_header_failure(credentials: &Credentials) -> SigningError {
     let bad_header = vec![("x-bad".to_owned(), Some(format!("{SECRET_KEY}\n")))];
     request_headers(RequestHeaders {
         credentials: Some(credentials),
@@ -228,7 +228,7 @@ fn bad_header_failure(credentials: &Credentials) -> SigningError {
     .unwrap_err()
 }
 
-fn missing_region_failure(credentials: &Credentials) -> SigningError {
+fn test_missing_region_failure(credentials: &Credentials) -> SigningError {
     sign_aws_json_post(JsonPost {
         service_name: "bedrock",
         region: None,
@@ -241,16 +241,16 @@ fn missing_region_failure(credentials: &Credentials) -> SigningError {
     .unwrap_err()
 }
 
-fn request_failures(credentials: &Credentials) -> Vec<SigningError> {
+fn test_request_failures(credentials: &Credentials) -> Vec<SigningError> {
     vec![
-        no_credentials_failure(),
-        bad_region_failure(credentials),
-        bad_header_failure(credentials),
-        missing_region_failure(credentials),
+        test_no_credentials_failure(),
+        test_bad_region_failure(credentials),
+        test_bad_header_failure(credentials),
+        test_missing_region_failure(credentials),
     ]
 }
 
-fn target_failure(credentials: &Credentials) -> SigningError {
+fn test_target_failure(credentials: &Credentials) -> SigningError {
     let mut params: BTreeMap<String, Box<RawValue>> = serde_json::from_str(
         r#"{"aws_region_name":"us-west-2","aws_access_key_id":{"fixture-secret-access-key":true}}"#,
     )
@@ -267,7 +267,7 @@ fn target_failure(credentials: &Credentials) -> SigningError {
     result.unwrap_err()
 }
 
-fn assert_no_secret(error: &SigningError) {
+fn test_assert_no_secret(error: &SigningError) {
     let text = format!("{error} {error:?}");
     assert!(!text.contains(SECRET_KEY));
     assert!(!text.contains(SECRET_TOKEN));
@@ -275,20 +275,20 @@ fn assert_no_secret(error: &SigningError) {
 
 #[test]
 fn bedrock_signing_secret_safe_failure() {
-    let credentials = fixture_credentials("AKIDFIXTURE", SECRET_KEY, Some(SECRET_TOKEN));
-    let failures = request_failures(&credentials);
+    let credentials = test_fixture_credentials("AKIDFIXTURE", SECRET_KEY, Some(SECRET_TOKEN));
+    let failures = test_request_failures(&credentials);
     assert!(failures.iter().all(|error| {
         let text = format!("{error} {error:?}");
         !text.contains(SECRET_KEY) && !text.contains(SECRET_TOKEN)
     }));
-    let target = target_failure(&credentials);
-    assert_no_secret(&target);
+    let target = test_target_failure(&credentials);
+    test_assert_no_secret(&target);
     assert!(matches!(target, SigningError::Auth(_)));
     let credential_debug = format!("{credentials:?}");
     assert!(!credential_debug.contains(SECRET_KEY));
     assert!(!credential_debug.contains(SECRET_TOKEN));
     assert_eq!(credentials.secret_access_key.expose_secret(), SECRET_KEY);
-    let signed = signed_with(&credentials, &base_headers());
+    let signed = test_signed_with(&credentials, &test_base_headers());
     let signed_debug = format!("{signed:?}");
     assert!(!signed_debug.contains(SECRET_TOKEN));
     assert!(signed_debug.contains("<redacted>"));

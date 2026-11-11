@@ -7,6 +7,7 @@ use crate::helpers::HelperError;
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::signing::batch::{BatchData, BatchRequest, sign_batch_request};
+use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::executor::{AwsSigningExecutor, sign_request_off_loop_if_aws};
 use betterlite_bedrock::signing::service::{ServiceRequest, sign_service_request};
 use betterlite_bedrock::signing::target::{RegionInputs, TargetRequest, request_target};
@@ -128,44 +129,33 @@ pub(super) fn off_loop_case(case: &OffLoop) -> Result<Value, Box<HelperError>> {
 }
 async fn observed_steps(probe: &Probe, failure_message: &str) -> Vec<Value> {
     let executor = AwsSigningExecutor::default();
-    let mut steps = Vec::new();
+    let unsigned = |_error: SigningError| json!({"ok": false, "status": null});
     let run_probe = probe.clone();
-    steps.push(match executor.run(move || run_probe.observe("run")).await {
-        Ok(value) => value,
-        Err(_error) => json!({"ok": false, "status": null}),
-    });
     let inline_probe = probe.clone();
-    steps.push(
-        match sign_request_off_loop_if_aws(&executor, false, move || inline_probe.observe("inline"))
-            .await
-        {
-            Ok(value) => value,
-            Err(_error) => json!({"ok": false, "status": null}),
-        },
-    );
     let offloaded_probe = probe.clone();
-    steps.push(
-        match sign_request_off_loop_if_aws(&executor, true, move || {
+    let failure_text = failure_message.to_owned();
+    vec![
+        executor
+            .run(move || run_probe.observe("run"))
+            .await
+            .unwrap_or_else(unsigned),
+        sign_request_off_loop_if_aws(&executor, false, move || inline_probe.observe("inline"))
+            .await
+            .unwrap_or_else(unsigned),
+        sign_request_off_loop_if_aws(&executor, true, move || {
             offloaded_probe.observe("offloaded")
         })
         .await
-        {
-            Ok(value) => value,
-            Err(_error) => json!({"ok": false, "status": null}),
-        },
-    );
-    let failure_text = failure_message.to_owned();
-    steps.push(
+        .unwrap_or_else(unsigned),
         match executor
             .run(move || Err::<Value, String>(failure_text))
             .await
         {
             Ok(Ok(value)) => value,
             Ok(Err(message)) => json!({"kind": "failure", "failed": true, "value": message}),
-            Err(_error) => json!({"ok": false, "status": null}),
+            Err(error) => unsigned(error),
         },
-    );
-    steps
+    ]
 }
 #[derive(Clone)]
 struct Probe {

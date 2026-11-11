@@ -43,7 +43,7 @@ where
     let settings = auth_settings(auth, &region);
     let credentials = resolve_credentials(&settings, &region)
         .await
-        .map_err(|source| SigningError::Credential { source })?;
+        .map_err(SigningError::Credential)?;
     let method = request.method.unwrap_or("POST").to_ascii_uppercase();
     let (body, initial_headers) = if method == "GET" {
         (String::new(), Vec::new())

@@ -89,7 +89,7 @@ fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
 }
 
-fn assert_signed(signed: &AwsSignedRequest, url: &str, body: &[u8], headers: &[(&str, &str)]) {
+fn test_assert_signed(signed: &AwsSignedRequest, url: &str, body: &[u8], headers: &[(&str, &str)]) {
     assert_eq!(signed.method, "POST");
     assert_eq!(signed.url, url);
     assert_eq!(signed.body, body.to_vec());
@@ -107,7 +107,7 @@ struct EndpointCase<'source> {
     supports: bool,
 }
 
-fn endpoint(case: EndpointCase<'_>) -> Result<AwsSignedRequest, SigningError> {
+fn test_endpoint(case: EndpointCase<'_>) -> Result<AwsSignedRequest, SigningError> {
     request_headers(RequestHeaders {
         credentials: case.credentials,
         region: "us-west-2",
@@ -122,13 +122,13 @@ fn endpoint(case: EndpointCase<'_>) -> Result<AwsSignedRequest, SigningError> {
     })
 }
 
-fn plain_endpoint(
+fn test_plain_endpoint(
     credentials: &Credentials,
     headers: &[(String, Option<String>)],
     extra: &[(String, String)],
     data: Body<'_>,
 ) -> AwsSignedRequest {
-    endpoint(EndpointCase {
+    test_endpoint(EndpointCase {
         credentials: Some(credentials),
         headers,
         extra,
@@ -152,7 +152,7 @@ struct ServiceCase<'source> {
     configured: Option<&'source SecretString>,
 }
 
-fn service(case: ServiceCase<'_>) -> Result<AwsSignedRequest, SigningError> {
+fn test_service(case: ServiceCase<'_>) -> Result<AwsSignedRequest, SigningError> {
     let params = optional_params(case.params);
     let data = request_data(case.data);
     runtime().block_on(sign_service_request(
@@ -182,7 +182,7 @@ struct BatchCase<'source> {
     fixture: &'source Credentials,
 }
 
-fn batch(case: BatchCase<'_>) -> Result<AwsSignedRequest, SigningError> {
+fn test_batch(case: BatchCase<'_>) -> Result<AwsSignedRequest, SigningError> {
     let params = optional_params(case.params);
     runtime().block_on(sign_batch_request(
         BatchRequest {
@@ -204,13 +204,13 @@ fn fixed_clock_sigv4() {
         ("content-type", Some("application/json")),
         ("x-custom", Some("keep")),
     ]);
-    let signed = plain_endpoint(
+    let signed = test_plain_endpoint(
         &credentials,
         &headers,
         &[],
         Body::Text(r#"{"messages":[{"role":"user","content":"hello"}]}"#),
     );
-    assert_signed(
+    test_assert_signed(
         &signed,
         ENDPOINT,
         br#"{"messages":[{"role":"user","content":"hello"}]}"#,
@@ -227,13 +227,13 @@ fn fixed_clock_sigv4() {
 fn session_token_headers() {
     let with_token = fixture_credentials("AKIDEXAMPLE", Some("session-token"));
     let headers = supplied(&[("content-type", Some("application/json"))]);
-    let signed = plain_endpoint(
+    let signed = test_plain_endpoint(
         &with_token,
         &headers,
         &[],
         Body::Text(r#"{"inputText":"hello"}"#),
     );
-    assert_signed(
+    test_assert_signed(
         &signed,
         ENDPOINT,
         br#"{"inputText":"hello"}"#,
@@ -250,13 +250,13 @@ fn session_token_headers() {
 fn plain_signature_headers() {
     let without_token = fixture_credentials("AKIDEXAMPLE", None);
     let headers = supplied(&[("content-type", Some("application/json"))]);
-    let signed = plain_endpoint(
+    let signed = test_plain_endpoint(
         &without_token,
         &headers,
         &[],
         Body::Text(r#"{"inputText":"hello"}"#),
     );
-    assert_signed(
+    test_assert_signed(
         &signed,
         ENDPOINT,
         br#"{"inputText":"hello"}"#,
@@ -345,20 +345,20 @@ fn computed_header_replacement() {
         ("x-custom", "forwarded"),
         ("x-forwarded-for", "203.0.113.7"),
     ];
-    let with_stale = plain_endpoint(
+    let with_stale = test_plain_endpoint(
         &credentials,
         &stale,
         &[],
         Body::Text(r#"{"inputText":"hello"}"#),
     );
-    let without_stale = plain_endpoint(
+    let without_stale = test_plain_endpoint(
         &credentials,
         &forwarded,
         &[],
         Body::Text(r#"{"inputText":"hello"}"#),
     );
-    assert_signed(&with_stale, ENDPOINT, body, &expected_headers);
-    assert_signed(&without_stale, ENDPOINT, body, &expected_headers);
+    test_assert_signed(&with_stale, ENDPOINT, body, &expected_headers);
+    test_assert_signed(&without_stale, ENDPOINT, body, &expected_headers);
 }
 
 fn bearer_request_headers(api_key: &SecretString) -> AwsSignedRequest {
@@ -367,7 +367,7 @@ fn bearer_request_headers(api_key: &SecretString) -> AwsSignedRequest {
         ("x-custom", Some("keep")),
     ]);
     let extra = [("Authorization".to_owned(), "ignored-in-bearer".to_owned())];
-    endpoint(EndpointCase {
+    test_endpoint(EndpointCase {
         credentials: None,
         headers: &headers,
         extra: &extra,
@@ -411,7 +411,7 @@ fn bearer_service_request(api_key: &SecretString) -> (AwsSignedRequest, usize) {
 fn bearer_skips_sts() {
     let api_key = SecretString::from("bedrock-api-key".to_owned());
     let signed = bearer_request_headers(&api_key);
-    assert_signed(
+    test_assert_signed(
         &signed,
         ENDPOINT,
         br#"{"inputText":"hello"}"#,
@@ -424,7 +424,7 @@ fn bearer_skips_sts() {
     );
     let (service_signed, calls) = bearer_service_request(&api_key);
     assert_eq!(calls, 0);
-    assert_signed(
+    test_assert_signed(
         &service_signed,
         "https://bedrock-agentcore.us-west-2.amazonaws.com/runtimes/x/invocations",
         b"{\"b\": 1, \"a\": \"h\\u00e9llo\", \"n\": 1.0}",
@@ -436,7 +436,7 @@ fn bearer_skips_sts() {
     );
     let configured = SecretString::from("env-token".to_owned());
     let headers = supplied(&[("content-type", Some("application/json"))]);
-    let missing = endpoint(EndpointCase {
+    let missing = test_endpoint(EndpointCase {
         credentials: None,
         headers: &headers,
         extra: &[],
@@ -452,7 +452,7 @@ fn bearer_skips_sts() {
 fn override_request_headers(extra: &[(String, String)]) -> AwsSignedRequest {
     let credentials = fixture_credentials("AKIDEXAMPLE", None);
     let headers = supplied(&[("content-type", Some("application/json"))]);
-    plain_endpoint(
+    test_plain_endpoint(
         &credentials,
         &headers,
         extra,
@@ -466,7 +466,7 @@ fn override_service(authorization: Option<&str>) -> BTreeMap<String, String> {
         ("content-type", Some("application/json")),
         ("authorization", authorization),
     ]);
-    let signed = service(ServiceCase {
+    let signed = test_service(ServiceCase {
         service: ServiceName::Bedrock,
         headers: &headers,
         params: REGION_PARAMS,
@@ -480,7 +480,7 @@ fn override_service(authorization: Option<&str>) -> BTreeMap<String, String> {
     header_map(&signed.headers)
 }
 
-fn assert_service_override(authorization: Option<&str>, expected_authorization: &str) {
+fn test_assert_service_override(authorization: Option<&str>, expected_authorization: &str) {
     let headers = override_service(authorization);
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
@@ -495,7 +495,7 @@ fn override_request_checks() {
         ("authorization".to_owned(), "lower-ignored".to_owned()),
     ];
     let overridden = override_request_headers(&extra_override);
-    assert_signed(
+    test_assert_signed(
         &overridden,
         ENDPOINT,
         br#"{"inputText":"hello"}"#,
@@ -511,7 +511,7 @@ fn override_request_checks() {
         "AWS4-HMAC-SHA256 manual".to_owned(),
     )];
     let kept = override_request_headers(&aws_extra);
-    assert_signed(
+    test_assert_signed(
         &kept,
         ENDPOINT,
         br#"{"inputText":"hello"}"#,
@@ -526,16 +526,16 @@ fn override_request_checks() {
 
 fn explicit_non_aws_auth_override() {
     override_request_checks();
-    assert_service_override(Some("custom-lower"), "custom-lower");
-    assert_service_override(Some("AWS4-HMAC-SHA256 manual"), AUTH_AWS4_OVERRIDE);
-    assert_service_override(Some(""), "");
-    assert_service_override(Some("aws4-hmac-sha256 manual"), "aws4-hmac-sha256 manual");
+    test_assert_service_override(Some("custom-lower"), "custom-lower");
+    test_assert_service_override(Some("AWS4-HMAC-SHA256 manual"), AUTH_AWS4_OVERRIDE);
+    test_assert_service_override(Some(""), "");
+    test_assert_service_override(Some("aws4-hmac-sha256 manual"), "aws4-hmac-sha256 manual");
 }
 
 fn empty_credentials_error() {
     let headers = supplied(&[("content-type", Some("application/json"))]);
     let api_key = SecretString::from("bedrock-api-key".to_owned());
-    let plain = endpoint(EndpointCase {
+    let plain = test_endpoint(EndpointCase {
         credentials: None,
         headers: &headers,
         extra: &[],
@@ -545,7 +545,7 @@ fn empty_credentials_error() {
         supports: false,
     })
     .unwrap_err();
-    let bearer_disabled = endpoint(EndpointCase {
+    let bearer_disabled = test_endpoint(EndpointCase {
         credentials: None,
         headers: &headers,
         extra: &[],
@@ -562,13 +562,13 @@ fn empty_credentials_error() {
 fn assert_text_and_bytes_agree() {
     let credentials = fixture_credentials("AKIDEXAMPLE", None);
     let headers = supplied(&[("content-type", Some("application/json"))]);
-    let text = plain_endpoint(
+    let text = test_plain_endpoint(
         &credentials,
         &headers,
         &[],
         Body::Text("{\"text\":\"h\u{e9}llo\"}"),
     );
-    let bytes = plain_endpoint(
+    let bytes = test_plain_endpoint(
         &credentials,
         &headers,
         &[],
@@ -594,7 +594,7 @@ fn assert_text_and_bytes_agree() {
 fn bedrock_body_signature() {
     let fixture = fixture_credentials("AKIDEXAMPLE", Some("session-token"));
     let empty = Vec::new();
-    let signed = service(ServiceCase {
+    let signed = test_service(ServiceCase {
         service: ServiceName::Bedrock,
         headers: &empty,
         params: TOKEN_PARAMS,
@@ -605,7 +605,7 @@ fn bedrock_body_signature() {
         configured: None,
     })
     .unwrap();
-    assert_signed(
+    test_assert_signed(
         &signed,
         ENDPOINT,
         br#"{"b": 1, "a": 2}"#,
@@ -621,7 +621,7 @@ fn bedrock_body_signature() {
 fn sagemaker_keeps_content_type() {
     let fixture = fixture_credentials("AKIDEXAMPLE", None);
     let custom = supplied(&[("content-type", Some("application/x-custom"))]);
-    let signed = service(ServiceCase {
+    let signed = test_service(ServiceCase {
         service: ServiceName::Sagemaker,
         headers: &custom,
         params: REGION_PARAMS,
@@ -632,7 +632,7 @@ fn sagemaker_keeps_content_type() {
         configured: None,
     })
     .unwrap();
-    assert_signed(
+    test_assert_signed(
         &signed,
         "https://runtime.sagemaker.us-west-2.amazonaws.com/endpoints/x/invocations",
         br#"{"a": 1}"#,
@@ -647,7 +647,7 @@ fn sagemaker_keeps_content_type() {
 fn null_content_type_suppresses_insertion() {
     let fixture = fixture_credentials("AKIDEXAMPLE", None);
     let null = supplied(&[("content-type", None)]);
-    let signed = service(ServiceCase {
+    let signed = test_service(ServiceCase {
         service: ServiceName::S3vectors,
         headers: &null,
         params: REGION_PARAMS,
@@ -658,7 +658,7 @@ fn null_content_type_suppresses_insertion() {
         configured: None,
     })
     .unwrap();
-    assert_signed(
+    test_assert_signed(
         &signed,
         "https://s3vectors.us-west-2.api.aws/vectors/x",
         br#"{"a": 1}"#,
@@ -691,7 +691,7 @@ fn body_json_post_checks() {
         now: now(),
     })
     .unwrap();
-    assert_signed(
+    test_assert_signed(
         &post,
         ENDPOINT,
         br#"{"a": 1}"#,
@@ -722,7 +722,7 @@ fn body_bytes_match_signature() {
     body_json_post_checks();
 }
 
-fn target_call(
+fn test_target_call(
     optional_params: &str,
     model: Option<&str>,
     bearer: Option<&str>,
@@ -753,7 +753,7 @@ fn target_call(
 
 fn target_bearer_takes_the_endpoint() {
     let full = r#"{"aws_region_name":"us-west-2","aws_access_key_id":"AKIDEXAMPLE","aws_secret_access_key":"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY","aws_session_token":"session-token","aws_bedrock_runtime_endpoint":"https://custom.example","temperature":0.2}"#;
-    let (remaining, result, resolved) = target_call(full, None, Some(""));
+    let (remaining, result, resolved) = test_target_call(full, None, Some(""));
     let target = result.unwrap();
     assert_eq!(target.region, "us-west-2");
     assert_eq!(target.endpoint.as_deref(), Some("https://custom.example"));
@@ -767,7 +767,7 @@ fn target_bearer_takes_the_endpoint() {
 
 fn target_bearer_still_validates_auth() {
     let invalid_auth = r#"{"aws_region_name":"us-west-2","aws_access_key_id":{"nested":true}}"#;
-    let (remaining, result, resolved) = target_call(invalid_auth, None, Some("tok"));
+    let (remaining, result, resolved) = test_target_call(invalid_auth, None, Some("tok"));
     result.unwrap_err();
     assert_eq!(resolved, 0);
     assert!(remaining.is_empty());
@@ -775,7 +775,7 @@ fn target_bearer_still_validates_auth() {
 
 fn target_bearer_still_validates_region() {
     let invalid_region = r#"{"aws_region_name":"US-East-1"}"#;
-    let (remaining, result, resolved) = target_call(invalid_region, None, Some(""));
+    let (remaining, result, resolved) = test_target_call(invalid_region, None, Some(""));
     result.unwrap_err();
     assert_eq!(resolved, 0);
     assert!(remaining.contains_key("aws_region_name"));
@@ -784,14 +784,14 @@ fn target_bearer_still_validates_region() {
 fn target_bearer_still_validates_endpoint() {
     let bad_endpoint =
         r#"{"aws_region_name":"us-west-2","aws_bedrock_runtime_endpoint":{"nested":true}}"#;
-    let (_, result, resolved) = target_call(bad_endpoint, None, Some("tok"));
+    let (_, result, resolved) = test_target_call(bad_endpoint, None, Some("tok"));
     result.unwrap_err();
     assert_eq!(resolved, 0);
 }
 
 fn target_sigv4_resolves_credentials() {
     let full = r#"{"aws_region_name":"us-west-2","aws_access_key_id":"AKIDEXAMPLE","aws_secret_access_key":"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY","aws_session_token":"session-token","aws_bedrock_runtime_endpoint":"https://custom.example","temperature":0.2}"#;
-    let (remaining, result, resolved) = target_call(full, None, None);
+    let (remaining, result, resolved) = test_target_call(full, None, None);
     let target = result.unwrap();
     assert_eq!(
         target
@@ -811,7 +811,7 @@ fn target_sigv4_resolves_credentials() {
 
 fn target_region_from_model_arn() {
     let arn = r#"{"aws_access_key_id":"AKIDEXAMPLE","aws_secret_access_key":"wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"}"#;
-    let (remaining, result, resolved) = target_call(
+    let (remaining, result, resolved) = test_target_call(
         arn,
         Some("arn:aws:bedrock:eu-west-1:123456789012:inference-profile/example"),
         None,
@@ -873,9 +873,9 @@ fn off_loop_thread(runtime: &Runtime, executor: &AwsSigningExecutor, signs_with_
     })
 }
 
-fn batch_get_check(endpoint: &str, fixture: &Credentials) {
+fn test_batch_get(endpoint: &str, fixture: &Credentials) {
     let ignored = request_data(r#"{"ignored":true}"#);
-    let get = batch(BatchCase {
+    let get = test_batch(BatchCase {
         service_name: "bedrock",
         data: BatchData::Json(&ignored),
         endpoint,
@@ -885,7 +885,7 @@ fn batch_get_check(endpoint: &str, fixture: &Credentials) {
     })
     .unwrap();
     assert_eq!(get.method, "GET");
-    assert_signed(
+    test_assert_signed(
         &get,
         endpoint,
         b"",
@@ -896,9 +896,9 @@ fn batch_get_check(endpoint: &str, fixture: &Credentials) {
     );
 }
 
-fn batch_post_check(endpoint: &str, fixture: &Credentials) {
+fn test_batch_post(endpoint: &str, fixture: &Credentials) {
     let job = request_data(r#"{"jobName":"x"}"#);
-    let post = batch(BatchCase {
+    let post = test_batch(BatchCase {
         service_name: "bedrock",
         data: BatchData::Json(&job),
         endpoint,
@@ -907,7 +907,7 @@ fn batch_post_check(endpoint: &str, fixture: &Credentials) {
         fixture,
     })
     .unwrap();
-    assert_signed(
+    test_assert_signed(
         &post,
         endpoint,
         br#"{"jobName": "x"}"#,
@@ -920,8 +920,8 @@ fn batch_post_check(endpoint: &str, fixture: &Credentials) {
     );
 }
 
-fn batch_put_check(fixture: &Credentials) {
-    let put = batch(BatchCase {
+fn test_batch_put(fixture: &Credentials) {
+    let put = test_batch(BatchCase {
         service_name: "s3",
         data: BatchData::Text("raw-body"),
         endpoint: "https://s3.us-west-2.amazonaws.com/bucket/key",
@@ -931,7 +931,7 @@ fn batch_put_check(fixture: &Credentials) {
     })
     .unwrap();
     assert_eq!(put.method, "PUT");
-    assert_signed(
+    test_assert_signed(
         &put,
         "https://s3.us-west-2.amazonaws.com/bucket/key",
         b"raw-body",
@@ -945,10 +945,10 @@ fn batch_put_check(fixture: &Credentials) {
     );
 }
 
-fn batch_invalid_check(endpoint: &str, fixture: &Credentials) {
+fn test_batch_invalid(endpoint: &str, fixture: &Credentials) {
     let job = request_data(r#"{"jobName":"x"}"#);
     let invalid = r#"{"aws_access_key_id":{"bad":1},"aws_region_name":"us-west-2"}"#;
-    let error = batch(BatchCase {
+    let error = test_batch(BatchCase {
         service_name: "bedrock",
         data: BatchData::Json(&job),
         endpoint,
@@ -964,10 +964,10 @@ fn batch_service_signing() {
     let fixture = fixture_credentials("AKIDEXAMPLE", None);
     let token_fixture = fixture_credentials("AKIDEXAMPLE", Some("session-token"));
     let endpoint = "https://bedrock.us-west-2.amazonaws.com/model-invocation-job";
-    batch_get_check(endpoint, &fixture);
-    batch_post_check(endpoint, &fixture);
-    batch_put_check(&token_fixture);
-    batch_invalid_check(endpoint, &fixture);
+    test_batch_get(endpoint, &fixture);
+    test_batch_post(endpoint, &fixture);
+    test_batch_put(&token_fixture);
+    test_batch_invalid(endpoint, &fixture);
 }
 
 #[rstest]

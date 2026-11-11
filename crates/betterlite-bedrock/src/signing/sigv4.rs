@@ -29,7 +29,7 @@ pub fn sign_request(request: &Signable<'_>) -> Result<Vec<(String, String)>, Sig
         .time(request.now)
         .settings(SigningSettings::default())
         .build()
-        .map_err(|source| SigningError::Parameters { source })?;
+        .map_err(SigningError::Parameters)?;
     let signed = request.headers.iter().filter(|(name, _)| !unsigned(name));
     let signable = SignableRequest::new(
         request.method,
@@ -37,9 +37,9 @@ pub fn sign_request(request: &Signable<'_>) -> Result<Vec<(String, String)>, Sig
         signed.map(|(name, value)| (name.as_str(), value.as_str())),
         payload(request.headers, request.body),
     )
-    .map_err(|source| SigningError::Signable { source })?;
-    let output = sign(signable, &SigningParams::from(parameters))
-        .map_err(|source| SigningError::Signable { source })?;
+    .map_err(SigningError::Signable)?;
+    let output =
+        sign(signable, &SigningParams::from(parameters)).map_err(SigningError::Signable)?;
     let (instructions, _signature) = output.into_parts();
     let (headers, _query) = instructions.into_parts();
     Ok(headers
