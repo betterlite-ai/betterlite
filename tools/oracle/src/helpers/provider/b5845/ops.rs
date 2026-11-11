@@ -223,15 +223,12 @@ fn embedding_call_output(call: &EmbeddingCall) -> Value {
             non_default_params,
             optional_params,
             drop_params,
-        } => {
-            let mapped = map_openai_params(
-                non_default_params,
-                optional_params.clone(),
-                model,
-                *drop_params,
-            );
-            succeeded(&json!(mapped))
-        }
+        } => succeeded(&json!(map_openai_params(
+            non_default_params,
+            optional_params.clone(),
+            model,
+            *drop_params,
+        ))),
         EmbeddingCall::Prepare { session } => {
             let (token, resource_group, deployment_url) = session_parts(session.as_ref());
             let config = SapEmbeddingConfig {

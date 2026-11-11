@@ -64,10 +64,9 @@ def patched_environment(call: dict[str, Json]) -> Generator[None, None, None]:
         name: string_value(value, name)
         for name, value in object_value(environment.get("vars") or {}, "vars").items()
     }
-    home = optional_string(environment.get("home")) or DEFAULT_HOME
     with (
         patch.dict(os.environ, variables, clear=True),
-        patch.object(sap_credentials, "DEFAULT_HOME_PATH", str(Path(home) / ".aicore")),
+        patch.object(sap_credentials, "DEFAULT_HOME_PATH", str(Path(DEFAULT_HOME) / ".aicore")),
         patch.object(Path, "exists", return_value=False),
         patch.object(litellm, "sap_service_key", None),
     ):
@@ -95,9 +94,7 @@ def patched_token_request() -> Generator[None, None, None]:
 
 
 def header_pairs(headers: dict[str, str]) -> Json:
-    pairs: list[list[str]] = [[name.lower(), value] for name, value in headers.items()]
-    pairs.sort()
-    return cast(Json, pairs)
+    return cast(Json, sorted([name.lower(), value] for name, value in headers.items()))
 
 
 def chat_environment(call: dict[str, Json]) -> Json:
@@ -134,8 +131,7 @@ class FakeResponse:
         self.text = text
 
     def json(self) -> Json:
-        value: Json = cast(Json, json.loads(self.text))
-        return value
+        return cast(Json, json.loads(self.text))
 
 
 class Recorder:
@@ -168,7 +164,6 @@ def chat_response_view(response: ModelResponse) -> Json:
             }
         )
     usage = dumped.get("usage")
-    usage_fields = None if usage is None else object_value(usage, "usage")
     return {
         "id": dumped.get("id"),
         "object": dumped.get("object"),
@@ -176,9 +171,9 @@ def chat_response_view(response: ModelResponse) -> Json:
         "model": dumped.get("model"),
         "choices": choices,
         "usage": None
-        if usage_fields is None
+        if usage is None
         else {
-            name: usage_fields.get(name)
+            name: object_value(usage, "usage").get(name)
             for name in ("prompt_tokens", "completion_tokens", "total_tokens")
         },
     }

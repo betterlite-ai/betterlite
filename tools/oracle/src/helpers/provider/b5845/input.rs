@@ -54,7 +54,6 @@ pub(crate) struct SessionInput {
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct EnvironmentInput {
     vars: BTreeMap<String, String>,
-    home: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,11 +137,6 @@ impl SapEnvironment for FixtureEnvironment<'_> {
     }
 
     fn home_dir(&self) -> PathBuf {
-        PathBuf::from(
-            self.input
-                .home
-                .clone()
-                .unwrap_or_else(|| String::from(DEFAULT_HOME)),
-        )
+        PathBuf::from(DEFAULT_HOME)
     }
 }

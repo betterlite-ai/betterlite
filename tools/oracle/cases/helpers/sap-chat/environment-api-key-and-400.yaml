@@ -26,8 +26,8 @@ call:
             AICORE_RESOURCE_GROUP: rg1
         session: {token: Bearer case-token, resource_group: rg1, deployment_url: https://dep.example.com/v2/}
       - service_key: '{}'
-        environment: {vars: {}, home: /nowhere}
+        environment: {vars: {}}
       - service_key: '{"client_id":"only"}'
-        environment: {vars: {}, home: /nowhere}
+        environment: {vars: {}}
 env: {}
 compare: {ignore: []}

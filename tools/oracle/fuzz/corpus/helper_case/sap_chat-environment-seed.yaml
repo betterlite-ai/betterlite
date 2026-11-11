@@ -7,6 +7,6 @@ call:
       - service_key: null
         session: {token: Bearer case-token, resource_group: default, deployment_url: 'https://dep.example.com/v2'}
       - service_key: '{}'
-        environment: {vars: {}, home: /nowhere}
+        environment: {vars: {}}
 env: {}
 compare: {ignore: []}
