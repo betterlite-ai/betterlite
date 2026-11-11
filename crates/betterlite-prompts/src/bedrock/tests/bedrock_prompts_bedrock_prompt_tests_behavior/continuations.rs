@@ -182,6 +182,70 @@ async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_continue_message_tool_c
 }
 
 #[tokio::test]
+async fn bedrock_prompts_bedrock_prompt_tests_behavior_an_unused_continue_message_tool_call_adds_no_mapping()
+ {
+    let harness = Harness::new();
+    let continue_message = AssistantContinue::Message(
+        messages(
+            r#"[{"role":"assistant","content":"x","tool_calls":[
+                {"id":"c1","type":"function","function":{"name":"get weather","arguments":"{}"}}
+            ]}]"#,
+        )
+        .into_iter()
+        .next()
+        .unwrap(),
+    );
+    let settings = Settings::default().with_assistant_continue(&continue_message);
+    let converted = harness
+        .convert(
+            &messages(r#"[{"role":"user","content":"a"}]"#),
+            &[],
+            &settings,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        converted.messages,
+        list(r#"[{"role":"user","content":[{"text":"a"}]}]"#)
+    );
+    assert!(converted.names.is_empty());
+}
+
+#[tokio::test]
+async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_continue_message_between_user_turns_adds_no_mapping()
+ {
+    let harness = Harness::new();
+    let continue_message = AssistantContinue::Message(
+        messages(
+            r#"[{"role":"assistant","content":"x","tool_calls":[
+                {"id":"c1","type":"function","function":{"name":"get weather","arguments":"{}"}}
+            ]}]"#,
+        )
+        .into_iter()
+        .next()
+        .unwrap(),
+    );
+    let settings = Settings::default().with_assistant_continue(&continue_message);
+    let converted = harness
+        .convert(&messages(TOOL_THEN_USER), &[], &settings)
+        .await
+        .unwrap();
+    assert_eq!(
+        converted.messages,
+        list(
+            r#"[{"role":"user","content":[{"text":"a"}]},
+                {"role":"assistant","content":[{"text":"x"}]},
+                {"role":"user","content":[{"toolResult":{
+                    "content":[{"text":"result"}],"toolUseId":"call_1"
+                }}]},
+                {"role":"assistant","content":[{"text":"x"}]},
+                {"role":"user","content":[{"text":"b"}]}]"#
+        )
+    );
+    assert!(converted.names.is_empty());
+}
+
+#[tokio::test]
 async fn bedrock_prompts_bedrock_prompt_tests_behavior_a_prefix_assistant_turn_takes_no_continue_message()
  {
     let harness = Harness::new();

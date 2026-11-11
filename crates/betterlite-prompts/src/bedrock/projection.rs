@@ -1,6 +1,6 @@
 use crate::arguments::json::{Json, Object};
 use crate::bedrock_tools::name::{ToolNameMap, make_valid_bedrock_tool_name};
-use crate::message_content::{Content, Message, as_fields};
+use crate::message_content::{Content, Message, as_fields, is_non_content_values_set};
 
 const ASSISTANT: &str = "assistant";
 const CONTENT: &str = "content";
@@ -47,9 +47,7 @@ pub fn project_messages(messages: &[Message], names: &mut ToolNameMap) -> Vec<Js
     projected
 }
 
-// A continue message is converted in the blank assistant turn it replaces, so its calls are named like any other
-#[must_use]
-pub fn project_message_with_names(message: &Message, names: &mut ToolNameMap) -> Json {
+fn project_message_with_names(message: &Message, names: &mut ToolNameMap) -> Json {
     let mut value = project_message(message);
     if let Json::Object(fields) = &mut value {
         sanitize_tool_call_names(fields, names);
@@ -57,7 +55,27 @@ pub fn project_message_with_names(message: &Message, names: &mut ToolNameMap) ->
     value
 }
 
-fn sanitize_tool_call_names(fields: &mut Object, names: &mut ToolNameMap) {
+// LiteLLM swaps the continue message in only for a blank assistant string with no other set field
+#[must_use]
+pub fn swaps_in_continue(message: &Message) -> bool {
+    if message.role != ASSISTANT {
+        return false;
+    }
+    let Some(Content::Text(text)) = &message.content else {
+        return false;
+    };
+    is_blank_text(text) && !is_non_content_values_set(message)
+}
+
+// Python's str.strip() also strips U+001C to U+001F, which Rust's is_whitespace() treats as content
+fn is_blank_text(text: &str) -> bool {
+    text.trim_matches(|character: char| {
+        character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
+    })
+    .is_empty()
+}
+
+pub(crate) fn sanitize_tool_call_names(fields: &mut Object, names: &mut ToolNameMap) {
     let Some(Json::List(calls)) = fields.get_mut(TOOL_CALLS) else {
         return;
     };

@@ -1,9 +1,33 @@
 use rstest::rstest;
 
-use crate::bedrock::projection::{project_message, project_messages};
+use crate::bedrock::projection::{project_message, project_messages, swaps_in_continue};
 use crate::bedrock_tools::name::ToolNameMap;
 
 use super::prelude::{json, list, messages};
+
+#[rstest]
+#[case::blank_assistant(r#"[{"role":"assistant","content":""}]"#, true)]
+#[case::whitespace_assistant(r#"[{"role":"assistant","content":" \t\n"}]"#, true)]
+#[case::information_separator(r#"[{"role":"assistant","content":"\u001c\u001f"}]"#, true)]
+#[case::non_blank_assistant(r#"[{"role":"assistant","content":"x"}]"#, false)]
+#[case::assistant_with_other_fields(
+    r#"[{"role":"assistant","content":"","tool_calls":[]}]"#,
+    false
+)]
+#[case::assistant_with_prefix(r#"[{"role":"assistant","content":"","prefix":false}]"#, false)]
+#[case::user_blank(r#"[{"role":"user","content":""}]"#, false)]
+#[case::assistant_without_content(r#"[{"role":"assistant"}]"#, false)]
+#[case::assistant_with_list_content(
+    r#"[{"role":"assistant","content":[{"type":"text","text":""}]}]"#,
+    false
+)]
+fn bedrock_prompts_bedrock_prompt_tests_behavior_only_a_blank_assistant_string_swaps_in_the_continue_message(
+    #[case] raw: &str,
+    #[case] swaps: bool,
+) {
+    let message = messages(raw).into_iter().next().unwrap();
+    assert_eq!(swaps_in_continue(&message), swaps);
+}
 
 #[test]
 fn bedrock_prompts_bedrock_prompt_tests_behavior_a_text_message_projects_every_field() {
