@@ -1,0 +1,21 @@
+name: finops-populated
+config: config
+env: {}
+request: {method: GET, path: /health/liveliness, headers: {}, body: null}
+upstream: []
+database:
+  seed:
+    users: [{user_id: alice}]
+    keys: [{token: sk-alice-token, user_id: alice, team_id: team-red}]
+    teams: [{team_id: team-red}]
+    budgets: [{budget_id: budget-1, user_id: alice}]
+    finops:
+      organizations:
+        - {organization_id: org-key, organization_alias: Key Org, budget_id: budget-1, created_by: alice, updated_by: alice}
+      key_metadata:
+        - {token: sk-alice-token, key_alias: alice-key, organization_id: org-key}
+      daily_usage:
+        - {id: row-key, user_id: alice, date: '2025-01-01', api_key: {key: sk-alice-token}, created_at: '2025-01-01T00:00:00', updated_at: '2025-01-01T00:00:05'}
+      config_rows:
+        - {name: vantage_settings, serialized_value: cipher-value}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
