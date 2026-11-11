@@ -219,6 +219,20 @@ fn unknown_or_missing_usage_types_bill_zero() {
         ]),
         event(&[
             ("type", text(transcription::TRANSCRIPTION_COMPLETED_EVENT)),
+            (
+                "usage",
+                object(&[
+                    ("type", text("future_billing_type")),
+                    (
+                        "input_token_details",
+                        object(&[("audio_tokens", number("10"))]),
+                    ),
+                    ("output_tokens", number("5")),
+                ]),
+            ),
+        ]),
+        event(&[
+            ("type", text(transcription::TRANSCRIPTION_COMPLETED_EVENT)),
             ("usage", Json::Null),
         ]),
     ];
@@ -451,4 +465,51 @@ fn an_empty_model_string_is_not_a_candidate() {
         transcription::session::model_name(&events).expect("an empty model is absent"),
         None
     );
+}
+
+#[test]
+fn a_null_raw_rate_does_not_qualify() {
+    let events = duration_billing_results();
+    let mut catalog = Catalog::priced(&[("asr-base", base_duration_record())]);
+    catalog.raw.insert(
+        "asr-deploy".to_owned(),
+        record(&[("input_cost_per_second", Scalar::Null)]),
+    );
+    let mut effective = record(&[("input_cost_per_second", scalar_number("0.002"))]);
+    effective.insert("key".to_owned(), Scalar::Text("asr-deploy".to_owned()));
+    catalog.effective.insert("asr-deploy".to_owned(), effective);
+    let cost = transcription::cost(
+        &TranscriptionCostRequest {
+            results: &events,
+            custom_llm_provider: "openai",
+            litellm_model_name: "asr-base",
+            custom_pricing_model: Some("asr-deploy"),
+        },
+        &catalog,
+    )
+    .expect("the base rate applies");
+    assert_eq!(cost, Decimal::from_str("0.12").expect("a decimal"));
+}
+
+#[test]
+fn a_text_rate_is_a_typed_failure() {
+    let events = duration_billing_results();
+    let entry = record(&[("input_cost_per_second", Scalar::Text("free".to_owned()))]);
+    let catalog = Catalog::priced(&[("asr-base", entry)]);
+    let error = transcription::cost(
+        &TranscriptionCostRequest {
+            results: &events,
+            custom_llm_provider: "openai",
+            litellm_model_name: "asr-base",
+            custom_pricing_model: None,
+        },
+        &catalog,
+    )
+    .expect_err("a text rate is not a number");
+    assert!(matches!(
+        error,
+        RealtimeCostError::NotANumber {
+            field: "input_cost_per_second"
+        }
+    ));
 }

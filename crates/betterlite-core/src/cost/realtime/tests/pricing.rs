@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::tiered_pricing::Scalar;
+use betterlite_models::usage_sum::{PromptTokensDetails, Usage};
 use rust_decimal::Decimal;
 
 use crate::cost::realtime::error::RealtimeCostError;
@@ -292,4 +293,98 @@ fn a_missing_breakdown_target_does_not_fail_the_charge() {
     let total = stream_cost(&request, &catalog, &database(), None::<&mut Breakdown>)
         .expect("the charge survives a missing target");
     assert_eq!(total, Decimal::new(12, 2));
+}
+
+fn cache_usage(prompt: i64, text: i64, cache_write: i64) -> Usage {
+    Usage {
+        prompt_tokens: prompt,
+        completion_tokens: 0,
+        total_tokens: prompt,
+        prompt_tokens_details: Some(PromptTokensDetails {
+            text_tokens: Some(text),
+            audio_tokens: None,
+            image_tokens: None,
+            video_tokens: None,
+            web_search_requests: None,
+            google_maps_grounding_requests: None,
+            tool_use_tokens: None,
+            character_count: None,
+            image_count: None,
+            video_length_seconds: None,
+            audio_length_seconds: None,
+            query_count: None,
+            cache_write_tokens: Some(cache_write),
+            cache_creation_tokens: Some(cache_write),
+            cached_tokens: Some(0),
+            cached_tokens_details: None,
+        }),
+        completion_tokens_details: None,
+        numeric_extras: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn a_positive_sum_needs_no_declaration() {
+    let events = [session_event("session.created", Some("floating"))];
+    let mut catalog = Catalog::default();
+    catalog
+        .effective
+        .insert("floating".to_owned(), priced("0.001", "0.002"));
+    let usage = token_usage(100, 10);
+    let request = cost_request(&events, &usage, "openai", "floating");
+    let total = stream_cost(&request, &catalog, &database(), None::<&mut Breakdown>)
+        .expect("a positive sum is accepted");
+    assert_eq!(total, Decimal::new(12, 2));
+    assert_eq!(catalog.calls(), ["floating"]);
+}
+
+#[test]
+fn a_resolved_catalog_key_can_declare_pricing() {
+    let events = [session_event("session.created", Some("alias"))];
+    let mut catalog = Catalog::priced(&[("paid", priced("0.001", "0.002"))]);
+    catalog.raw.insert("canonical".to_owned(), priced("0", "0"));
+    let mut effective = priced("0", "0");
+    effective.insert("key".to_owned(), Scalar::Text("canonical".to_owned()));
+    catalog.effective.insert("alias".to_owned(), effective);
+    let usage = zero_usage();
+    let request = cost_request(&events, &usage, "openai", "paid");
+    let total = stream_cost(&request, &catalog, &database(), None::<&mut Breakdown>)
+        .expect("the resolved key declares the free entry");
+    assert_eq!(total, Decimal::ZERO);
+    assert_eq!(catalog.calls(), ["alias"]);
+}
+
+#[test]
+fn a_null_rate_field_does_not_declare_pricing() {
+    let events = [session_event("session.created", Some("null-rate"))];
+    let mut catalog = Catalog::priced(&[("paid", priced("0.001", "0.002"))]);
+    catalog.raw.insert(
+        "null-rate".to_owned(),
+        record(&[("input_cost_per_token", Scalar::Null)]),
+    );
+    catalog
+        .effective
+        .insert("null-rate".to_owned(), priced("0", "0"));
+    let usage = zero_usage();
+    let request = cost_request(&events, &usage, "openai", "paid");
+    let total = stream_cost(&request, &catalog, &database(), None::<&mut Breakdown>)
+        .expect("the priced candidate wins");
+    assert_eq!(total, Decimal::new(12, 2));
+    assert_eq!(catalog.calls(), ["null-rate", "paid"]);
+}
+
+#[test]
+fn cached_prompt_details_reach_generic_pricing() {
+    let events = [session_event("session.created", Some("cache-model"))];
+    let entry = record(&[
+        ("input_cost_per_token", scalar_number("0.001")),
+        ("cache_creation_input_token_cost", scalar_number("0.002")),
+        ("output_cost_per_token", scalar_number("0.001")),
+    ]);
+    let catalog = Catalog::priced(&[("cache-model", entry)]);
+    let usage = cache_usage(100, 50, 50);
+    let request = cost_request(&events, &usage, "openai", "cache-model");
+    let total = stream_cost(&request, &catalog, &database(), None::<&mut Breakdown>)
+        .expect("the cache rates price the prompt");
+    assert_eq!(total, Decimal::new(15, 2));
 }
