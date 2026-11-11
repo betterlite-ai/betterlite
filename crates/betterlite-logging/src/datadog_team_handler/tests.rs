@@ -201,6 +201,37 @@ fn a_different_credential_set_builds_a_second_logger() {
 }
 
 #[test]
+fn a_different_agent_port_builds_a_second_logger() {
+    let cache = cache();
+    let builds = Arc::new(AtomicUsize::new(0));
+    let environment = map(&[]);
+    let first = get(
+        &map(&[
+            ("dd_api_key", "team-key"),
+            ("dd_agent_host", "agent.local"),
+            ("dd_agent_port", "10518"),
+        ]),
+        &cache,
+        &environment,
+        &builds,
+    )
+    .expect("the first team logger");
+    let second = get(
+        &map(&[
+            ("dd_api_key", "team-key"),
+            ("dd_agent_host", "agent.local"),
+            ("dd_agent_port", "10519"),
+        ]),
+        &cache,
+        &environment,
+        &builds,
+    )
+    .expect("the second team logger");
+    assert!(!Arc::ptr_eq(&first, &second));
+    assert_eq!(builds.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn an_absent_credential_and_an_empty_one_are_different_cache_keys() {
     let cache = cache();
     let builds = Arc::new(AtomicUsize::new(0));
@@ -293,6 +324,31 @@ fn a_team_api_key_alone_falls_back_to_the_proxy_site() {
     assert_eq!(
         logger.settings.intake_url,
         "https://http-intake.logs.env-site.datadoghq.com/api/v2/logs"
+    );
+}
+
+#[test]
+fn a_request_without_a_destination_uses_the_proxy_credentials() {
+    let cache = cache();
+    let builds = Arc::new(AtomicUsize::new(0));
+    let params = map(&[]);
+    let environment = map(&[
+        ("DD_API_KEY", "proxy-key"),
+        ("DD_SITE", "proxy-site.datadoghq.com"),
+    ]);
+    let logger = get(&params, &cache, &environment, &builds).expect("the proxy logger");
+    assert_eq!(
+        logger
+            .settings
+            .api_key
+            .as_ref()
+            .expect("the proxy key")
+            .expose_secret(),
+        "proxy-key"
+    );
+    assert_eq!(
+        logger.settings.intake_url,
+        "https://http-intake.logs.proxy-site.datadoghq.com/api/v2/logs"
     );
 }
 
