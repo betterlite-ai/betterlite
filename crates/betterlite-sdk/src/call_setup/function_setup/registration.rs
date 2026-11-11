@@ -171,10 +171,7 @@ fn resolve_event(
     lists: &mut CallbackLists,
     loggers: &CustomLoggers<'_>,
 ) {
-    let target = match event {
-        CallbackEvent::Success => CallbackList::Success,
-        CallbackEvent::Failure => CallbackList::Failure,
-    };
+    let mut kept = Vec::new();
     let mut known = Vec::new();
     for entry in entries {
         match &entry {
@@ -186,10 +183,14 @@ fn resolve_event(
             }
             DynamicCallback::Name(name) if (loggers.known)(name) => {
                 known.push(name.clone());
-                lists.add(target, &entry);
+                kept.push(entry);
             }
-            DynamicCallback::Name(_) | DynamicCallback::Logger(_) => lists.add(target, &entry),
+            DynamicCallback::Name(_) | DynamicCallback::Logger(_) => kept.push(entry),
         }
+    }
+    match event {
+        CallbackEvent::Success => lists.success = kept,
+        CallbackEvent::Failure => lists.failure = kept,
     }
     for name in known {
         add_known_logger_callback(&name, event, loggers, lists);
