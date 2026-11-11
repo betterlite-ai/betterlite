@@ -10,17 +10,22 @@ pub(crate) fn exact<'catalog>(
     Some(entry)
 }
 
-// get_model_info falls back to a case-insensitive key and to the part after the provider prefix
+// get_model_info tries the name, its case-folded key, and then the part after the provider prefix
 pub(crate) fn resolved<'catalog>(
     catalog: &'catalog ModelCatalog,
     model: &str,
 ) -> Option<&'catalog CatalogEntry> {
-    exact(catalog, model)
-        .or_else(|| case_insensitive(catalog, model))
-        .or_else(|| {
-            let (_provider, rest) = model.split_once('/')?;
-            exact(catalog, rest).or_else(|| case_insensitive(catalog, rest))
-        })
+    let mut candidates = vec![model];
+    if let Some((_provider, rest)) = model.split_once('/') {
+        candidates.push(rest);
+    }
+    for candidate in candidates {
+        let found = exact(catalog, candidate).or_else(|| case_insensitive(catalog, candidate));
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
 }
 
 fn case_insensitive<'catalog>(
@@ -28,9 +33,10 @@ fn case_insensitive<'catalog>(
     model: &str,
 ) -> Option<&'catalog CatalogEntry> {
     let wanted = model.to_lowercase();
-    let key = catalog
-        .lookup
-        .keys()
-        .find(|key| key.to_lowercase() == wanted)?;
-    exact(catalog, key)
+    for (key, canonical) in &catalog.lookup {
+        if key.to_lowercase() == wanted {
+            return catalog.entries.get(canonical.as_ref());
+        }
+    }
+    None
 }

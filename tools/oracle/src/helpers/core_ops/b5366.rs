@@ -6,7 +6,8 @@ mod input;
 mod small;
 mod streams;
 mod thought;
-mod trim_tokens;
+mod token_steps;
+mod trim_steps;
 mod validators;
 
 use serde_json::json;
@@ -40,7 +41,8 @@ async fn dispatch(entry: &Call, session: &Session) -> HelperResult {
     match entry {
         Call::Thought(found) => thought::run(found),
         Call::Conversation(found) => conversation::run(found, session).await,
-        Call::TrimTokens(found) => trim_tokens::run(found, session).await,
+        Call::TokenSteps(found) => token_steps::run(found, session).await,
+        Call::TrimSteps(found) => trim_steps::run(found, session).await,
         Call::Validators(found) => validators::run(found),
         Call::Cache(found) => Ok(cache::run(found, session).await),
         Call::Streams(found) => streams::run(found),

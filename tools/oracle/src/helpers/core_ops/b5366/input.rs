@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{cache, conversation, small, streams, thought, trim_tokens, validators};
+use super::{cache, conversation, small, streams, thought, token_steps, trim_steps, validators};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -14,7 +14,8 @@ pub(crate) struct Input {
 pub(crate) enum Call {
     Thought(thought::Call),
     Conversation(conversation::Call),
-    TrimTokens(trim_tokens::Call),
+    TokenSteps(token_steps::Call),
+    TrimSteps(trim_steps::Call),
     Validators(validators::Call),
     Cache(cache::Call),
     Streams(streams::Call),

@@ -107,33 +107,42 @@ pub fn fix_openai_messages(messages: &[Json]) -> Result<Vec<Json>, ValidationErr
     let mut new_messages = Vec::with_capacity(messages.len());
     for message in messages {
         let found = json::object(message).ok_or(ValidationError::NotAnObject)?;
-        let mut fields = found.clone();
-        if !fields.get("role").is_some_and(json::counts_as_present) {
-            fields.insert(String::from("role"), Json::Text(String::from("assistant")));
-        }
+        let mut fields = with_fixed_role(found.clone());
         if let Some(calls_value) = fields
             .get("tool_calls")
             .filter(|value| json::counts_as_present(value))
         {
-            let calls = tool_calls_as_list(calls_value)?;
-            fields.insert(String::from("tool_calls"), Json::List(calls));
+            fields.insert(
+                String::from("tool_calls"),
+                Json::List(tool_calls_as_list(calls_value)?),
+            );
         }
         new_messages.push(cleanup_none_field_in_message(&Json::Object(fields))?);
     }
     validate_openai_user_messages(&new_messages)
 }
 
+fn with_fixed_role(mut fields: IndexMap<String, Json>) -> IndexMap<String, Json> {
+    let missing = !fields.get("role").is_some_and(json::counts_as_present);
+    if missing {
+        fields.insert(String::from("role"), Json::Text(String::from("assistant")));
+    }
+    fields
+}
+
 fn tool_calls_as_list(tool_calls: &Json) -> Result<Vec<Json>, ValidationError> {
-    match tool_calls {
-        Json::List(items) => Ok(items
+    if let Json::List(items) = tool_calls {
+        return Ok(items
             .iter()
             .filter(|item| matches!(item, Json::Object(_)))
             .cloned()
-            .collect()),
-        // a string or an object iterates into names, and none of those is a dict
-        Json::Text(_) | Json::Object(_) => Ok(Vec::new()),
-        Json::Null | Json::Bool(_) | Json::Number(_) => Err(ValidationError::ToolCallsNotIterable),
+            .collect());
     }
+    // a string or an object iterates into names, and none of those is a dict
+    if matches!(tool_calls, Json::Text(_) | Json::Object(_)) {
+        return Ok(Vec::new());
+    }
+    Err(ValidationError::ToolCallsNotIterable)
 }
 
 #[must_use]
@@ -175,39 +184,55 @@ pub fn fix_thinking_param(thinking: &Json, medium_budget: u32) -> Option<Json> {
 }
 
 pub fn validate_openai_user_messages(messages: &[Json]) -> Result<Vec<Json>, ValidationError> {
-    for (index, message) in messages.iter().enumerate() {
-        let Some(fields) = json::object(message) else {
-            return Err(ValidationError::InvalidMessage { index });
-        };
-        let Some(role) = fields.get("role") else {
-            return Err(ValidationError::InvalidMessage { index });
-        };
-        if json::text(role) != Some("user") {
-            continue;
-        }
-        if let Some(Json::List(items)) = fields.get("content") {
-            let valid = items.iter().filter_map(json::object).all(|item| {
-                item.get("type")
-                    .and_then(json::text)
-                    .is_some_and(|kind| USER_CONTENT_TYPES.contains(&kind))
-            });
-            if !valid {
-                return Err(ValidationError::InvalidUserMessage { index });
-            }
+    messages
+        .iter()
+        .enumerate()
+        .try_for_each(|(index, message)| user_message_is_valid(index, message))?;
+    Ok(messages.to_vec())
+}
+
+fn user_message_is_valid(index: usize, message: &Json) -> Result<(), ValidationError> {
+    let fields = json::object(message).ok_or(ValidationError::InvalidMessage { index })?;
+    let role = fields
+        .get("role")
+        .ok_or(ValidationError::InvalidMessage { index })?;
+    let is_user = json::text(role) == Some("user");
+    if is_user && !user_content_is_valid(fields.get("content")) {
+        return Err(ValidationError::InvalidUserMessage { index });
+    }
+    Ok(())
+}
+
+fn user_content_is_valid(content: Option<&Json>) -> bool {
+    match content {
+        Some(Json::List(items)) => items.iter().filter_map(json::object).all(|item| {
+            item.get("type")
+                .and_then(json::text)
+                .is_some_and(|kind| USER_CONTENT_TYPES.contains(&kind))
+        }),
+        None
+        | Some(Json::Null | Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
+            true
         }
     }
-    Ok(messages.to_vec())
+}
+
+fn collapsed_mode(fields: &IndexMap<String, Json>) -> Option<Json> {
+    let Some(Json::Text(kind)) = fields.get("type") else {
+        return None;
+    };
+    if !matches!(kind.as_str(), "auto" | "none" | "required") {
+        return None;
+    }
+    (!fields.contains_key("function")).then(|| Json::Text(kind.clone()))
 }
 
 pub fn validate_tool_choice(tool_choice: &Json) -> Result<Json, ValidationError> {
     match tool_choice {
         Json::Null | Json::Text(_) => Ok(tool_choice.clone()),
         Json::Object(fields) => {
-            if let Some(Json::Text(kind)) = fields.get("type")
-                && matches!(kind.as_str(), "auto" | "none" | "required")
-                && !fields.contains_key("function")
-            {
-                return Ok(Json::Text(kind.clone()));
+            if let Some(collapsed) = collapsed_mode(fields) {
+                return Ok(collapsed);
             }
             let type_absent = matches!(fields.get("type"), None | Some(Json::Null));
             let function_absent = matches!(fields.get("function"), None | Some(Json::Null));

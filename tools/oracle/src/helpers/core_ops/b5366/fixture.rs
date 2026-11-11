@@ -71,31 +71,40 @@ impl Session {
             Arc::clone(&service),
         ));
         let catalog = BundledCatalog::default().get();
-        let hub = hub_settings();
-        let clock = Arc::new(SystemHubClock::default());
-        let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
-        let tokens = Arc::new(HubTokenResolver::new(
-            hub.clone(),
-            OidcSettings::default(),
-            Arc::clone(&client),
-            reader,
-            clock,
-        ));
-        let downloader = Arc::new(HubDownloader::new(
-            Arc::new(hub),
-            tokens,
-            Arc::new(Instant::now),
-        ));
-        let selector = Arc::new(Selector::new(
-            Arc::clone(&fetcher),
-            downloader,
-            Arc::clone(&catalog),
-            Arc::clone(&service),
-            true,
-        ));
+        let selector = Arc::new(selector(&fetcher, client, Arc::clone(&service), &catalog));
         let counter = Counter::new(selector, fetcher, service, Arc::clone(&catalog), settings);
         Ok(Self { counter, catalog })
     }
+}
+
+fn selector(
+    fetcher: &Arc<TiktokenFetcher>,
+    client: Arc<ProxiedClient>,
+    service: Arc<CountingService>,
+    catalog: &Arc<ModelCatalog>,
+) -> Selector {
+    let hub = hub_settings();
+    let clock = Arc::new(SystemHubClock::default());
+    let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
+    let tokens = Arc::new(HubTokenResolver::new(
+        hub.clone(),
+        OidcSettings::default(),
+        client,
+        reader,
+        clock,
+    ));
+    let downloader = Arc::new(HubDownloader::new(
+        Arc::new(hub),
+        tokens,
+        Arc::new(Instant::now),
+    ));
+    Selector::new(
+        Arc::clone(fetcher),
+        downloader,
+        Arc::clone(catalog),
+        service,
+        true,
+    )
 }
 
 fn hub_settings() -> HubSettings {
