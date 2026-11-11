@@ -803,11 +803,13 @@ fn assert_configured_settings(settings: &Path) {
         document.get("model").and_then(JsonValue::as_str),
         Some("opus")
     );
-    assert!(
+    assert_eq!(
         document
             .get("statusLine")
-            .and_then(JsonValue::as_str)
-            .is_some_and(|line| line.contains("/usr/bin/lite statusline"))
+            .and_then(JsonValue::as_object)
+            .and_then(|entry| entry.get("command"))
+            .and_then(JsonValue::as_str),
+        Some("/usr/bin/lite statusline")
     );
     let env = document
         .get("env")
