@@ -1,12 +1,10 @@
-use std::io::Write as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use http::header::{CONTENT_ENCODING, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
 
 use crate::batch::delivery::{BatchCancelled, BatchDelivery};
+use crate::datadog_logging::send::gzip;
 use crate::datadog_logging::transport::{LOGGING_TIMEOUT, PostRequest, TransportResponse};
 
 use super::datadog_metrics::DatadogMetricsLogger;
@@ -27,10 +25,11 @@ pub(crate) async fn upload(
     let payload = DatadogMetricsPayload {
         series: series.to_vec(),
     };
+    let payload_json = serde_json::to_vec(&payload).map_err(MetricsError::Encode)?;
     let request = PostRequest {
         url: logger.settings.upload_url.clone(),
         headers: headers(logger)?,
-        body: gzip(&payload)?,
+        body: gzip(&payload_json).map_err(MetricsError::Gzip)?,
         timeout: LOGGING_TIMEOUT,
     };
     let response: TransportResponse = logger.transport.post(request).await?;
@@ -65,15 +64,6 @@ fn headers(logger: &DatadogMetricsLogger) -> Result<HeaderMap, MetricsError> {
         headers.insert(APPLICATION_KEY_HEADER, app_value);
     }
     Ok(headers)
-}
-
-fn gzip(payload: &DatadogMetricsPayload) -> Result<Vec<u8>, MetricsError> {
-    let payload_json = serde_json::to_vec(payload).map_err(MetricsError::Encode)?;
-    let mut compressor = GzEncoder::new(Vec::new(), Compression::default());
-    compressor
-        .write_all(&payload_json)
-        .map_err(MetricsError::Compress)?;
-    compressor.finish().map_err(MetricsError::Compress)
 }
 
 pub(crate) struct DatadogMetricsBatch<'logger> {

@@ -1,4 +1,3 @@
-use std::io;
 use std::num::ParseFloatError;
 
 use betterlite_env::EnvError;
@@ -6,6 +5,7 @@ use http::header::InvalidHeaderValue;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
+use crate::datadog_logging::error::DatadogError;
 use crate::datadog_logging::transport::TransportFailure;
 
 #[derive(Debug, Error)]
@@ -20,8 +20,8 @@ pub enum MetricsError {
     Value(#[source] ParseFloatError),
     #[error("the Datadog metrics payload could not be serialized")]
     Encode(#[source] serde_json::Error),
-    #[error("the Datadog metrics payload could not be gzipped")]
-    Compress(#[source] io::Error),
+    #[error(transparent)]
+    Gzip(#[from] DatadogError),
     #[error("the Datadog metric key cannot be carried in a header")]
     ApiKeyHeader(#[source] InvalidHeaderValue),
 }
