@@ -55,15 +55,18 @@ async fn request_batch_post_call_writes_flush_separately() {
 
 #[tokio::test(start_paused = true)]
 async fn request_batch_post_call_during_a_flush_arms_a_new_deadline() {
-    let server = FakeServer::start().await;
-    server.silence("INCRBYFLOAT");
-    let cached = cache_with_timeout(&server, Some("ns"), 0.25).await;
+    let held = FakeServer::start().await;
+    held.silence("INCRBYFLOAT");
+    let held_cache = cache_with_timeout(&held, Some("ns"), 0.25).await;
+    let later_server = FakeServer::start().await;
+    later_server.script("INCRBYFLOAT", Reply::Bulk("2.5".to_owned()));
+    let later_cache = cache(&later_server, Some("ns")).await;
 
     let (_, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
         let request = ACTIVE_REQUEST_BATCHES
             .try_with(Arc::clone)
             .expect("a request scope");
-        let writes = active_post_call_redis_batch(&cached).expect("the post-call batch");
+        let writes = active_post_call_redis_batch(&held_cache).expect("the post-call batch");
         writes.increment("first", 1.5, None);
 
         let mut tasks = JoinSet::new();
@@ -71,11 +74,11 @@ async fn request_batch_post_call_during_a_flush_arms_a_new_deadline() {
         tasks.spawn(ACTIVE_REQUEST_BATCHES.scope(carried, async move {
             flush_post_call_redis_batches().await;
         }));
-        while command_names(&server).is_empty() {
+        while command_names(&held).is_empty() {
             yield_now().await;
         }
 
-        let later = active_post_call_redis_batch(&cached).expect("the same post-call batch");
+        let later = active_post_call_redis_batch(&later_cache).expect("the second post-call batch");
         later.increment("second", 2.5, None);
         yield_now().await;
         advance(Duration::from_millis(300)).await;
@@ -85,10 +88,10 @@ async fn request_batch_post_call_during_a_flush_arms_a_new_deadline() {
             .expect("the in-flight flush")
             .expect("the flush panicked");
         advance(POST_CALL_FLUSH_DEADLINE).await;
-        wait_for_commands(&server, 2).await;
+        wait_for_commands(&later_server, 1).await;
         assert_eq!(
-            command_names(&server),
-            ["INCRBYFLOAT", "INCRBYFLOAT"],
+            command_names(&later_server),
+            ["INCRBYFLOAT"],
             "the write declared during the flush gets its own deadline"
         );
     })
