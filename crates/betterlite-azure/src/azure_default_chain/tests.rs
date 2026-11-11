@@ -27,6 +27,7 @@ use crate::azure_client_secret::transport::{Clock, HttpReply, HttpRequest, Trans
 use betterlite_config::sections::azure_client_secret::Settings as ClientSecretSettings;
 
 mod cases;
+mod native;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Script {
