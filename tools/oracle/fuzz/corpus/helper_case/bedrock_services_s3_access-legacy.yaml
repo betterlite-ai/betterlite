@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-s3-access-legacy
+call:
+  bedrock_services_s3_access:
+    operation: legacy_id_opt_in
+    trusted:
+      - [allow_legacy_cloud_file_ids, " yes "]
+    s3_uri: "s3://bucket/legacy-object"
+    bucket: bucket
+env: {}
+compare: {ignore: []}
