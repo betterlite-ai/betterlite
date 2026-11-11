@@ -17,21 +17,19 @@ use crate::galileo::delivery::transport::{HttpResponse, Transport, TransportErro
 // LiteLLM's shared logging client falls back to this total, so a dead intake cannot wedge a flush forever
 pub(super) const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
+type Payload = IndexMap<String, Json>;
+type Reply = Result<HttpResponse, TransportError>;
+
 pub(super) struct PooledTransport {
     pub(super) client: ProxiedClient,
 }
 
 impl Transport for PooledTransport {
-    fn get(&self, url: &str, headers: &[Header]) -> Result<HttpResponse, TransportError> {
+    fn get(&self, url: &str, headers: &[Header]) -> Reply {
         self.exchange(Method::GET, url, headers, RequestBody::Empty)
     }
 
-    fn post_form(
-        &self,
-        url: &str,
-        headers: &[Header],
-        form: &[(&str, &str)],
-    ) -> Result<HttpResponse, TransportError> {
+    fn post_form(&self, url: &str, headers: &[Header], form: &[(&str, &str)]) -> Reply {
         let encoded = form_urlencoded::Serializer::new(String::new())
             .extend_pairs(form.iter().copied())
             .finish();
@@ -42,12 +40,7 @@ impl Transport for PooledTransport {
         self.exchange(Method::POST, url, headers, body)
     }
 
-    fn post_json(
-        &self,
-        url: &str,
-        headers: &[Header],
-        payload: &IndexMap<String, Json>,
-    ) -> Result<HttpResponse, TransportError> {
+    fn post_json(&self, url: &str, headers: &[Header], payload: &Payload) -> Reply {
         let body = serde_json::to_vec(payload)
             .map_err(|error| transport_error(url, &error.to_string()))?;
         self.exchange(Method::POST, url, headers, RequestBody::Json(body))
