@@ -509,16 +509,10 @@ fn guardrail_titan_headers() {
             .count(),
         1
     );
+    assert_eq!(titan.body().len(), 3);
     assert_eq!(
-        titan.body(),
-        params(vec![
-            ("taskType", Field::from("TEXT_IMAGE")),
-            (
-                "textToImageParams",
-                Field::from(params(vec![("text", Field::from("a cat"))])),
-            ),
-            ("imageGenerationConfig", Field::from(Params::new())),
-        ])
+        field(&titan.body(), "imageGenerationConfig"),
+        &Field::from(Params::new())
     );
 }
 

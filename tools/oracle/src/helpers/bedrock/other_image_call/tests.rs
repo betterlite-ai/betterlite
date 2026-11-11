@@ -30,7 +30,7 @@ fn helper_seeds_select_bedrock_other_image_call() {
             .is_ok()
             && serde_saphyr::from_str::<HelperCase>(source).is_ok_and(|case| {
                 case.call.operation == "bedrock_other_image_call"
-                    && serde_json::from_value::<Input>(case.call.input.clone()).is_ok()
+                    && serde_json::from_value::<Input>(case.call.input).is_ok()
             })
     }));
 }
@@ -42,6 +42,6 @@ fn a_provider_status_reaches_the_error_value() {
     )
     .unwrap();
     let value = Op::run(&input).unwrap();
-    assert_eq!(value[0]["status"], 429);
+    assert_eq!(value[0]["status"], 429_i32);
     assert_eq!(value[0]["post_call"], false);
 }
