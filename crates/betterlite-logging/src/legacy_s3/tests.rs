@@ -322,6 +322,17 @@ async fn callback_logger_swallows_an_unreachable_upload() {
     );
 }
 
+#[tokio::test(start_paused = true)]
+async fn callback_logger_retries_a_transient_failure_three_times() {
+    let harness = harness_answering(&[("s3_bucket_name", "logs")], &[], Answer::Status(503));
+    harness
+        .logger
+        .async_log_success_event(event(payload()))
+        .await
+        .expect("the callback never propagates a failure");
+    assert_eq!(recorded(&harness.requests).len(), 3);
+}
+
 #[tokio::test]
 async fn callback_logger_sends_the_sync_event_through_the_task_tracker() {
     let harness = harness(&[("s3_bucket_name", "logs")], &[]);
