@@ -25,9 +25,7 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
-use crate::server::chat_setup::provider_call::{
-    CallError, chat_mocks_resolve, control_options, provider_chat,
-};
+use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
 
 use headers::{failure_headers, success_headers};
 
@@ -163,26 +161,7 @@ async fn execute_chat(
     if request.stream {
         return stream_chat(state, deployment, request, control, call).await;
     }
-    let mocked = match chat_mocks_resolve(&state.executor, deployment, request) {
-        Ok(mocked) => mocked,
-        Err(error) => return failure(&error, call, Some(deployment)),
-    };
-    let answered = if mocked {
-        state
-            .executor
-            .send(deployment, request)
-            .await
-            .map(|outcome| {
-                (
-                    ChatCompletion::OpenAi(Box::new(outcome.response)),
-                    outcome.upstream.headers,
-                    outcome.upstream_time,
-                )
-            })
-            .map_err(CallError::Route)
-    } else {
-        provider_chat(&state.executor, request, deployment, control).await
-    };
+    let answered = answer_chat(&state.executor, request, deployment, control).await;
     render_answer(answered, deployment, call)
 }
 

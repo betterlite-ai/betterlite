@@ -27,7 +27,24 @@ pub(crate) fn control_options(
     parse_control_options(Some(&value))
 }
 
-pub(crate) fn chat_mocks_resolve(
+pub(crate) async fn answer_chat(
+    executor: &ChatExecutor,
+    request: &ChatRequest,
+    deployment: &ChatDeployment,
+    control: ControlOptions,
+) -> Result<(ChatCompletion, HeaderMap, Duration), CallError<ChatError>> {
+    if !chat_mocks_resolve(executor, deployment, request)? {
+        return provider_chat(executor, request, deployment, control).await;
+    }
+    let outcome = executor.send(deployment, request).await?;
+    Ok((
+        ChatCompletion::OpenAi(Box::new(outcome.response)),
+        outcome.upstream.headers,
+        outcome.upstream_time,
+    ))
+}
+
+fn chat_mocks_resolve(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &ChatRequest,
@@ -44,7 +61,7 @@ pub(crate) fn chat_mocks_resolve(
     Ok(resolved.is_some())
 }
 
-pub(crate) async fn provider_chat(
+async fn provider_chat(
     executor: &ChatExecutor,
     request: &ChatRequest,
     deployment: &ChatDeployment,
