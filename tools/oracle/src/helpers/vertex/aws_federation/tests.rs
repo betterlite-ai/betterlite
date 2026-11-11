@@ -22,6 +22,6 @@ fn helper_seeds_select_vertex_aws_federation(
 
 #[test]
 fn an_aws_field_of_the_wrong_type_is_not_a_vertex_aws_federation_input() {
-    let input = serde_json::json!({"aws_region_name": 3});
+    let input = serde_json::json!({"aws_region_name": 3_i32});
     assert!(Op::check(&input).is_err());
 }
