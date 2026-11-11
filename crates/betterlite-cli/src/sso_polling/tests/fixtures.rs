@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::Error as IoError;
 use std::iter::repeat_with;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use console::Key;
@@ -14,7 +14,7 @@ use crate::sso_polling::polling::{
     PollNotice, PollOptions, ReadyPoll, Sleeper, poll_for_ready_data,
 };
 use crate::sso_polling::session::{
-    AuthenticationPoll, TeamSelectionPoll, handle_poll_team_selection, poll_for_authentication,
+    AuthenticationPoll, handle_poll_team_selection, poll_for_authentication,
 };
 use crate::sso_polling::terminal::SelectionInput;
 use crate::sso_polling::transport::PollTransport;
@@ -78,34 +78,27 @@ pub(super) struct FakeInput {
     pub(super) lines: VecDeque<Option<String>>,
 }
 
-pub(super) fn interactive_input(keys: Vec<Key>) -> FakeInput {
+fn input(interactive: bool, keys: Vec<Key>, lines: Vec<&str>) -> FakeInput {
     FakeInput {
-        interactive: true,
+        interactive,
         keys: keys.into_iter().map(Some).collect(),
-        lines: VecDeque::new(),
+        lines: lines
+            .into_iter()
+            .map(|line| Some(line.to_owned()))
+            .collect(),
     }
+}
+
+pub(super) fn interactive_input(keys: Vec<Key>) -> FakeInput {
+    input(true, keys, Vec::new())
 }
 
 pub(super) fn terminal_input(keys: Vec<Key>, lines: Vec<&str>) -> FakeInput {
-    FakeInput {
-        interactive: true,
-        keys: keys.into_iter().map(Some).collect(),
-        lines: lines
-            .into_iter()
-            .map(|line| Some(line.to_owned()))
-            .collect(),
-    }
+    input(true, keys, lines)
 }
 
 pub(super) fn piped_input(lines: Vec<&str>) -> FakeInput {
-    FakeInput {
-        interactive: false,
-        keys: VecDeque::new(),
-        lines: lines
-            .into_iter()
-            .map(|line| Some(line.to_owned()))
-            .collect(),
-    }
+    input(false, Vec::new(), lines)
 }
 
 impl SelectionInput for FakeInput {
@@ -124,13 +117,14 @@ impl SelectionInput for FakeInput {
 
 #[derive(Default)]
 pub(super) struct Echo {
-    messages: Mutex<Vec<String>>,
+    messages: Arc<Mutex<Vec<String>>>,
 }
 
 impl Echo {
-    pub(super) fn sink(&self) -> impl Fn(&str) + Send + Sync + '_ {
+    pub(super) fn sink(&self) -> impl Fn(&str) + Send + Sync + 'static {
+        let messages = Arc::clone(&self.messages);
         move |message| {
-            self.messages
+            messages
                 .lock()
                 .expect("the echo log")
                 .push(message.to_owned());
@@ -248,59 +242,61 @@ impl PollTransport for ScriptedTransport {
     }
 }
 
-pub(super) fn poll(
-    transport: &ScriptedTransport,
-    options: &PollOptions,
-    sleeper: &RecordingSleeper,
-    echo: &Echo,
-) -> Result<Option<CliPollData>, PollingError> {
-    let sink = echo.sink();
-    poll_for_ready_data(&ReadyPoll {
-        url: POLL_URL,
-        headers: &[],
-        options,
-        transport,
-        sleeper,
-        echo: &sink,
-    })
+pub(super) struct PollFixture {
+    pub(super) transport: ScriptedTransport,
+    pub(super) sleeper: RecordingSleeper,
+    pub(super) echo: Echo,
+    poll_secret: SecretString,
+    sink: Box<dyn Fn(&str) + Send + Sync>,
 }
 
-pub(super) fn authenticate(
-    transport: &ScriptedTransport,
-    sleeper: &RecordingSleeper,
-    input: &mut FakeInput,
-    echo: &Echo,
-) -> Result<Option<CliAuthResult>, PollingError> {
-    let sink = echo.sink();
-    let poll_secret = secret(POLL_SECRET);
-    poll_for_authentication(&mut AuthenticationPoll {
-        base_url: SERVER,
-        key_id: LOGIN_ID,
-        poll_secret: &poll_secret,
-        transport,
-        sleeper,
-        lines: input,
-        echo: &sink,
-    })
-}
+impl PollFixture {
+    pub(super) fn new(transport: ScriptedTransport, echo: Echo) -> Self {
+        let sink = Box::new(echo.sink());
+        Self {
+            transport,
+            sleeper: RecordingSleeper::default(),
+            echo,
+            poll_secret: secret(POLL_SECRET),
+            sink,
+        }
+    }
 
-pub(super) fn select_team(
-    transport: &ScriptedTransport,
-    sleeper: &RecordingSleeper,
-    input: &mut FakeInput,
-    teams: &[CliTeam],
-    echo: &Echo,
-) -> Result<Option<SecretString>, PollingError> {
-    let sink = echo.sink();
-    let poll_secret = secret(POLL_SECRET);
-    handle_poll_team_selection(&mut TeamSelectionPoll {
-        base_url: SERVER,
-        key_id: LOGIN_ID,
-        poll_secret: &poll_secret,
-        transport,
-        sleeper,
-        lines: input,
-        teams,
-        echo: &sink,
-    })
+    pub(super) fn poll(&self, options: &PollOptions) -> Result<Option<CliPollData>, PollingError> {
+        poll_for_ready_data(&ReadyPoll {
+            url: POLL_URL,
+            headers: &[],
+            options,
+            transport: &self.transport,
+            sleeper: &self.sleeper,
+            echo: &*self.sink,
+        })
+    }
+
+    pub(super) fn authenticate(
+        &self,
+        input: &mut FakeInput,
+    ) -> Result<Option<CliAuthResult>, PollingError> {
+        poll_for_authentication(&mut self.session(input))
+    }
+
+    pub(super) fn select_team(
+        &self,
+        input: &mut FakeInput,
+        teams: &[CliTeam],
+    ) -> Result<Option<SecretString>, PollingError> {
+        handle_poll_team_selection(&mut self.session(input), teams)
+    }
+
+    fn session<'poll>(&'poll self, input: &'poll mut FakeInput) -> AuthenticationPoll<'poll> {
+        AuthenticationPoll {
+            base_url: SERVER,
+            key_id: LOGIN_ID,
+            poll_secret: &self.poll_secret,
+            transport: &self.transport,
+            sleeper: &self.sleeper,
+            lines: input,
+            echo: &*self.sink,
+        }
+    }
 }

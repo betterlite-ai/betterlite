@@ -132,6 +132,19 @@ fn start_names_a_wrongly_typed_field() {
 }
 
 #[test]
+fn start_rejects_a_json_body_that_is_not_an_object() {
+    let transport = scripted_transport(vec![Reply::Response(typed_response(
+        200,
+        "application/json",
+        "[]",
+    ))]);
+
+    let error = start_cli_sso_flow(SERVER, &transport).expect_err("the array body");
+
+    assert!(error.to_string().contains("not a valid CLI SSO start body"));
+}
+
+#[test]
 fn start_reports_an_unreachable_proxy() {
     let transport = scripted_transport(vec![Reply::Transport]);
 

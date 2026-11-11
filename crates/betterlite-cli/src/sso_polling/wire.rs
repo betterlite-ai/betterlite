@@ -10,6 +10,17 @@ pub enum WireError {
     Trailing(#[from] serde_json::Error),
 }
 
+impl WireError {
+    // A data error means the body was valid JSON of the wrong shape; a syntax error means it was not JSON at all.
+    #[must_use]
+    pub fn is_data_error(&self) -> bool {
+        match self {
+            Self::Shape(source) => source.inner().is_data(),
+            Self::Trailing(_source) => false,
+        }
+    }
+}
+
 pub fn decode<T>(bytes: &[u8]) -> Result<T, WireError>
 where
     T: DeserializeOwned,

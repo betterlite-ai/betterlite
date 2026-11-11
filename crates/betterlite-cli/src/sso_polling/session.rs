@@ -65,11 +65,21 @@ pub fn start_cli_sso_flow(
 }
 
 fn parse_start_body(url: &str, response: &HttpResponse) -> Result<CliSsoStartData, PollingError> {
-    let body: StartWire =
-        wire::decode(&response.body).map_err(|source| PollingError::StartBody {
-            url: url.to_owned(),
-            source,
-        })?;
+    let body: StartWire = match wire::decode(&response.body) {
+        Ok(body) => body,
+        Err(source) if source.is_data_error() => {
+            return Err(PollingError::StartBody {
+                url: url.to_owned(),
+                source,
+            });
+        }
+        Err(_) => {
+            return Err(PollingError::StartNotJson {
+                url: url.to_owned(),
+                content_type: content_type(response),
+            });
+        }
+    };
     let missing = missing_fields(&body);
     let start = body.login_id.zip(body.poll_secret).zip(body.user_code);
     let Some(((login_id, poll_secret), user_code)) = start else {
@@ -84,6 +94,14 @@ fn parse_start_body(url: &str, response: &HttpResponse) -> Result<CliSsoStartDat
         user_code,
         verification_uri_complete: body.verification_uri_complete,
     })
+}
+
+fn content_type(response: &HttpResponse) -> String {
+    response
+        .headers
+        .iter()
+        .find(|(name, _value)| name.eq_ignore_ascii_case("content-type"))
+        .map_or_else(|| String::from("unknown"), |(_name, value)| value.clone())
 }
 
 fn missing_fields(body: &StartWire) -> Vec<&'static str> {
@@ -144,16 +162,7 @@ impl AuthenticationPoll<'_> {
             (self.echo)(NO_TEAMS_WARNING);
             return Ok(None);
         }
-        let jwt = handle_poll_team_selection(&mut TeamSelectionPoll {
-            base_url: self.base_url,
-            key_id: self.key_id,
-            poll_secret: self.poll_secret,
-            transport: self.transport,
-            sleeper: self.sleeper,
-            lines: &mut *self.lines,
-            teams: &teams,
-            echo: self.echo,
-        })?;
+        let jwt = handle_poll_team_selection(self, &teams)?;
         let Some(api_key) = jwt else {
             (self.echo)(TEAM_SELECTION_FAILED);
             return Ok(None);
@@ -206,27 +215,17 @@ fn direct_auth_result(data: CliPollData, echo: MessageSink<'_>) -> Option<CliAut
     })
 }
 
-pub struct TeamSelectionPoll<'poll> {
-    pub base_url: &'poll str,
-    pub key_id: &'poll str,
-    pub poll_secret: &'poll SecretString,
-    pub transport: &'poll dyn PollTransport,
-    pub sleeper: &'poll dyn Sleeper,
-    pub lines: &'poll mut dyn SelectionInput,
-    pub teams: &'poll [CliTeam],
-    pub echo: MessageSink<'poll>,
-}
-
 pub fn handle_poll_team_selection(
-    poll: &mut TeamSelectionPoll<'_>,
+    poll: &mut AuthenticationPoll<'_>,
+    teams: &[CliTeam],
 ) -> Result<Option<SecretString>, PollingError> {
-    if poll.teams.is_empty() {
+    if teams.is_empty() {
         (poll.echo)(NO_TEAMS_MESSAGE);
         return Ok(None);
     }
     (poll.echo)(TEAM_SEPARATOR);
     (poll.echo)(SELECT_TEAM_INTRO);
-    let Some(team_id) = prompt_team_id(poll.teams, &mut *poll.lines, poll.echo) else {
+    let Some(team_id) = prompt_team_id(teams, &mut *poll.lines, poll.echo) else {
         (poll.echo)(NO_TEAM_SELECTED_MESSAGE);
         return Ok(None);
     };
@@ -239,7 +238,7 @@ pub fn handle_poll_team_selection(
 }
 
 fn poll_team_jwt(
-    poll: &TeamSelectionPoll<'_>,
+    poll: &AuthenticationPoll<'_>,
     team_id: &str,
 ) -> Result<Option<SecretString>, PollingError> {
     let options = PollOptions {

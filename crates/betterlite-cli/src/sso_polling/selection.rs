@@ -1,3 +1,5 @@
+use std::iter::from_fn;
+
 use crate::credentials::contracts::CliTeam;
 use crate::credentials::notice::MessageSink;
 
@@ -13,6 +15,11 @@ const INVALID_INPUT_MESSAGE: &str = "Invalid input. Please enter a number or 'sk
 const SKIPPED_MESSAGE: &str = "Team selection skipped.";
 const TABLE_HEADER: &str = "Available Teams";
 const TABLE_COLUMNS: &str = "Index  Team Name  Team ID";
+
+enum Picked {
+    Team(CliTeam),
+    Skipped,
+}
 
 #[must_use]
 pub fn prompt_team_selection(
@@ -67,33 +74,16 @@ pub fn prompt_team_selection_fallback(
     input: &mut dyn SelectionInput,
     echo: MessageSink<'_>,
 ) -> Option<CliTeam> {
-    if teams.is_empty() {
+    ask_for_choice(teams, input, echo, FALLBACK_PROMPT)
+        .and_then(|picked| announce_team(picked, echo))
+}
+
+fn announce_team(picked: Option<Picked>, echo: MessageSink<'_>) -> Option<CliTeam> {
+    let Picked::Team(team) = picked? else {
         return None;
-    }
-    loop {
-        let answer = ask(input, echo, FALLBACK_PROMPT)?;
-        let choice = answer.trim();
-        if choice.eq_ignore_ascii_case("skip") {
-            return None;
-        }
-        let Ok(number) = choice.parse::<i64>() else {
-            echo(INVALID_INPUT_MESSAGE);
-            continue;
-        };
-        let selected = usize::try_from(number)
-            .ok()
-            .and_then(|index| index.checked_sub(1))
-            .and_then(|offset| teams.get(offset));
-        let Some(team) = selected else {
-            echo(&format!(
-                "Invalid selection. Please enter a number between 1 and {}",
-                teams.len()
-            ));
-            continue;
-        };
-        echo(&selected_team_message(team));
-        return Some(team.clone());
-    }
+    };
+    echo(&selected_team_message(&team));
+    Some(team)
 }
 
 #[must_use]
@@ -102,38 +92,58 @@ pub fn prompt_team_id(
     input: &mut dyn SelectionInput,
     echo: MessageSink<'_>,
 ) -> Option<String> {
-    if teams.is_empty() {
-        return None;
-    }
     display_team_table(teams, echo);
-    loop {
-        let answer = ask(input, echo, LOGIN_TEAM_PROMPT)?;
-        let choice = answer.trim();
-        if choice.eq_ignore_ascii_case("skip") {
-            let first_team = teams.first()?;
-            return first_team.team_id.clone();
+    match ask_for_choice(teams, input, echo, LOGIN_TEAM_PROMPT)? {
+        Picked::Skipped => teams.first()?.team_id.clone(),
+        Picked::Team(team) => {
+            echo(&selected_login_team_message(&team));
+            team.team_id
         }
-        let Ok(number) = choice.parse::<i64>() else {
-            echo(INVALID_INPUT_MESSAGE);
-            continue;
-        };
-        let selected = usize::try_from(number)
-            .ok()
-            .and_then(|index| index.checked_sub(1))
-            .and_then(|offset| teams.get(offset));
-        let Some(team) = selected else {
-            echo(&format!(
-                "Invalid selection. Please enter a number between 1 and {}",
-                teams.len()
-            ));
-            continue;
-        };
-        echo(&selected_login_team_message(team));
-        return team.team_id.clone();
     }
 }
 
+fn ask_for_choice(
+    teams: &[CliTeam],
+    input: &mut dyn SelectionInput,
+    echo: MessageSink<'_>,
+    prompt: &str,
+) -> Option<Picked> {
+    if teams.is_empty() {
+        return None;
+    }
+    from_fn(|| {
+        echo(prompt);
+        input.read_line()
+    })
+    .find_map(|answer| interpret(teams, answer.trim(), echo))
+}
+
+fn interpret(teams: &[CliTeam], answer: &str, echo: MessageSink<'_>) -> Option<Picked> {
+    if answer.eq_ignore_ascii_case("skip") {
+        return Some(Picked::Skipped);
+    }
+    let Ok(number) = answer.parse::<i64>() else {
+        echo(INVALID_INPUT_MESSAGE);
+        return None;
+    };
+    let found = usize::try_from(number)
+        .ok()
+        .and_then(|index| index.checked_sub(1))
+        .filter(|offset| *offset < teams.len());
+    let Some(offset) = found else {
+        echo(&format!(
+            "Invalid selection. Please enter a number between 1 and {}",
+            teams.len()
+        ));
+        return None;
+    };
+    teams.get(offset).cloned().map(Picked::Team)
+}
+
 fn display_team_table(teams: &[CliTeam], echo: MessageSink<'_>) {
+    if teams.is_empty() {
+        return;
+    }
     echo(TABLE_HEADER);
     echo(TABLE_COLUMNS);
     for (position, team) in (1_usize..).zip(teams) {
@@ -141,11 +151,6 @@ fn display_team_table(teams: &[CliTeam], echo: MessageSink<'_>) {
         let name = team.team_alias.as_deref().unwrap_or(team_id);
         echo(&format!("{position}  {name}  {team_id}"));
     }
-}
-
-fn ask(input: &mut dyn SelectionInput, echo: MessageSink<'_>, prompt: &str) -> Option<String> {
-    echo(prompt);
-    input.read_line()
 }
 
 fn selected_team_message(team: &CliTeam) -> String {
