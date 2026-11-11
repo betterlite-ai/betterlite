@@ -21,8 +21,6 @@ use tokio::time::timeout;
 use self::body::GuardedBody;
 use self::in_flight::{InFlightRequests, track_in_flight};
 use self::response::overloaded;
-use crate::middleware::request_root_paths::RootPaths;
-use betterlite_config::sections::request_root_paths;
 
 // LiteLLM lets health probes and metric scrapes through so a saturated worker stays observable
 const EXEMPT_PATHS: [&str; 8] = [
@@ -161,14 +159,12 @@ impl Drop for AdmissionSlot {
 pub struct AdmissionStack {
     pub admission: Arc<AdmissionControl>,
     pub in_flight: Arc<InFlightRequests>,
-    // server.rs leaves this empty because RootPaths wraps outside; the oracle probe builds the stack alone
-    pub scalar_root: String,
 }
 
 impl AdmissionStack {
     pub fn wrap(&self, application: Router) -> Router {
         // the root path layer must wrap this stack so an exemption check sees the route path
-        let stacked = application
+        application
             .layer(from_fn_with_state(
                 Arc::clone(&self.in_flight),
                 track_in_flight,
@@ -176,18 +172,7 @@ impl AdmissionStack {
             .layer(from_fn_with_state(
                 Arc::clone(&self.admission),
                 admit_request,
-            ));
-        if self.scalar_root.is_empty() {
-            return stacked;
-        }
-        let settings = request_root_paths::Settings {
-            server_root_path: self.scalar_root.clone(),
-            server_root_paths: Vec::new(),
-        };
-        match RootPaths::from_settings(&settings) {
-            Some(paths) => paths.wrap(stacked),
-            None => stacked,
-        }
+            ))
     }
 }
 
