@@ -67,6 +67,12 @@ description: >-
   utilities. B8990 owns the constructor, apply and config-model logic; this task only builds and dispatches it.
 
 
+  Model Armor. `LiveGuardrail::build` constructs each Model Armor guardrail with B9440's `VertexArmorTokens::new(credentials, project_id, ...)`, the production implementation of B3733's `ArmorTokens`. B3732 to B3734 put the Model Armor code in crates/betterlite-guardrails/src/model_armor and B3735 puts the stream code in crates/betterlite-core/src/guardrails/model_armor, so the variant reaches both.
+
+
+  Vendor variants. B9460 (Pillar), B9461 (TypeSafe), B9462 (XecGuard) and B9463 (Presidio) each own their runtime; this task builds their variants. Resolve the TYPESAFE_* and PRESIDIO_*_API_BASE settings through B8500's secret lookup, the way it does for Vigil. For the Cisco AI Defense variant, `streaming_iterator` forwards to B9450's `cisco_stream_scan::scan_stream`. For AIM, Akto, the legacy Lakera guardrail and Lasso, the hook methods forward to the functions of B9451's `third_party_hooks_a`. The Conduct variant is built through B9451's `conduct::build`. That build always fails with LiteLLM's MISSING_PACKAGE_MESSAGE, because LiteLLM does not ship conduct-litellm-guard, and LiteLLM stops startup on that ImportError. So a Conduct build failure is returned to the caller and stops startup, and is not skipped like the other build failures.
+
+
   callback.rs. `LiveCallback` pairs a `GuardrailCallback` with its `Arc<LiveGuardrail>` and implements B8390's
   `ProxyCallback` (the hook methods forward to the live guardrail, `overrides` comes from it) and `GuardrailCallback`
   (guardrail_name, run_in_parallel, scan_raw_request, use_native_during_call_hook, event_hook_is_set and

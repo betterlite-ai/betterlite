@@ -1,0 +1,14 @@
+id: B9711
+milestone: M2 routing
+title: Router runtime settings and guardrail selection
+status: todo
+depends_on: [B306, B3683]
+file: tasks/B9711-router-runtime-settings.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

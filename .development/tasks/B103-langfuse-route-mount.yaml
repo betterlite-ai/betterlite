@@ -1,0 +1,102 @@
+id: B103
+title: Mount the Langfuse pass-through route
+description: >-
+  B8292 ports litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py and returns `langfuse_router(deps: LangfuseDeps) -> axum::Router`, but nothing merges that router into the app, so `/langfuse/{endpoint}` answers the Not Found fallback today and B8292's five HTTP cases can't pass at its own gate. This task builds the production `LangfuseDeps`, mounts the router in the booted proxy and owns the Langfuse HTTP oracle cases. It adds no route logic: every step of the handler stays B8292's.
+
+  Where it goes. Fill crates/betterlite-server/src/app/pass_through/routes/langfuse.rs and its folder (adapters.rs and tests.rs). B8640 calls `langfuse::mount_public(router, &ps)` from the pass-through area's `mount_public`, with a stub body that returns the router unchanged; this task replaces the stub. Everything comes from B8640's `PassThroughState`: the one `Arc<PassThroughHandler>` (B3613's type, the same Arc every other family gets), the server's `Config`, Shared's `secrets: Arc<SecretLookup>` and the startup TLS verification. When one of those has no field in PassThroughState, stop and report; never read Shared, build a second handler or open a second secret lookup.
+
+  Why mount_public. LiteLLM registers the route with `@router.api_route("/langfuse/{endpoint:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])` and no `Depends(user_api_key_auth)`. A Langfuse SDK sends `Authorization: Basic base64(<public key>:<gateway key>)`, and the handler decodes it and calls user_api_key_auth itself with `Bearer <gateway key>`. Inside the app's auth layers the master key stage would read the whole Basic value as the key and answer 401 before B8292's handler runs, so the router is merged after them, the way B8606 merges the Gemini route.
+
+  `mount_public(router: Router, ps: &PassThroughState) -> Router` builds one `LangfuseDeps` and merges `langfuse_router(deps)`. It sets no fallback, because only the pass-through area's mount does. The deps fill B8292's struct:
+  - the handler: a clone of ps's handler Arc;
+  - `user_url_validation`: `config.sections.user_url_policy.user_url_validation` (B5082's section, default true, read from litellm_settings and general_settings);
+  - `KeyAuthPort`: `KeyAuthAdapter`, which calls B052's user_api_key_auth with the request and the explicit api key string B8292 passes (already "Bearer <key>"; add no second prefix). B052's error passes through unchanged, so a wrong key keeps LiteLLM's 401 auth_error. Read B052's merged entry point that takes an explicit key; B8641's Vertex KeyAuthAdapter calls the same one.
+  - `LoggingSettingsPort`: `CallbackVarsAdapter`, which calls B1109's `_get_dynamic_logging_metadata` port with the authenticated key and the server's config (LiteLLM passes `proxy_config` for the team settings in config.yaml) and returns the result's `callback_vars`, or None when the result or its callback_vars is None. Read B1109's merged name and inputs; when it needs a value PassThroughState doesn't hold, stop and report.
+  - `SecretPort`: `SecretAdapter`, which calls the shared SecretLookup's `get_secret(env, name, None)` (betterlite-secret-managers, B8500) with the environment map the server's other SecretLookup callers use, taken through PassThroughState. LiteLLM's litellm.utils.get_secret also asks the configured key management system, so the adapter never reads std::env directly. `SecretValue::Text` gives its text; `SecretValue::Bool` gives "True" or "False", since get_secret turns an env value "true" or "false" into a Python bool and the f-string in the Basic header prints it that way. A `SecretLookupError` goes out through SecretPort's error arm unchanged and is never turned into None; when B8292's merged SecretPort has no error arm, stop and report.
+  - `UrlGuardPort`: `UrlGuardAdapter<R: Resolve>`, which holds one B5082 `UrlValidator<R>`. `UrlGuardAdapter::from_config(config: &Config, verification: &Verification, resolver: R) -> Self` builds it with `UrlValidator::new(resolver, &config.sections.user_url_policy.user_url_allowed_hosts, verification)`. mount_public passes `SystemResolver` and the `verification` of the TlsPolicy the server resolved at startup (betterlite-config's tls.rs `TlsPolicy::resolve`: litellm_settings.ssl_verify, then SSL_VERIFY, then SSL_CERT_FILE), the one Shared's HTTP client was built from. Take it through PassThroughState and never resolve a second policy; when PassThroughState doesn't carry it, stop and report. validate_url returns `Validated { url, host_header }`, which the adapter returns as `Ok((url, host_header))`. `UserUrlError::Ssrf(e)` becomes `Err(e.to_string())`; its texts already match LiteLLM's SSRFError messages, so B8292's 400 detail reads `Invalid Langfuse host: <text>` as in LiteLLM. Parse and InvalidUrl errors become `Err` with their text too (see deviations).
+
+  Each adapter is a plain struct with its dependency passed to `new`. B5082's Resolve is a trait, so tests pass a FakeResolver. When B052's or B1109's merged entry point is a trait, tests pass a fake of it; when it is a concrete service, the adapter takes a one-method trait declared in adapters.rs that the real service implements. SecretLookup is a concrete struct, so tests build one with `manager: None` and an environment map. No adapter copies logic from the task it calls.
+
+  Tests (tests.rs, module app::pass_through::routes::langfuse::tests), with fakes and no booted app. `adapters`: one rstest per adapter. KeyAuthAdapter hands the key string through untouched and returns the fake's error unchanged. CallbackVarsAdapter returns None for a None result and for a result without callback_vars, and the map otherwise. SecretAdapter, over a SecretLookup with no manager and a test environment map, returns the text for LANGFUSE_PUBLIC_KEY, "True" for an env value "true" and None for a missing name. UrlGuardAdapter returns the rewritten http URL and Host header for a public host and the blocked-address text for a private one. `url_guard_config`: from_config with a FakeResolver and a config loaded from `litellm_settings: {user_url_allowed_hosts: [langfuse.internal]}` lets `http://langfuse.internal` through although it resolves to 10.0.0.5, blocks it with the default config, keeps an https URL with `Verification::Enabled` and rewrites it to the IP with `Verification::Disabled`. The mount itself is proven through the booted proxy by the oracle cases below: without it every case answers 404.
+
+  Oracle cases, all under tools/oracle/cases/server/langfuse-passthrough/. Write B8292's five cases at the names B8292 lists, plus four of your own. The oracle client (reqwest) normalizes `..`, `%2e%2e` and a raw backslash in a URL before sending it, so the paths below are the ones that survive to both gateways. Every request carries `Authorization: Basic cGstbGYtY2xpZW50Om9yYWNsZS1tYXN0ZXI=` (base64 of `pk-lf-client:oracle-master`) unless the case says otherwise, the config is `model_list: []` and the harness supplies LITELLM_MASTER_KEY.
+  - path-dot-segments-400: GET `/langfuse/api/public/%2e%2e%2fsecret` (one segment for the client, `api/public/../secret` after one decode), 400 with `Invalid Langfuse endpoint path`.
+  - path-double-encoded-400: GET `/langfuse/api/%252e%252e/secret`, 400 after the decode loop.
+  - path-backslash-400: GET `/langfuse/api%5Cpublic`, 400.
+  - path-leading-double-slash-400: GET `/langfuse/%2F%2Fevil.example/x`, 400.
+  - authorization-without-colon-500: `Authorization: Basic b3JhY2xlLW1hc3Rlcg==` (base64 of `oracle-master`), 500.
+  - wrong-key-401: `Authorization: Basic cGstbGYtY2xpZW50Ondyb25nLWtleQ==` (base64 of `pk-lf-client:wrong-key`) on GET `/langfuse/api/public/projects`, LiteLLM's 401 auth_error, ignoring only `/error/message` with its reason.
+  - forward-env-credentials: env `LANGFUSE_HOST: "{{upstream}}"`, `LANGFUSE_PUBLIC_KEY: pk-lf-oracle`, `LANGFUSE_SECRET_KEY: sk-lf-oracle`; GET `/langfuse/api/public/projects?page=2` with a 200 JSON upstream answer. Compare `upstream_headers: [authorization]` (both must send `Basic cGstbGYtb3JhY2xlOnNrLWxmLW9yYWNsZQ==`), the upstream path with its query, status, body and content-type.
+  - ingestion-post-forward: the same env; POST `/langfuse/api/public/ingestion` with a JSON body `{batch: [{id: evt-1, type: trace-create, timestamp: "2026-01-01T00:00:00Z", body: {id: trace-1, name: oracle}}]}` and a 207 JSON upstream answer. The upstream body comparison proves the body is relayed unchanged.
+  - upstream-error-relayed: the same env; GET `/langfuse/api/public/traces/trace-404` with a 404 JSON upstream answer `{message: "Trace not found"}`. Compare what the pass-through relay returns (status, body, content-type).
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/routes/langfuse.rs
+    - crates/betterlite-server/src/app/pass_through/routes/langfuse/**
+    - tools/oracle/cases/server/langfuse-passthrough/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py#L149-L227
+    why: The route decorator with its five methods and no auth dependency, the Basic header parse, the calls this task backs with adapters (user_api_key_auth, _get_dynamic_logging_metadata, get_secret through _get_langfuse_proxy_credentials) and create_pass_through_route, which gets the shared handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py#L104-L146
+    why: get_secret for LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY, and validate_url guarded by user_url_validation with only SSRFError caught as the 400.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L260-L264
+    why: LiteLLM loads the router on the first request under /langfuse; B8292 records the startup mount as a deviation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L266-L364
+    why: validate_url with user_url_allowed_hosts and ssl_verify, and its SSRFError texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L973-L1031
+    why: _get_dynamic_logging_metadata, the key, team, deprecated team metadata and config team branches that give callback_vars.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L189-L200
+    why: get_secret, which consults the key management system before the environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3433-L3445
+    why: user_api_key_auth called with an explicit api_key, as the Langfuse handler does.
+  - url: https://docs.litellm.ai/docs/pass_through/langfuse
+    why: How a Langfuse SDK is pointed at the gateway with the gateway key as its secret key.
+dod:
+  - text: mount_public merges the Langfuse router after the auth layers, so a Basic header reaches B8292's handler through the booted proxy and a bad one gets the handler's 500, not the auth stage's 401.
+    proof: [oracle]
+  - text: The key, callback vars, secret and URL guard adapters forward to B052, B1109, B8500 and B5082 with the inputs and error texts the description names.
+    proof: [adapter-tests]
+  - text: The URL guard takes its allowed hosts from user_url_allowed_hosts and its https handling from the verification it is given.
+    proof: [url-guard-config-tests]
+  - text: The Langfuse route answers through the booted proxy as LiteLLM does for bad paths, a wrong key, forwarding with env credentials, a POST body and an upstream error.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: url-guard-config-tests
+      why: the validator ignores user_url_allowed_hosts or keeps an https hostname with ssl_verify false
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::langfuse::tests::url_guard_config/)'
+    - id: adapter-tests
+      why: an adapter changes the key string, loses an error, reads the environment directly or maps an SSRF error to another text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::langfuse::tests::adapters/)'
+oracle_cases:
+  - tools/oracle/cases/server/langfuse-passthrough/path-dot-segments-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/path-double-encoded-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/path-backslash-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/path-leading-double-slash-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/authorization-without-colon-500.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/wrong-key-401.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/forward-env-credentials.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/ingestion-post-forward.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/upstream-error-relayed.yaml
+deviations:
+  - what: "A Parse or InvalidUrl error from B5082's validate_url becomes B8292's 400 `Invalid Langfuse host: <text>`. LiteLLM catches only SSRFError there, so a ValueError from urlparse would end as a 500."
+    why: B8292's UrlGuardPort has one error arm. The URL it checks is the url crate's own serialization of an http or https URL with a host, so neither error is expected to occur.
+out_of_scope:
+  - "Every function in langfuse_endpoints.py, the handler order, the Basic parse, the path and host checks and their HTTP texts: B8292. create_request_copy and default_vertex_config have no caller at the pin, as B8292 records."
+  - "PassThroughState, the order of the family calls and the call to langfuse::mount_public: B8640. The shared handler: B3613 and B3615."
+  - "The proxy key check behind KeyAuthAdapter: B052. _get_dynamic_logging_metadata: B1109. get_secret: B8500. validate_url and the user_url_policy section: B5082."
+  - "Logging of a Langfuse pass-through call (is_langfuse_route and the success handler): B3605 to B3607, assembled by B8931 and proven together over HTTP by B102."
+  - "The provider pass-through routes and their mounts, which B548, B566, B625, B658, B3630 and B3650 once left to B103: B3618 to B3629 and B8606 to B8609 register and mount them, B3613, B3615 and B6510 forward, and B102 owns the logging integration cases. The raw Bedrock Mantle relay has no proxy route at the pin; it goes through the SDK pass-through of B101 and B3570 to B3574."
+pitfalls:
+  - "Merging the router through `mount` instead of `mount_public` turns authorization-without-colon-500 into a 401, because the master key stage reads `Basic ...` as the key."
+  - "LiteLLM's handler passes `Bearer <key>` as api_key; B8292 already adds the prefix, so KeyAuthAdapter must not add a second `Bearer `."
+  - "`UrlValidator` keeps an https URL only while verification is on; hard-coding `Verification::Enabled` instead of the server's resolved ssl_verify makes `ssl_verify: false` keep the hostname where LiteLLM pins the IP."
+  - "LiteLLM's `getattr(litellm, \"user_url_validation\", True)` defaults to on; read `config.sections.user_url_policy.user_url_validation`, never a literal true."
+  - "A path case written with `..`, `%2e%2e` or a literal backslash never reaches either gateway, since reqwest normalizes it first; keep the encoded forms the description gives."
+  - "LANGFUSE_HOST and the two key secrets are read per request in LiteLLM, so the forward cases set them in the case env and not in config.yaml."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

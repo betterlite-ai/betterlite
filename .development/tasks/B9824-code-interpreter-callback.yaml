@@ -1,0 +1,131 @@
+id: B9824
+title: Register code_interpreter_interception in the SDK callback list
+description: >-
+  With `litellm_settings.callbacks: ["code_interpreter_interception"]` LiteLLM builds one
+  CodeInterpreterInterceptionLogger at startup (callback_utils.py L165-L175, `initialize_from_proxy_config` at
+  handler.py L245-L256) and appends it to litellm.callbacks. Its deployment hook (L259-L305) swaps a native
+  `code_interpreter` tool for the `litellm_code_execution` function on chat and Responses calls, turns a stream off and
+  mints the sandbox key; when the model calls that function the gate and plan (L399-L568) run the code in a sandbox and
+  send the follow-up, and the post response and cleanup hooks (L614-L676) merge the code_interpreter_call items and
+  delete request scoped sandboxes. B4122 built the settings, the hook, the gate and the plans, B4121 the sandbox reuse,
+  the post response and cleanup hooks, and B3519 the sandbox dispatch behind litellm.acreate_sandbox. B9821's list has a
+  builder slot for this name that still answers UnavailableAdapter, and B9825 runs the seams on the gateway. This task
+  fills the slot and loads the params, so the name starts and the interception runs through the gateway.
+
+
+  Config. No section reads `litellm_settings.code_interpreter_interception_params` yet. Fill the section
+  `code_interpreter_interception` (crates/betterlite-config/src/sections/code_interpreter_interception.rs and
+  code_interpreter_interception/tests.rs; the skeleton creates the stub and declares it in sections.rs). It reads
+  litellm_settings.code_interpreter_interception_params, a mapping with `enabled` (bool, default true),
+  `enabled_providers` (list of strings, absent or null means every provider) and `sandbox_tool_name` (string, absent or
+  null means none), and when the key is absent it takes `callback_settings.code_interpreter_interception` if that entry
+  is a mapping, else the defaults: LiteLLM's precedence (handler.py L245-L256). A wrong type is a config error naming the
+  key (docs/compatibility.md). The section exposes the result as B4122's settings type. Commit config_yaml seeds
+  crates/betterlite-config/fuzz/corpus/config_yaml/code-interpreter-interception-params.yaml and
+  code-interpreter-interception-callback-settings.yaml.
+
+
+  Code goes in crates/betterlite-server/src/state/sdk_callbacks/code_interpreter.rs and code_interpreter/ (tests.rs).
+  Replace the body of `build(inputs)` and touch no other file of the slot. `CodeInterpreterCallback` holds one B4122
+  logger value built from `config.sections.code_interpreter_interception`, with B4121's sandbox lifecycle over B3519's
+  sandbox dispatch (`shared.http` and the sandbox tools the config lists) and no sandbox_config object, since the proxy
+  path never passes one. Built once per process, so the container cache is shared by a call and its follow-ups. It
+  implements:
+  - B5367's DeploymentHook: the pre-call method is B4122's async_pre_call_deployment_hook; success and failure keep the
+    defaults.
+  - B9820's AgenticCallback: `callback_name` "code_interpreter_interception", `overrides()` with should_run, build_plan,
+    post_response and cleanup, delegating to B4122's gate and plan builder and B4121's post response and cleanup hooks.
+  `build` returns `SdkCallbackEntry { name: "code_interpreter_interception", deployment: Some(..), agentic: Some(..),
+  pre_request: None, search: None }`, every view the same Arc.
+
+
+  Tests. code_interpreter/tests.rs (`state::sdk_callbacks::code_interpreter::tests`): install with the name gives one
+  entry with the deployment and agentic views over one object; overrides() reports exactly the four flags; the pre-call
+  view swaps the native tool on a chat and on a Responses request and sets `_code_interpreter_interception_active`; the
+  gate says run for a response that calls litellm_code_execution. Section tests in code_interpreter_interception/tests.rs
+  (`sections::code_interpreter_interception::tests`): the litellm_settings mapping wins over callback_settings, the
+  callback_settings entry is used when the key is absent, both absent give the defaults, and a non-list
+  enabled_providers fails naming the key.
+
+
+  HTTP oracle cases in tools/oracle/cases/interception/code-interpreter/, through the booted proxies. Config: an
+  `openai/gpt-4o-mini` deployment `gpt-code` with `api_base: "{{upstream}}"` and `api_key: oracle-key`, and
+  `litellm_settings.callbacks: ["code_interpreter_interception"]`. Compare status, the body and every captured upstream
+  request (path and body); ignore only generated ids, timestamps and the minted sandbox key at their pointers. Confirm
+  each case with `--self-check` before comparing betterlite.
+  - responses-tool-swap.yaml: POST /v1/responses with `tools: [{type: code_interpreter, container: {type: auto}}]` and
+    a plain answer; the upstream sees the litellm_code_execution function tool and the client gets the answer.
+  - chat-tool-swap.yaml: the same through POST /v1/chat/completions with the chat function shape.
+  - no-sandbox-keeps-model-call.yaml: through POST /v1/responses the model answers with a litellm_code_execution call and no sandbox is
+    configured; the plan fails with "CodeInterpreterInterception: no sandbox available", the loop logs it and goes on,
+    and the client gets the model's answer with that call, after exactly one upstream request.
+  - disabled-untouched.yaml: `code_interpreter_interception_params: {enabled: false}`; the upstream sees the client's
+    tool.
+  Add one http_case corpus seed per case.
+scope:
+  paths:
+    - crates/betterlite-server/src/state/sdk_callbacks/code_interpreter.rs
+    - crates/betterlite-server/src/state/sdk_callbacks/code_interpreter/**
+    - crates/betterlite-config/src/sections/code_interpreter_interception.rs
+    - crates/betterlite-config/src/sections/code_interpreter_interception/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/code-interpreter-interception-*"
+    - tools/oracle/cases/interception/code-interpreter/**
+    - tools/oracle/fuzz/corpus/http_case/interception-code-interpreter-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L165-L175
+    why: The name builds one logger before the known name check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L223-L256
+    why: The constructor, from_config_yaml defaults and initialize_from_proxy_config precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L259-L305
+    why: The deployment hook acts on completion and responses call types only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L399-L676
+    why: The four agentic hooks the class overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/code_interpreter_interception/handler.py#L734-L750
+    why: Without a sandbox config or a resolvable sandbox tool, creating a container raises.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/example_config_yaml/code_interpreter_interception_config.yaml#L1-L17
+    why: The config shape users write.
+dod:
+  - text: litellm_settings.code_interpreter_interception_params loads with LiteLLM's defaults and its precedence over callback_settings, and a wrong type fails naming the key.
+    proof: [config-tests, config-corpus]
+  - text: code_interpreter_interception in litellm_settings.callbacks installs one entry with the deployment and agentic views over one object, and overrides() names should_run, build_plan, post_response and cleanup.
+    proof: [code-interpreter-tests]
+  - text: Through /v1/responses and /v1/chat/completions a native code_interpreter tool reaches the provider as litellm_code_execution, a disabled interception is untouched, and a code call with no sandbox returns the model's answer after one upstream request.
+    proof: [case-files, oracle]
+  - text: The new HTTP transcripts replay through the existing HTTP-case decoder.
+    proof: [http-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the params are not loaded, the precedence or a default differs, or a wrong type passes
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::code_interpreter_interception::/)'
+    - id: config-corpus
+      why: the config seeds never reach the config decoder
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/code-interpreter-interception-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: code-interpreter-tests
+      why: the name still fails startup, a view is missing, or a hook delegates to the wrong piece
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::sdk_callbacks::code_interpreter::tests::/)'
+    - id: case-files
+      why: no code interpreter interception case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/interception/code-interpreter)"
+    - id: http-corpus
+      why: the HTTP transcripts never reach the production case parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/interception-code-interpreter-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/interception/code-interpreter/responses-tool-swap.yaml
+  - tools/oracle/cases/interception/code-interpreter/chat-tool-swap.yaml
+  - tools/oracle/cases/interception/code-interpreter/no-sandbox-keeps-model-call.yaml
+  - tools/oracle/cases/interception/code-interpreter/disabled-untouched.yaml
+deviations: []
+out_of_scope:
+  - "The hook bodies, plans and sandbox reuse: B4122 and B4121. Sandbox providers and lifecycle dispatch: B3516, B3518, B3519."
+  - "Running the seams on the gateway: B9825. The list and the slot: B9821."
+pitfalls:
+  - "The sandbox key is a fresh uuid4 hex per root request, so ignore it in the case comparison and never assert its value."
+  - "The hook strips the interception metadata keys from a root request (depth 0) before anything else, so a client that sends _code_interpreter_interception_active itself gets it removed on both sides."
+  - "Build the logger once; a logger per request loses the container cache, and a follow-up would create a second sandbox for the same request."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

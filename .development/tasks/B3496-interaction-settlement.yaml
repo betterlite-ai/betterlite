@@ -96,7 +96,7 @@ out_of_scope:
   - "B3500 owns adelete and the call to settle_before_delete; B3499 owns scheduling a poll after a create."
   - "B3003 owns release_budget_reservation; SettlementHost::release_reservation reaches it through B3499's injected ReservationRelease port, which B8660 implements over the shared budget services."
   - "B250 owns the success handler, success dedupe markers and the rest of the recognized-call-type check; B069 owns the proxy cost callback that decides a reservation stays open for a pollable create."
-  - "Rest of litellm_logging.py, including the other InteractionsAPIResponse conversion at lines 4149-4160."
+  - "Rest of litellm_logging.py, including the other InteractionsAPIResponse conversion at lines 4149-4160 (B098)."
 pitfalls:
   - settle_before_delete claims the settlement before it bills or releases; claiming after the await lets the poll task bill the same interaction.
   - A fetch error in settle_before_delete still claims and releases, while a fetch error in the poll loop only retries on the next interval.

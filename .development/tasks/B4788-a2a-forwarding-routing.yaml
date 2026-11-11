@@ -15,7 +15,7 @@ description: >-
   - Build one ordered map from passthrough, then caller_identity, then trace, then backend_auth. A later pair with the exact same name (case-sensitive) replaces the earlier value and keeps the earlier position, like a Python dict. Use a Vec and a manual replace loop, or an index map, not a HashMap.
   - Return None when the result is empty.
 
-  4. `backend_auth_header` : trait HopAuth { async fn resolve(&self, litellm_params: &BTreeMap<String, AgentJson>, custom_llm_provider: Option<&str>) -> Result<Option<Vec<(String,String)>>, HopAuthError> } is the port for resolve_a2a_hop_auth_header (B050 owns it, nothing here). Function `resolve_backend_auth<D, H>(databricks: &D, hop: &H, litellm_params, custom_llm_provider)`: when litellm_params holds a truthy value under the key that databricks_oauth names as DATABRICKS_OAUTH_PARAM (look it up in agent_endpoints/databricks_oauth/config.rs and use that constant; truthy means not null, not false, not 0 and not an empty string/list/object), call the Databricks side and return its header. Otherwise call HopAuth. Make the Databricks side a second small trait `AppAuth` with one method returning Result<Option<Vec<(String,String)>>, _>, so the test can fake it. The real impl over resolve_oauth_header is wired by B141. Mirrors _resolve_backend_auth_header (L166-L172).
+  4. `backend_auth_header` : trait HopAuth { async fn resolve(&self, litellm_params: &BTreeMap<String, AgentJson>, custom_llm_provider: Option<&str>) -> Result<Option<Vec<(String,String)>>, HopAuthError> } is the port for resolve_a2a_hop_auth_header (B8100 owns it, nothing here). Function `resolve_backend_auth<D, H>(databricks: &D, hop: &H, litellm_params, custom_llm_provider)`: when litellm_params holds a truthy value under the key that databricks_oauth names as DATABRICKS_OAUTH_PARAM (look it up in agent_endpoints/databricks_oauth/config.rs and use that constant; truthy means not null, not false, not 0 and not an empty string/list/object), call the Databricks side and return its header. Otherwise call HopAuth. Make the Databricks side a second small trait `AppAuth` with one method returning Result<Option<Vec<(String,String)>>, _>, so the test can fake it. The real impl over resolve_oauth_header is wired by B141. Mirrors _resolve_backend_auth_header (L166-L172).
 
   5. `enforce_inbound_trace_id(agent: &AgentResponse, chain_id: Option<&str>) -> Result<(), ForwardingError>`. When agent.litellm_params has a truthy "require_trace_id_on_calls_to_agent" this needs chain_id to be Some and not empty. If not, return ForwardingError::TraceIdRequired(agent_id) and its message is "Agent '<agent_id>' requires x-litellm-trace-id header on all inbound requests.". The caller maps it to HTTP 400. chain_id is what get_chain_id_from_headers returns (litellm_pre_call_utils.py L746-L773); that function has no owner in this backlog, so the caller passes it in. Mirrors _enforce_inbound_trace_id (L220-L234).
 
@@ -114,8 +114,8 @@ deviations:
 out_of_scope:
   - "The message/send, message/stream and card routes, the SSE relay (_a2a_sse_event_source, _forward_jsonrpc_sse, _handle_stream_message) are B4789 and B8589."
   - "_build_message_send_params is B6950."
-  - "_served_version and the 0.3/1.0 conversion are B4811 and B4812."
-  - "resolve_a2a_hop_auth_header stays B050's. This task only calls it through the HopAuth port."
+  - "_served_version is B8589's and the 0.3/1.0 conversion is B4812."
+  - "resolve_a2a_hop_auth_header stays B8100's. This task only calls it through the HopAuth port."
   - "get_chain_id_from_headers, ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError have no owner in the backlog. The callers pass their results in."
 pitfalls:
   - The header map keeps names with their exact case. "x-trace" and "X-Trace" are two entries, but the passthrough filter and the backend-auth filter compare lowercase.

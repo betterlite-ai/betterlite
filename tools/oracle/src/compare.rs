@@ -6,9 +6,9 @@ use crate::router_probes::comparison;
 
 pub(crate) mod helper;
 pub(crate) mod multipart;
+mod upstream;
 mod value;
 
-use multipart::{captured_parts, first_part_difference, masked_boundary};
 pub(crate) use value::{first_difference, remove_pointer};
 
 use helper::HelperOutput;
@@ -144,7 +144,7 @@ pub(crate) fn compare(
     compare: &Compare,
 ) -> Result<(), Difference> {
     compare_responses(left, right, compare)?;
-    compare_provider_requests(left_requests, right_requests, compare)
+    upstream::compare_provider_requests(left_requests, right_requests, compare)
 }
 
 fn compare_responses(
@@ -189,12 +189,19 @@ fn compare_response_body(
 ) -> Result<(), Difference> {
     let no_contracts = Contracts::default();
     let contracts = compare.contracts.as_deref().unwrap_or(&no_contracts);
+    // a selector names a provider request, so it must never remove a response field
+    let ignores: Vec<Ignore> = compare
+        .ignore
+        .iter()
+        .filter(|ignored| !ignored.pointer.starts_with("/upstream/"))
+        .cloned()
+        .collect();
     let Some(body_difference) = comparison::compare(&comparison::Documents {
         reference: &left.body,
         rust: &right.body,
         numeric: &contracts.numeric,
         expected_difference: &contracts.expected_difference,
-        ignore: &compare.ignore,
+        ignore: &ignores,
         self_check: contracts.self_check,
         message: "response bodies differ",
     }) else {
@@ -212,59 +219,6 @@ fn compare_response_body(
         return Err(difference("/response/bytes", "response bodies differ"));
     }
     Err(body_difference)
-}
-
-fn compare_provider_requests(
-    left: &[ProviderRequest],
-    right: &[ProviderRequest],
-    compare: &Compare,
-) -> Result<(), Difference> {
-    let difference = |pointer: &str, message: &str| Difference {
-        pointer: pointer.to_owned(),
-        message: message.to_owned(),
-    };
-    if left.len() != right.len() {
-        return Err(difference("/upstream", "provider request counts differ"));
-    }
-    for (index, (left_request, right_request)) in left.iter().zip(right).enumerate() {
-        compare_provider_request(index, left_request, right_request, compare, &difference)?;
-    }
-    Ok(())
-}
-
-fn compare_provider_request(
-    index: usize,
-    left: &ProviderRequest,
-    right: &ProviderRequest,
-    compare: &Compare,
-    difference: &dyn Fn(&str, &str) -> Difference,
-) -> Result<(), Difference> {
-    if left.method != right.method || left.path != right.path {
-        return Err(difference(
-            &format!("/upstream/{index}"),
-            "provider request targets differ",
-        ));
-    }
-    // two decoded captures compare part by part, so only their random boundaries may differ
-    let body_pointer = match (captured_parts(left), captured_parts(right)) {
-        (Some(left_parts), Some(right_parts)) => first_part_difference(&left_parts, &right_parts)
-            .map(|part| format!("/upstream/{index}{part}")),
-        (Some(_) | None, _) => (left.body != right.body).then(|| format!("/upstream/{index}/body")),
-    };
-    if let Some(pointer) = body_pointer {
-        return Err(difference(&pointer, "provider request bodies differ"));
-    }
-    for header in &compare.upstream_headers {
-        let name = header.to_ascii_lowercase();
-        let left_value = left.headers.get(&name).map(|value| masked_boundary(value));
-        if left_value != right.headers.get(&name).map(|value| masked_boundary(value)) {
-            return Err(difference(
-                &format!("/upstream/{index}/headers/{name}"),
-                "provider header values differ",
-            ));
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn compare_sdk(
