@@ -21,6 +21,7 @@ use crate::credentials::notice::{
 use crate::keyring::KeyringUnusable;
 use crate::token_records::secret::decode_secret;
 
+use super::auth_command::{AuthCommand, run_auth_command};
 use super::configure::{ConfigureClaudeRequest, configure_claude_code};
 use super::error::SessionError;
 use super::logout::{LogoutRequest, logout};
@@ -305,6 +306,24 @@ impl PrintFixture {
     fn requests(&self) -> Vec<RecordedRequest> {
         self.http.requests()
     }
+}
+
+#[test]
+fn print_token_auth_command_runs_the_print_token_command() {
+    let mut fixture = PrintFixture::new(FakeFiles::holding(record()), Vec::new());
+    let mut request = PrintTokenRequest {
+        context: &fixture.context,
+        files: &fixture.files,
+        vault: &mut fixture.vault,
+        http: Arc::clone(&fixture.http),
+        clock: Arc::new(FixedWallClock(1_000)),
+        expiration_hours: 24,
+        token_path: token_path(),
+        stdout: &mut fixture.stdout,
+        stderr: &mut fixture.stderr,
+    };
+    run_auth_command(AuthCommand::PrintToken, &mut request).expect("prints the key");
+    assert_eq!(fixture.stdout(), "sk-secret\n");
 }
 
 #[test]
