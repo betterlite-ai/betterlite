@@ -35,3 +35,10 @@ deviations:
       The catalog name proves no adapter exists; those endpoint bodies are owned by B024-B036, and until each one
       fills its module the call must fail explicitly rather than reach a provider with an unfinished request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8451-L8625
+  - what: >-
+      A deployment built from a configured chat deployment (Deployment::from_chat) carries no max_retries,
+      drop_params or provider_affinity_header; only Deployment::from_params, which reads them from litellm_params, sets them.
+    why: >-
+      The chat deployment type lives in betterlite-openai and has no field for them, and nothing in the server reads
+      them yet, so a configured value has no effect on a provider call until the owner of that type adds them.
+    link: ""
