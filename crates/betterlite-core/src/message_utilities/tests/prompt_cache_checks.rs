@@ -101,7 +101,7 @@ async fn prompt_cache_requires_messages_or_tools() {
     let counter = support::counter();
     let catalog = support::catalog();
     let settings = PromptCacheSettings::default();
-    // a zero minimum is met by any count, so only the missing messages and tools make this false
+    // a zero minimum is met by any count, so only the count error for missing messages makes this false
     let mut nothing = cache_request("gpt-4o", None);
     nothing.min_token_count = Some(0);
     assert!(!is_prompt_caching_valid_prompt(&nothing, settings, &counter, &catalog).await);
@@ -111,7 +111,8 @@ async fn prompt_cache_requires_messages_or_tools() {
     let mut with_tools = cache_request("gpt-4o", None);
     with_tools.tools = Some(&tools);
     with_tools.min_token_count = Some(1);
-    assert!(is_prompt_caching_valid_prompt(&with_tools, settings, &counter, &catalog).await);
+    // tools without messages fail the token count, like LiteLLM's token_counter
+    assert!(!is_prompt_caching_valid_prompt(&with_tools, settings, &counter, &catalog).await);
 }
 
 #[tokio::test]

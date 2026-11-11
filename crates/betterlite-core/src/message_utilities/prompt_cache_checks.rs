@@ -100,9 +100,6 @@ async fn valid_prompt(
     counter: &Counter,
     catalog: &ModelCatalog,
 ) -> Result<bool, PromptCacheError> {
-    if request.messages.is_none() && request.tools.is_none() {
-        return Ok(false);
-    }
     let mut model = request.model.to_owned();
     if let Some(provider) = request.custom_llm_provider
         && !model.starts_with(provider)
