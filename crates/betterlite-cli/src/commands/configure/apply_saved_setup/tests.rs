@@ -8,7 +8,7 @@ use crate::agent_setup::pickers::{
     CLAUDE_MODEL_MESSAGE, EMPTY_TARGETS_MESSAGE, KEEP_CLAUDE_DEFAULT, TARGET_ROUTE_MESSAGE,
 };
 use crate::agent_setup_profiles::locks::lock_path_for;
-use crate::agent_setup_profiles::{Target, settings_path_for};
+use crate::agent_setup_profiles::{Target, settings_path_for, setup_profile_path};
 use crate::commands::configure::args::{ConfigureArgs, ConfigureTarget, ConnectionFlags};
 use crate::commands::configure::test_support::{
     Call, FakeEnvironment, Harness, MockProxy, Reply, claude_env, claude_settings, codex_config,
@@ -203,4 +203,24 @@ async fn subcommand_does_not_apply_saved_setups() {
             .unwrap()
             .exists()
     );
+}
+
+#[tokio::test]
+async fn group_invocation_reports_an_invalid_saved_setup() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    save_profile(
+        Target::Claude,
+        &environment,
+        "http://proxy.test",
+        Some("claude-1"),
+    )
+    .await;
+    let settings_path = settings_path_for(Target::Claude, &environment).unwrap();
+    let profile = setup_profile_path(Target::Claude, &settings_path, &environment).unwrap();
+    fs::write(&profile, "{}").unwrap();
+    let mut harness = Harness::new(environment, context("http://proxy.test", None));
+    let error = harness.configure(group_configure()).await.unwrap_err();
+    assert!(error.to_string().contains("Saved claude setup"));
+    assert!(error.to_string().contains("is invalid or unsupported"));
 }

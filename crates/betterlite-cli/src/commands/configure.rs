@@ -22,6 +22,8 @@ use target::TargetRequest;
 
 #[path = "configure/apply_saved_setup/tests.rs"]
 mod apply_saved_setup;
+#[path = "configure/command_surface/tests.rs"]
+mod command_surface;
 #[path = "configure/forget/tests.rs"]
 mod forget;
 #[path = "configure/missing_receipt/tests.rs"]

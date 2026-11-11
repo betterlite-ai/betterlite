@@ -214,3 +214,22 @@ async fn unconfigure_codex_reports_settings_modified_since_configure() {
             .contains("other")
     );
 }
+
+#[tokio::test]
+async fn unconfigure_reports_an_unreadable_receipt() {
+    let home = TempDir::new().unwrap();
+    let environment = FakeEnvironment::with_home(home.path());
+    let settings_path = settings_path_for(Target::Claude, &environment).unwrap();
+    fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+    fs::write(&settings_path, "{}").unwrap();
+    let state_path = receipt_path_for(Target::Claude, &settings_path, &environment).unwrap();
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    fs::write(&state_path, "not json").unwrap();
+    let mut harness = Harness::new(environment, context("http://proxy.test", None));
+    let error = harness.unconfigure(unconfigure_claude()).await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("is not a readable `lite configure claude` receipt")
+    );
+}
