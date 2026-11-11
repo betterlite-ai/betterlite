@@ -1,0 +1,5 @@
+task: B641
+deviations:
+  - what: A CountTokens error reply whose body is not UTF-8 becomes a message naming the byte count, where LiteLLM decodes the bytes with replacement characters.
+    why: betterlite refuses bytes that are not UTF-8 instead of mangling them, so a binary body never reaches the error record as altered text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/count_tokens/handler.py#L103

@@ -9,6 +9,7 @@ mod failure_cases;
 mod http_call_cases;
 mod invariants;
 mod logs;
+mod records;
 mod result_cases;
 mod selection_cases;
 mod support;

@@ -8,6 +8,7 @@ pub(crate) async fn native_count_selection() {
     provider_selection();
     absent_and_empty_messages().await;
     null_messages().await;
+    message_truthiness().await;
     tools_and_system().await;
     deployment_defaults().await;
     model_forms_resolve().await;
@@ -45,6 +46,31 @@ async fn absent_and_empty_messages() {
 async fn null_messages() {
     let null = Json::Null;
     absent_messages(fixture(Reply::ok("{}"), environment(&[])), Some(&null)).await;
+}
+
+async fn message_truthiness() {
+    let cases = [
+        ("0", false),
+        ("0.0", false),
+        ("1", true),
+        ("false", false),
+        ("true", true),
+        (r#""""#, false),
+        (r#""x""#, true),
+        ("{}", false),
+        (r#"{"a": 1}"#, true),
+    ];
+    for (text, counted) in cases {
+        let messages = json(text);
+        let built = fixture(Reply::ok("{}"), environment(&[]));
+        let counter = BedrockTokenCounter {
+            handler: built.handler,
+        };
+        let mut request = call(&Json::Null, None);
+        request.messages = Some(&messages);
+        let outcome = counter.count_tokens(&request).await;
+        assert_eq!(outcome.is_some(), counted, "messages {text}");
+    }
 }
 
 fn sent_body(counter: &BedrockTokenCounter<super::support::Handler>) -> Json {
