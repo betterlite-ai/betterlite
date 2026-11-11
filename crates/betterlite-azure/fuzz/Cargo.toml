@@ -63,3 +63,10 @@ path = "fuzz_targets/azure_hosted_identity.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_managed_identity"
+path = "fuzz_targets/azure_managed_identity.rs"
+test = false
+doc = false
+bench = false
