@@ -2830,6 +2830,7 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-postgres-fixture",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-router",
  "betterlite-semantic",
