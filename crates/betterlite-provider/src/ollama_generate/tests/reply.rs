@@ -3,8 +3,8 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{GoneCounter, SequenceIds, WordsCounter, request_data};
-use crate::ollama_chat::reply::{AssistantMessage, Function, ToolCall};
-use crate::ollama_chat::usage::Usage;
+use crate::ollama_chat::reply::{AssistantMessage, Function, OllamaChatResponse, ToolCall};
+use crate::ollama_chat::usage::{TokenCounter, Usage};
 use crate::ollama_generate::error::OllamaGenerateError;
 use crate::ollama_generate::reply::{ReplyInput, transform_response};
 
@@ -16,16 +16,22 @@ struct Found {
     usage: Usage,
 }
 
-async fn found(body: &str, data: &IndexMap<String, Json>) -> Found {
+async fn transform(
+    body: &str,
+    data: &IndexMap<String, Json>,
+    counter: &dyn TokenCounter,
+) -> Result<OllamaChatResponse, OllamaGenerateError> {
     let input = ReplyInput {
         model: "llama3",
         body: body.as_bytes(),
         request_data: data,
         created: CREATED,
     };
-    let response = transform_response(&input, &WordsCounter, &SequenceIds::new())
-        .await
-        .unwrap();
+    transform_response(&input, counter, &SequenceIds::new()).await
+}
+
+async fn found(body: &str, data: &IndexMap<String, Json>) -> Found {
+    let response = transform(body, data, &WordsCounter).await.unwrap();
     let choice = response.choices.into_iter().next().unwrap();
     Found {
         message: choice.message,
@@ -35,15 +41,7 @@ async fn found(body: &str, data: &IndexMap<String, Json>) -> Found {
 }
 
 async fn failed(body: &str, data: &IndexMap<String, Json>) -> OllamaGenerateError {
-    let input = ReplyInput {
-        model: "llama3",
-        body: body.as_bytes(),
-        request_data: data,
-        created: CREATED,
-    };
-    transform_response(&input, &WordsCounter, &SequenceIds::new())
-        .await
-        .unwrap_err()
+    transform(body, data, &WordsCounter).await.unwrap_err()
 }
 
 fn nothing() -> IndexMap<String, Json> {
@@ -200,16 +198,13 @@ async fn a_null_prompt_count_uses_the_counter_and_a_null_message_count_is_zero()
 
 #[tokio::test]
 async fn a_counter_without_an_answer_counts_zero() {
-    let data = request_data(r#"{"prompt":"a b"}"#);
-    let input = ReplyInput {
-        model: "llama3",
-        body: br#"{"response":"hello"}"#,
-        request_data: &data,
-        created: CREATED,
-    };
-    let response = transform_response(&input, &GoneCounter, &SequenceIds::new())
-        .await
-        .unwrap();
+    let response = transform(
+        r#"{"response":"hello"}"#,
+        &request_data(r#"{"prompt":"a b"}"#),
+        &GoneCounter,
+    )
+    .await
+    .unwrap();
     assert_eq!(response.usage.prompt_tokens, 0_u64);
 }
 

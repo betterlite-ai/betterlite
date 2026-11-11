@@ -94,24 +94,21 @@ pub(super) struct MapFetcher;
 
 impl RemoteMediaFetcher for MapFetcher {
     fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
-        if url.contains("png") {
-            ready(Ok(png_data_url()))
+        ready(if url.contains("png") {
+            Ok(png_data_url())
         } else {
-            ready(Err(ImageFetchError::Rejected {
+            Err(ImageFetchError::Rejected {
                 url: url.to_owned(),
-            }))
-        }
+            })
+        })
     }
 
     fn convert_urls(
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        ready(
-            urls.iter()
-                .map(|_url| Ok(png_data_url()))
-                .collect::<Result<Vec<String>, ImageFetchError>>(),
-        )
+        let values: Vec<String> = urls.iter().map(|_url| png_data_url()).collect();
+        ready(Ok(values))
     }
 }
 
