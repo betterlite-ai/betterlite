@@ -198,8 +198,8 @@ pub(crate) async fn connect_cache(addr: SocketAddr) -> Result<Arc<RedisCache>, B
     let overrides: RedisOverrides = serde_json::from_value(json!({
         "host": addr.ip().to_string(),
         "port": addr.port(),
-        "socket_timeout": 2.0,
-        "socket_connect_timeout": 2.0,
+        "socket_timeout": 2.0_f64,
+        "socket_connect_timeout": 2.0_f64,
     }))
     .or_value_error()?;
     let options = RedisCacheOptions {

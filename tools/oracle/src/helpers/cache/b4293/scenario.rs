@@ -61,9 +61,9 @@ impl Scenario {
 pub(crate) async fn run(call: &Call) -> HelperResult {
     match call {
         Call::GetHitsMemoryFirst(fields) | Call::GetBackfillsMemoryFromRedis(fields) => {
-            read(fields).await
+            read(fields, false).await
         }
-        Call::BatchMissingRead(fields) => batch_read(fields).await,
+        Call::BatchMissingRead(fields) => read(fields, true).await,
         Call::SetCacheAppliesDefaultTtl(fields) => set_default_ttl(fields).await,
         Call::IncrementPropagatesRedisError(fields) => increment_error(fields).await,
         Call::IncrementFallback(fields) => increment_fallback(fields).await,
@@ -73,25 +73,24 @@ pub(crate) async fn run(call: &Call) -> HelperResult {
     }
 }
 
-async fn read(call: &Fields) -> HelperResult {
+async fn read(call: &Fields, batched: bool) -> HelperResult {
     let scenario = Scenario::start(call).await?;
     for entry in &call.memory {
         scenario.cache.set_cache(&entry.key, &entry.value, LOCAL);
     }
-    let read = scenario.cache.get_cache(&call.key, false);
-    scenario.observe(&call.key, read).await
-}
-
-async fn batch_read(call: &Fields) -> HelperResult {
-    let scenario = Scenario::start(call).await?;
-    let redis = Arc::clone(&scenario.redis);
-    let (_batches, read) = request_redis_batch_scope(EXPIRY, async {
-        let batch = active_request_redis_batch(&redis)?;
-        let _misses = batch.mget(&[call.key.clone()]).await;
-        scenario.cache.async_get_cache(&call.key, false).await
-    })
-    .await;
-    scenario.observe(&call.key, read).await
+    let found = if batched {
+        let redis = Arc::clone(&scenario.redis);
+        let (_batches, found) = request_redis_batch_scope(EXPIRY, async {
+            let batch = active_request_redis_batch(&redis)?;
+            let _misses = batch.mget(std::slice::from_ref(&call.key)).await;
+            scenario.cache.async_get_cache(&call.key, false).await
+        })
+        .await;
+        found
+    } else {
+        scenario.cache.get_cache(&call.key, false)
+    };
+    scenario.observe(&call.key, found).await
 }
 
 async fn set_default_ttl(call: &Fields) -> HelperResult {
