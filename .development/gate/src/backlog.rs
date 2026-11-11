@@ -37,14 +37,16 @@ pub(crate) fn read_backlog(development: &Path) -> Result<(Backlog, Vec<String>),
     })?;
     let mut tasks = Vec::new();
     let mut problems = Vec::new();
-    for item in listing {
-        let path = item
-            .map_err(|source| GateError::Read {
-                path: folder.clone(),
-                source,
-            })?
-            .path();
-        tasks.extend(read_entry(&path, &mut problems));
+    for listed in listing {
+        let item = listed.map_err(|source| GateError::Read {
+            path: folder.clone(),
+            source,
+        })?;
+        // Claude Code keeps a .claude folder in the folder a sandboxed command runs in
+        if item.file_name().as_encoded_bytes().starts_with(b".") {
+            continue;
+        }
+        tasks.extend(read_entry(&item.path(), &mut problems));
     }
     tasks.sort_by_key(|entry| {
         entry

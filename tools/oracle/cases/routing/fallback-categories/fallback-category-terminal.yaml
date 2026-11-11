@@ -1,0 +1,417 @@
+kind: probe
+name: fallback-category-terminal
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: context_window
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: unresolved
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: content_policy
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: absent
+        content_policy:
+          state: unresolved
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: unresolved
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: absent
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          deployment_orders: [1, 2, 3]
+          current_target: 2
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          deployment_ids: [d1, d2, d3]
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: absent
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          deployment_orders: [null, null]
+          external: absent
+        weighted_failover:
+          enabled: true
+          strategy: simple-shuffle
+          failed_deployment_id: d1
+          model_group: requested
+          deployment_ids: [d1, d2]
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: absent
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          deployment_orders: [null, null, null]
+          external: absent
+        weighted_failover:
+          enabled: true
+          strategy: simple-shuffle
+          failed_deployment_id: d2
+          model_group: requested
+          deployment_ids: [d0, d1, d2]
+          metadata_key: metadata
+          prior_excluded_ids: [d0]
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          deployment_orders: [null]
+          external: absent
+        weighted_failover:
+          enabled: true
+          strategy: simple-shuffle
+          failed_deployment_id: d1
+          model_group: requested
+          deployment_ids: [d1]
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: non_standard
+          chain:
+            state: resolved
+            targets: [{model: client-b}]
+            has_unattempted: true
+          client_targets: [client-a, client-b]
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: non_standard
+          chain:
+            state: resolved
+            targets: [{model: client-b}]
+            has_unattempted: true
+          client_targets: [client-a, client-b]
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          deployment_orders: [1, 2]
+          external: client_fallbacks
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          deployment_ids: [d1, d2]
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        router_fallbacks: ["*"]
+        ordinary:
+          kind: absent
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          has_choices: true
+          first_finish_reason: content_filter
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        disable_fallbacks: true
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        guardrail_intervention: true
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: null
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: true
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        response:
+          function_name: completion
+          refusal: not_refusal
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: ordinary
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: standard
+          chain:
+            state: resolved
+            targets: [{model: ordinary-model}]
+            has_unattempted: false
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          external: absent
+        weighted_failover:
+          strategy: simple-shuffle
+          model_group: requested
+          metadata_key: metadata
+        attempted: [ordinary-model]
+        response:
+          has_choices: false
+          function_name: anthropic_messages
+          refusal: without_stop_details
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_categories:
+        failure: context_window
+        original_model_group: requested
+        model_group: requested
+        ordinary:
+          kind: absent
+        context_window:
+          state: absent
+        content_policy:
+          state: absent
+        order:
+          model_group: requested
+          deployment_orders: [null, null]
+          external: absent
+        weighted_failover:
+          enabled: true
+          strategy: simple-shuffle
+          failed_deployment_id: d1
+          model_group: requested
+          deployment_ids: [d1, d2]
+          metadata_key: metadata
+        response:
+          function_name: anthropic_messages
+          refusal: with_stop_details
