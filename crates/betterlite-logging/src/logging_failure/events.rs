@@ -18,6 +18,7 @@ use crate::logging_failure::request_redaction::RequestRedaction;
 pub struct FailureDelivery<'delivery> {
     pub payload: &'delivery Arc<StandardLoggingPayload>,
     pub dynamic_params: Arc<StandardCallbackDynamicParams>,
+    pub litellm_metadata: Arc<IndexMap<String, Json>>,
     pub stream: bool,
     pub excluded_fields: &'delivery [String],
     pub stamp: ResponseStamp,
@@ -29,6 +30,7 @@ impl FailureDelivery<'_> {
         Ok(LoggerEvent {
             payload: self.redacted_payload(logger)?,
             dynamic_params: Arc::clone(&self.dynamic_params),
+            litellm_metadata: Arc::clone(&self.litellm_metadata),
             stream: self.stream,
             guardrail_snapshot: None,
         })

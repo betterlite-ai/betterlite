@@ -75,6 +75,7 @@ pub(crate) fn event(parameters: Json) -> LoggerEvent {
     LoggerEvent {
         payload: Arc::new(payload()),
         dynamic_params: Arc::new(parameters),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     }

@@ -9,8 +9,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -163,12 +161,10 @@ where
             &self.settings.default_credentials,
             Some(event.dynamic_params.as_ref()),
         )?;
-        // LiteLLM reads run_name and project_name from litellm_params.metadata, which B8740's LoggerEvent does not carry yet.
-        let litellm_metadata: IndexMap<String, Json> = IndexMap::new();
         let data = prepare_log_data(
             &Prepare {
                 standard_logging_object: Some(event.payload.as_ref()),
-                litellm_metadata: &litellm_metadata,
+                litellm_metadata: event.litellm_metadata.as_ref(),
                 credentials: &credentials,
                 default_run_name: &self.settings.default_run_name,
                 redact_user_api_key_info: self.settings.redact_user_api_key_info,

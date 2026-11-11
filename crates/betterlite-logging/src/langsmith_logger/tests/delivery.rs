@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
@@ -333,6 +335,33 @@ async fn the_run_name_reaches_the_batch_body(
     assert_eq!(posts.len(), 1);
     let runs = posts[0].runs();
     assert_eq!(text_field(&runs[0], "name"), Some(expected));
+}
+
+#[tokio::test]
+async fn request_metadata_reaches_the_run_name_and_session_name() {
+    let options = Options {
+        environment: &global_key(),
+        batch_size: Some(1),
+        draws: &[0.0_f64],
+        redact: false,
+    };
+    let built = harness(&options, FakeDelivery::answering(200));
+    let metadata: IndexMap<String, Json> = IndexMap::from([
+        ("run_name".to_owned(), text("nightly-eval")),
+        ("project_name".to_owned(), text("evals")),
+    ]);
+    let mut request = event(dynamic(&[]));
+    request.litellm_metadata = Arc::new(metadata);
+    built
+        .logger
+        .async_log_success_event(Arc::new(request))
+        .await
+        .expect("the event is logged");
+    let posts = built.delivery.posts();
+    assert_eq!(posts.len(), 1);
+    let runs = posts[0].runs();
+    assert_eq!(text_field(&runs[0], "name"), Some("nightly-eval"));
+    assert_eq!(text_field(&runs[0], "session_name"), Some("evals"));
 }
 
 #[rstest]
