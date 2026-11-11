@@ -3,7 +3,7 @@
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
-use crate::api::skills::fixtures::{CALL_ID, kwargs, text};
+use crate::api::skills::fixtures::{CALL_ID, kwargs, metadata_with, object, text};
 use crate::api::skills::list_fixtures::{
     Fixture, call, call_with, hosted_params, listing, logging, map, params,
 };
@@ -77,6 +77,27 @@ async fn list_skill_logging_uses_litellm_proxy_for_hosted() {
             ("limit", Json::Number(Number::from(50_i64))),
             ("offset", Json::Number(Number::from(0_i64))),
         ])
+    );
+}
+
+#[tokio::test]
+async fn list_skill_logging_keeps_hosted_kwargs_out_of_litellm_params() {
+    let fixture = Fixture::new();
+    let principal = object(&[("user_id", text("user-1"))]);
+    let mut values = kwargs();
+    values.insert("metadata".to_owned(), metadata_with(principal));
+    let hosted = call_with(hosted_params(), None, None, None, &values);
+    let mut state = logging();
+    fixture
+        .service()
+        .list_skills(listing(&hosted, &mut state))
+        .await
+        .expect("the hosted list succeeds");
+    assert!(state.litellm_params.get("metadata").is_none());
+    assert!(state.litellm_params.get("litellm_metadata").is_none());
+    assert_eq!(
+        state.optional_params.get("limit"),
+        Some(&Json::Number(Number::from(20_i64)))
     );
 }
 

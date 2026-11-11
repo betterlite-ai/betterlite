@@ -25,7 +25,7 @@ pub fn log_pre_call(
         };
         optional_params.insert(name.clone(), logged);
     }
-    log_update(logging, call, provider, optional_params)
+    log_update(logging, call.kwargs, call, provider, optional_params)
 }
 
 // LiteLLM's hosted transformation handler logs the resolved pagination before the database call
@@ -38,11 +38,20 @@ pub fn log_hosted_pre_call(
     let mut optional_params = IndexMap::new();
     optional_params.insert("limit".to_owned(), Json::Number(Number::from(limit)));
     optional_params.insert("offset".to_owned(), Json::Number(Number::from(offset)));
-    log_update(logging, call, LITELLM_PROXY_PROVIDER, optional_params)
+    // list_skills passes no kwargs to the hosted handler, so its log line never copies caller metadata
+    let kwargs = IndexMap::new();
+    log_update(
+        logging,
+        &kwargs,
+        call,
+        LITELLM_PROXY_PROVIDER,
+        optional_params,
+    )
 }
 
 fn log_update(
     logging: &mut LoggingState,
+    kwargs: &IndexMap<String, Json>,
     call: &ListSkillsCall<'_>,
     provider: &str,
     optional_params: IndexMap<String, Json>,
@@ -60,7 +69,7 @@ fn log_update(
     );
     update_from_kwargs(
         logging,
-        call.kwargs,
+        kwargs,
         Some(&litellm_params),
         CallUpdate {
             model: None,
