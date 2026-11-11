@@ -11,6 +11,8 @@ import httpx
 import litellm
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.vector_stores.transformation import BedrockVectorStoreConfig
+from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import TypeAliasType
 
 litellm.suppress_debug_info = True
 
@@ -18,10 +20,59 @@ if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
     from litellm.types.vector_stores import VectorStoreSearchOptionalRequestParams
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-PAIR_LENGTH: Final = 2
+Json = TypeAliasType("Json", None | bool | int | float | str | list["Json"] | dict[str, "Json"])
 ENDPOINT: Final = "https://bedrock-agent-runtime.us-east-1.amazonaws.com/knowledgebases"
-Handler: TypeAlias = Callable[[BedrockVectorStoreConfig, dict[str, Json]], Json]
+
+
+class UrlScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    api_base: str | None = None
+    litellm_params: dict[str, Json] = Field(default_factory=dict)
+    environment: dict[str, str] = Field(default_factory=dict)
+
+
+class ResponseScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: int
+    headers: list[tuple[str, str]] = Field(default_factory=list)
+    body: str
+    query: str = ""
+
+
+class OptionScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    non_default_params: dict[str, Json] = Field(default_factory=dict)
+    optional_params: dict[str, Json] = Field(default_factory=dict)
+
+
+class ContextScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    extra_body: Json | None = None
+    litellm_params: dict[str, Json] = Field(default_factory=dict)
+
+
+class RequestScenario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    vector_store_id: str
+    query: Json
+    optional_params: dict[str, Json] = Field(default_factory=dict)
+    api_base: str
+    litellm_params: dict[str, Json] = Field(default_factory=dict)
+    extra_body: Json | None = None
+
+
+class Input(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operation: str
+    operators: list[str] = Field(default_factory=list)
+    filters: list[Json] = Field(default_factory=list)
+    urls: list[UrlScenario] = Field(default_factory=list)
+    headers: list[tuple[str, str | None]] = Field(default_factory=list)
+    metadata: list[dict[str, Json] | None] = Field(default_factory=list)
+    responses: list[ResponseScenario] = Field(default_factory=list)
+    options: list[OptionScenario] = Field(default_factory=list)
+    contexts: list[ContextScenario] = Field(default_factory=list)
+    requests: list[RequestScenario] = Field(default_factory=list)
 
 
 class Logging:
@@ -31,117 +82,66 @@ class Logging:
         )
 
 
-def object_of(value: Json, name: str) -> dict[str, Json]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return cast(dict[str, Json], value)
-
-
-def list_of(value: Json, name: str) -> list[Json]:
-    if not isinstance(value, list):
-        raise ValueError(f"{name} must be a list")
-    return cast(list[Json], value)
-
-
-def text_of(value: Json, name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
-
-
-def optional_text(value: Json, name: str) -> str | None:
-    return None if value is None else text_of(value, name)
-
-
-def integer_of(value: Json, name: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"{name} must be an integer")
-    return value
-
-
-def texts_of(params: dict[str, Json], name: str) -> list[str]:
-    return [text_of(entry, name) for entry in objects_of(params, name)]
-
-
-def objects_of(params: dict[str, Json], name: str) -> list[Json]:
-    value = params.get(name)
-    return [] if value is None else list_of(value, name)
-
-
-def pairs_of(value: Json, name: str) -> dict[str, Json]:
-    pairs: dict[str, Json] = {}
-    for entry in list_of(value, name):
-        item = list_of(entry, name)
-        if len(item) != PAIR_LENGTH:
-            raise ValueError(f"{name} entries must be [key, value]")
-        pairs[text_of(item[0], name)] = item[1]
-    return pairs
-
-
 def to_json(value: object) -> Json:
     return cast(Json, json.loads(json.dumps(value)))
 
 
 def mapped_filters(
-    params: dict[str, Json],
+    filters: list[Json],
     mapper: Callable[[dict[str, object]], object],
 ) -> list[Json]:
-    filters: list[Json] = []
-    for value in objects_of(params, "filters"):
+    mapped: list[Json] = []
+    for value in filters:
         try:
-            mapped = mapper(cast(dict[str, object], value))
+            result = mapper(cast(dict[str, object], value))
         except (KeyError, TypeError):
-            filters.append({"failed": True})
+            mapped.append({"failed": True})
             continue
-        filters.append({"value": to_json(mapped)})
-    return filters
+        mapped.append({"value": to_json(result)})
+    return mapped
 
 
-def filter_operator_map(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
+def filter_operator_map(config: BedrockVectorStoreConfig, params: Input) -> Json:
     operators = [
         config._map_operator_to_aws(operator)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        for operator in texts_of(params, "operators")
+        for operator in params.operators
     ]
     mapper = cast(
         Callable[[dict[str, object]], object],
         config._map_operator_filter,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     )
-    return {"operators": cast(Json, operators), "filters": mapped_filters(params, mapper)}
+    return {"operators": cast(Json, operators), "filters": mapped_filters(params.filters, mapper)}
 
 
-def nested_and_or_filters(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
+def nested_and_or_filters(config: BedrockVectorStoreConfig, params: Input) -> Json:
     mapper = cast(
         Callable[[dict[str, object]], object],
         config._map_and_or_filters,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     )
-    return {"filters": mapped_filters(params, mapper)}
+    return {"filters": mapped_filters(params.filters, mapper)}
 
 
-def url_outcome(config: BedrockVectorStoreConfig, scenario: Json) -> Json:
-    fields = object_of(scenario, "url")
-    litellm_params = object_of(fields.get("litellm_params"), "litellm_params")
-    environment = cast(dict[str, str], fields.get("environment") or {})
-    api_base = optional_text(fields.get("api_base"), "api_base")
-    with mock.patch.dict(os.environ, environment, clear=True):
+def url_outcome(config: BedrockVectorStoreConfig, scenario: UrlScenario) -> Json:
+    with mock.patch.dict(os.environ, scenario.environment, clear=True):
         try:
             url = config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]
-                api_base=api_base, litellm_params=cast(dict[str, object], litellm_params)
+                api_base=scenario.api_base,
+                litellm_params=cast(dict[str, object], scenario.litellm_params),
             )
         except ValueError:
             return {"failed": True}
     return {"url": url}
 
 
-def headers_outcome(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
-    headers = pairs_of(params.get("headers") or [], "headers")
+def headers_outcome(config: BedrockVectorStoreConfig, params: Input) -> Json:
     resolved = config.validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        headers=cast(dict[str, object], headers), litellm_params=None
+        headers=cast(dict[str, object], dict(params.headers)), litellm_params=None
     )
     return to_json(cast(object, resolved))
 
 
-def knowledge_base_retrieve_url(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
-    urls = [url_outcome(config, scenario) for scenario in objects_of(params, "urls")]
+def knowledge_base_retrieve_url(config: BedrockVectorStoreConfig, params: Input) -> Json:
+    urls = [url_outcome(config, scenario) for scenario in params.urls]
     return {
         "endpoints": to_json(config.get_vector_store_endpoints_by_type()),
         "credentials": to_json(
@@ -155,38 +155,35 @@ def knowledge_base_retrieve_url(config: BedrockVectorStoreConfig, params: dict[s
     }
 
 
-def user_context_outcome(_config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
+def user_context_outcome(_config: BedrockVectorStoreConfig, params: Input) -> Json:
     selected: list[Json] = []
-    for scenario in objects_of(params, "contexts"):
-        fields = object_of(scenario, "contexts entry")
-        litellm_params = object_of(fields.get("litellm_params") or {}, "litellm_params")
-        extra_body = fields.get("extra_body")
+    for scenario in params.contexts:
+        extra_body = cast(Mapping[str, object] | None, scenario.extra_body)
         value = BedrockVectorStoreConfig._user_context(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-            extra_body=cast(Mapping[str, object] | None, extra_body),
-            litellm_params=litellm_params,
+            extra_body=extra_body, litellm_params=scenario.litellm_params
         )
         selected.append(cast(Json, value))
     return {"selected": selected}
 
 
-def location_file_id_name(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
+def location_file_id_name(config: BedrockVectorStoreConfig, params: Input) -> Json:
     values: list[Json] = []
-    for entry in objects_of(params, "metadata"):
-        metadata = {} if entry is None else object_of(entry, "metadata")
+    for metadata in params.metadata:
+        resolved = cast(dict[str, object], metadata or {})
         values.append(
             {
                 "file_id": cast(
                     Json,
-                    config._get_file_id_from_metadata(metadata),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                    config._get_file_id_from_metadata(resolved),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
                 ),
                 "filename": cast(
                     Json,
-                    config._get_filename_from_metadata(metadata),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+                    config._get_filename_from_metadata(resolved),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
                 ),
                 "attributes": cast(
                     Json,
                     config._get_attributes_from_metadata(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-                        cast(dict[str, object], metadata)
+                        resolved
                     ),
                 ),
             }
@@ -194,18 +191,15 @@ def location_file_id_name(config: BedrockVectorStoreConfig, params: dict[str, Js
     return {"values": values}
 
 
-def decode_outcome(config: BedrockVectorStoreConfig, scenario: Json) -> tuple[Json, bool]:
-    fields = object_of(scenario, "response")
-    status = integer_of(fields.get("status"), "status")
-    headers = pairs_of(fields.get("headers") or [], "headers")
-    body = text_of(fields.get("body"), "body")
-    query = text_of(fields.get("query") or "", "query")
+def decode_outcome(
+    config: BedrockVectorStoreConfig, scenario: ResponseScenario
+) -> tuple[Json, bool]:
     response = httpx.Response(
-        status,
-        content=body.encode(),
-        headers=cast("dict[str, str]", headers),
+        scenario.status,
+        content=scenario.body.encode(),
+        headers=dict(scenario.headers),
     )
-    logging_obj = Logging(query)
+    logging_obj = Logging(scenario.query)
     try:
         result = config.transform_search_vector_store_response(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
             response=response,
@@ -216,27 +210,23 @@ def decode_outcome(config: BedrockVectorStoreConfig, scenario: Json) -> tuple[Js
     return to_json(result), True
 
 
-def decode_values(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
+def decode_responses(
+    config: BedrockVectorStoreConfig, params: Input, *, summary: bool
+) -> Json:
     responses: list[Json] = []
-    for scenario in objects_of(params, "responses"):
-        value, decoded = decode_outcome(config, scenario)
-        responses.append({"value": value} if decoded else value)
-    return {"responses": responses}
-
-
-def decode_errors(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
-    responses: list[Json] = []
-    for scenario in objects_of(params, "responses"):
+    for scenario in params.responses:
         value, decoded = decode_outcome(config, scenario)
         if not decoded:
             responses.append(value)
-            continue
-        data = object_of(value, "value").get("data") or []
-        responses.append({"ok": True, "count": len(cast(list[Json], data))})
+        elif summary:
+            data = cast(dict[str, Json], value).get("data") or []
+            responses.append({"ok": True, "count": len(cast(list[Json], data))})
+        else:
+            responses.append({"value": value})
     return {"responses": responses}
 
 
-def unsupported_create(config: BedrockVectorStoreConfig, _params: dict[str, Json]) -> Json:
+def unsupported_create(config: BedrockVectorStoreConfig, _params: Input) -> Json:
     request_failed = False
     try:
         config.transform_create_vector_store_request(  # pyright: ignore[reportUnknownMemberType]
@@ -259,17 +249,13 @@ def unsupported_create(config: BedrockVectorStoreConfig, _params: dict[str, Json
     }
 
 
-def option_mapping(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
+def option_mapping(config: BedrockVectorStoreConfig, params: Input) -> Json:
     results: list[Json] = []
-    for scenario in objects_of(params, "options"):
-        fields = object_of(scenario, "option")
-        optional_params = dict(object_of(fields.get("optional_params") or {}, "optional_params"))
-        non_default_params = dict(
-            object_of(fields.get("non_default_params") or {}, "non_default_params")
-        )
+    for scenario in params.options:
+        optional_params = dict(scenario.optional_params)
         try:
             mapped = config.map_openai_params(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-                non_default_params=non_default_params,
+                non_default_params=scenario.non_default_params,
                 optional_params=optional_params,
                 drop_params=False,
             )
@@ -280,25 +266,19 @@ def option_mapping(config: BedrockVectorStoreConfig, params: dict[str, Json]) ->
     return {"results": results}
 
 
-def request_outcome(config: BedrockVectorStoreConfig, scenario: Json) -> Json:
-    fields = object_of(scenario, "request")
-    vector_store_id = text_of(fields.get("vector_store_id"), "vector_store_id")
-    optional_params = object_of(fields.get("optional_params") or {}, "optional_params")
-    litellm_params = object_of(fields.get("litellm_params") or {}, "litellm_params")
-    api_base = text_of(fields.get("api_base"), "api_base")
-    extra_body = fields.get("extra_body")
+def request_outcome(config: BedrockVectorStoreConfig, scenario: RequestScenario) -> Json:
     logging_obj = Logging()
     try:
         url, body = config.transform_search_vector_store_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-            vector_store_id=vector_store_id,
-            query=cast("str | list[str]", fields.get("query")),
+            vector_store_id=scenario.vector_store_id,
+            query=cast("str | list[str]", scenario.query),
             vector_store_search_optional_params=cast(
-                "VectorStoreSearchOptionalRequestParams", optional_params
+                "VectorStoreSearchOptionalRequestParams", scenario.optional_params
             ),
-            api_base=api_base,
+            api_base=scenario.api_base,
             litellm_logging_obj=cast("LiteLLMLoggingObj", logging_obj),
-            litellm_params=litellm_params,
-            extra_body=cast("dict[str, object] | None", extra_body),
+            litellm_params=scenario.litellm_params,
+            extra_body=cast("dict[str, object] | None", scenario.extra_body),
         )
     except (AttributeError, KeyError, TypeError, ValueError):
         return {"failed": True}
@@ -309,10 +289,12 @@ def request_outcome(config: BedrockVectorStoreConfig, scenario: Json) -> Json:
     }
 
 
-def retrieval_configuration(config: BedrockVectorStoreConfig, params: dict[str, Json]) -> Json:
-    calls = [request_outcome(config, scenario) for scenario in objects_of(params, "requests")]
+def retrieval_configuration(config: BedrockVectorStoreConfig, params: Input) -> Json:
+    calls = [request_outcome(config, scenario) for scenario in params.requests]
     return {"calls": calls}
 
+
+Handler: TypeAlias = Callable[[BedrockVectorStoreConfig, Input], Json]
 
 HANDLERS: Final[dict[str, Handler]] = {
     "filter_operator_map": filter_operator_map,
@@ -320,18 +302,21 @@ HANDLERS: Final[dict[str, Handler]] = {
     "knowledge_base_retrieve_url": knowledge_base_retrieve_url,
     "user_context": user_context_outcome,
     "location_file_id_name": location_file_id_name,
-    "attributes_and_scores": decode_values,
+    "attributes_and_scores": lambda config, params: decode_responses(
+        config, params, summary=False
+    ),
     "unsupported_create": unsupported_create,
     "option_mapping": option_mapping,
     "retrieval_configuration": retrieval_configuration,
-    "knowledge_base_response_error": decode_errors,
+    "knowledge_base_response_error": lambda config, params: decode_responses(
+        config, params, summary=True
+    ),
 }
 
 
 def run(input_value: Json) -> Json:
-    params = object_of(input_value, "input")
-    operation = text_of(params.get("operation"), "operation")
-    handler = HANDLERS.get(operation)
+    supplied = Input.model_validate(cast(dict[str, object], input_value))
+    handler = HANDLERS.get(supplied.operation)
     if handler is None:
-        raise ValueError(f"unknown operation {operation}")
-    return handler(BedrockVectorStoreConfig(), params)
+        raise ValueError(f"unknown operation {supplied.operation}")
+    return handler(BedrockVectorStoreConfig(), supplied)
