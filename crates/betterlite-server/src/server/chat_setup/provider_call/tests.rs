@@ -19,8 +19,11 @@ use tower::ServiceExt as _;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 
+mod errors;
+mod mapping;
 mod stream;
 
+const OWN_KEY: &str = ", api_key: own-key";
 const PLAIN: &str = r#"{"model":"g","messages":[]}"#;
 
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
@@ -35,7 +38,7 @@ struct Usage {
     total_tokens: u64,
 }
 
-async fn upstream(listener: TcpListener) -> String {
+async fn upstream(listener: TcpListener, reply: (u16, &str)) -> String {
     let Ok(Ok((mut stream, _))) = timeout(Duration::from_millis(500), listener.accept()).await
     else {
         return String::new();
@@ -46,9 +49,10 @@ async fn upstream(listener: TcpListener) -> String {
     }
     let mut body = vec![0_u8; 4096];
     let read = stream.read(&mut body).await.unwrap();
+    let (code, answer) = reply;
     let head = format!(
-        "HTTP/1.1 200 OK\r\nx-request-id: up-1\r\ncontent-length: {}\r\n\r\n{ANSWER}",
-        ANSWER.len()
+        "HTTP/1.1 {code} Reply\r\nx-request-id: up-1\r\ncontent-length: {}\r\n\r\n{answer}",
+        answer.len()
     );
     stream.write_all(head.as_bytes()).await.unwrap();
     body.truncate(read);
@@ -56,14 +60,23 @@ async fn upstream(listener: TcpListener) -> String {
     String::from_utf8(received).unwrap().to_lowercase()
 }
 
-async fn call(model: &str, sent_body: &'static str) -> (u16, Vec<u8>, String, Option<String>) {
+async fn call(
+    model: &str,
+    sent_body: &'static str,
+    key: &str,
+    reply: (u16, &str),
+) -> (u16, Vec<u8>, String, Option<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let source = format!(
-        "model_list:\n  - {{model_name: g, litellm_params: {{model: {model}, api_base: '{base}', api_key: own-key}}, model_info: {{id: dep-1}}}}\n"
+        "model_list:\n  - {{model_name: g, litellm_params: {{model: {model}, api_base: '{base}'{key}}}, model_info: {{id: dep-1}}}}\n"
     );
     let environment = BTreeMap::from([
         ("OPENAI_API_KEY".to_owned(), "env-key".to_owned()),
+        (
+            "OPENAI_BASE_URL".to_owned(),
+            "http://127.0.0.1:1".to_owned(),
+        ),
         ("OPENAI_ORGANIZATION".to_owned(), "org-9".to_owned()),
     ]);
     let loader = ConfigLoader {
@@ -76,7 +89,7 @@ async fn call(model: &str, sent_body: &'static str) -> (u16, Vec<u8>, String, Op
         .body(Body::from(sent_body))
         .unwrap();
     let router = chat_routes_with_call_id(Arc::new(executor), false).unwrap();
-    let (sent, answered) = tokio::join!(upstream(listener), router.oneshot(request));
+    let (sent, answered) = tokio::join!(upstream(listener, reply), router.oneshot(request));
     let response = answered.unwrap();
     let status = response.status().as_u16();
     let forwarded = response
@@ -108,7 +121,7 @@ async fn provider_framework_tests_behavior(
     #[case] status: u16,
     #[case] reached: Option<(bool, bool)>,
 ) {
-    let (answered, body, sent, forwarded) = call(model, sent_body).await;
+    let (answered, body, sent, forwarded) = call(model, sent_body, OWN_KEY, (200, ANSWER)).await;
     assert_eq!(answered, status);
     let Some((has_usage, sends_organization)) = reached else {
         assert_eq!(sent, "");

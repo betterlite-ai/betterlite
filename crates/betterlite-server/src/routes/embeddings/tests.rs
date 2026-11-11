@@ -19,6 +19,9 @@ use tower::ServiceExt as _;
 use super::{EmbeddingError, embedding_routes, failure};
 use crate::server::chat_setup::chat_executor;
 
+mod call_failure;
+mod mapping;
+
 #[derive(serde::Deserialize)]
 struct ErrorEnvelope {
     error: ErrorFields,

@@ -637,6 +637,9 @@ async fn answers_failures_in_litellm_shape(
     assert!(header(&answered.headers, "x-ratelimit-reset-requests").is_none());
 }
 
+#[path = "tests/call_failure.rs"]
+mod call_failure;
+
 #[path = "tests/stream/tests.rs"]
 mod stream;
 
