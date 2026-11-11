@@ -12,7 +12,7 @@ use betterlite_redis::request_batch::scope::{
 use serde_json::json;
 
 use super::input::{Call, Fields};
-use super::server::{FakeRedis, Frame, connect_cache, delete_lengths, set_expiries};
+use super::server::{FAILURE, FakeRedis, connect_cache, delete_lengths, set_expiries};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 const EXPIRY: Duration = Duration::from_secs(1);
@@ -33,7 +33,10 @@ impl Scenario {
         let server = FakeRedis::start().await?;
         let redis = connect_cache(server.addr).await?;
         let reply = serde_json::to_string(&call.redis_get).or_value_error()?;
-        server.script("GET", Frame::Bulk(reply));
+        server.script(
+            "GET",
+            format!("${}\r\n{reply}\r\n", reply.len()).into_bytes(),
+        );
         let clock = call.clock;
         let memory = LocalMemoryOps::new(1024, Arc::new(move || clock)).or_value_error()?;
         let settings = DualCacheSettings {
@@ -110,7 +113,7 @@ async fn set_default_ttl(call: &Fields) -> HelperResult {
 
 async fn failing(call: &Fields, command: &str) -> Result<(Scenario, f64), Box<HelperError>> {
     let scenario = Scenario::start(call).await?;
-    scenario.server.script(command, Frame::Failure("ERR boom"));
+    scenario.server.script(command, FAILURE.to_vec());
     let wire = serde_json::to_value(&call.value).or_value_error()?;
     let amount = wire.as_f64().ok_or("the increment is not a number");
     Ok((scenario, amount.or_value_error()?))

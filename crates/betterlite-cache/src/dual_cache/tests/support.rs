@@ -11,7 +11,6 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
-use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, IntOrText};
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use tokio::io::{
@@ -241,48 +240,13 @@ impl BreakerGate for Allow {
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
-// LiteLLM's RedisCache defaults, spelled out because a struct update hides which fields stay unset
-fn blank_overrides() -> RedisOverrides {
-    RedisOverrides {
-        host: None,
-        port: None,
-        db: None,
-        username: None,
-        password: None,
-        url: None,
-        ssl: None,
-        socket_timeout: None,
-        socket_connect_timeout: None,
-        socket_keepalive: None,
-        max_connections: None,
-        health_check_interval: None,
-        credential_provider: false,
-        startup_nodes: None,
-        sentinel_nodes: None,
-        sentinel_password: None,
-        service_name: None,
-        ssl_password: None,
-        gcp_service_account: None,
-        gcp_ssl_ca_certs: None,
-        azure_redis_ad_token: None,
-        azure_client_id: None,
-        azure_tenant_id: None,
-        azure_client_secret: None,
-        aws_iam_auth: None,
-        aws_iam_user_name: None,
-        aws_iam_cache_name: None,
-        aws_iam_region: None,
-        aws_iam_serverless: None,
-        passthrough: BTreeMap::new(),
-    }
-}
-
 pub(crate) async fn connect_cache(addr: SocketAddr) -> Arc<RedisCache> {
-    let mut overrides = blank_overrides();
-    overrides.host = Some(addr.ip().to_string());
-    overrides.port = Some(IntOrText::Value(i64::from(addr.port())));
-    overrides.socket_timeout = Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS));
-    overrides.socket_connect_timeout = Some(FloatOrText::Value(SOCKET_TIMEOUT_SECONDS));
+    let wire = format!(
+        r#"{{"host":"{}","port":{},"socket_timeout":{SOCKET_TIMEOUT_SECONDS},"socket_connect_timeout":{SOCKET_TIMEOUT_SECONDS}}}"#,
+        addr.ip(),
+        addr.port(),
+    );
+    let overrides: RedisOverrides = serde_json::from_str(&wire).expect("the Redis overrides parse");
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,

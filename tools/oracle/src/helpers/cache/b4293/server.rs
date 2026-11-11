@@ -24,39 +24,13 @@ use crate::helpers::{HelperError, OrHelperError as _};
 const DEFAULT_TTL: i64 = 60;
 const SOCKET_TIMEOUT_SECONDS: f64 = 2.0;
 
-#[derive(Clone, Debug)]
-pub(crate) enum Frame {
-    Status(&'static str),
-    Integer(i64),
-    Bulk(String),
-    Nil,
-    Array(Vec<Self>),
-    // redis-py raises ResponseError for an error frame, and so does the rust client
-    Failure(&'static str),
-}
-
-impl Frame {
-    fn encode(&self) -> Vec<u8> {
-        match self {
-            Self::Status(text) => format!("+{text}\r\n").into_bytes(),
-            Self::Integer(number) => format!(":{number}\r\n").into_bytes(),
-            Self::Bulk(text) => format!("${}\r\n{text}\r\n", text.len()).into_bytes(),
-            Self::Nil => b"$-1\r\n".to_vec(),
-            Self::Array(items) => {
-                let mut encoded = format!("*{}\r\n", items.len()).into_bytes();
-                for item in items {
-                    encoded.extend(item.encode());
-                }
-                encoded
-            }
-            Self::Failure(reason) => format!("-{reason}\r\n").into_bytes(),
-        }
-    }
-}
+const NIL: &[u8] = b"$-1\r\n";
+// redis-py raises ResponseError for an error frame, and so does the rust client
+pub(crate) const FAILURE: &[u8] = b"-ERR boom\r\n";
 
 #[derive(Default)]
 struct State {
-    replies: BTreeMap<String, VecDeque<Frame>>,
+    replies: BTreeMap<String, VecDeque<Vec<u8>>>,
     received: Vec<Vec<String>>,
 }
 
@@ -81,14 +55,14 @@ impl FakeRedis {
         })
     }
 
-    pub(crate) fn script(&self, command: &str, frame: Frame) {
+    pub(crate) fn script(&self, command: &str, reply: Vec<u8>) {
         self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .replies
             .entry(command.to_ascii_uppercase())
             .or_default()
-            .push_back(frame);
+            .push_back(reply);
     }
 
     fn received(&self, name: &str) -> Vec<Vec<String>> {
@@ -156,22 +130,25 @@ async fn serve(stream: TcpStream, state: Arc<Mutex<State>>) {
                 .and_then(VecDeque::pop_front)
                 .unwrap_or_else(|| fallback(&name, argument_count))
         };
-        if write_half.write_all(&reply.encode()).await.is_err() {
+        if write_half.write_all(&reply).await.is_err() {
             return;
         }
     }
 }
 
-fn fallback(name: &str, argument_count: usize) -> Frame {
+fn fallback(name: &str, argument_count: usize) -> Vec<u8> {
     match name {
-        "PING" => Frame::Status("PONG"),
-        "INFO" => Frame::Bulk("redis_version:7.2.0\r\n".to_owned()),
-        "MGET" => Frame::Array(vec![Frame::Nil; argument_count.saturating_sub(1)]),
-        "GET" => Frame::Nil,
-        "INCRBYFLOAT" => Frame::Bulk("1.0".to_owned()),
-        "TTL" => Frame::Integer(DEFAULT_TTL),
-        "INCRBY" | "DEL" | "EXPIRE" | "SADD" => Frame::Integer(1),
-        _ => Frame::Status("OK"),
+        "PING" => b"+PONG\r\n".to_vec(),
+        "INFO" => b"$21\r\nredis_version:7.2.0\r\n\r\n".to_vec(),
+        "MGET" => {
+            let misses = argument_count.saturating_sub(1);
+            format!("*{misses}\r\n{}", "$-1\r\n".repeat(misses)).into_bytes()
+        }
+        "GET" => NIL.to_vec(),
+        "INCRBYFLOAT" => b"$3\r\n1.0\r\n".to_vec(),
+        "TTL" => format!(":{DEFAULT_TTL}\r\n").into_bytes(),
+        "INCRBY" | "DEL" | "EXPIRE" | "SADD" => b":1\r\n".to_vec(),
+        _ => b"+OK\r\n".to_vec(),
     }
 }
 

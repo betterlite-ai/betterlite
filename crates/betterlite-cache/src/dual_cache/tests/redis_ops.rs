@@ -208,27 +208,6 @@ async fn async_delete_cache_keys_chunks_the_redis_deletes() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn increment_cache_propagates_the_redis_error() {
-    let server = FakeRedis::start().await;
-    server.script("INCRBY", vec![Reply::Error("ERR boom")]);
-    let cache = DualCache::new(
-        local_memory(1000.0),
-        Some(connect_cache(server.addr).await),
-        settings_for_tests(None),
-    );
-    let error = cache
-        .increment_cache("key", 2.0_f64, write(None, false))
-        .expect_err("Redis rejected the increment");
-    assert!(matches!(error, DualCacheError::RedisIncrement { .. }));
-    assert_eq!(
-        cache.get_cache("key", true),
-        Some(Json::Number(
-            Number::from_f64(2.0_f64).expect("a finite number")
-        ))
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn increment_cache_rejects_a_fractional_increment_for_redis() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
