@@ -1,0 +1,42 @@
+task: B3903
+deviations:
+  - what: >-
+      Async and background task ownership replaces Python's detached thread model. Rust cannot match
+      `threading.Timer.daemon=True` exactly, so the retirement timer is a Tokio task whose handle the
+      lease keeps and cancels, and a flush worker is a Tokio task the channel flush joins under one
+      deadline. Unfinished blocking work at the deadline is abandoned to finish in the background, as
+      LiteLLM leaves its daemon worker running.
+    why: >-
+      Rust requires explicit ownership; daemon threads have no direct equivalent. The semantics are
+      preserved: background work does not block process shutdown, and a reacquired channel cancels its
+      retirement.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L956-L960"
+  - what: >-
+      The flush deadline is one wall-clock window shared across every channel's worker rather than a
+      per-worker join timeout. A worker still blocked when the window closes is abandoned and the call
+      reports failure instead of pushing the deadline out for the channels after it.
+    why: >-
+      LiteLLM's _FlushWorker starts every thread and joins each one against one `deadline` computed
+      before the first start; this preserves that shared floor.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L997-L1002"
+  - what: >-
+      LANGFUSE_DEBUG cannot raise a logger's level at runtime: betterlite's log levels come from the
+      process-wide tracing subscriber, not from a per-logger setting. Acquisition still parses the
+      flag through the langfuse settings and calls enable_langfuse_debug_logging, which reports
+      whether debug output is enabled instead of installing a handler and setting the langfuse logger
+      to DEBUG.
+    why: >-
+      A library cannot change the subscriber a host installed. The flag's parse, its truthiness rules
+      and its call site at acquisition are kept; only the Python logging configuration has no Rust
+      counterpart.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L644-L647"
+  - what: >-
+      A flush waits at most five seconds for the batch processor's queue to drain. LiteLLM passes the
+      caller's timeout into the SDK's provider.force_flush; the Rust OpenTelemetry SDK's thread-based
+      BatchSpanProcessor caps force_flush at a hard-coded five seconds, so a flush whose caller
+      timeout is longer is reported failed at five seconds when the destination is slower than that.
+    why: >-
+      The cap lives in the SDK's private field with no setter. betterlite still enforces the caller's
+      shorter deadline around the call, and a destination that takes longer than five seconds per
+      batch fails the delivery accounting either way.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L856-L859"

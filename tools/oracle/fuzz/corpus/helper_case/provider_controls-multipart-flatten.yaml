@@ -1,0 +1,13 @@
+kind: helper
+name: provider_controls-multipart-flatten-seed
+call:
+  multipart_fields:
+    operation: flatten
+    sources:
+      - tags:
+          - one
+          - two
+        nested:
+          option: true
+env: {}
+compare: {ignore: []}
