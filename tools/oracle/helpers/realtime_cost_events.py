@@ -60,7 +60,7 @@ def _numeric_extras(usage: Usage) -> dict[str, Json]:
     return {
         name: cast("Json", value)
         for name, value in extras.items()
-        if not name.startswith("_") and isinstance(value, (int, float))
+        if name != "cost" and not name.startswith("_") and isinstance(value, (int, float))
     }
 
 
@@ -82,6 +82,7 @@ def _usage_projection(usage: Usage) -> dict[str, Json]:
         "total_tokens": usage.total_tokens,
         "prompt_tokens_details": prompt_projection,
         "completion_tokens_details": completion_projection,
+        "cost": cast("Json", getattr(usage, "cost", None)),
         "numeric_extras": _numeric_extras(usage),
     }
 

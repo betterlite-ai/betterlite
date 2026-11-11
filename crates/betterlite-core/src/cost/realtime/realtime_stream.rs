@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_models::usage_sum::{Usage, usage_sum};
+use betterlite_models::usage_sum::Usage;
 
 use super::Event;
 use super::error::RealtimeCostError;
@@ -27,10 +27,4 @@ pub fn collect_usage(results: &[Event]) -> Result<Vec<Usage>, RealtimeCostError>
         usages.push(aggregate_usage(response.get("usage"))?);
     }
     Ok(usages)
-}
-
-pub fn combine_usage(results: &[Event]) -> Result<Usage, RealtimeCostError> {
-    let usages = collect_usage(results)?;
-    let combined = usage_sum(&usages).map_err(RealtimeCostError::from)?;
-    Ok(combined)
 }

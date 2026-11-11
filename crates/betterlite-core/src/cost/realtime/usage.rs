@@ -29,6 +29,9 @@ pub(super) fn aggregate_mapping(
     let raw = serde_json::to_value(fields).map_err(|source| RealtimeCostError::Json { source })?;
     let converted = normalize_usage(UsageInput::Mapping(&raw))?;
     let mut numeric_extras = BTreeMap::new();
+    if let Some(cost) = converted.cost {
+        numeric_extras.insert("cost".to_owned(), UsageNumber::Decimal(cost));
+    }
     for (name, extension) in &converted.extensions {
         if name.starts_with('_') {
             continue;

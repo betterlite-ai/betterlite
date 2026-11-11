@@ -100,12 +100,6 @@ pub fn collect_usage(results: &[Event]) -> Result<Vec<Usage>, RealtimeCostError>
         .collect()
 }
 
-pub fn combine_usage(results: &[Event]) -> Result<Usage, RealtimeCostError> {
-    let usages = collect_usage(results)?;
-    let combined = usage_sum(&usages).map_err(RealtimeCostError::from)?;
-    Ok(combined)
-}
-
 // Ports partition_results_by_service_tier: first-seen tier order, None distinct from an empty tier.
 pub fn partition_by_service_tier(
     results: &[Event],

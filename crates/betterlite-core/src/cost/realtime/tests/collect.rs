@@ -1,4 +1,6 @@
 use betterlite_models::decisions::Json;
+use betterlite_models::usage_sum::{UsageNumber, usage_sum};
+use rust_decimal::Decimal;
 
 use crate::cost::realtime::error::RealtimeCostError;
 use crate::cost::realtime::realtime_stream;
@@ -129,7 +131,8 @@ fn combined_realtime_usage_sums_each_response_done_event() {
             ("response", object(&[("usage", response_usage("5", "15"))])),
         ]),
     ];
-    let combined = realtime_stream::combine_usage(&events).expect("the events are readable");
+    let usages = realtime_stream::collect_usage(&events).expect("the events are readable");
+    let combined = usage_sum(&usages).expect("the usages add");
     assert_eq!(combined.prompt_tokens, 15);
     assert_eq!(combined.completion_tokens, 35);
     assert_eq!(combined.total_tokens, 50);
@@ -156,7 +159,8 @@ fn responses_ws_collects_completed_and_incomplete_only() {
     assert_eq!(usages.len(), 2);
     assert_eq!(usages[0].prompt_tokens, 3);
     assert_eq!(usages[1].prompt_tokens, 2);
-    let combined = responses_ws::combine_usage(&events).expect("the events are readable");
+    let ws_usages = responses_ws::collect_usage(&events).expect("the events are readable");
+    let combined = usage_sum(&ws_usages).expect("the usages add");
     assert_eq!(combined.total_tokens, 6);
 }
 
@@ -361,4 +365,52 @@ fn several_tiers_split_into_independently_aggregated_records() {
     assert_eq!(parts[1].usage.prompt_tokens, 60);
     assert_eq!(parts[1].usage.completion_tokens, 10);
     assert_eq!(parts[1].results.len(), 1);
+}
+
+fn cost_event(event_type: &str, cost: &str) -> Event {
+    event(&[
+        ("type", text(event_type)),
+        (
+            "response",
+            object(&[(
+                "usage",
+                object(&[
+                    ("input_tokens", number("2")),
+                    ("output_tokens", number("3")),
+                    ("total_tokens", number("5")),
+                    ("cost", number(cost)),
+                ]),
+            )]),
+        ),
+    ])
+}
+
+#[test]
+fn provider_cost_is_summed_across_collected_events() {
+    let realtime_events = [
+        cost_event("response.done", "0.125"),
+        cost_event("response.done", "0.125"),
+    ];
+    let realtime_usages =
+        realtime_stream::collect_usage(&realtime_events).expect("cost is a usage extra");
+    assert_eq!(
+        realtime_usages[0].numeric_extras.get("cost"),
+        Some(&UsageNumber::Decimal(Decimal::new(125, 3)))
+    );
+    let realtime_combined = usage_sum(&realtime_usages).expect("the costs add");
+    assert_eq!(
+        realtime_combined.numeric_extras.get("cost"),
+        Some(&UsageNumber::Decimal(Decimal::new(25, 2)))
+    );
+
+    let ws_events = [
+        cost_event("response.completed", "0.125"),
+        cost_event("response.completed", "0.125"),
+    ];
+    let ws_usages = responses_ws::collect_usage(&ws_events).expect("cost is a usage extra");
+    let ws_combined = usage_sum(&ws_usages).expect("the costs add");
+    assert_eq!(
+        ws_combined.numeric_extras.get("cost"),
+        Some(&UsageNumber::Decimal(Decimal::new(25, 2)))
+    );
 }

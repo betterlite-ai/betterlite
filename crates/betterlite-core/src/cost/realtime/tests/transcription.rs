@@ -513,3 +513,33 @@ fn a_text_rate_is_a_typed_failure() {
         }
     ));
 }
+
+#[test]
+fn the_legacy_object_applies_when_audio_has_no_input() {
+    let events = [event(&[
+        ("type", text("transcription_session.created")),
+        (
+            "session",
+            nested_session(&[("audio", object(&[]))], Some("legacy-asr"), None),
+        ),
+    ])];
+    assert_eq!(
+        transcription::session::model_name(&events).expect("the session is readable"),
+        Some("legacy-asr".to_owned())
+    );
+}
+
+#[test]
+fn the_legacy_object_applies_when_audio_is_null() {
+    let events = [event(&[
+        ("type", text("transcription_session.created")),
+        (
+            "session",
+            nested_session(&[("audio", Json::Null)], Some("legacy-asr"), None),
+        ),
+    ])];
+    assert_eq!(
+        transcription::session::model_name(&events).expect("the session is readable"),
+        Some("legacy-asr".to_owned())
+    );
+}

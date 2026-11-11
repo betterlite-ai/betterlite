@@ -46,10 +46,10 @@ fn session_transcription(
         return Ok(None);
     };
     let Some(audio) = optional_object(found, "audio")? else {
-        return Ok(None);
+        return optional_object(found, "input_audio_transcription");
     };
     let Some(input) = optional_object(audio, "input")? else {
-        return Ok(None);
+        return optional_object(found, "input_audio_transcription");
     };
     let nested = optional_object(input, "transcription")?;
     if nested.is_some_and(|fields| !fields.is_empty()) {

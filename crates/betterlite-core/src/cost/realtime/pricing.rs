@@ -73,7 +73,6 @@ where
     Ok(total)
 }
 
-// Transcription is billed only when the session carries a transcription completed event.
 fn transcription_charge(
     request: &RealtimeCostRequest<'_>,
     lookup: &dyn PriceLookup,

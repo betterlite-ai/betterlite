@@ -5,7 +5,7 @@ use betterlite_core::cost::realtime::{
     Event, RealtimeBilling, realtime_stream, responses_ws, transcription,
 };
 use betterlite_models::usage_sum::{
-    CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber,
+    CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber, usage_sum,
 };
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -56,11 +56,11 @@ fn failure(error: &RealtimeCostError) -> Failure {
 fn collect(events: &[Event]) -> crate::helpers::HelperResult {
     let realtime_usages =
         realtime_stream::collect_usage(events).map_err(|error| failure(&error))?;
-    let realtime_combined =
-        realtime_stream::combine_usage(events).map_err(|error| failure(&error))?;
+    let realtime_combined = usage_sum(&realtime_usages)
+        .map_err(|source| failure(&RealtimeCostError::Aggregation { source }))?;
     let responses_usages = responses_ws::collect_usage(events).map_err(|error| failure(&error))?;
-    let responses_combined =
-        responses_ws::combine_usage(events).map_err(|error| failure(&error))?;
+    let responses_combined = usage_sum(&responses_usages)
+        .map_err(|source| failure(&RealtimeCostError::Aggregation { source }))?;
     let partition =
         responses_ws::partition_by_service_tier(events).map_err(|error| failure(&error))?;
     let split = responses_ws::split_by_service_tier(&RealtimeBilling {
@@ -107,6 +107,7 @@ fn usage_value(usage: &Usage) -> Result<Value, Failure> {
     fields.insert("total_tokens".to_owned(), json!(usage.total_tokens));
     fields.insert("prompt_tokens_details".to_owned(), prompt_details);
     fields.insert("completion_tokens_details".to_owned(), completion_details);
+    fields.insert("cost".to_owned(), cost_value(&usage.numeric_extras)?);
     fields.insert(
         "numeric_extras".to_owned(),
         numeric_extras_value(&usage.numeric_extras)?,
@@ -154,9 +155,15 @@ fn completion_details_value(details: &CompletionTokensDetails) -> Value {
     })
 }
 
+fn cost_value(extras: &BTreeMap<String, UsageNumber>) -> Result<Value, Failure> {
+    extras
+        .get("cost")
+        .map_or_else(|| Ok(Value::Null), number_value)
+}
+
 fn numeric_extras_value(extras: &BTreeMap<String, UsageNumber>) -> Result<Value, Failure> {
     let mut rendered = BTreeMap::new();
-    for (name, value) in extras {
+    for (name, value) in extras.iter().filter(|(name, _)| *name != "cost") {
         rendered.insert(name.clone(), number_value(value)?);
     }
     Ok(json!(rendered))

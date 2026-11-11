@@ -365,7 +365,7 @@ fn a_null_rate_field_does_not_declare_pricing() {
     catalog
         .effective
         .insert("null-rate".to_owned(), priced("0", "0"));
-    let usage = zero_usage();
+    let usage = token_usage(100, 10);
     let request = cost_request(&events, &usage, "openai", "paid");
     let total = stream_cost(&request, &catalog, &database(), None::<&mut Breakdown>)
         .expect("the priced candidate wins");
