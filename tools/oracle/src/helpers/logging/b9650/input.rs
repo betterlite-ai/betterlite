@@ -44,4 +44,5 @@ pub(crate) enum Behavior {
     ReplaceUnchanged,
     Fail,
     RewriteLive,
+    RewriteLiveThenFail,
 }

@@ -18,6 +18,22 @@ fn edited_item() -> Json {
     ]))
 }
 
+impl ScriptedLogger {
+    fn rewrite(&self, call: &mut McpToolHookCall<'_>) {
+        call.original.content.clone_from(&self.wire.content);
+        call.original
+            .structured_content
+            .clone_from(&self.wire.structured_content);
+    }
+
+    fn fail(&self) -> Result<Option<McpPostCallResponse>, LoggerError> {
+        Err(LoggerError::Delivery {
+            callback: self.wire.name.clone(),
+            message: "logger exploded".to_owned(),
+        })
+    }
+}
+
 #[async_trait]
 impl CallbackLogger for ScriptedLogger {
     fn callback_name(&self) -> &str {
@@ -26,7 +42,7 @@ impl CallbackLogger for ScriptedLogger {
 
     async fn async_post_mcp_tool_call_hook(
         &self,
-        call: McpToolHookCall<'_>,
+        mut call: McpToolHookCall<'_>,
     ) -> Result<Option<McpPostCallResponse>, LoggerError> {
         match self.wire.behavior {
             Behavior::None => Ok(None),
@@ -44,16 +60,14 @@ impl CallbackLogger for ScriptedLogger {
                 Ok(Some(call.response.clone()))
             }
             Behavior::ReplaceUnchanged => Ok(Some(call.response.clone())),
-            Behavior::Fail => Err(LoggerError::Delivery {
-                callback: self.wire.name.clone(),
-                message: "logger exploded".to_owned(),
-            }),
+            Behavior::Fail => self.fail(),
             Behavior::RewriteLive => {
-                call.original.content.clone_from(&self.wire.content);
-                call.original
-                    .structured_content
-                    .clone_from(&self.wire.structured_content);
+                self.rewrite(&mut call);
                 Ok(None)
+            }
+            Behavior::RewriteLiveThenFail => {
+                self.rewrite(&mut call);
+                self.fail()
             }
         }
     }

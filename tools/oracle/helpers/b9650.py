@@ -110,12 +110,14 @@ class _Scripted(CustomLogger):
             return response_obj
         if self.behavior == "fail":
             raise RuntimeError("logger exploded")
-        if self.behavior == "rewrite_live":
+        if self.behavior in ("rewrite_live", "rewrite_live_then_fail"):
             original = kwargs.get("original_response")
             if not isinstance(original, CallToolResult):
                 raise InputError("the live result is missing from kwargs")
             original.content[:] = list(self.content)
             original.structured_content = self.structured
+            if self.behavior == "rewrite_live_then_fail":
+                raise RuntimeError("logger exploded")
             return None
         raise InputError(f"unknown behavior {self.behavior}")
 
@@ -128,15 +130,26 @@ def _result(wire: Fields) -> CallToolResult:
     return result
 
 
+def _global_loggers(value: Fields) -> list[_Scripted]:
+    scripted: list[_Scripted] = []
+    shared: dict[str, _Scripted] = {}
+    for item in _items(value.get("global_success"), "global_success"):
+        wire = _object(item, "global_success")
+        name = _text(wire.get("name"), "name")
+        logger = shared.get(name)
+        if logger is None:
+            logger = _Scripted(wire)
+            shared[name] = logger
+        scripted.append(logger)
+    return scripted
+
+
 def _build(value: Fields) -> Logging:
     dynamic = [
         _text(item, "dynamic_success")
         for item in _items(value.get("dynamic_success"), "dynamic_success")
     ]
-    scripted = [
-        _Scripted(_object(item, "global_success"))
-        for item in _items(value.get("global_success"), "global_success")
-    ]
+    scripted = _global_loggers(value)
     litellm.success_callback = cast("Callbacks", list(scripted))
     logging_obj = Logging(
         model="gpt-4o",

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io::{Result as IoResult, Write};
+use std::iter::once;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -79,6 +80,7 @@ enum Behavior {
     ReplaceLive,
     Fail,
     RewriteLive,
+    RewriteLiveThenFail,
 }
 
 #[derive(Clone)]
@@ -88,6 +90,7 @@ struct Script {
     // ast-grep-ignore: no-float-money
     response_cost: Option<f64>,
     structured_content: Option<Json>,
+    aliases: Vec<&'static str>,
 }
 
 impl Script {
@@ -97,6 +100,7 @@ impl Script {
             content: Vec::new(),
             response_cost: None,
             structured_content: None,
+            aliases: Vec::new(),
         }
     }
 
@@ -106,6 +110,7 @@ impl Script {
             content: vec![content.clone()],
             response_cost,
             structured_content: None,
+            aliases: Vec::new(),
         }
     }
 
@@ -115,6 +120,7 @@ impl Script {
             content: vec![content.clone()],
             response_cost: None,
             structured_content: Some(structured_content.clone()),
+            aliases: Vec::new(),
         }
     }
 
@@ -133,6 +139,15 @@ impl Script {
             .mcp_tool_call_response
             .push(text_item("edited"));
     }
+
+    fn replace_copy(&self, call: &mut McpToolHookCall<'_>) {
+        call.response
+            .mcp_tool_call_response
+            .clone_from(&self.content);
+        if let Some(cost) = self.response_cost {
+            call.response.hidden_params.response_cost = Some(cost);
+        }
+    }
 }
 
 struct ScriptedLogger {
@@ -147,6 +162,13 @@ impl ScriptedLogger {
     fn record(&self, cost: Option<f64>) {
         self.runs.lock().unwrap().push(self.name);
         self.received_costs.lock().unwrap().push(cost);
+    }
+
+    fn fail(&self) -> Result<Option<McpPostCallResponse>, LoggerError> {
+        Err(LoggerError::Delivery {
+            callback: self.name.to_owned(),
+            message: "logger exploded".to_owned(),
+        })
     }
 }
 
@@ -169,10 +191,7 @@ impl CallbackLogger for ScriptedLogger {
                 Ok(None)
             }
             Behavior::Replace => {
-                script.rewrite_content(&mut call);
-                if let Some(cost) = script.response_cost {
-                    call.response.hidden_params.response_cost = Some(cost);
-                }
+                script.replace_copy(&mut call);
                 Ok(Some(call.response.clone()))
             }
             Behavior::ReplaceUnchanged => Ok(Some(call.response.clone())),
@@ -189,14 +208,16 @@ impl CallbackLogger for ScriptedLogger {
                     hidden_params: call.response.hidden_params,
                 }))
             }
-            Behavior::Fail => Err(LoggerError::Delivery {
-                callback: self.name.to_owned(),
-                message: "logger exploded".to_owned(),
-            }),
+            Behavior::Fail => self.fail(),
             Behavior::RewriteLive => {
                 script.rewrite_content(&mut call);
                 script.rewrite_structured(&mut call);
                 Ok(None)
+            }
+            Behavior::RewriteLiveThenFail => {
+                script.rewrite_content(&mut call);
+                script.rewrite_structured(&mut call);
+                self.fail()
             }
         }
     }
@@ -320,21 +341,24 @@ fn registry_for(
 ) -> CallbackRegistry {
     let mut registry = CallbackRegistry::new(16);
     for (name, script) in loggers {
-        let logger = Arc::new(ScriptedLogger {
+        let logger: Arc<dyn CallbackLogger> = Arc::new(ScriptedLogger {
             name,
             script: script.clone(),
             runs: Arc::clone(runs),
             received_costs: Arc::clone(received_costs),
         });
-        let registration = registry.register(
-            CallbackIdentity {
-                class_name: (*name).to_owned(),
-                attributes: IndexMap::new(),
-            },
-            CallbackSink::Logger(logger),
-            CallbackList::Success,
-        );
-        assert_eq!(registration, Registration::Registered);
+        let identities = once(*name).chain(script.aliases.iter().copied());
+        for class_name in identities {
+            let registration = registry.register(
+                CallbackIdentity {
+                    class_name: class_name.to_owned(),
+                    attributes: IndexMap::new(),
+                },
+                CallbackSink::Logger(Arc::clone(&logger)),
+                CallbackList::Success,
+            );
+            assert_eq!(registration, Registration::Registered);
+        }
     }
     registry
 }
@@ -439,6 +463,7 @@ fn hello() -> McpToolResult {
             content: Vec::new(),
             response_cost: None,
             structured_content: Some(object(&[("interim", Json::Bool(true))])),
+            aliases: Vec::new(),
         },
     )],
     expected: Expected {
@@ -489,6 +514,7 @@ fn hello() -> McpToolResult {
             content: vec![text_item("blocked")],
             response_cost: None,
             structured_content: Some(object(&[("blocked", Json::Bool(true))])),
+            aliases: Vec::new(),
         },
     )],
     expected: Expected {
@@ -535,6 +561,29 @@ fn hello() -> McpToolResult {
         error_lines: 0,
     },
 })]
+#[case::failing_logger_keeps_its_live_rewrite(Scenario {
+    result: hello(),
+    dynamic_success: Vec::new(),
+    global_success: vec![(
+        "broken-guard",
+        Script {
+            behavior: Behavior::RewriteLiveThenFail,
+            content: vec![text_item("blocked")],
+            response_cost: None,
+            structured_content: Some(object(&[("blocked", Json::Bool(true))])),
+            aliases: Vec::new(),
+        },
+    )],
+    expected: Expected {
+        content: vec![text_item("blocked")],
+        structured_content: Some(object(&[("blocked", Json::Bool(true))])),
+        is_error: false,
+        response_cost: None,
+        runs: vec!["broken-guard"],
+        received_costs: vec![None],
+        error_lines: 1,
+    },
+})]
 #[case::two_loggers_carry_hidden_params(Scenario {
     result: McpToolResult { content: vec![text_item("hello")], structured_content: None, is_error: false },
     dynamic_success: Vec::new(),
@@ -555,7 +604,16 @@ fn hello() -> McpToolResult {
 #[case::logger_in_both_lists_runs_once(Scenario {
     result: hello(),
     dynamic_success: vec!["guard".to_owned()],
-    global_success: vec![("guard", Script::plain(Behavior::EditInPlace))],
+    global_success: vec![(
+        "guard",
+        Script {
+            behavior: Behavior::EditInPlace,
+            content: Vec::new(),
+            response_cost: None,
+            structured_content: None,
+            aliases: vec!["guard-mirror"],
+        },
+    )],
     expected: Expected {
         content: vec![text_item("hello"), text_item("edited")],
         structured_content: None,

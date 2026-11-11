@@ -54,23 +54,36 @@ pub(super) async fn execute(input: &Input, logs: &ErrorLines) -> crate::helpers:
 
 fn registry_for(input: &Input) -> Result<CallbackRegistry, Box<HelperError>> {
     let mut registry = CallbackRegistry::new(input.global_success.len().saturating_add(1));
-    for wire in &input.global_success {
-        let logger: Arc<dyn CallbackLogger> = Arc::new(ScriptedLogger { wire: wire.clone() });
+    let mut registered: Vec<(&str, Arc<dyn CallbackLogger>)> = Vec::new();
+    for (index, wire) in input.global_success.iter().enumerate() {
+        let existing = registered
+            .iter()
+            .find(|entry| entry.0 == wire.name.as_str())
+            .map(|entry| Arc::clone(&entry.1));
+        let repeated = existing.is_some();
+        let logger: Arc<dyn CallbackLogger> = match existing {
+            Some(logger) => logger,
+            None => Arc::new(ScriptedLogger { wire: wire.clone() }),
+        };
+        // a repeated name is the same logger in a second list slot, which register() would refuse
+        let class_name = if repeated {
+            format!("{}#{index}", wire.name)
+        } else {
+            wire.name.clone()
+        };
         let identity = CallbackIdentity {
-            class_name: wire.name.clone(),
+            class_name,
             attributes: IndexMap::new(),
         };
-        let registration = registry.register(
-            identity,
-            CallbackSink::Logger(logger),
-            CallbackList::Success,
-        );
+        let sink = CallbackSink::Logger(Arc::clone(&logger));
+        let registration = registry.register(identity, sink, CallbackList::Success);
         if registration != Registration::Registered {
             return Err(failure(format!(
                 "the logger {} was not registered",
                 wire.name
             )));
         }
+        registered.push((wire.name.as_str(), logger));
     }
     Ok(registry)
 }
