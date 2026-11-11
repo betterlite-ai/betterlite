@@ -14,7 +14,6 @@ Run the build from the repository root. The context has to include the entrypoin
 
 ```sh
 docker build \
-  --build-arg BETTERLITE_VERSION=0.1.0 \
   -f packaging/docker/build_from_pip/Dockerfile.build_from_pip \
   -t betterlite:published \
   .
