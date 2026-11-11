@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 use betterlite_redact::structured::SensitiveDataMasker;
+use betterlite_redis::redis_connection_settings::model::scalars::FloatOrText;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use serde_json::Number;
 
@@ -37,17 +38,20 @@ fn nothing_but_the_default_socket_timeout_is_shown_for_empty_overrides() {
 
 #[test]
 fn an_explicit_socket_timeout_replaces_the_default() {
-    let kwargs = redis_kwargs(&parsed(r#"{"socket_timeout": 1.5}"#));
+    let mut settings = overrides();
+    settings.socket_timeout = Some(FloatOrText::Value(1.5_f64));
+    let kwargs = redis_kwargs(&settings);
     assert_eq!(kwargs.get("socket_timeout"), Some(&float(1.5_f64)));
 }
 
 #[test]
 fn the_host_port_and_connection_options_appear_as_given() {
-    let kwargs = redis_kwargs(&parsed(
+    let mut settings = parsed(
         r#"{"host": "redis.internal", "port": "6380", "db": 2, "username": "proxy", "ssl": true,
-            "socket_connect_timeout": 2.5, "socket_keepalive": false, "max_connections": 20,
-            "health_check_interval": 30}"#,
-    ));
+            "socket_keepalive": false, "max_connections": 20, "health_check_interval": 30}"#,
+    );
+    settings.socket_connect_timeout = Some(FloatOrText::Value(2.5_f64));
+    let kwargs = redis_kwargs(&settings);
     assert_eq!(kwargs.get("host"), Some(&text("redis.internal")));
     assert_eq!(kwargs.get("port"), Some(&text("6380")));
     assert_eq!(kwargs.get("db"), Some(&number(2_i64)));
