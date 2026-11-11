@@ -7,6 +7,7 @@ pub mod baseline;
 pub mod budget_cascade;
 pub mod budget_permission_rows;
 pub mod budget_reset_policy;
+pub mod budget_sweep;
 pub mod budget_tier_sweep;
 pub mod cleanup_metrics;
 pub mod combined_key_read;

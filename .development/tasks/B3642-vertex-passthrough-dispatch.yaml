@@ -27,7 +27,7 @@ description: >-
 
 
   Constructor. `VertexPassthroughHandler::new(predict: VertexPredictLogger, batch: VertexBatchLogging, cost: Arc<dyn <B3638's cost trait>>)
-  -> VertexPassthroughHandler`. B102 builds the VertexPredictLogger with its own cost handle, builds VertexBatchLogging and the cost handle, and
+  -> VertexPassthroughHandler`. B8931 builds the VertexPredictLogger with its own cost handle, builds VertexBatchLogging and the cost handle, and
   passes all three in; this module builds none of them and reads no config. No module-level state.
 
 
@@ -107,7 +107,7 @@ description: >-
   Tests live under pass_through_logging::vertex_passthrough_handler::tests, in groups by prefix: order_ (every branch, plus the ordering pairs
   below), location_, interactions_, video_, generate_, embed_ and predict_, raw_predict_, search_, batch_, error_. A fake stands in for the cost
   trait, the logging object and CallLog, and the leaf handlers are the real merged ones where they are pure, so each test checks the arguments the
-  branch hands over and the kwargs and logging object writes it makes. The module has no HTTP route yet (B3606, B3607 and B102 wire it), so it gets
+  branch hands over and the kwargs and logging object writes it makes. The module has no HTTP route yet (B3606, B3607 and B8931 wire it), so it gets
   helper cases for the branch order only; the other branches need a logging object and proxy state, and a helper adapter cannot build
   that for every leaf, so those branches are native tests.
 scope:
@@ -239,7 +239,7 @@ out_of_scope:
   - "_handle_logging_vertex_collected_chunks and _build_complete_streaming_response (the stream side) belong to B3640."
   - "B3605 owns success_handler's TRACKED_VERTEX_METHOD_ROUTES and TRACKED_VERTEX_RESOURCE_ROUTES consts and the is_vertex_route predicate, and B3606 owns the branch choice between Gemini, Vertex and the other providers. This task owns only the choice inside the Vertex handler. B3606 owns the Vertex Live branch."
   - "The Vertex Live handler (VertexAILivePassthroughLoggingHandler, B3643) is never called from vertex_passthrough_handler in LiteLLM; B3606 reaches it through its own VertexAiLive branch."
-  - "The Veo response parsing (B1362), the Gemini response decoder (B1326), the partner response configs (B032, B1333, B1335) and the Discovery Engine response decoder (B1389) are called here and not rebuilt. The completion_cost service itself (B068) is reached through B3638's cost trait, passed in by B102."
+  - "The Veo response parsing (B1362), the Gemini response decoder (B1326), the partner response configs (B032, B1333, B1335) and the Discovery Engine response decoder (B1389) are called here and not rebuilt. The completion_cost service itself (B068) is reached through B3638's cost trait, passed in by B8931."
 pitfalls:
   - "Every branch test is a plain substring test over the whole route string, project and model names included, so a model path or project id that contains 'search' reaches the Search branch unless an earlier test matches first."
   - "'predict' is lowercase, so 'rawPredict', 'streamRawPredict' and 'batchPredictionJobs' do not match the Predict branch, and 'predictLongRunning' is caught by the Video test that runs before it."

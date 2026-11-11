@@ -45,7 +45,7 @@ deviations:
     why: The class has its own tasks and B3682 owns the registry and the registration, as with B3681.
 
 out_of_scope:
-  - 'The ContentFilterGuardrail class and its matching: the content filter tasks under B105.'
+  - 'The ContentFilterGuardrail class and its matching: B8773 builds the class and B3693 to B3695 own the matchers.'
   - 'The initializer registry and the callback registration: B3682.'
 
 pitfalls:

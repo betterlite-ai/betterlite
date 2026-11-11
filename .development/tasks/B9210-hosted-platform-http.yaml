@@ -1,0 +1,154 @@
+id: B9210
+title: Prove hosted platform transforms through inference HTTP routes
+description: >-
+  B8310 supplies the hosted-platform dispatch and proves Fireworks, Together, Groq and
+  Cloudflare chat plus Fireworks embeddings. Its case list omits Perplexity and NVIDIA
+  chat, their embeddings, text completion, rerank and Groq transcription. Add the missing
+  HTTP oracle fixtures under tools/oracle/cases/http/hosted-platform-remainder. This is
+  fixture work over the booted gateway, with no provider implementation, helper adapter,
+  new parser or route registration. The Python functions below remain their parts' code;
+  this task owns zero additional LiteLLM implementation lines. Allow about 750 fixture
+  lines plus a small audio fixture, using compact deterministic mock records.
+
+  Every case configures general_settings.master_key, one or more model_list deployments
+  with litellm_params.model, api_key and api_base pointing to the harness mock, and
+  router_settings.num_retries: 0. Keys are fixed dummy strings. Nothing may contact a
+  provider's public default base. Use the ordinary HTTP case schema, including steps for
+  related calls, and B2400's existing body_kind: multipart for audio. Do not add kind:
+  helper to these files. Compare captured upstream paths, parsed bodies and authorization
+  and content-type headers, plus client status, JSON and content-type. Stable error type,
+  param and code remain compared; ignore only /error/message for betterlite's own wording.
+  Supply fixed upstream ids, timestamps and usage so these do not need broad ignores.
+
+  perplexity-chat-citations uses perplexity/sonar. The mock returns content with a Unicode
+  prefix and two occurrences of [1], citations, a matching search_results title and
+  usage.num_search_queries. The public response must retain both annotations, character
+  offsets, citation tokens and web_search_requests. nvidia-chat-token-limit uses
+  nvidia_nim/nvidia/nemotron-4-340b-instruct with max_completion_tokens and proves the
+  upstream receives max_tokens instead. Include an upstream 429 step with retries disabled
+  so the provider-specific error reaches the HTTP envelope.
+
+  perplexity-embedding-int8 uses perplexity/pplx-embed-v1-0.6b, an explicit base without
+  /v1, encoding_format float and a mock base64 embedding containing bytes 0, 127 and 129;
+  the response vector is [0, 1, -1], with total_tokens populated. nvidia-embedding-options
+  uses nvidia_nim/nvidia/nv-embedqa-e5-v5 with input_type query and truncate END, proving
+  extra_body is flattened by the shared OpenAI embedding call. Together embeddings use
+  that same branch: include together_ai/BAAI/bge-base-en-v1.5 as another step in this case.
+
+  together-completion uses together_ai/meta-llama/Meta-Llama-3.1-8B and a one-string prompt
+  list; capture a scalar upstream prompt and a text_completion response. fireworks-completion
+  uses fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct with a scalar prompt
+  and guided_json in extra_body, proving text-completion selection and the translated
+  response_format. Do not route either case through a fake chat response or a helper.
+
+  The three rerank cases use query and two string documents. together-rerank uses
+  together_ai/Salesforce/Llama-Rank-V1 and verifies the /rerank suffix and usage copied
+  into both metadata records. fireworks-rerank uses fireworks_ai/qwen3-reranker-8b,
+  capturing model fireworks/qwen3-reranker-8b and the /inference/v1/rerank suffix, and
+  converts a nonempty data array with document strings. nvidia-rerank uses
+  nvidia_nim/nvidia/llama-3_2-nv-rerankqa-1b-v2, top_n: 1 and truncate END; capture
+  /v1/retrieval/nvidia/llama-3_2-nv-rerankqa-1b-v2/reranking, a body model with 3.2,
+  passages and top_k, and convert rankings[].logit with original document text. Supply
+  positive total_tokens so fallback billing counts do not obscure the routing proof.
+
+  groq-transcription uses groq/whisper-large-v3 and a small committed WAV fixture with
+  language en and response_format verbose_json. Follow success with response_format srt
+  under drop_params false: LiteLLM rejects it with status 400 before an upstream request.
+  A final request with no proxy Authorization must stop at auth and send nothing upstream.
+  Reuse existing fixture support; no decoder is introduced here.
+
+  Routes already exist in their owners. Chat has POST /v1/chat/completions,
+  /chat/completions, /engines/{model:path}/chat/completions and
+  /openai/deployments/{model:path}/chat/completions. Completion and embeddings have the
+  same four prefix forms with /completions and /embeddings. Rerank has POST /v2/rerank,
+  /v1/rerank and /rerank; transcription has POST /v1/audio/transcriptions and
+  /audio/transcriptions. Distribute these aliases across the listed cases and use steps
+  where needed to exercise each alias once; the path model is the configured deployment
+  alias. No /openai/v1 alias or provider-prefixed inference route is invented.
+scope:
+  paths:
+    - tools/oracle/cases/http/hosted-platform-remainder/**
+    - tools/oracle/fixtures/multipart-oracle/hosted-platform-remainder/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/chat/transformation.py#L68-L230
+    why: B6120's citation and usage behavior, reached through the real chat route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L54-L170
+    why: B5834's URL, headers and signed-int8 response decoding are HTTP assertions here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/chat/transformation.py#L23-L113
+    why: B5837's model-sensitive options and max_completion_tokens mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/embed.py#L58-L82
+    why: Existing NVIDIA embedding option projection; B5837 implements it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/completion/transformation.py#L23-L55
+    why: B5831's single-prompt projection must reach the completion transport.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/rerank/handler.py#L19-L96
+    why: B5831 and B1079 own the Together rerank path and execution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/rerank/transformation.py#L21-L58
+    why: Together usage and result projection owned by B5831.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/completion/transformation.py#L57-L169
+    why: B5832 translates guided params and resolves the text-completion model resource.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L31-L259
+    why: B6070's request path and result metadata, without transferring implementation ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L65-L341
+    why: B5837's underscore path, dotted body model, passages and rankings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/stt/transformation.py#L65-L98
+    why: B5833's supported formats and handled 400 for srt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12024
+    why: Existing chat aliases and authenticated entry; no mount belongs to this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12105-L12166
+    why: Text completion decorators and request entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12342
+    why: All four embedding aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12655-L12733
+    why: Multipart transcription entry and its two aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L136
+    why: B085's three rerank aliases and response envelope.
+dod:
+  - text: Perplexity citations and NVIDIA token-limit mapping survive the booted chat path, including a provider 429.
+    proof: [chat-cases, oracle]
+  - text: Perplexity signed embeddings and NVIDIA and Together shared-client embedding requests have differential HTTP coverage.
+    proof: [embedding-cases, oracle]
+  - text: Together and Fireworks select text completion while all three rerank providers use their own request and response transformations.
+    proof: [completion-rerank-cases, oracle]
+  - text: Groq audio upload reaches transcription, srt is rejected before transport, and unauthenticated requests send nothing upstream.
+    proof: [audio-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: chat-cases
+      why: The missing hosted chat HTTP fixtures must be new and both present.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/hosted-platform-remainder)" && test -f tools/oracle/cases/http/hosted-platform-remainder/perplexity-chat-citations.yaml && test -f tools/oracle/cases/http/hosted-platform-remainder/nvidia-chat-token-limit.yaml
+    - id: embedding-cases
+      why: Neither the signed embedding response nor the provider extra-body path may be omitted.
+      run: test -f tools/oracle/cases/http/hosted-platform-remainder/perplexity-embedding-int8.yaml && test -f tools/oracle/cases/http/hosted-platform-remainder/nvidia-embedding-options.yaml
+    - id: completion-rerank-cases
+      why: Each previously helper-only completion and ranking family needs its own live-route case.
+      run: test -f tools/oracle/cases/http/hosted-platform-remainder/together-completion.yaml && test -f tools/oracle/cases/http/hosted-platform-remainder/fireworks-completion.yaml && test -f tools/oracle/cases/http/hosted-platform-remainder/together-rerank.yaml && test -f tools/oracle/cases/http/hosted-platform-remainder/fireworks-rerank.yaml && test -f tools/oracle/cases/http/hosted-platform-remainder/nvidia-rerank.yaml
+    - id: audio-cases
+      why: The Groq multipart and pre-transport rejection regression is absent on the base branch.
+      run: test -f tools/oracle/cases/http/hosted-platform-remainder/groq-transcription.yaml
+oracle_cases:
+  - tools/oracle/cases/http/hosted-platform-remainder/perplexity-chat-citations.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/nvidia-chat-token-limit.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/perplexity-embedding-int8.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/nvidia-embedding-options.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/together-completion.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/fireworks-completion.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/together-rerank.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/fireworks-rerank.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/nvidia-rerank.yaml
+  - tools/oracle/cases/http/hosted-platform-remainder/groq-transcription.yaml
+deviations: []
+out_of_scope:
+  - All functions in the referenced provider files remain B5831, B5832, B5833, B5834, B5837, B6070 and B6120 implementations; this task adds their HTTP proofs only.
+  - B8310 owns _complete_fireworks_ai, _complete_together_ai, _complete_groq, _complete_cloudflare and the Fireworks and Perplexity embedding arms; B044 owns the shared NVIDIA and Together embedding arm, and B024 the OpenAI-compatible chat arm.
+  - B1079 owns rerank credential and base selection, B2454 its shared HTTP transport, B2238 text completion transport and B2453 native transcription transport.
+  - B014, B006, B202, B083 and B085 retain the handlers; B8636 installs the router-backed rerank port, and B8610 owns the application composition root.
+  - Provider billing formulas, model catalogs, helper cases, native unit tests and NVIDIA passthrough HTTP cases stay with their existing owners; B8606 already proves the NVIDIA passthrough mount.
+pitfalls:
+  - Perplexity's embedding URL appends /v1/embeddings without trimming, so a mock base already ending in /v1 tests a different URL.
+  - A NVIDIA retrieval model uses llama-3_2 in its URL but llama-3.2 in its body; normalizing both hides a real dispatch regression.
+  - Groq srt is a handled UnsupportedParamsError with status 400, not a malformed-upload test.
+  - Fireworks rerank accepts a nonempty data array, whereas Together expects results; sharing one generic mock body can bypass the transform being proved.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

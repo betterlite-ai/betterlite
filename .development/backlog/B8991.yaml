@@ -1,0 +1,13 @@
+id: B8991
+milestone: M6 guardrails
+title: Media and rerank guardrail HTTP parity
+status: todo
+depends_on: [B083, B085, B3343, B3344, B6360, B3680, B3666, B3771, B8804, B8636]
+file: tasks/B8991-media-guardrail-http.yaml
+covers: []
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

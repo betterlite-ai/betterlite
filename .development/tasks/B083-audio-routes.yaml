@@ -16,7 +16,7 @@ description: >-
 
   Speech pre-call type is aspeech; transcription is transcription, with route_type=atranscription. Neither
   handler invokes post_call_success_hook. Both run response-header hooks after custom headers and permit callback
-  overwrites. Speech MIME comes from B1003 using upstream content-type when the response is binary, otherwise
+  overwrites. Custom headers include B8994's logging_caching_headers, called from that utility and not copied. Speech MIME comes from B1003 using upstream content-type when the response is binary, otherwise
   requested string response_format or audio/mpeg; an explicit callback content-type still wins in StreamingResponse.
   Chunk iteration passes AUDIO_SPEECH_CHUNK_SIZE, integer default 8192. The source may already have buffered the
   provider response: test downstream delivery/cancellation, not an invented live upstream streaming contract.

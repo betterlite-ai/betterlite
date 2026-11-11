@@ -1,0 +1,162 @@
+id: B9093
+title: Complete static dashboard serving with typed asset settings and HTTP parity
+description: >-
+  Finish the dedicated UI mount that B8680 installs, after that task has merged. B8591 remains
+  the sole implementation of directory selection, validation, copying, restructuring and
+  SERVER_ROOT_PATH text replacement. This task gives its inputs typed config and closes the
+  browser-visible gaps between Starlette StaticFiles and tower-http ServeDir; it does not
+  install a second /ui router or take ownership of the rest of app/edge.rs.
+
+  Add config.sections.dashboard_assets in crates/betterlite-config/src/sections/dashboard_assets.rs.
+  Settings holds non_root (LITELLM_NON_ROOT, default false), ui_path (LITELLM_UI_PATH, default
+  absent) and assets_path (LITELLM_ASSETS_PATH, default absent). Preserve a present empty path
+  rather than treating it as unset. These are environment settings with no new general_settings
+  spellings. Use EnvironmentLookup and the existing environment-bool parser; test the production
+  loader, including environment_variables where supported by the shared loader. Resolve paths
+  in server app::edge::ui::assets against an injected executable path: packaged UI is its sibling ui,
+  the packaged logo directory is the executable's own directory (it ships no logo files, see B9092),
+  runtime UI defaults to the packaged UI or
+  /var/lib/litellm/ui when non_root, and runtime logos default to the packaged directory or
+  /var/lib/litellm/assets when non_root. An explicit env path wins. No new BETTERLITE_* runtime
+  variable is introduced. B8387/B8671 consume these same asset settings for their existing image
+  handlers; the architect's handoff makes that dependency explicit before dispatch.
+
+  In app/edge/ui.rs, pass the typed values to B8591 instead of reading the process environment.
+  A populated custom UI directory wins; an empty directory is populated from packaged files;
+  copy failure warns and falls back to packaged assets. .litellm_ui_ready or an index-bearing
+  non-underscore subdirectory suppresses restructuring. A flat route.html is otherwise moved
+  to route/index.html, excluding index.html and the _next/litellm-asset-prefix trees. Reuse the
+  existing warning behavior for unreadable or unwritable files. For scalar SERVER_ROOT_PATH
+  other than empty or /, B8591 rewrites /litellm-asset-prefix to the scalar and rewrites
+  /litellm/.well-known/litellm-ui-config to <root>/.well-known/litellm-ui-config only when the
+  selected directory is writable. Do not silently make a runtime copy for a read-only selected
+  directory; LiteLLM warns and leaves those files unchanged. A fresh bundle is needed to change
+  between two scalar prefixes because the original marker text is gone after rewriting.
+
+  The only static mounts are /ui, /_next and /litellm-asset-prefix/_next, including slash and
+  descendant forms. /ui serves directory indexes, including /ui/login/, /ui/connect/,
+  /ui/onboarding/, /ui/assets/* and /ui/_next/*; the two root asset aliases serve only _next
+  files, with directory indexes disabled. Match 307 slash redirects for /ui and exported route
+  directories, preserving query strings and externally visible root prefix in Location.
+  Set Host: dashboard.test in oracle requests so absolute redirect URLs have the same host
+  on both processes. Scalar and per-request roots are stripped exactly once by B4200, never
+  by new duplicate prefixed mounts. SERVER_ROOT_PATH defaults empty; SERVER_ROOT_PATHS defaults
+  empty and affects request routing only. Discovery and build-time asset rewriting continue
+  to use the scalar, so this task does not promise one bundle dynamically branded for several
+  root prefixes. UI_BASE_PATH is not a route prefix or a directory setting.
+
+  Implement app::edge::ui::assets with UiAssetError and reuse ServeDir for file streaming, HEAD, ranges
+  and conditional requests. Adapt its responses where necessary to match the pinned proxy:
+  HTML/CSS/JS/text/image content types and charset, 307 Location, empty HEAD body, static
+  unsupported-method 405 and its detail/headers, and missing files. With html=True a present
+  404.html is served with status 404; otherwise the error is JSON detail Not Found. Missing
+  _next files and missing RSC .txt files must not fall back to index.html with 200. Root /,
+  /login and /v2/login remain their existing API/login routes, not SPA aliases. These static
+  mounts need no Authorization header, even with a master key and DISABLE_ADMIN_UI=true:
+  that flag changes discovery/login behavior, not the mount block at the pin.
+
+  decode_ui_asset_path accepts bounded URI-path bytes, uses the existing percent decoder and
+  B4260 confinement checks, and rejects resolved paths outside the selected directory,
+  including symlinks. Do not implement HTTP framing or MIME detection from scratch. Add the
+  ui_asset_path fuzz target and replays_the_ui_asset_path_corpus, with encoded separators,
+  dot segments, invalid UTF-8, query-independent file lookup and oversized inputs. Native
+  fixtures, in new dashboard_static_* tests, also prove an absent bundle warns and leaves the existing app 404, selected
+  directories are not mutated when read-only, and duplicate route registration never occurs.
+
+  HTTP oracle cases use real mounted handlers and identical small static trees, never a helper
+  that calls FastAPI handlers. Add gateway/dashboard_fixture.rs and one call in gateway::spec
+  before spawning either process. Only LITELLM_UI_PATH values equal to the checked-in paths
+  tools/oracle/fixtures/dashboard-static/ready or tools/oracle/fixtures/dashboard-static/flat
+  activate this fixture: copy that fixed tree separately beneath each gateway's log directory
+  and replace the env value with its absolute path. All other values pass untouched. This
+  avoids the different native and Python working directories and lets the actual LiteLLM
+  startup restructure/rewrite files without sharing mutations. The hook must not replace any
+  handler or set enterprise flags. A fixture test proves independent copies and cleanup after
+  process exit. Case bodies match exactly, including rewritten marker text; compare status,
+  content-type and location, and assert presence rather than equality of mtime-derived ETags.
+  Seed the existing HTTP-case corpus with these requests and replay it along with the new
+  URI-path corpus; no second HTTP request parser is needed.
+  About 80 config, 230 serving/adapter, 100 fixture and 120 corpus/case lines plus 200 tests
+  fits roughly 730 authored lines; B8591's 180-or-so preparation lines are reused, not ported twice.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/dashboard_assets.rs
+    - crates/betterlite-config/src/sections/dashboard_assets/**
+    - crates/betterlite-server/src/app/edge/ui.rs
+    - crates/betterlite-server/src/app/edge/ui/**
+    - crates/betterlite-server/fuzz/fuzz_targets/ui_asset_path.rs
+    - crates/betterlite-server/fuzz/corpus/ui_asset_path/**
+    - tools/oracle/src/gateway.rs
+    - tools/oracle/src/gateway/dashboard_fixture.rs
+    - tools/oracle/src/gateway/dashboard_fixture/**
+    - tools/oracle/fixtures/dashboard-static/**
+    - tools/oracle/cases/ui/static/**
+    - tools/oracle/fuzz/corpus/http_case/dashboard-static-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2129-L2244
+    why: Packaged/runtime directory defaults, ready-marker detection and LITELLM_NON_ROOT/LITELLM_UI_PATH reads; preparation functions remain B8591's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2246-L2423
+    why: Reused selection/rewrite/restructure behavior and the three static mounts at L2358-L2371 owned by the existing B8680 mount and this follow-up.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17596-L17668
+    why: Dependency-owned image handler establishes the shared LITELLM_ASSETS_PATH defaults and packaged-logo fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8342-L8370
+    why: Dependency-owned scalar root defaults and the distinction between a root prefix and UI_BASE_PATH.
+  - url: https://docs.rs/tower-http/0.6.11/tower_http/services/struct.ServeDir.html
+    why: Reuse the already locked static service and add only the Starlette compatibility and confinement boundaries it lacks.
+dod:
+  - text: The production loader supplies each asset environment variable with the pinned defaults and explicit values, and the existing mount consumes it.
+    proof: [asset-settings, static-tests, oracle]
+  - text: All three public mount families match status, content type, slash redirects, directory indexes, HEAD, static errors and RSC handling through a booted proxy.
+    proof: [static-tests, static-cases, oracle]
+  - text: Custom directories, scalar roots, read-only warnings and flat-export restructuring reuse the pinned selection order without duplicate mounts.
+    proof: [static-tests, fixture-tests, oracle]
+  - text: Escaping paths cannot read outside the selected tree and the real path decoder has a replayed adversarial corpus.
+    proof: [static-tests, asset-path-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: asset-settings
+      why: Asset settings are described but never loaded from their real environment names.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::dashboard_assets::/)'
+    - id: static-tests
+      why: The static adapter loses its root prefix, serves the wrong fallback or escapes its directory.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::ui::.*dashboard_static_/) - test(replays_the_ui_asset_path_corpus)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::ui::/) - test(replays_the_ui_asset_path_corpus)'
+    - id: fixture-tests
+      why: Native and Python static fixtures share mutations or resolve relative to different working directories.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^gateway::dashboard_fixture::/)'
+    - id: static-cases
+      why: Existing proxy tests could pass without any new dashboard HTTP comparison.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/static)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/dashboard-static-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+    - id: asset-path-corpus
+      why: The new URI-path decoder is not fuzzed and replayed with encoded and malformed paths.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/ui_asset_path.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/ui_asset_path)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_ui_asset_path_corpus)'
+oracle_cases:
+  - tools/oracle/cases/ui/static/ui-slash-location-and-query.yaml
+  - tools/oracle/cases/ui/static/login-index-and-html-head.yaml
+  - tools/oracle/cases/ui/static/three-next-asset-paths-and-mime.yaml
+  - tools/oracle/cases/ui/static/public-assets-css-and-rsc-text.yaml
+  - tools/oracle/cases/ui/static/missing-route-404-document.yaml
+  - tools/oracle/cases/ui/static/missing-next-and-flight-are-not-spa.yaml
+  - tools/oracle/cases/ui/static/static-post-405.yaml
+  - tools/oracle/cases/ui/static/scalar-root-rewrites-assets-and-discovery.yaml
+  - tools/oracle/cases/ui/static/flat-export-is-restructured.yaml
+  - tools/oracle/cases/ui/static/admin-disabled-keeps-static-mounts.yaml
+  - tools/oracle/cases/ui/static/non-root-custom-directory.yaml
+deviations:
+  - what: The packaged UI is beside the betterlite executable instead of inside litellm/proxy, and that directory is where a fallback logo is looked up; configured LITELLM_UI_PATH and LITELLM_ASSETS_PATH and the non-root defaults keep their names and meanings.
+    why: This is the native sidecar contract used by B9091, with no Python installation directory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2129-L2133
+out_of_scope:
+  - B8591 owns _dir_has_content, _validate_ui_directory, _is_ui_pre_restructured, _try_populate_ui_directory, root-path rewriting and _restructure_ui_html_files; this task reuses them.
+  - All other proxy_server.py functions remain with B124 and its parts, including B8680's error/CORS/metrics layers, B899 login and B8387 onboarding/image/favicon handlers.
+  - B4200 owns root-path middleware; B3211/B8670 own both discovery routes, whose JSON remains scalar even with SERVER_ROOT_PATHS.
+  - B9091/B9092 own export bytes and branding; B144 checks the complete generated application rather than this task's small static fixture.
+pitfalls:
+  - DISABLE_ADMIN_UI does not surround the static mount block, so hiding /ui with a server 404 changes the pinned behavior.
+  - nest_service can lose the public path prefix when a filesystem service constructs Location; compare the complete redirected URL.
+  - Moving a flat 404.html to 404/index.html changes which missing-file response Starlette can use, so test ready and flat trees separately.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -163,7 +163,7 @@ out_of_scope:
   - HiddenLayer SaaS detection and JWT token acquisition (is_saas, _get_jwt, JWT refresh lambda storage) provided by B3775.
   - ">-
     CustomGuardrail base class lifecycle (CustomGuardrail.__init__, log_guardrail_information decorator, supported_event_hooks):
-    Framework base class for guardrail integration; no assigned task owner yet (B104 outline has no task file). Required for initialization and lifecycle; infrastructure dependency."
+    Framework base class for guardrail integration; owned by B5471 (construction and updates) and B3664 (invocation logging). Required for initialization and lifecycle; infrastructure dependency."
   - ">-
     HTTP client management (AsyncHTTPHandler, get_async_httpx_client): Infrastructure layer that provides pooled httpx clients with timeout handling;
     no assigned task owner yet. Injected as dependency rather than constructed here."
