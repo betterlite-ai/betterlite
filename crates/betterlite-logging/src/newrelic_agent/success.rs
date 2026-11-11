@@ -52,7 +52,7 @@ pub(super) fn process_event(
         response,
         standard_logging_object: Some(payload),
     };
-    // B8740's LoggerEvent carries no inbound headers and no plan task adds them, so traceparent is a deviation
+    // a LoggerEvent has no inbound headers; B1104 derives the traceparent trace id into the payload trace id read here
     let redact_message_logging = match &*event.dynamic_params {
         Json::Object(fields) => should_redact_message_logging(None, Some(fields), false),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => false,

@@ -7,14 +7,16 @@ deviations:
       resolution and uses StandardLoggingPayload.trace_id, or a generated id when that
       is empty. LiteLLM reads litellm_params.metadata.headers.traceparent first.
     why: >-
-      B8740 owns callback_logger/event.rs, whose LoggerEvent carries only the standard
-      payload, dynamic params and stream; B250 and B251 build the event from it without
-      headers, and B1137 will put the logging-safe headers in the request metadata
-      (litellm_pre_call_utils.py:2151) but no task in the plan moves them onto the
-      event. A B8740 follow-up task that adds the headers field must enter the plan
-      before this deviation has an owner; this logger then passes the supplied headers
-      through unchanged, which B3941's trace-context resolution and the direct
-      process_success test already cover.
+      B1104 (Request headers and tracing, todo) owns
+      add_litellm_metadata_from_request_headers, which extracts the W3C traceparent
+      into litellm_trace_id (litellm_pre_call_utils.py L1588-L1598); B253's
+      logging_payload_trace_id already sources the standard payload trace id from
+      litellm_trace_id, so once B1104 lands the trace id this logger reports for a
+      traceparent-carrying request is the client's. When another trace source also sets
+      litellm_trace_id, LiteLLM's header-first precedence still differs: the raw header
+      would have to ride on LoggerEvent (B8740), which it does not today. B3941's
+      resolution already prefers a supplied case-insensitive traceparent, and the direct
+      process_success test covers that path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L280-L292
   - what: >-
       The newrelic.agent module is an injected boundary rather than an import. With no
