@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use tokio::task::yield_now;
 
 use crate::redis_cache::RedisCache;
 use crate::redis_cache::connect::{RedisCacheOptions, connect};
@@ -49,6 +52,53 @@ impl BreakerGate for AllowGate {
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
+pub(crate) struct CountingGate {
+    in_flight: AtomicUsize,
+    peak: AtomicUsize,
+}
+
+impl CountingGate {
+    pub(crate) fn new() -> Self {
+        Self {
+            in_flight: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+        }
+    }
+
+    pub(crate) fn peak(&self) -> usize {
+        self.peak.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn reset_peak(&self) {
+        self.peak.store(0, Ordering::SeqCst);
+    }
+
+    fn finished(&self) {
+        self.in_flight.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl BreakerGate for CountingGate {
+    fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        let in_flight = self
+            .in_flight
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        self.peak.fetch_max(in_flight, Ordering::SeqCst);
+        Ok(BreakerAdmission::from(1))
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {
+        self.finished();
+    }
+
+    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {
+        self.finished();
+    }
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
+}
+
 fn blank_overrides() -> RedisOverrides {
     RedisOverrides {
         host: None,
@@ -93,6 +143,18 @@ pub(crate) async fn cache_with_timeout(
     namespace: Option<&str>,
     timeout_seconds: f64,
 ) -> Arc<RedisCache> {
+    cache_with_gate(server, namespace, timeout_seconds, Arc::new(AllowGate)).await
+}
+
+pub(crate) async fn cache_with_gate<G>(
+    server: &FakeServer,
+    namespace: Option<&str>,
+    timeout_seconds: f64,
+    gate: Arc<G>,
+) -> Arc<RedisCache>
+where
+    G: BreakerGate + 'static,
+{
     let mut overrides = blank_overrides();
     overrides.host = Some(server.host());
     overrides.port = Some(IntOrText::Value(i64::from(server.port())));
@@ -108,7 +170,7 @@ pub(crate) async fn cache_with_timeout(
         factory: Arc::new(LiveClientFactory::new(None)),
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(SilentHooks),
-        gate: Arc::new(AllowGate),
+        gate,
     };
     let env = BTreeMap::<String, String>::new();
     Arc::new(connect(options, &env).await.expect("a connected cache"))
@@ -121,4 +183,12 @@ pub(crate) fn command_names(server: &FakeServer) -> Vec<String> {
         .map(|command| command.name)
         .filter(|name| BATCH_COMMANDS.contains(&name.as_str()))
         .collect()
+}
+
+pub(crate) async fn wait_for_commands(server: &FakeServer, expected: usize) {
+    let mut passes = 0_u32;
+    while command_names(server).len() < expected && passes < 256_u32 {
+        yield_now().await;
+        passes = passes.saturating_add(1);
+    }
 }

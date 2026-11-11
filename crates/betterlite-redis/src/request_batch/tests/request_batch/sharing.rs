@@ -39,6 +39,7 @@ async fn request_batch_awaiting_one_operation_flushes_the_shared_batch() {
     server.script("MGET", Reply::Array(vec![Reply::Bulk("1".to_owned())]));
     server.script("MGET", Reply::Array(vec![Reply::Bulk("2".to_owned())]));
     let other_server = FakeServer::start().await;
+    other_server.script("MGET", Reply::Array(vec![Reply::Nil]));
     let cache_a = cache(&server, Some("ns")).await;
     let cache_b = cache(&server, Some("ns")).await;
     let cache_c = cache(&other_server, Some("ns")).await;

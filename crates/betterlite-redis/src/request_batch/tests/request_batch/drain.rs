@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tokio::time::sleep;
 
-use super::support::{cache, cache_with_timeout, command_names};
+use super::support::{CountingGate, cache, cache_with_gate, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use crate::request_batch::lock;
@@ -61,27 +61,28 @@ async fn request_batch_flushing_one_request_keeps_the_others_registered() {
     );
 }
 
-// real time on purpose: the assertion is that two socket timeouts overlap, which a paused clock cannot separate
 #[tokio::test]
 async fn request_batch_drain_flushes_open_requests_concurrently() {
     let first_server = FakeServer::start().await;
+    first_server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
     let second_server = FakeServer::start().await;
-    let first_cache = cache_with_timeout(&first_server, Some("ns"), 0.2).await;
-    let second_cache = cache_with_timeout(&second_server, Some("ns"), 0.2).await;
+    second_server.script("INCRBYFLOAT", Reply::Bulk("2.5".to_owned()));
+    let gate = Arc::new(CountingGate::new());
+    let first_cache = cache_with_gate(&first_server, Some("ns"), 0.2, Arc::clone(&gate)).await;
+    let second_cache = cache_with_gate(&second_server, Some("ns"), 0.2, Arc::clone(&gate)).await;
     let (first, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
     let (second, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
     first.post_call(&first_cache).increment("first", 1.5, None);
     second
         .post_call(&second_cache)
         .increment("second", 2.5, None);
-    first_server.mute();
-    second_server.mute();
+    gate.reset_peak();
 
-    let started = Instant::now();
     drain_post_call_redis_batches().await;
-    assert!(
-        started.elapsed() < Duration::from_millis(350),
-        "both backends time out together, not one after the other"
+    assert_eq!(
+        gate.peak(),
+        2,
+        "both backends' pipelines run at the same time"
     );
 }
 

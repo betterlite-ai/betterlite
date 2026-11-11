@@ -7,7 +7,7 @@ use tokio::task::{JoinSet, yield_now};
 use tokio::time::{advance, timeout};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{cache, cache_with_timeout, command_names};
+use super::support::{cache, cache_with_timeout, command_names, wait_for_commands};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use crate::request_batch::lock;
@@ -77,14 +77,15 @@ async fn request_batch_post_call_during_a_flush_arms_a_new_deadline() {
 
         let later = active_post_call_redis_batch(&cached).expect("the same post-call batch");
         later.increment("second", 2.5, None);
-        advance(Duration::from_millis(250)).await;
+        yield_now().await;
+        advance(Duration::from_millis(300)).await;
         tasks
             .join_next()
             .await
             .expect("the in-flight flush")
             .expect("the flush panicked");
         advance(POST_CALL_FLUSH_DEADLINE).await;
-        yield_now().await;
+        wait_for_commands(&server, 2).await;
         assert_eq!(
             command_names(&server),
             ["INCRBYFLOAT", "INCRBYFLOAT"],
@@ -128,6 +129,7 @@ async fn request_batch_post_call_deadline_flushes_the_post_call_writes() {
         yield_now().await;
         assert_eq!(writes.pending(), 0);
         assert_eq!(writes.flushes(), 1);
+        wait_for_commands(&server, 1).await;
         assert_eq!(command_names(&server), ["INCRBYFLOAT"]);
     })
     .await;
@@ -143,6 +145,7 @@ async fn request_batch_deadline_skips_a_post_call_batch_with_no_writes() {
         let flushed = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&flushed);
         writes.add_flush_hook(Arc::new(move || flag.store(true, Ordering::Relaxed)));
+        yield_now().await;
 
         advance(POST_CALL_FLUSH_DEADLINE).await;
         yield_now().await;
@@ -169,6 +172,7 @@ async fn request_batch_a_stale_deadline_does_not_flush_the_current_one() {
         let replacement = Arc::new(CancellationToken::new());
         let replaced = lock(&request.deadline).replace(replacement);
         assert!(replaced.is_some(), "the first deadline was armed");
+        yield_now().await;
 
         advance(POST_CALL_FLUSH_DEADLINE).await;
         yield_now().await;
@@ -204,6 +208,7 @@ async fn request_batch_early_flush_cancels_the_deadline_timer() {
         let later = active_post_call_redis_batch(&cached).expect("the same post-call batch");
         assert!(Arc::ptr_eq(&writes, &later));
         later.increment("second", 2.5, None);
+        yield_now().await;
         advance(Duration::from_millis(700)).await;
         yield_now().await;
         assert_eq!(
@@ -216,6 +221,7 @@ async fn request_batch_early_flush_cancels_the_deadline_timer() {
         advance(Duration::from_millis(400)).await;
         yield_now().await;
         assert_eq!(later.pending(), 0, "the re-armed timer flushes it");
+        wait_for_commands(&server, 2).await;
         assert_eq!(command_names(&server), ["INCRBYFLOAT", "INCRBYFLOAT"]);
     })
     .await;
@@ -245,6 +251,7 @@ async fn request_batch_flush_all_cancels_an_idle_deadline() {
 
         let later = active_post_call_redis_batch(&cached).expect("the same post-call batch");
         later.increment("second", 2.5, None);
+        yield_now().await;
         advance(Duration::from_millis(700)).await;
         yield_now().await;
         assert_eq!(
@@ -285,6 +292,7 @@ async fn request_batch_flush_all_keeps_a_deadline_with_pending_writes() {
         advance(deadline).await;
         yield_now().await;
         assert_eq!(writes.pending(), 0, "the armed deadline flushes them");
+        wait_for_commands(&server, 1).await;
         assert_eq!(command_names(&server), ["INCRBYFLOAT"]);
     })
     .await;
@@ -310,5 +318,6 @@ async fn request_batch_deadline_flush_survives_request_cancellation() {
 
     advance(deadline).await;
     yield_now().await;
+    wait_for_commands(&server, 1).await;
     assert_eq!(command_names(&server), ["INCRBYFLOAT"]);
 }
