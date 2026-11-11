@@ -246,7 +246,10 @@ fn trusted_callback_vars(
 }
 
 fn privacy_request(request: &RequestMap) -> Result<PrivacyRequest, CallSetupError> {
-    let encoded = serde_json::to_vec(request)?;
+    // The SDK reads the trusted variables itself, so the privacy check must not see them as smuggled metadata
+    let mut direct = request.clone();
+    direct.shift_remove("litellm_trusted_callback_vars");
+    let encoded = serde_json::to_vec(&direct)?;
     let privacy = serde_json::from_slice(&encoded)?;
     Ok(privacy)
 }

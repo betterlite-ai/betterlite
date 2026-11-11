@@ -43,6 +43,17 @@ fn ocr_summary_keeps_a_plain_location() {
 }
 
 #[test]
+fn ocr_summary_keeps_a_plain_location_with_a_comma() {
+    assert_eq!(
+        ocr_document_summary(
+            Some(&value(r#"{"document_url":"https://example.com/a,b.png"}"#)),
+            None,
+        ),
+        "https://example.com/a,b.png"
+    );
+}
+
+#[test]
 fn ocr_summary_prefers_the_document_url_over_a_null_image_url() {
     assert_eq!(
         ocr_document_summary(

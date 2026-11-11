@@ -9,6 +9,7 @@ use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
+use super::support::Marker;
 use super::support::as_hook;
 use super::support::request;
 use crate::call_setup::RequestMap;
@@ -42,6 +43,7 @@ struct Hook {
     success_calls: Mutex<usize>,
     saw_targets: Mutex<Vec<bool>>,
     depths: Mutex<Vec<Option<i64>>>,
+    saw_model: Mutex<Vec<bool>>,
 }
 
 impl Hook {
@@ -56,6 +58,7 @@ impl Hook {
             success_calls: Mutex::new(0),
             saw_targets: Mutex::new(Vec::new()),
             depths: Mutex::new(Vec::new()),
+            saw_model: Mutex::new(Vec::new()),
         }
     }
 
@@ -123,6 +126,10 @@ impl DeploymentHook for Hook {
             .lock()
             .expect("the depth log is free")
             .push(fallback_depth);
+        self.saw_model
+            .lock()
+            .expect("the model log is free")
+            .push(request_data.contains_key("model"));
         self.fail_if(Fault::FailureHook, "failure hook failed")
     }
 }
@@ -270,7 +277,7 @@ async fn deployment_hook_failure_hides_the_attempted_targets() {
 
     failure_deployment_hook(
         &hooks,
-        &request(r#"{"attempted_targets":["a"],"fallback_depth":2}"#),
+        &request(r#"{"model":"gpt-4o","attempted_targets":["a"],"fallback_depth":2}"#),
         &failure(),
         "completion",
     )
@@ -289,6 +296,13 @@ async fn deployment_hook_failure_hides_the_attempted_targets() {
             .expect("the depth log is free")
             .as_slice(),
         [Some(2)]
+    );
+    assert_eq!(
+        hook.saw_model
+            .lock()
+            .expect("the model log is free")
+            .as_slice(),
+        [true]
     );
 }
 
@@ -398,4 +412,39 @@ async fn deployment_hook_converted_stream_skips_an_unknown_call_type() {
     run_success_hook_on_stream(&hooks, &mut outcome, &request("{}"), "some_new_call")
         .await
         .expect("an unknown call type skips the hook");
+}
+
+#[tokio::test]
+async fn deployment_hook_pre_call_default_leaves_the_request() {
+    let marker = Arc::new(Marker {
+        label: String::from("plain"),
+        guardrail: None,
+    });
+    let hooks = vec![as_hook(Arc::clone(&marker))];
+
+    let modified =
+        pre_call_deployment_hook(&hooks, &request(r#"{"model":"gpt-4o"}"#), "completion")
+            .await
+            .expect("the default hook accepts the call");
+
+    assert_eq!(
+        modified.get("model"),
+        Some(&Json::Text(String::from("gpt-4o")))
+    );
+}
+
+#[tokio::test]
+async fn deployment_hook_success_default_leaves_the_response() {
+    let marker = Arc::new(Marker {
+        label: String::from("plain"),
+        guardrail: None,
+    });
+    let hooks = vec![as_hook(Arc::clone(&marker))];
+    let response = Json::Text(String::from("response"));
+
+    let outcome = success_deployment_hook(&hooks, &request("{}"), &response, "completion")
+        .await
+        .expect("the default hook accepts the response");
+
+    assert_eq!(outcome, response);
 }

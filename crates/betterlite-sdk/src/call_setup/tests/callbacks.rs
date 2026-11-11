@@ -1,13 +1,23 @@
+use std::sync::Arc;
+
+use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::dynamic_callbacks::DynamicCallback;
 use betterlite_logging::logging_state::types::DynamicCallbacks;
 use rstest::rstest;
 
+use super::support::Marker;
 use super::support::Outcome;
+use super::support::Resolver;
 use super::support::chat_request;
 use super::support::hook;
 use super::support::labels;
 use super::support::setup;
 use super::support::setup_with;
+use crate::call_setup::callbacks::CallbackEvent;
+use crate::call_setup::callbacks::CallbackList;
+use crate::call_setup::callbacks::CallbackLists;
+use crate::call_setup::callbacks::CustomLoggers;
+use crate::call_setup::callbacks::add_known_logger_callback;
 
 fn name(label: &str) -> DynamicCallback {
     DynamicCallback::Name(label.to_owned())
@@ -265,4 +275,88 @@ fn callback_global_success_name_is_kept_when_no_resolver_matches() {
         .expect("the setup succeeds");
 
     assert_eq!(labels(&fixture.lists.success), ["name:custom"]);
+}
+
+#[test]
+fn callback_async_names_stay_in_the_failure_list() {
+    let mut fixture = setup();
+    fixture.lists.failure = vec![name("dynamodb"), name("openmeter")];
+    fixture
+        .call("completion", &[], chat_request("{}"))
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        labels(&fixture.lists.failure),
+        ["name:dynamodb", "name:openmeter"]
+    );
+    assert!(fixture.lists.async_success.is_empty());
+}
+
+#[test]
+fn callback_success_dedups_loggers_of_one_name() {
+    let marker = |label: &str| {
+        let logger: Arc<dyn CallbackLogger> = Arc::new(Marker {
+            label: label.to_owned(),
+            guardrail: None,
+        });
+        logger
+    };
+    let mut lists = CallbackLists::default();
+    lists.success.push(DynamicCallback::Logger(marker("otel")));
+    lists.add(
+        CallbackList::Success,
+        &DynamicCallback::Logger(marker("otel")),
+    );
+
+    assert_eq!(labels(&lists.success), ["logger:otel"]);
+}
+
+#[test]
+fn callback_input_list_keeps_loggers_of_one_name() {
+    let marker = |label: &str| {
+        let logger: Arc<dyn CallbackLogger> = Arc::new(Marker {
+            label: label.to_owned(),
+            guardrail: None,
+        });
+        logger
+    };
+    let mut lists = CallbackLists::default();
+    lists.input.push(DynamicCallback::Logger(marker("otel")));
+    lists.add(
+        CallbackList::Input,
+        &DynamicCallback::Logger(marker("otel")),
+    );
+
+    assert_eq!(labels(&lists.input), ["logger:otel", "logger:otel"]);
+}
+
+#[test]
+fn callback_resolution_skips_a_name_outside_the_catalog() {
+    let resolver = Resolver::with(&[("langfuse", Outcome::Logger(String::from("langfuse")))]);
+    let known = |_name: &str| false;
+    let loggers = CustomLoggers {
+        known: &known,
+        resolver: &resolver,
+    };
+    let mut lists = CallbackLists::default();
+
+    add_known_logger_callback("langfuse", CallbackEvent::Success, &loggers, &mut lists);
+
+    assert!(lists.success.is_empty());
+    assert!(lists.async_success.is_empty());
+}
+
+#[test]
+fn callback_resolution_removes_one_name_entry() {
+    let mut fixture = setup_with(&[("langfuse", Outcome::Logger(String::from("langfuse")))]);
+    fixture.lists.success = vec![name("langfuse"), name("langfuse")];
+    fixture
+        .call("completion", &[], chat_request("{}"))
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        labels(&fixture.lists.success),
+        ["name:langfuse", "logger:langfuse"]
+    );
+    assert_eq!(labels(&fixture.lists.async_success), ["logger:langfuse"]);
 }

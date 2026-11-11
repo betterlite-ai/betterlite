@@ -544,3 +544,86 @@ fn function_setup_falls_back_on_the_call_type(#[case] call_type: &str, #[case] c
         );
     }
 }
+
+#[test]
+fn function_setup_leaves_a_rerank_query() {
+    let mut fixture = setup();
+    let result = fixture
+        .call(
+            "rerank",
+            &[],
+            chat_request(r#"{"query":"what is a reranker"}"#),
+        )
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        result.logging.messages,
+        Some(vec![value(
+            r#"{"role":"user","content":"what is a reranker"}"#
+        )])
+    );
+}
+
+#[test]
+fn function_setup_leaves_an_image_edit_prompt() {
+    let mut fixture = setup();
+    let result = fixture
+        .call("image_edit", &[], chat_request(r#"{"prompt":"add a hat"}"#))
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        result.logging.messages,
+        Some(vec![value(r#"{"role":"user","content":"add a hat"}"#)])
+    );
+}
+
+#[test]
+fn function_setup_leaves_a_moderation_input() {
+    let mut fixture = setup();
+    let result = fixture
+        .call(
+            "moderation",
+            &[],
+            chat_request(r#"{"input":"please review"}"#),
+        )
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        result.logging.messages,
+        Some(vec![value(r#"{"role":"user","content":"please review"}"#)])
+    );
+}
+
+#[test]
+fn function_setup_null_stream_options_stays_absent() {
+    let mut fixture = setup();
+    let result = fixture
+        .call(
+            "completion",
+            &[],
+            chat_request(r#"{"stream_options":null}"#),
+        )
+        .expect("the setup succeeds");
+
+    assert_eq!(result.logging.stream_options, None);
+}
+
+#[test]
+fn function_setup_collects_callback_params_from_the_request() {
+    let mut fixture = setup();
+    let result = fixture
+        .call(
+            "completion",
+            &[],
+            chat_request(r#"{"langsmith_project":"project"}"#),
+        )
+        .expect("the setup succeeds");
+
+    assert_eq!(
+        result
+            .logging
+            .callback_dynamic_params
+            .get("langsmith_project"),
+        Some(&Json::Text(String::from("project")))
+    );
+}

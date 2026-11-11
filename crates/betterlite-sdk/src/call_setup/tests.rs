@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod callbacks;
+mod correlation;
 mod credentials;
 mod function_setup;
 mod guardrails;
