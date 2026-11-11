@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_anthropic::credentials::AnthropicSettings;
 use http::HeaderMap;
 use rstest::rstest;
 
@@ -123,13 +124,17 @@ async fn url_construction_ignores_an_empty_call_api_base() {
 
 #[rstest]
 #[case::call_base(Some("https://gateway.example"), "https://gateway.example")]
-#[case::empty_call_base(Some(""), "https://api.anthropic.com")]
-#[case::absent_call_base(None, "https://api.anthropic.com")]
+#[case::empty_call_base(Some(""), "https://env-base.example")]
+#[case::absent_call_base(None, "https://env-base.example")]
 fn call_base_resolution_uses_only_a_non_empty_api_base(
     #[case] call_base: Option<&str>,
     #[case] expected: &str,
 ) {
-    let settings = anthropic_settings();
+    // a distinct settings base proves the fallback reads B567's resolved value, not a literal default
+    let settings = AnthropicSettings {
+        api_base: "https://env-base.example".to_owned(),
+        ..anthropic_settings()
+    };
     let params = SkillsCallParams {
         api_key: None,
         api_base: call_base.map(str::to_owned),
