@@ -1341,6 +1341,7 @@ dependencies = [
  "num-traits",
  "regex",
  "rstest",
+ "rust_decimal",
  "rustix",
  "secrecy",
  "serde",
@@ -2670,6 +2671,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
  "unicode-general-category",
 ]
 
