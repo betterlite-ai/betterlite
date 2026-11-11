@@ -523,6 +523,30 @@ fn deployment_info_rejects_a_nonobject_metadata() {
 }
 
 #[test]
+fn a_numeric_or_empty_metadata_is_rejected_only_when_truthy() {
+    let counted = params(&[("metadata", Json::Number(serde_json::Number::from(2_u8)))]);
+    assert!(matches!(
+        deployment_info(&query(Some(true), None, Some(&counted)), &Lookup::new(&[])),
+        Err(BillingContextError::MetadataShape { field: "metadata" })
+    ));
+    let zero = params(&[("metadata", Json::Number(serde_json::Number::from(0_u8)))]);
+    assert!(
+        deployment_info(&query(Some(true), None, Some(&zero)), &Lookup::new(&[]))
+            .expect("a zero metadata is skipped")
+            .is_none()
+    );
+    let empty_text = params(&[("metadata", Json::Text(String::new()))]);
+    assert!(
+        deployment_info(
+            &query(Some(true), None, Some(&empty_text)),
+            &Lookup::new(&[])
+        )
+        .expect("an empty metadata is skipped")
+        .is_none()
+    );
+}
+
+#[test]
 fn ocr_info_layers_logging_params_over_the_deployment_record() {
     let deployment = model_info(Json::Object(hidden(&[
         (

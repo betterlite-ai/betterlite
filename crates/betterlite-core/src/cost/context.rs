@@ -204,8 +204,7 @@ fn strip_unregistered_head(
     {
         return model.to_owned();
     }
-    let region_head =
-        region_name.is_some() && segments.len() > 2 && segments.get(1).copied() == region_name;
+    let region_head = region_name.is_some_and(|region| segments.get(1) == Some(&region));
     let head_len = if region_head { 2 } else { 1 };
     let Some((head, tail)) = segments.split_at_checked(head_len) else {
         return model.to_owned();
