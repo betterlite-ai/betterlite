@@ -5,6 +5,7 @@ from typing import cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/auth.py#L433
 import litellm
+from litellm.exceptions import AuthenticationError
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.claude_platform.common_utils import (
     BedrockClaudePlatformMixin,
@@ -13,6 +14,8 @@ from litellm.llms.bedrock.claude_platform.common_utils import (
     strip_claude_platform_route,
 )
 
+from .capture import captured_warnings
+from .patching import CredentialProvider, FrozenClock, set_environment
 from .types import (
     EMPTY_HEADER_MAP,
     EMPTY_HEADERS,
@@ -20,9 +23,7 @@ from .types import (
     EMPTY_STRINGS,
     OVERRIDE_KEY,
     BodyCall,
-    CredentialProvider,
     ErrorClassCall,
-    FrozenClock,
     Input,
     Json,
     Object,
@@ -33,11 +34,37 @@ from .types import (
     SigningCall,
     UrlCase,
     WorkspaceCase,
-    captured_warnings,
-    override_container,
-    resolution_outcome,
-    set_environment,
 )
+
+
+def override_container(spec: dict[str, Json]) -> Override:
+    kind, payload = next(iter(spec.items()))
+    if kind == "other":
+        return payload
+    match payload:
+        case [*items]:
+            listed: list[Json] = items
+        case _:
+            raise ValueError("override items must be a list")
+    if kind == "set":
+        return set(listed)
+    if kind == "frozenset":
+        return frozenset(listed)
+    if kind == "tuple":
+        return tuple(listed)
+    return listed
+
+
+def resolution_outcome(key: str, resolve: Callable[[], str]) -> Json:
+    try:
+        value = resolve()
+    except AuthenticationError:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L149
+        return {"error": "missing_region"}
+    except ValueError:
+        return {"error": "invalid_region"}
+    except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L106
+        return {"error": "other"}
+    return {key: value}
 
 
 def workspaces(cases: list[WorkspaceCase]) -> list[Json]:
@@ -183,23 +210,27 @@ def platform_signing(calls: list[SigningCall]) -> list[Json]:
     return outcomes
 
 
-def run(input_value: Input) -> Object:  # noqa: PLR0911  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L13
+def run(input_value: Input) -> Object:
     if "workspace_alias_precedence" in input_value:
-        return {"workspaces": workspaces(input_value["workspace_alias_precedence"]["cases"])}
-    if "explicit_region_required" in input_value:
-        return {"regions": regions(input_value["explicit_region_required"]["cases"])}
-    if "api_base_before_region" in input_value:
-        return {"urls": urls(input_value["api_base_before_region"]["cases"])}
-    if "platform_route_prefix" in input_value:
+        result: Object = {
+            "workspaces": workspaces(input_value["workspace_alias_precedence"]["cases"])
+        }
+    elif "explicit_region_required" in input_value:
+        result = {"regions": regions(input_value["explicit_region_required"]["cases"])}
+    elif "api_base_before_region" in input_value:
+        result = {"urls": urls(input_value["api_base_before_region"]["cases"])}
+    elif "platform_route_prefix" in input_value:
         models: list[Json] = [
             strip_claude_platform_route(model)
             for model in input_value["platform_route_prefix"]["models"]
         ]
-        return {"models": models}
-    if "unsupported_override" in input_value:
-        return {"calls": unsupported_override(input_value["unsupported_override"]["calls"])}
-    if "filtered_body_fields" in input_value:
-        return {"calls": filtered_body_fields(input_value["filtered_body_fields"]["calls"])}
-    if "platform_signing" in input_value:
-        return {"calls": platform_signing(input_value["platform_signing"]["calls"])}
-    raise ValueError("the input names exactly one claude_platform_inputs variant")
+        result = {"models": models}
+    elif "unsupported_override" in input_value:
+        result = {"calls": unsupported_override(input_value["unsupported_override"]["calls"])}
+    elif "filtered_body_fields" in input_value:
+        result = {"calls": filtered_body_fields(input_value["filtered_body_fields"]["calls"])}
+    elif "platform_signing" in input_value:
+        result = {"calls": platform_signing(input_value["platform_signing"]["calls"])}
+    else:
+        raise ValueError("the input names exactly one claude_platform_inputs variant")
+    return result

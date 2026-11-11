@@ -1,14 +1,6 @@
-import logging
-import os
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
-from datetime import UTC, datetime
 from typing import NotRequired, TypeAlias, TypedDict
 
-from litellm._logging import verbose_logger
-from litellm.exceptions import AuthenticationError
-from litellm.types.llms.bedrock import AwsAuthParams
-from typing_extensions import override
+import litellm.llms.bedrock.claude_platform.common_utils as platform
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
@@ -18,7 +10,7 @@ EMPTY_PARAMS: dict[str, Json] = {}
 EMPTY_STRINGS: dict[str, str] = {}
 EMPTY_HEADERS: list[tuple[str, str]] = []
 EMPTY_HEADER_MAP: dict[str, str | None] = {}
-OVERRIDE_KEY = "claude_platform_unsupported_params"
+OVERRIDE_KEY = platform.CLAUDE_PLATFORM_UNSUPPORTED_PARAMS_OVERRIDE_KEY
 DROP_MARKER = "dropping unsupported Messages API param(s) "
 IGNORE_MARKER = "ignoring claude_platform_unsupported_params of type "
 
@@ -91,89 +83,3 @@ class Input(TypedDict):
     unsupported_override: NotRequired[dict[str, list[OverrideCall]]]
     filtered_body_fields: NotRequired[dict[str, list[BodyCall]]]
     platform_signing: NotRequired[dict[str, list[SigningCall]]]
-
-
-class FrozenClock:
-    def __init__(self, epoch: int) -> None:
-        self.moment = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
-
-    def __call__(self) -> datetime:
-        return self.moment
-
-
-class CredentialProvider:
-    def __init__(self, keys: Keys) -> None:
-        self.access_key = keys["access_key_id"]
-        self.secret_key = keys["secret_access_key"]
-        self.token = keys.get("session_token")
-
-    def __call__(self, _auth: AwsAuthParams, _region: str | None) -> "CredentialProvider":
-        return self
-
-
-class Warnings(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.entries: list[Json] = []
-
-    @override
-    def emit(self, record: logging.LogRecord) -> None:
-        self.entries.append(warning_entry(record.getMessage()))
-
-
-def set_environment(environment: dict[str, str] | None) -> None:
-    os.environ.clear()
-    os.environ["LITELLM_RUST"] = "false"
-    if environment is not None:
-        os.environ.update(environment)
-
-
-@contextmanager
-def captured_warnings() -> Generator[list[Json], None, None]:
-    handler = Warnings()
-    verbose_logger.addHandler(handler)
-    try:
-        yield handler.entries
-    finally:
-        verbose_logger.removeHandler(handler)
-
-
-def warning_entry(message: str) -> Json:
-    if DROP_MARKER in message:
-        _, _, listed = message.partition(DROP_MARKER)
-        tuple_text, _, _ = listed.partition(" from the request body")
-        inner = tuple_text.strip()[1:-1].rstrip(",")
-        names: list[Json] = [] if not inner else [name.strip("'\"") for name in inner.split(", ")]
-        return {"action": "drop", "params": names}
-    _, _, type_text = message.partition(IGNORE_MARKER)
-    return {"action": "ignore", "type_name": type_text.split(";", 1)[0]}
-
-
-def override_container(spec: dict[str, Json]) -> Override:
-    kind, payload = next(iter(spec.items()))
-    if kind == "other":
-        return payload
-    match payload:
-        case [*items]:
-            listed: list[Json] = items
-        case _:
-            raise ValueError("override items must be a list")
-    if kind == "set":
-        return set(listed)
-    if kind == "frozenset":
-        return frozenset(listed)
-    if kind == "tuple":
-        return tuple(listed)
-    return listed
-
-
-def resolution_outcome(key: str, resolve: Callable[[], str]) -> Json:
-    try:
-        value = resolve()
-    except AuthenticationError:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L149
-        return {"error": "missing_region"}
-    except ValueError:
-        return {"error": "invalid_region"}
-    except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/claude_platform/common_utils.py#L106
-        return {"error": "other"}
-    return {key: value}
