@@ -25,7 +25,6 @@ use crate::count_call::reply::CountResponse;
 use crate::credentials::error::CredentialError;
 
 pub(crate) const MODEL: &str = "bedrock/converse/us.anthropic.claude-3-5-sonnet-20241022-v2:0";
-pub(crate) const RESOLVED: &str = "anthropic.claude-3-5-sonnet-20241022-v2:0";
 pub(crate) const REQUEST_MODEL: &str = "requested-model";
 
 #[derive(Debug, Clone)]
