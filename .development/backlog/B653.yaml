@@ -1,7 +1,7 @@
 id: B653
 milestone: M3 providers
 title: Bedrock AgentCore invocation preparation
-status: todo
+status: done
 depends_on: [B595, B171, B590, B682, B2202, B218, B198, B002]
 file: tasks/B653-bedrock-services-agentcore-request.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/bedrock_agentcore.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1298
