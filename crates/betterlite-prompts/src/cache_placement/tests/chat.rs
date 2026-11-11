@@ -452,3 +452,20 @@ fn malformed_points_are_a_typed_error() {
     let error = apply_chat_injections(prompt).unwrap_err();
     assert!(matches!(error, PlacementError::InjectionPoints { .. }));
 }
+
+#[test]
+fn a_tool_config_point_reserves_a_slot_from_message_injection() {
+    let input = r#"[
+        {"role": "user", "content": "a", "cache_control": {}},
+        {"role": "assistant", "content": "b", "cache_control": {}},
+        {"role": "user", "content": "c", "cache_control": {}},
+        {"role": "user", "content": "d"}
+    ]"#;
+    let params_wire = r#"{"custom_llm_provider": "azure", "cache_control_injection_points": [{"location": "message", "role": "user", "index": null, "control": null}, {"location": "tool_config", "control": null}]}"#;
+    let (processed, params) = run(input, "gpt-5.6", params_wire, &World::plain());
+    assert_eq!(processed, json(input));
+    let expected = json(
+        r#"{"custom_llm_provider": "azure", "cache_control_injection_points": [{"location": "tool_config", "control": null}]}"#,
+    );
+    assert_eq!(params, expected);
+}

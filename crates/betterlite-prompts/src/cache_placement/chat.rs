@@ -96,7 +96,6 @@ fn points_from(
 }
 
 fn fallback_dialect(source: &DialectSource<'_>) -> bool {
-    let options = source.params.get(PROMPT_CACHE_OPTIONS).cloned();
     let inputs = DialectInputs {
         model: source.model,
         custom_llm_provider: source
@@ -107,7 +106,7 @@ fn fallback_dialect(source: &DialectSource<'_>) -> bool {
         base_url: source.params.get("base_url").and_then(Json::as_str),
         global_api_base: source.global_api_base,
         environment: source.environment,
-        prompt_cache_options: options.as_ref(),
+        prompt_cache_options: source.params.get(PROMPT_CACHE_OPTIONS),
     };
     targets_openai_breakpoint(&inputs, source.facts)
 }

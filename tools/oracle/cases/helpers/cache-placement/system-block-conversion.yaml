@@ -83,5 +83,14 @@ call:
       - messages: [{role: user, content: hi}]
         system: rules
         points: [{location: message, role: system, index: null, control: {type: ephemeral, ttl: 1h}}]
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: user, content: d}
+        system: rules
+        points:
+          - {location: message, role: user, index: null, control: null}
+          - {location: message, role: system, index: null, control: null}
 env: {}
 compare: {ignore: []}

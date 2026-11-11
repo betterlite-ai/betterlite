@@ -275,3 +275,24 @@ fn an_assistant_point_is_skipped_in_openai_mode() {
     let points = r#"[{"location": "message", "role": null, "index": 0, "control": null}]"#;
     assert_eq!(run(input, None, points, true, 0), expected);
 }
+
+#[test]
+fn a_system_mark_takes_a_slot_before_a_message_point() {
+    let input = r#"[
+        {"role": "user", "content": "a", "cache_control": {}},
+        {"role": "assistant", "content": "b", "cache_control": {}},
+        {"role": "user", "content": "c", "cache_control": {}},
+        {"role": "user", "content": "d"}
+    ]"#;
+    let points = r#"[{"location": "message", "role": "user", "index": null, "control": null}, {"location": "message", "role": "system", "index": null, "control": null}]"#;
+    let expected_messages = list(&[
+        marked("user", "a"),
+        marked("assistant", "b"),
+        marked("user", "c"),
+        converted("user", "d"),
+    ]);
+    let expected = json(&format!(
+        r#"{{"messages": {expected_messages}, "system": [{{"type": "text", "text": "sys", "cache_control": {{"type": "ephemeral"}}}}], "remaining": []}}"#
+    ));
+    assert_eq!(run(input, Some(r#""sys""#), points, false, 0), expected);
+}
