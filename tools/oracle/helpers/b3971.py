@@ -249,7 +249,7 @@ def report(
             "host": logger.posthog_host,
             "capture_url": logger.capture_url,
             "batch_size": logger.batch_size,
-            "flush_interval_ms": int(logger.flush_interval * 1000),
+            "flush_interval_seconds": int(logger.flush_interval),
             "mock_mode": logger.is_mock_mode,
             "max_queue_size": logger.max_queue_size,
         },
