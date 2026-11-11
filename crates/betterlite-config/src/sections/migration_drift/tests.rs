@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use betterlite_db::database_tls::translation::strip_prisma_query_params;
 use betterlite_db::migration_drift::MigrationDriftCheck;
-use betterlite_db::migration_drift::index_repair::repair_connection_url;
 use betterlite_db::migration_ledger::environment::prisma_schema_param;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -38,9 +38,10 @@ fn shown(value: Option<&SecretString>) -> Option<&str> {
     value.map(SecretString::expose_secret)
 }
 
-fn repair_url(settings: &MigrationDriftCheck) -> Option<String> {
-    repair_connection_url(settings.database_url.as_ref(), settings.direct_url.as_ref())
-        .expect("the database URL parses")
+fn repair_url(settings: &MigrationDriftCheck) -> String {
+    let database = settings.database_url.as_ref().expect("DATABASE_URL is set");
+    let chosen = settings.direct_url.as_ref().unwrap_or(database);
+    strip_prisma_query_params(chosen.expose_secret()).expect("the database URL parses")
 }
 
 fn schema_of(settings: &MigrationDriftCheck) -> Option<String> {
@@ -57,36 +58,30 @@ fn loads_settings() {
     assert_eq!(shown(loaded.inner.direct_url.as_ref()), Some(direct));
 
     let settings = check(&loaded);
-    assert_eq!(
-        repair_url(&settings).as_deref(),
-        Some("postgresql://direct:6543/db")
-    );
+    assert_eq!(repair_url(&settings), "postgresql://direct:6543/db");
     assert_eq!(schema_of(&settings).as_deref(), Some("tenant_a"));
 }
 
 #[test]
 fn defaults_and_precedence() {
     let absent = load(&[]);
-    assert!(absent.inner.database_url.is_none());
-    assert!(absent.inner.direct_url.is_none());
-    assert_eq!(repair_url(&check(&absent)), None);
+    let absent_settings = check(&absent);
+    assert!(absent_settings.database_url.is_none());
+    assert!(absent_settings.direct_url.is_none());
 
     let database = "postgresql://writer/db?schema=tenant_a&sslmode=require&pool_timeout=30";
     let direct = "postgresql://direct:6543/db?pgbouncer=true";
     let both = load(&[("DATABASE_URL", database), ("DIRECT_URL", direct)]);
     let both_settings = check(&both);
-    assert_eq!(
-        repair_url(&both_settings).as_deref(),
-        Some("postgresql://direct:6543/db")
-    );
+    assert_eq!(repair_url(&both_settings), "postgresql://direct:6543/db");
     assert_eq!(schema_of(&both_settings).as_deref(), Some("tenant_a"));
 
     let writer = load(&[("DATABASE_URL", database)]);
     let writer_settings = check(&writer);
     assert!(writer_settings.direct_url.is_none());
     assert_eq!(
-        repair_url(&writer_settings).as_deref(),
-        Some("postgresql://writer/db?sslmode=require")
+        repair_url(&writer_settings),
+        "postgresql://writer/db?sslmode=require"
     );
 }
 
@@ -103,9 +98,10 @@ fn invalid_value_fallback() {
     );
     assert!(malformed.inner.direct_url.is_none());
     let malformed_settings = check(&malformed);
-    repair_connection_url(
-        malformed_settings.database_url.as_ref(),
-        malformed_settings.direct_url.as_ref(),
-    )
-    .unwrap_err();
+    let database = malformed_settings
+        .database_url
+        .as_ref()
+        .expect("DATABASE_URL is set");
+    let chosen = malformed_settings.direct_url.as_ref().unwrap_or(database);
+    strip_prisma_query_params(chosen.expose_secret()).unwrap_err();
 }

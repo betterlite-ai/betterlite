@@ -105,21 +105,27 @@ fn transient_suffix_selects_drop(#[case] name: &str, #[case] transient: bool) {
     );
 }
 
-#[test]
-fn repair_url_prefers_direct() {
-    let database = SecretString::from(
-        "postgresql://writer/db?schema=tenant_a&sslmode=require&connection_limit=3",
-    );
-    let direct = SecretString::from("postgresql://direct:6543/db?pgbouncer=true");
-    let chosen = repair_connection_url(Some(&database), Some(&direct))
-        .unwrap()
-        .unwrap();
-    assert_eq!(chosen, "postgresql://direct:6543/db");
-    let fallback = repair_connection_url(Some(&database), None)
-        .unwrap()
-        .unwrap();
-    assert_eq!(fallback, "postgresql://writer/db?sslmode=require");
-    assert_eq!(repair_connection_url(None, None).unwrap(), None);
-    let malformed = SecretString::from("postgresql://[::1/db");
-    repair_connection_url(Some(&malformed), None).unwrap_err();
+#[tokio::test]
+async fn repair_connects_over_direct_url() {
+    Box::pin(with_schema(|database| async move {
+        let client = database.pool.get().await.unwrap();
+        let raw = &**client;
+        duplicate_table(raw, "LiteLLM_Direct").await;
+        invalid_unique_index(raw, "LiteLLM_Direct", "LiteLLM_direct_idx").await;
+        deduplicate(raw, "LiteLLM_Direct").await;
+        let absent = "postgresql://postgres:postgres@127.0.0.1:1/absent";
+        let check = MigrationDriftCheck {
+            database_url: Some(SecretString::from(format!(
+                "{absent}&schema={}",
+                database.schema
+            ))),
+            direct_url: Some(database.direct_url.clone()),
+        };
+        assert!(repair_invalid_indexes(&check, "30s").await);
+        assert_eq!(
+            index_valid(raw, &database.schema, "LiteLLM_direct_idx").await,
+            Some(true)
+        );
+    }))
+    .await;
 }

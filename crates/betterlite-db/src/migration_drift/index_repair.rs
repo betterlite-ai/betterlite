@@ -3,7 +3,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use tokio_postgres::{Client as PostgresClient, Error as PostgresError, GenericClient};
 
-use crate::database_tls::translation::{TranslateError, strip_prisma_query_params};
+use crate::database_tls::translation::strip_prisma_query_params;
 use crate::migration_ledger::connection::connect;
 use crate::migration_ledger::environment::{DEFAULT_SCHEMA, prisma_schema_param};
 use crate::migration_ledger::lock::{HeldLockError, held_migration_lock};
@@ -90,7 +90,7 @@ pub fn index_repair(index: &InvalidIndex) -> (String, &'static str) {
     (format!("REINDEX INDEX CONCURRENTLY {target}"), "Rebuilt")
 }
 
-async fn repair_index(client: &PostgresClient, index: &InvalidIndex) -> Result<(), RepairError> {
+async fn repair_index(client: &PostgresClient, index: &InvalidIndex) {
     let (statement, action) = index_repair(index);
     let qualified = format!("{}.{}", index.schema, index.name);
     if let Err(error) = client.batch_execute(&statement).await {
@@ -100,10 +100,9 @@ async fn repair_index(client: &PostgresClient, index: &InvalidIndex) -> Result<(
             statement = %statement,
             "could not repair an invalid index; it will be retried on the next database setup run, and the index owner can run the statement by hand"
         );
-        return Ok(());
+        return;
     }
     tracing::info!(action, index = %qualified, "repaired an invalid index");
-    Ok(())
 }
 
 // Mirrors _repair_under_migration_lock: re-check under the migration coordinator lock so a concurrent job is never fought
@@ -124,7 +123,7 @@ pub async fn repair_under_migration_lock(
             .iter()
             .any(|found| found.schema == index.schema && found.name == index.name);
         if present {
-            repair_index(client, index).await?;
+            repair_index(client, index).await;
         }
         Ok(true)
     })
@@ -149,7 +148,8 @@ pub async fn repair_invalid_indexes(check: &MigrationDriftCheck, lock_timeout: &
         return false;
     };
     let schema = configured.unwrap_or_else(|| DEFAULT_SCHEMA.to_owned());
-    let Ok(Some(url)) = repair_connection_url(Some(database_url), check.direct_url.as_ref()) else {
+    let repair_url = check.direct_url.as_ref().unwrap_or(database_url);
+    let Ok(url) = strip_prisma_query_params(repair_url.expose_secret()) else {
         tracing::warn!(
             "the database URL could not be normalized for the invalid index repair; skipping it until the next database setup run"
         );
@@ -171,16 +171,6 @@ pub async fn repair_invalid_indexes(check: &MigrationDriftCheck, lock_timeout: &
             false
         }
     }
-}
-
-// DIRECT_URL reaches one server session for the session settings and the concurrent DDL; DATABASE_URL names the schema
-pub fn repair_connection_url(
-    database_url: Option<&SecretString>,
-    direct_url: Option<&SecretString>,
-) -> Result<Option<String>, TranslateError> {
-    direct_url.or(database_url).map_or(Ok(None), |url| {
-        strip_prisma_query_params(url.expose_secret()).map(Some)
-    })
 }
 
 async fn repair_over(

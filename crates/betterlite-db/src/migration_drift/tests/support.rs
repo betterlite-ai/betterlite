@@ -13,7 +13,7 @@ use super::fixtures::{
 use super::guard::{LensGuardError, raise_if_lens_rename_pending, spend_logs_is_partitioned};
 use super::index_repair::{
     INDEX_REPAIR_LOCK_KEY, InvalidIndex, index_repair, invalid_litellm_indexes,
-    repair_connection_url, repair_invalid_indexes, repair_under_migration_lock,
+    repair_invalid_indexes, repair_under_migration_lock,
 };
 use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
 use crate::schema_agent_identity::MIGRATION_CATALOG as B709;
