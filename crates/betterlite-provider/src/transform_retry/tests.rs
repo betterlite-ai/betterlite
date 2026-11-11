@@ -13,6 +13,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::time::timeout;
 use url::Url;
 
 use super::{TransformOnUnprocessable, TransformRetry, send_with_retry};
@@ -55,7 +56,10 @@ impl TransformOnUnprocessable for Rewrite {
 async fn serve(listener: TcpListener, statuses: Vec<u16>) -> Vec<String> {
     let mut bodies = Vec::new();
     for status in statuses {
-        let (mut socket, _) = listener.accept().await.unwrap();
+        let Ok(accepted) = timeout(Duration::from_secs(2), listener.accept()).await else {
+            break;
+        };
+        let (mut socket, _) = accepted.unwrap();
         let mut head = Vec::new();
         while !head.ends_with(b"\r\n\r\n") {
             head.push(socket.read_u8().await.unwrap());
@@ -136,4 +140,16 @@ async fn provider_framework_tests_behavior(
     };
     assert_eq!(response.status, last);
     assert_eq!(bodies, sent);
+}
+
+#[test]
+fn a_buffered_upstream_exposes_its_response_headers() {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-request-id", "abc".parse().unwrap());
+    let upstream = Upstream::Buffered(UpstreamResponse {
+        status: 200,
+        headers: headers.clone(),
+        body: Vec::new(),
+    });
+    assert_eq!(upstream.headers(), &headers);
 }

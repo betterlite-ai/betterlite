@@ -385,3 +385,31 @@ async fn provider_framework_tests_behavior(
     assert_eq!(reply.error.code, status.to_string());
     assert!(reply.error.message.contains(&error.to_string()));
 }
+
+#[tokio::test]
+async fn an_unmocked_embedding_goes_through_the_provider_framework() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    let body = to_bytes(response.into_body(), 4096).await.expect("body");
+    let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(
+        envelope.error.message,
+        "betterlite does not serve azure embeddings yet"
+    );
+}
