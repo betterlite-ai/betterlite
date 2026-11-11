@@ -1,10 +1,7 @@
 task: B3938
 deviations:
-  - what: When DD_API_KEY is unset in direct API mode, logger initialization raises an exception.
-    why: LiteLLM requires explicit credentials for direct API mode; betterlite refuses to start a logger that would drop every span.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L463-L466
-  - what: Agent mode needs no DD_API_KEY; direct API mode needs both DD_API_KEY and DD_SITE.
-    why: LiteLLM branches on LITELLM_DD_AGENT_HOST, so an agent-only setup carries no credential; betterlite follows that branch.
+  - what: Agent mode is chosen by LITELLM_DD_AGENT_HOST and needs no DD_API_KEY, while direct API mode requires both DD_API_KEY and DD_SITE and raises when one is missing.
+    why: LiteLLM branches on the agent host and enforces both credentials for direct API mode; betterlite refuses to start a logger that would drop every span.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L451-L467
   - what: Payloads are sent as uncompressed JSON, unlike the log delivery integration which gzips.
     why: The LLM Observability intake accepts uncompressed JSON and LiteLLM sends it that way; only log delivery to /api/v2/logs requires gzip.
