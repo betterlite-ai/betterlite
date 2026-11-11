@@ -20,7 +20,7 @@ pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 27] = [
+const CASES: [(&str, fn()); 29] = [
     ("channel_labels", channel_labels),
     ("otpm_failure_without_itpm_releases_nothing", || {
         super::runtime().block_on(otpm_failure_without_itpm_releases_nothing());
@@ -48,6 +48,12 @@ const CASES: [(&str, fn()); 27] = [
     }),
     ("provider_mismatched_model_uses_4096", || {
         super::runtime().block_on(provider_mismatched_model_uses_4096());
+    }),
+    ("mantle_region_prefix_is_stripped", || {
+        super::runtime().block_on(mantle_region_prefix_is_stripped());
+    }),
+    ("non_region_prefix_is_not_stripped", || {
+        super::runtime().block_on(non_region_prefix_is_not_stripped());
     }),
     ("missing_model_id_skips_limits", || {
         super::runtime().block_on(skips_without(None, Some("gpt-4o"), Some(100), Some(100)));
@@ -224,6 +230,46 @@ async fn provider_mismatched_model_uses_4096() {
         .unwrap()
         .unwrap();
     assert_eq!(reserved.otpm_reserved, 4096);
+}
+
+async fn mantle_region_prefix_is_stripped() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = IoDeployment {
+        model_id: Some("dep-a"),
+        model: Some("bedrock_mantle/us-east-1/openai.gpt-oss-120b"),
+        limits: IoLimits {
+            itpm: None,
+            otpm: Some(100_000),
+        },
+    };
+    let mut request = support::body();
+    let reserved = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reserved.otpm_reserved, 0x8000);
+}
+
+async fn non_region_prefix_is_not_stripped() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = IoDeployment {
+        model_id: Some("dep-a"),
+        model: Some("bedrock_mantle/foo/openai.gpt-oss-120b"),
+        limits: IoLimits {
+            itpm: None,
+            otpm: Some(100_000),
+        },
+    };
+    let mut request = support::body();
+    let reserved = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(reserved.otpm_reserved, 0x8000);
 }
 
 async fn model_cap_over_limit_by_one_fails() {

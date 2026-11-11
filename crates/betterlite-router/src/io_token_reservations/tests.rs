@@ -65,6 +65,8 @@ fn io_token_reservations_behaviors(#[case] name: &str) {
 #[case::model_cap_equal_to_limit_passes("model_cap_equal_to_limit_passes")]
 #[case::model_cap_over_limit_by_one_fails("model_cap_over_limit_by_one_fails")]
 #[case::provider_mismatched_model_uses_4096("provider_mismatched_model_uses_4096")]
+#[case::mantle_region_prefix_is_stripped("mantle_region_prefix_is_stripped")]
+#[case::non_region_prefix_is_not_stripped("non_region_prefix_is_not_stripped")]
 #[case::missing_model_id_skips_limits("missing_model_id_skips_limits")]
 #[case::missing_model_skips_limits("missing_model_skips_limits")]
 #[case::no_limits_skips_everything("no_limits_skips_everything")]
