@@ -60,12 +60,12 @@ fn discovered() -> Vec<DiscoveredModel> {
 }
 
 fn all_tiers() -> BTreeMap<Tier, Vec<String>> {
-    tier_map(&[
-        (Tier::Simple, &["alpha"]),
-        (Tier::Medium, &["alpha", "beta"]),
-        (Tier::Complex, &["beta"]),
-        (Tier::Reasoning, &["beta"]),
-    ])
+    let mut tiers = BTreeMap::new();
+    tiers.insert(Tier::Simple, vec!["alpha".to_owned()]);
+    tiers.insert(Tier::Medium, vec!["alpha".to_owned(), "beta".to_owned()]);
+    tiers.insert(Tier::Complex, vec!["beta".to_owned()]);
+    tiers.insert(Tier::Reasoning, vec!["beta".to_owned()]);
+    tiers
 }
 
 fn config() -> AutorouteConfig {
@@ -563,8 +563,8 @@ fn generated_document_serializes_model_list_before_general_settings() {
         .expect("the router config");
     let tiers = rendered.find("tiers:").expect("the tiers");
     let default_model = rendered.find("default_model:").expect("the default model");
+    assert!(router < tiers);
     assert!(tiers < default_model);
-    assert!(default_model < router);
 }
 
 #[test]

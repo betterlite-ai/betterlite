@@ -145,35 +145,41 @@ fn prompt_tiers(
     Ok(tiers)
 }
 
+fn prompt_model(
+    prompter: &mut dyn Prompter,
+    label: &str,
+    pool: &[DiscoveredModel],
+) -> Result<String, WizardError> {
+    let message = format!("{label}: type to filter, enter to confirm");
+    let names: Vec<String> = pool.iter().map(|model| model.name.clone()).collect();
+    prompter.select_one(&message, &names)
+}
+
 fn prompt_classifier(
     prompter: &mut dyn Prompter,
     chat_pool: &[DiscoveredModel],
 ) -> Result<ClassifierChoice, WizardError> {
-    if !prompter.confirm(LLM_CLASSIFIER_QUESTION, false)? {
-        return Ok(ClassifierChoice::Heuristic);
+    if prompter.confirm(LLM_CLASSIFIER_QUESTION, false)? {
+        let model = prompt_model(prompter, LLM_CLASSIFIER_LABEL, chat_pool)?;
+        return Ok(ClassifierChoice::Llm(LlmClassifierConfig {
+            model,
+            timeout_ms: DEFAULT_CLASSIFIER_TIMEOUT_MS,
+        }));
     }
-    let message = format!("{LLM_CLASSIFIER_LABEL}: type to filter, enter to confirm");
-    let names: Vec<String> = chat_pool.iter().map(|model| model.name.clone()).collect();
-    let model = prompter.select_one(&message, &names)?;
-    Ok(ClassifierChoice::Llm(LlmClassifierConfig {
-        model,
-        timeout_ms: DEFAULT_CLASSIFIER_TIMEOUT_MS,
-    }))
+    Ok(ClassifierChoice::Heuristic)
 }
 
 fn prompt_semantic_matching(
     prompter: &mut dyn Prompter,
     embedding_pool: &[DiscoveredModel],
 ) -> Result<SemanticMatchingChoice, WizardError> {
-    if embedding_pool.is_empty() || !prompter.confirm(SEMANTIC_QUESTION, false)? {
+    if embedding_pool.is_empty() {
         return Ok(SemanticMatchingChoice::Disabled);
     }
-    let message = format!("{SEMANTIC_LABEL}: type to filter, enter to confirm");
-    let names: Vec<String> = embedding_pool
-        .iter()
-        .map(|model| model.name.clone())
-        .collect();
-    let embedding_model = prompter.select_one(&message, &names)?;
+    if !prompter.confirm(SEMANTIC_QUESTION, false)? {
+        return Ok(SemanticMatchingChoice::Disabled);
+    }
+    let embedding_model = prompt_model(prompter, SEMANTIC_LABEL, embedding_pool)?;
     let keyword_tier_rules = prompt_keyword_tier_rules(prompter)?;
     Ok(SemanticMatchingChoice::Enabled(SemanticMatching {
         embedding_model,

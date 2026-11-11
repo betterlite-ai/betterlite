@@ -126,23 +126,22 @@ fn rule_list(rules: &[KeywordTierRule]) -> Vec<(Tier, Vec<&str>)> {
 }
 
 fn assert_tier_prompts_in_order(prompter: &FakePrompter) {
-    let many = prompter.select_many_calls();
-    assert_eq!(many.len(), 4);
+    let messages = &prompter.many_messages;
+    assert_eq!(messages.len(), 4);
+    assert_eq!(prompter.many_choices.len(), 4);
     for (index, tier) in Tier::ALL.iter().enumerate() {
         assert_eq!(
-            many[index].0,
+            messages[index],
             format!("{tier}: type to filter, tab to toggle, enter to confirm")
         );
-        assert_eq!(many[index].1, vec!["alpha", "beta"]);
+        assert_eq!(prompter.many_choices[index], vec!["alpha", "beta"]);
     }
 }
 
 fn assert_written_announcements(prompter: &FakePrompter) {
-    let announcements = prompter.announcements();
-    assert!(
-        announcements
-            .contains(&"Assign model(s) to each complexity tier (from what your key can access):")
-    );
+    let announcements = &prompter.announcements;
+    assert!(announcements.iter().any(|message| message
+        == "Assign model(s) to each complexity tier (from what your key can access):"));
     assert!(
         announcements
             .iter()
@@ -201,20 +200,24 @@ fn run_configure_wizard_discovers_models_and_builds_tiers_in_tier_order() {
 }
 
 fn assert_classifier_and_semantic_prompts(prompter: &FakePrompter) {
-    let single = prompter.select_one_calls();
-    assert_eq!(single.len(), 2);
+    assert_eq!(prompter.one_messages.len(), 2);
     assert_eq!(
-        single[0].0,
+        prompter.one_messages[0],
         "LLM classifier: type to filter, enter to confirm"
     );
-    assert_eq!(single[0].1, vec!["alpha", "beta"]);
+    assert_eq!(prompter.one_choices[0], vec!["alpha", "beta"]);
     assert_eq!(
-        single[1].0,
+        prompter.one_messages[1],
         "semantic embeddings: type to filter, enter to confirm"
     );
-    assert_eq!(single[1].1, vec!["embed-a", "embed-b"]);
+    assert_eq!(prompter.one_choices[1], vec!["embed-a", "embed-b"]);
+    let keywords: Vec<(&str, &str)> = prompter
+        .keyword_calls
+        .iter()
+        .map(|(message, default)| (message.as_str(), default.as_str()))
+        .collect();
     assert_eq!(
-        prompter.keyword_calls(),
+        keywords,
         vec![
             ("  SIMPLE keywords", "hi, hello, thanks"),
             ("  MEDIUM keywords", "explain, how does"),
@@ -222,23 +225,20 @@ fn assert_classifier_and_semantic_prompts(prompter: &FakePrompter) {
             ("  REASONING keywords", "step by step, think through, prove"),
         ]
     );
-    let confirms = prompter.confirm_calls();
+    let confirms = &prompter.confirm_calls;
     assert_eq!(confirms.len(), 3);
     assert_eq!(
-        confirms[0],
-        (
-            "\nUse an LLM classifier instead of the free heuristic scorer?",
-            false
-        )
+        confirms[0].0,
+        "\nUse an LLM classifier instead of the free heuristic scorer?"
     );
-    assert_eq!(confirms[1], ("\nEnable semantic keyword matching?", false));
+    assert!(!confirms[0].1);
+    assert_eq!(confirms[1].0, "\nEnable semantic keyword matching?");
+    assert!(!confirms[1].1);
     assert_eq!(
-        confirms[2],
-        (
-            "\nEnable adaptive (bandit) selection on top of tiering?",
-            false
-        )
+        confirms[2].0,
+        "\nEnable adaptive (bandit) selection on top of tiering?"
     );
+    assert!(!confirms[2].1);
 }
 
 fn assert_classifier_and_semantic_settings(router: &ComplexityRouterConfig) {
@@ -310,7 +310,7 @@ fn run_configure_wizard_skips_semantic_prompts_without_embedding_models() {
 
     run(home.path(), &client, &mut prompter, &files, true).expect("a written config");
 
-    let confirms = prompter.confirm_calls();
+    let confirms = &prompter.confirm_calls;
     assert_eq!(confirms.len(), 2);
     assert_eq!(
         confirms[0].0,
@@ -350,16 +350,16 @@ fn run_configure_wizard_reprompts_each_tier_until_a_model_is_selected() {
 
     run(home.path(), &client, &mut prompter, &files, true).expect("a written config");
 
-    let many = prompter.select_many_calls();
-    assert_eq!(many.len(), 5);
+    let messages = &prompter.many_messages;
+    assert_eq!(messages.len(), 5);
     assert_eq!(
-        many[0].0,
+        messages[0],
         "SIMPLE: type to filter, tab to toggle, enter to confirm"
     );
-    assert_eq!(many[1].0, many[0].0);
+    assert_eq!(messages[1], messages[0]);
     assert_eq!(
         prompter
-            .announcements()
+            .announcements
             .iter()
             .filter(|message| **message == "Select at least one model.")
             .count(),
@@ -385,7 +385,7 @@ fn run_configure_wizard_reports_no_chat_models_before_the_interactive_check() {
 
     assert!(matches!(error, WizardError::NoChatModels));
     assert_eq!(client.calls(), 1);
-    assert!(prompter.calls.is_empty());
+    assert!(!prompter.was_prompted());
     assert!(!target_path(home.path()).exists());
 }
 
@@ -400,7 +400,7 @@ fn run_configure_wizard_refuses_a_non_interactive_run_before_prompting() {
         run(home.path(), &client, &mut prompter, &files, false).expect_err("not a terminal");
 
     assert!(matches!(error, WizardError::NotInteractive));
-    assert!(prompter.calls.is_empty());
+    assert!(!prompter.was_prompted());
     assert!(!target_path(home.path()).exists());
 }
 
@@ -528,7 +528,7 @@ fn run_configure_wizard_returns_the_discovery_error_without_prompting() {
         run(home.path(), &client, &mut prompter, &files, true).expect_err("a failed listing");
 
     assert!(matches!(error, WizardError::Discovery(_)));
-    assert!(prompter.calls.is_empty());
+    assert!(!prompter.was_prompted());
 }
 
 #[test]

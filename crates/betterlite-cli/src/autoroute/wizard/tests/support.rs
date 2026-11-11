@@ -51,32 +51,20 @@ impl ModelDiscoveryClient for FakeClient {
     }
 }
 
-pub(crate) enum Call {
-    Announce(String),
-    SelectOne {
-        message: String,
-        choices: Vec<String>,
-    },
-    SelectMany {
-        message: String,
-        choices: Vec<String>,
-    },
-    Confirm {
-        message: String,
-        default: bool,
-    },
-    Keywords {
-        message: String,
-        default: String,
-    },
-}
+type Prompted<T> = Result<T, WizardError>;
 
 pub(crate) struct FakePrompter {
     pub(crate) selections: VecDeque<Vec<String>>,
     pub(crate) singles: VecDeque<String>,
     pub(crate) confirm_answers: VecDeque<bool>,
     pub(crate) keyword_answers: VecDeque<String>,
-    pub(crate) calls: Vec<Call>,
+    pub(crate) announcements: Vec<String>,
+    pub(crate) one_messages: Vec<String>,
+    pub(crate) one_choices: Vec<Vec<String>>,
+    pub(crate) many_messages: Vec<String>,
+    pub(crate) many_choices: Vec<Vec<String>>,
+    pub(crate) confirm_calls: Vec<(String, bool)>,
+    pub(crate) keyword_calls: Vec<(String, String)>,
     pub(crate) fail: bool,
 }
 
@@ -87,80 +75,45 @@ impl FakePrompter {
             singles: VecDeque::new(),
             confirm_answers: VecDeque::new(),
             keyword_answers: VecDeque::new(),
-            calls: Vec::new(),
+            announcements: Vec::new(),
+            one_messages: Vec::new(),
+            one_choices: Vec::new(),
+            many_messages: Vec::new(),
+            many_choices: Vec::new(),
+            confirm_calls: Vec::new(),
+            keyword_calls: Vec::new(),
             fail: false,
         }
     }
 
-    pub(crate) fn announcements(&self) -> Vec<&str> {
-        self.calls
-            .iter()
-            .filter_map(|call| match call {
-                Call::Announce(message) => Some(message.as_str()),
-                Call::SelectOne { .. }
-                | Call::SelectMany { .. }
-                | Call::Confirm { .. }
-                | Call::Keywords { .. } => None,
-            })
-            .collect()
+    pub(crate) fn was_prompted(&self) -> bool {
+        !(self.announcements.is_empty()
+            && self.one_messages.is_empty()
+            && self.many_messages.is_empty()
+            && self.confirm_calls.is_empty()
+            && self.keyword_calls.is_empty())
     }
 
-    pub(crate) fn select_many_calls(&self) -> Vec<(&str, Vec<&str>)> {
-        self.calls
-            .iter()
-            .filter_map(|call| match call {
-                Call::SelectMany { message, choices } => Some((
-                    message.as_str(),
-                    choices.iter().map(String::as_str).collect(),
-                )),
-                Call::Announce(_)
-                | Call::SelectOne { .. }
-                | Call::Confirm { .. }
-                | Call::Keywords { .. } => None,
-            })
-            .collect()
+    fn refuse(&self) -> Prompted<()> {
+        if self.fail {
+            return Err(cancelled());
+        }
+        Ok(())
     }
 
-    pub(crate) fn select_one_calls(&self) -> Vec<(&str, Vec<&str>)> {
-        self.calls
-            .iter()
-            .filter_map(|call| match call {
-                Call::SelectOne { message, choices } => Some((
-                    message.as_str(),
-                    choices.iter().map(String::as_str).collect(),
-                )),
-                Call::Announce(_)
-                | Call::SelectMany { .. }
-                | Call::Confirm { .. }
-                | Call::Keywords { .. } => None,
-            })
-            .collect()
+    fn note_one(&mut self, message: &str, choices: &[String]) {
+        self.one_messages.push(message.to_owned());
+        self.one_choices.push(choices.to_vec());
     }
 
-    pub(crate) fn confirm_calls(&self) -> Vec<(&str, bool)> {
-        self.calls
-            .iter()
-            .filter_map(|call| match call {
-                Call::Confirm { message, default } => Some((message.as_str(), *default)),
-                Call::Announce(_)
-                | Call::SelectOne { .. }
-                | Call::SelectMany { .. }
-                | Call::Keywords { .. } => None,
-            })
-            .collect()
+    fn note_many(&mut self, message: &str, choices: &[String]) {
+        self.many_messages.push(message.to_owned());
+        self.many_choices.push(choices.to_vec());
     }
 
-    pub(crate) fn keyword_calls(&self) -> Vec<(&str, &str)> {
-        self.calls
-            .iter()
-            .filter_map(|call| match call {
-                Call::Keywords { message, default } => Some((message.as_str(), default.as_str())),
-                Call::Announce(_)
-                | Call::SelectOne { .. }
-                | Call::SelectMany { .. }
-                | Call::Confirm { .. } => None,
-            })
-            .collect()
+    fn note_keywords(&mut self, message: &str, default: &str) {
+        self.keyword_calls
+            .push((message.to_owned(), default.to_owned()));
     }
 }
 
@@ -169,72 +122,34 @@ fn cancelled() -> WizardError {
 }
 
 impl Prompter for FakePrompter {
-    fn announce(&mut self, message: &str) -> Result<(), WizardError> {
-        if self.fail {
-            return Err(cancelled());
-        }
-        self.calls.push(Call::Announce(message.to_owned()));
+    fn announce(&mut self, message: &str) -> Prompted<()> {
+        self.refuse()?;
+        self.announcements.push(message.to_owned());
         Ok(())
     }
 
-    fn select_one(&mut self, message: &str, choices: &[String]) -> Result<String, WizardError> {
-        if self.fail {
-            return Err(cancelled());
-        }
-        self.calls.push(Call::SelectOne {
-            message: message.to_owned(),
-            choices: choices.to_vec(),
-        });
-        Ok(self
-            .singles
-            .pop_front()
-            .expect("a scripted single selection"))
+    fn select_one(&mut self, message: &str, choices: &[String]) -> Prompted<String> {
+        self.refuse()?;
+        self.note_one(message, choices);
+        Ok(self.singles.pop_front().expect("a single pick"))
     }
 
-    fn select_many(
-        &mut self,
-        message: &str,
-        choices: &[String],
-    ) -> Result<Vec<String>, WizardError> {
-        if self.fail {
-            return Err(cancelled());
-        }
-        self.calls.push(Call::SelectMany {
-            message: message.to_owned(),
-            choices: choices.to_vec(),
-        });
-        Ok(self
-            .selections
-            .pop_front()
-            .expect("a scripted multi selection"))
+    fn select_many(&mut self, message: &str, choices: &[String]) -> Prompted<Vec<String>> {
+        self.refuse()?;
+        self.note_many(message, choices);
+        Ok(self.selections.pop_front().expect("a multi pick"))
     }
 
-    fn confirm(&mut self, message: &str, default: bool) -> Result<bool, WizardError> {
-        if self.fail {
-            return Err(cancelled());
-        }
-        self.calls.push(Call::Confirm {
-            message: message.to_owned(),
-            default,
-        });
-        Ok(self
-            .confirm_answers
-            .pop_front()
-            .expect("a scripted confirmation"))
+    fn confirm(&mut self, message: &str, default: bool) -> Prompted<bool> {
+        self.refuse()?;
+        self.confirm_calls.push((message.to_owned(), default));
+        Ok(self.confirm_answers.pop_front().expect("a confirmation"))
     }
 
-    fn prompt_keywords(&mut self, message: &str, default: &str) -> Result<String, WizardError> {
-        if self.fail {
-            return Err(cancelled());
-        }
-        self.calls.push(Call::Keywords {
-            message: message.to_owned(),
-            default: default.to_owned(),
-        });
-        Ok(self
-            .keyword_answers
-            .pop_front()
-            .expect("a scripted keyword answer"))
+    fn prompt_keywords(&mut self, message: &str, default: &str) -> Prompted<String> {
+        self.refuse()?;
+        self.note_keywords(message, default);
+        Ok(self.keyword_answers.pop_front().expect("a keyword answer"))
     }
 }
 
