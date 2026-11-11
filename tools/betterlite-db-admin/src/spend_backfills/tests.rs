@@ -170,6 +170,21 @@ async fn rejects_bad_arguments() {
     rejects(&["key-total-spend-from-logs", "extra"]).await;
 }
 
+#[tokio::test]
+async fn names_the_unregistered_backfill_operation() {
+    let backend = DbAdminBackend::default();
+    let (status, lines) = run_command(
+        &["key-total-spend"],
+        "postgresql://pinned.example/db",
+        &backend,
+    )
+    .await;
+    assert_eq!(status, ExitStatus::Failure);
+    assert!(lines.iter().any(|line| {
+        line.contains("no native service is registered for the key-total-spend operation")
+    }));
+}
+
 #[test]
 fn maps_statement_failures_to_the_admin_error() {
     let error = BackfillError::Statement {
