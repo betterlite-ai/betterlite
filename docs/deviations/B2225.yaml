@@ -1,0 +1,5 @@
+task: B2225
+deviations:
+  - what: betterlite reads DEFAULT_MAX_LRU_CACHE_SIZE from litellm_settings and from a deployment's litellm_params as well as from the environment variable of that name, and resolves them per deployment before building a cache instance.
+    why: The task's config contract names both YAML inputs, with the deployment value overriding the global one, which overrides the environment variable, which defaults to 64. LiteLLM only reads the process environment at import, so a setup that never sets those YAML keys behaves identically; the keys only let betterlite configure the same two bounded caches per deployment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L493
