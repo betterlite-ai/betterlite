@@ -121,6 +121,7 @@ pub enum RecoveryError {
         #[source]
         source: StepCause,
     },
+    // baseline and recovery failures outside a step have no step cause to chain
     #[error("{message}")]
     ManualIntervention {
         message: String,
@@ -131,7 +132,6 @@ pub enum RecoveryError {
     AttemptsExhausted { message: String },
 }
 
-// The cause of a failed migration step: a database error or a catalog SQL that is not UTF-8
 #[derive(Debug, Error)]
 pub enum StepCause {
     #[error("database error: {0}")]
