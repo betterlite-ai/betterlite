@@ -341,3 +341,24 @@ fn preparers_map_pi_and_codex_by_command_name() {
         .unwrap();
     assert_eq!(args, ["--model".to_owned(), "litellm/gpt-4o".to_owned()]);
 }
+
+#[test]
+fn base_environment_reads_the_agent_variables_and_the_given_home() {
+    let variables = vars(&[("CODEX_HOME", "/x/codex")]);
+    let home = Path::new("/home/tester");
+    let environment = BaseEnvironment {
+        variables: &variables,
+        home: Some(home),
+    };
+    assert_eq!(
+        environment.lookup("CODEX_HOME"),
+        Some("/x/codex".to_owned())
+    );
+    assert_eq!(environment.lookup("PI_HOME"), None);
+    assert_eq!(environment.system_home(), Some(home.to_path_buf()));
+    let homeless = BaseEnvironment {
+        variables: &variables,
+        home: None,
+    };
+    assert_eq!(homeless.system_home(), None);
+}

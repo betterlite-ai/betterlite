@@ -9,6 +9,7 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use betterlite_config::loader::EnvironmentLookup as _;
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -26,6 +27,7 @@ use crate::agent_run::codex::{
     DebugModels as _, DebugModelsOutcome, DebugOutput, StdDebugModels, StockModels,
     codex_debug_models, codex_model_catalog_path, replace_file, stock_codex_models,
 };
+use crate::agent_run::environment::BaseEnvironment;
 use crate::agent_run::error::AgentRunError;
 use crate::agent_run::messages::{Messages as _, NoticeBuffer, StreamMessages};
 use crate::agent_run::prepare::{
