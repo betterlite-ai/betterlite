@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::chat::ChatRequest;
+use crate::chat::{ChatRequest, RequestError};
 
 #[test]
 fn a_null_disable_fallbacks_leaves_fallbacks_on() {
@@ -28,4 +28,25 @@ fn the_category_fallback_overrides_are_read_and_never_forwarded() {
     assert!(!written.contains("context_window_fallbacks"));
     assert!(!written.contains("content_policy_fallbacks"));
     assert!(!written.contains("disable_fallbacks"));
+}
+
+#[test]
+fn the_request_fallbacks_override_is_read_typed_and_never_forwarded() {
+    let body = br#"{"model":"m","messages":[],"fallbacks":["a",{"b":["c"]}]}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    assert_eq!(
+        serde_json::to_string(&request.fallbacks).unwrap(),
+        r#"["a",{"b":["c"]}]"#
+    );
+    assert!(
+        !serde_json::to_string(&request)
+            .unwrap()
+            .contains("fallbacks")
+    );
+    let empty = ChatRequest::parse(br#"{"model":"m","messages":[],"fallbacks":[]}"#).unwrap();
+    assert_eq!(empty.fallbacks, Some(Vec::new()));
+    let absent = ChatRequest::parse(br#"{"model":"m","messages":[]}"#).unwrap();
+    assert_eq!(absent.fallbacks, None);
+    let wrong = ChatRequest::parse(br#"{"model":"m","messages":[],"fallbacks":"x"}"#).unwrap_err();
+    assert!(matches!(wrong, RequestError::Body { .. }));
 }

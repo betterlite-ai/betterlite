@@ -100,6 +100,8 @@ pub struct ChatRequest {
     pub response_format: Option<ResponseFormat>,
     // the router reads these fallback overrides itself and never forwards them
     #[serde(default, skip_serializing)]
+    pub fallbacks: Option<Vec<FallbackChainEntry>>,
+    #[serde(default, skip_serializing)]
     pub context_window_fallbacks: Option<Vec<FallbackChainEntry>>,
     #[serde(default, skip_serializing)]
     pub content_policy_fallbacks: Option<Vec<FallbackChainEntry>>,
