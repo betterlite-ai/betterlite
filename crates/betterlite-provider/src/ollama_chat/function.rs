@@ -57,23 +57,23 @@ impl WireFunction {
                 complete: !text.is_empty() && is_function_call_complete(value),
                 arguments: text.clone(),
             }),
-            Some(Json::Null) | None => Ok(CallArguments {
-                complete: false,
-                arguments: self.parameters_text()?,
-            }),
+            Some(Json::Null) | None => match &self.parameters {
+                Some(value @ Json::Object(_)) => Ok(CallArguments {
+                    complete: false,
+                    arguments: serde_json::to_string(value)
+                        .map_err(|source| OllamaError::Shape { source })?,
+                }),
+                Some(
+                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
+                )
+                | None => Ok(CallArguments {
+                    complete: false,
+                    arguments: String::new(),
+                }),
+            },
             Some(Json::List(_) | Json::Bool(_) | Json::Number(_)) => Err(OllamaError::Arguments {
                 field: ARGUMENTS_FIELD,
             }),
-        }
-    }
-
-    fn parameters_text(&self) -> Result<String, OllamaError> {
-        match &self.parameters {
-            Some(value @ Json::Object(_)) => {
-                serde_json::to_string(value).map_err(|source| OllamaError::Shape { source })
-            }
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None => Ok(String::new()),
         }
     }
 }
