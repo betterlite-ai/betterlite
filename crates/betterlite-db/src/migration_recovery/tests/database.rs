@@ -146,19 +146,20 @@ pub(super) struct LedgerRow<'row> {
 }
 
 pub(super) async fn insert_row(database: &TestDatabase, row: &LedgerRow<'_>) {
-    let table = ledger_table(&database.schema);
+    let statement = format!(
+        "INSERT INTO {} (id, checksum, migration_name, logs, started_at, finished_at, \
+         rolled_back_at, applied_steps_count) VALUES ($1, $2, $3, $4, \
+         $5::text::timestamptz, CASE WHEN $6 THEN current_timestamp END, \
+         CASE WHEN $7 THEN current_timestamp END, $8)",
+        ledger_table(&database.schema)
+    );
     database
         .pool
         .get()
         .await
         .expect("a fixture connection")
         .execute(
-            &format!(
-                "INSERT INTO {table} (id, checksum, migration_name, logs, started_at, finished_at, \
-                 rolled_back_at, applied_steps_count) VALUES ($1, $2, $3, $4, \
-                 $5::text::timestamptz, CASE WHEN $6 THEN current_timestamp END, \
-                 CASE WHEN $7 THEN current_timestamp END, $8)"
-            ),
+            &statement,
             &[
                 &row.id,
                 &row.checksum,
@@ -174,11 +175,12 @@ pub(super) async fn insert_row(database: &TestDatabase, row: &LedgerRow<'_>) {
         .expect("the ledger row inserts");
 }
 
-pub(super) async fn insert_unfinished(
+pub(super) async fn insert_history(
     database: &TestDatabase,
     migration: &Migration,
     id: &str,
     started_at: &str,
+    finished: bool,
 ) {
     insert_row(
         database,
@@ -187,8 +189,12 @@ pub(super) async fn insert_unfinished(
             name: &migration.name,
             checksum: &migration.checksum,
             steps: 1,
-            logs: Some("ERROR: deadlock detected"),
-            finished: false,
+            logs: if finished {
+                None
+            } else {
+                Some("ERROR: deadlock detected")
+            },
+            finished,
             rolled_back: false,
             started_at,
         },
@@ -196,44 +202,18 @@ pub(super) async fn insert_unfinished(
     .await;
 }
 
-pub(super) async fn insert_finished(
-    database: &TestDatabase,
-    name: &str,
-    checksum: &str,
-    id: &str,
-    started_at: &str,
-) {
-    insert_row(
-        database,
-        &LedgerRow {
-            id,
-            name,
-            checksum,
-            steps: 1,
-            logs: None,
-            finished: true,
-            rolled_back: false,
-            started_at,
-        },
+fn create_table_statement(schema: &str) -> String {
+    format!(
+        "CREATE TABLE {} (id varchar(36) PRIMARY KEY NOT NULL, checksum varchar(64) NOT NULL, \
+         finished_at timestamptz, migration_name varchar(255) NOT NULL, logs text, \
+         rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), \
+         applied_steps_count integer NOT NULL DEFAULT 0)",
+        ledger_table(schema)
     )
-    .await;
 }
 
 pub(super) async fn create_ledger(database: &TestDatabase) {
-    let table = ledger_table(&database.schema);
-    database
-        .pool
-        .get()
-        .await
-        .expect("a fixture connection")
-        .batch_execute(&format!(
-            "CREATE TABLE {table} (id varchar(36) PRIMARY KEY NOT NULL, checksum varchar(64) NOT NULL, \
-             finished_at timestamptz, migration_name varchar(255) NOT NULL, logs text, \
-             rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), \
-             applied_steps_count integer NOT NULL DEFAULT 0)"
-        ))
-        .await
-        .expect("the ledger table creates");
+    execute(database, &create_table_statement(&database.schema)).await;
 }
 
 pub(super) struct StoredRow {
@@ -247,19 +227,17 @@ pub(super) struct StoredRow {
 
 pub(super) async fn stored_row(database: &TestDatabase, name: &str) -> StoredRow {
     let table = ledger_table(&database.schema);
+    let statement = format!(
+        "SELECT checksum, logs, applied_steps_count, started_at::text, \
+         finished_at IS NOT NULL, rolled_back_at IS NOT NULL FROM {table} \
+         WHERE migration_name = $1"
+    );
     let row = database
         .pool
         .get()
         .await
         .expect("a fixture connection")
-        .query_one(
-            &format!(
-                "SELECT checksum, logs, applied_steps_count, started_at::text, \
-                 finished_at IS NOT NULL, rolled_back_at IS NOT NULL FROM {table} \
-                 WHERE migration_name = $1"
-            ),
-            &[&name],
-        )
+        .query_one(&statement, &[&name])
         .await
         .expect("the ledger row reads");
     StoredRow {
@@ -273,16 +251,18 @@ pub(super) async fn stored_row(database: &TestDatabase, name: &str) -> StoredRow
 }
 
 pub(super) async fn relation_exists(database: &TestDatabase, name: &str) -> bool {
-    let found: Option<String> = database
+    let lookup = database
         .pool
         .get()
         .await
         .expect("a fixture connection")
-        .query_one("SELECT to_regclass($1)::text", &[&name])
+        .query_opt(
+            "SELECT 1 FROM pg_class WHERE oid = to_regclass($1)",
+            &[&name],
+        )
         .await
-        .expect("to_regclass reads")
-        .get(0);
-    found.is_some()
+        .expect("to_regclass reads");
+    lookup.is_some()
 }
 
 pub(super) async fn execute(database: &TestDatabase, statement: &str) {

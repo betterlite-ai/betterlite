@@ -170,14 +170,13 @@ pub async fn setup_database_v2(
         .as_ref()
         .filter(|url| !url.expose_secret().is_empty())
         .ok_or(RecoveryError::DatabaseUrlRequired)?;
-    let lock_url = lock_connection_url(database_url, inputs.direct_url.as_ref())?;
-    let deploy_url = deploy_connection_url(database_url, inputs.direct_url.as_ref())?;
+    let urls = connection_urls(database_url, inputs.direct_url.as_ref())?;
     let steps = PgSteps::new(PgStepsInputs {
         schema: ledger_namespace(database_url.expose_secret())?,
         catalog: inputs.catalog,
-        prisma_url: prisma_connection_url(database_url, inputs.direct_url.as_ref())?,
-        deploy_url: SecretString::from(deploy_url),
-        lock_url: SecretString::from(lock_url),
+        prisma_url: urls.prisma,
+        deploy_url: urls.deploy,
+        lock_url: urls.lock,
         database_url: database_url.clone(),
         direct_url: inputs.direct_url.clone(),
         schema_prisma: inputs.schema_prisma,
@@ -201,36 +200,37 @@ fn ledger_namespace(database_url: &str) -> Result<String, RecoveryError> {
         .map(|schema| schema.unwrap_or_else(|| DEFAULT_SCHEMA.to_owned()))
 }
 
-fn lock_connection_url(
-    database_url: &SecretString,
-    direct_url: Option<&SecretString>,
-) -> Result<String, RecoveryError> {
-    let chosen = match direct_url {
-        Some(direct) if !direct.expose_secret().is_empty() => direct.expose_secret(),
-        _ => database_url.expose_secret(),
-    };
-    strip_prisma_query_params(chosen).map_err(|source| RecoveryError::Translation { source })
+struct ConnectionUrls {
+    lock: SecretString,
+    deploy: SecretString,
+    prisma: SecretString,
 }
 
-fn deploy_connection_url(
+// The deploy session follows migration_environment; the lock session follows DIRECT_URL or the writer URL
+fn connection_urls(
     database_url: &SecretString,
     direct_url: Option<&SecretString>,
-) -> Result<String, RecoveryError> {
-    let prisma = prisma_connection_url(database_url, direct_url)?;
-    strip_prisma_query_params(prisma.expose_secret())
-        .map_err(|source| RecoveryError::Translation { source })
-}
-
-fn prisma_connection_url(
-    database_url: &SecretString,
-    direct_url: Option<&SecretString>,
-) -> Result<SecretString, RecoveryError> {
-    let environment = migration_environment(
+) -> Result<ConnectionUrls, RecoveryError> {
+    let direct = direct_url.filter(|url| !url.expose_secret().is_empty());
+    let prisma = migration_environment(
         Some(database_url.expose_secret()),
-        direct_url.map(SecretString::expose_secret),
+        direct.map(SecretString::expose_secret),
     )
-    .map_err(|source| RecoveryError::Url { source })?;
-    Ok(environment.map_or_else(|| database_url.clone(), SecretString::from))
+    .map_err(|source| RecoveryError::Url { source })?
+    .map_or_else(|| database_url.clone(), SecretString::from);
+    let lock_source =
+        direct.map_or_else(|| database_url.expose_secret(), |url| url.expose_secret());
+    Ok(ConnectionUrls {
+        lock: stripped(lock_source)?,
+        deploy: stripped(prisma.expose_secret())?,
+        prisma,
+    })
+}
+
+fn stripped(url: &str) -> Result<SecretString, RecoveryError> {
+    strip_prisma_query_params(url)
+        .map(SecretString::from)
+        .map_err(|source| RecoveryError::Translation { source })
 }
 
 // B051 calls this once after a successful setup; the retry loop never applies it after every attempt

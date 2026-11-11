@@ -19,9 +19,8 @@ use crate::migration_recovery::tests::support::{
     FakeJitter, RecordingPause, ScriptedSteps, capture_logs,
 };
 use crate::migration_recovery::{
-    RecoveryError, SetupInputs, SetupRequest, deploy_connection_url, ledger_namespace,
-    lock_connection_url, replica_identity_if_requested, resolve_v2_migration_resolver,
-    setup_database_v2,
+    RecoveryError, SetupInputs, SetupRequest, connection_urls, ledger_namespace,
+    replica_identity_if_requested, resolve_v2_migration_resolver, setup_database_v2,
 };
 
 fn settings(deploy_seconds: u64, lock_seconds: u64) -> PassSettings {
@@ -83,7 +82,8 @@ fn direct_lock_url_writer_namespace() {
     );
     let direct =
         SecretString::from("postgresql://u:p@direct:5432/db?sslmode=require&connection_limit=7");
-    let lock = lock_connection_url(&writer, Some(&direct)).expect("a lock URL");
+    let urls = connection_urls(&writer, Some(&direct)).expect("native URLs");
+    let lock = urls.lock.expose_secret();
     assert!(
         lock.starts_with("postgresql://u:p@direct:5432/db"),
         "{lock}"
@@ -91,14 +91,15 @@ fn direct_lock_url_writer_namespace() {
     assert!(!lock.contains("connection_limit"), "{lock}");
     assert!(!lock.contains("schema"), "{lock}");
     assert!(lock.contains("sslmode=require"), "{lock}");
-    let deploy = deploy_connection_url(&writer, Some(&direct)).expect("a deploy URL");
+    let deploy = urls.deploy.expose_secret();
     assert!(
         deploy.starts_with("postgresql://u:p@direct:5432/db"),
         "{deploy}"
     );
     assert!(!deploy.contains("schema"), "{deploy}");
     let empty_direct = SecretString::from("");
-    let fallback = lock_connection_url(&writer, Some(&empty_direct)).expect("a lock URL");
+    let writer_only = connection_urls(&writer, Some(&empty_direct)).expect("native URLs");
+    let fallback = writer_only.lock.expose_secret();
     assert!(
         fallback.starts_with("postgresql://u:p@writer:5432/db"),
         "{fallback}"

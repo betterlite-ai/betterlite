@@ -2,29 +2,28 @@ use std::time::Duration;
 
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::time::{Instant, timeout};
-use tokio_postgres::Error as PostgresError;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::database_tls::options::native_connection_options;
+use crate::migration_deploy::MigrationDeploy;
 use crate::migration_deploy::catalog::Migration;
-use crate::migration_deploy::{DeployError, MigrationDeploy};
 use crate::migration_drift::MigrationDriftCheck;
 use crate::migration_drift::ahead::warn_if_db_ahead_of_head;
 use crate::migration_ledger::baseline::{BaselineInputs, baseline_current_schema};
 use crate::migration_ledger::connection::{CONNECT_TIMEOUT, connect};
 use crate::migration_ledger::inert::rollback_inert_migration;
 use crate::migration_ledger::ledger_reads::{FailedLookup, look_up_failed_migration};
-use crate::migration_ledger::lock::{JitterSource, MigrationCoordinator, PRISMA_LOCK_KEY};
+use crate::migration_ledger::lock::{JitterSource, MigrationCoordinator};
 use crate::migration_ledger::recovery::recover_completed_migration;
 use crate::schema_contract::SchemaContract;
 
 use super::RecoveryError;
-use super::outcome::{CANCELED_SQLSTATE, DeployOutcome, FailedIdentity, FailedStep, is_deadlock};
+use super::outcome::{DeployOutcome, FailedIdentity};
 use super::policy::{RecoverySteps, StepFuture};
 
-const CONTENTION_DETAIL: &str =
-    "the deploy deadline elapsed while another process held the migration lock";
+mod deploy;
+mod failure;
 
 pub(super) struct PgStepsInputs<'input> {
     pub schema: String,
@@ -93,129 +92,6 @@ impl<'input> PgSteps<'input> {
             known,
             pool,
         })
-    }
-
-    // Mirrors Prisma's P3005 check: a namespace with objects but no history refuses to deploy until it is baselined
-    async fn needs_baseline(&self, client: &tokio_postgres::Client) -> Result<bool, RecoveryError> {
-        let table = format!(
-            "\"{}\".\"_prisma_migrations\"",
-            self.deploy.schema.replace('"', "\"\"")
-        );
-        let ledger: Option<String> = client
-            .query_one("SELECT to_regclass($1)::text", &[&table])
-            .await?
-            .try_get(0)?;
-        if ledger.is_some() {
-            return Ok(false);
-        }
-        let nonempty: bool = client
-            .query_one(
-                "SELECT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
-                 WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm', 'f'))",
-                &[&self.deploy.schema],
-            )
-            .await?
-            .try_get(0)?;
-        Ok(nonempty)
-    }
-
-    async fn unfinished_identity(
-        &self,
-        name: &str,
-    ) -> Result<Option<FailedIdentity>, RecoveryError> {
-        let client = connect(&self.deploy_url).await?;
-        let table = format!(
-            "\"{}\".\"_prisma_migrations\"",
-            self.deploy.schema.replace('"', "\"\"")
-        );
-        let statement = format!(
-            "SELECT started_at::text FROM {table} WHERE migration_name = $1 \
-             AND finished_at IS NULL AND rolled_back_at IS NULL ORDER BY started_at LIMIT 1"
-        );
-        let Some(row) = client.query_opt(&statement, &[&name]).await? else {
-            return Ok(None);
-        };
-        let started_at: String = row.try_get(0)?;
-        Ok(Some(FailedIdentity {
-            name: name.to_owned(),
-            started_at,
-        }))
-    }
-
-    async fn deploy_once(&self, timeout: Duration) -> Result<DeployOutcome, RecoveryError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|source| RecoveryError::DeployConnection { source })?;
-        if self.needs_baseline(&client).await? {
-            return Ok(DeployOutcome::SchemaNotBaselined);
-        }
-        let deadline = Instant::now()
-            .checked_add(timeout)
-            .ok_or(RecoveryError::DeployTimeout)?;
-        self.classify(self.deploy.run(client, deadline).await).await
-    }
-
-    async fn classify(
-        &self,
-        result: Result<(), DeployError>,
-    ) -> Result<DeployOutcome, RecoveryError> {
-        let outcome = match result {
-            Ok(()) => DeployOutcome::Complete,
-            Err(DeployError::Unfinished { name }) => DeployOutcome::UnfinishedHistory {
-                identity: self.unfinished_identity(&name).await?,
-            },
-            Err(DeployError::Migration { name, source }) => step_outcome(name, &source),
-            Err(DeployError::InvalidSql { name, source }) => {
-                DeployOutcome::FailedStep(FailedStep {
-                    name: Some(name),
-                    sqlstate: None,
-                    detail: source.to_string(),
-                })
-            }
-            Err(DeployError::Database(source)) => database_outcome(&source),
-            Err(DeployError::MigrationLog {
-                name,
-                source,
-                ledger,
-            }) => failed_after_step(&name, &source, &ledger),
-            Err(DeployError::InvalidSqlLog {
-                name,
-                source,
-                ledger,
-            }) => DeployOutcome::Failed {
-                detail: format!(
-                    "migration {name} has SQL that is not UTF-8 ({source}) and recording the failure also failed: {ledger}"
-                ),
-            },
-            Err(DeployError::Deadline(_)) => self.deadline_outcome().await?,
-        };
-        Ok(outcome)
-    }
-
-    async fn deadline_outcome(&self) -> Result<DeployOutcome, RecoveryError> {
-        if self.deploy_lock_held().await? {
-            return Ok(DeployOutcome::Contention {
-                detail: CONTENTION_DETAIL.to_owned(),
-            });
-        }
-        Ok(DeployOutcome::TimedOut)
-    }
-
-    // A deadline with a released lock means this deploy held it and ran out of time; a held one means it waited
-    async fn deploy_lock_held(&self) -> Result<bool, RecoveryError> {
-        let client = connect(&self.deploy_url).await?;
-        let held: bool = client
-            .query_one(
-                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted \
-                 AND objsubid = 1 AND classid::bigint = 0 AND objid::bigint = $1 \
-                 AND database = (SELECT oid FROM pg_database WHERE datname = current_database()))",
-                &[&PRISMA_LOCK_KEY],
-            )
-            .await?
-            .try_get(0)?;
-        Ok(held)
     }
 
     async fn recover_once(&self, name: &str) -> Result<bool, RecoveryError> {
@@ -353,45 +229,4 @@ fn recoverable_name(name: &str) -> bool {
         return false;
     }
     !name.contains('/') && !name.contains('\\')
-}
-
-fn step_outcome(name: String, source: &PostgresError) -> DeployOutcome {
-    let sqlstate = sqlstate_of(source);
-    if sqlstate.as_deref() == Some(CANCELED_SQLSTATE) {
-        return DeployOutcome::TimedOut;
-    }
-    DeployOutcome::FailedStep(FailedStep {
-        name: Some(name),
-        sqlstate,
-        detail: source.to_string(),
-    })
-}
-
-fn database_outcome(source: &PostgresError) -> DeployOutcome {
-    let detail = source.to_string();
-    let sqlstate = sqlstate_of(source);
-    if sqlstate.as_deref() == Some(CANCELED_SQLSTATE) {
-        return DeployOutcome::TimedOut;
-    }
-    if is_deadlock(sqlstate.as_deref(), &detail) {
-        return DeployOutcome::Deadlock { detail };
-    }
-    DeployOutcome::Failed { detail }
-}
-
-fn failed_after_step(name: &str, source: &PostgresError, ledger: &PostgresError) -> DeployOutcome {
-    if sqlstate_of(source).as_deref() == Some(CANCELED_SQLSTATE) {
-        return DeployOutcome::TimedOut;
-    }
-    DeployOutcome::Failed {
-        detail: format!(
-            "migration {name} failed ({source}) and recording the failure in the migration ledger also failed: {ledger}"
-        ),
-    }
-}
-
-fn sqlstate_of(source: &PostgresError) -> Option<String> {
-    source
-        .as_db_error()
-        .map(|error| error.code().code().to_owned())
 }

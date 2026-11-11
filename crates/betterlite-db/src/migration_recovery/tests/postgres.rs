@@ -11,8 +11,8 @@ use crate::migration_recovery::outcome::{DeployOutcome, FailedIdentity, FailedSt
 use crate::migration_recovery::policy::{PassSettings, RecoverySteps, StepFuture, run_passes};
 use crate::migration_recovery::steps::PgSteps;
 use crate::migration_recovery::tests::database::{
-    LedgerRow, create_ledger, execute, insert_finished, insert_row, insert_unfinished,
-    ledger_table, migration, relation_exists, stored_row, with_schema,
+    LedgerRow, create_ledger, execute, insert_history, insert_row, ledger_table, migration,
+    relation_exists, stored_row, with_schema,
 };
 use crate::migration_recovery::tests::support::{
     FakeJitter, RecordingPause, ScriptedSteps, capture_logs,
@@ -25,19 +25,21 @@ async fn postgres_rollback_marker_preserves_history() {
     with_schema(|database| async move {
         create_ledger(&database).await;
         let failed = migration("20240101000000_a", "SELECT 1;");
-        insert_unfinished(
+        let completed = migration("20240101000000_b", "SELECT 2;");
+        insert_history(
             &database,
             &failed,
             "00000000-0000-0000-0000-000000000001",
             "2024-01-02 03:04:05+00",
+            false,
         )
         .await;
-        insert_finished(
+        insert_history(
             &database,
-            "20240101000000_b",
-            "bbbb",
+            &completed,
             "00000000-0000-0000-0000-000000000002",
             "2024-01-03 03:04:05+00",
+            true,
         )
         .await;
         let before = stored_row(&database, &failed.name).await;
@@ -54,7 +56,7 @@ async fn postgres_rollback_marker_preserves_history() {
         assert_eq!(after.logs, before.logs);
         assert_eq!(after.steps, before.steps);
         assert_eq!(after.started_at, before.started_at);
-        let untouched = stored_row(&database, "20240101000000_b").await;
+        let untouched = stored_row(&database, &completed.name).await;
         assert!(untouched.finished);
         assert!(!untouched.rolled_back);
     })
@@ -335,19 +337,21 @@ async fn postgres_rollback_targets_only_the_named_migration() {
     with_schema(|database| async move {
         create_ledger(&database).await;
         let failed = migration("20240101000000_a", "SELECT 1;");
-        insert_unfinished(
+        insert_history(
             &database,
             &failed,
             "00000000-0000-0000-0000-000000000005",
             "2024-01-02 03:04:05+00",
+            false,
         )
         .await;
         let other = migration("20240101000000_other", "SELECT 1;");
-        insert_unfinished(
+        insert_history(
             &database,
             &other,
             "00000000-0000-0000-0000-000000000006",
             "2024-01-02 04:04:05+00",
+            false,
         )
         .await;
         let jitter = FakeJitter(0);
