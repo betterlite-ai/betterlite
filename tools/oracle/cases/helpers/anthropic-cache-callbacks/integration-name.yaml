@@ -1,0 +1,7 @@
+kind: helper
+name: anthropic-cache-callbacks-integration-name
+call:
+  b4126:
+    operation: integration_name
+env: {}
+compare: {ignore: []}
