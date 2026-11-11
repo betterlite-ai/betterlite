@@ -88,4 +88,5 @@ pub mod vllm;
 pub mod watsonx_embed;
 pub mod watsonx_rerank;
 pub mod watsonx_text;
+pub mod watsonx_transcription;
 pub mod xai_mistral;

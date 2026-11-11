@@ -7,7 +7,7 @@ description: >-
   effective store_model_in_db=true, in that order. Read/write row id ui_settings through B726.
   GET decodes the object or JSON-string row with B1659, filters its allowlist, applies its
   runtime policy projection, then refreshes ui_settings:settings_dict for 600 seconds. Overlay
-  every allowlisted key present in B120's effective SettingsStore before asking B1656 for
+  every allowlisted key present in B4140's effective SettingsStore (carried by B8380) before asking B1656 for
   values and schema. Add the two read-only derived values and their source labels through
   B1659; a persisted value not present in SettingsStore reports db. Failed schema construction
   can therefore follow already-applied runtime/cache changes.

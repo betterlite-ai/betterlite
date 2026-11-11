@@ -154,7 +154,7 @@ out_of_scope:
   - "endpoints.json, the response models and BaseContainerConfig: B3360 owns them."
   - "GenericLiteLLMParams: B010 owns it. The @client decorator that creates the logging state: B012 owns it."
   - "Logging update_from_kwargs: B247 owns it. exception_type: B185 owns it."
-  - "Router registration of the ten names and the proxy file routes under /v1/containers/{container_id}/files: B094 and its proxy parts own them. No route reaches this code yet, so there are no HTTP oracle cases."
+  - "Router registration of the ten names and the proxy file routes under /v1/containers/{container_id}/files: B7430 owns the router registration, B3371, B3372 and B7326 the handlers and B8635 the mounts and basic HTTP cases. Uploads are B3363, B3367 and this task. No route reaches this code yet, so there are no HTTP oracle cases here."
 
 pitfalls:
   - The mock check reads mock_response with kwargs.get and comes before any provider lookup, so a mock call with an unknown provider still succeeds.

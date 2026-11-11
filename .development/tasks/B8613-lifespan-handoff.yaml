@@ -34,6 +34,7 @@ description: >-
   the prompts position of load_config (L7027-L7034, after the policy engine setup and before credentials), when
   `config.sections.prompts` is not empty, B8293's `init_prompts` fills it with the config file path; its error stops
   startup with its text. B8384's load_prompts gets this same registry.
+  One B9320 `Arc<PolicyRuntime>`, built here over the handles B9320 names and backing B8590's policy-init port through a binary-side adapter. It runs at the init_policy_engine position (after init_guardrails_v2, before prompts), and an empty policies key still skips it. The same Arc goes through Started and StartupOutputs into `Shared.policies`.
   5. Router handle. `RouterHandle::new(None)` before the response cache, because B8651's SemanticDeps holds it.
   6. Response cache. `CacheRuntime::new(...)` (B8612) with SemanticDeps { router: the handle, factory, http: the chat
   executor's client, env }. When litellm_settings.cache is true, resolve every os.environ/ string in the cache params
@@ -43,8 +44,11 @@ description: >-
   7. Router. When a config file was loaded, in load_config order (L6905-L6928): B8378's check_capability_limits over the
   model_list with B377's unlicensed limit; for each entry B8378's check_max_agentic_loops, check_complexity_placement,
   check_access_windows and pin_complexity_model_id; B8587's complexity router plugin resolution with the config file
-  path; then `handle.install(ProxyRouter::build(RouterParts::from_config(&config, slot.get().is_some()))?)`, the
-  Router(...) call at L6992. A check error stops startup with its text. When B8377's selection returns a usage Redis,
+  path; then call B8384's `parse_search_tools(&config)`, set the entries on the parts (`parts.search_tools`, an empty list
+  when it returns none), and `handle.install(ProxyRouter::build(parts)?)` with `parts = RouterParts::from_config(&config,
+  slot.get().is_some())`, the Router(...) call at L6992. The search tools are supplied this way even when no database is
+  configured, so GET /v1/search/tools sees the config tools. Install B3008's fallback budget predicate in RouterParts as the router's
+  fallback_budget_check (L7001). A check error stops startup with its text. When B8377's selection returns a usage Redis,
   call the router's `attach_redis` with it (L1400-L1413 and L7006-L7007). Pass the handle wherever B8374 passes "the
   router" today (B8381's DeploymentSync, B8372's model info refresh).
   8. MCP JWT signer slot. One B8254 `JwtSignerSlot::new()` before the guardrail factories are built, passed to the
@@ -52,7 +56,7 @@ description: >-
   9. ProxyLogging. `ProxyLogging::new(auth_cache, false)` (B8399; premium_user is false in open-source LiteLLM) right
   after the auth cache is created, and `startup_event(router, usage_redis)` at the position of
   ProxyStartupEvent._initialize_startup_logging (L1415-L1420), after the Redis selection and before the transaction
-  buffer check. The B8590 alerting port that B8374 calls updates this same value. Right after ProxyLogging is built, make the one B8666 `GuardrailClasses::new(runtime, ports)` over the GuardrailRuntime from step 8, pass its `callbacks()` (a live source that reads the handler on every call) to B8399's add_guardrail_callbacks, and keep it in Started for SharedGuardrails.classes. The lifespan never calls init_callbacks: B8742's callback_loggers slot calls `shared.proxy_logging.init_callbacks(resolver)` from app::callbacks::start.
+  buffer check. The B8590 alerting port that B8374 calls updates this same value. Right after ProxyLogging is built, make the one B8666 `GuardrailClasses::new(runtime, ports)` over the GuardrailRuntime from step 8 (the `ClassPorts` also carry the settings B8990's Vigil runtime needs and the existing secret-lookup handle from step 2), pass its `callbacks()` (a live source that reads the handler on every call) to B8399's add_guardrail_callbacks, and keep it in Started for SharedGuardrails.classes. The lifespan never calls init_callbacks: B8742's callback_loggers slot calls `shared.proxy_logging.init_callbacks(resolver)` from app::callbacks::start.
   10. Periodic reloads. One B8385 `PeriodicReloads` before B8374 registers the background jobs. B8372's
   BackgroundJobInputs (the periodic_reload_job) and B8384's beta header reload get this one; Started carries it for
   B8586's routes.
@@ -63,7 +67,8 @@ description: >-
   DeploymentSyncPort>` and the same DeploymentSync as `auto_router_catalog: Arc<dyn AutoRouterCatalog>` (B8381
   implements B379's trait).
   12. Gateway requests. One B3102 `GatewayRequestAccumulator` as an Arc, before the background jobs. Every flush B8374
-  and B8372 run takes this one, and Started carries it for B8680's billable sink.
+  and B8372 run takes this one, and Started carries it for B8680's billable sink. Also make one B3067 `VantageLoggers`
+  Arc here, pass it to B8372, and carry it in Started so B8610 exposes it as shared.vantage_loggers.
   13. Prometheus registry. One B3875 `CollectorRegistry` as an Arc, before anything registers a collector; pass it
   wherever B8374's merged code takes a registry. Started carries it: B8655 registers its collectors into it and B3886's
   metrics_router renders it.
@@ -72,6 +77,11 @@ description: >-
   server's in-flight layer and wait_for_drain count the same requests (B8610 hands them to ServerState).
   15. Spend producer slot. One empty `Arc<std::sync::OnceLock<P>>`, where P is what B069's spend::startup::start
   returns. Started carries it; B8662 fills it from app::spend::start once the server starts.
+  16. Config-load steps. B8873's raw secret-manager bootstrap runs before whole-config reference resolution (before
+  B8590's env_overlay resolves the file), and B8872's audit-callback installation runs at its config-load position
+  (proxy_server.py L6518-L6547). Both go through B8590's config_boot calls; neither builds a second manager or callback list.
+  17. Agent tracing session. B8374 starts B8911's tracing receiver at its position; Started carries the returned session
+  for stop.
 
   Stop adds these steps, each once:
   1. At B8374's "drain the spend event producer" position (L1625, before stop_in_flight_jobs), drain what the slot from
@@ -83,6 +93,8 @@ description: >-
   second flush.
   3. Before B8374's response cache disconnect, fire the CacheWriteTracker's token and await its wait_idle, so cache
   writes already started finish first (B4304).
+  4. After serving and B8374's other shutdown steps, close the session from step 17 (unregister the spend logger, then
+  await its bounded flush). Without a session, do nothing.
 
 
   Collector lifecycle. B1709 defines `CollectorLifecycle` (startup, shutdown) in crates/betterlite/src/collector.rs and

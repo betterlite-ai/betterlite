@@ -8,7 +8,7 @@ description: >-
   `GuardrailMerge` over B8391's merge_model_level_guardrails with trust_client_model_info false and `shared.router` (B8611).
   `CompressionArming` over B3546's arm_pre_call with `shared.router`.
   `TagBudgets` over B750's request_skips_budget_checks with the router, and B752's tag_max_budget_check_for_tags with `shared.db`, the auth key cache and `shared.proxy_logging`. A BudgetExceeded answer maps to `Proxy` with type budget_exceeded, no param and its status.
-  `RetrievalPipelines` over B3269's attach_post_call_pipelines_to_retrieval with the router.
+  `RetrievalPipelines` over B3269's attach_post_call_pipelines_to_retrieval with the router and the policy registries from `shared.policies` (B9320), read on each request and never kept as a startup snapshot.
 
   Tests in app/inference/pre_call_hooks/tests.rs (`app::inference::pre_call_hooks::tests::`) build a ServerState from a config.yaml with a `generic_guardrail_api` pre_call guardrail against a local mock, a model-level guardrail on one deployment, and a tag with max_budget 0. The pre_call guardrail blocks and the skip flag bypasses it. A local rate limit comes back as RateLimited. The model-level guardrail joins the data with and without an alias. A tag added by a guardrail over its budget fails with budget_exceeded. aget_responses data gets the retrieval pipelines.
 scope:

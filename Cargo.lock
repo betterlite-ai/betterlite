@@ -1519,6 +1519,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-dashboard-browser"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [
@@ -2875,6 +2879,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",

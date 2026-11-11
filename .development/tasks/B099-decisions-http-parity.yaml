@@ -1,0 +1,207 @@
+id: B099
+title: Decisions and SystemOne HTTP conversion and failure parity
+description: >-
+  Close the HTTP evidence gap between the decision providers and the mounted proxy.
+  B8276 implements every function in proxy/decisions_endpoints/endpoints.py; B8634
+  supplies its state, dispatch and mount, but checks only authentication and malformed
+  request bodies. B3510 through B3515 exercise records, conversions, preparation and
+  sending without a successful request through the booted proxy. Add HTTP cases under
+  tools/oracle/cases/decisions/composed for that missing composition. Reuse the existing
+  HTTP Case schema and steps; no helper operation, native implementation, route
+  registration, mount or parser is added. The six endpoint functions are all accounted
+  for below. There are zero unassigned LiteLLM implementation lines, so this task is
+  approximately 700 lines of fixtures rather than another port of those functions.
+
+  Exercise exactly POST /v1/systemone and /systemone for state plus named questions,
+  and POST /v1/decisions and /decisions for input plus a questions sequence. There are
+  no /openai/v1 or provider-prefixed aliases in this endpoint module. Use a configured
+  master key, model_list aliases, explicit mock api_base values containing {{upstream}},
+  dummy provider credentials and router_settings.num_retries: 0. Each successful case
+  must capture a real upstream POST; compare its path, JSON body and authorization and
+  content-type headers as well as the client body. Rejected requests must leave the
+  upstream capture empty. Keep inputs within the declared wire types even in the
+  rejection cases; empty question collections and one-option SystemOne questions
+  test declared validation constraints, not Python coercion.
+
+  typesafe-systemone.yaml uses typesafe/jev-latest and a configured base ending /v1/.
+  Send the same state object and named noul, choice and score questions through both
+  SystemOne aliases. Return deterministic answers with a different provider model,
+  an extra top-level field, nonzero input/output usage and cached/write token fields.
+  The captured URL has exactly one /v1/systemone suffix, named answers survive, the
+  provider model wins and hidden params and excluded cached/write fields stay out of
+  the SystemOne response. Resolve the dummy key from TYPESAFE_API_KEY by omitting the
+  deployment api_key. Include configured extra_headers with conflicting authorization
+  and content-type plus x-decision-test; only the custom header survives unchanged.
+  TypeSafe's inherited defaults are TYPESAFE_API_BASE then https://api.typesafe.ai,
+  with a required TYPESAFE_API_KEY when no explicit key is supplied; fixtures override
+  the base so no public host is contacted.
+
+  typesafe-decisions.yaml covers the reverse projection through /v1/decisions and
+  /decisions. Use two user messages containing input_text parts, one unnamed question
+  among named questions, boolean and string choice values, a score level description,
+  and a final predicate with no provider answer. Every upstream question key becomes
+  its numeric index when any name is missing; the text joins with two newlines. Return
+  the boolean choice as the SystemOne string key true, sparse probabilities and no
+  answer for the final predicate. The client gets its ordered OpenAI answers, boolean
+  value, original level labels, zero-filled probabilities and final refusal. Supply
+  usage with cached/write counts and verify the OpenAI detail records and total_tokens.
+  Omit the optional SystemOne provider model in the second reply to exercise the
+  OpenAI projection's requested-model fallback; compare LiteLLM's routed result
+  rather than assuming that the original proxy alias survives routing.
+
+  openai-decisions.yaml uses openai/gpt-6-luna, an explicit dummy key and mock base,
+  an input_image data URL beside input_text, and string safety_identifier. The request
+  reaches /v1/decisions with the image and identifier intact. Return OpenAI predicate,
+  choice and score answers with cached and reasoning usage; preserve the provider's
+  nonempty model rather than overwriting it with the proxy alias. The native OpenAI
+  response requires model, answers and usage, unlike the SystemOne provider response.
+  OpenAI resolves an absent base through litellm.api_base, OPENAI_BASE_URL,
+  OPENAI_API_BASE and https://api.openai.com; keys fall through litellm.api_key,
+  litellm.openai_key and OPENAI_API_KEY. This fixture supplies both values explicitly.
+
+  openai-systemone.yaml sends SystemOne named questions to that same OpenAI deployment.
+  Include noul criteria and choice/score questions with omitted instructions to expose
+  the provider's default instruction strings and criteria projection. Return one
+  refusal and one answer of the wrong question type: those names disappear from the
+  SystemOne answers while matching answers remain. Follow with a SystemOne choice
+  containing one criterion: route validation accepts it, OpenAI conversion rejects it
+  with 400 before transport. The public format determines the response shape regardless
+  of the provider's native format.
+
+  safety-strict.yaml and safety-drop.yaml both target TypeSafe with the same valid
+  string safety_identifier on requests in each public format. The first leaves
+  drop_params at its false default and gets the unsupported-parameter 400 envelope
+  without upstream IO. The second sets litellm_params.drop_params: true on the
+  deployment and succeeds with no safety_identifier in the upstream body. Route
+  validation removes this key only from its validation copy; otherwise the strict
+  case would incorrectly succeed. Do not use a numeric or list identifier to test
+  Python's runtime acceptance beyond the declared str-or-null type.
+
+  body-validation.yaml sends an empty questions map to /systemone, an empty questions
+  list to /decisions, and a valid SystemOne body with an additional input field. The
+  first two fail route validation; the last reaches _prepare_systemone_call and fails
+  reject_other_format. Add an OpenAI input_image request against TypeSafe to prove its
+  text-only rejection happens after route validation. All four produce 400 with no
+  provider call, but compare each complete error envelope independently.
+
+  provider-failures.yaml sends otherwise valid TypeSafe requests with mock replies
+  401, 429 and a 200 response whose answers field has the wrong declared shape. The
+  first two traverse B3514's transport classification; the last traverses response
+  validation and becomes 500. Use steps with retries disabled and a distinct response
+  per step. Preserve status, error.type, error.param and error.code; ignore only
+  /error/message because betterlite supplies its own wording. Compare any Retry-After
+  header the proxy actually exposes instead of copying the upstream header by assumption.
+
+  strands-http.yaml installs two strands_decider/strands-decider-2B-hobson-v19 aliases
+  with a local HTTP base, one without a key and one with a dummy explicit key. Make
+  SystemOne and OpenAI-format requests and compare inherited /v1/systemone conversion,
+  absence versus presence of Bearer authorization, provider extras on the SystemOne
+  result, and OpenAI answer projection. STRANDS_DECIDER_API_KEY and
+  STRANDS_DECIDER_API_BASE are its environment fallbacks; no base default exists and
+  a key is optional. Keep both environment variables absent in this fixture. Direct
+  HTTP must not invent AgentCore session or SigV4 headers. B3512 retains ARN parsing,
+  session generation and signing tests; a canonical AWS HTTPS invocation cannot be
+  redirected by substituting this harness's HTTP api_base without changing branches.
+
+  foundry-formats.yaml uses azure_ai/decision-1 and a mock base ending
+  /api/projects/demo/openai/v1?api-version=ignored. Exercise both public formats and
+  capture /providers/microsoft/v1/systemone without the project, suffix or query.
+  Set an explicit dummy key and compare Bearer authorization: this decision config
+  inherits BaseDecisionsConfig, not Foundry chat's host-specific api-key policy.
+  AZURE_AI_API_KEY and AZURE_AI_API_BASE are its fallbacks and the base has no default.
+  Return a SystemOne answer and verify each client receives its requested wire format.
+
+  Use the harness's booted-gateway HTTP cases, not SDK HTTP or direct FastAPI calls.
+  Keep content-type and deterministic x-litellm-call-id compared; duration and version
+  headers may be checked for presence. Compare the full answers, usage, model and
+  upstream JSON, without broad ignores. B040 already owns hosted_vllm decision HTTP
+  cases; B9211 owns OpenRouter, Perplexity and Cloudflare. Sandbox operations have no
+  standalone proxy route at this pin: B3519 supplies their SDK dispatch, B7891 the
+  Python facade, and B4121/B4122 the code-interpreter caller under B119. Do not add a
+  sandbox endpoint or a duplicate interceptor here.
+scope:
+  paths:
+    - tools/oracle/cases/decisions/composed/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L78-L170
+    why: B8276 owns the four parsing, validation and processing helpers; B099 proves their composition over HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L173-L256
+    why: B8276 owns both handlers and all four decorators; B8634 mounts their router once.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L121-L337
+    why: B3513's safety and preparation policies and B3514's transport, format selection and hidden metadata, exercised rather than reimplemented.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/systemone/main.py#L19-L76
+    why: B3515's live async entrypoint rejects input even though the SystemOne envelope permits extra fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L63-L394
+    why: B3511's numeric-key fallback, text projection, refusal handling, inherited headers, URL and response validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/typesafe/decisions/transformation.py#L4-L9
+    why: B3511's TypeSafe environment names and default base used by the fixtures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/decisions/transformation.py#L104-L321
+    why: B524's instruction defaults, one-option rejection, answer alignment, usage projection and model fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L131-L156
+    why: B3510 excludes cached/write token counts and hidden params from SystemOne serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/strands_decider/decisions/transformation.py#L103-L161
+    why: B3512's direct HTTP branch has an optional key and bypasses AgentCore-specific signing and runtime-error interpretation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/decisions/transformation.py#L8-L24
+    why: B557's Foundry suffix removal, fixed decision path and inherited SystemOne configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/decisions_endpoints/test_endpoints.py#L349-L535
+    why: Pinned examples of both route formats, image rejection, image passthrough and complete answer and usage projections.
+dod:
+  - text: Both SystemOne aliases and both Decisions aliases execute TypeSafe calls with the native or translated answer and usage shape, ordered numeric fallback and configured headers.
+    proof: [typesafe-cases, oracle]
+  - text: OpenAI decisions accept image content and safety identifiers, preserve upstream models, translate SystemOne requests and refuse a single-option question before transport.
+    proof: [openai-cases, oracle]
+  - text: Deployment drop_params changes the unsupported safety-identifier outcome after HTTP validation, and the four validation failures make no provider request.
+    proof: [validation-cases, oracle]
+  - text: Provider authentication, rate-limit and validated-but-invalid responses retain their distinct proxy statuses and error fields.
+    proof: [failure-case, oracle]
+  - text: Strands direct HTTP and Foundry decision configs are reached through the production decision pipeline with their distinct credential and URL behavior.
+    proof: [provider-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: typesafe-cases
+      why: Both native and translated TypeSafe fixtures must be new and present before the HTTP gate can prove anything.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/decisions/composed)" && test -f tools/oracle/cases/decisions/composed/typesafe-systemone.yaml && test -f tools/oracle/cases/decisions/composed/typesafe-decisions.yaml
+    - id: openai-cases
+      why: A TypeSafe success does not establish the OpenAI-native or SystemOne-to-OpenAI path.
+      run: test -f tools/oracle/cases/decisions/composed/openai-decisions.yaml && test -f tools/oracle/cases/decisions/composed/openai-systemone.yaml
+    - id: validation-cases
+      why: The strict, dropping and pre-transport rejection fixtures must all exist independently.
+      run: test -f tools/oracle/cases/decisions/composed/safety-strict.yaml && test -f tools/oracle/cases/decisions/composed/safety-drop.yaml && test -f tools/oracle/cases/decisions/composed/body-validation.yaml
+    - id: failure-case
+      why: SDK send tests cannot prove the proxy's serialized transport and provider-validation errors.
+      run: test -f tools/oracle/cases/decisions/composed/provider-failures.yaml
+    - id: provider-cases
+      why: The provider-specific branches require real HTTP requests through their own configured aliases.
+      run: test -f tools/oracle/cases/decisions/composed/strands-http.yaml && test -f tools/oracle/cases/decisions/composed/foundry-formats.yaml
+oracle_cases:
+  - tools/oracle/cases/decisions/composed/typesafe-systemone.yaml
+  - tools/oracle/cases/decisions/composed/typesafe-decisions.yaml
+  - tools/oracle/cases/decisions/composed/openai-decisions.yaml
+  - tools/oracle/cases/decisions/composed/openai-systemone.yaml
+  - tools/oracle/cases/decisions/composed/safety-strict.yaml
+  - tools/oracle/cases/decisions/composed/safety-drop.yaml
+  - tools/oracle/cases/decisions/composed/body-validation.yaml
+  - tools/oracle/cases/decisions/composed/provider-failures.yaml
+  - tools/oracle/cases/decisions/composed/strands-http.yaml
+  - tools/oracle/cases/decisions/composed/foundry-formats.yaml
+deviations: []
+out_of_scope:
+  - "Complete inventory for litellm/proxy/decisions_endpoints/endpoints.py: _invalid_request L78-L92, _fields_checked_before_routing L95-L96, _request_data L99-L104, _process_decisions L107-L170, systemone including decorators L173-L213 and decisions including decorators L216-L256 are implemented by B8276, whose covers claims this file. Its __init__.py contains only __all__ = (). B099 adds HTTP evidence only."
+  - "Route registration and body decoder/fuzz coverage stay with B8276; request preparation and shared hook/exception ports are its prerequisites B1103, B8393, B8395 and B003. B8634 supplies the mount and state, B8631 the router ports and B8610 the composition root. The unrelated B8626, B8701 and B8728 MCP mounts are not involved."
+  - "All referenced decision records and transforms stay with B3510, B3511, B3512, B524 and B557; prepare_call and ProviderConfigManager.get_provider_decisions_config are B3513, send/asend and formatting B3514, and public wrappers B3515. No copies or second provider selector are added."
+  - "OpenAPI request examples and generated schema are already excluded by B8276 for the architect's schema work; they are not runtime functions to port here."
+  - "Hosted_vllm HTTP coverage is B040 and aggregator decisions coverage is B9211. B3512's AgentCore ARN/signing tests remain its responsibility; this fixture suite does not claim canonical HTTPS interception coverage."
+  - "Sandbox provider implementations belong to B3516-B3518, registry and SDK lifecycle dispatch to B3519, Python APIs to B7891, and interception functions to B4121/B4122 under B119. The sandbox files are outside B099's remaining covers glob."
+pitfalls:
+  - "systemone_keys returns numeric keys for every question when any name is absent or duplicated; keeping the other names contradicts L63-L67."
+  - "ir_to_openai_response uses response.model or requested_model, so an always-echo-the-request assertion would encode the incorrect summary in B3514."
+  - "A valid SystemOne one-choice question fails only when translated to OpenAI; using an invalid one-choice OpenAI request would test the wrong layer."
+  - "Foundry Decisions sends Bearer authorization even where Foundry chat sends api-key, because AzureAIDecisionsConfig inherits the shared decision base."
+  - "A mock HTTP api_base for Strands exercises the direct branch; it does not prove ARN invocation signing or runtime error decoding."
+  - "The deprecated SDK decisions(state=...) path is not an HTTP alias: /decisions validates the OpenAI body before it can reach that wrapper."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -17,8 +17,9 @@ description: >-
   (rate_limit.rs, tests.rs). Each arm builds its handler once per process as the LiteLLM arm does (litellm_logging.py
   L4905-L4940): with ProxyLogging's internal usage cache (shared.proxy_logging, B8612) and then the router through its
   update_variables equivalent (shared.router, B8611). Wrap it in a struct that implements B8390's ProxyCallback with the
-  hooks the handler overrides (async_pre_call_hook for both, plus the v3 response header and success hooks B3053
-  builds), and return it as Ok(Some(..)). The v3 handler also accounts tokens in async_log_success_event, so its
+  hooks the handler overrides (async_pre_call_hook for both, the legacy dynamic handler's
+  async_post_call_success_hook that B3050 builds with its six project and model headers, plus the v3 response header
+  and success hooks B3053 builds), and return it as Ok(Some(..)). The v3 handler also accounts tokens in async_log_success_event, so its
   adapter implements B8740's CallbackLogger too, and in crates/betterlite-server/src/state/callback_loggers.rs the
   dynamic_rate_limiter_v3 name resolves to that same Arc as a logger instead of Ok(None). betterlite-server gains a
   dependency on betterlite-rate-limit in its Cargo.toml; rate-limit sits below the server, so no cycle forms.

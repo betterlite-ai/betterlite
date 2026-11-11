@@ -1,0 +1,153 @@
+id: B8890
+title: Shared alert runtime construction and live updates
+description: >-
+  Supply the missing SlackAlerting constructor and update_values implementation, in
+  crates/betterlite-server/src/alerting/runtime.rs and runtime/. B4020 supplies parsed settings,
+  B4021 the delivery machinery, B4024 the dispatch policy and B4027 the hanging-request detector;
+  none constructs the long-lived value ProxyLogging needs. Build AlertRuntime, RuntimeOptions,
+  RuntimeUpdate and AlertRuntimeError here. This is a dependency of ProxyLogging, so it must not
+  import ProxyLogging, Shared or app::callbacks. Accept the cache, pooled HTTP client, environment
+  lookup, clock, TaskTracker and optional B8611 router view as constructor inputs.
+
+  RuntimeOptions retains Option for alerting and alert_to_webhook_url. A standalone constructor
+  defaults alerting to Some([]), alert_types to DEFAULT_ALERT_TYPES, threshold to 300 seconds and
+  the webhook map and default_webhook_url to None; ProxyLogging explicitly supplies alerting None
+  and its internal usage DualCache. Use that supplied cache by identity; only a standalone caller
+  without one gets a fresh B4293 DualCache with its own defaults. Use the supplied B173 client via
+  the existing PooledDelivery adapter. Resolve os.environ/ webhook references with B4020, preserve
+  a string versus a list, and retain None versus an explicitly empty map. The normalized map in
+  config.sections.alert_settings alone cannot tell whether the input was absent: the caller must
+  pass the presence information from its typed settings update, not infer it from map length.
+
+  Assemble one Arc of B4021 AlertDelivery, its BatchQueue and DigestBuckets, and one B4027 hanging
+  detector. B256 BatchSettings supplies DEFAULT_BATCH_SIZE (512), DEFAULT_FLUSH_INTERVAL_SECONDS
+  (5) and the 50000-item queue cap; read those through its environment-map API, never std::env.
+  B4020 supplies SlackAlertingArgs, including SLACK_DAILY_REPORT_FREQUENCY (43200), the 86400-second
+  digest default and log_to_console false. Start with empty digests, is_running false, no router
+  and no flush task. Configuration loading retains B4020's 600-second threshold when alerting
+  is supplied without a threshold; 300 is the constructor default, not a replacement for that
+  loaded value.
+  Constructor assembly must not start a loop. The hanging detector's cache TTL is calculated
+  once from the construction threshold, as in LiteLLM; updating the threshold does not recreate
+  that cache or discard its pending requests.
+
+  update_values applies supplied fields in source order: destinations, threshold, alert types,
+  args, per-type digest settings, webhook mapping, then router. None means leave unchanged;
+  Some([]) clears the destinations or types. Each supplied args record replaces the old args,
+  with omitted members taking B4020 defaults rather than inheriting old values. Digest settings
+  and webhook mappings merge by key; an empty map removes nothing. Resolve an incoming webhook
+  map before adding its entries, but retain preceding successful field updates if that resolution
+  fails. Changes to destinations, including an empty list, and to args request B4021's
+  ensure_started; other fields do not. That existing owner prevents duplicate timers and restarts
+  a finished one. Preserve the queue, digest entries, cache and HTTP client across every update.
+  Merge the digest configuration before calling DigestBuckets::set_config, which replaces its
+  map. Do not rewrite periodic_flush, digest draining or destination selection.
+
+  B4021 currently fixes AlertDelivery.log_to_console at construction. In the explicitly scoped
+  alert_delivery.rs, give it a synchronized live setting and set_log_to_console, read it once per batch,
+  and update its adjacent tests and construction sites there. This small API
+  change lets runtime updates affect later batches without replacing their queue or timer.
+  Test the existing alert_batching module too because its delivery type changed.
+
+  Expose a snapshot of current settings and stable delivery, cache, hanging-check and router
+  handles for the existing producer owners. Delegate send_alert to B4024 over those handles.
+  Define a LegacyEmailPort over the merged B4022/B4023 event types, with budget and key/invitation
+  send operations, a public send_key_created_or_user_invited_email entry and a one-time
+  attach_email_port method; B8891 supplies its production value
+  after the database and invitation creator exist. An email send attempted before attachment
+  returns a typed UnboundEmailPort error, which the owning producer handles by its existing
+  policy. This is a startup invariant, not a new HTTP error or a disabled-email mode.
+
+  Put the typed settings transition in runtime/update.rs so native execution and the pure oracle
+  projection use the same logic. Helper cases compare the settings and ordered ensure-flush
+  requests with SlackAlerting.update_values on an in-memory receiver whose flush starter only
+  records calls; they neither start a timer nor import FastAPI handlers. Cases cover omitted
+  fields, clearing a list, resetting args to defaults, both map merges, empty-map preservation,
+  os.environ/ resolution and field changes retained before a missing environment reference.
+  Constructor identity, real timer admission and hanging-cache survival are native tests with
+  paused time. No new byte decoder or config section is added; B4020 owns decoding and B116
+  exercises the runtime through the already planned HTTP routes.
+scope:
+  paths:
+    - crates/betterlite-server/src/alerting/runtime.rs
+    - crates/betterlite-server/src/alerting/runtime/**
+    - crates/betterlite-logging/src/alert_batching/alert_delivery.rs
+    - crates/betterlite-logging/src/alert_batching/alert_delivery/tests.rs
+    - tools/oracle/cases/helpers/alert-runtime/**
+    - tools/oracle/helpers/b8890.py
+    - tools/oracle/helpers/b8890/**
+    - tools/oracle/src/helpers/server/b8890.rs
+    - tools/oracle/src/helpers/server/b8890/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L92-L131
+    why: Own constructor assembly; B4020 retains settings validation and defaults, and B4027 retains the hanging detector implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L139-L171
+    why: Own update_values, including ordered replacement, map merging and the two flush-start call sites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L133-L137
+    why: Reuse B4021's task admission, including restart after the previous task has finished.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1597-L1607
+    why: Keep the existing batch delegation when an args update changes console logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/batching_handler.py#L43-L76
+    why: B4021 owns the sender; its console warning reads live args.log_to_console, which the runtime setter must keep current.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1202-L1215
+    why: Caller context only, owned by B8399; the alert runtime shares ProxyLogging's one-second usage cache.
+dod:
+  - text: Construction preserves supplied cache and client identity, starts no timer and creates the hanging cache once with the construction threshold.
+    proof: [runtime-tests]
+  - text: Typed updates retain absence, replace lists and args, merge maps and preserve earlier changes when webhook resolution fails, matching the helper projection.
+    proof: [runtime-tests, oracle, helper-python]
+  - text: Empty destinations and args updates admit one live flush timer, finished timers restart, and queued alerts and digests survive updates.
+    proof: [runtime-tests]
+  - text: A changed log_to_console reaches the next batch through the existing delivery object and all existing delivery tests still pass.
+    proof: [runtime-tests, delivery-tests]
+  - text: Runtime send operations use B4024 and the attached email port, and an unattached email port fails with a typed error.
+    proof: [runtime-tests]
+checks:
+  optional: []
+  commands:
+    - id: runtime-tests
+      why: construction, ordered updates, shared handles or email attachment is absent or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::runtime::/)'
+    - id: delivery-tests
+      why: changing the live batch setting breaks batching, flushing or its callers
+      run: >-
+        grep -q 'pub fn set_log_to_console' crates/betterlite-logging/src/alert_batching/alert_delivery.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_batching::/)'
+    - id: helper-python
+      why: the settings projection adapter is missing or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/alert-runtime/omitted-fields.yaml
+  - tools/oracle/cases/helpers/alert-runtime/empty-destinations.yaml
+  - tools/oracle/cases/helpers/alert-runtime/replace-args.yaml
+  - tools/oracle/cases/helpers/alert-runtime/merge-digest-config.yaml
+  - tools/oracle/cases/helpers/alert-runtime/merge-webhook-map.yaml
+  - tools/oracle/cases/helpers/alert-runtime/empty-map-keeps-entries.yaml
+  - tools/oracle/cases/helpers/alert-runtime/webhook-environment.yaml
+  - tools/oracle/cases/helpers/alert-runtime/partial-update-before-resolution-error.yaml
+deviations: []
+out_of_scope:
+  - "slack_alerting.py: _all_possible_alert_types and the settings schema are B4020; _ensure_periodic_flush_task, send_webhook_alert, _enqueue_ms_teams_alert, async_send_batch, _flush_digest_buckets and periodic_flush are B4021, apart from the live console-setting adaptation specified above."
+  - "slack_alerting.py: _check_if_using_premium_email_feature and send_email_alert_using_smtp are B4022; _construct_user_invitation_link and send_key_created_or_user_invited_email are B4023; send_alert is B4024."
+  - "slack_alerting.py: failed_tracking_alert, budget_alerts, _get_event_and_event_message, _get_percent_of_max_budget_left, _get_user_info_str and customer_spend_alert are B4025."
+  - "slack_alerting.py: _prepare_outage_value_for_cache, _restore_outage_value_from_cache, _count_outage_alerts, _outage_alert_msg_factory, region_outage_alerts and outage_alerts are B4026."
+  - "slack_alerting.py: _response_taking_too_long_callback_helper, _get_deployment_latencies_to_alert, response_taking_too_long_callback and response_taking_too_long are B4027."
+  - "slack_alerting.py: async_update_daily_reports, send_daily_reports, async_log_success_event, _run_scheduler_helper and _run_scheduled_daily_report are B4028; B8656 composes success and failure logging, including async_log_failure_event."
+  - "slack_alerting.py: send_weekly_spend_report, send_monthly_spend_report and send_user_spend_alerts are B4029."
+  - "slack_alerting.py: model_added_alert, _deprecation_alerts_enabled, send_model_deprecation_alert, _claimed_deprecation_alert_window, _deprecation_alert_sent_within_a_day, _run_deprecation_alert_pass, run_scheduled_deprecation_check, send_fallback_stats_from_prometheus and send_virtual_key_event_slack are B4030; its injected router getter replaces _proxy_llm_router."
+  - "deployment_in_cooldown, deployment_removed_from_cooldown, model_removed_alert and _request_is_completed: no caller at the pin."
+  - "ProxyLogging construction, registration rules and report/hanging/deprecation startup are B8399; concrete event and SMTP bindings are B8891, and route-level parity is B116."
+pitfalls:
+  - "Some([]) starts the periodic flush task when passed as alerting to update_values even though send_alert does not start it for an empty list."
+  - "An empty alert_type_config or alert_to_webhook_url update preserves existing entries, whereas empty alert_types replaces the list."
+  - "Updating alerting_threshold leaves hanging_request_cache_ttl unchanged because the detector is constructed only once."
+  - "Passing an empty map in place of None changes /health/services?service=slack from the default test alert to an empty per-type loop."
+  - "Do not hold a settings lock while awaiting HTTP, SMTP or a flush, because the flush reads those same settings."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

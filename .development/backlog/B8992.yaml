@@ -1,0 +1,13 @@
+id: B8992
+milestone: M6 guardrails
+title: Native Google A2A and MCP guardrail HTTP parity
+status: blocked
+depends_on: [B3680, B3771, B3506, B8774, B8648, B8589, B8626, B4682, B8198, B6163, B6370, B8804]
+file: tasks/B8992-native-guardrail-http.yaml
+covers: []
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: "waits for a planned change: stream guardrails must keep raw frames (a lossless GuardrailStreamItem through B3661 to B8632), B104's report"
+pr: null

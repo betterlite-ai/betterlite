@@ -4,7 +4,8 @@ title: "MCP operations: tool execution, guardrails and logging"
 status: todo
 depends_on: [B8190, B8196, B8197, B4731, B6591, B8464, B8465]
 file: tasks/B8198-mcp-ops-execution.yaml
-covers: []
+covers:
+  - "litellm/proxy/_experimental/mcp_server/operations.py"
 parent: B136
 split_from: B136
 resolution: null

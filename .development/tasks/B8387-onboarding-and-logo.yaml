@@ -40,7 +40,7 @@ description: >-
   does not exist, falling back" and the next candidate is tried. With no custom logo serve the bundled logo for the
   variant (the dark file for the dark theme when present) from the assets directory (LITELLM_ASSETS_PATH, default
   /var/lib/litellm/assets when LITELLM_NON_ROOT is true, created when missing, falling back to the bundled directory
-  with a warning), and the bundled light logo as the last resort. GET `/get_favicon`: LITELLM_FAVICON_URL empty serves
+  with a warning), and the bundled light logo as the last resort. betterlite bundles no logo files (B9092 shows a text wordmark), so when no candidate file exists the route answers 404 "Default logo not found" where LiteLLM's FileResponse would fail with a 500. GET `/get_favicon`: LITELLM_FAVICON_URL empty serves
   the dashboard's favicon.ico (image/x-icon) or 404 "Default favicon not found"; an http(s) value redirects; a local
   value is served when it validates, otherwise it warns and falls back to the default, or 404 "Favicon not found".
 
@@ -79,10 +79,11 @@ checks:
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^onboarding_routes::/)'
 oracle_cases: []
 deviations:
-  - what: The bundled logos and default favicon are betterlite's rebranded dashboard files, so /get_image and /get_favicon without a custom value return different bytes.
-    why: The dashboard is kept and rebranded (README decisions, 2026-10-24); the bundled directory is an input this task takes, not files it adds.
+  - what: betterlite bundles no logo or favicon files, so /get_image without a custom or assets-directory logo answers 404 "Default logo not found" and /get_favicon answers LiteLLM's own 404 "Default favicon not found".
+    why: The rebranded dashboard uses a text wordmark instead of a logo image (maintainer decision, 2026-11-11), and LiteLLM's last-resort FileResponse on a missing file is a 500, not a contract to copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17663-L17686
 out_of_scope:
-  - "Building and serving the dashboard and its bundled assets: the B144 dashboard work, which has no parts yet (planner notes)."
+  - "Building and serving the dashboard: B9091 builds the ui sidecar, B9092 owns the text wordmark and B9093 serves the static files."
   - "Invitation rows: B797. Password policy and breach check: B786. UI session key revocation: B789."
 pitfalls:
   - The UI token object JWTs carry no exp claim; only the inner onboarding JWT expires.
