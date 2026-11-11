@@ -1,0 +1,35 @@
+kind: helper
+name: cache-placement-anthropic-dialect
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages: [{role: user, content: hello}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: [{type: text, text: one}, {type: text, text: two}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: assistant, content: hello}]
+        points: [{location: message, role: assistant, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, name: alice}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: []}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: hello}]
+        points: [{location: message, role: user, index: null, control: {type: ephemeral, ttl: 1h}}]
+        max_blocks: 4
+      - messages: [{role: user, content: [{type: text, text: one}, {type: video, source: clip}]}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: null, index: 1, control: null}]
+        max_blocks: 4
+      - messages: [{role: user, content: [{type: text, text: one}], name: alice, tool_call_id: call_1}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 4
+env: {}
+compare: {ignore: []}

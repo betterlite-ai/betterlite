@@ -1,0 +1,100 @@
+kind: helper
+name: bedrock-signing-body-bytes-match-signature
+call:
+  bedrock_signing:
+    calls:
+      - request_headers:
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          region: us-west-2
+          extra_headers: {}
+          endpoint: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          data:
+            text: '{"text":"héllo"}'
+          headers:
+            content-type: application/json
+          now: 1767225600
+      - request_headers:
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          region: us-west-2
+          extra_headers: {}
+          endpoint: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          data:
+            base64: eyJ0ZXh0IjoiaMOpbGxvIn0=
+          headers:
+            content-type: application/json
+          now: 1767225600
+      - service_request:
+          service_name: bedrock
+          headers: {}
+          optional_params:
+            aws_access_key_id: AKIDEXAMPLE
+            aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+            aws_session_token: session-token
+            aws_region_name: us-west-2
+          request_data:
+            b: 1
+            a: 2
+          api_base: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+            session_token: session-token
+          now: 1767225600
+      - service_request:
+          service_name: sagemaker
+          headers:
+            content-type: application/x-custom
+          optional_params:
+            aws_access_key_id: AKIDEXAMPLE
+            aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+            aws_region_name: us-west-2
+          request_data:
+            a: 1
+          api_base: https://runtime.sagemaker.us-west-2.amazonaws.com/endpoints/x/invocations
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          now: 1767225600
+      - service_request:
+          service_name: s3vectors
+          headers:
+            content-type: null
+          optional_params:
+            aws_access_key_id: AKIDEXAMPLE
+            aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+            aws_region_name: us-west-2
+          request_data:
+            a: 1
+          api_base: https://s3vectors.us-west-2.api.aws/vectors/x
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          now: 1767225600
+      - json_post:
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          service_name: bedrock
+          region: us-west-2
+          url: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          body: '{"a": 1}'
+          headers:
+            content-type: application/json
+            x-custom: signed
+          now: 1767225600
+      - json_post:
+          credentials:
+            access_key_id: AKIDEXAMPLE
+            secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          service_name: bedrock
+          region: null
+          url: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          body: '{"a": 1}'
+          headers: {}
+          now: 1767225600
+env: {}
+compare: {ignore: []}
