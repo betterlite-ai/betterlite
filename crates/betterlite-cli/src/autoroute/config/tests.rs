@@ -181,6 +181,13 @@ fn tier_names_and_serialization_are_uppercase(#[case] tier: Tier, #[case] name: 
 }
 
 #[test]
+fn llm_classifier_config_defaults_a_missing_timeout_to_three_seconds() {
+    let config: LlmClassifierConfig =
+        serde_saphyr::from_str("model: classifier\n").expect("a classifier config");
+    assert_eq!(config.timeout_ms, 3000);
+}
+
+#[test]
 fn parse_discovered_models_sets_the_name_from_the_id() {
     let raw = vec![RawModelListing {
         id: "gpt-4o".to_owned(),

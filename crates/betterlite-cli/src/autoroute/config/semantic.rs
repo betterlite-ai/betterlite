@@ -4,6 +4,7 @@ use super::tier::Tier;
 
 pub const DEFAULT_MATCH_THRESHOLD: f64 = 0.5;
 
+// a const cannot hold the rule's Vec<String>, so each tier pairs with its keyword slice
 pub const DEFAULT_KEYWORD_TIER_RULES: [(&[&str], Tier); 4] = [
     (&["hi", "hello", "thanks"], Tier::Simple),
     (&["explain", "how does"], Tier::Medium),

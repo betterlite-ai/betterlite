@@ -63,6 +63,7 @@ pub struct ComplexityRouterConfig {
     pub adaptive: Option<bool>,
 }
 
+// the wire form of the master key exists only for the config file write; this struct derives no Debug
 #[derive(Deserialize, Serialize)]
 pub struct GeneralSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
