@@ -136,7 +136,7 @@ fn missing_finish_reason_is_stop_and_choice_nulls_are_dropped() {
     let written: JsonValue =
         serde_json::from_slice(&serde_json::to_vec(&*completion).unwrap()).unwrap();
     let wanted: JsonValue = serde_json::from_str(
-        r#"{"id":"c1","object":"chat.completion","created":7,"model":"g","choices":[{"index":0,"bar":1,"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}"#,
+        r#"{"id":"c1","object":"chat.completion","created":7,"model":"g","choices":[{"index":0,"bar":1,"message":{"role":"assistant","content":null},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}"#,
     )
     .unwrap();
     assert_eq!(written, wanted);
