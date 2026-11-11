@@ -6,7 +6,6 @@ call:
       - function: select_non_default
         passed_params: {temperature: 0.5, top_p: null, model: gpt-4o, seed: 0, user: ""}
         default_names: [temperature, top_p, seed, user]
-        additional_drop_params: null
       - function: select_non_default
         passed_params: {temperature: 0.5, top_p: 0.9, seed: 7}
         default_names: [temperature, top_p, seed]
@@ -24,7 +23,6 @@ call:
       - function: bedrock_route
         model: us.anthropic.claude-3-sonnet-20240229-v1:0
         passed_params: {temperature: 0.1, aws_region_name: us-east-1}
-        additional_drop_params: null
       - function: bedrock_route
         model: bedrock/converse/anthropic.claude-3-sonnet
         passed_params: {temperature: 0.1, top_k: 5}

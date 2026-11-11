@@ -7,129 +7,96 @@ call:
         model: dall-e-3
         custom_llm_provider: openai
         params: {n: 2, quality: hd, size: 1024x1024, style: vivid, user: u, response_format: url}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: dall-e-3
         custom_llm_provider: azure
         params: {n: 1, custom_field: 1}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: dall-e-3
         custom_llm_provider: openai
         params: {n: 1, size: 256x256, custom_field: 1, dropped: 2}
         additional_drop_params: [size, dropped]
-        drop_params: null
       - function: image_generation
         model: dall-e-3
         custom_llm_provider: openai
         params: {n: 1, extra_body: {inner: 2}, imageConfig: {aspect: wide}, tools: [], web_search_options: {size: big}}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: dall-e-3
         custom_llm_provider: openai
         params: {n: 1, extra_body: {inner: 2}}
         additional_drop_params: [extra_body]
-        drop_params: null
       - function: image_generation
         model: imagegeneration@006
         custom_llm_provider: vertex_ai
         params: {n: 3, size: 1792x1024}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: imagegeneration@006
         custom_llm_provider: vertex_ai
         params: {n: 3, size: 1024x1792}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: imagegeneration@006
         custom_llm_provider: vertex_ai
         params: {size: 123x456}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: imagegeneration@006
         custom_llm_provider: vertex_ai
         params: {n: 1, quality: hd, user: u}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: imagegeneration@006
         custom_llm_provider: vertex_ai
         params: {n: 1, quality: hd, user: u, custom_field: 1}
-        additional_drop_params: null
         drop_params: true
       - function: image_generation
         model: imagegeneration@006
         custom_llm_provider: vertex_ai
         params: {n: 1, quality: hd}
-        additional_drop_params: null
         drop_params: false
         litellm_drop_params: true
       - function: image_generation
         model: imagegeneration@006
         custom_llm_provider: vertex_ai
         params: {n: 1, vertex_project: p, aws_region_name: r, hf_model_name: h}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: amazon.titan-image-generator-v1
         custom_llm_provider: bedrock
         params: {n: 2, size: 512x512, quality: standard}
-        additional_drop_params: null
-        drop_params: null
         bedrock: {supported: [n, size], fail_status: null, records: false}
       - function: image_generation
         model: amazon.titan-image-generator-v1
         custom_llm_provider: bedrock
         params: {n: 2, size: 512x512, quality: standard}
-        additional_drop_params: null
         drop_params: true
         bedrock: {supported: [n, size], fail_status: null, records: false}
       - function: image_generation
         model: amazon.titan-image-generator-v1
         custom_llm_provider: bedrock
         params: {n: 2, aws_region_name: r, vertex_project: p, custom_field: 1}
-        additional_drop_params: null
-        drop_params: null
         bedrock: {supported: [n], fail_status: null, records: false}
       - function: image_generation
         model: amazon.titan-image-generator-v1
         custom_llm_provider: bedrock
         params: {n: 2}
-        additional_drop_params: null
-        drop_params: null
         bedrock: {supported: [n], fail_status: 503, records: false}
       - function: image_generation
         model: gpt-image-1
         custom_llm_provider: openai
         params: {n: 2, size: 1024x1024, background: transparent, moderation: low}
-        additional_drop_params: null
-        drop_params: null
         provider_config: {supported: [n, size, background], fail_status: null, records: true}
       - function: image_generation
         model: gpt-image-1
         custom_llm_provider: openai
         params: {n: 2, quality: hd}
-        additional_drop_params: null
-        drop_params: null
         provider_config: {supported: [n], fail_status: null, records: true}
       - function: image_generation
         model: gpt-image-1
         custom_llm_provider: openai
         params: {n: 2, quality: hd}
-        additional_drop_params: null
         drop_params: true
         provider_config: {supported: [n], fail_status: null, records: true}
       - function: image_generation
         model: gpt-image-1
         custom_llm_provider: openai
         params: {n: 2, quality: hd}
-        additional_drop_params: null
         drop_params: false
         litellm_drop_params: true
         provider_config: {supported: [n], fail_status: null, records: true}
@@ -144,41 +111,29 @@ call:
         model: gpt-image-1
         custom_llm_provider: openai
         params: {n: 2, moderation: low}
-        additional_drop_params: null
-        drop_params: null
         provider_config: {supported: [n], fail_status: null, records: true}
       - function: image_generation
         model: gpt-image-1
         custom_llm_provider: openai
         params: {n: 2, moderation: low}
-        additional_drop_params: null
-        drop_params: null
         litellm_drop_params: true
         provider_config: {supported: [n], fail_status: null, records: true}
       - function: image_generation
         model: gpt-image-1
         custom_llm_provider: openai
         params: {n: 2}
-        additional_drop_params: null
-        drop_params: null
         provider_config: {supported: [n], fail_status: 504, records: true}
       - function: image_generation
         model: null
         custom_llm_provider: null
         params: {n: 2, custom_field: 1}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: flux
         custom_llm_provider: hosted_vllm
         params: {n: 2, custom_field: 1}
-        additional_drop_params: null
-        drop_params: null
       - function: image_generation
         model: flux
         custom_llm_provider: fal_ai
         params: {n: 2, custom_field: 1}
-        additional_drop_params: null
-        drop_params: null
 env: {}
 compare: {ignore: []}
