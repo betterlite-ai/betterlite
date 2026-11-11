@@ -17,6 +17,7 @@ use super::delivery::{LOGGING_TIMEOUT, PostFailure, PostRequest, Transport};
 use super::event::PostHogEventPayload;
 use super::logger::PostHogLogger;
 use super::sink::PostHogSink;
+use super::url_check::UrlCheck;
 
 pub const OK_STATUS: u16 = 200;
 pub const FAILURE_STATUS: u16 = 400;
@@ -29,11 +30,13 @@ pub struct QueuedEvent {
     pub event: PostHogEventPayload,
     pub api_key: SecretString,
     pub api_url: String,
+    pub request_url: bool,
 }
 
 pub struct CredentialGroup {
     pub api_key: SecretString,
     pub api_url: String,
+    pub request_url: bool,
     pub events: Vec<PostHogEventPayload>,
 }
 
@@ -43,6 +46,8 @@ pub enum PostHogSendError {
     Encode(#[source] serde_json::Error),
     #[error(transparent)]
     Transport(#[from] PostFailure),
+    #[error("the request-supplied PostHog URL was refused")]
+    RefusedUrl,
 }
 
 #[derive(Serialize)]
@@ -71,6 +76,7 @@ pub fn group_events(events: Vec<QueuedEvent>) -> Vec<CredentialGroup> {
             None => groups.push(CredentialGroup {
                 api_key: item.api_key,
                 api_url: item.api_url,
+                request_url: item.request_url,
                 events: vec![item.event],
             }),
         }
@@ -81,11 +87,18 @@ pub fn group_events(events: Vec<QueuedEvent>) -> Vec<CredentialGroup> {
 pub async fn send_group(
     transport: &dyn Transport,
     mock_mode: bool,
+    url_check: &dyn UrlCheck,
     group: &CredentialGroup,
 ) -> Result<u16, PostHogSendError> {
     let url = format!("{}/batch/", group.api_url.trim_end_matches('/'));
     if mock_mode && url.to_ascii_lowercase().contains(MOCK_URL_MARKER) {
         return Ok(OK_STATUS);
+    }
+    if group.request_url {
+        url_check.check(&url).await.map_err(|error| {
+            tracing::warn!(%error, "PostHog: refused a request-supplied PostHog URL");
+            PostHogSendError::RefusedUrl
+        })?;
     }
     let encoded = serde_json::to_vec(&PostHogBatchPayload {
         api_key: group.api_key.expose_secret(),
@@ -126,8 +139,15 @@ pub async fn log_async_event(logger: &PostHogLogger, event: &LoggerEvent) {
 // LiteLLM's async_send_batch aborts the remaining credential groups on the first failed post
 pub async fn send_batches(sink: &PostHogSink, events: Vec<QueuedEvent>) {
     for group in group_events(events) {
-        match send_group(sink.transport.as_ref(), sink.mock_mode, &group).await {
-            Ok(OK_STATUS) => {}
+        match send_group(
+            sink.transport.as_ref(),
+            sink.mock_mode,
+            sink.url_check.as_ref(),
+            &group,
+        )
+        .await
+        {
+            Ok(OK_STATUS) | Err(PostHogSendError::RefusedUrl) => {}
             Ok(status) => {
                 tracing::error!(status, "PostHog Error sending batch API");
                 return;

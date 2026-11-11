@@ -3,7 +3,8 @@ use betterlite_models::decisions::Json;
 use crate::callback_logger::CallbackLogger as _;
 use crate::posthog_logging::tests::support::{
     API_KEY, Reply, ScriptedTransport, default_settings, dynamic, event, event_with, field,
-    fixed_id, items, list_len, logger_with, payload, settings, settle, text,
+    fixed_id, items, list_len, logger_with, logger_with_check, payload, settings, settle, text,
+    validating_check,
 };
 
 fn api_key(body: &Json) -> String {
@@ -117,4 +118,39 @@ async fn posthog_sync_send_leaves_a_custom_url_live_in_mock_mode() {
         .expect("the sync event is accepted");
     settle(&tasks).await;
     assert_eq!(transport.urls(), vec!["http://localhost:8080/batch/"]);
+}
+
+#[tokio::test]
+async fn posthog_sync_send_refuses_a_request_url_on_a_private_host() {
+    let transport = ScriptedTransport::new(&[]);
+    let (logger, tasks) =
+        logger_with_check(default_settings(), &transport, validating_check(), fixed_id);
+    let params = dynamic(&[
+        ("posthog_api_key", "request-key"),
+        ("posthog_api_url", "https://private.example"),
+    ]);
+    logger
+        .log_success_event(&event_with(payload(), params))
+        .expect("the sync event is accepted");
+    settle(&tasks).await;
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
+async fn posthog_sync_send_uses_a_request_url_on_a_public_host() {
+    let transport = ScriptedTransport::new(&[]);
+    let (logger, tasks) =
+        logger_with_check(default_settings(), &transport, validating_check(), fixed_id);
+    let params = dynamic(&[
+        ("posthog_api_key", "request-key"),
+        ("posthog_api_url", "https://public.example"),
+    ]);
+    logger
+        .log_success_event(&event_with(payload(), params))
+        .expect("the sync event is accepted");
+    settle(&tasks).await;
+    let requests = transport.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].url, "https://public.example/batch/");
+    assert_eq!(api_key(&requests[0].body), "request-key");
 }

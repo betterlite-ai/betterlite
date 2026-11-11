@@ -5,11 +5,12 @@ use secrecy::ExposeSecret as _;
 use crate::posthog_logging::credentials::{CredentialError, credentials_for_request};
 use crate::posthog_logging::tests::support::{default_settings, dynamic, object, text};
 
-fn resolve(dynamic_params: &Json) -> Result<(String, String), CredentialError> {
+fn resolve(dynamic_params: &Json) -> Result<(String, String, bool), CredentialError> {
     let credentials = credentials_for_request(&default_settings(), dynamic_params)?;
     Ok((
         credentials.api_key.expose_secret().to_owned(),
         credentials.api_url,
+        credentials.request_url,
     ))
 }
 
@@ -17,7 +18,11 @@ fn resolve(dynamic_params: &Json) -> Result<(String, String), CredentialError> {
 fn posthog_credentials_default_to_the_initialized_values() {
     assert_eq!(
         resolve(&Json::Null).expect("the credentials resolve"),
-        ("phk-test".to_owned(), "https://us.i.posthog.com".to_owned())
+        (
+            "phk-test".to_owned(),
+            "https://us.i.posthog.com".to_owned(),
+            false
+        )
     );
 }
 
@@ -31,7 +36,8 @@ fn posthog_credentials_take_the_per_request_pair() {
         resolve(&params).expect("the credentials resolve"),
         (
             "request-key".to_owned(),
-            "https://request.example/".to_owned()
+            "https://request.example/".to_owned(),
+            true
         )
     );
 }
@@ -39,28 +45,28 @@ fn posthog_credentials_take_the_per_request_pair() {
 #[rstest]
 #[case::key_only(
     &[("posthog_api_key", "request-key")],
-    ("request-key", "https://us.i.posthog.com")
+    ("request-key", "https://us.i.posthog.com", false)
 )]
 #[case::url_only(
     &[("posthog_api_url", "https://request.example")],
-    ("phk-test", "https://request.example")
+    ("phk-test", "https://us.i.posthog.com", false)
 )]
 #[case::empty_key(
     &[("posthog_api_key", ""), ("posthog_api_url", "https://request.example")],
-    ("phk-test", "https://request.example")
+    ("phk-test", "https://us.i.posthog.com", false)
 )]
 #[case::empty_url(
     &[("posthog_api_key", "request-key"), ("posthog_api_url", "")],
-    ("request-key", "https://us.i.posthog.com")
+    ("request-key", "https://us.i.posthog.com", false)
 )]
 fn posthog_credentials_fall_back_one_field_at_a_time(
     #[case] pairs: &[(&str, &str)],
-    #[case] expected: (&str, &str),
+    #[case] expected: (&str, &str, bool),
 ) {
     let params = dynamic(pairs);
     assert_eq!(
         resolve(&params).expect("the credentials resolve"),
-        (expected.0.to_owned(), expected.1.to_owned())
+        (expected.0.to_owned(), expected.1.to_owned(), expected.2)
     );
 }
 
@@ -72,7 +78,11 @@ fn posthog_credentials_null_fields_use_the_defaults() {
     ]);
     assert_eq!(
         resolve(&params).expect("the credentials resolve"),
-        ("phk-test".to_owned(), "https://us.i.posthog.com".to_owned())
+        (
+            "phk-test".to_owned(),
+            "https://us.i.posthog.com".to_owned(),
+            false
+        )
     );
 }
 

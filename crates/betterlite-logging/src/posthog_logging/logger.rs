@@ -18,6 +18,7 @@ use super::event::{self, IdGenerator, PostHogEventError};
 use super::exit::spawn_exit_flush;
 use super::settings::PostHogSettings;
 use super::sink::PostHogSink;
+use super::url_check::UrlCheck;
 
 #[derive(Debug, Error)]
 pub enum PostHogLayerError {
@@ -29,6 +30,7 @@ pub enum PostHogLayerError {
 
 pub struct PostHogDeps {
     pub transport: Arc<dyn Transport>,
+    pub url_check: Arc<dyn UrlCheck>,
     pub ids: IdGenerator,
     pub tasks: TaskTracker,
     // the server's shutdown token; a logger built without one runs no exit flush
@@ -50,6 +52,7 @@ impl PostHogLogger {
         let sink = PostHogSink {
             queue: BatchQueue::new(settings.batch),
             transport: deps.transport,
+            url_check: deps.url_check,
             mock_mode: settings.mock_mode,
         };
         let logger = Arc::new(Self {
@@ -76,6 +79,7 @@ impl PostHogLogger {
             event: payload,
             api_key: credentials.api_key,
             api_url: credentials.api_url,
+            request_url: credentials.request_url,
         })
     }
 

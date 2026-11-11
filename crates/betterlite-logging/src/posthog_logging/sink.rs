@@ -3,14 +3,17 @@ use std::sync::{Arc, PoisonError};
 use crate::batch::logger::BatchQueue;
 
 use super::batch::{
-    CredentialGroup, FAILURE_STATUS, OK_STATUS, PostHogBatch, QueuedEvent, group_events, send_group,
+    CredentialGroup, FAILURE_STATUS, OK_STATUS, PostHogBatch, PostHogSendError, QueuedEvent,
+    group_events, send_group,
 };
 use super::delivery::Transport;
+use super::url_check::UrlCheck;
 
 #[derive(Clone)]
 pub struct PostHogSink {
     pub queue: BatchQueue<QueuedEvent>,
     pub transport: Arc<dyn Transport>,
+    pub url_check: Arc<dyn UrlCheck>,
     pub mock_mode: bool,
 }
 
@@ -34,10 +37,19 @@ impl PostHogSink {
         let group = CredentialGroup {
             api_key: queued.api_key,
             api_url: queued.api_url,
+            request_url: queued.request_url,
             events: vec![queued.event],
         };
-        match send_group(self.transport.as_ref(), self.mock_mode, &group).await {
+        match send_group(
+            self.transport.as_ref(),
+            self.mock_mode,
+            self.url_check.as_ref(),
+            &group,
+        )
+        .await
+        {
             Ok(OK_STATUS) => tracing::debug!("PostHog: Sync event successfully sent"),
+            Err(PostHogSendError::RefusedUrl) => {}
             Ok(status) => tracing::error!(status, "PostHog Sync Layer Error"),
             Err(error) => tracing::error!(%error, "PostHog Sync Layer Error"),
         }
@@ -52,8 +64,15 @@ impl PostHogSink {
         }
         let queued = pending.len();
         for group in group_events(pending) {
-            match send_group(self.transport.as_ref(), self.mock_mode, &group).await {
-                Ok(OK_STATUS) => {}
+            match send_group(
+                self.transport.as_ref(),
+                self.mock_mode,
+                self.url_check.as_ref(),
+                &group,
+            )
+            .await
+            {
+                Ok(OK_STATUS) | Err(PostHogSendError::RefusedUrl) => {}
                 // LiteLLM's raise_for_status ignores a status under 400, so the flush goes on
                 Ok(status) if status < FAILURE_STATUS => {
                     tracing::error!(status, "PostHog: Failed to flush on exit");

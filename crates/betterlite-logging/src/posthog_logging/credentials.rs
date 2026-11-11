@@ -13,6 +13,7 @@ pub const API_URL_FIELD: &str = "posthog_api_url";
 pub struct Credentials {
     pub api_key: SecretString,
     pub api_url: String,
+    pub request_url: bool,
 }
 
 #[derive(Debug, Error)]
@@ -23,7 +24,7 @@ pub enum CredentialError {
     FieldType { field: &'static str },
 }
 
-// PostHogLogger._get_credentials_for_request: a per-request key and URL win, and each falls back alone
+// PostHogLogger._get_credentials_for_request: the request key wins, and its URL only when it also set a key
 pub fn credentials_for_request(
     settings: &PostHogSettings,
     dynamic_params: &StandardCallbackDynamicParams,
@@ -33,6 +34,7 @@ pub fn credentials_for_request(
             return Ok(Credentials {
                 api_key: settings.api_key.clone(),
                 api_url: settings.api_url.clone(),
+                request_url: false,
             });
         }
         Json::Object(fields) => fields,
@@ -40,13 +42,21 @@ pub fn credentials_for_request(
             return Err(CredentialError::ParamsType);
         }
     };
-    let api_key = text_field(fields, API_KEY_FIELD)?
-        .filter(|value| !value.is_empty())
-        .map_or_else(|| settings.api_key.clone(), SecretString::from);
-    let api_url = text_field(fields, API_URL_FIELD)?
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| settings.api_url.clone());
-    Ok(Credentials { api_key, api_url })
+    let request_key = text_field(fields, API_KEY_FIELD)?.filter(|value| !value.is_empty());
+    let requested_url = text_field(fields, API_URL_FIELD)?.filter(|value| !value.is_empty());
+    let api_key = request_key.as_ref().map_or_else(
+        || settings.api_key.clone(),
+        |key| SecretString::from(key.clone()),
+    );
+    let (api_url, request_url) = match (&request_key, &requested_url) {
+        (Some(_), Some(url)) => (url.clone(), true),
+        _ => (settings.api_url.clone(), false),
+    };
+    Ok(Credentials {
+        api_key,
+        api_url,
+        request_url,
+    })
 }
 fn text_field(
     fields: &IndexMap<String, Json>,

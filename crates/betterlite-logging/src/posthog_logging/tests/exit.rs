@@ -9,8 +9,8 @@ use crate::batch::logger::BatchQueue;
 use crate::posthog_logging::delivery::{PostFailure, PostRequest, Transport};
 use crate::posthog_logging::sink::PostHogSink;
 use crate::posthog_logging::tests::support::{
-    Reply, ScriptedTransport, default_settings, field, fixed_id, logger_with, logger_with_shutdown,
-    payload, queued, queued_for, settle, text,
+    AllowAllUrlCheck, Reply, ScriptedTransport, default_settings, field, fixed_id, logger_with,
+    logger_with_shutdown, payload, queued, queued_for, settle, text,
 };
 
 struct GateTransport {
@@ -149,6 +149,7 @@ async fn posthog_exit_flush_never_resends_or_drops_an_event_enqueued_during_the_
     let sink = PostHogSink {
         queue: queue.clone(),
         transport,
+        url_check: Arc::new(AllowAllUrlCheck),
         mock_mode: false,
     };
     let _first = queue.enqueue(queued(&payload()));

@@ -2,10 +2,21 @@ use std::collections::VecDeque;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
+use betterlite_http::user_url::error::UserUrlError;
 use betterlite_logging::posthog_logging::delivery::{PostFailure, PostRequest, Transport};
+use betterlite_logging::posthog_logging::url_check::UrlCheck;
 use serde_json::{Map, Value, json};
 
 use super::ReplyInput;
+
+pub(super) struct AllowAllUrlCheck;
+
+#[async_trait]
+impl UrlCheck for AllowAllUrlCheck {
+    async fn check(&self, _url: &str) -> Result<(), UserUrlError> {
+        Ok(())
+    }
+}
 
 pub(super) struct ScriptedTransport {
     replies: Mutex<VecDeque<u16>>,

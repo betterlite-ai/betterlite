@@ -20,7 +20,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod scripted;
 
-use scripted::ScriptedTransport;
+use scripted::{AllowAllUrlCheck, ScriptedTransport};
 
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
@@ -256,6 +256,7 @@ async fn run_scenario(input: &Input) -> HelperResult {
         settings,
         PostHogDeps {
             transport: pooled,
+            url_check: Arc::new(AllowAllUrlCheck),
             ids: || "generated-id".to_owned(),
             tasks: tasks.clone(),
             shutdown: None,

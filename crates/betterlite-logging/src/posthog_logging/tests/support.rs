@@ -1,11 +1,16 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::io;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
+use betterlite_config::tls::Verification;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::user_url::error::UserUrlError;
+use betterlite_http::user_url::validate::{Resolve, UrlValidator};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -20,6 +25,7 @@ use crate::posthog_logging::delivery::{PostFailure, PostRequest, Transport};
 use crate::posthog_logging::event::{IdGenerator, create_event_payload};
 use crate::posthog_logging::logger::{PostHogDeps, PostHogLogger};
 use crate::posthog_logging::settings::{PostHogSettings, resolve};
+use crate::posthog_logging::url_check::UrlCheck;
 
 pub(super) const API_KEY: &str = "phk-test";
 pub(super) const API_URL: &str = "https://us.i.posthog.com";
@@ -141,9 +147,38 @@ pub(super) fn fixed_id() -> String {
     "generated-id".to_owned()
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AllowAllUrlCheck;
+
+#[async_trait]
+impl UrlCheck for AllowAllUrlCheck {
+    async fn check(&self, _url: &str) -> Result<(), UserUrlError> {
+        Ok(())
+    }
+}
+
+struct TestResolver;
+
+#[async_trait]
+impl Resolve for TestResolver {
+    async fn resolve(&self, host: &str, _port: u16) -> io::Result<Vec<SocketAddr>> {
+        let address = if host == "private.example" {
+            IpAddr::V4(Ipv4Addr::LOCALHOST)
+        } else {
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))
+        };
+        Ok(vec![SocketAddr::new(address, 443)])
+    }
+}
+
+pub(super) fn validating_check() -> Arc<dyn UrlCheck> {
+    Arc::new(UrlValidator::new(TestResolver, &[], &Verification::Enabled))
+}
+
 fn build(
     settings: PostHogSettings,
     transport: &Arc<ScriptedTransport>,
+    url_check: Arc<dyn UrlCheck>,
     ids: IdGenerator,
     shutdown: Option<CancellationToken>,
 ) -> (Arc<PostHogLogger>, TaskTracker) {
@@ -154,6 +189,7 @@ fn build(
         settings,
         PostHogDeps {
             transport: target,
+            url_check,
             ids,
             tasks: tasks.clone(),
             shutdown,
@@ -167,7 +203,16 @@ pub(super) fn logger_with(
     transport: &Arc<ScriptedTransport>,
     ids: IdGenerator,
 ) -> (Arc<PostHogLogger>, TaskTracker) {
-    build(settings, transport, ids, None)
+    build(settings, transport, Arc::new(AllowAllUrlCheck), ids, None)
+}
+
+pub(super) fn logger_with_check(
+    settings: PostHogSettings,
+    transport: &Arc<ScriptedTransport>,
+    url_check: Arc<dyn UrlCheck>,
+    ids: IdGenerator,
+) -> (Arc<PostHogLogger>, TaskTracker) {
+    build(settings, transport, url_check, ids, None)
 }
 
 pub(super) fn logger_with_shutdown(
@@ -176,7 +221,13 @@ pub(super) fn logger_with_shutdown(
     ids: IdGenerator,
 ) -> (Arc<PostHogLogger>, TaskTracker, CancellationToken) {
     let shutdown = CancellationToken::new();
-    let (logger, tasks) = build(settings, transport, ids, Some(shutdown.clone()));
+    let (logger, tasks) = build(
+        settings,
+        transport,
+        Arc::new(AllowAllUrlCheck),
+        ids,
+        Some(shutdown.clone()),
+    );
     (logger, tasks, shutdown)
 }
 
@@ -293,6 +344,7 @@ pub(super) fn queued_for(
         event,
         api_key: SecretString::from(api_key),
         api_url: api_url.to_owned(),
+        request_url: false,
     }
 }
 
