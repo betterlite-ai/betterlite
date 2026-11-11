@@ -84,17 +84,14 @@ impl RequestRedisBatches {
             post_call.values().all(|batch| batch.pending() == 0)
         };
         if post_call_idle {
-            self.disarm_and_discard();
+            self.cancel_deadline();
+            self.discard_if_idle();
         }
     }
 
     pub async fn flush_post_call(self: &Arc<Self>) {
-        Self::flush_slots(&self.post_call).await;
-        self.disarm_and_discard();
-    }
-
-    fn disarm_and_discard(self: &Arc<Self>) {
         self.cancel_deadline();
+        Self::flush_slots(&self.post_call).await;
         self.discard_if_idle();
     }
 
