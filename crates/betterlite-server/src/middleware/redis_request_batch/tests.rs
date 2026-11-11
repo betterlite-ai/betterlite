@@ -16,9 +16,7 @@ use tower::{Layer as _, Service as _, service_fn};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use self::support::{
-    Inner, InnerFailed, NotReadyOnce, Reply, record, seen, take, unreachable_cache,
-};
+use self::support::{Inner, InnerFailed, NotReadyOnce, Reply, record, take, unreachable_cache};
 use super::RedisBatchLayer;
 
 #[tokio::test]
@@ -156,7 +154,7 @@ async fn nested_layers_share_the_outer_scope_batches() {
     let cache = unreachable_cache().await;
     let (handler, handler_seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, true);
     let mut inner_layer = RedisBatchLayer.layer(handler);
-    let probe_seen = seen();
+    let probe_seen = Arc::new(Mutex::new(None));
     let probe_cache = Arc::clone(&cache);
     let recorded = Arc::clone(&probe_seen);
     let probe = service_fn(move |request: Request<Body>| {
@@ -189,7 +187,10 @@ async fn nested_layers_share_the_outer_scope_batches() {
 async fn poll_ready_waits_for_the_inner_service() {
     let cache = unreachable_cache().await;
     let (handler, _seen) = Inner::for_test(Arc::clone(&cache), Reply::Responded, false);
-    let mut service = RedisBatchLayer.layer(NotReadyOnce::new(handler));
+    let mut service = RedisBatchLayer.layer(NotReadyOnce {
+        inner: handler,
+        polled: false,
+    });
     let mut context = Context::from_waker(Waker::noop());
     assert!(service.poll_ready(&mut context).is_pending());
     assert!(service.poll_ready(&mut context).is_ready());

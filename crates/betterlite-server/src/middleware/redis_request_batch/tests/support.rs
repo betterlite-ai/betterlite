@@ -30,13 +30,11 @@ pub(crate) const DECLARED_KEY: &str = "batch-key";
 
 pub(crate) type SeenBatch = Arc<Mutex<Option<Arc<RedisBatch>>>>;
 
-pub(crate) fn seen() -> SeenBatch {
-    Arc::new(Mutex::new(None))
-}
-
 pub(crate) fn take(seen: &SeenBatch) -> Arc<RedisBatch> {
-    let batch = seen.lock().expect("the batch record").take();
-    batch.expect("the inner service saw a request batch scope")
+    seen.lock()
+        .expect("the batch record")
+        .take()
+        .expect("the inner service saw a request batch scope")
 }
 
 struct SilentHooks;
@@ -137,11 +135,6 @@ fn response() -> Response {
         .expect("a response")
 }
 
-fn streaming_response() -> Response {
-    let chunks = stream::pending::<Result<Bytes, Infallible>>();
-    Response::new(Body::from_stream(chunks))
-}
-
 pub(crate) async fn text(response: Response) -> String {
     let bytes = to_bytes(response.into_body(), 1024)
         .await
@@ -171,7 +164,9 @@ impl Reply {
         match self {
             Self::Responded => Ok(response()),
             Self::Failed => Err(InnerFailed),
-            Self::Streaming => Ok(streaming_response()),
+            Self::Streaming => Ok(Response::new(Body::from_stream(stream::pending::<
+                Result<Bytes, Infallible>,
+            >()))),
         }
     }
 }
@@ -193,7 +188,7 @@ impl Inner {
         reply: Reply,
         declare: bool,
     ) -> (Self, SeenBatch) {
-        let seen = seen();
+        let seen = Arc::new(Mutex::new(None));
         (
             Self {
                 cache,
@@ -228,17 +223,8 @@ impl Service<Request<Body>> for Inner {
 }
 
 pub(crate) struct NotReadyOnce<S> {
-    inner: S,
-    polled: bool,
-}
-
-impl<S> NotReadyOnce<S> {
-    pub(crate) fn new(inner: S) -> Self {
-        Self {
-            inner,
-            polled: false,
-        }
-    }
+    pub(crate) inner: S,
+    pub(crate) polled: bool,
 }
 
 impl<S, B> Service<Request<B>> for NotReadyOnce<S>
