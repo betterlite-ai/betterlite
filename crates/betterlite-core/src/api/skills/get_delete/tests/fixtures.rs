@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,17 +22,21 @@ use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use super::super::call::{SkillCall, SkillRequest, SkillsCallParams};
-use super::super::error::SkillsCallError;
-use super::super::handler::{SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler};
-use super::super::hosted::{HostedSkillRequest, HostedSkillsHandler, HostedSkillsHandlers};
-use super::super::service::SkillsService;
+use crate::api::skills::get_delete::call::{SkillCall, SkillRequest, SkillsCallParams};
+use crate::api::skills::get_delete::error::SkillsCallError;
+use crate::api::skills::get_delete::handler::{
+    SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler,
+};
+use crate::api::skills::get_delete::hosted::{
+    HostedSkillRequest, HostedSkillsHandler, HostedSkillsHandlers,
+};
+use crate::api::skills::get_delete::service::SkillsService;
 
-pub(super) const SKILL_ID: &str = "skill_1";
-pub(super) const API_BASE: &str = "https://api.anthropic.com";
-pub(super) const CALL_ID: &str = "call-1";
+pub(crate) const SKILL_ID: &str = "skill_1";
+pub(crate) const API_BASE: &str = "https://api.anthropic.com";
+pub(crate) const CALL_ID: &str = "call-1";
 
-pub(super) fn redactor() -> Redactor {
+pub(crate) fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles")
 }
 
@@ -38,7 +44,7 @@ fn moment() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").expect("the fixture is RFC 3339")
 }
 
-pub(super) fn logging() -> LoggingState {
+pub(crate) fn logging() -> LoggingState {
     let mut context = CorrelationContext::default();
     LoggingState::new(
         LoggingInit {
@@ -90,7 +96,7 @@ fn core_settings() -> CoreSettings {
     }
 }
 
-pub(super) fn sample_skill() -> Skill {
+pub(crate) fn sample_skill() -> Skill {
     Skill {
         id: SKILL_ID.to_owned(),
         created_at: "2026-01-01T00:00:00Z".to_owned(),
@@ -104,18 +110,18 @@ pub(super) fn sample_skill() -> Skill {
     }
 }
 
-pub(super) fn sample_deleted() -> DeleteSkillResponse {
+pub(crate) fn sample_deleted() -> DeleteSkillResponse {
     DeleteSkillResponse {
         id: SKILL_ID.to_owned(),
         r#type: "skill_deleted".to_owned(),
     }
 }
 
-pub(super) fn text(value: &str) -> Json {
+pub(crate) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
-pub(super) fn object(pairs: &[(&str, Json)]) -> Json {
+pub(crate) fn object(pairs: &[(&str, Json)]) -> Json {
     let mut values = IndexMap::new();
     for (name, value) in pairs {
         values.insert((*name).to_owned(), value.clone());
@@ -123,11 +129,11 @@ pub(super) fn object(pairs: &[(&str, Json)]) -> Json {
     Json::Object(values)
 }
 
-pub(super) fn metadata_with(principal: Json) -> Json {
+pub(crate) fn metadata_with(principal: Json) -> Json {
     object(&[("user_api_key_auth", principal)])
 }
 
-pub(super) fn kwargs() -> IndexMap<String, Json> {
+pub(crate) fn kwargs() -> IndexMap<String, Json> {
     IndexMap::new()
 }
 
@@ -135,7 +141,7 @@ fn params() -> SkillsCallParams {
     SkillsCallParams::default()
 }
 
-pub(super) fn hosted_params() -> SkillsCallParams {
+pub(crate) fn hosted_params() -> SkillsCallParams {
     SkillsCallParams {
         api_key: None,
         api_base: None,
@@ -146,21 +152,21 @@ pub(super) fn hosted_params() -> SkillsCallParams {
     }
 }
 
-pub(super) fn call<'call>(
+pub(crate) fn call<'call>(
     skill_id: &'call str,
     kwargs: &'call IndexMap<String, Json>,
 ) -> SkillCall<'call> {
     call_with(params(), skill_id, kwargs)
 }
 
-pub(super) fn skill_request<'call>(
+pub(crate) fn skill_request<'call>(
     call: &'call SkillCall<'call>,
     logging: &'call mut LoggingState,
 ) -> SkillRequest<'call> {
     SkillRequest { call, logging }
 }
 
-pub(super) fn call_with<'call>(
+pub(crate) fn call_with<'call>(
     params: SkillsCallParams,
     skill_id: &'call str,
     kwargs: &'call IndexMap<String, Json>,
@@ -173,11 +179,11 @@ pub(super) fn call_with<'call>(
     }
 }
 
-pub(super) struct Recorded {
-    pub(super) url: String,
-    pub(super) headers: HeaderMap,
-    pub(super) timeout: Duration,
-    pub(super) provider: String,
+pub(crate) struct Recorded {
+    pub(crate) url: String,
+    pub(crate) headers: HeaderMap,
+    pub(crate) timeout: Duration,
+    pub(crate) provider: String,
 }
 
 fn recorded(request: &SkillHttpRequest<'_>) -> Recorded {
@@ -199,13 +205,13 @@ fn handler_error(status_code: u16) -> SkillsHandlerError {
     }
 }
 
-pub(super) fn call_error(status_code: u16) -> SkillsCallError {
+pub(crate) fn call_error(status_code: u16) -> SkillsCallError {
     SkillsCallError::Handler(handler_error(status_code))
 }
 
-pub(super) struct FakeHttp {
-    pub(super) get_requests: Mutex<Vec<Recorded>>,
-    pub(super) delete_requests: Mutex<Vec<Recorded>>,
+pub(crate) struct FakeHttp {
+    pub(crate) get_requests: Mutex<Vec<Recorded>>,
+    pub(crate) delete_requests: Mutex<Vec<Recorded>>,
     status: Option<u16>,
 }
 
@@ -260,10 +266,10 @@ impl SkillsHttpHandler for FakeHttp {
 }
 
 #[derive(Clone)]
-pub(super) struct HostedCall {
-    pub(super) skill_id: String,
-    pub(super) principal: Option<Json>,
-    pub(super) litellm_call_id: Option<String>,
+pub(crate) struct HostedCall {
+    pub(crate) skill_id: String,
+    pub(crate) principal: Option<Json>,
+    pub(crate) litellm_call_id: Option<String>,
 }
 
 fn hosted_call(request: &HostedSkillRequest<'_>) -> HostedCall {
@@ -274,7 +280,7 @@ fn hosted_call(request: &HostedSkillRequest<'_>) -> HostedCall {
     }
 }
 
-pub(super) struct FakeHosted {
+pub(crate) struct FakeHosted {
     calls: Arc<Mutex<Vec<HostedCall>>>,
     deletes: Arc<Mutex<Vec<HostedCall>>>,
 }
@@ -307,11 +313,11 @@ impl HostedSkillsHandler for FakeHosted {
     }
 }
 
-pub(super) struct HostedFixture {
+pub(crate) struct HostedFixture {
     handlers: HostedSkillsHandlers<FakeHosted>,
     created: Arc<Mutex<usize>>,
-    pub(super) calls: Arc<Mutex<Vec<HostedCall>>>,
-    pub(super) deletes: Arc<Mutex<Vec<HostedCall>>>,
+    pub(crate) calls: Arc<Mutex<Vec<HostedCall>>>,
+    pub(crate) deletes: Arc<Mutex<Vec<HostedCall>>>,
 }
 
 fn hosted_fixture() -> HostedFixture {
@@ -340,20 +346,20 @@ fn hosted_fixture() -> HostedFixture {
     }
 }
 
-pub(super) struct Fixture {
-    pub(super) http: FakeHttp,
-    pub(super) hosted: HostedFixture,
-    pub(super) anthropic: AnthropicSettings,
-    pub(super) core: CoreSettings,
+pub(crate) struct Fixture {
+    pub(crate) http: FakeHttp,
+    pub(crate) hosted: HostedFixture,
+    pub(crate) anthropic: AnthropicSettings,
+    pub(crate) core: CoreSettings,
     redactor: Redactor,
 }
 
 impl Fixture {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::with_http(FakeHttp::new())
     }
 
-    pub(super) fn failing(status: u16) -> Self {
+    pub(crate) fn failing(status: u16) -> Self {
         Self::with_http(FakeHttp::failing(status))
     }
 
@@ -367,7 +373,7 @@ impl Fixture {
         }
     }
 
-    pub(super) fn service(&self) -> SkillsService<'_, FakeHttp, FakeHosted> {
+    pub(crate) fn service(&self) -> SkillsService<'_, FakeHttp, FakeHosted> {
         SkillsService {
             http: &self.http,
             hosted: &self.hosted.handlers,
@@ -377,12 +383,12 @@ impl Fixture {
         }
     }
 
-    pub(super) fn builds(&self) -> usize {
+    pub(crate) fn builds(&self) -> usize {
         *self.hosted.created.lock().expect("the factory counts")
     }
 }
 
-pub(super) fn header_values(headers: &HeaderMap, name: &str) -> Vec<String> {
+pub(crate) fn header_values(headers: &HeaderMap, name: &str) -> Vec<String> {
     headers
         .get_all(name)
         .iter()
@@ -391,7 +397,7 @@ pub(super) fn header_values(headers: &HeaderMap, name: &str) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn extra_headers(name: &'static str, value: &'static str) -> HeaderMap {
+pub(crate) fn extra_headers(name: &'static str, value: &'static str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
         HeaderName::from_static(name),
