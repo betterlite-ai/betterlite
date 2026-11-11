@@ -170,6 +170,12 @@ fn chat_request(
     if let Some(limit) = fields.shift_remove("max_completion_tokens") {
         fields.insert(String::from("max_tokens"), limit);
     }
+    // the router sets stream=False on a buffered call and this transformation sends every optional param
+    if !stream {
+        fields
+            .entry(String::from("stream"))
+            .or_insert(JsonValue::Bool(false));
+    }
     // the aiohttp transformation answers Bearer {api_key} and never reads an environment key
     let bearer = deployment.api_key.as_ref().map_or_else(
         || String::from("Bearer None"),

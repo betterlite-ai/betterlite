@@ -159,6 +159,44 @@ fn stream_request_keeps_the_stream_variant() {
     ));
 }
 
+fn sent_body(given: &str, stream: bool) -> JsonValue {
+    let operation = Box::new(ChatOperation {
+        model: String::from("up"),
+        request: ChatRequest::parse(given.as_bytes()).unwrap(),
+        control: ControlOptions::default(),
+    });
+    let request = if stream {
+        OperationRequest::Stream(operation)
+    } else {
+        OperationRequest::Chat(operation)
+    };
+    let (PreparedRequest::Chat(prepared) | PreparedRequest::Stream(prepared)) = AiohttpOpenAi
+        .prepare(&request, &deployment("https://host", Some("k")), &catalog())
+        .unwrap()
+    else {
+        panic!("a chat request prepares the chat request");
+    };
+    serde_json::from_slice(&prepared.http.body).unwrap()
+}
+
+fn only_a_buffered_body_gets_the_router_stream_false() {
+    let buffered: JsonValue =
+        serde_json::from_str(r#"{"model":"up","messages":[],"stream":false}"#).unwrap();
+    assert_eq!(sent_body(r#"{"model":"g","messages":[]}"#, false), buffered);
+    assert_eq!(
+        sent_body(r#"{"model":"g","messages":[],"stream":false}"#, false),
+        buffered
+    );
+    let streamed: JsonValue = serde_json::from_str(
+        r#"{"model":"up","messages":[],"stream":true,"stream_options":{"include_usage":true}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        sent_body(r#"{"model":"g","messages":[],"stream":true}"#, true),
+        streamed
+    );
+}
+
 fn embedding_is_unsupported_before_http() {
     let embedding = OperationRequest::Embedding(Box::new(EmbeddingOperation {
         model: String::from("up"),
@@ -298,6 +336,7 @@ fn an_absent_base_reaches_the_bare_openai_host() {
 #[case::defaults_and_null_extras(missing_finish_reason_is_stop_and_choice_nulls_are_dropped)]
 #[case::provider_error(provider_error_status_is_a_provider_error)]
 #[case::stream_variant(stream_request_keeps_the_stream_variant)]
+#[case::router_stream_false(only_a_buffered_body_gets_the_router_stream_false)]
 #[case::embedding_unsupported(embedding_is_unsupported_before_http)]
 fn provider_framework_tests_behavior(#[case] check: fn()) {
     check();
