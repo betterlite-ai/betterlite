@@ -192,15 +192,20 @@ async fn check_named(scenario: &NamedScenario) {
     let fixture = Fixture::new(scenario.fixture);
     let mut session = Session::new(&fixture);
     for (capability, model, provider, expected) in scenario.steps {
-        let request = CapabilityRequest {
-            model,
-            custom_llm_provider: *provider,
-        };
-        let answer = session
-            .environment()
-            .supports_factory(&request, capability.key())
-            .await;
-        assert_eq!(answer, *expected, "{model}");
+        assert_eq!(
+            session
+                .environment()
+                .supports_factory(
+                    &CapabilityRequest {
+                        model,
+                        custom_llm_provider: *provider,
+                    },
+                    capability.key(),
+                )
+                .await,
+            *expected,
+            "{model}"
+        );
     }
 }
 
@@ -536,12 +541,13 @@ pub(super) async fn named_capability_wrappers() {
 
 pub(super) async fn native_streaming_default() {
     check(&NATIVE_STREAMING_SCENARIO).await;
+    let unmapped = CapabilityRequest {
+        model: "fireworks_ai/nothing-known",
+        custom_llm_provider: Some("fireworks_ai"),
+    };
     failure_line(
         NATIVE_STREAMING_DEFAULT,
-        CapabilityRequest {
-            model: "fireworks_ai/nothing-known",
-            custom_llm_provider: Some("fireworks_ai"),
-        },
+        unmapped,
         Reader::Streaming,
         "Model not found or error in checking supports_native_streaming support. \
          You passed model=nothing-known, custom_llm_provider=fireworks_ai. Error: ",
