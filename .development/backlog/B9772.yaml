@@ -1,0 +1,18 @@
+id: B9772
+milestone: M10 admin ui
+title: Logging alerting and router-settings HTTP acceptance
+status: todo
+depends_on: [B8594, B8595, B8596, B8675, B4447, B8540, B8389, B066, B116, B004, B310, B8350, B077, B1630, B860, B5076, B9735]
+file: tasks/B9772-dashboard-logging-http.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/logging-and-alerts/**"
+  - "ui/litellm-dashboard/src/components/{settings,email_settings,MSTeamsSettings,logging_settings_view,callback_info_helpers}.*"
+  - "ui/litellm-dashboard/src/components/{alerting,email_events}/**"
+  - "ui/litellm-dashboard/src/components/Settings/{LoggingAndAlerts,RouterSettings}/**"
+  - "ui/litellm-dashboard/src/components/Settings/AdminSettings/{LoggingSettings,PluginSettings}/**"
+parent: B150
+split_from: B150
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

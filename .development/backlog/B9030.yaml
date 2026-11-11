@@ -1,0 +1,13 @@
+id: B9030
+milestone: M8 platform
+title: Lens database fixtures and administration HTTP parity
+status: todo
+depends_on: [B860, B1630, B5076, B8682]
+file: tasks/B9030-lens-postgres-http.yaml
+covers: []
+parent: B132
+split_from: B132
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,6 +6,7 @@ depends_on: [B8592, B8727, B8724, B8725, B8620, B8621, B8622, B8626, B8610, B861
 file: tasks/B8728-mcp-transport-mount.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/server.py"
+  - "litellm/proxy/proxy_server.py"
 parent: B136
 split_from: B136
 resolution: null

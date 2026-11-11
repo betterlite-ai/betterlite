@@ -7,8 +7,9 @@ description: >-
   The scorer_defaults endpoint returns the three baseline collections the complexity router ships with: `DEFAULT_DIMENSION_WEIGHTS`,
   `DEFAULT_TIER_BOUNDARIES` and `DEFAULT_TOKEN_THRESHOLDS` from B328.
   The fuse_presets endpoint calls B353's `get_fuse_presets` and returns its catalog.
-  The autorouter_presets endpoint fetches from `litellm_settings.autorouter_presets_url` (env override `LITELLM_AUTOROUTER_PRESETS_URL`,
-  default `https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/proxy/public_endpoints/autorouter_presets.json`)
+  The autorouter_presets endpoint fetches from `litellm_settings.autorouter_presets_url`. LiteLLM reads `LITELLM_AUTOROUTER_PRESETS_URL` only as the import-time default of
+  `litellm.autorouter_presets_url` (litellm/__init__.py L438-L441), so a configured litellm_settings value wins over the environment, and the
+  environment wins over the default `https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/proxy/public_endpoints/autorouter_presets.json`
   with a five-second timeout using B173's pooled client, caching the result once per process, and falling back to the bundled catalog
   on any failure with a warning logged. Local-only mode activates only for case-insensitive `LITELLM_LOCAL_AUTOROUTER_PRESETS=true`;
   empty remote maps count as a failure, while bundled-map decode errors propagate.
@@ -63,7 +64,7 @@ dod:
     proof: [oracle, fallback-tests]
   - text: LITELLM_LOCAL_AUTOROUTER_PRESETS=true (case-insensitive) forces local-only mode; any other value fetches remotely.
     proof: [behavior-tests, settings-tests]
-  - text: LITELLM_AUTOROUTER_PRESETS_URL overrides the default remote URL through litellm_settings.autorouter_presets_url.
+  - text: LITELLM_AUTOROUTER_PRESETS_URL replaces only the built-in default remote URL; a configured litellm_settings.autorouter_presets_url takes precedence over it.
     proof: [settings-tests]
   - text: A five-second timeout on the remote fetch uses B173's pooled client.
     proof: [behavior-tests, concurrent-tests]
@@ -86,10 +87,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::public_router_presets::/)'
     - id: concurrent-tests
       why: concurrent requests do not share a single fetch or timeout does not apply
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^router_presets.*concurrent/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::router_presets::.*concurrent/)'
     - id: fallback-tests
       why: fallback to bundled presets on failure or local-only mode does not work
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^router_presets.*fallback/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::router_presets::.*fallback/)'
     - id: fuzz-corpus
       why: the autorouter preset decoder fuzz target or corpus is missing
       run: test -f crates/betterlite-server/fuzz/fuzz_targets/autorouter_presets.rs && test -d crates/betterlite-server/fuzz/corpus/autorouter_presets
@@ -116,7 +117,7 @@ pitfalls:
   - LITELLM_LOCAL_AUTOROUTER_PRESETS only activates for the exact case-insensitive match to `"true"`; any other value fetches remotely, and LiteLLM does not trim whitespace.
   - The five bundled presets are loaded once on first request with no per-request IO overhead; a cache miss re-enters the fetch/fallback loop but only once.
   - Fuzz the remote preset decoder like any parser of untrusted bytes; the bundled catalog is trusted.
-  - The betterlite-config section must handle both LITELLM_AUTOROUTER_PRESETS_URL (override) and LITELLM_LOCAL_AUTOROUTER_PRESETS (local mode), with no trimming of whitespace.
+  - The betterlite-config section must handle both LITELLM_AUTOROUTER_PRESETS_URL (default only, below a configured litellm_settings value) and LITELLM_LOCAL_AUTOROUTER_PRESETS (local mode), with no trimming of whitespace.
 review_level: standard
 budget:
   max_changed_lines: 1500

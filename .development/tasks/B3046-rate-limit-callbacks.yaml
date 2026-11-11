@@ -266,7 +266,7 @@ out_of_scope:
   - Batch token store interface (save, pop, refund) belongs to B1043.
   - User API key auth context and parent span extraction belong to B732.
   - Request stash lifecycle and call-ID filtering belong to B3031.
-  - Cache pipeline transport methods and Redis registration belong to external owners (B124/B125/B126).
+  - Cache pipeline transport methods and Redis registration belong to external owners (B8399, B125 and B126).
 
 pitfalls:
   - _merge_ratelimit_statuses_into_additional_headers is non-mutating; callers must use the returned dict, not assume the input is modified.

@@ -105,7 +105,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - Within the shared Soniox handler, B1549 owns records and preparation/logging/error helpers at 61-102 and 173-357; B1550 owns remote helper pairs at 482-588 and 716-816; B1551 owns pipeline bodies at 358-481 and 589-715.
-  - Deepgram listen WebSocket authorization, route mounting and billing consumers belong to B094 and must consume B1542 rather than this composer.
+  - Deepgram listen WebSocket authorization, route mounting and billing consumers belong to B3628 (the Deepgram routes), B8606 (their mount) and B3653 (billing consumers), and they must consume B1542 rather than this composer.
   - Public audio-route extraction remains B083, and native facade preparation/execution outside these provider variants remains B1082/B1083/B1084.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as speech_provider_dispatch in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/speech_provider_dispatch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/speech_provider_dispatch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

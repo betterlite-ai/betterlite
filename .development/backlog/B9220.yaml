@@ -1,0 +1,14 @@
+id: B9220
+milestone: M3 providers
+title: Watsonx native transcription operation binding
+status: todo
+depends_on: [B173, B1122, B2453, B5842, B5970]
+file: tasks/B9220-watsonx-transcription-binding.yaml
+covers:
+  - "litellm/utils.py"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

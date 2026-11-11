@@ -17,6 +17,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
 
 [[bin]]
+name = "hf_model_config"
+path = "fuzz_targets/hf_model_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "model_fields"
 path = "fuzz_targets/model_fields.rs"
 test = false
@@ -103,6 +110,13 @@ bench = false
 [[bin]]
 name = "provider_capabilities"
 path = "fuzz_targets/provider_capabilities.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "judge_verdict_parser"
+path = "fuzz_targets/judge_verdict_parser.rs"
 test = false
 doc = false
 bench = false

@@ -1,4 +1,5 @@
 pub(crate) mod headers;
+pub(crate) mod prompt_execution;
 mod streaming;
 
 use streaming::stream_chat;

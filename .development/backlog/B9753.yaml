@@ -1,0 +1,14 @@
+id: B9753
+milestone: M10 admin ui
+title: Policy template page HTTP requests and installation
+status: todo
+depends_on: [B9740, B9321, B9324, B8790, B8667, B8669, B9735]
+file: tasks/B9753-dashboard-policy-template-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/policies/_components/{ai_suggestion_modal,guardrail_selection_modal,policy_templates,template_parameter_modal}.*"
+parent: B148
+split_from: B148
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

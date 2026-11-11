@@ -23,6 +23,9 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-core/src/api/skills/tests/modules.rs"
+    - "crates/betterlite-core/src/api/skills.rs"
+    - "crates/betterlite-core/src/api.rs"
     - crates/betterlite-core/src/api/skills/get_delete.rs
     - crates/betterlite-core/src/api/skills/get_delete/**
   lint_tables: false
