@@ -1,6 +1,6 @@
 {
   "include": ["."],
-  "exclude": ["b4002.py", "b5367"],
+  "exclude": ["bedrock_settings.py", "bedrock_web_identity.py"],
   "typeCheckingMode": "strict",
   "reportAny": "error",
   "reportMissingTypeStubs": "none"
