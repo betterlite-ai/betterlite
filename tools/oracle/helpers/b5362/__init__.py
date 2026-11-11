@@ -1,57 +1,80 @@
 from collections.abc import Callable, Mapping
-from typing import Final, Protocol, TypeAlias, cast
-from unittest.mock import patch
+from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
-import litellm.utils
+from litellm import utils
 from litellm.exceptions import UnsupportedParamsError
-from litellm.llms.base_llm import base_utils
+from litellm.llms.base_llm.base_utils import type_to_response_format_param
 from litellm.llms.bedrock.common_utils import BedrockModelInfo
 from litellm.llms.bedrock.image_generation.image_handler import BedrockImageGeneration
-from litellm.utils import ProviderConfigManager
+from litellm.utils import ProviderConfigManager, _bedrock_route_for_request, _get_non_default_params
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Fields: TypeAlias = dict[str, Json]
 
 
-class Utils(Protocol):
-    _bedrock_route_for_request: Callable[..., Json]
-    _get_non_default_params: Callable[..., Json]
-    add_provider_specific_params_to_optional_params: Callable[..., Json]
-    filter_out_litellm_params: Callable[..., Json]
-    get_non_default_completion_params: Callable[..., Json]
-    get_non_default_transcription_params: Callable[..., Json]
-    get_optional_params_image_gen: Callable[..., Json]
-    get_optional_params_transcription: Callable[..., Json]
-    peek_reasoning_summary_aliases: Callable[..., Json]
-    pre_process_non_default_params: Callable[..., Json]
-    pre_process_optional_params: Callable[..., Json]
-    remove_sensitive_keys_from_dict: Callable[..., Json]
-    strip_reasoning_summary_aliases_from_optional_params: Callable[..., tuple[Fields, Json]]
+class MapperSpec(TypedDict):
+    supported: list[str]
+    fail_status: NotRequired[int | None]
+    records: NotRequired[bool]
+    rewrite_refs: NotRequired[bool]
 
 
-class BaseUtils(Protocol):
-    type_to_response_format_param: Callable[..., Json]
+class RequestSpec(TypedDict):
+    passed_params: Fields
+    special_params: Fields
+    custom_llm_provider: str
+    additional_drop_params: NotRequired[list[str] | None]
 
 
-_UTILS: Final = cast(Utils, litellm.utils)
-_BASE_UTILS: Final = cast(BaseUtils, base_utils)
+class Call(TypedDict):
+    function: str
+    passed_params: NotRequired[Fields]
+    default_names: NotRequired[list[str]]
+    additional_drop_params: NotRequired[list[str] | None]
+    kwargs: NotRequired[Fields]
+    excluding: NotRequired[list[str]]
+    endpoint: NotRequired[Literal["completion", "transcription"] | None]
+    non_default_params: NotRequired[Fields]
+    optional_params: NotRequired[Fields]
+    model: NotRequired[str]
+    request: NotRequired[RequestSpec]
+    remove_sensitive_keys: NotRequired[bool | None]
+    add_provider_specific_params: NotRequired[bool | None]
+    params: NotRequired[Fields]
+    custom_llm_provider: NotRequired[str]
+    openai_params: NotRequired[list[str]]
+    drop_params: NotRequired[bool | None]
+    litellm_drop_params: NotRequired[bool | None]
+    mapper: NotRequired[MapperSpec | None]
+    provider_config: NotRequired[MapperSpec | None]
+    bedrock: NotRequired[MapperSpec | None]
 
 
-def _obj(fields: Fields, name: str) -> Fields:
-    return cast(Fields, fields.get(name, {}))
+class Input(TypedDict):
+    calls: list[Call]
 
 
-def _str(fields: Fields, name: str) -> str:
-    return cast(str, fields[name])
-
-
-def _flag(fields: Fields, name: str) -> bool:
-    return fields.get(name) is True
-
-
-def _strs(fields: Fields, name: str) -> list[str]:
-    return cast("list[str]", fields.get(name, []))
+DEFAULTS: Call = {
+    "function": "",
+    "passed_params": {},
+    "default_names": [],
+    "additional_drop_params": None,
+    "kwargs": {},
+    "excluding": [],
+    "endpoint": None,
+    "non_default_params": {},
+    "optional_params": {},
+    "remove_sensitive_keys": False,
+    "add_provider_specific_params": False,
+    "params": {},
+    "openai_params": [],
+    "drop_params": None,
+    "litellm_drop_params": False,
+    "mapper": None,
+    "provider_config": None,
+    "bedrock": None,
+}
 
 
 class FixtureError(Exception):
@@ -61,11 +84,14 @@ class FixtureError(Exception):
 
 
 class Mapper:
-    def __init__(self, spec: Fields) -> None:
-        self.supported: Final = _strs(spec, "supported")
-        self.fail_status: Final = cast("int | None", spec.get("fail_status"))
-        self.records: Final = _flag(spec, "records")
-        self.rewrite_refs: Final = _flag(spec, "rewrite_refs")
+    def __init__(self, spec: MapperSpec) -> None:
+        self.supported = spec["supported"]
+        self.fail_status = spec.get("fail_status")
+        self.records = spec.get("records") is True
+        self.rewrite_refs = spec.get("rewrite_refs") is True
+        self.get_supported_openai_params_stt = self.get_supported_openai_params
+        self.map_openai_params_stt = self.map_openai_params
+        self.get_json_schema_from_pydantic_object = self.schema_for
 
     def get_supported_openai_params(self, model: str = "") -> list[str]:
         del model
@@ -81,18 +107,15 @@ class Mapper:
     ) -> Fields:
         if self.fail_status is not None:
             raise FixtureError(self.fail_status)
-        mapped: Final = {**optional_params, **non_default_params}
+        mapped = {**optional_params, **non_default_params}
         if self.records:
             mapped["seen_drop"] = drop_params
             mapped["seen_model"] = model
         return mapped
 
-    def get_json_schema_from_pydantic_object(self, response_format: Fields) -> Json:
-        template: Final = "/$defs/{model}" if self.rewrite_refs else None
-        return _BASE_UTILS.type_to_response_format_param(response_format, ref_template=template)
-
-    get_supported_openai_params_stt = get_supported_openai_params
-    map_openai_params_stt = map_openai_params
+    def schema_for(self, response_format: Fields) -> Json:
+        template = "/$defs/{model}" if self.rewrite_refs else None
+        return type_to_response_format_param(response_format, ref_template=template)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179
 
 
 class Provide:
@@ -111,155 +134,149 @@ class RouteRecorder:
         self.answer = {"model": model, "params": dict(request_params)}
 
 
-def _mapper(fields: Fields, name: str) -> Mapper | None:
-    if fields.get(name) is None:
+def build_mapper(spec: MapperSpec | None) -> Mapper | None:
+    if spec is None:
         return None
-    return Mapper(_obj(fields, name))
+    return Mapper(spec)
 
 
-def _bedrock_route(fields: Fields) -> Json:
-    recorder: Final = RouteRecorder()
-    with patch.object(BedrockModelInfo, "get_bedrock_route", recorder):
-        _UTILS._bedrock_route_for_request(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-            model=_str(fields, "model"),
-            passed_params=_obj(fields, "passed_params"),
-            additional_drop_params=fields.get("additional_drop_params"),
-        )
+def bedrock_route(call: Call) -> Json:
+    recorder = RouteRecorder()
+    BedrockModelInfo.get_bedrock_route = recorder  # type: ignore[method-assign, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1347
+    _bedrock_route_for_request(call["model"], call["passed_params"], call["additional_drop_params"])
     return recorder.answer
 
 
-def _pre_process(fields: Fields) -> Json:
-    request: Final = _obj(fields, "request")
-    return _UTILS.pre_process_non_default_params(
-        passed_params=dict(_obj(request, "passed_params")),
-        special_params=_obj(request, "special_params"),
-        custom_llm_provider=_str(request, "custom_llm_provider"),
+def pre_process(call: Call) -> Json:
+    request = call["request"]
+    passed = dict(request["passed_params"])
+    return utils.pre_process_non_default_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4281
+        passed_params=passed,
+        special_params=request["special_params"],
+        custom_llm_provider=request["custom_llm_provider"],
         additional_drop_params=request.get("additional_drop_params"),
         model="model",
-        remove_sensitive_keys=_flag(fields, "remove_sensitive_keys"),
-        add_provider_specific_params=_flag(fields, "add_provider_specific_params"),
-        provider_config=_mapper(fields, "provider_config"),
+        remove_sensitive_keys=call["remove_sensitive_keys"] is True,
+        add_provider_specific_params=call["add_provider_specific_params"] is True,
+        provider_config=build_mapper(call["provider_config"]),  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4289
     )
 
 
-def _function_fallback(fields: Fields) -> Json:
-    non_default: Final = dict(_obj(fields, "non_default_params"))
-    optional = _UTILS.pre_process_optional_params(
-        passed_params=_obj(fields, "passed_params"),
-        non_default_params=non_default,
-        custom_llm_provider=_str(fields, "custom_llm_provider"),
-    )
+def function_fallback(call: Call) -> Json:
+    remaining = dict(call["non_default_params"])
     return {
-        "optional_params": optional,
-        "non_default_params": non_default,
+        "optional_params": utils.pre_process_optional_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4356
+            passed_params=call["passed_params"],
+            non_default_params=remaining,
+            custom_llm_provider=call["custom_llm_provider"],
+        ),
+        "non_default_params": remaining,
         "add_function_to_prompt": litellm.add_function_to_prompt,
     }
 
 
-def _strip_aliases(fields: Fields) -> Json:
-    stripped, summary = _UTILS.strip_reasoning_summary_aliases_from_optional_params(
-        _obj(fields, "optional_params")
+def strip_aliases(call: Call) -> Json:
+    optional = call["optional_params"]
+    stripped, summary = utils.strip_reasoning_summary_aliases_from_optional_params(optional)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10261
+    return {"params": stripped, "summary": summary}  # type: ignore[misc, dict-item]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10261
+
+
+def filter_out(call: Call) -> Json:
+    endpoint = call["endpoint"]
+    if endpoint == "completion":
+        return utils.get_non_default_completion_params(call["kwargs"])  # type: ignore[return-value]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10239
+    if endpoint == "transcription":
+        return utils.get_non_default_transcription_params(call["kwargs"])  # type: ignore[return-value]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10286
+    return utils.filter_out_litellm_params(call["kwargs"], frozenset(call["excluding"]))  # type: ignore[return-value]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4196
+
+
+def transcription(call: Call) -> Json:
+    mapper = Provide(build_mapper(call["mapper"]))
+    ProviderConfigManager.get_provider_audio_transcription_config = mapper  # type: ignore[method-assign, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9013
+    litellm.GroqSTTConfig = mapper  # type: ignore[misc, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1614
+    options = {
+        **call["params"],
+        "model": call["model"],
+        "custom_llm_provider": call["custom_llm_provider"],
+        "drop_params": call["drop_params"],
+    }
+    return utils.get_optional_params_transcription(**options)  # type: ignore[arg-type, misc, no-any-return]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3510
+
+
+def image_generation(call: Call) -> Json:
+    BedrockImageGeneration.get_config_class = Provide(build_mapper(call["bedrock"]))  # type: ignore[method-assign, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L66
+    return utils.get_optional_params_image_gen(  # type: ignore[misc, no-any-return]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3617
+        **{  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3617
+            **call["params"],
+            "model": call.get("model"),
+            "custom_llm_provider": call.get("custom_llm_provider"),
+            "additional_drop_params": call["additional_drop_params"],
+            "provider_config": build_mapper(call["provider_config"]),
+            "drop_params": call["drop_params"],
+        },
     )
-    return {"params": stripped, "summary": summary}
 
 
-def _filter_out(fields: Fields) -> Json:
-    kwargs: Final = _obj(fields, "kwargs")
-    match fields.get("endpoint"):
-        case "completion":
-            return _UTILS.get_non_default_completion_params(kwargs=kwargs)
-        case "transcription":
-            return _UTILS.get_non_default_transcription_params(kwargs=kwargs)
-        case _:
-            return _UTILS.filter_out_litellm_params(
-                kwargs=kwargs, excluding=frozenset(_strs(fields, "excluding"))
-            )
+def select_non_default(call: Call) -> Json:
+    defaults: dict[str, None] = dict.fromkeys(call["default_names"])
+    return _get_non_default_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3497
+        passed_params=call["passed_params"],
+        default_params=defaults,
+        additional_drop_params=call["additional_drop_params"],
+    )
 
 
-def _transcription(fields: Fields) -> Json:
-    mapper: Final = _mapper(fields, "mapper")
-    with (
-        patch.object(
-            ProviderConfigManager, "get_provider_audio_transcription_config", Provide(mapper)
-        ),
-        patch.object(litellm, "GroqSTTConfig", Provide(mapper)),
-    ):
-        return _UTILS.get_optional_params_transcription(
-            **{
-                **_obj(fields, "params"),
-                "model": _str(fields, "model"),
-                "custom_llm_provider": _str(fields, "custom_llm_provider"),
-                "drop_params": fields.get("drop_params"),
-            },
-        )
+def add_provider_specific(call: Call) -> Json:
+    optional = dict(call["optional_params"])
+    passed = dict(call["passed_params"])
+    provider = call["custom_llm_provider"]
+    return utils.add_provider_specific_params_to_optional_params(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5049
+        optional, passed, provider, call["openai_params"], call["additional_drop_params"]
+    )
 
 
-def _image_generation(fields: Fields) -> Json:
-    bedrock: Final = Provide(_mapper(fields, "bedrock"))
-    with patch.object(BedrockImageGeneration, "get_config_class", bedrock):
-        return _UTILS.get_optional_params_image_gen(
-            **{
-                **_obj(fields, "params"),
-                "model": fields.get("model"),
-                "custom_llm_provider": fields.get("custom_llm_provider"),
-                "additional_drop_params": fields.get("additional_drop_params"),
-                "provider_config": _mapper(fields, "provider_config"),
-                "drop_params": fields.get("drop_params"),
-            },
-        )
+def remove_sensitive(call: Call) -> Json:
+    params = dict(call["params"])
+    return utils.remove_sensitive_keys_from_dict(params)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4342
 
 
-_HANDLERS: Final[dict[str, Callable[[Fields], Json]]] = {
-    "select_non_default": lambda fields: _UTILS._get_non_default_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        passed_params=_obj(fields, "passed_params"),
-        default_params=dict.fromkeys(_strs(fields, "default_names")),
-        additional_drop_params=fields.get("additional_drop_params"),
-    ),
-    "filter_out_litellm": _filter_out,
-    "bedrock_route": _bedrock_route,
-    "pre_process": _pre_process,
-    "remove_sensitive_keys": lambda fields: _UTILS.remove_sensitive_keys_from_dict(
-        d=dict(_obj(fields, "params"))
-    ),
-    "function_fallback": _function_fallback,
-    "add_provider_specific": lambda fields: _UTILS.add_provider_specific_params_to_optional_params(
-        optional_params=dict(_obj(fields, "optional_params")),
-        passed_params=dict(_obj(fields, "passed_params")),
-        custom_llm_provider=_str(fields, "custom_llm_provider"),
-        openai_params=_strs(fields, "openai_params"),
-        additional_drop_params=fields.get("additional_drop_params"),
-    ),
-    "peek_aliases": lambda fields: _UTILS.peek_reasoning_summary_aliases(
-        optional_params=_obj(fields, "optional_params")
-    ),
-    "strip_aliases": _strip_aliases,
-    "transcription": _transcription,
-    "image_generation": _image_generation,
+HANDLERS: dict[str, Callable[[Call], Json]] = {
+    "select_non_default": select_non_default,
+    "filter_out_litellm": filter_out,
+    "bedrock_route": bedrock_route,
+    "pre_process": pre_process,
+    "remove_sensitive_keys": remove_sensitive,
+    "function_fallback": function_fallback,
+    "add_provider_specific": add_provider_specific,
+    "strip_aliases": strip_aliases,
+    "transcription": transcription,
+    "image_generation": image_generation,
 }
 
 
-def _answer(call: Fields) -> Json:
-    handler: Final = _HANDLERS.get(_str(call, "function"))
-    if handler is None:
-        raise ValueError(f"unknown b5362 function: {call.get('function')}")
-    litellm.drop_params = _flag(call, "litellm_drop_params")
-    litellm.add_function_to_prompt = False
-    try:
-        return handler(call)
-    except FixtureError as failure:
-        return {"error": failure.status}
-    except UnsupportedParamsError as failure:
-        return {"error": failure.status_code}
-
-
-def run(input_value: Fields) -> Json:
-    calls: Final = input_value.get("calls")
-    if not isinstance(calls, list):
-        raise TypeError("calls must be a list")
-    previous_drop: Final = litellm.drop_params
-    previous_prompt: Final = litellm.add_function_to_prompt
-    try:
-        return [_answer(cast(Fields, call)) for call in calls]
-    finally:
-        litellm.drop_params = previous_drop
-        litellm.add_function_to_prompt = previous_prompt
+def run(input_value: Input) -> Json:
+    results: list[Json] = []
+    route = BedrockModelInfo.get_bedrock_route
+    transcribe = ProviderConfigManager.get_provider_audio_transcription_config
+    groq = litellm.GroqSTTConfig  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1614
+    images = BedrockImageGeneration.get_config_class
+    for raw in input_value["calls"]:
+        call: Call = {**DEFAULTS, **raw}
+        litellm.drop_params = call["litellm_drop_params"] is True
+        litellm.add_function_to_prompt = False
+        try:
+            if call["function"] == "peek_aliases":
+                optional = call["optional_params"]
+                results.append(utils.peek_reasoning_summary_aliases(optional))  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10243
+            else:
+                results.append(HANDLERS[call["function"]](call))
+        except FixtureError as failure:
+            results.append({"error": failure.status})
+        except UnsupportedParamsError as failure:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L945
+            results.append({"error": failure.status_code})
+        finally:
+            BedrockModelInfo.get_bedrock_route = route  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1347
+            ProviderConfigManager.get_provider_audio_transcription_config = transcribe  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9013
+            litellm.GroqSTTConfig = groq  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1614
+            BedrockImageGeneration.get_config_class = images  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L66
+    return results
