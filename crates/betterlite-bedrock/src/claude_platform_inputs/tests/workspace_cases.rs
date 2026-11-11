@@ -1,4 +1,5 @@
 use betterlite_config::sections::claude_platform_inputs::PlatformInputs;
+use indexmap::IndexMap;
 
 use super::support;
 use crate::claude_platform_inputs::error::PlatformInputError;
@@ -279,11 +280,23 @@ fn containers_are_rejected() {
         "anthropic-workspace-id",
         ParamValue::List(vec![support::text("a")]),
     )]);
+    let mapping = support::params(&[(
+        "anthropic-workspace-id",
+        ParamValue::Mapping(IndexMap::from([("a".to_owned(), support::text("b"))])),
+    )]);
     let settings = support::settings(&[]);
-    let error = resolve_workspace_id(&list, &empty, &empty, &settings.environment).unwrap_err();
+    let list_error =
+        resolve_workspace_id(&list, &empty, &empty, &settings.environment).unwrap_err();
     assert!(
-        matches!(error, PlatformInputError::ValueType { field } if field == "anthropic-workspace-id"),
-        "{error}"
+        matches!(list_error, PlatformInputError::ValueType { field } if field == "anthropic-workspace-id"),
+        "{list_error}"
     );
-    assert_eq!(error.status_code(), Some(400));
+    assert_eq!(list_error.status_code(), Some(400));
+    let mapping_error =
+        resolve_workspace_id(&mapping, &empty, &empty, &settings.environment).unwrap_err();
+    assert!(
+        matches!(mapping_error, PlatformInputError::ValueType { field } if field == "anthropic-workspace-id"),
+        "{mapping_error}"
+    );
+    assert_eq!(mapping_error.status_code(), Some(400));
 }

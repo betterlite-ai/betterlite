@@ -69,7 +69,6 @@ pub(super) fn optional_candidate<'source>(
 ) -> Option<Candidate<'source>> {
     params
         .get(key)
-        .filter(|value| !matches!(value, ParamValue::Null))
         .map(|value| Candidate::Param { field: key, value })
 }
 
