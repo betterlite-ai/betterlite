@@ -5,7 +5,7 @@ use super::support::{
     API_KEY_INDEX, FakeDatabase, FixedJitter, PostgresTest, RecordingDatabase, RecordingPause,
     SPEND_LOGS, attached_children, duplicate_api_key_rows, index_builder, index_by_name,
     index_dependencies, index_oid, index_state_of, informed, install_logs, invalid_index,
-    leave_invalid_index, partitioned_table, run_partition, suffix, valid_index,
+    leave_invalid_index, partitioned_table, suffix, valid_index,
 };
 
 #[tokio::test]
@@ -50,7 +50,11 @@ async fn existing_invalid_parent_reused() {
     let pause = RecordingPause::new(&fake);
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&fake, "public", &dependencies);
-    assert!(!run_partition(&builder, index_by_name(API_KEY_INDEX)).await);
+    assert!(
+        !build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
+            .await
+            .unwrap()
+    );
     assert!(fake.state().statements.is_empty());
     assert!(pause.delays().is_empty());
 }
@@ -77,7 +81,11 @@ async fn first_failed_child_stops_later_children() {
     let pause = RecordingPause::new(&fake);
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&fake, "public", &dependencies);
-    assert!(!run_partition(&builder, index_by_name(API_KEY_INDEX)).await);
+    assert!(
+        !build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
+            .await
+            .unwrap()
+    );
     assert!(
         !fake
             .state()
@@ -115,7 +123,11 @@ async fn final_parent_validity_required() {
     let pause = RecordingPause::new(&fake);
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&fake, "public", &dependencies);
-    assert!(!run_partition(&builder, index_by_name(API_KEY_INDEX)).await);
+    assert!(
+        !build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
+            .await
+            .unwrap()
+    );
     assert!(
         fake.state()
             .statements
@@ -145,7 +157,11 @@ async fn interrupted_build_resumes() {
     let pause = RecordingPause::standalone();
     let dependencies = index_dependencies(&jitter, &pause);
     let builder = index_builder(&recorder, &test.schema, &dependencies);
-    assert!(run_partition(&builder, index_by_name(API_KEY_INDEX)).await);
+    assert!(
+        build_on_partitioned_table(&builder, index_by_name(API_KEY_INDEX), None, None)
+            .await
+            .unwrap()
+    );
     assert_ne!(index_oid(&test.client, &child).await.unwrap(), invalid_oid);
     assert!(index_state_of(&test.client, &child).await.unwrap().1);
     assert_eq!(

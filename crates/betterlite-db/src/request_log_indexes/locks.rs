@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use super::IndexBuilder;
-use super::database::{DatabaseFailure as _, DatabaseFuture, IndexDatabase};
+use super::database::{DatabaseFailure as _, IndexDatabase};
 
 pub(crate) const LOCK_ATTEMPTS: u32 = 10;
 pub(crate) const RETRY_HALF_BASE_MILLIS: u64 = 125;
@@ -28,14 +28,15 @@ impl RetryPause for TokioPause {
 }
 
 // Mirrors _with_bounded_lock: a short lock_timeout per attempt, the coordinator held per attempt only
-pub(crate) async fn with_bounded_lock<'step, D, S>(
+pub(crate) async fn with_bounded_lock<'step, D, S, F>(
     builder: &'step IndexBuilder<'_, D>,
     what: &str,
     step: S,
 ) -> Result<bool, D::Error>
 where
     D: IndexDatabase,
-    S: Fn() -> DatabaseFuture<'step, bool, D::Error>,
+    S: Fn() -> F,
+    F: Future<Output = Result<bool, D::Error>> + 'step,
 {
     for attempt in 0..LOCK_ATTEMPTS {
         if attempt > 0 {

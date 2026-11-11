@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-use crate::request_log_indexes::leaf::report_second_copies;
+use crate::request_log_index_catalog::catalog::IndexState;
 use crate::request_log_indexes::locks::HANDOVER;
+use crate::request_log_indexes::report::report_second_copies;
 
 use super::support::{
     API_KEY_INDEX, CALL_ID_INDEX, FakeDatabase, FixedJitter, PostgresTest, RecordingDatabase,
@@ -61,7 +62,7 @@ fn assert_repair_logs(logs: &str) {
     ));
 }
 
-async fn create_repair_fixture(test: &PostgresTest) -> (u32, u32, u32) {
+async fn create_invalid_fixture(test: &PostgresTest, extras: &str) -> (u32, u32) {
     create_spend_logs(test).await;
     duplicate_api_key_rows(&test.client, SPEND_LOGS).await;
     leave_invalid_index(
@@ -72,20 +73,21 @@ async fn create_repair_fixture(test: &PostgresTest) -> (u32, u32, u32) {
     )
     .await;
     let setup = format!(
-        "CREATE INDEX api_key_copy ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\"); CREATE INDEX call_id_copy ON \"{SPEND_LOGS}\" (litellm_call_id);"
+        "CREATE INDEX api_key_copy ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\"); {extras}"
     );
     test.client.batch_execute(&setup).await.unwrap();
     let invalid_oid = index_oid(&test.client, API_KEY_INDEX).await.unwrap();
     let copy_oid = index_oid(&test.client, "api_key_copy").await.unwrap();
-    let adoption_oid = index_oid(&test.client, "call_id_copy").await.unwrap();
-    (invalid_oid, copy_oid, adoption_oid)
+    (invalid_oid, copy_oid)
 }
 
 #[tokio::test]
 async fn postgres_leaf_repair_and_adoption() {
     let (logs, _guard) = install_logs();
     let test = PostgresTest::new().await;
-    let (invalid_oid, copy_oid, adoption_oid) = create_repair_fixture(&test).await;
+    let extras = format!("CREATE INDEX call_id_copy ON \"{SPEND_LOGS}\" (litellm_call_id);");
+    let (invalid_oid, copy_oid) = create_invalid_fixture(&test, &extras).await;
+    let adoption_oid = index_oid(&test.client, "call_id_copy").await.unwrap();
     let recorder = RecordingDatabase::new(test.service().await);
     let jitter = FixedJitter::new(0);
     let pause = RecordingPause::standalone();
@@ -228,32 +230,11 @@ async fn wrong_table_collision_untouched() {
     test.finish().await;
 }
 
-async fn create_invalid_leaf_fixture(test: &PostgresTest) -> (u32, u32) {
-    create_spend_logs(test).await;
-    duplicate_api_key_rows(&test.client, SPEND_LOGS).await;
-    leave_invalid_index(
-        &test.client,
-        API_KEY_INDEX,
-        SPEND_LOGS,
-        "\"api_key\", \"startTime\"",
-    )
-    .await;
-    test.client
-        .batch_execute(&format!(
-            "CREATE INDEX api_key_copy ON \"{SPEND_LOGS}\" (\"api_key\", \"startTime\")"
-        ))
-        .await
-        .unwrap();
-    let invalid_oid = index_oid(&test.client, API_KEY_INDEX).await.unwrap();
-    let copy_oid = index_oid(&test.client, "api_key_copy").await.unwrap();
-    (invalid_oid, copy_oid)
-}
-
 #[tokio::test]
 async fn invalid_leaf_drops_before_create_without_adoption() {
     let (logs, _guard) = install_logs();
     let test = PostgresTest::new().await;
-    let (invalid_oid, copy_oid) = create_invalid_leaf_fixture(&test).await;
+    let (invalid_oid, copy_oid) = create_invalid_fixture(&test, "").await;
     let recorder = RecordingDatabase::new(test.service().await);
     let jitter = FixedJitter::new(0);
     let pause = RecordingPause::standalone();
@@ -372,47 +353,17 @@ async fn stale_read_rechecked_under_lock() {
     );
 }
 
-async fn run_valid_leaf() -> (Vec<Duration>, usize) {
+async fn run_leaf_with_states(states: &[IndexState]) -> (Vec<Duration>, usize) {
     let fake = FakeDatabase::default().working();
     fake.configure(|state| {
         state
             .tables
             .insert(SPEND_LOGS.to_owned(), Ok(Some(plain_table())));
-        state
-            .index_state_sequence
-            .push_back(Ok(Some(valid_index(SPEND_LOGS))));
-    });
-    let jitter = FixedJitter::new(0);
-    let pause = RecordingPause::new(&fake);
-    let dependencies = index_dependencies(&jitter, &pause);
-    let builder = index_builder(&fake, "public", &dependencies);
-    assert!(
-        run_leaf(
-            &builder,
-            SPEND_LOGS,
-            API_KEY_INDEX,
-            index_by_name(API_KEY_INDEX)
-        )
-        .await
-    );
-    (pause.delays(), fake.state().statements.len())
-}
-
-async fn run_rebuilt_leaf() -> (Vec<Duration>, usize) {
-    let fake = FakeDatabase::default().working();
-    fake.configure(|state| {
-        state
-            .tables
-            .insert(SPEND_LOGS.to_owned(), Ok(Some(plain_table())));
-        state
-            .index_state_sequence
-            .push_back(Ok(Some(invalid_index(SPEND_LOGS))));
-        state
-            .index_state_sequence
-            .push_back(Ok(Some(invalid_index(SPEND_LOGS))));
-        state
-            .index_state_sequence
-            .push_back(Ok(Some(valid_index(SPEND_LOGS))));
+        for status in states {
+            state
+                .index_state_sequence
+                .push_back(Ok(Some(status.clone())));
+        }
     });
     let jitter = FixedJitter::new(0);
     let pause = RecordingPause::new(&fake);
@@ -432,10 +383,15 @@ async fn run_rebuilt_leaf() -> (Vec<Duration>, usize) {
 
 #[tokio::test]
 async fn leaf_handover_only_after_locked_success() {
-    let (valid_delays, valid_statements) = run_valid_leaf().await;
+    let (valid_delays, valid_statements) = run_leaf_with_states(&[valid_index(SPEND_LOGS)]).await;
     assert!(valid_delays.is_empty());
     assert_eq!(valid_statements, 0);
-    let (rebuilt_delays, rebuilt_statements) = run_rebuilt_leaf().await;
+    let states = [
+        invalid_index(SPEND_LOGS),
+        invalid_index(SPEND_LOGS),
+        valid_index(SPEND_LOGS),
+    ];
+    let (rebuilt_delays, rebuilt_statements) = run_leaf_with_states(&states).await;
     assert_eq!(rebuilt_delays, [Duration::from_secs(2)]);
     assert_eq!(rebuilt_statements, 2);
 }

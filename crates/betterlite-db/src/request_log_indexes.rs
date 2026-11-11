@@ -1,10 +1,16 @@
+mod adopt;
 mod connect;
+mod copies;
+mod create;
 mod database;
+mod dispatch;
 pub mod ensure;
 mod leaf;
+mod leaf_step;
 mod locks;
 mod partition;
 pub mod replica_identity;
+mod report;
 mod tests;
 
 use crate::database_tls::options::ConnectionOptionsError;
@@ -33,12 +39,12 @@ pub enum RequestLogIndexError {
     },
     #[error("the request-log index statement failed")]
     Statement {
-        #[source]
+        #[from]
         source: tokio_postgres::Error,
     },
     #[error("the request-log index catalog query failed")]
     Catalog {
-        #[source]
+        #[from]
         source: RequestLogIndexCatalogError,
     },
 }

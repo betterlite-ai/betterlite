@@ -9,7 +9,9 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
+use tokio_postgres::Client as PgClient;
 use tokio_postgres::NoTls;
+use tokio_postgres::types::{FromSqlOwned, ToSql};
 use tracing::Subscriber;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
@@ -20,12 +22,11 @@ use crate::request_log_index_catalog::catalog::{EquivalentIndex, IndexState, Rel
 use crate::request_log_index_catalog::definitions::{REQUEST_LOG_INDEXES, RequestLogIndex};
 use crate::request_log_indexes::connect;
 use crate::request_log_indexes::database::{
-    DatabaseFailure, DatabaseFuture, IndexDatabase, PostgresDatabase,
+    DatabaseFailure, DatabaseFuture, IndexDatabase, IndexRef, PostgresDatabase,
 };
 use crate::request_log_indexes::ensure::ensure_indexes;
 use crate::request_log_indexes::leaf::build_leaf;
 use crate::request_log_indexes::locks::RetryPause;
-use crate::request_log_indexes::partition::build_on_partitioned_table;
 use crate::request_log_indexes::{IndexBuilder, IndexDependencies, RequestLogIndexError};
 
 #[derive(Parser)]
@@ -147,35 +148,28 @@ impl IndexDatabase for RecordingDatabase {
 
     fn equivalent_indexes<'database>(
         &'database self,
-        schema: &'database str,
-        table: &'database str,
-        expected_name: &'database str,
-        index: RequestLogIndex<'database>,
+        target: IndexRef<'database>,
+        definition: RequestLogIndex<'database>,
     ) -> DatabaseFuture<'database, Vec<EquivalentIndex>, Self::Error> {
-        self.inner
-            .equivalent_indexes(schema, table, expected_name, index)
+        self.inner.equivalent_indexes(target, definition)
     }
 
     fn children_without_the_index<'database>(
         &'database self,
-        schema: &'database str,
-        table: &'database str,
-        index: &'database str,
+        target: IndexRef<'database>,
     ) -> DatabaseFuture<'database, Vec<Relation>, Self::Error> {
-        self.inner.children_without_the_index(schema, table, index)
+        self.inner.children_without_the_index(target)
     }
 
     fn execute<'database>(
         &'database self,
         statement: &'database str,
     ) -> DatabaseFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            self.statements
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(statement.to_owned());
-            self.inner.execute(statement).await
-        })
+        self.statements
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(statement.to_owned());
+        self.inner.execute(statement)
     }
 
     fn try_coordinator_lock(&self) -> DatabaseFuture<'_, bool, Self::Error> {
@@ -199,6 +193,14 @@ pub(super) fn index_by_name(name: &str) -> RequestLogIndex<'_> {
         .unwrap()
 }
 
+const INDEX_STATE_SQL: &str = "SELECT t.relname AS \"table\", x.indisvalid AS valid FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid WHERE i.relname = $1 AND i.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())";
+const OID_SQL: &str = "SELECT c.oid FROM pg_class c WHERE c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())";
+const OID_IN_SCHEMA_SQL: &str = "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2";
+const RELKIND_SQL: &str = "SELECT relkind::text FROM pg_class WHERE relname = $1 AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())";
+const REPLICA_SQL: &str = "SELECT relreplident::text FROM pg_class WHERE relname = $1 AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())";
+const COLUMNS_SQL: &str = "SELECT a.attname FROM pg_index x JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = ANY (x.indkey::int2[]) WHERE x.indexrelid = (SELECT oid FROM pg_class WHERE relname = $1 AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema()))";
+const CHILDREN_SQL: &str = "SELECT child.relname FROM pg_inherits i JOIN pg_class parent ON parent.oid = i.inhparent JOIN pg_class child ON child.oid = i.inhrelid WHERE parent.relname = $1 AND parent.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $2) ORDER BY child.relname";
+
 pub(super) async fn create_spend_logs(test: &PostgresTest) {
     test.client
         .batch_execute(&format!(
@@ -208,86 +210,72 @@ pub(super) async fn create_spend_logs(test: &PostgresTest) {
         .unwrap();
 }
 
-pub(super) async fn duplicate_api_key_rows(client: &tokio_postgres::Client, table: &str) {
-    client
-        .batch_execute(&format!(
-            "INSERT INTO \"{table}\" (request_id, api_key, \"startTime\", litellm_call_id) VALUES ('one', 'same', '2026-01-01T00:00:00Z', 'call-one'), ('two', 'same', '2026-01-01T00:00:00Z', 'call-two');"
-        ))
-        .await
-        .unwrap();
+pub(super) async fn duplicate_api_key_rows(client: &PgClient, table: &str) {
+    client.batch_execute(&format!("INSERT INTO \"{table}\" (request_id, api_key, \"startTime\", litellm_call_id) VALUES ('one', 'same', '2026-01-01T00:00:00Z', 'call-one'), ('two', 'same', '2026-01-01T00:00:00Z', 'call-two');")).await.unwrap();
 }
 
 // A UNIQUE CONCURRENTLY build over duplicate rows fails and leaves the named index invalid
-pub(super) async fn leave_invalid_index(
-    client: &tokio_postgres::Client,
-    name: &str,
-    table: &str,
-    columns: &str,
-) {
-    client
-        .batch_execute(&format!(
-            "CREATE UNIQUE INDEX CONCURRENTLY \"{name}\" ON \"{table}\" ({columns})"
-        ))
-        .await
-        .unwrap_err();
+pub(super) async fn leave_invalid_index(client: &PgClient, name: &str, table: &str, columns: &str) {
+    let statement =
+        format!("CREATE UNIQUE INDEX CONCURRENTLY \"{name}\" ON \"{table}\" ({columns})");
+    client.batch_execute(&statement).await.unwrap_err();
 }
 
-pub(super) async fn index_state_of(
-    client: &tokio_postgres::Client,
-    name: &str,
-) -> Option<(String, bool)> {
-    client
-        .query_opt(
-            "SELECT t.relname AS \"table\", x.indisvalid AS valid FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid WHERE i.relname = $1 AND i.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())",
-            &[&name],
-        )
-        .await
-        .unwrap()
-        .map(|row| (row.get("table"), row.get("valid")))
+pub(super) async fn index_state_of(client: &PgClient, name: &str) -> Option<(String, bool)> {
+    let row = client.query_opt(INDEX_STATE_SQL, &[&name]).await.unwrap()?;
+    Some((row.get("table"), row.get("valid")))
 }
 
-pub(super) async fn index_oid(client: &tokio_postgres::Client, name: &str) -> Option<u32> {
+pub(super) async fn index_oid(client: &PgClient, name: &str) -> Option<u32> {
+    optional_value(client, OID_SQL, &[&name]).await
+}
+
+pub(super) async fn relation_kind(client: &PgClient, name: &str) -> String {
+    first_value(client, RELKIND_SQL, &[&name]).await
+}
+
+pub(super) async fn index_columns(client: &PgClient, name: &str) -> Vec<String> {
+    text_column(client, COLUMNS_SQL, &[&name]).await
+}
+
+pub(super) async fn replica_identity(client: &PgClient, table: &str) -> String {
+    first_value(client, REPLICA_SQL, &[&table]).await
+}
+
+async fn first_value<T>(client: &PgClient, statement: &str, params: &[&(dyn ToSql + Sync)]) -> T
+where
+    T: FromSqlOwned,
+{
+    client.query_one(statement, params).await.unwrap().get(0)
+}
+
+async fn optional_value<T>(
+    client: &PgClient,
+    statement: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Option<T>
+where
+    T: FromSqlOwned,
+{
     client
-        .query_opt(
-            "SELECT c.oid FROM pg_class c WHERE c.relname = $1 AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())",
-            &[&name],
-        )
+        .query_opt(statement, params)
         .await
         .unwrap()
         .map(|row| row.get(0))
 }
 
-pub(super) async fn relation_kind(client: &tokio_postgres::Client, name: &str) -> String {
+async fn text_column(
+    client: &PgClient,
+    statement: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Vec<String> {
     client
-        .query_one(
-            "SELECT relkind::text FROM pg_class WHERE relname = $1 AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())",
-            &[&name],
-        )
+        .query(statement, params)
         .await
         .unwrap()
-        .get(0)
-}
-
-pub(super) async fn index_columns(client: &tokio_postgres::Client, name: &str) -> Vec<String> {
-    let rowset = client
-        .query(
-            "SELECT a.attname FROM pg_index x JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = ANY (x.indkey::int2[]) WHERE x.indexrelid = (SELECT oid FROM pg_class WHERE relname = $1 AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema()))",
-            &[&name],
-        )
-        .await
-        .unwrap();
-    rowset.iter().map(|row| row.get(0)).collect()
-}
-
-pub(super) async fn replica_identity(client: &tokio_postgres::Client, table: &str) -> String {
-    client
-        .query_one(
-            "SELECT relreplident::text FROM pg_class WHERE relname = $1 AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())",
-            &[&table],
-        )
-        .await
-        .unwrap()
-        .get(0)
+        .iter()
+        .map(|row| row.get(0))
+        .collect()
 }
 
 #[derive(Clone, Default)]
@@ -476,6 +464,77 @@ impl FakeDatabase {
         state.release_attempts = state.release_attempts.saturating_add(1);
         state.locked = false;
     }
+
+    fn kind_answer(&self, schema: &str, table: &str) -> Result<Option<TableKind>, FakeError> {
+        let mut state = self.state();
+        state.schemas_asked.push(schema.to_owned());
+        state.table_kinds_asked.push(table.to_owned());
+        let stored = state.tables.get(table).cloned();
+        answer(&mut state.table_kind_sequence, stored.as_ref())
+    }
+
+    fn state_answer(&self, schema: &str, index: &str) -> Result<Option<IndexState>, FakeError> {
+        let mut state = self.state();
+        state.schemas_asked.push(schema.to_owned());
+        state.index_states_asked.push(index.to_owned());
+        let stored = state.index_states.get(index).cloned();
+        answer(&mut state.index_state_sequence, stored.as_ref())
+    }
+
+    fn equivalent_answer(
+        &self,
+        target: IndexRef<'_>,
+        definition: &RequestLogIndex<'_>,
+    ) -> Vec<EquivalentIndex> {
+        let mut state = self.state();
+        state.schemas_asked.push(target.schema.to_owned());
+        state.expected_names_asked.push(target.name.to_owned());
+        state
+            .equivalent_definitions_asked
+            .push(definition.name.to_owned());
+        let asked = state.equivalents_asked.saturating_add(1);
+        state.equivalents_asked = asked;
+        state
+            .equivalents
+            .get(target.table)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn children_answer(&self, target: IndexRef<'_>) -> Vec<Relation> {
+        let mut state = self.state();
+        state.schemas_asked.push(target.schema.to_owned());
+        state.child_indexes_asked.push(target.name.to_owned());
+        state
+            .children
+            .get(target.table)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    async fn answer_execute(&self, statement: &str) -> Result<(), FakeError> {
+        match self.next_fault(statement) {
+            Some(fault) => fault_answer(fault).await,
+            None => Ok(()),
+        }
+    }
+}
+
+fn answer<T>(
+    sequence: &mut VecDeque<Result<T, FakeFault>>,
+    stored: Option<&Result<T, FakeFault>>,
+) -> Result<T, FakeError>
+where
+    T: Clone + Default,
+{
+    if let Some(next) = sequence.pop_front() {
+        return next.map_err(|fault| FakeError { fault });
+    }
+    match stored {
+        Some(Ok(value)) => Ok(value.clone()),
+        Some(Err(fault)) => Err(FakeError { fault: *fault }),
+        None => Ok(T::default()),
+    }
 }
 
 impl IndexDatabase for FakeDatabase {
@@ -486,19 +545,7 @@ impl IndexDatabase for FakeDatabase {
         schema: &'database str,
         table: &'database str,
     ) -> DatabaseFuture<'database, Option<TableKind>, Self::Error> {
-        Box::pin(async move {
-            let mut state = self.state();
-            state.schemas_asked.push(schema.to_owned());
-            state.table_kinds_asked.push(table.to_owned());
-            if let Some(answer) = state.table_kind_sequence.pop_front() {
-                return answer.map_err(|fault| FakeError { fault });
-            }
-            match state.tables.get(table) {
-                Some(Ok(kind)) => Ok(kind.clone()),
-                Some(Err(fault)) => Err(FakeError { fault: *fault }),
-                None => Ok(None),
-            }
-        })
+        Box::pin(async move { self.kind_answer(schema, table) })
     }
 
     fn index_state<'database>(
@@ -506,64 +553,29 @@ impl IndexDatabase for FakeDatabase {
         schema: &'database str,
         index: &'database str,
     ) -> DatabaseFuture<'database, Option<IndexState>, Self::Error> {
-        Box::pin(async move {
-            let mut state = self.state();
-            state.schemas_asked.push(schema.to_owned());
-            state.index_states_asked.push(index.to_owned());
-            if let Some(answer) = state.index_state_sequence.pop_front() {
-                return answer.map_err(|fault| FakeError { fault });
-            }
-            match state.index_states.get(index) {
-                Some(Ok(found)) => Ok(found.clone()),
-                Some(Err(fault)) => Err(FakeError { fault: *fault }),
-                None => Ok(None),
-            }
-        })
+        Box::pin(async move { self.state_answer(schema, index) })
     }
 
     fn equivalent_indexes<'database>(
         &'database self,
-        schema: &'database str,
-        table: &'database str,
-        expected_name: &'database str,
-        index: RequestLogIndex<'database>,
+        target: IndexRef<'database>,
+        definition: RequestLogIndex<'database>,
     ) -> DatabaseFuture<'database, Vec<EquivalentIndex>, Self::Error> {
-        Box::pin(async move {
-            let mut state = self.state();
-            state.schemas_asked.push(schema.to_owned());
-            state.expected_names_asked.push(expected_name.to_owned());
-            state
-                .equivalent_definitions_asked
-                .push(index.name.to_owned());
-            state.equivalents_asked = state.equivalents_asked.saturating_add(1);
-            Ok(state.equivalents.get(table).cloned().unwrap_or_default())
-        })
+        Box::pin(async move { Ok(self.equivalent_answer(target, &definition)) })
     }
 
     fn children_without_the_index<'database>(
         &'database self,
-        schema: &'database str,
-        table: &'database str,
-        index: &'database str,
+        target: IndexRef<'database>,
     ) -> DatabaseFuture<'database, Vec<Relation>, Self::Error> {
-        Box::pin(async move {
-            let mut state = self.state();
-            state.schemas_asked.push(schema.to_owned());
-            state.child_indexes_asked.push(index.to_owned());
-            Ok(state.children.get(table).cloned().unwrap_or_default())
-        })
+        Box::pin(async move { Ok(self.children_answer(target)) })
     }
 
     fn execute<'database>(
         &'database self,
         statement: &'database str,
     ) -> DatabaseFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            match self.next_fault(statement) {
-                Some(fault) => fault_answer(fault).await,
-                None => Ok(()),
-            }
-        })
+        Box::pin(self.answer_execute(statement))
     }
 
     fn try_coordinator_lock(&self) -> DatabaseFuture<'_, bool, Self::Error> {
@@ -699,19 +711,8 @@ pub(super) fn role_name(prefix: &str) -> String {
     format!("b718_{prefix}_{}", Uuid::new_v4().simple())
 }
 
-pub(super) async fn attached_children(
-    client: &tokio_postgres::Client,
-    schema: &str,
-    index: &str,
-) -> Vec<String> {
-    let rowset = client
-        .query(
-            "SELECT child.relname FROM pg_inherits i JOIN pg_class parent ON parent.oid = i.inhparent JOIN pg_class child ON child.oid = i.inhrelid WHERE parent.relname = $1 AND parent.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $2) ORDER BY child.relname",
-            &[&index, &schema],
-        )
-        .await
-        .unwrap();
-    rowset.iter().map(|row| row.get(0)).collect()
+pub(super) async fn attached_children(client: &PgClient, schema: &str, index: &str) -> Vec<String> {
+    text_column(client, CHILDREN_SQL, &[&index, &schema]).await
 }
 
 pub(super) async fn create_partition_tree(test: &PostgresTest) {
@@ -731,19 +732,8 @@ pub(super) async fn create_partition_tree(test: &PostgresTest) {
         .unwrap();
 }
 
-pub(super) async fn oid_in_schema(
-    client: &tokio_postgres::Client,
-    schema: &str,
-    name: &str,
-) -> Option<u32> {
-    client
-        .query_opt(
-            "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2",
-            &[&schema, &name],
-        )
-        .await
-        .unwrap()
-        .map(|row| row.get(0))
+pub(super) async fn oid_in_schema(client: &PgClient, schema: &str, name: &str) -> Option<u32> {
+    optional_value(client, OID_IN_SCHEMA_SQL, &[&schema, &name]).await
 }
 
 pub(super) async fn run_leaf<D>(
@@ -756,18 +746,6 @@ where
     D: IndexDatabase,
 {
     build_leaf(builder, table, name, index).await.unwrap()
-}
-
-pub(super) async fn run_partition<D>(
-    builder: &IndexBuilder<'_, D>,
-    index: RequestLogIndex<'_>,
-) -> bool
-where
-    D: IndexDatabase,
-{
-    build_on_partitioned_table(builder, index, None, None)
-        .await
-        .unwrap()
 }
 
 pub(super) fn plain_table() -> TableKind {
