@@ -14,6 +14,13 @@ if TYPE_CHECKING:
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
+RECORD_KEYS = (
+    "guardrail_name",
+    "guardrail_provider",
+    "guardrail_mode",
+    "guardrail_response",
+    "guardrail_status",
+)
 JUDGE_CALL_TARGET = (
     "litellm.proxy.guardrails.guardrail_hooks.llm_as_a_judge.judge_acompletion"
 )
@@ -104,14 +111,7 @@ def run(input_value: dict[str, Json]) -> Json:
         metadata.get("standard_logging_guardrail_information") or [],
     )
     records: list[Json] = [
-        {
-            "guardrail_name": entry["guardrail_name"],
-            "guardrail_provider": entry["guardrail_provider"],
-            "guardrail_mode": entry["guardrail_mode"],
-            "guardrail_response": entry["guardrail_response"],
-            "guardrail_status": entry["guardrail_status"],
-        }
-        for entry in entries
+        {key: entry[key] for key in RECORD_KEYS} for entry in entries
     ]
     return {
         "judge_call": captured or None,

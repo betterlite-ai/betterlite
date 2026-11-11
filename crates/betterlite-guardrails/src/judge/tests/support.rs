@@ -192,15 +192,13 @@ pub(crate) fn guardrail_with(completion: Arc<RecordingCompletion>) -> LLMAsAJudg
     }
 }
 
-pub(crate) const FIXED_SECONDS: f64 = 1_700_000_000.0;
-
 pub(crate) fn only_record(data: &RequestData) -> &JudgeGuardrailRecord {
     let records = &data.metadata.guardrail_records;
     assert_eq!(records.len(), 1, "a judge run leaves exactly one record");
     &records[0]
 }
 
-fn fixed_now() -> SystemTime {
+pub(crate) fn fixed_now() -> SystemTime {
     UNIX_EPOCH
         .checked_add(Duration::from_secs(1_700_000_000))
         .unwrap_or(UNIX_EPOCH)

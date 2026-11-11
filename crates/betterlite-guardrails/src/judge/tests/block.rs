@@ -9,7 +9,7 @@ use crate::judge::hooks::{EventHookConfig, GuardrailEventHook};
 use crate::judge::verdict::EvalInformation;
 
 use super::support::{
-    FIXED_SECONDS, Outcome, RecordingCompletion, guardrail_with, only_record, reply_with_score,
+    Outcome, RecordingCompletion, fixed_now, guardrail_with, only_record, reply_with_score,
     request_data, texts,
 };
 
@@ -76,8 +76,8 @@ async fn judge_block_tests_behavior(#[case] case: Case) {
                 record.guardrail_mode,
                 EventHookConfig::Single(GuardrailEventHook::PostCall)
             );
-            assert_eq!(record.start_time.to_bits(), FIXED_SECONDS.to_bits());
-            assert_eq!(record.end_time.to_bits(), FIXED_SECONDS.to_bits());
+            assert_eq!(record.start_time, fixed_now());
+            assert_eq!(record.end_time, fixed_now());
             let Json::Object(response) = &record.guardrail_response else {
                 panic!("the record keeps the judge reply");
             };

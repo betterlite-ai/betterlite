@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_judge::Criterion;
@@ -111,7 +111,6 @@ impl LLMAsAJudgeGuardrail {
         let evaluation = self
             .evaluate(&messages, &text, input_type, &mut request_data.metadata)
             .await;
-        let ended = (self.now)();
         request_data
             .metadata
             .guardrail_records
@@ -122,14 +121,8 @@ impl LLMAsAJudgeGuardrail {
                     .map_or_else(|| self.event_hook.clone(), EventHookConfig::Single),
                 guardrail_response: Json::Object(evaluation.verdict),
                 guardrail_status: evaluation.status,
-                start_time: started
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs_f64(),
-                end_time: ended
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs_f64(),
+                start_time: started,
+                end_time: (self.now)(),
             });
         evaluation.block.map_or(Ok(inputs), Err)
     }
