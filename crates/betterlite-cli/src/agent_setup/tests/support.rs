@@ -90,6 +90,11 @@ impl FakeEnvironment {
             home: None,
         }
     }
+
+    pub(crate) fn with_variable(mut self, name: &str, value: &str) -> Self {
+        self.variables.insert(name.to_owned(), value.to_owned());
+        self
+    }
 }
 
 impl EnvironmentLookup for FakeEnvironment {

@@ -4,6 +4,23 @@ async fn fetch(base_url: &str, target: Target) -> Result<Vec<ListedModel>, Agent
 }
 
 #[tokio::test]
+async fn listing_routes_through_the_environment_proxy() {
+    let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[("claude-3", None)]))]).await;
+    let environment =
+        FakeEnvironment::without_home().with_variable("HTTP_PROXY", "http://127.0.0.1:1");
+    let error = fetch_listing(
+        &proxy.base_url,
+        &token("sk-test"),
+        Target::Claude,
+        &environment,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, AgentSetupError::ListingUnreachable { .. }));
+    assert!(proxy.requests().is_empty());
+}
+
+#[tokio::test]
 async fn listing_sends_the_claude_code_headers() {
     let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[("claude-3", None)]))]).await;
     let models = fetch(&proxy.base_url, Target::Claude).await.unwrap();
