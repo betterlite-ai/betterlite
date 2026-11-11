@@ -25,7 +25,13 @@ pub fn resolve_target_indices(point: &MessageInjectionPoint, messages: &[Message
             Some(TargetIndex::Position(position)) => {
                 return resolve_index(position, messages.len());
             }
-            Some(TargetIndex::OutOfRange) => return resolve_out_of_range(messages.len()),
+            Some(TargetIndex::OutOfRange) => {
+                warn!(
+                    length = messages.len(),
+                    "cache control injection index is out of bounds; skipping"
+                );
+                return Vec::new();
+            }
             None => {}
         }
     }
@@ -114,14 +120,6 @@ fn resolve_index(index: i64, length: usize) -> Vec<usize> {
         return Vec::new();
     };
     vec![position]
-}
-
-fn resolve_out_of_range(length: usize) -> Vec<usize> {
-    warn!(
-        length,
-        "cache control injection index is out of bounds; skipping"
-    );
-    Vec::new()
 }
 
 const fn role_name(role: InjectionRole) -> &'static str {

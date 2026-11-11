@@ -64,5 +64,8 @@ call:
       - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
         points: [{location: message, role: user, index: "1__0", control: null}]
         max_blocks: 4
+      - messages: [{role: user, content: one}, {role: assistant, content: two}, {role: user, content: three}]
+        points: [{location: message, role: user, index: "", control: null}]
+        max_blocks: 4
 env: {}
 compare: {ignore: []}
