@@ -110,6 +110,16 @@ fn media_optional_params_transcription_unsupported_param_is_rejected() {
 }
 
 #[test]
+fn media_optional_params_transcription_names_the_first_unsupported_param_in_key_order() {
+    let passed = r#"{"response_format": "json", "prompt": "p"}"#;
+    let error = transcribe("other", passed, DropPolicy::default(), Some(&SUPPORTED)).unwrap_err();
+    assert!(matches!(
+        &error,
+        MediaParamsError::TranscriptionUnsupported { param, .. } if param == "prompt"
+    ));
+}
+
+#[test]
 fn media_optional_params_transcription_drop_params_false_still_rejects() {
     let policy = DropPolicy {
         drop_params: Some(false),
