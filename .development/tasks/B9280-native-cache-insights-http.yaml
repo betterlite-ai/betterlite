@@ -1,0 +1,196 @@
+id: B9280
+title: Verify native prompt-cache predictions and observed routing over HTTP
+description: >-
+  B3120-B3124 test parsing, counting, observations, prices and selection below HTTP. B3125's
+  prediction cases stop at validation and unsupported inputs. Finish their integration proof
+  through the running proxy, including the actual success callback and the provider count
+  endpoint. Build no prediction algorithm, route or callback here. B066 composes
+  prompt_cache_routes, B081 serves POST /v1/messages, B8399/B8742 install the built-in
+  prompt_cache_prediction observer, and B021 composes automatic routing. The architect must
+  first make the B021/B8399 dependency and production-adapter corrections in the planner
+  report. Do not compensate for an absent production binding by installing a test-only hook.
+
+  Add tools/oracle/src/insights_http.rs and insights_http/ as test-driver support. Expose a
+  crate-visible ProxyPair owning two ordinary process::Gateway values and their artifact
+  directories. Start the pinned MIT LiteLLM and target/debug/betterlite with gateway::start,
+  self_check=false, separately supplied config paths and environment maps. Use existing
+  http::send, comparison and artifact functions for every observation. Accept an existing
+  per-peer database URL through the config so B075 can reuse the same boot/comparison code;
+  this module neither provisions databases nor changes the shared Case or fixture schemas.
+  A failed start, assertion or comparison still stops both processes. Close gateways before
+  their external services and temporary directories. Own all asynchronous fixture work in
+  a JoinSet, with an explicit stop-and-drain path. Put test functions in adjacent tests.rs;
+  the architect's skeleton declares insights_http in the oracle crate before dispatch.
+  Keep the driver/transport behind cfg(test) and their dependencies in dev-dependencies;
+  an InsightsHttpError enum in this module retains startup, IO, TLS and comparison causes.
+
+  Native prediction accepts only https://api.anthropic.com or its /v1/messages URL. Replacing
+  api_base with the ordinary localhost oracle URL would test unsupported_provider_endpoint
+  instead of predictions. Add a loopback CONNECT/TLS fixture under insights_http/transport:
+  accept CONNECT only for api.anthropic.com:443, terminate TLS with an ephemeral certificate
+  for api.anthropic.com, and serve scripted /v1/messages and /v1/messages/count_tokens
+  responses without opening an external connection. Reuse hyper's upgrade/server APIs,
+  tokio-rustls and rcgen, with the versions/features already used in the workspace. Add
+  only the direct dependencies needed in tools/oracle/Cargo.toml; keep Cargo.lock generated.
+  hyper-util and http-body-util supply the existing Tokio IO/body adapters. Standard TCP
+  string splitting is unsuitable because CONNECT and TLS can arrive in separate reads.
+  Inject HTTPS_PROXY and SSL_CERT_FILE into each child, and NO_PROXY=127.0.0.1,localhost for
+  readiness and proxy requests. Do not set ssl_verify=false or alter Anthropic endpoints.
+  Bound fixture bodies to 1 MiB, headers to 32 KiB, active connections to 16 and recorded
+  requests to 256, with five-second handshake and thirty-second response deadlines. Reject
+  an unexpected authority or path locally. HTTP framing and TLS decoding remain library
+  code; no custom external-byte decoder or cargo-fuzz target is introduced. Transport tests
+  are named connect_origin_tls, fixture_limits and pair_cleanup, each under
+  insights_http::tests::transport.
+
+  Use two configured aliases, cache-current and cache-candidate, each with one deployment,
+  fixed model_info.id and native anthropic/claude-sonnet-4-20250514. Use distinct dummy API
+  keys and explicit input, output, cache-read, 5m-write and 1h-write prices from the allowed
+  deployment options. Keep max_input_tokens/max_output_tokens in model_info, not litellm_params.
+  Send a text message with one explicit message-content cache_control marker followed by
+  unmarked suffix text and max_tokens=32. A normal count transcript returns 5000 for the
+  full body and 4096 for the prefix. Count requests retain the native model, x-api-key and
+  anthropic-version=2023-06-01, omit generation-only max_tokens, and never generate a message.
+  Do not configure request transforms, response caching or an Anthropic beta header.
+
+  The named tests under insights_http::tests::prediction are live HTTP oracle cases.
+  cold_comparison_http compares complete stay/switch arms, all token buckets, three costs,
+  null evidence, no_compatible_observation, switch_delta, cache_rebuild_penalty,
+  pricing_basis=input_before_discounts_and_margins and cache_guarantee=false, with four
+  count calls. same_deployment_http uses the same id twice and proves only two count calls.
+  count_failures_http has rstest cases provider_error and prefix_exceeds_total: HTTP remains
+  200 with token_count_unavailable and null scenario/delta fields. below_minimum_http uses
+  counts below the pinned model minimum, yielding disabled/below_cache_minimum and equal
+  cold/warm/estimate scenarios. Price and minimum resolution are production services, never
+  expected values manufactured by the driver. Preserve zero-valued configured prices.
+
+  observed_prediction_http has buffered and complete_stream rstest cases. First
+  call /cost/predict-cache without evidence, then POST /v1/messages to cache-candidate.
+  The native mock returns the same model and usage with 4096 cache_creation_input_tokens,
+  zero cache reads, 904 ordinary input tokens, positive output tokens and the matching
+  cache_creation.ephemeral_5m_input_tokens split. For streaming, send native message_start,
+  content-block and message_delta/message_stop events through the ordinary Messages route.
+  Poll predictions at most thirty seconds, at 100 ms intervals, until the real callback's
+  observation is visible; compare the settled answers, keeping polling transcripts as
+  diagnostics rather than requiring identical scheduling between processes. Assert the
+  candidate becomes warm, its estimate uses reads, and its evidence lifetime reflects a
+  300-second request-start TTL. Ignore only exact observed_at/expires_at pointers between
+  processes, and separately bound those times against each process's request interval.
+  read_without_prior_write_http returns read-only usage on a fresh process and proves it
+  cannot establish evidence. deployment_scope_http warms one id and predicts another id
+  with identical model/key, proving deployment identity still separates observations.
+
+  Under insights_http::tests::routing, warm_alternative_http uses the documented
+  auto_router/complexity_router marker, classifier_type=heuristic, SIMPLE=cache-current,
+  COMPLEX=cache-candidate, context_compaction=false, classification_mode=every_request and
+  max_tokens_from_tier_model=false. First prove the selected short prompt classifies to
+  cache-current with cache_aware_routing absent (default false). Warm the candidate through
+  its real Messages route, then compare the same request with cache_aware_routing=true and
+  tariffs making cached candidate input plus output strictly cheaper. The actual upstream
+  Messages request must now carry the candidate key. Compare the routed response and
+  x-litellm response headers, preserving the source's requested-versus-routed model mapping.
+  no_warm_alternative_http leaves the cache empty and proves no count request occurs.
+  deadline_keeps_classified_http sets cache_aware_routing_timeout_ms=50 and holds count
+  responses past it: the classified message still succeeds, and count work is cancelled.
+  Production defaults stay false, 1024 expected output tokens and 2000 ms; this task parses
+  no configuration. B337 stamps decisions, B3124 decides candidates and B021 injects the
+  real chooser. These HTTP tests must fail if that chooser is replaced by a no-op.
+
+  Also add ordinary kind: http cases under tools/oracle/cases/http/native-cache-insights/:
+  custom-endpoint-refused.yaml uses two Anthropic deployments at the normal mock URL and a
+  valid prefix, expecting unsupported_provider_endpoint without upstream calls;
+  unsupported-version.yaml sends anthropic-version=2020-01-01 and gets
+  unsupported_provider_headers before any count. These run with the normal oracle check.
+  The TLS/stateful cases use the named live-http checks because the normal case schema has
+  no public-host TLS fixture. They still compare real HTTP on both implementations, never
+  helper adapters or calls to FastAPI functions. Compare status, content-type and present
+  error type/param/code, ignoring only error-message wording and separately justified
+  generated values. Retain both client and upstream captures on failure.
+
+  No LiteLLM function is newly ported. Keep the reusable driver/transport near 300 lines
+  and the parameterized scenarios and two static cases near 450; separate transport,
+  lifecycle and domain tests so each source file meets the repository limits.
+scope:
+  paths:
+    - tools/oracle/src/insights_http.rs
+    - tools/oracle/src/insights_http/**
+    - tools/oracle/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/http/native-cache-insights/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_cache_prediction.py#L64-L167
+    why: Decorated comparison route, shared observation cache, same-id shortcut and delta formulas; B3125 owns implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L168
+    why: Existing /v1/messages decorator and ordinary request-processing pipeline used by observation and routing cases; B081 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L521-L546
+    why: Actual native count endpoint, input projection, fifteen-second call timeout and unavailable-count fallback; B3121.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/prompt_cache_prediction.py#L610-L714
+    why: Public-origin restriction and observed response eligibility that a localhost api_base cannot exercise; B3121/B3122.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L168-L236
+    why: HTTP proof of cold, disabled and warm scenario composition, costs and evidence; algorithm remains B3123.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L39-L142
+    why: Real success callback, complete-stream requirement, prior-write rule and request-start expiry; B3122.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L229-L343
+    why: Production host inputs and whole-selection timeout exercised through the existing router, owned by B3124.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4427-L4472
+    why: B337's decision adjustment must receive B3124's real chooser through B021's composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/README.md#L70-L108
+    why: Documented native Messages path, supported tier setup and opt-in defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L34
+    why: Observer is a built-in hook and v3 is the default limiter; registration remains B8399/B8742.
+  - url: https://docs.rs/hyper/latest/hyper/upgrade/index.html
+    why: Reuse the maintained CONNECT upgrade implementation instead of parsing tunnel bytes by hand.
+  - url: https://docs.rs/rcgen/latest/rcgen/struct.CertificateParams.html
+    why: Generate a short-lived fixture CA and DNS-name certificate without committed keys or verification bypass.
+dod:
+  - text: The loopback fixture preserves api.anthropic.com origin and verified TLS, bounds requests and connections, and closes every gateway and fixture task on success or failure.
+    proof: [transport-tests, prediction-http]
+  - text: Booted comparisons cover cold pricing, same-id reuse, unavailable counts, disabled caching and the two unsupported-input HTTP responses.
+    proof: [prediction-http, new-http-cases, oracle]
+  - text: Buffered and complete-stream success callbacks produce reusable evidence, read-only first hits cannot create it, and a second deployment cannot borrow it.
+    proof: [observation-http]
+  - text: The production complexity chooser uses a cheaper warm alternative, skips counts without warm evidence and preserves the classified route when its deadline expires.
+    proof: [routing-http]
+checks:
+  optional: []
+  commands:
+    - id: transport-tests
+      why: Public-host TLS, bounded fixture handling or process cleanup is missing.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::(connect_origin_tls|fixture_limits|pair_cleanup)(::|$)/)'
+    - id: prediction-http
+      why: Successful native counts and scenario serialization have no real two-proxy proof.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::(cold_comparison_http|same_deployment_http|count_failures_http|below_minimum_http)(::|$)/)'
+    - id: observation-http
+      why: Prediction tests can pass while the native success observer is disconnected or scoped incorrectly.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::(observed_prediction_http|read_without_prior_write_http|deployment_scope_http)(::|$)/)'
+    - id: routing-http
+      why: A no-op chooser or separate cache can hide behind passing selection unit tests.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::(warm_alternative_http|no_warm_alternative_http|deadline_keeps_classified_http)(::|$)/)'
+    - id: new-http-cases
+      why: Both runnable public-origin/header refusal cases must be added on this branch.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/native-cache-insights)" &&
+        test -f tools/oracle/cases/http/native-cache-insights/custom-endpoint-refused.yaml &&
+        test -f tools/oracle/cases/http/native-cache-insights/unsupported-version.yaml
+oracle_cases:
+  - tools/oracle/cases/http/native-cache-insights/custom-endpoint-refused.yaml
+  - tools/oracle/cases/http/native-cache-insights/unsupported-version.yaml
+deviations: []
+out_of_scope:
+  - All prompt_cache_prediction.py parsing/fingerprinting helpers and plan records remain B3120; counted records remain B1696; target resolution and counting remain B3121; observed response parsing remains B3122. This task owns only their HTTP composition proof.
+  - Every class/function in hooks/prompt_cache_prediction.py belongs to B3122. B8399 builds the built-in hook with its internal usage cache, and B8742 calls init_callbacks before listening; neither registration is repeated here.
+  - Every AnthropicCacheRouting method, _ModelLimits, _buckets, _scenario and predict_arm remains B3123; every function in common_utils/cache_aware_routing.py remains B3124.
+  - All functions in management_endpoints/prompt_cache_prediction.py remain B3125. B066 owns its router inclusion, B081 owns the Messages route, and B021 owns construction and injection of the server-side automatic-routing adapters.
+  - B075 owns database model-insight aggregation, task shares and prompt-caching request-list HTTP proof. B1734 owns rollup writes and the immutable task catalog.
+  - B5366 owns get_prompt_cache_min_tokens; B3123's stale out_of_scope assignment to B157 must be corrected by the architect, not by this worker.
+pitfalls:
+  - Setting api_base to the mock listener prevents native prediction and observation eligibility before any count can run.
+  - A count failure is an unavailable estimate with HTTP 200, while request_capacity denial can escape the comparison route as 429.
+  - A read-only provider hit without an exact prior observation must not make the next prediction warm.
+  - Callback polling can take different numbers of requests on the two processes; compare settled results and retain the intermediate traffic only as diagnostics.
+  - ssl_verify is not an allowed prediction deployment option, so even a fixture-only per-deployment override would change the path under test.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

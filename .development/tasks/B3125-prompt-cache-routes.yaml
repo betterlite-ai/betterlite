@@ -6,7 +6,7 @@ description: >-
   need a Bearer or master-key caller through the existing auth layer. Submodules: `predict` (handler and arm
   composition), `requests` (query decoding, SQL, row mapping, paging) and `error` (the module's error enum).
   This task adds betterlite-anthropic and betterlite-rate-limit to the server's Cargo.toml. It registers both
-  routes itself. The settings-route task B1650 composes its router without re-registering /cost/predict-cache.
+  routes itself. The settings-route task B066 composes its router without re-registering /cost/predict-cache.
 
   Route one, POST /cost/predict-cache. The body type `CachePredictionRequest` has current_deployment_id and
   candidate_deployment_id (strings of 1 to 256 characters) and request (a JSON object); any other field is a 422.
@@ -151,8 +151,8 @@ deviations:
   - what: limiter_unavailable is returned only when betterlite's main rate limiter is absent from server state, not when a different limiter class is installed.
     why: betterlite has one limiter type (B5660 builds it at boot), so LiteLLM's isinstance test against the v3 handler has no second case.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_cache_prediction.py#L103-L111
-  - what: The oracle cases for the listing route stop at the 400, 422 and no-database 500 answers; the admin 403, the date-order 400, rows and paging are covered by native tests only.
-    why: The oracle has no database for either gateway in the worker sandbox, so cases stop at the 500 database check.
+  - what: The oracle cases for the listing route stop at the 400, 422 and no-database 500 answers; the admin 403, the date-order 400, rows and paging are covered by native tests here, by B075's database HTTP cases for the listing route, and by B9280's native prediction HTTP cases for POST /cost/predict-cache.
+    why: The oracle has no database for either gateway in this task's worker sandbox, so its cases stop at the 500 database check.
 out_of_scope:
   - "B3120 owns parse_prompt, B3121 owns supported_prediction_headers, count_prompt_tokens and TokenCounter, B3123 owns predict, the arm types and has_request_transforms, and B3122 owns observation lookup."
   - "B746 owns get_cache_prediction_deployments and the /cost/predict-cache model-candidate extraction for auth; B886 owns can_key_call_resolved_model."

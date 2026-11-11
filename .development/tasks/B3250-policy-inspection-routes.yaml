@@ -88,12 +88,7 @@ description: >-
   Vec<u8> and compare the exact text. Route tests build registries from B3241 with a fake sync, so they need no database. The test named
   `replays_the_inspect_request_corpus` replays the fuzz corpus.
 
-  Oracle. HTTP cases go in tools/oracle/cases/policies/inspect/ and send the real request to the booted proxy with the master key `oracle-master` and no
-  database, no `policies` config. They cover: validate with an empty policy map (valid true), with `inherit` naming an undefined parent, with two policies that
-  inherit each other, with an unknown extra field (422) and without `policies` (422); list with nothing loaded; info for an unknown name (404, engine not
-  initialized); test with `model` only (message in the body) and with an unknown field (422); resolve without a database (500), with `tags` as a string (422),
-  and every route without a key (401). Cases that load config policies need the proxy startup to call `init_policies`; see the task notes. Compare status and
-  ignore the validation `detail` text (see deviations).
+  Oracle. B9324 owns the HTTP cases for these routes in tools/oracle/cases/policies/inspect/, since they need B9321's mount. This task proves the routes with router-local route tests and depends on no mount.
 
 scope:
   paths:
@@ -109,7 +104,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/inspect_request.rs
     - crates/betterlite-server/fuzz/corpus/inspect_request/**
-    - tools/oracle/cases/policies/inspect/**
     - tools/oracle/helpers/b3250.py
     - tools/oracle/helpers/b3250/**
     - tools/oracle/src/helpers/policy/b3250.rs
@@ -174,22 +168,22 @@ dod:
   - text: >-
       POST /policy/validate returns the validator's result with 200, treats a missing policies field or any extra field as 422, and passes validate_db
       from the database handle.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       GET /policy/list returns the quirky LiteLLM shape (empty scope, empty guardrails, total_count 0) and an empty result when nothing is loaded.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       GET /policy/info/{policy_name} answers the two 404 texts and otherwise returns the policy's own add and remove lists with its resolved guardrails
       and chain.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       POST /policy/test echoes the context with four keys, returns the not-initialized message, and otherwise returns matching policies and resolved
       guardrails.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       POST /policies/resolve answers 422 before 500 `Database not connected`, runs both syncs only when force_sync is true, and returns matched policies
       and sorted effective guardrails.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       The three body decoders reject malformed bytes and wrong shapes without panicking, accept unknown fields only for the resolve body, and have
       committed corpus inputs.
@@ -209,21 +203,7 @@ checks:
     - id: request-corpus
       why: the request decoders have no committed malformed-input regressions or no replay test
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/inspect_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_inspect_request_corpus)'
-oracle_cases:
-  - tools/oracle/cases/policies/inspect/validate-empty-valid.yaml
-  - tools/oracle/cases/policies/inspect/validate-undefined-parent.yaml
-  - tools/oracle/cases/policies/inspect/validate-circular-parents.yaml
-  - tools/oracle/cases/policies/inspect/validate-extra-field-422.yaml
-  - tools/oracle/cases/policies/inspect/validate-missing-policies-422.yaml
-  - tools/oracle/cases/policies/inspect/validate-no-auth-401.yaml
-  - tools/oracle/cases/policies/inspect/list-nothing-loaded.yaml
-  - tools/oracle/cases/policies/inspect/list-no-auth-401.yaml
-  - tools/oracle/cases/policies/inspect/info-not-initialized-404.yaml
-  - tools/oracle/cases/policies/inspect/test-not-initialized.yaml
-  - tools/oracle/cases/policies/inspect/test-extra-field-422.yaml
-  - tools/oracle/cases/policies/inspect/resolve-no-database-500.yaml
-  - tools/oracle/cases/policies/inspect/resolve-tags-string-422.yaml
-  - tools/oracle/cases/policies/inspect/resolve-no-auth-401.yaml
+oracle_cases: []
 
 deviations:
   - what: The 422 body for a bad request body or query parameter uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings.

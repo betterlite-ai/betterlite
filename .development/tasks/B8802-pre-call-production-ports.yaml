@@ -8,7 +8,7 @@ description: >-
   key.rs and resolved_key/auth.rs. UserAPIKeyAuth (B732, merged) has no `aliases` or `router_settings` field and keeps its fields pub(crate). Add `aliases` (a JSON object, empty by default) and `router_settings` (a JSON value, None by default) to it, filled from the same key and team row fields LiteLLM's UserAPIKeyAuth reads, and add the public readers `aliases()`, `router_settings()` and `team_id()`. Then implement B8800's `PreCallKey` for UserAPIKeyAuth over those readers.
 
   adapters.rs, one adapter per request or router port:
-  `RequestPreparer` over B1103's add_litellm_data_to_request stage, the one ServerState holds in its request_setup slot.
+  `RequestPreparer` over B1103's add_litellm_data_to_request stage, the one ServerState holds in its request_setup slot. Its policy inputs come from `shared.policies` (B9320), read on each request and never kept as a startup snapshot.
   `VectorStoreAccess` over B1061's assert_user_can_access_vector_store_id (core::api::vector_endpoint_access).
   `RouterSettingsSource` over B881's _get_hierarchical_router_settings (the auth_context_sources slot).
   `RouterView` over `shared.router` (B8611): resolved_models from B844's resolved_litellm_models, arm_prefetch from Router.arm_routing_read_prefetch, fallbacks from the router's fallbacks setting, fallback_models from B016's get_fallback_model_group (a model group match first, else the generic `*` entry), and authorize_alias from B886's can_key_call_resolved_model with the router's model list and the router. With no deployments in the startup router the port is None, which is LiteLLM's no-router branch.

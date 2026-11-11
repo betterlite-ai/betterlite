@@ -1,7 +1,7 @@
 id: B968
 milestone: M5 api families
 title: Messages context clear
-status: todo
+status: done
 depends_on: [B171, B958, B013]
 file: tasks/B968-messages-context-clear.yaml
 covers:
@@ -13,7 +13,7 @@ covers:
   - "litellm/llms/anthropic/pass_through/context_management/result.py"
 parent: B081
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1229

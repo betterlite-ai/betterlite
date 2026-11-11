@@ -5,6 +5,7 @@ status: todo
 depends_on: [B8170, B8171, B2202]
 file: tasks/B8172-dashscope-image-family.yaml
 covers:
+  - "litellm/llms/dashscope/common_utils.py"
   - "litellm/llms/dashscope/image_generation/__init__.py"
   - "litellm/llms/dashscope/image_generation/transformation.py"
   - "litellm/llms/dashscope/qwen_ai_platform.py"

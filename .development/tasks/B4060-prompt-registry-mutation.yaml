@@ -122,7 +122,7 @@ out_of_scope:
   - litellm/proxy/prompts/prompt_registry.py:21-96 (get_base_prompt_id, get_version_number, prompt_environment_or_default, registry_key_for_prompt, parse_prompt_version, _spec_version, _default_serve_environment); owned by B4059 for registry selection.
   - litellm/proxy/prompts/prompt_registry.py:171-183 (InMemoryPromptRegistry.__init__); owned by B4059.
   - litellm/proxy/prompts/prompt_registry.py:267-308 (resolve_prompt_spec, get_prompt_callback_for_prompt, has_config_prompt); owned by B4059 for lookups.
-  - Langfuse and Arize Phoenix prompt initializers; question 3 in the outline notes these are unresolved owners and must be assigned separately.
+  - Langfuse and Arize Phoenix prompt initializers. Phoenix initialization is B3864's and the Langfuse prompt client is B3908's. B117's initializer registration adapter hands both to this registry.
   - The B4058 completion-hook adapters (get_chat_completion_prompt, async_get_chat_completion_prompt); registration stores compiler identity but does not invoke those hooks.
   - Custom Python extension execution through prompt management hooks; this task builds the registration machinery only.
 pitfalls:
@@ -134,7 +134,7 @@ pitfalls:
   - Initializer functions return PromptManagementClient; the return type validation (checking isinstance/match in LiteLLM, type checking in Rust) is essential and not optional.
   - IN_MEMORY_PROMPTS and prompt_id_to_custom_prompt maps are keyed by registry_key_for_prompt result and must stay synchronized; every mutation operation must update both or update neither.
   - Callback unregistration calls remove_callback_from_all_lists from the logging callback manager (B189, external); this is not a local remove operation and cannot fail silently without losing registered callbacks.
-  - Arize Phoenix is reachable through automatic discovery in LiteLLM; question 3 in the outline notes it requires explicit ownership assignment if betterlite intends to support it.
+  - Arize Phoenix is reachable through automatic discovery in LiteLLM; betterlite has no discovery, so B3864's initializer reaches this registry only through B117's registration adapter.
 review_level: standard
 budget:
   max_changed_lines: 1500

@@ -20,7 +20,7 @@ description: >-
   merged code for the exact Rust names and signatures and call them. Do not copy their logic. If a function you need is not there, or the
   cost trait cannot take an embedding or image response or a vertex_location, report it in notes and stop.
 
-  Constructor. `VertexPredictLogger::new(cost: Arc<dyn <B3638's cost trait>>)` keeps the handle. No module-level state. B102 builds it once
+  Constructor. `VertexPredictLogger::new(cost: Arc<dyn <B3638's cost trait>>)` keeps the handle. No module-level state. B8931 builds it once
   and B3642 holds it. Pass B3638's cost trait the response, model, custom_llm_provider and the vertex_location, as LiteLLM passes them to
   completion_cost; call_type is not passed on these paths.
 

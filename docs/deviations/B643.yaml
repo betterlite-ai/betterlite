@@ -1,0 +1,5 @@
+task: B643
+deviations:
+  - what: An empty configured-bucket tuple makes validate_configured_file_id return the bucket-required storage error; LiteLLM indexes the tuple and raises IndexError.
+    why: The function is only called with the non-empty tuple get_configured_s3_bucket_names returns, so no working setup reaches the empty case; betterlite refuses it as a typed error instead of panicking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L250

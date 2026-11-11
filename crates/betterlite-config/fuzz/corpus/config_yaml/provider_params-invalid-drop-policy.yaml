@@ -1,0 +1,8 @@
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o
+      drop_params: "true"
+      additional_drop_params: temperature
+litellm_settings:
+  drop_params: "yes"

@@ -1,0 +1,14 @@
+id: B8990
+milestone: M6 guardrails
+title: Vigil guardrail construction and ordered scan execution
+status: todo
+depends_on: [B3799, B5471, B8218]
+file: tasks/B8990-vigil-runtime.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

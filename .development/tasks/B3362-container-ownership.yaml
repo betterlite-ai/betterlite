@@ -190,7 +190,7 @@ out_of_scope:
 - B726 owns ManagedObjectRepository and table.find_unique, find_first, find_many, create, update in auxiliary_repository.
 - B732 owns Principal/AuthContext and request authentication.
 - B2226 owns InMemoryCache construction and get_cache, set_cache, delete_cache behavior.
-- The fetch_page callback is injected by B3369 (container list operations); container_ownership.rs declares its type and waits for injection, never calls it directly.
+- The fetch_page callback is supplied by B7326 and wired by B8635, not by B3369; container_ownership.rs declares its type and waits for injection, never calls it directly.
 pitfalls:
 - "Cache sentinels like \"__litellm_container_no_owner__\" must distinguish cached None from cache miss. InMemoryCache.get_cache returns None for both; the sentinel is stored as the cached value itself to discriminate them. Boolean checks must match against the literal string, not pattern-match on an enum."
 - "Admin bypass does not exempt identity checks in record_container_owner: identity-less master-key auth (no user_id/team_id/org_id/api_key) rejects with HTTP 403 regardless of admin status. Admin-created containers still require an identity scope on the ownership row."

@@ -1,0 +1,19 @@
+kind: helper
+name: judge-target-sdk-qualified
+call:
+  b4080:
+    check: target
+    router:
+      served: []
+    queries:
+      - model: gpt-4o
+      - model: openai/gpt-4o-mini
+    dispatch:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: which reply is better?
+      params:
+        max_tokens: 16
+env: {}
+compare: {ignore: []}

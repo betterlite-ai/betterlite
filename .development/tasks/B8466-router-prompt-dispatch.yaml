@@ -2,7 +2,7 @@ id: B8466
 title: Router prompt management model dispatch
 description: >-
   Build prompt_dispatch in betterlite-router: LiteLLM's Router._is_prompt_management_model and
-  Router._prompt_management_factory. Router.acompletion (B016) asks is_prompt_model first, and for
+  Router._prompt_management_factory. Router.acompletion (B6020) asks is_prompt_model first, and for
   a prompt management model it hands the whole call to prompt_factory instead of the scheduler or
   the fallback loop. A prompt management model is a model group whose one deployment points at a
   prompt store, for example model "langfuse/my-prompt" with prompt_id "greeting" in litellm_params.
@@ -98,9 +98,9 @@ oracle_cases:
 deviations: []
 
 out_of_scope:
-  - "Router.acompletion, _update_kwargs_with_deployment and async_function_with_fallbacks: B016, through PromptPorts."
-  - "get_chat_completion_prompt and the prompt managers: B4058 and the B117 parts."
-  - The HTTP cases for a prompt management model come with B016, which owns the chat route path through the router.
+  - "Router.acompletion: B6020. _update_kwargs_with_deployment: B303. async_function_with_fallbacks: B310. All three through PromptPorts, whose production ports are B8630's."
+  - "get_chat_completion_prompt dispatch on the logging object: B8560. The backend orchestration: B4058."
+  - The HTTP cases for a prompt management model come with B117.
 
 pitfalls:
   - >-
