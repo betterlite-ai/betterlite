@@ -27,7 +27,6 @@ use crate::helpers::{HelperError, HelperResult};
 
 use super::input::{
     HeaderStep, Input, ModelNameInput, SafeDivideInput, SafeDivideSecondsInput, TrustedStep,
-    UpstreamAttributesStep,
 };
 
 pub(super) fn run(input: &Input) -> HelperResult {
@@ -49,9 +48,6 @@ pub(super) fn run(input: &Input) -> HelperResult {
             })
         }
         Input::SnapshotIsolation { record } => return snapshot_isolation(record),
-        Input::UpstreamAttributes { steps } => {
-            Value::Array(steps.iter().map(upstream_attributes).collect())
-        }
         Input::FilterInternal { record, additional } => {
             let names: BTreeSet<String> = additional.iter().cloned().collect();
             json!(RequestRecordProjection::filter_internal(
@@ -73,12 +69,15 @@ pub(super) fn run(input: &Input) -> HelperResult {
 }
 
 // only the attributes the call added or changed, since LiteLLM's dump fills defaults on the rest
-fn upstream_attributes(step: &UpstreamAttributesStep) -> Value {
-    let mut response = step.response.clone();
-    preserve_upstream_attributes(&mut response, &step.original_chunk);
+fn upstream_attributes(
+    before: &IndexMap<String, Json>,
+    original_chunk: &IndexMap<String, Json>,
+) -> Value {
+    let mut response = before.clone();
+    preserve_upstream_attributes(&mut response, original_chunk);
     let changed: IndexMap<&String, &Json> = response
         .iter()
-        .filter(|(key, value)| step.response.get(*key) != Some(*value))
+        .filter(|(key, value)| before.get(*key) != Some(*value))
         .collect();
     json!(changed)
 }
@@ -201,6 +200,10 @@ fn header_step(step: &HeaderStep) -> Value {
             })
         }
         HeaderStep::GetHidden { hidden } => json!(provider_response_headers(hidden.as_ref())),
+        HeaderStep::StreamAttributes {
+            response,
+            original_chunk,
+        } => upstream_attributes(response, original_chunk),
     }
 }
 

@@ -208,6 +208,17 @@ def _model_reconstruction(input_value: Object) -> Json:
     return results
 
 
+def _stream_attributes(step: Object) -> Json:
+    response = ModelResponseStream.model_validate(_object(step.get("response"), "response"))
+    original = ModelResponseStream.model_validate(
+        _object(step.get("original_chunk"), "original_chunk")
+    )
+    before = cast(Object, response.model_dump())  # pyright: ignore[reportUnknownMemberType]
+    preserve_upstream_non_openai_attributes(model_response=response, original_chunk=original)
+    after = cast(Object, response.model_dump())  # pyright: ignore[reportUnknownMemberType]
+    return {key: value for key, value in after.items() if key not in before or before[key] != value}
+
+
 def _header_step(raw: Json) -> Json:
     step = _object(raw, "header step")
     function = _string(step.get("function"), "function")
@@ -228,6 +239,8 @@ def _header_step(raw: Json) -> Json:
         response = _HiddenResponse(step.get("hidden"))
         headers = get_provider_response_headers_from_hidden_params(response)
         return None if headers is None else cast(Json, dict(headers))
+    if function == "stream_attributes":
+        return _stream_attributes(step)
     raise ValueError(f"unknown response headers function: {function}")
 
 
@@ -245,26 +258,6 @@ def _upstream_internal_header(input_value: Object) -> Json:
             process_response_headers(trusted, preserve_litellm_internal_headers=True),
         ),
     }
-
-
-def _upstream_attributes(input_value: Object) -> Json:
-    results: list[Json] = []
-    for step in _object_list(input_value.get("steps"), "steps"):
-        response = ModelResponseStream.model_validate(_object(step.get("response"), "response"))
-        original = ModelResponseStream.model_validate(
-            _object(step.get("original_chunk"), "original_chunk")
-        )
-        before = cast(Object, response.model_dump())  # pyright: ignore[reportUnknownMemberType]
-        preserve_upstream_non_openai_attributes(model_response=response, original_chunk=original)
-        after = cast(Object, response.model_dump())  # pyright: ignore[reportUnknownMemberType]
-        results.append(
-            {
-                key: value
-                for key, value in after.items()
-                if key not in before or before[key] != value
-            }
-        )
-    return results
 
 
 def _snapshot_isolation(input_value: Object) -> Json:
@@ -377,8 +370,6 @@ def run(input_value: dict[str, Json]) -> Json:  # noqa: C901, PLR0911, PLR0912
         return _response_headers(input_value)
     if function == "upstream_internal_header":
         return _upstream_internal_header(input_value)
-    if function == "upstream_attributes":
-        return _upstream_attributes(input_value)
     if function == "snapshot_isolation":
         return _snapshot_isolation(input_value)
     if function == "filter_internal":
