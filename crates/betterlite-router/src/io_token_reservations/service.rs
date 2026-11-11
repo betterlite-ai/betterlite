@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
+use betterlite_context::bedrock_model::regions::AmazonBedrockGlobalConfig;
+use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
-use betterlite_models::lookup::limits::max_output_tokens;
+use betterlite_models::lookup::info::ModelQuery;
+use betterlite_models::lookup::resolve::{BedrockNames, find_info};
 use betterlite_tokenizer::reservation::RequestBody;
 
 use super::clock::{IoClock, ROUTING_ARGS_TTL_SECONDS, minute_label};
@@ -15,6 +18,12 @@ use super::reservation::{IoReservation, stash_reservation};
 pub const DEFAULT_MAX_TOKENS: i64 = 4096;
 
 const MAX_TOKEN_FIELDS: [&str; 3] = ["max_tokens", "max_completion_tokens", "max_output_tokens"];
+
+const BEDROCK_NAMES: BedrockNames = BedrockNames {
+    base_model: get_bedrock_base_model,
+    strip_routing_prefix: strip_bedrock_routing_prefix,
+    strip_mantle_region,
+};
 
 pub struct IoTokenReservations {
     pub counter: Arc<dyn IoCounter>,
@@ -55,9 +64,10 @@ impl IoTokenReservations {
         estimated_input: i64,
         max_tokens: i64,
     ) -> Result<IoReservation, RateLimitExceeded> {
+        // an estimate or cap that failed still holds one token, so one request cannot fill the whole bucket
         let mut reservation = IoReservation::default();
         if let Some(limit) = limits.itpm {
-            let reserved = reserved_tokens(estimated_input);
+            let reserved = estimated_input.max(1);
             reservation.itpm_reserved = reserved;
             reservation.itpm_key = Some(keys.itpm.clone());
             self.increment_with_rollback(&keys.itpm, reserved, limit, IoChannel::Itpm)
@@ -67,7 +77,7 @@ impl IoTokenReservations {
             let reserved = if max_tokens == 0 {
                 0
             } else {
-                reserved_tokens(max_tokens)
+                max_tokens.max(1)
             };
             reservation.otpm_reserved = reserved;
             reservation.otpm_key = Some(keys.otpm.clone());
@@ -123,11 +133,6 @@ impl IoTokenReservations {
     }
 }
 
-// an estimate that failed still holds one token, so one request cannot fill the whole bucket before it reconciles
-const fn reserved_tokens(value: i64) -> i64 {
-    if value > 0 { value } else { 1 }
-}
-
 fn resolve_max_tokens(
     request: &RequestBody,
     model: Option<&str>,
@@ -140,11 +145,39 @@ fn resolve_max_tokens(
         }
     }
     if let Some(model_name) = model
-        && let Ok(Some(cap)) = max_output_tokens(catalog, model_name)
+        && let Some(cap) = model_output_cap(catalog, model_name)
     {
-        return Ok(i64::try_from(cap).unwrap_or(i64::MAX));
+        return Ok(cap);
     }
     Ok(DEFAULT_MAX_TOKENS)
+}
+
+// _model_max_output_tokens goes through get_model_info, which refuses an entry whose provider does not match
+fn model_output_cap(catalog: &ModelCatalog, model: &str) -> Option<i64> {
+    let query = ModelQuery {
+        model,
+        provider: None,
+    };
+    match find_info(catalog, &BEDROCK_NAMES, &query) {
+        Ok(Some(resolved)) => {
+            let cap = resolved
+                .limits
+                .max_output_tokens
+                .or(resolved.limits.max_tokens)?;
+            i64::try_from(cap).ok()
+        }
+        Ok(None) | Err(_) => None,
+    }
+}
+
+// a leading Bedrock region segment goes, any other model stays; the same adapter B013 passes to find_info
+fn strip_mantle_region(model: &str) -> String {
+    match model.split_once('/') {
+        Some((head, tail)) if AmazonBedrockGlobalConfig.get_all_regions().contains(&head) => {
+            tail.to_owned()
+        }
+        _ => model.to_owned(),
+    }
 }
 
 // an explicit 0 is honored, a negative cap becomes 0 like max(0, int(cap)), and any other type is refused

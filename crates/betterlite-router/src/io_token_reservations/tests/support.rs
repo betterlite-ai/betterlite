@@ -44,6 +44,7 @@ use crate::io_token_reservations::service::IoTokenReservations;
 use crate::redis_failure_policy::Settings as BreakerSettings;
 use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_state_store::{BreakerClock, RedisSettings, RoutingStateStore, Settings};
+use crate::routing_value_store::{RoutingValueStore, StoreSettings};
 
 pub(crate) const NOW_SECONDS: u64 = 1_700_000_000;
 
@@ -216,6 +217,27 @@ pub(crate) fn keys(deployment: &IoDeployment<'_>) -> MinuteKeys {
 
 pub(crate) fn number(value: i64) -> Json {
     Json::Number(Number::from(value))
+}
+
+pub(crate) fn object(fields: &[(&str, Json)]) -> Json {
+    let mut map = IndexMap::new();
+    for (key, value) in fields {
+        map.insert((*key).to_owned(), value.clone());
+    }
+    Json::Object(map)
+}
+
+pub(crate) fn local_store() -> RoutingValueStore {
+    RoutingValueStore::new(
+        StoreSettings {
+            max_size_in_memory: None,
+            default_ttl_seconds: None,
+            max_size_per_item: None,
+            loaded_max_size_per_item_kib: 1024,
+        },
+        Arc::new(|| 0.0_f64),
+    )
+    .unwrap()
 }
 
 pub(crate) fn messages() -> Json {

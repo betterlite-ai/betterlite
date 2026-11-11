@@ -5,19 +5,20 @@ use betterlite_tokenizer::count::wire::TokenRequestWire;
 use betterlite_tokenizer::reservation::RequestBody;
 
 use super::support::{self, Behavior, RecordingCounter};
-use crate::io_token_reservations::counter::IoCounter;
+use crate::io_token_reservations::counter::{DualIoCounter, IoCounter};
 use crate::io_token_reservations::error::{IoChannel, IoPreCallError};
 use crate::io_token_reservations::estimate::estimate_input_tokens;
 use crate::io_token_reservations::limits::IoDeployment;
 use crate::io_token_reservations::reservation::read_reservation;
 use crate::io_token_reservations::service::DEFAULT_MAX_TOKENS;
 use crate::io_token_reservations::usage::{ReconcileUsage, UsageTokens, resolve_reconcile_usage};
+use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, StoreRead};
 
 pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 23] = [
+const CASES: [(&str, fn()); 28] = [
     ("full_reservation_stashes_both_channels", || {
         super::runtime().block_on(full_reservation_stashes_both_channels());
     }),
@@ -82,12 +83,25 @@ const CASES: [(&str, fn()); 23] = [
     ("store_counter_increments_and_reports", || {
         super::runtime().block_on(store_counter_increments_and_reports());
     }),
-    ("store_counter_unavailable_is_none", || {
-        super::runtime().block_on(store_counter_unavailable_is_none());
+    ("redis_down_uses_the_local_count", || {
+        super::runtime().block_on(local_count_enforces_limits(true));
+    }),
+    ("local_counter_enforces_without_redis", || {
+        super::runtime().block_on(local_count_enforces_limits(false));
     }),
     ("store_counter_rejects_oversized_key", || {
         super::runtime().block_on(store_counter_rejects_oversized_key());
     }),
+    ("usage_input_output_aliases", usage_input_output_aliases),
+    ("usage_cached_details_win", usage_cached_details_win),
+    (
+        "usage_total_tokens_only_is_absent",
+        usage_total_tokens_only_is_absent,
+    ),
+    (
+        "standard_logging_cached_metadata",
+        standard_logging_cached_metadata,
+    ),
 ];
 
 fn rate_limit(error: IoPreCallError) -> (IoChannel, i64, i64) {
@@ -397,35 +411,133 @@ async fn tokenizer_count_matches(messages: bool) {
 
 async fn store_counter_increments_and_reports() {
     let fixture = support::store_fixture().await;
+    let counter = DualIoCounter {
+        local: support::local_store(),
+        remote: Some(Arc::new(fixture.store)),
+    };
     let key = format!("global_router:dep-a:gpt-4o:itpm:{}", support::minute());
     assert_eq!(
-        IoCounter::increment_counter(&fixture.store, &key, 5, 60).await,
+        IoCounter::increment_counter(&counter, &key, 5, 60).await,
         Some(5)
     );
     assert_eq!(
-        IoCounter::increment_counter(&fixture.store, &key, 2, 60).await,
+        IoCounter::increment_counter(&counter, &key, 2, 60).await,
         Some(7)
+    );
+    let route = RouteKey::parse(&key).unwrap();
+    assert_eq!(
+        counter.local.get(&route).unwrap(),
+        StoreRead::Value(RouteValue::Counter(7))
     );
     let (stored, ttl) = fixture.server.raw(&key).unwrap();
     assert_eq!(stored, br#"{"counter":7}"#);
     assert_eq!(ttl, 60);
 }
 
-async fn store_counter_unavailable_is_none() {
-    let fixture = support::store_fixture().await;
-    fixture.server.set_down(true);
-    let key = format!("global_router:dep-a:itpm:{}", support::minute());
+// LiteLLM's DualCache keeps the in-memory increment when Redis is down or not configured at all
+async fn local_count_enforces_limits(redis_down: bool) {
+    let local = support::local_store();
+    let deployment = support::deployment(Some(100), None);
+    let keys = support::keys(&deployment);
+    let route = RouteKey::parse(&keys.itpm).unwrap();
     assert_eq!(
-        IoCounter::increment_counter(&fixture.store, &key, 1, 60).await,
-        None
+        local
+            .increment(&route, &RouteIncrement::Counter(95), None)
+            .unwrap(),
+        RouteValue::Counter(95)
     );
+    let (remote, _server) = if redis_down {
+        let fixture = support::store_fixture().await;
+        fixture.server.set_down(true);
+        (Some(Arc::new(fixture.store)), Some(fixture.server))
+    } else {
+        (None, None)
+    };
+    let counter = Arc::new(DualIoCounter { local, remote });
+    let reservations = support::service(counter, Some(10));
+    let mut request = support::body();
+    let error = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap_err();
+    assert_eq!(rate_limit(error), (IoChannel::Itpm, 100, 105));
 }
 
 async fn store_counter_rejects_oversized_key() {
     let fixture = support::store_fixture().await;
+    let counter = DualIoCounter {
+        local: support::local_store(),
+        remote: Some(Arc::new(fixture.store)),
+    };
     let key = "k".repeat(1025);
     assert_eq!(
-        IoCounter::increment_counter(&fixture.store, &key, 1, 60).await,
+        IoCounter::increment_counter(&counter, &key, 1, 60).await,
         None
     );
+}
+
+fn usage_input_output_aliases() {
+    let usage = UsageTokens::from_usage(&support::object(&[
+        ("input_tokens", support::number(100)),
+        ("output_tokens", support::number(20)),
+        ("cache_read_input_tokens", support::number(30)),
+    ]))
+    .unwrap();
+    assert_eq!(
+        usage,
+        UsageTokens {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            cached_tokens: 30,
+        }
+    );
+    assert_eq!(
+        resolve_reconcile_usage(Some(usage), None),
+        ReconcileUsage {
+            billable_input: 70,
+            completion_tokens: 20,
+            usage_resolved: true,
+        }
+    );
+}
+
+fn usage_cached_details_win() {
+    let usage = UsageTokens::from_usage(&support::object(&[
+        ("prompt_tokens", support::number(50)),
+        ("completion_tokens", support::number(5)),
+        (
+            "prompt_tokens_details",
+            support::object(&[("cached_tokens", support::number(20))]),
+        ),
+        ("cache_read_input_tokens", support::number(9)),
+    ]))
+    .unwrap();
+    assert_eq!(usage.cached_tokens, 20);
+}
+
+fn usage_total_tokens_only_is_absent() {
+    let total_only = support::object(&[("total_tokens", support::number(100))]);
+    assert!(UsageTokens::from_usage(&total_only).is_none());
+    assert!(!resolve_reconcile_usage(None, None).usage_resolved);
+}
+
+fn standard_logging_cached_metadata() {
+    let logging = support::object(&[
+        ("prompt_tokens", support::number(10)),
+        ("completion_tokens", support::number(4)),
+        (
+            "metadata",
+            support::object(&[("cache_read_input_tokens", support::number(6))]),
+        ),
+    ]);
+    let usage = UsageTokens::from_standard_logging(&logging).unwrap();
+    assert_eq!(
+        usage,
+        UsageTokens {
+            prompt_tokens: 10,
+            completion_tokens: 4,
+            cached_tokens: 6,
+        }
+    );
+    assert_eq!(resolve_reconcile_usage(None, Some(usage)).billable_input, 4);
 }

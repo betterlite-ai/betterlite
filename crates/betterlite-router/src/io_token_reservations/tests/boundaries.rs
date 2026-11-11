@@ -20,7 +20,7 @@ pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 26] = [
+const CASES: [(&str, fn()); 27] = [
     ("channel_labels", channel_labels),
     ("otpm_failure_without_itpm_releases_nothing", || {
         super::runtime().block_on(otpm_failure_without_itpm_releases_nothing());
@@ -45,6 +45,9 @@ const CASES: [(&str, fn()); 26] = [
     }),
     ("model_cap_over_limit_by_one_fails", || {
         super::runtime().block_on(model_cap_over_limit_by_one_fails());
+    }),
+    ("provider_mismatched_model_uses_4096", || {
+        super::runtime().block_on(provider_mismatched_model_uses_4096());
     }),
     ("missing_model_id_skips_limits", || {
         super::runtime().block_on(skips_without(None, Some("gpt-4o"), Some(100), Some(100)));
@@ -201,6 +204,26 @@ async fn model_cap_equal_to_limit_passes() {
         .unwrap()
         .unwrap();
     assert_eq!(reserved.otpm_reserved, 0x4000);
+}
+
+async fn provider_mismatched_model_uses_4096() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let reservations = support::service(counter, Some(10));
+    let deployment = IoDeployment {
+        model_id: Some("dep-a"),
+        model: Some("together_ai/gpt-4o"),
+        limits: IoLimits {
+            itpm: None,
+            otpm: Some(10_000),
+        },
+    };
+    let mut request = support::body();
+    let reserved = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reserved.otpm_reserved, 4096);
 }
 
 async fn model_cap_over_limit_by_one_fails() {
@@ -432,7 +455,8 @@ fn billable_input_never_negative() {
         completion_tokens: 0,
         cached_tokens: 5,
     };
-    assert_eq!(usage.billable_input(), 0);
+    let resolved = resolve_reconcile_usage(Some(usage), None);
+    assert_eq!(resolved.billable_input, 0);
 }
 
 fn standard_logging_zero_tokens_unresolved() {
