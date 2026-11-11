@@ -187,6 +187,7 @@ tools/oracle/helpers/b5652/__init__.py
 tools/oracle/helpers/b5653/__init__.py
 tools/oracle/helpers/b5835/__init__.py
 tools/oracle/helpers/b5836/__init__.py
+tools/oracle/helpers/b5845/__init__.py
 tools/oracle/helpers/b5846.py
 tools/oracle/helpers/b5847.py
 tools/oracle/helpers/b5940/__init__.py
