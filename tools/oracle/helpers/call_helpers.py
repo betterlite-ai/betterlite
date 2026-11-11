@@ -13,7 +13,6 @@ from litellm.litellm_core_utils.core_helpers import (
     get_litellm_metadata_from_kwargs,  # pyright: ignore[reportUnknownVariableType]
     get_or_create_metadata_bucket,  # pyright: ignore[reportUnknownVariableType]
     get_provider_response_headers_from_hidden_params,
-    independent_snapshot,  # pyright: ignore[reportUnknownVariableType]
     is_expected_client_error,
     map_finish_reason,
     normalize_drop_params,
@@ -250,11 +249,6 @@ def _upstream_internal_header(input_value: Object) -> Json:
     }
 
 
-def _snapshot_isolation(input_value: Object) -> Json:
-    record = _object(input_value.get("record"), "record")
-    return cast(Json, independent_snapshot(record))
-
-
 def _filter_internal(input_value: Object) -> Json:
     record = _object(input_value.get("record"), "record")
     additional = input_value.get("additional", [])
@@ -363,8 +357,6 @@ def run(input_value: dict[str, Json]) -> Json:  # noqa: C901, PLR0911, PLR0912
         return _response_headers(input_value)
     if function == "upstream_internal_header":
         return _upstream_internal_header(input_value)
-    if function == "snapshot_isolation":
-        return _snapshot_isolation(input_value)
     if function == "filter_internal":
         return _filter_internal(input_value)
     if function == "drop_env_invalid":

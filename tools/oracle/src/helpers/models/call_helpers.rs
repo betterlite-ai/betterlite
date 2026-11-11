@@ -1,6 +1,5 @@
 mod input;
 mod run;
-mod tests;
 
 pub(crate) struct Op;
 

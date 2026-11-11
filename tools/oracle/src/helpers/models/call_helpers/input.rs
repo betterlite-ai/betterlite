@@ -35,9 +35,6 @@ pub(crate) enum Input {
         upstream: IndexMap<String, String>,
         trusted: AdditionalHeaders,
     },
-    SnapshotIsolation {
-        record: RequestRecord,
-    },
     FilterInternal {
         record: RequestRecord,
         additional: Vec<String>,
