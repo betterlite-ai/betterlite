@@ -1,0 +1,15 @@
+kind: helper
+name: claude-platform-platform-route-prefix
+call:
+  claude_platform_inputs:
+    platform_route_prefix:
+      models:
+        - claude_platform/anthropic.claude-3
+        - claude_platform/claude_platform/anthropic.claude-3
+        - xclaude_platform/anthropic.claude-3
+        - converse/claude_platform/anthropic.claude-3
+        - claude_platform/
+        - claude_platform
+        - ''
+env: {}
+compare: {ignore: []}
