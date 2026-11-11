@@ -28,20 +28,6 @@ where
     }
 }
 
-impl<Sender: MeteringSender + 'static, Time: UtcClock + 'static> OpenMeterAdapter<Sender, Time> {
-    // LiteLLM's sync hooks post on the blocking client, so both go onto the owned tracker
-    fn spawn_sync(&self, event: &LoggerEvent) {
-        let payload = Arc::clone(&event.payload);
-        let logger = Arc::clone(&self.logger);
-        let _spawned = self.tracker.spawn(async move {
-            let call = metering_event(&payload);
-            if let Err(error) = logger.log_success_event(&call).await {
-                tracing::warn!(%error, "the openmeter event could not be logged");
-            }
-        });
-    }
-}
-
 #[async_trait]
 impl<Sender: MeteringSender + 'static, Time: UtcClock + 'static> CallbackLogger
     for OpenMeterAdapter<Sender, Time>
@@ -51,12 +37,20 @@ impl<Sender: MeteringSender + 'static, Time: UtcClock + 'static> CallbackLogger
     }
 
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.spawn_sync(event);
+        // LiteLLM's sync hook posts on the blocking client, so it goes onto the owned tracker
+        let payload = Arc::clone(&event.payload);
+        let logger = Arc::clone(&self.logger);
+        let _spawned = self.tracker.spawn(async move {
+            let call = metering_event(&payload);
+            if let Err(error) = logger.log_success_event(&call).await {
+                tracing::warn!(%error, "the openmeter event could not be logged");
+            }
+        });
         Ok(())
     }
 
-    fn log_stream_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.spawn_sync(event);
+    // LiteLLM's legacy branch calls log_stream_event on OpenMeterLogger, which inherits CustomLogger's no-op body
+    fn log_stream_event(&self, _event: &LoggerEvent) -> Result<(), LoggerError> {
         Ok(())
     }
 
@@ -68,11 +62,8 @@ impl<Sender: MeteringSender + 'static, Time: UtcClock + 'static> CallbackLogger
             .map_err(|error| delivery_error(&error))
     }
 
-    async fn async_log_stream_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        let call = metering_event(&event.payload);
-        self.logger
-            .async_log_success_event(&call)
-            .await
-            .map_err(|error| delivery_error(&error))
+    // the async legacy branch calls the inherited no-op async_log_stream_event the same way
+    async fn async_log_stream_event(&self, _event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        Ok(())
     }
 }

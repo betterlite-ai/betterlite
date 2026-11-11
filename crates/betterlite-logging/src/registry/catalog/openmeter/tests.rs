@@ -304,7 +304,7 @@ async fn an_async_success_event_posts_the_mapped_cloud_event() {
 }
 
 #[tokio::test]
-async fn a_sync_stream_event_posts_the_mapped_cloud_event() {
+async fn a_sync_stream_event_posts_nothing() {
     let sender = FakeSender::default();
     let (adapter, tracker) = adapter(settings(&[]), sender.clone());
     adapter
@@ -312,21 +312,18 @@ async fn a_sync_stream_event_posts_the_mapped_cloud_event() {
         .expect("the chunk is accepted");
     tracker.close();
     tracker.wait().await;
-    let posts = sender.posts();
-    assert_eq!(posts.len(), 1);
-    assert_eq!(posts[0].url, "https://openmeter.test/api/v1/events");
+    assert!(sender.posts().is_empty());
 }
 
 #[tokio::test]
-async fn an_async_stream_event_posts_the_mapped_cloud_event() {
+async fn an_async_stream_event_posts_nothing() {
     let sender = FakeSender::default();
     let (adapter, _tracker) = adapter(settings(&[]), sender.clone());
     adapter
         .async_log_stream_event(Arc::new(event()))
         .await
         .expect("the chunk is logged");
-    let posts = sender.posts();
-    assert_eq!(posts.len(), 1);
+    assert!(sender.posts().is_empty());
 }
 
 #[tokio::test]
