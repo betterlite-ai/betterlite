@@ -178,6 +178,7 @@ impl RecoverySteps for ScriptedSteps {
     }
 
     fn warn_ahead(&self) -> StepFuture<'_, Vec<String>> {
+        self.record("ahead".to_owned());
         self.ahead.fetch_add(1, Ordering::SeqCst);
         let count = self.hostile.load(Ordering::SeqCst);
         let names = (0..count)
