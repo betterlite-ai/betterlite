@@ -18,12 +18,12 @@ use tokio::time::timeout;
 use crate::agentcore_stream::adapter;
 use crate::agentcore_stream::tests::support::{FixedIds, FixtureLogger};
 use crate::agentcore_stream::transport::{HandlerKind, StreamHandler};
-use crate::agentcore_stream::{IdSource, StreamDeps, StreamRequest};
+use crate::agentcore_stream::{StreamDeps, StreamRequest};
 
 #[tokio::test]
 async fn agentcore_stream_releases_transport_on_drop() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
+    let api_base = format!("http://{}/invoke", listener.local_addr().unwrap());
     let (closed, closed_rx) = oneshot::channel::<Vec<u8>>();
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_one_frame(listener, closed));
@@ -34,7 +34,6 @@ async fn agentcore_stream_releases_transport_on_drop() {
     let logger = FixtureLogger::default();
     let data = Json::Object(IndexMap::default());
     let messages = Json::List(Vec::new());
-    let api_base = format!("http://{address}/invoke");
     let request = StreamRequest {
         model: "agentcore-model",
         api_base: &api_base,
@@ -43,15 +42,16 @@ async fn agentcore_stream_releases_transport_on_drop() {
         signed_json_body: None,
         messages: &messages,
     };
-    let ids: Arc<dyn IdSource> = Arc::new(FixedIds::new(&[]));
     let deps = StreamDeps {
         supplied: None,
         default: transport,
-        ids,
+        ids: Arc::new(FixedIds::new(&[])),
         logger: &logger,
     };
-    let mut stream = adapter::open(&request, &deps, HandlerKind::Async)
+    let opening = adapter::open(&request, &deps, HandlerKind::Async);
+    let mut stream = timeout(Duration::from_secs(10), opening)
         .await
+        .unwrap()
         .unwrap();
     let first = timeout(Duration::from_secs(10), stream.next_chunk())
         .await
