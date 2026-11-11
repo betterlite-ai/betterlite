@@ -1,0 +1,15 @@
+kind: helper
+name: provider_controls-extra-body-seed
+call:
+  provider_controls:
+    operation: extra_body
+    body:
+      metadata:
+        prompt:
+          name: prompt-name
+      flags:
+        - true
+        - null
+        - 1
+env: {}
+compare: {ignore: []}
