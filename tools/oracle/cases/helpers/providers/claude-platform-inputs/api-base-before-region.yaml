@@ -1,0 +1,30 @@
+kind: helper
+name: claude-platform-api-base-before-region
+call:
+  claude_platform_inputs:
+    api_base_before_region:
+      cases:
+        - api_base: https://custom.example
+        - api_base: https://custom.example/
+        - api_base: https://custom.example///
+        - api_base: https://custom.example/v1/messages
+        - api_base: https://custom.example/v1/messages/
+        - api_base: https://explicit.example
+          litellm_api_base: https://global.example
+        - litellm_api_base: https://global.example
+        - api_base: ''
+          litellm_api_base: https://global.example
+          environment: {ANTHROPIC_AWS_BASE_URL: https://base.example}
+        - environment: {ANTHROPIC_AWS_BASE_URL: https://base.example}
+        - environment: {ANTHROPIC_AWS_API_BASE: https://api.example}
+        - environment: {ANTHROPIC_AWS_BASE_URL: https://base.example, ANTHROPIC_AWS_API_BASE: https://api.example}
+        - environment: {ANTHROPIC_AWS_BASE_URL: '', ANTHROPIC_AWS_API_BASE: https://api.example}
+        - environment: {ANTHROPIC_AWS_API_BASE: ''}
+        - api_base: ''
+        - optional_params: {aws_region_name: eu-west-1}
+        - environment: {AWS_REGION: us-east-2}
+        - {}
+        - api_base: https://custom.example
+          optional_params: {aws_region_name: BAD_REGION}
+env: {}
+compare: {ignore: []}
