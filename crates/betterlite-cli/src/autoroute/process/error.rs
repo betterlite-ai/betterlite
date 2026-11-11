@@ -34,12 +34,6 @@ pub enum ProcessError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("cannot create the directory for the PID record {path}: {source}")]
-    PidRecordDirectory {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
     #[error("cannot write the PID record {path}: {source}")]
     WritePidRecord {
         path: PathBuf,

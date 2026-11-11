@@ -9,18 +9,6 @@ use crate::autoroute::process::log_tail::LogTailer;
 use crate::autoroute::process::pid_record::clear_pid_record;
 use crate::settings_backup::restore::restore_claude_settings;
 
-pub struct Teardown {
-    done: AtomicBool,
-}
-
-impl Default for Teardown {
-    fn default() -> Self {
-        Self {
-            done: AtomicBool::new(false),
-        }
-    }
-}
-
 pub struct TeardownRequest<'request> {
     pub settings: &'request Path,
     pub backup: &'request Path,
@@ -37,9 +25,9 @@ pub struct TeardownRequest<'request> {
 
 // The only path that terminates the proxy, clears the PID record and restores the settings
 #[must_use]
-pub fn run_teardown(mut request: TeardownRequest<'_>, guard: &Teardown) -> bool {
+pub fn run_teardown(mut request: TeardownRequest<'_>, done: &AtomicBool) -> bool {
     // LiteLLM's Lock.acquire(blocking=False): only the first caller cleans up and the rest return
-    if guard.done.swap(true, Ordering::SeqCst) {
+    if done.swap(true, Ordering::SeqCst) {
         return false;
     }
     terminate(request.pid, request.signal_port, request.clock);
@@ -52,9 +40,7 @@ pub fn run_teardown(mut request: TeardownRequest<'_>, guard: &Teardown) -> bool 
             );
             let _warning = writeln!(
                 request.stdout,
-                "Restart any Claude Code session still open from this session, or another local \
-                 account could bind the now-free port {} and receive its requests. Do not use \
-                 `lite autoroute start` on a shared or multi-tenant host.",
+                "Restart any Claude Code session still open from this session, or another local account could bind the now-free port {} and receive its requests. Do not use `lite autoroute start` on a shared or multi-tenant host.",
                 request.port
             );
         }

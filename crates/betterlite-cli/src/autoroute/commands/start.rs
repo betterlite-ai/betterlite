@@ -1,6 +1,6 @@
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use secrecy::SecretString;
 use tokio::runtime::Builder;
@@ -8,7 +8,7 @@ use tokio::runtime::Builder;
 use super::AutoroutePorts;
 use super::error::CommandsError;
 use super::master_key::ensure_master_key;
-use super::teardown::{Teardown, TeardownRequest, run_teardown};
+use super::teardown::{TeardownRequest, run_teardown};
 use crate::autoroute::config::AUTOROUTER_MODEL_NAME;
 use crate::autoroute::paths::{config_path, log_path, pid_record_path};
 use crate::autoroute::process::control::terminate;
@@ -53,7 +53,17 @@ pub fn start(ports: &mut AutoroutePorts<'_>, port: u16) -> Result<(), CommandsEr
         abort(launched.pid, ports, &paths.pid_record);
         return Err(error);
     }
-    announce(ports.stdout, &launched.base_url, launched.pid)?;
+    writeln!(
+        ports.stdout,
+        "betterlite: ephemeral auto-router proxy up at {} (pid {})",
+        launched.base_url, launched.pid
+    )
+    .map_err(|source| CommandsError::Output { source })?;
+    writeln!(
+        ports.stdout,
+        "Claude Code sessions started now will route through it. Press Ctrl-C to stop and restore."
+    )
+    .map_err(|source| CommandsError::Output { source })?;
     foreground(ports, &paths, launched.pid, port)
 }
 
@@ -193,38 +203,23 @@ fn patch_settings(
     Ok(())
 }
 
-fn announce(stdout: &mut dyn Write, base_url: &str, pid: u32) -> Result<(), CommandsError> {
-    writeln!(
-        stdout,
-        "betterlite: ephemeral auto-router proxy up at {base_url} (pid {pid})"
-    )
-    .map_err(|source| CommandsError::Output { source })?;
-    writeln!(
-        stdout,
-        "Claude Code sessions started now will route through it. Press Ctrl-C to stop and restore."
-    )
-    .map_err(|source| CommandsError::Output { source })
-}
-
 fn foreground(
     ports: &mut AutoroutePorts<'_>,
     paths: &StartPaths,
     pid: u32,
     port: u16,
 ) -> Result<(), CommandsError> {
-    let teardown = Teardown::default();
-    let guard = match ports.signals.watch() {
-        Ok(guard) => guard,
+    let teardown = AtomicBool::new(false);
+    let started = ports.signals.watch().and_then(|guard| {
+        spawn_log_tail(&paths.log)
+            .map(|tail| (guard, tail))
+            .map_err(CommandsError::Process)
+    });
+    let (guard, tail) = match started {
+        Ok(ready) => ready,
         Err(error) => {
             let _ran = run_teardown(teardown_request(ports, paths, pid, port, None), &teardown);
             return Err(error);
-        }
-    };
-    let tail = match spawn_log_tail(&paths.log) {
-        Ok(tail) => tail,
-        Err(error) => {
-            let _ran = run_teardown(teardown_request(ports, paths, pid, port, None), &teardown);
-            return Err(CommandsError::Process(error));
         }
     };
     guard.wait();

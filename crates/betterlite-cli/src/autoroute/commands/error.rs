@@ -16,19 +16,15 @@ pub enum CommandsError {
     #[error("An ephemeral proxy is already running (pid {pid}). Run `lite autoroute stop` first.")]
     AlreadyRunning { pid: u32 },
     #[error(
-        "{path} already exists -- `lite autoroute start` looks like it's already running (or \
-         crashed without cleanup). Run `lite autoroute stop` first."
+        "{path} already exists -- `lite autoroute start` looks like it's already running (or crashed without cleanup). Run `lite autoroute stop` first."
     )]
     BackupExists { path: PathBuf },
     #[error(
-        "Port 4000 is the proxy's own default and its launcher silently rebinds it to a random \
-         port when busy; pick a different --port."
+        "Port 4000 is the proxy's own default and its launcher silently rebinds it to a random port when busy; pick a different --port."
     )]
     ReservedPort,
     #[error(
-        "Port {port} on 127.0.0.1 is already in use. If a previous `lite autoroute start` is \
-         still running or crashed, run `lite autoroute stop`; otherwise pick a different port \
-         with --port."
+        "Port {port} on 127.0.0.1 is already in use. If a previous `lite autoroute start` is still running or crashed, run `lite autoroute stop`; otherwise pick a different port with --port."
     )]
     PortInUse { port: u16 },
     #[error("cannot read {path}: {source}")]

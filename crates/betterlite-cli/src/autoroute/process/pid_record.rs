@@ -39,7 +39,7 @@ pub fn read_pid_record(path: &Path) -> Result<Option<PidRecord>, ProcessError> {
 
 pub fn write_pid_record(path: &Path, record: &PidRecord) -> Result<(), ProcessError> {
     if let Some(directory) = path.parent() {
-        fs::create_dir_all(directory).map_err(|source| ProcessError::PidRecordDirectory {
+        fs::create_dir_all(directory).map_err(|source| ProcessError::WritePidRecord {
             path: path.to_owned(),
             source,
         })?;
@@ -56,12 +56,12 @@ pub fn write_pid_record(path: &Path, record: &PidRecord) -> Result<(), ProcessEr
 }
 
 pub fn clear_pid_record(path: &Path) -> Result<(), ProcessError> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(source) => Err(ProcessError::ClearPidRecord {
-            path: path.to_owned(),
-            source,
-        }),
+    // unlink(missing_ok=True): a record another stop already cleared is not an error
+    if !path.exists() {
+        return Ok(());
     }
+    fs::remove_file(path).map_err(|source| ProcessError::ClearPidRecord {
+        path: path.to_owned(),
+        source,
+    })
 }

@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
@@ -21,7 +22,7 @@ use self::support::{
 use super::args::{AutorouteCommand, StartArgs};
 use super::deprecation_notice;
 use super::error::CommandsError;
-use super::teardown::{Teardown, TeardownRequest, run_teardown};
+use super::teardown::{TeardownRequest, run_teardown};
 use crate::autoroute::commands::liveliness::{HttpLiveliness, LIVELINESS_TIMEOUT_SECONDS};
 use crate::autoroute::config::model::RawModelListing;
 use crate::autoroute::paths::pid_record_path;
@@ -335,7 +336,7 @@ impl TeardownWorld {
 #[test]
 fn teardown_lock_runs_the_cleanup_once() {
     let world = teardown_world();
-    let guard = Teardown::default();
+    let guard = AtomicBool::new(false);
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let first = run_teardown(world.request(&mut stdout, &mut stderr), &guard);
@@ -350,7 +351,7 @@ fn teardown_lock_runs_the_cleanup_once() {
 #[test]
 fn teardown_restores_the_original_settings_and_clears_the_record() {
     let world = teardown_world();
-    let guard = Teardown::default();
+    let guard = AtomicBool::new(false);
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     assert!(run_teardown(

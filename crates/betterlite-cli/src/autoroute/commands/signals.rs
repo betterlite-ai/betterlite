@@ -1,5 +1,7 @@
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::thread::park_timeout;
+use std::time::Duration;
 
 #[cfg(unix)]
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -11,6 +13,7 @@ use std::thread::{Builder, JoinHandle};
 use super::error::CommandsError;
 
 pub const SIGNAL_THREAD_NAME: &str = "betterlite-autoroute-signals";
+pub const SIGNAL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 pub trait StopGuard {
     fn wait(&self);
@@ -22,39 +25,21 @@ pub trait StopSignals {
 
 pub struct StopSignal {
     requested: AtomicBool,
-    gate: Mutex<()>,
-    ready: Condvar,
 }
 
 impl Default for StopSignal {
     fn default() -> Self {
         Self {
             requested: AtomicBool::new(false),
-            gate: Mutex::new(()),
-            ready: Condvar::new(),
         }
     }
 }
 
 impl StopSignal {
-    // The lock pairs with the predicate check in wait, so a request never slips between the two
-    pub fn request(&self) {
-        let Ok(_guard) = self.gate.lock() else {
-            return;
-        };
-        self.requested.store(true, Ordering::SeqCst);
-        self.ready.notify_all();
-    }
-
+    // The flag is the only thing a signal path touches; the foreground wait polls it briefly
     pub fn wait(&self) {
-        let Ok(mut guard) = self.gate.lock() else {
-            return;
-        };
         while !self.requested.load(Ordering::SeqCst) {
-            match self.ready.wait(guard) {
-                Ok(next) => guard = next,
-                Err(_poisoned) => return,
-            }
+            park_timeout(SIGNAL_POLL_INTERVAL);
         }
     }
 }
@@ -75,7 +60,7 @@ impl StopSignals for OsSignals {
             .name(SIGNAL_THREAD_NAME.to_owned())
             .spawn(move || {
                 for _signal in signals.forever() {
-                    thread_stop.request();
+                    thread_stop.requested.store(true, Ordering::SeqCst);
                 }
             })
             .map_err(|source| CommandsError::Signals { source })?;
