@@ -67,6 +67,8 @@ fn extracts_the_verdict_object(#[case] raw: &str, #[case] fields: &str) {
 #[rstest]
 #[case::array("[1, 2]")]
 #[case::fenced_array(concat!("```json\n", "[1, 2]\n", "```"))]
+#[case::fenced_array_with_a_capital_marker(concat!("```JSON\n", "[{\"score\": 2}]\n", "```"))]
+#[case::multiline_fenced_array(concat!("```json\n", "[\n", "{\"score\": 2}\n", "]\n", "```"))]
 #[case::empty_array("[]")]
 #[case::string("\"verdict\"")]
 #[case::number("42")]
