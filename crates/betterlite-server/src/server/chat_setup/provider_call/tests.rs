@@ -19,6 +19,7 @@ use tower::ServiceExt as _;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 
+mod defaults;
 mod embedding_mapping;
 mod errors;
 mod mapping;

@@ -26,7 +26,7 @@ fn deployment(api_base: &str, api_key: Option<&str>) -> Deployment {
     Deployment {
         model: String::from("up"),
         api_base: api_base.to_owned(),
-        endpoint: Url::parse("http://127.0.0.1:9/v1/chat/completions").unwrap(),
+        endpoint: Url::parse(&complete_url(api_base)).unwrap(),
         api_key: api_key.map(SecretString::from),
         authorization: None,
         organization: Some(String::from("org-1")),
