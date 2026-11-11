@@ -25,35 +25,26 @@ async fn none_result_returns_none() {
 }
 
 async fn zero_result_is_a_count() {
-    let messages = user_messages();
-    let counter = BedrockTokenCounter {
-        handler: FixedHandler {
-            result: Some(object(json(r#"{"input_tokens": 0}"#))),
-        },
-    };
-    let outcome = counter.count_tokens(&call(&messages, None)).await.unwrap();
-    assert_eq!(outcome.total_tokens, 0);
-    assert!(!outcome.error);
-    assert_eq!(
-        outcome.original_response,
-        Some(object(json(r#"{"input_tokens": 0}"#)))
-    );
+    fixed_zero(r#"{"input_tokens": 0}"#).await;
 }
 
 async fn missing_key_defaults_to_zero() {
+    fixed_zero(r#"{"other": true}"#).await;
+}
+
+async fn fixed_zero(reply: &str) {
     let messages = user_messages();
+    let result = object(json(reply));
+    let expected = result.clone();
     let counter = BedrockTokenCounter {
         handler: FixedHandler {
-            result: Some(object(json(r#"{"other": true}"#))),
+            result: Some(result),
         },
     };
     let outcome = counter.count_tokens(&call(&messages, None)).await.unwrap();
     assert_eq!(outcome.total_tokens, 0);
     assert!(!outcome.error);
-    assert_eq!(
-        outcome.original_response,
-        Some(object(json(r#"{"other": true}"#)))
-    );
+    assert_eq!(outcome.original_response, Some(expected));
 }
 
 async fn validation_failure(result: Json) {

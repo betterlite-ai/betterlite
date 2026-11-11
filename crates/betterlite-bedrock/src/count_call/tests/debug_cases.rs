@@ -83,21 +83,19 @@ async fn success_order_and_values() {
 }
 
 async fn transport_failure_stops_early() {
-    let (entries, failed) = debug_entries(Reply::Failure).await;
-    assert!(failed);
-    let subjects: Vec<&str> = entries
-        .iter()
-        .filter_map(|entry| entry.subject.as_deref())
-        .collect();
-    assert_eq!(subjects, SUBJECTS[..4]);
+    stops_early(Reply::Failure, 4).await;
 }
 
 async fn status_failure_stops_before_the_reply() {
-    let (entries, failed) = debug_entries(Reply::status(404, "missing")).await;
+    stops_early(Reply::status(404, "missing"), 5).await;
+}
+
+async fn stops_early(reply: Reply, expected: usize) {
+    let (entries, failed) = debug_entries(reply).await;
     assert!(failed);
     let subjects: Vec<&str> = entries
         .iter()
         .filter_map(|entry| entry.subject.as_deref())
         .collect();
-    assert_eq!(subjects, SUBJECTS[..5]);
+    assert_eq!(subjects, SUBJECTS[..expected]);
 }

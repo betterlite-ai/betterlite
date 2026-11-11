@@ -1,6 +1,7 @@
 mod input;
 mod logs;
 mod ops;
+mod script;
 mod tests;
 
 use crate::helpers::{Helper, HelperResult};

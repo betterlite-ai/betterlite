@@ -101,7 +101,6 @@ async fn api_base_wins() {
 }
 
 async fn configured_endpoint() {
-    let messages = user_messages();
     let params = deployment(&[
         ("api_key", Json::Text("fixture-bearer".to_owned())),
         (
@@ -109,31 +108,27 @@ async fn configured_endpoint() {
             Json::Text("https://runtime.example".to_owned()),
         ),
     ]);
-    let built = fixture(
-        Reply::ok(r#"{"inputTokens": 8}"#),
-        environment(&[("AWS_BEDROCK_RUNTIME_ENDPOINT", "https://env.example")]),
-    );
-    let transport = built.transport.clone();
-    counted(built, &messages, &params).await;
-    assert_eq!(
-        transport.request().url,
-        format!("https://runtime.example{TOKEN_PATH}")
-    );
+    endpoint_url(&params, r#"{"inputTokens": 8}"#, "https://runtime.example").await;
 }
 
 async fn environment_endpoint() {
+    endpoint_url(
+        &deployment(&with_key()),
+        r#"{"inputTokens": 9}"#,
+        "https://env.example",
+    )
+    .await;
+}
+
+async fn endpoint_url(params: &CountTokensDeployment, reply: &str, expected: &str) {
     let messages = user_messages();
-    let params = deployment(&with_key());
     let built = fixture(
-        Reply::ok(r#"{"inputTokens": 9}"#),
+        Reply::ok(reply),
         environment(&[("AWS_BEDROCK_RUNTIME_ENDPOINT", "https://env.example")]),
     );
     let transport = built.transport.clone();
-    counted(built, &messages, &params).await;
-    assert_eq!(
-        transport.request().url,
-        format!("https://env.example{TOKEN_PATH}")
-    );
+    counted(built, &messages, params).await;
+    assert_eq!(transport.request().url, format!("{expected}{TOKEN_PATH}"));
 }
 
 async fn only_200_succeeds() {

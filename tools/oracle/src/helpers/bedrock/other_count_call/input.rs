@@ -18,7 +18,7 @@ pub(crate) enum Input {
 }
 
 impl Input {
-    pub(crate) fn calls(&self) -> &Calls {
+    pub(crate) const fn calls(&self) -> &Calls {
         match self {
             Self::CountTokenHttpRequest(calls)
             | Self::NativeCountSelection(calls)
@@ -45,7 +45,7 @@ pub(crate) struct Call {
     pub(crate) model: String,
     #[serde(default)]
     pub(crate) messages: Option<Json>,
-    // LiteLLM takes this argument and never reads it, so the helper accepts it only to prove that
+    // LiteLLM never reads this argument; the helper accepts it to prove the counter ignores it
     #[serde(default, rename = "contents")]
     pub(crate) _contents: Option<Json>,
     #[serde(default)]
