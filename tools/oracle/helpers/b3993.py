@@ -154,7 +154,7 @@ class OracleLogger(S3Logger):
         virtual_hosted = settings.get("use_virtual_hosted_style")
         drop_terminal = settings.get("drop_on_terminal_error")
         adaptive = settings.get("adaptive_concurrency")
-        init_s3_params = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L118
+        init_s3_params = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
             InitS3Params,
             self._init_s3_params,
         )
@@ -176,8 +176,11 @@ class OracleLogger(S3Logger):
             self._upload_limiter = self.recorder
         self._flush_dropped = {}
 
-    def was_dropped(self, element: s3BatchLoggingElement) -> bool:
-        return id(element) in self._flush_dropped
+    async def put(self, element: s3BatchLoggingElement) -> str:
+        delivered = await self.async_upload_data_to_s3(element)
+        if id(element) in self._flush_dropped:
+            return "dropped"
+        return "delivered" if delivered else "retry"
 
     async def download(self, object_key: str) -> dict[str, Json] | None:
         fetch = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L923
@@ -215,9 +218,7 @@ async def execute(input_value: Input) -> dict[str, Json]:
             body=element_input.get("body"),
             content_type="application/json" if content_type_value is None else content_type_value,
         )
-        delivered = await logger.async_upload_data_to_s3(element)
-        dropped = logger.was_dropped(element)
-        outcome = "dropped" if dropped else ("delivered" if delivered else "retry")
+        outcome = await logger.put(element)
         if logger.recorder is not None:
             samples = logger.recorder.samples
     else:
