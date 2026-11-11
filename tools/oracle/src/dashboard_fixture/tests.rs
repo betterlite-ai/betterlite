@@ -1,16 +1,17 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::dashboard::payload::JsonPayload;
 use betterlite_postgres_fixture::dashboard::{DashboardFixtureError, SpendLogSeed};
 use betterlite_postgres_fixture::error::FixtureError;
 use betterlite_postgres_fixture::seed::{DatabaseFixture, FixtureSeed};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 use tokio::task::JoinSet;
 use tokio_postgres::NoTls;
 
@@ -31,10 +32,6 @@ const EMPTY_SEED: &str = "    users: [{user_id: alice}]\n    dashboard: {logs: [
 
 fn case_with(seed: &str) -> String {
     format!("{CASE_PREFIX}{seed}{CASE_SUFFIX}")
-}
-
-fn json_value(text: &str) -> Value {
-    serde_json::from_str(text).expect("the expected payload is JSON")
 }
 
 fn expected_log(request_id: &str, key_index: usize) -> SpendLogSeed {
@@ -61,7 +58,10 @@ fn expected_log(request_id: &str, key_index: usize) -> SpendLogSeed {
         total_tokens: 0,
         prompt_tokens: 0,
         completion_tokens: 0,
-        metadata: Some(json_value(r#"{"project_id": "project-x"}"#)),
+        metadata: Some(JsonPayload::Object(BTreeMap::from([(
+            "project_id".to_owned(),
+            JsonPayload::Text("project-x".to_owned()),
+        )]))),
         request_tags: None,
         messages: None,
         response: None,
@@ -69,8 +69,15 @@ fn expected_log(request_id: &str, key_index: usize) -> SpendLogSeed {
     }
 }
 
-fn expected_logs() -> Vec<SpendLogSeed> {
-    let alice = SpendLogSeed {
+fn expected_messages() -> JsonPayload {
+    JsonPayload::Array(vec![JsonPayload::Object(BTreeMap::from([
+        ("role".to_owned(), JsonPayload::Text("user".to_owned())),
+        ("content".to_owned(), JsonPayload::Text("hello".to_owned())),
+    ]))])
+}
+
+fn expected_alice() -> SpendLogSeed {
+    SpendLogSeed {
         request_id: "req-alice".to_owned(),
         call_type: "acompletion".to_owned(),
         start_time: "2026-01-01T10:00:00.123".to_owned(),
@@ -94,15 +101,24 @@ fn expected_logs() -> Vec<SpendLogSeed> {
         prompt_tokens: 60_i32,
         completion_tokens: 40_i32,
         metadata: None,
-        request_tags: Some(json_value(r#"["tag-a", "tag-b"]"#)),
-        messages: Some(json_value(r#"[{"role": "user", "content": "hello"}]"#)),
-        response: Some(json_value(r#"{"id": "chatcmpl-1"}"#)),
-        proxy_server_request: Some(json_value(
-            r#"{"url": "http://localhost/v1/chat/completions"}"#,
-        )),
-    };
-    let bob = expected_log("req-bob", 1);
-    vec![alice, bob]
+        request_tags: Some(JsonPayload::Array(vec![
+            JsonPayload::Text("tag-a".to_owned()),
+            JsonPayload::Text("tag-b".to_owned()),
+        ])),
+        messages: Some(expected_messages()),
+        response: Some(JsonPayload::Object(BTreeMap::from([(
+            "id".to_owned(),
+            JsonPayload::Text("chatcmpl-1".to_owned()),
+        )]))),
+        proxy_server_request: Some(JsonPayload::Object(BTreeMap::from([(
+            "url".to_owned(),
+            JsonPayload::Text("http://localhost/v1/chat/completions".to_owned()),
+        )]))),
+    }
+}
+
+fn expected_logs() -> Vec<SpendLogSeed> {
+    vec![expected_alice(), expected_log("req-bob", 1)]
 }
 
 fn decoded_dashboard(case: &Case) -> Option<&[SpendLogSeed]> {

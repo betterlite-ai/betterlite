@@ -2,6 +2,7 @@ use secrecy::ExposeSecret as _;
 use tokio_postgres::Client;
 use tokio_postgres::types::ToSql;
 
+use super::payload::JsonPayload;
 use super::{DashboardFixtureError, SpendLogSeed};
 use crate::seed::FixtureSeed;
 
@@ -31,12 +32,9 @@ impl<'log> Bindings<'log> {
     }
 
     // an omitted payload column keeps the value the pinned schema defaults it to
-    fn bind_json<T>(&mut self, value: Option<&'log T>)
-    where
-        T: ToSql + Sync,
-    {
+    fn bind_json(&mut self, value: Option<&'log String>) {
         match value {
-            Some(json) => self.bind(json, JSON_CAST),
+            Some(text) => self.bind(text, JSON_CAST),
             None => self.placeholders.push("DEFAULT".to_owned()),
         }
     }
@@ -58,11 +56,18 @@ pub(super) async fn insert_log(
         })?;
     let api_key = FixtureSeed::key_hash(key.token.expose_secret());
     let spend = log.spend.to_string();
+    let payloads = [
+        serialize_payload(log.metadata.as_ref())?,
+        serialize_payload(log.request_tags.as_ref())?,
+        serialize_payload(log.messages.as_ref())?,
+        serialize_payload(log.response.as_ref())?,
+        serialize_payload(log.proxy_server_request.as_ref())?,
+    ];
     let mut bindings = Bindings {
         placeholders: Vec::new(),
         params: Vec::new(),
     };
-    bind_log(&mut bindings, log, &api_key, &spend);
+    bind_log(&mut bindings, log, &api_key, &spend, &payloads);
     let statement = format!(
         "INSERT INTO \"LiteLLM_SpendLogs\" ({COLUMNS}) VALUES ({})",
         bindings.placeholders.join(",")
@@ -74,11 +79,21 @@ pub(super) async fn insert_log(
     Ok(())
 }
 
+fn serialize_payload(
+    payload: Option<&JsonPayload>,
+) -> Result<Option<String>, DashboardFixtureError> {
+    payload
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|source| DashboardFixtureError::PayloadUnserializable { source })
+}
+
 fn bind_log<'log>(
     bindings: &mut Bindings<'log>,
     log: &'log SpendLogSeed,
     api_key: &'log String,
     spend: &'log String,
+    payloads: &'log [Option<String>; 5],
 ) {
     bindings.bind(&log.request_id, "");
     bindings.bind(&log.call_type, "");
@@ -102,9 +117,7 @@ fn bind_log<'log>(
     bindings.bind(&log.status, "");
     bindings.bind(&log.cache_hit, "");
     bindings.bind(&log.litellm_call_id, "");
-    bindings.bind_json(log.metadata.as_ref());
-    bindings.bind_json(log.request_tags.as_ref());
-    bindings.bind_json(log.messages.as_ref());
-    bindings.bind_json(log.response.as_ref());
-    bindings.bind_json(log.proxy_server_request.as_ref());
+    for payload in payloads {
+        bindings.bind_json(payload.as_ref());
+    }
 }

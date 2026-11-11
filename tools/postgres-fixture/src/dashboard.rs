@@ -1,9 +1,5 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "fixture payloads are arbitrary provider JSON, mirroring LiteLLM's Json columns"
-)]
-
 mod insert;
+pub mod payload;
 mod schema;
 mod tests;
 mod validate;
@@ -19,6 +15,8 @@ use thiserror::Error;
 use tokio_postgres::Client;
 
 use crate::seed::FixtureSeed;
+
+use self::payload::JsonPayload;
 
 const MAX_LOGS: usize = 256;
 
@@ -72,15 +70,15 @@ pub struct SpendLogSeed {
     #[serde(default)]
     pub completion_tokens: i32,
     #[serde(default)]
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<JsonPayload>,
     #[serde(default)]
-    pub request_tags: Option<serde_json::Value>,
+    pub request_tags: Option<JsonPayload>,
     #[serde(default)]
-    pub messages: Option<serde_json::Value>,
+    pub messages: Option<JsonPayload>,
     #[serde(default)]
-    pub response: Option<serde_json::Value>,
+    pub response: Option<JsonPayload>,
     #[serde(default)]
-    pub proxy_server_request: Option<serde_json::Value>,
+    pub proxy_server_request: Option<JsonPayload>,
 }
 
 #[derive(Debug, Error)]
@@ -115,6 +113,11 @@ pub enum DashboardFixtureError {
     JsonUnserializable {
         row: usize,
         field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("dashboard log payload cannot be serialized: {source}")]
+    PayloadUnserializable {
         #[source]
         source: serde_json::Error,
     },

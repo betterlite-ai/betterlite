@@ -1,5 +1,3 @@
-use serde::Serialize;
-
 use super::{DashboardFixtureError, SpendLogSeed};
 
 const TEXT_BYTES: usize = 4096;
@@ -79,15 +77,28 @@ const fn validate_counters(row: usize, log: &SpendLogSeed) -> Result<(), Dashboa
 }
 
 fn validate_payloads(row: usize, log: &SpendLogSeed) -> Result<(), DashboardFixtureError> {
-    check_json(row, "metadata", log.metadata.as_ref())?;
-    check_json(row, "request_tags", log.request_tags.as_ref())?;
-    check_json(row, "messages", log.messages.as_ref())?;
-    check_json(row, "response", log.response.as_ref())?;
-    check_json(
-        row,
-        "proxy_server_request",
-        log.proxy_server_request.as_ref(),
-    )
+    for (field, value) in [
+        ("metadata", &log.metadata),
+        ("request_tags", &log.request_tags),
+        ("messages", &log.messages),
+        ("response", &log.response),
+        ("proxy_server_request", &log.proxy_server_request),
+    ] {
+        let Some(payload) = value else {
+            continue;
+        };
+        let bytes = serde_json::to_string(payload)
+            .map_err(|source| DashboardFixtureError::JsonUnserializable { row, field, source })?;
+        if bytes.len() > JSON_BYTES {
+            return Err(DashboardFixtureError::JsonTooLong {
+                row,
+                field,
+                bytes: bytes.len(),
+                limit: JSON_BYTES,
+            });
+        }
+    }
+    Ok(())
 }
 
 const fn check_text(
@@ -101,30 +112,6 @@ const fn check_text(
             field,
             bytes: text.len(),
             limit: TEXT_BYTES,
-        });
-    }
-    Ok(())
-}
-
-fn check_json<T>(
-    row: usize,
-    field: &'static str,
-    value: Option<&T>,
-) -> Result<(), DashboardFixtureError>
-where
-    T: Serialize + ?Sized,
-{
-    let Some(json) = value else {
-        return Ok(());
-    };
-    let bytes = serde_json::to_vec(json)
-        .map_err(|source| DashboardFixtureError::JsonUnserializable { row, field, source })?;
-    if bytes.len() > JSON_BYTES {
-        return Err(DashboardFixtureError::JsonTooLong {
-            row,
-            field,
-            bytes: bytes.len(),
-            limit: JSON_BYTES,
         });
     }
     Ok(())

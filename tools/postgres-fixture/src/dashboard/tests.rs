@@ -1,10 +1,11 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::dashboard::payload::JsonPayload;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 use tokio::task::JoinSet;
 use tokio_postgres::{Client, NoTls, types::FromSqlOwned};
 
@@ -78,10 +79,6 @@ const SPEND_COLUMNS: &[&str] = &[
 
 fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
-}
-
-fn json_value(text: &str) -> Value {
-    serde_json::from_str(text).unwrap()
 }
 
 fn spend_log(request_id: &str, key_index: usize) -> SpendLogSeed {
@@ -377,6 +374,27 @@ async fn stored_row(client: &Client, request_id: &str) -> String {
         .get(0)
 }
 
+fn alice_payloads(alice: &mut SpendLogSeed) {
+    alice.request_tags = Some(JsonPayload::Array(vec![
+        JsonPayload::Text("tag-a".to_owned()),
+        JsonPayload::Text("tag-b".to_owned()),
+    ]));
+    alice.messages = Some(JsonPayload::Array(vec![JsonPayload::Object(
+        BTreeMap::from([
+            ("role".to_owned(), JsonPayload::Text("user".to_owned())),
+            ("content".to_owned(), JsonPayload::Text("hello".to_owned())),
+        ]),
+    )]));
+    alice.response = Some(JsonPayload::Object(BTreeMap::from([(
+        "id".to_owned(),
+        JsonPayload::Text("chatcmpl-1".to_owned()),
+    )])));
+    alice.proxy_server_request = Some(JsonPayload::Object(BTreeMap::from([(
+        "url".to_owned(),
+        JsonPayload::Text("http://localhost/v1/chat/completions".to_owned()),
+    )])));
+}
+
 fn round_trip_logs() -> Vec<SpendLogSeed> {
     let mut alice = spend_log("req-alice", 0);
     alice.completion_start_time = Some("2026-01-01T10:00:01.000".to_owned());
@@ -396,19 +414,17 @@ fn round_trip_logs() -> Vec<SpendLogSeed> {
     alice.total_tokens = 100_i32;
     alice.prompt_tokens = 60_i32;
     alice.completion_tokens = 40_i32;
-    alice.request_tags = Some(json_value(r#"["tag-a", "tag-b"]"#));
-    alice.messages = Some(json_value(r#"[{"role": "user", "content": "hello"}]"#));
-    alice.response = Some(json_value(r#"{"id": "chatcmpl-1"}"#));
-    alice.proxy_server_request = Some(json_value(
-        r#"{"url": "http://localhost/v1/chat/completions"}"#,
-    ));
+    alice_payloads(&mut alice);
 
     let mut bob = spend_log("req-bob", 1);
     bob.start_time = "2026-01-01T11:00:00.000".to_owned();
     bob.end_time = "2026-01-01T11:00:01.000".to_owned();
     bob.session_id = Some("session-shared".to_owned());
     bob.spend = Decimal::new(-50, 2);
-    bob.metadata = Some(json_value(r#"{"project_id": "project-x"}"#));
+    bob.metadata = Some(JsonPayload::Object(BTreeMap::from([(
+        "project_id".to_owned(),
+        JsonPayload::Text("project-x".to_owned()),
+    )])));
 
     let mut minimal = spend_log("req-minimal", 1);
     minimal.call_type = "aembedding".to_owned();
@@ -573,13 +589,13 @@ fn completion_start_bytes(bytes: usize) -> Vec<SpendLogSeed> {
 
 fn metadata_json(bytes: usize) -> Vec<SpendLogSeed> {
     let mut log = spend_log("req", 0);
-    log.metadata = Some(json_value(&format!("\"{}\"", "x".repeat(bytes))));
+    log.metadata = Some(JsonPayload::Text("x".repeat(bytes)));
     vec![log]
 }
 
 fn request_tags_json(bytes: usize) -> Vec<SpendLogSeed> {
     let mut log = spend_log("req", 0);
-    log.request_tags = Some(json_value(&format!("\"{}\"", "x".repeat(bytes))));
+    log.request_tags = Some(JsonPayload::Text("x".repeat(bytes)));
     vec![log]
 }
 
@@ -607,7 +623,7 @@ fn boundary_logs() -> Vec<SpendLogSeed> {
     first.request_id = "i".repeat(0x1000);
     first.model = Some("m".repeat(0x1000));
     first.completion_start_time = Some("c".repeat(0x1000));
-    first.metadata = Some(json_value(&format!("\"{}\"", "x".repeat(0xFFFE))));
+    first.metadata = Some(JsonPayload::Text("x".repeat(0xFFFE)));
     first.request_duration_ms = Some(0_i32);
     first.spend = Decimal::new(-125, 2);
     logs
@@ -615,9 +631,12 @@ fn boundary_logs() -> Vec<SpendLogSeed> {
 
 fn redacted_logs() -> Vec<SpendLogSeed> {
     let mut first = spend_log("req-secret", 0);
-    first.metadata = Some(json_value(r#"{"payload": "super-secret-payload"}"#));
+    first.metadata = Some(JsonPayload::Object(BTreeMap::from([(
+        "payload".to_owned(),
+        JsonPayload::Text("super-secret-payload".to_owned()),
+    )])));
     let mut second = spend_log("req-oversized", 0);
-    second.metadata = Some(json_value(&format!("\"{}\"", "x".repeat(0xFFFF))));
+    second.metadata = Some(JsonPayload::Text("x".repeat(0xFFFF)));
     vec![first, second]
 }
 
