@@ -464,7 +464,8 @@ async fn a_cost_failure_posts_no_cost_and_no_debug_info() {
     let Json::Object(span) = batch_entry(&requests[1].body, "spans") else {
         panic!("the span is an object");
     };
-    assert!(!span.contains_key("total_cost"));
+    // the sync path posts the optional fields as nulls, as LiteLLM's payload dict keeps them
+    assert_eq!(span.get("total_cost"), Some(&Json::Null));
 }
 
 #[tokio::test]
@@ -506,8 +507,8 @@ async fn an_async_success_event_flushes_the_queue_at_the_batch_size() {
     assert_span(batch_entry(&requests[1].body, "spans"), trace);
 }
 
-#[test]
-fn an_invalid_start_time_is_reported() {
+#[tokio::test]
+async fn an_invalid_start_time_is_reported() {
     let (adapter, capture, _tracker) = fixture(512);
     let broken = event_from(&PAYLOAD.replace("1704067200.0", "100000000000000000000"));
     let error = adapter
