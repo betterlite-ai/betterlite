@@ -103,6 +103,8 @@ async fn contention_only_elapsed_budget() {
     steps.deploying(DeployOutcome::Complete);
     let jitter = FakeJitter(0);
     let pause = RecordingPause::default();
+    let (logs, subscriber) = capture_logs();
+    let guard = set_default(subscriber);
     run_database_v2(
         &steps,
         MigrateAttemptBudget::default(),
@@ -112,8 +114,14 @@ async fn contention_only_elapsed_budget() {
     )
     .await
     .expect("contention never spends a failure attempt");
+    drop(guard);
     assert!(pause.delays().is_empty());
     assert_eq!(steps.deploy_timeouts().len(), 3);
+    assert!(
+        logs.contents().contains("does not spend a failure attempt"),
+        "{}",
+        logs.contents()
+    );
 }
 
 #[tokio::test(start_paused = true)]

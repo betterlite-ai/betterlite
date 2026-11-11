@@ -208,6 +208,9 @@ fn contention_attempt(
     if is_deadlock(None, detail) {
         return Ok(deadlock_attempt(budget));
     }
+    tracing::info!(
+        "waiting for the migration advisory lock held by another process; contention does not spend a failure attempt"
+    );
     Ok(budget.after_contention(elapsed)?)
 }
 
