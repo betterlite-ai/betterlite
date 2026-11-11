@@ -232,8 +232,8 @@ fn token_step(step: &TokenStep) -> Result<Value, Failure> {
         },
     };
     outcome["bearer"] = bearer;
-    outcome["requests"] = json!(fixture.shared.recorded_requests());
-    outcome["sleeps"] = json!(fixture.shared.recorded_sleeps());
+    outcome["requests"] = json!(fixture.shared.requests());
+    outcome["sleeps"] = json!(fixture.shared.sleeps());
     Ok(outcome)
 }
 
