@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::Cursor;
 
 use base64::Engine as _;
 use base64::alphabet::STANDARD as BASE64_ALPHABET;
@@ -14,6 +15,8 @@ use betterlite_prompts::media::inline::{RemoteMediaFetcher, async_inline_remote_
 use betterlite_prompts::media::parts::INLINE_REMOTE_IMAGE_URLS;
 use betterlite_prompts::message_content::{Content, ContentPart, Message, get_str_from_messages};
 use image::DynamicImage;
+use image::ImageReader;
+use image::Limits;
 use image::codecs::jpeg::JpegEncoder;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -31,6 +34,9 @@ const JPEG_SIGNATURE: [u8; 3] = [0xFF, 0xD8, 0xFF];
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 // Pillow saves without a quality argument at its 75 default
 const JPEG_QUALITY: u8 = 75;
+// a 1 MiB prompt cap can still carry a header that declares huge dimensions, so the decode is bounded
+const MAX_IMAGE_SIDE: u32 = 8192;
+const MAX_IMAGE_ALLOC: u64 = 64 * 1024 * 1024;
 const LENIENT: GeneralPurpose = GeneralPurpose::new(
     &BASE64_ALPHABET,
     GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
@@ -41,7 +47,7 @@ pub struct RequestParams {
     #[serde(default)]
     pub custom_prompt_dict: Option<BTreeMap<String, CustomPromptTemplate>>,
     #[serde(default)]
-    pub text_completion: Option<bool>,
+    pub text_completion: bool,
 }
 
 pub struct RequestInput<'request> {
@@ -94,7 +100,7 @@ pub fn transform_request(
         .unwrap_or(input.custom_prompts);
     let prompt = match prompts.get(input.model) {
         Some(template) => custom_prompt(template, &renderer_messages(input.messages)?)?,
-        None if input.params.text_completion == Some(true) => get_str_from_messages(input.messages),
+        None if input.params.text_completion => get_str_from_messages(input.messages),
         None => {
             let rendered = ollama(input.model, &renderer_messages(input.messages)?)?;
             let images = rendered.images.into_iter().map(Json::Text).collect();
@@ -216,7 +222,16 @@ pub fn convert_image(image: &str) -> Result<String, OllamaGenerateError> {
 }
 
 fn reencode_as_jpeg(raw: &[u8], original: &str) -> Result<String, OllamaGenerateError> {
-    let Ok(decoded) = image::load_from_memory(raw) else {
+    let raw_reader = ImageReader::new(Cursor::new(raw));
+    let Ok(mut reader) = raw_reader.with_guessed_format() else {
+        return Ok(original.to_owned());
+    };
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_SIDE);
+    limits.max_image_height = Some(MAX_IMAGE_SIDE);
+    limits.max_alloc = Some(MAX_IMAGE_ALLOC);
+    reader.limits(limits);
+    let Ok(decoded) = reader.decode() else {
         return Ok(original.to_owned());
     };
     let rgb = DynamicImage::ImageRgb8(decoded.to_rgb8());

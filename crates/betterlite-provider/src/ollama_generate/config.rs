@@ -124,7 +124,12 @@ fn response_format(value: &Json) -> Result<Option<Json>, OllamaError> {
             Ok(Some(Json::Text(String::from("json"))))
         }
         Some(Json::Text(kind)) if kind == "json_schema" => json_schema_format(fields),
-        Some(_) => Ok(None),
+        Some(Json::Text(_) | Json::Null) => Ok(None),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(OllamaError::Param {
+                field: "response_format.type",
+            })
+        }
     }
 }
 

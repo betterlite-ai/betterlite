@@ -4,7 +4,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
 use super::support::{
-    JPEG_BASE64, PNG_BASE64, bmp_base64, bmp_data_url, jpeg_data_url, png_data_url,
+    JPEG_BASE64, PNG_BASE64, bmp_base64, bmp_data_url, jpeg_data_url, oversized_bmp_data_url,
+    png_data_url,
 };
 use crate::ollama_generate::request::convert_image;
 
@@ -92,6 +93,12 @@ fn a_space_in_a_data_url_is_dropped_while_the_payload_is_kept() {
     wrapped.insert(10, ' ');
     let image = format!("data:image/jpeg;base64,{wrapped}");
     assert_eq!(convert_image(&image).unwrap(), wrapped);
+}
+
+#[test]
+fn an_image_that_declares_oversized_dimensions_is_returned_unchanged() {
+    let image = oversized_bmp_data_url();
+    assert_eq!(convert_image(&image).unwrap(), image);
 }
 
 #[test]

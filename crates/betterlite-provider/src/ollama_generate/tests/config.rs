@@ -69,7 +69,7 @@ fn get_config_drops_unset_fields_and_keeps_zero_and_empty() {
         serde_json::from_str(r#"{"system":"","num_predict":0}"#).unwrap();
     let found = config.get_config();
     let names: Vec<&str> = found.keys().map(String::as_str).collect();
-    assert_eq!(names, ["system", "num_predict"]);
+    assert_eq!(names, ["num_predict", "system"]);
     assert_eq!(found.get("system"), Some(&Json::Text(String::new())));
     assert_eq!(
         found.get("num_predict"),

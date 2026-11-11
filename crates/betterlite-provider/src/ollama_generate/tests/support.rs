@@ -145,6 +145,27 @@ pub(super) fn bmp_data_url() -> String {
     format!("data:image/bmp;base64,{}", bmp_base64())
 }
 
+pub(super) fn oversized_bmp_data_url() -> String {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"BM");
+    bytes.extend_from_slice(&58_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&54_u32.to_le_bytes());
+    bytes.extend_from_slice(&40_u32.to_le_bytes());
+    bytes.extend_from_slice(&100_000_i32.to_le_bytes());
+    bytes.extend_from_slice(&1_i32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&24_u16.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&4_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 255, 0, 0]);
+    format!("data:image/bmp;base64,{}", STANDARD.encode(bytes))
+}
+
 pub(super) fn text_message(role: &str, content: &str) -> Message {
     Message {
         role: role.to_owned(),

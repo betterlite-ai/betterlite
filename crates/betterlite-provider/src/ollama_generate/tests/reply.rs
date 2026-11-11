@@ -88,10 +88,15 @@ async fn a_plain_reply_carries_the_model_and_created_second() {
     Some("answer"),
     Some("why")
 )]
-#[case::empty_thinking_keeps_the_field(
+#[case::empty_thinking_falls_back_to_tags(
     r#"{"response":"answer","thinking":""}"#,
     Some("answer"),
-    Some("")
+    None
+)]
+#[case::empty_thinking_with_tags(
+    r#"{"response":"<think>a</think>b","thinking":""}"#,
+    Some("b"),
+    Some("a")
 )]
 #[case::tags(
     r#"{"response":"<think>why</think>answer"}"#,
@@ -281,6 +286,13 @@ async fn json_mode_keeps_the_thinking_field() {
     let found = found(r#"{"response":"{\"a\":1}","thinking":"why"}"#, &json_mode()).await;
     assert_eq!(found.message.content.as_deref(), Some("{\"a\":1}"));
     assert_eq!(found.message.reasoning_content.as_deref(), Some("why"));
+}
+
+#[tokio::test]
+async fn json_mode_drops_an_empty_thinking_field() {
+    let found = found(r#"{"response":"{\"a\":1}","thinking":""}"#, &json_mode()).await;
+    assert_eq!(found.message.content.as_deref(), Some("{\"a\":1}"));
+    assert_eq!(found.message.reasoning_content.as_deref(), None);
 }
 
 #[tokio::test]

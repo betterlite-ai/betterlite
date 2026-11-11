@@ -74,7 +74,7 @@ pub fn split_reasoning(
     response: &ResponseText,
     thinking: Option<&str>,
 ) -> (Option<String>, Option<String>) {
-    if let Some(field) = thinking {
+    if let Some(field) = thinking.filter(|text| !text.is_empty()) {
         let content = match response {
             ResponseText::Absent => Some(String::new()),
             ResponseText::Null => None,
@@ -141,7 +141,7 @@ fn json_mode_message(
     reply: &GenerateReply,
     ids: &dyn IdSource,
 ) -> Result<GeneratedMessage, OllamaError> {
-    let thinking = reply.thinking.clone();
+    let thinking = reply.thinking.clone().filter(|text| !text.is_empty());
     if reply.response.text().trim().is_empty() {
         return Ok((Some(String::new()), thinking, None, STOP_FINISH_REASON));
     }

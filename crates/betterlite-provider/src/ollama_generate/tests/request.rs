@@ -47,7 +47,7 @@ fn body(
 
 fn image_message(url: &str) -> Message {
     let json = r#"{"role":"user","content":[{"type":"text","text":"see"},{"type":"image_url","image_url":{"url":"URL"}}]}"#;
-    messages(&json.replace("URL", url)).remove(0)
+    messages(&format!("[{}]", json.replace("URL", url))).remove(0)
 }
 
 #[test]
@@ -388,7 +388,7 @@ fn a_request_message_with_tool_calls_renders_them() {
     let json = r#"{"role":"assistant","content":"x","tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{\"a\":1}"}}]}"#;
     let rendered = body(
         "llama3",
-        &messages(json),
+        &messages(&format!("[{json}]")),
         &IndexMap::new(),
         &RequestParams::default(),
         &BTreeMap::new(),
