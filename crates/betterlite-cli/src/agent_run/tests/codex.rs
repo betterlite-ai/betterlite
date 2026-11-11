@@ -38,6 +38,7 @@ fn replace_file_writes_the_text_and_cleans_the_staged_file() {
     replace_file(&target, "{\"models\":[]}", &files).unwrap();
     assert_eq!(fs::read_to_string(&target).unwrap(), "{\"models\":[]}");
     assert_eq!(files.staged_paths().len(), 1_usize);
+    assert_eq!(files.staged_paths()[0].parent(), Some(directory.path()));
     assert!(!files.staged_paths()[0].exists());
     assert_eq!(files_in(directory.path()), ["catalog.json"]);
 }
