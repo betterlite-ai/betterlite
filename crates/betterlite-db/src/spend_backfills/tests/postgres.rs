@@ -26,7 +26,7 @@ const NULL_KEY_SPEND_SQL: &str =
     r#"ALTER TABLE "LiteLLM_SpendLogs" ALTER COLUMN spend DROP NOT NULL"#;
 const NULL_KEYS_SQL: &str = r#"ALTER TABLE "LiteLLM_VerificationToken" ALTER COLUMN spend DROP NOT NULL, ALTER COLUMN total_spend DROP NOT NULL;
 ALTER TABLE "LiteLLM_DeletedVerificationToken" ALTER COLUMN spend DROP NOT NULL, ALTER COLUMN total_spend DROP NOT NULL;"#;
-const NULL_LIFETIMES_SQL: &str = r#"INSERT INTO "LiteLLM_VerificationToken" (token, spend, total_spend) VALUES ('null-spend', NULL, 1.0), ('null-total', 5.0, NULL), ('both-null', NULL, NULL), ('below', 5.0, 1.0), ('equal', 5.0, 5.0), ('higher', 10.0, 5.0);
+const NULL_LIFETIMES_SQL: &str = r#"INSERT INTO "LiteLLM_VerificationToken" (token, spend, total_spend) VALUES ('null-spend', NULL, 1.0), ('null-total', 5.0, NULL), ('both-null', NULL, NULL), ('below', 5.0, 1.0), ('equal', 5.0, 5.0), ('higher', 5.0, 10.0);
 INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token, spend, total_spend) VALUES ('archived-below', 'token-below', 5.0, 1.0), ('archived-null', 'token-null', NULL, 1.0);"#;
 const REJECT_ARCHIVED_SQL: &str = r#"CREATE FUNCTION reject_archived_key_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'archived key update rejected'; END $$;
 CREATE TRIGGER reject_archived_key_update BEFORE UPDATE ON "LiteLLM_DeletedVerificationToken" FOR EACH ROW EXECUTE FUNCTION reject_archived_key_update();"#;

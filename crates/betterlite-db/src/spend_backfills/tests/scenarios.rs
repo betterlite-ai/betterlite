@@ -602,7 +602,7 @@ pub(super) const NULL_LIFETIME_TOTALS: [ExpectedRow<'_>; 8] = [
     ExpectedRow {
         table: KeyTable::Active,
         id: "higher",
-        total_spend: Some((5, 0)),
+        total_spend: Some((10, 0)),
     },
     ExpectedRow {
         table: KeyTable::Archived,
