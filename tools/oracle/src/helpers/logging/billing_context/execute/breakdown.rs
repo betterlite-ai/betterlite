@@ -66,18 +66,14 @@ fn record_value(state: &LoggingState) -> Value {
             "data_residency": record.data_residency,
             "vertex_location": record.vertex_location,
         })),
-        "billed_token_rates": state.billed_token_rates.map_or(Value::Null, rates_value),
-    })
-}
-
-fn rates_value(rates: BilledTokenRates) -> Value {
-    json!({
-        "input_cost_per_token": rates.input_cost_per_token.normalize().to_string(),
-        "output_cost_per_token": rates.output_cost_per_token.normalize().to_string(),
-        "cache_read_input_token_cost": rates.cache_read_input_token_cost.normalize().to_string(),
-        "audio_read": rates.audio_read.normalize().to_string(),
-        "cache_write": rates.cache_write.normalize().to_string(),
-        "cache_write_1h": rates.cache_write_1h.normalize().to_string(),
-        "reasoning": rates.reasoning.normalize().to_string(),
+        "billed_token_rates": state.billed_token_rates.map_or(Value::Null, |rates| json!({
+            "input_cost_per_token": rates.input_cost_per_token.normalize().to_string(),
+            "output_cost_per_token": rates.output_cost_per_token.normalize().to_string(),
+            "cache_read_input_token_cost": rates.cache_read_input_token_cost.normalize().to_string(),
+            "audio_read": rates.audio_read.normalize().to_string(),
+            "cache_write": rates.cache_write.normalize().to_string(),
+            "cache_write_1h": rates.cache_write_1h.normalize().to_string(),
+            "reasoning": rates.reasoning.normalize().to_string(),
+        })),
     })
 }
