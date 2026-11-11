@@ -32,7 +32,7 @@ impl Default for Terminal {
 impl SelectionInput for Terminal {
     #[cfg_attr(test, mutants::skip)]
     fn is_interactive(&self) -> bool {
-        io::stdin().is_terminal()
+        io::stdin().is_terminal() && self.term.is_term()
     }
 
     #[cfg_attr(test, mutants::skip)]

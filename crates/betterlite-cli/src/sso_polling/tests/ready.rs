@@ -103,19 +103,69 @@ fn ready_keeps_polling_through_a_rate_limited_status() {
 }
 
 #[test]
-fn ready_fails_when_a_success_body_is_not_poll_data() {
+fn ready_retries_when_a_success_body_is_not_json() {
     let fixture = PollFixture::new(
-        scripted_transport(vec![Reply::Response(response(200, "not json"))]),
+        scripted_transport(vec![
+            Reply::Response(response(200, "not json")),
+            Reply::Response(response(200, r#"{"status":"ready"}"#)),
+        ]),
         Echo::default(),
     );
 
-    let error = fixture.poll(&wait_options()).expect_err("the body");
+    let data = fixture.poll(&wait_options()).expect("the poll");
 
-    assert!(
-        error
-            .to_string()
-            .contains("does not match the poll data shape")
+    assert!(data.is_some());
+    assert_eq!(
+        fixture.echo.recorded(),
+        vec!["Connection error (will retry): expected value at line 1 column 1"]
     );
+    assert_eq!(fixture.sleeper.intervals(), vec![Duration::from_secs(2)]);
+    assert_eq!(fixture.transport.calls().len(), 2);
+}
+
+#[test]
+fn ready_notices_a_non_json_success_body_on_the_connection_error_schedule() {
+    let mut options = wait_options();
+    options.http_error_log_every = 3;
+    options.connection_error_log_every = 5;
+    let broken = Reply::Response(response(200, "not json"));
+    let fixture = PollFixture::new(
+        scripted_transport(
+            repeated(&broken, 10)
+                .into_iter()
+                .chain([Reply::Response(response(200, r#"{"status":"ready"}"#))])
+                .collect(),
+        ),
+        Echo::default(),
+    );
+
+    let data = fixture.poll(&options).expect("the poll");
+
+    assert!(data.is_some());
+    assert_eq!(
+        fixture.echo.recorded(),
+        vec![
+            "Connection error (will retry): expected value at line 1 column 1",
+            "Connection error (will retry): expected value at line 1 column 1"
+        ]
+    );
+}
+
+#[test]
+fn ready_times_out_when_the_success_body_is_never_json() {
+    let mut options = wait_options();
+    options.total_timeout_seconds = 10;
+    let broken = Reply::Response(response(200, "<html>bad gateway</html>"));
+    let fixture = PollFixture::new(scripted_transport(repeated(&broken, 5)), Echo::default());
+
+    let data = fixture.poll(&options).expect("the poll");
+
+    assert!(data.is_none());
+    assert_eq!(fixture.transport.calls().len(), 5);
+    assert_eq!(fixture.sleeper.intervals(), vec![Duration::from_secs(2); 5]);
+    let notice = fixture.echo.recorded();
+    assert_eq!(notice.len(), 1);
+    assert!(notice[0].starts_with("Connection error (will retry): "));
 }
 
 #[test]

@@ -95,8 +95,18 @@ fn poll_attempt(poll: &ReadyPoll<'_>, attempt: u64) -> Result<Attempt, PollingEr
             }
         };
     if response.status == 200 {
-        let data: CliPollData =
-            wire::decode(&response.body).map_err(|source| PollingError::PollData { source })?;
+        let data: CliPollData = match wire::decode(&response.body) {
+            Ok(data) => data,
+            Err(source) if source.is_data_error() => {
+                return Err(PollingError::PollData { source });
+            }
+            Err(source) => {
+                if due(poll.options.connection_error_log_every, attempt) {
+                    (poll.echo)(&format!("Connection error (will retry): {source}"));
+                }
+                return Ok(Attempt::Retry);
+            }
+        };
         match data.status.as_deref() {
             Some("ready") => return Ok(Attempt::Ready(data)),
             Some("pending") => log_notice(poll.options.pending.as_ref(), attempt, poll.echo),
