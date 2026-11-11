@@ -244,7 +244,7 @@ fn test_unresolved_auth_parameters_are_named_in_an_error(#[case] name: &str) {
     assert_eq!(
         output,
         format!(
-            "ERROR the AWS auth flow for this credential parameter is not built here; the parameter is ignored parameter={name}\n"
+            "ERROR the AWS auth flow for this credential parameter is not built here; the parameter is ignored parameter=\"{name}\"\n"
         )
     );
 }
