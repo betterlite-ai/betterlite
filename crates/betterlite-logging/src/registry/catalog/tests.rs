@@ -127,7 +127,7 @@ fn failing_builder(
 
 #[rstest]
 #[case::unknown_name("not_a_callback")]
-#[case::stub_name("langsmith")]
+#[case::stub_name("langfuse")]
 fn an_unknown_or_unbuilt_name_fails_naming_the_callback(#[case] name: &str) {
     assert!(matches!(
         catalog().resolve_logger(name),
@@ -273,12 +273,12 @@ fn a_registry_with_the_catalog_refuses_an_unbuilt_name() {
     let mut registry = CallbackRegistry::new(100).with_resolver(resolver);
     assert!(matches!(
         registry.register_configured(
-            "langsmith",
+            "langfuse",
             &CallbackVars::new(),
             CallbackList::Success,
             flags()
         ),
-        Err(RegistryError::UnavailableAdapter { name }) if name == "langsmith"
+        Err(RegistryError::UnavailableAdapter { name }) if name == "langfuse"
     ));
     assert!(registry.list_identities(CallbackList::Success).is_empty());
     assert!(registry.loggers(CallbackPhase::Success).is_empty());
