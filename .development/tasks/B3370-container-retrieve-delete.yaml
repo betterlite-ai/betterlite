@@ -46,7 +46,7 @@ description: >-
   wrapper also goes through the exception dispatch, using the provider name as the caller gave it (not the decoded one), because
   the wrapper has no decoded value; the sync body uses the decoded one.
 
-  Out of the box, nothing registers a route: the HTTP routes belong to the umbrella B094 and its parts. Tests therefore drive the
+  Out of the box, nothing registers a route: the router registration is B7430, the handlers are B7326 and the mounts are B8635. Tests therefore drive the
   operations with a fake handler, a fake config lookup and a recording logging object, all injected by the constructor.
 
   Budget from the owned LiteLLM lines (about 260 non-blank lines of containers/main.py L490-L918 minus overloads and docstrings):

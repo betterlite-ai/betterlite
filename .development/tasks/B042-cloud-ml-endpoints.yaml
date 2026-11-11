@@ -1,0 +1,169 @@
+id: B042
+title: Prove the remaining cloud ML endpoints through the proxy
+description: >-
+  Finish the cloud ML umbrella at the remaining endpoint boundary. B8330 already binds Databricks
+  Responses, and B8331 binds watsonx rerank, but neither supplies HTTP cases for those operations.
+  B9220 binds B5842's watsonx audio config to the native transcription executor consumed by B1082.
+  Prove these three composed paths through the existing booted proxy. B080 owns POST
+  /v1/responses, /responses and /openai/v1/responses;
+  B083 owns POST /v1/audio/transcriptions and /audio/transcriptions; B085 owns POST /v2/rerank,
+  /v1/rerank and /rerank. Call their existing routes without registering any path or alias again.
+
+  Add only composition tests and HTTP fixtures here. Declare the tests from
+  crates/betterlite-server/src/cloud_ml_parity.rs and put them in cloud_ml_parity/tests.rs.
+  The rstest function cloud_routes_keep_aliases boots the production application with its real
+  startup inputs and drives one named case for each of the eight aliases above against a local
+  upstream. Assert that the route table builds without duplicate registration and every request
+  reaches the intended Responses, rerank or multipart transcription operation once. Reuse the
+  existing server fixture builders; no test may mount a replacement router or inject a fake
+  provider operation. There is no new parser, configuration section, provider registry or
+  application startup callback in this task.
+
+  Add kind: http cases under tools/oracle/cases/providers/cloud-ml-endpoints/. All cases boot the
+  real application with general_settings.master_key=sk-cloud-test, no database, one configured
+  deployment per operation and router_settings.num_retries=0. Use separate model aliases cloud-gpt,
+  cloud-rerank and cloud-audio whose litellm_params.model values are respectively
+  databricks/databricks-gpt-5-nano, watsonx/cross-encoder/ms-marco-minilm-l-12-v2 and
+  watsonx/whisper-large-v3-turbo. Resolve api_base from os.environ/CLOUD_API_BASE with the
+  case env pointing at {{upstream}}; Databricks uses {{upstream}}/serving-endpoints/. Use fixed
+  fixture keys, a fixed x-litellm-call-id per step and deterministic provider response ids. Compare
+  downstream status and complete JSON, content-type and call-id headers, plus captured upstream
+  method, path, query, JSON or normalized multipart, Authorization, Accept where present and
+  Content-Type. Ignore /error/message only for error wording, and individually justify any
+  runtime-generated response metadata ignored by the existing route cases; never ignore an
+  entire request, result, usage block or header map.
+
+  databricks-responses-aliases sends input hello to each of the three Responses aliases. Expect
+  one /serving-endpoints/responses POST per request, the provider prefix removed from model,
+  JSON content type, Bearer auth and a completed Responses object with fixed output item ids.
+  databricks-responses-stream uses /v1/responses with stream true and the same fixed Responses
+  event sequence B080 uses, proving the Databricks config reaches the native HTTP stream path.
+  databricks-responses-auth supplies both a PAT and DATABRICKS_CLIENT_ID/DATABRICKS_CLIENT_SECRET:
+  script /oidc/v1/token then the Responses reply in upstream arrival order, and verify that the
+  explicit PAT overwrites the fetched token on the final request, as the shared auth function
+  does after its OAuth branch. The token request must still happen; keep the scheme/host-only
+  token URL, basic credentials and grant_type=client_credentials, scope=all-apis form. Set
+  DATABRICKS_API_BASE to the mock too. databricks-responses-provider-error returns a controlled
+  upstream 400 and compares the actual proxy error type, param and string code without replacing
+  the Responses handler's error mapping.
+
+  watsonx-rerank-aliases sends query q, documents [a,b], top_n 1, return_documents true and
+  max_tokens_per_doc 16 to all three rerank aliases, with a deployment project_id and WATSONX_TOKEN
+  plus an explicit fixture API key required by the rerank credential resolver. The provider POST
+  is /ml/v1/text/rerank?version=2024-03-13, with inputs [{text:a},{text:b}], model_id, project_id,
+  parameters.return_options and parameters.truncate_input_tokens. Use a reply with id rerank-fixed,
+  results in index order [1,0], score and input fields, and input_token_count 7; compare the
+  preserved order, relevance_score, document and meta.tokens.input_tokens. watsonx-rerank-no-project
+  removes both project and space configuration and clears WATSONX_PROJECT_ID, WX_PROJECT_ID,
+  PROJECT_ID, WATSONX_DEPLOYMENT_SPACE_ID, WATSONX_SPACE_ID, WX_SPACE_ID and SPACE_ID, expecting
+  the existing 401 path before provider traffic. watsonx-rerank-provider-error uses an upstream 400
+  with the same valid credentials and project, proving the proxy error envelope after dispatch.
+
+  watsonx-audio-aliases uploads the same small valid WAV to both audio aliases, with language en,
+  prompt hello, response_format verbose_json, timestamp_granularities[]=word and both project_id
+  and space_id; only project_id reaches the upstream form. Store the WAV at
+  tools/oracle/fixtures/multipart-oracle/cloud-ml/sample.wav and reference cloud-ml/sample.wav
+  from B900's body_kind multipart file part. Use WATSONX_TOKEN and no IAM response in the mock.
+  Return text hello, a valid usage object, model ignored-upstream-model, duration 1 and segments [],
+  then compare the response without model and with the other fields intact. The upstream path is
+  /ml/v1/audio/transcriptions?version=2024-03-13. watsonx-audio-space uses only space_id and an
+  explicit api_version=2025-01-01, asserting that version is the sole URL query field and space_id
+  remains a form field. watsonx-audio-no-project supplies neither id and sets WATSONX_PROJECT_ID
+  to an unused fixture value: the upstream form must contain neither id and the request succeeds.
+  watsonx-audio-provider-error returns a controlled upstream 400 and compares B083's actual error
+  type, param and code, not the rerank route's mapping. cloud-endpoints-no-key repeats a valid
+  request at every listed alias without Authorization, with master_key still configured, and
+  compares the authentication response and zero upstream calls.
+
+  All production behavior in these references already has an owner, including B9220's concrete
+  Watsonx audio binding. This final part owns the missing end-to-end proof: allow about 150 native
+  composition-test lines and 500 HTTP case/fixture lines, with no new LiteLLM function body.
+scope:
+  paths:
+    - crates/betterlite-server/src/cloud_ml_parity.rs
+    - crates/betterlite-server/src/cloud_ml_parity/**
+    - tools/oracle/cases/providers/cloud-ml-endpoints/**
+    - tools/oracle/fixtures/multipart-oracle/cloud-ml/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9053-L9058
+    why: B5360 selects the tag and B9220 supplies its config; the umbrella tests their composed HTTP path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8160-L8183
+    why: B1082's existing native transcription call consumes B9220's operation; this is HTTP-test context, not another implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/audio_transcription/transformation.py#L29-L205
+    why: HTTP expectations for B5842's existing audio config, not ownership of another transform or decoder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L225-L280
+    why: B5970's auth and base/version policy is exercised through B9220 and the existing audio route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/responses/transformation.py#L27-L103
+    why: B5980 and B8330 own implementation and selection; this task adds the missing HTTP Responses proofs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L209-L262
+    why: The existing OAuth token transport is observed by the Responses credential precedence case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L338-L400
+    why: A PAT is applied after the OAuth exchange even when that exchange succeeded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L492-L519
+    why: B1079's Watsonx dispatch supplies the credentials and optional token to the generic rerank executor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/rerank/transformation.py#L28-L206
+    why: B5842's request and response transforms need a booted-proxy proof in addition to their helper cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L458
+    why: Existing B080 handler and all three POST aliases are exercised without registering them again.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12655-L12803
+    why: Existing B083 transcription decorators, required file upload and proxy response/error wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L136
+    why: Existing B085 aliases, authentication and rerank error envelope.
+dod:
+  - text: The production application mounts each of the eight existing aliases once and reaches the intended provider operation without a replacement router or fake provider.
+    proof: [composition-tests, oracle, new-http-cases]
+  - text: Databricks Responses uses all existing aliases, preserves streaming events, performs OAuth before the PAT overwrite and retains the proxy's provider-error envelope.
+    proof: [oracle, new-http-cases]
+  - text: Watsonx rerank retains its three aliases, mapped request fields, result order and usage, and distinguishes missing project credentials from an upstream failure.
+    proof: [oracle, new-http-cases]
+  - text: Watsonx audio sends the correct multipart file and id/version fields, allows absent project/space, removes only response model and preserves the audio route's error mapping.
+    proof: [composition-tests, oracle, new-http-cases]
+  - text: Every reused endpoint rejects an unauthenticated request before any provider call, with the pinned status, error type, param, code and headers.
+    proof: [oracle, new-http-cases]
+checks:
+  optional: []
+  commands:
+    - id: composition-tests
+      why: One of the endpoint families is still disconnected from the production application or an alias is registered twice.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::cloud_routes_keep_aliases(::|$)/)'
+    - id: new-http-cases
+      why: The remainder has no new HTTP cases or its audio upload fixture is missing.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/cloud-ml-endpoints)" &&
+        test -f tools/oracle/fixtures/multipart-oracle/cloud-ml/sample.wav &&
+        ! grep -L '^kind: http$' tools/oracle/cases/providers/cloud-ml-endpoints/*.yaml | grep -q .
+oracle_cases:
+  - tools/oracle/cases/providers/cloud-ml-endpoints/databricks-responses-aliases.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/databricks-responses-stream.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/databricks-responses-auth.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/databricks-responses-provider-error.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/watsonx-rerank-aliases.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/watsonx-rerank-no-project.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/watsonx-rerank-provider-error.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/watsonx-audio-aliases.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/watsonx-audio-space.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/watsonx-audio-no-project.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/watsonx-audio-provider-error.yaml
+  - tools/oracle/cases/providers/cloud-ml-endpoints/cloud-endpoints-no-key.yaml
+deviations: []
+out_of_scope:
+  - "B8330 owns _complete_oci, _complete_databricks, _complete_snowflake, their completion/embedding arms, OCI stream sends, Databricks OAuth transport and Responses binding; its existing chat/embedding cases remain there."
+  - "B8331 owns _complete_sap, _complete_sagemaker_chat, _complete_sagemaker, _complete_watsonx, _complete_watsonx_text, their completion/embedding arms, Watsonx rerank binding and the shared environment/transport inputs; B9220 owns the additional Watsonx audio binding."
+  - "B8332 owns _complete_replicate, _complete_huggingface, _complete_predibase, Hugging Face embedding/rerank binding and their HTTP cases; B6042 owns text_completion's Hugging Face branch at main.py L7574-L7600."
+  - "Every other main.py function keeps the callable owner in B500's Function ownership inventory, refined by B158/B159's B5650-B5659 and B6040-B6045 parts; B1082 owns all of transcription and atranscription, including the generic call used here."
+  - "The covered databricks.py, watsonx.py and oci.py type files contain no functions: B7929 owns Databricks Python types and B7928 owns OCI/Watsonx Python types, while B5841/B5980, B5842/B5970/B5972 and B5940/B5941/B5942/B5843 own their Rust provider records."
+  - "B5842 retains every audio/rerank method and decoder; B5970 retains every credential, IAM and URL helper; B5980 retains every Databricks Responses/auth method, with B507's inherited Responses transformation."
+  - "B5360 retains every media/resource selector, B1082 the SDK transcription facade, B1122 its contract, B2453 its HTTP executor, B1079/B1014 the rerank facade and B2454 its executor."
+  - "B080, B083 and B085 retain every route handler, auth layer and alias registration; B8610 composes the application and B8636 supplies Responses stream and rerank router ports."
+  - "B3627 and B8609 own /watsonx passthrough and its mounted HTTP cases; this task adds no passthrough mount."
+  - "B1686's broad provider-price handoff is already assigned to B5980 for Databricks cost_per_token and B1689 for Replicate timing; B1687 selects no cloud-ML image or grounding formula at this pin."
+pitfalls:
+  - "B5360's AudioTranscriptionConfigTag::IBMWatsonX is metadata until a production operation actually constructs and calls watsonx_audio."
+  - "The audio form uses model and accepts neither project nor space, while rerank sends model_id and requires a project or space outside deployment models."
+  - "Databricks OAuth can run even when a PAT ultimately replaces its token, so a one-reply mock would answer the token request with a Responses body."
+  - "Only env values expand {{upstream}}, so put CLOUD_API_BASE and DATABRICKS_API_BASE there rather than in mock reply JSON."
+  - "Use B900's normalized multipart comparison because the boundary is generated independently in each proxy."
+  - "An upstream status must pass through the actual audio or rerank handler before comparison because those handlers wrap errors differently."
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

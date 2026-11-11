@@ -6,7 +6,13 @@ use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use subtle::ConstantTimeEq as _;
 
+use crate::daily_usage::{self, DailyUsageRow};
+use crate::dashboard::{self, DashboardSeed};
+use crate::dashboard_governance::{self, DashboardGovernanceSeed};
+use crate::discovery_skills::DiscoverySeed;
 use crate::error::FixtureError;
+use crate::finops::FinOpsSeed;
+use crate::search_tools::SearchSeed;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +36,18 @@ pub struct FixtureSeed {
     pub budgets: Vec<BudgetRow>,
     #[serde(default)]
     pub jwt_mappings: Vec<JwtMapping>,
+    #[serde(default)]
+    pub daily_usage: Option<Vec<DailyUsageRow>>,
+    #[serde(default)]
+    pub finops: Option<FinOpsSeed>,
+    #[serde(default)]
+    pub discovery_skills: Option<DiscoverySeed>,
+    #[serde(default)]
+    pub search_tools: Option<SearchSeed>,
+    #[serde(default)]
+    pub dashboard: Option<DashboardSeed>,
+    #[serde(default)]
+    pub dashboard_governance: Option<DashboardGovernanceSeed>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -163,6 +181,22 @@ impl FixtureSeed {
             .map(|row| row.team_id.as_str())
             .collect::<BTreeSet<_>>();
         validate_references(&users, &teams, self)?;
+        self.validate_extensions()
+    }
+
+    fn validate_extensions(&self) -> Result<(), FixtureError> {
+        if let Some(rows) = &self.daily_usage {
+            daily_usage::validate(rows, &self.keys)?;
+        }
+        if let Some(finops) = &self.finops {
+            finops.validate(self)?;
+        }
+        if let Some(dashboard_seed) = &self.dashboard {
+            dashboard::validate(dashboard_seed, self)?;
+        }
+        if let Some(governance) = &self.dashboard_governance {
+            dashboard_governance::validate(governance, self)?;
+        }
         Ok(())
     }
 

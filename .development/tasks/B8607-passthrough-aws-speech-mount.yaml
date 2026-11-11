@@ -2,7 +2,7 @@ id: B8607
 title: Mount the Bedrock, Comprehend Medical and speech pass-through routes
 description: >-
   B8640 builds the shared pass-through state and calls `aws_speech::mount` with a stub body. This task fills crates/betterlite-server/src/app/pass_through/routes/aws_speech.rs (and its folder for tests) so the AWS signed routes of B3621 and the speech routes of B3625 answer through the booted proxy. It takes over their HTTP oracle cases, which could not pass at their own gates.
-  Everything comes from B8640's `PassThroughState`. Read B3621's and B3625's merged deps and fill each field from it: the general_settings map, the environment and secret readers (B198 and B8500), B594's AWS credential resolver and B595's SigV4 signer, the handler Arc for B3615's create_pass_through_route, and for /bedrock the router and the passthrough processor that B3620 calls for every non agent-runtime endpoint. When a field has no source there, stop and report.
+  Everything comes from B8640's `PassThroughState`. Read B3621's and B3625's merged deps and fill each field from it: the general_settings map, the environment and secret readers (B198 and B8500), B594's AWS credential resolver and B595's SigV4 signer, the handler Arc for B3615's create_pass_through_route, and for /bedrock the router and the passthrough processor that B3620 calls for every non agent-runtime endpoint. Pass the `speech_rates` adapter that B8931 exposes through `PassThroughState` to B3625 as its `SpeechRates`. When a field has no source there, stop and report.
 
   `mount(router, ps)` merges, inside the auth layers:
   - B3621's router: `/bedrock/{*endpoint}` for GET, POST, PUT, DELETE and PATCH, and `/comprehendmedical/{operation}` and `/comprehendmedical` for POST only;

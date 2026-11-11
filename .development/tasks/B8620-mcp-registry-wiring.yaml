@@ -67,6 +67,9 @@ description: >-
   6. SSO assertions: one B4663 SsoAssertionCache, and config_declares_id_jag computed once from the config file's
   mcp_servers as B4663's text says. B8622 builds the assertion store over both.
 
+  7. Separator check: McpState::build calls B8970's startup_diagnostics::check_separator once with the
+  MCP_TOOL_PREFIX_SEPARATOR value from item 2, so an invalid separator logs one warning per process.
+
 
   Tests in app::mcp::core:: and app::mcp::state:: : McpState::shared returns the same Arc on a second call; McpCore
   builds from a config with no database and reads the servers B8614 loaded into `shared.mcp_registry`; ProbeClient

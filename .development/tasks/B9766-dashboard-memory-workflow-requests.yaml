@@ -1,0 +1,92 @@
+id: B9766
+title: Cover memory editing and workflow timeline requests from the dashboard
+description: >-
+  Add the missing HTTP sequences for MemoryView and WorkflowRuns, about 500 lines of
+  cases. These pages need no new route or client implementation. B9090 retains their
+  complete component/helper/test trees. B860 supplies separate PostgreSQL databases;
+  create records through the existing API rather than an oracle helper or raw fixture SQL.
+
+  Memory inventory. GET /v1/memory sends page=1,page_size=50 and optional search from
+  the debounced text input. It does not send networking's optional key/key_prefix filters.
+  Read memories[],total and each memory_id,key,value,metadata,user_id,team_id,
+  created_at,created_by,updated_at,updated_by. POST /v1/memory sends {key,value,metadata?};
+  blank metadata is omitted. PUT /v1/memory/{key_path} sends {value,metadata}, with an
+  explicitly null metadata value when the editor is blank. Encode each key segment while
+  preserving slash separators, as networking.tsx does. DELETE on the same path has no body;
+  the component checks success and refetches. It opens the detail drawer from the list
+  record, so GET /v1/memory/{key_path} has no caller in this page. B8541 owns every listed
+  handler; B8770 mounts them. Cover a key containing both slash and space, create without
+  metadata, edit with an object, clear it with null, search and delete, plus a second
+  user's visibility and denied edit. Keep the default list request distinct from search.
+
+  Workflow inventory. WorkflowRuns uses fetch directly with proxyBaseUrl and
+  globalLitellmHeaderName, not a networking wrapper. GET /v1/workflows/runs?limit=100
+  reads runs[] run_id,status,workflow_type,created_at,metadata and its title,state,
+  pr_url,worktree_path,plan_text,grill_session_id,session_id display values. Selecting a
+  row GETs /v1/workflows/runs/{run_id}/events and /v1/workflows/runs/{run_id}/messages,
+  both without query/body. Read events[] event_id,event_type,step_name,sequence_number,
+  created_at,data and messages[] message_id,role,content,sequence_number,created_at.
+  The selected run itself comes from the list; no run-detail request or workflow mutation
+  is sent by the page. B3159 builds the runs list; B3160 builds events/messages. Setup
+  POSTs to the existing run/events/messages routes under those same owners, then issue
+  the three exact page reads. Use several events/messages to prove ordering and the
+  selected run boundary; include another owner's run and a forbidden timeline read.
+
+  Both pages use Authorization Bearer by default, or the configured dashboard header,
+  with application/json for JSON writes. Keep auth and ownership checks observable through
+  the booted proxy, including error status and actual detail or type/param/code fields.
+  Capture generated run/memory IDs independently and normalize only generated timestamps,
+  never the sequence numbers, memory key, content or ownership fields.
+
+  There are no on-disk HTTP cases for either page's paths. B8770's planned memory
+  malformed/no-database cases and B3159/B3160's planned generic workflow route tests
+  do not cover memory's omitted-versus-null metadata, segment-preserving key encoding,
+  limit=100 or the list-to-selected-timeline sequence. No browser test is required for
+  these new HTTP contracts; B144's harness owns the retained application's boot.
+scope:
+  paths:
+    - tools/oracle/cases/ui/memory-workflows/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7871-L7970
+    why: Memory list query and segment-preserving CRUD paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/memory/_components/MemoryView.tsx#L26-L173
+    why: Actual list/search defaults and omitted create versus null update metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/workflows/WorkflowRuns.tsx#L374-L445
+    why: Three direct fetch calls bypass networking.tsx and use limit=100.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L285-L385
+    why: Existing create/list decorators under /v1/memory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L429-L562
+    why: Existing PUT/DELETE path-key routes and ownership checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L194-L271
+    why: Run creation for fixture setup and the page's list route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L353-L530
+    why: Event/message write setup and the two read decorators.
+dod:
+  - text: Memory listing/search and CRUD preserve slash-containing keys and omitted/null metadata with the page's ownership boundaries.
+    proof: [memory-timeline-cases, oracle]
+  - text: A limit-100 run list selects the correct ordered event/message timeline without leaking another user's run.
+    proof: [memory-timeline-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: memory-timeline-cases
+      why: Isolated route tests omit the exact memory editor and workflow selection requests.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/memory-workflows)"
+oracle_cases:
+  - tools/oracle/cases/ui/memory-workflows/memory-search-edit-clear-delete.yaml
+  - tools/oracle/cases/ui/memory-workflows/memory-user-boundaries.yaml
+  - tools/oracle/cases/ui/memory-workflows/run-list-limit-and-selected-timeline.yaml
+  - tools/oracle/cases/ui/memory-workflows/workflow-owner-boundaries.yaml
+deviations: []
+out_of_scope:
+  - B8541/B8770 implement and mount memory; B3159/B3160 keep all workflow endpoint functions, including setup writes not called by the page.
+  - Every memory/workflows component, drawer, formatting helper and test remains in B9090's retained source intake.
+pitfalls:
+  - Encoding an entire memory key would turn its slash separators into a different route.
+  - WorkflowRuns never fetches run detail after selecting a row.
+  - Memory create omits blank metadata while memory edit explicitly sends null.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
