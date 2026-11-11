@@ -17,24 +17,6 @@ pub fn construction(credential: &'static str, error: GrantError) -> DefaultChain
     }
 }
 
-pub fn required<'value>(
-    value: Option<&'value str>,
-    variable: &'static str,
-) -> Result<&'value str, DefaultChainError> {
-    match value {
-        Some(value) => Ok(value),
-        None => Err(DefaultChainError::MissingEnvironment { variable }),
-    }
-}
-
-#[must_use]
-pub fn non_empty(value: Option<&str>) -> Option<&str> {
-    match value {
-        Some(text) if !text.is_empty() => Some(text),
-        Some(_) | None => None,
-    }
-}
-
 #[must_use]
 pub const fn identity(client_id: Option<&str>) -> ManagedIdentityIdentity {
     match client_id {
@@ -54,7 +36,7 @@ pub fn missing_workload_arguments(environment: &ChainEnvironment) -> Vec<&'stati
         ),
     ]
     .into_iter()
-    .filter(|(_, value)| non_empty(*value).is_none())
+    .filter(|(_, value)| value.as_ref().is_none_or(|text| text.is_empty()))
     .map(|(name, _)| name)
     .collect()
 }
@@ -62,9 +44,21 @@ pub fn missing_workload_arguments(environment: &ChainEnvironment) -> Vec<&'stati
 #[must_use]
 pub fn workload_record(environment: &ChainEnvironment, scope: &str) -> Option<WorkloadRecord> {
     Some(WorkloadRecord {
-        client_id: non_empty(environment.client_id.as_deref())?.to_owned(),
-        tenant_id: non_empty(environment.tenant_id.as_deref())?.to_owned(),
-        token_file: non_empty(environment.federated_token_file.as_deref())?.to_owned(),
+        client_id: environment
+            .client_id
+            .as_deref()
+            .filter(|text| !text.is_empty())?
+            .to_owned(),
+        tenant_id: environment
+            .tenant_id
+            .as_deref()
+            .filter(|text| !text.is_empty())?
+            .to_owned(),
+        token_file: environment
+            .federated_token_file
+            .as_deref()
+            .filter(|text| !text.is_empty())?
+            .to_owned(),
         scope: scope.to_owned(),
     })
 }

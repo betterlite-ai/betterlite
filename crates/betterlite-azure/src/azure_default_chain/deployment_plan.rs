@@ -1,8 +1,8 @@
-use super::chain::{Chain, ChainName, Link, ManagedIdentityIdentity};
+use super::chain::{Chain, ChainName, Link};
 use super::environment::ChainEnvironment;
 use super::error::DefaultChainError;
 use super::grant::{ChainPlacement, Grants, ManagedIdentityRecord};
-use super::plan::{construction, non_empty, workload_link, workload_record};
+use super::plan::{construction, identity, workload_link, workload_record};
 
 // LiteLLM builds a plain ChainedTokenCredential here, so the workload and both identity links are separate
 pub fn deployment_chain<'grants, F>(
@@ -17,7 +17,11 @@ where
     if workload_record(environment, scope).is_some() {
         links.push(workload_link(environment, grants, scope)?);
     }
-    if let Some(client_id) = non_empty(environment.client_id.as_deref()) {
+    if let Some(client_id) = environment
+        .client_id
+        .as_deref()
+        .filter(|text| !text.is_empty())
+    {
         let record = ManagedIdentityRecord {
             client_id: Some(client_id.to_owned()),
             exclude_workload_identity: false,
@@ -25,12 +29,7 @@ where
             placement: ChainPlacement::Chained,
             scope: scope.to_owned(),
         };
-        links.push(Link::ManagedIdentity {
-            identity: ManagedIdentityIdentity::UserAssigned,
-            grant: grants
-                .managed_identity(&record)
-                .map_err(|error| construction("ManagedIdentityCredential", error))?,
-        });
+        links.push(managed_link(&record, grants)?);
     }
     let system = ManagedIdentityRecord {
         client_id: None,
@@ -39,15 +38,25 @@ where
         placement: ChainPlacement::Chained,
         scope: scope.to_owned(),
     };
-    links.push(Link::ManagedIdentity {
-        identity: ManagedIdentityIdentity::SystemAssigned,
-        grant: grants
-            .managed_identity(&system)
-            .map_err(|error| construction("ManagedIdentityCredential", error))?,
-    });
+    links.push(managed_link(&system, grants)?);
     Ok(Chain {
         name: ChainName::ChainedTokenCredential,
         links,
         warnings: Vec::new(),
+    })
+}
+
+fn managed_link<'grants, F>(
+    record: &ManagedIdentityRecord,
+    grants: &'grants F,
+) -> Result<Link<F::Grant<'grants>>, DefaultChainError>
+where
+    F: Grants + 'grants,
+{
+    Ok(Link::ManagedIdentity {
+        identity: identity(record.client_id.as_deref()),
+        grant: grants
+            .managed_identity(record)
+            .map_err(|error| construction("ManagedIdentityCredential", error))?,
     })
 }
