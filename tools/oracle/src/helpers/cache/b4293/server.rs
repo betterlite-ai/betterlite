@@ -121,14 +121,6 @@ pub(crate) fn set_expiries(server: &FakeRedis) -> Vec<serde_json::Value> {
         .collect()
 }
 
-pub(crate) fn delete_lengths(server: &FakeRedis) -> Vec<usize> {
-    server
-        .received("DEL")
-        .iter()
-        .map(|command| command.len().saturating_sub(1))
-        .collect()
-}
-
 async fn accept_loop(listener: TcpListener, state: Arc<Mutex<State>>) {
     let mut connections = JoinSet::new();
     loop {

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use betterlite_redis::request_batch::scope::{
 use serde_json::json;
 
 use super::input::{Call, Fields};
-use super::server::{FakeRedis, Frame, connect_cache, delete_lengths, set_expiries};
+use super::server::{FakeRedis, Frame, connect_cache, set_expiries};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 const EXPIRY: Duration = Duration::from_secs(1);
@@ -37,7 +38,7 @@ impl Scenario {
         let memory = LocalMemoryOps::new(1024, Arc::new(move || clock)).or_value_error()?;
         let settings = DualCacheSettings {
             default_in_memory_ttl: call.default_in_memory_ttl,
-            ..DualCacheSettings::from_environment(&call.environment)
+            ..DualCacheSettings::from_environment(&BTreeMap::<String, String>::new())
         };
         let cache = DualCache::new(Arc::new(memory), Some(Arc::clone(&redis)), settings);
         Ok(Self {
@@ -65,7 +66,6 @@ pub(crate) async fn run(call: &Call) -> HelperResult {
         Call::IncrementFallback(fields) => increment_fallback(fields).await,
         Call::SetPreCallReturnsBatchOrNone(fields) => pre_call(fields).await,
         Call::SetPipelineAppliesSingleTtl(fields) => pipeline(fields).await,
-        Call::DeleteCacheKeysChunksRedis(fields) => delete_keys(fields).await,
     }
 }
 
@@ -171,26 +171,4 @@ async fn pipeline(call: &Fields) -> HelperResult {
         ttls.push(scenario.cache.async_get_ttl(key).await.or_value_error()?);
     }
     Ok(json!({"ttls": ttls, "sets": set_expiries(&scenario.server)}))
-}
-
-async fn delete_keys(call: &Fields) -> HelperResult {
-    let scenario = Scenario::start(call).await?;
-    let keys: Vec<String> = (0..call.key_count)
-        .map(|index| format!("key-{index}"))
-        .collect();
-    for key in &keys {
-        scenario
-            .cache
-            .set_cache(key, &Json::Text("value".to_owned()), LOCAL);
-    }
-    scenario
-        .cache
-        .async_delete_cache_keys(&keys)
-        .await
-        .or_value_error()?;
-    let remaining = keys
-        .iter()
-        .filter(|key| scenario.cache.get_cache(key, true).is_some())
-        .count();
-    Ok(json!({"chunks": delete_lengths(&scenario.server), "remaining": remaining}))
 }
