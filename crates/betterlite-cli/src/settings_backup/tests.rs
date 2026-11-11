@@ -445,7 +445,7 @@ fn login_probe_usable_login_needs_a_key() {
     let files = token_file(directory.path());
     seed(&files, &record());
     let mut vault = FakeVault::unreachable_read();
-    assert!(!usable_login(None, &files, &mut vault, 1_000.0_f64, 24));
+    assert!(!usable_login(None, &files, &mut vault, 1_000.0_f64, 24).expect("checks the login"));
 }
 
 #[test]
@@ -454,13 +454,9 @@ fn login_probe_usable_login_needs_a_stored_credential() {
     let files = token_file(directory.path());
     let mut vault = FakeVault::unreachable_read();
     let key = secret("sk-context");
-    assert!(!usable_login(
-        Some(&key),
-        &files,
-        &mut vault,
-        1_000.0_f64,
-        24
-    ));
+    assert!(
+        !usable_login(Some(&key), &files, &mut vault, 1_000.0_f64, 24).expect("checks the login")
+    );
 }
 
 #[rstest]
@@ -480,7 +476,7 @@ fn login_probe_usable_login_follows_freshness(
     let mut vault = FakeVault::unreachable_read();
     let key = secret("sk-context");
     assert_eq!(
-        usable_login(Some(&key), &files, &mut vault, 1_000.0_f64, 24),
+        usable_login(Some(&key), &files, &mut vault, 1_000.0_f64, 24).expect("checks the login"),
         usable
     );
 }
@@ -532,7 +528,7 @@ impl ProbeFixture {
             warn: &warn,
             token_path: Path::new("/home/tester/.litellm/token.json"),
         };
-        key_resolved_on_the_way_in(request)
+        key_resolved_on_the_way_in(request).expect("resolves the key")
     }
 
     fn warnings(&self) -> Vec<String> {
@@ -620,7 +616,10 @@ fn login_probe_stored_login_is_pkce_follows_the_refresh_token(#[case] renewable:
     }
     seed(&files, &stored);
     let mut vault = FakeVault::unreachable_read();
-    assert_eq!(stored_login_is_pkce(&files, &mut vault), renewable);
+    assert_eq!(
+        stored_login_is_pkce(&files, &mut vault).expect("checks the login"),
+        renewable
+    );
 }
 
 #[test]
@@ -628,7 +627,7 @@ fn login_probe_stored_login_is_pkce_needs_a_stored_credential() {
     let directory = TempDir::new().expect("directory");
     let files = token_file(directory.path());
     let mut vault = FakeVault::unreachable_read();
-    assert!(!stored_login_is_pkce(&files, &mut vault));
+    assert!(!stored_login_is_pkce(&files, &mut vault).expect("checks the login"));
 }
 
 #[test]
@@ -640,7 +639,7 @@ fn login_probe_stored_login_is_pkce_ignores_an_unreadable_vault() {
     seed(&files, &stored);
     let mut vault = FakeVault::unreachable_read();
     vault.read_failure = Some(KeyringUnusable::KeyringUnreachable);
-    assert!(!stored_login_is_pkce(&files, &mut vault));
+    assert!(!stored_login_is_pkce(&files, &mut vault).expect("checks the login"));
 }
 
 #[test]

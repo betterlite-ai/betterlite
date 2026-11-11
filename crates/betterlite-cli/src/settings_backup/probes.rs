@@ -12,6 +12,7 @@ use crate::keyring::SecretVault;
 use crate::pkce_login::{Http, WallClock};
 use crate::token_records::freshness::is_token_fresh;
 
+use super::error::BackupError;
 use super::runtime::block_on;
 
 pub struct KeyResolvedRequest<'request, H, W> {
@@ -25,35 +26,32 @@ pub struct KeyResolvedRequest<'request, H, W> {
     pub token_path: &'request Path,
 }
 
-#[must_use]
 pub fn usable_login(
     api_key: Option<&SecretString>,
     files: &dyn CredentialFiles,
     vault: &mut (dyn SecretVault + Send + Sync),
     now_seconds: f64,
     expiration_hours: i64,
-) -> bool {
+) -> Result<bool, BackupError> {
     if api_key.is_none() {
-        return false;
+        return Ok(false);
     }
-    match block_on(load_cli_token(files, vault)) {
-        Ok(Some(record)) => is_token_fresh(&record, now_seconds, expiration_hours),
-        Ok(None) | Err(_) => false,
-    }
+    let loaded =
+        block_on(load_cli_token(files, vault)).map_err(|source| BackupError::Runtime { source })?;
+    Ok(loaded.is_some_and(|record| is_token_fresh(&record, now_seconds, expiration_hours)))
 }
 
-#[must_use]
 pub fn key_resolved_on_the_way_in<H, W>(
     request: KeyResolvedRequest<'_, H, W>,
-) -> Option<SecretString>
+) -> Result<Option<SecretString>, BackupError>
 where
     H: Http + Send + Sync + 'static,
     W: WallClock + Send + Sync + 'static,
 {
     if request.context.api_key_from_token_file {
-        return request.context.api_key.clone();
+        return Ok(request.context.api_key.clone());
     }
-    let loaded = block_on(get_stored_api_key(StoredApiKeyRequest {
+    block_on(get_stored_api_key(StoredApiKeyRequest {
         expected_base_url: Some(request.base_url),
         files: request.files,
         vault: request.vault,
@@ -61,17 +59,15 @@ where
         clock: request.clock,
         warn: request.warn,
         token_path: request.token_path,
-    }));
-    loaded.unwrap_or_default()
+    }))
+    .map_err(|source| BackupError::Runtime { source })
 }
 
-#[must_use]
 pub fn stored_login_is_pkce(
     files: &dyn CredentialFiles,
     vault: &mut (dyn SecretVault + Send + Sync),
-) -> bool {
-    match block_on(load_cli_token(files, vault)) {
-        Ok(Some(record)) => record.refresh_token.is_some(),
-        Ok(None) | Err(_) => false,
-    }
+) -> Result<bool, BackupError> {
+    let loaded =
+        block_on(load_cli_token(files, vault)).map_err(|source| BackupError::Runtime { source })?;
+    Ok(loaded.is_some_and(|record| record.refresh_token.is_some()))
 }
