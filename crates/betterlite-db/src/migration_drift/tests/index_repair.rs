@@ -114,11 +114,13 @@ async fn repair_connects_over_direct_url() {
         invalid_unique_index(raw, "LiteLLM_Direct", "LiteLLM_direct_idx").await;
         deduplicate(raw, "LiteLLM_Direct").await;
         let absent = "postgresql://postgres:postgres@127.0.0.1:1/absent";
+        let database_url = format!("{absent}?schema={}", database.schema);
+        assert_eq!(
+            prisma_schema_param(&database_url).unwrap().as_deref(),
+            Some(database.schema.as_str())
+        );
         let check = MigrationDriftCheck {
-            database_url: Some(SecretString::from(format!(
-                "{absent}&schema={}",
-                database.schema
-            ))),
+            database_url: Some(SecretString::from(database_url)),
             direct_url: Some(database.direct_url.clone()),
         };
         assert!(repair_invalid_indexes(&check, "30s").await);

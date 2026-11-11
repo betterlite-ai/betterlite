@@ -15,6 +15,7 @@ use super::index_repair::{
     INDEX_REPAIR_LOCK_KEY, InvalidIndex, index_repair, invalid_litellm_indexes,
     repair_invalid_indexes, repair_under_migration_lock,
 };
+use crate::migration_ledger::environment::prisma_schema_param;
 use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
 use crate::schema_agent_identity::MIGRATION_CATALOG as B709;
 use crate::schema_contract::catalog::Attribute;
