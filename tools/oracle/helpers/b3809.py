@@ -3,25 +3,15 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 from fastapi import HTTPException
 from litellm.proxy.guardrails.guardrail_hooks import llm_as_a_judge
-from litellm.proxy.guardrails.guardrail_hooks.llm_as_a_judge import (
-    LLMAsAJudgeGuardrail,
-    initialize_guardrail,
-)
+from litellm.proxy.guardrails.guardrail_hooks.llm_as_a_judge import initialize_guardrail
 from litellm.router import Router
 from litellm.types.guardrails import LitellmParams
 from litellm.types.utils import ModelResponse
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-RECORD_KEYS = (
-    "guardrail_name",
-    "guardrail_provider",
-    "guardrail_mode",
-    "guardrail_response",
-    "guardrail_status",
-    "start_time",
-    "end_time",
-)
+RECORD_KEYS = ("guardrail_name", "guardrail_provider", "guardrail_mode", "guardrail_response",
+               "guardrail_status", "start_time", "end_time")
 
 
 class JudgeOutcome(TypedDict, total=False):
@@ -66,15 +56,11 @@ class _FakeJudge:
         return ModelResponse(choices=[choice])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
 
 
-def _initialize(config: GuardrailConfig) -> LLMAsAJudgeGuardrail:
-    parameters = LitellmParams(**config["litellm_params"])
-    entry = {"guardrail_name": config["guardrail_name"], "litellm_params": parameters}
-    return initialize_guardrail(parameters, entry)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
-
-
 def run(input_value: Input) -> Json:
     config = input_value["guardrail"]
-    guardrail = _initialize(config)
+    parameters = LitellmParams(**config["litellm_params"])
+    entry = {"guardrail_name": config["guardrail_name"], "litellm_params": parameters}
+    guardrail = initialize_guardrail(parameters, entry)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/
     captured: dict[str, Json] = {}
     outcome = input_value.get("judge")
     if outcome is None:
