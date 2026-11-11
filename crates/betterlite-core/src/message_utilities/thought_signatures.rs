@@ -43,28 +43,24 @@ pub fn strip_assistant_tool_calls(
     message: &Json,
     separator: &str,
 ) -> Result<Json, ThoughtSignatureError> {
-    let Some(fields) = json::object(message)
-        .filter(|fields| fields.get("role").and_then(json::text) == Some("assistant"))
-    else {
+    let Some(fields) = json::object(message) else {
         return Ok(message.clone());
     };
-    let Some(Json::List(tool_calls)) = fields.get("tool_calls") else {
+    let is_assistant = fields.get("role").and_then(json::text) == Some("assistant");
+    let Some(Json::List(tool_calls)) = fields.get("tool_calls").filter(|_| is_assistant) else {
         return Ok(message.clone());
     };
     let mut updated = Vec::with_capacity(tool_calls.len());
     for tool_call in tool_calls {
-        let Some(call_fields) = json::object(tool_call) else {
-            updated.push(tool_call.clone());
-            continue;
-        };
-        let mut cleaned_call = call_fields.clone();
-        if let Some(id) = cleaned_call.get("id").and_then(json::text)
+        let mut cleaned_call = tool_call.clone();
+        if let Json::Object(call_fields) = &mut cleaned_call
+            && let Some(id) = call_fields.get("id").and_then(json::text)
             && id.contains(separator)
         {
             let cleaned = strip_signature_from_id(id, separator)?;
-            cleaned_call.insert(String::from("id"), Json::Text(cleaned));
+            call_fields.insert(String::from("id"), Json::Text(cleaned));
         }
-        updated.push(Json::Object(cleaned_call));
+        updated.push(cleaned_call);
     }
     let mut processed_fields = fields.clone();
     processed_fields.insert(String::from("tool_calls"), Json::List(updated));
@@ -75,20 +71,16 @@ pub fn process_tool_message_id(
     message: &Json,
     separator: &str,
 ) -> Result<Json, ThoughtSignatureError> {
-    let Some(tool_call_id) = json::object(message)
-        .filter(|fields| fields.get("role").and_then(json::text) == Some("tool"))
-        .and_then(|fields| fields.get("tool_call_id"))
-        .and_then(json::text)
-    else {
-        return Ok(message.clone());
-    };
-    if !tool_call_id.contains(separator) {
-        return Ok(message.clone());
+    let mut processed = message.clone();
+    if let Json::Object(fields) = &mut processed
+        && fields.get("role").and_then(json::text) == Some("tool")
+        && let Some(tool_call_id) = fields.get("tool_call_id").and_then(json::text)
+        && tool_call_id.contains(separator)
+    {
+        let cleaned = strip_signature_from_id(tool_call_id, separator)?;
+        fields.insert(String::from("tool_call_id"), Json::Text(cleaned));
     }
-    let cleaned = strip_signature_from_id(tool_call_id, separator)?;
-    let mut processed = json::object(message).cloned().unwrap_or_default();
-    processed.insert(String::from("tool_call_id"), Json::Text(cleaned));
-    Ok(Json::Object(processed))
+    Ok(processed)
 }
 
 pub fn strip_signatures_from_messages(

@@ -15,27 +15,19 @@ pub(crate) fn resolved<'catalog>(
     catalog: &'catalog ModelCatalog,
     model: &str,
 ) -> Option<&'catalog CatalogEntry> {
-    let mut candidates = vec![model];
-    if let Some((_provider, rest)) = model.split_once('/') {
-        candidates.push(rest);
-    }
-    for candidate in candidates {
-        let found = exact(catalog, candidate).or_else(|| case_insensitive(catalog, candidate));
-        if found.is_some() {
-            return found;
-        }
-    }
-    None
-}
-
-fn case_insensitive<'catalog>(
-    catalog: &'catalog ModelCatalog,
-    model: &str,
-) -> Option<&'catalog CatalogEntry> {
-    let wanted = model.to_lowercase();
-    for (key, canonical) in &catalog.lookup {
-        if key.to_lowercase() == wanted {
-            return catalog.entries.get(canonical.as_ref());
+    let unprefixed = model.split_once('/').map(|(_provider, rest)| rest);
+    for name in [Some(model), unprefixed].into_iter().flatten() {
+        let wanted = name.to_lowercase();
+        let canonical = catalog.lookup.get(name).or_else(|| {
+            let folded = catalog
+                .lookup
+                .iter()
+                .find(|(key, _)| key.to_lowercase() == wanted);
+            folded.map(|(_key, canonical)| canonical)
+        });
+        if let Some(entry) = canonical.and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+        {
+            return Some(entry);
         }
     }
     None
