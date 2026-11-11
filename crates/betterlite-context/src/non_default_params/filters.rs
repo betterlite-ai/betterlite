@@ -1,0 +1,91 @@
+use std::collections::BTreeSet;
+
+use betterlite_models::controls::json_value::JsonValue;
+
+use super::Params;
+use super::names::{DEFAULT_CHAT_COMPLETION_PARAMS, PROVIDER_UNVALIDATED_PARAMS};
+use crate::owned_parameter_names::is_litellm_owned_kwarg;
+
+// Every default in the tables is null, so a value is non-default when it is not null.
+#[must_use]
+pub fn select_non_default_params(
+    passed_params: &Params,
+    default_names: &[&str],
+    additional_drop_params: &[String],
+) -> Params {
+    let mut selected = passed_params.clone();
+    selected.retain(|key, value| {
+        default_names.contains(&key.as_str())
+            && !matches!(value, JsonValue::Null)
+            && !additional_drop_params.contains(key)
+    });
+    selected
+}
+
+pub fn bedrock_route_for_request<R, E, F>(
+    model: &str,
+    passed_params: &Params,
+    additional_drop_params: &[String],
+    route: F,
+) -> Result<R, E>
+where
+    F: FnOnce(&str, &Params) -> Result<R, E>,
+{
+    let mut filtered = passed_params.clone();
+    filtered.retain(|key, _| !additional_drop_params.contains(key));
+    route(model, &filtered)
+}
+
+#[must_use]
+pub fn get_non_default_params(passed_params: &Params) -> Params {
+    let mut selected =
+        select_non_default_params(passed_params, DEFAULT_CHAT_COMPLETION_PARAMS, &[]);
+    selected.retain(|key, _| !matches!(key.as_str(), "model" | "custom_llm_provider"));
+    selected
+}
+
+#[must_use]
+pub fn provider_rejectable_params(passed_params: &Params) -> BTreeSet<String> {
+    get_non_default_params(passed_params)
+        .into_keys()
+        .filter(|key| !PROVIDER_UNVALIDATED_PARAMS.contains(&key.as_str()))
+        .collect()
+}
+
+#[must_use]
+pub fn filter_out_litellm_params(kwargs: &Params, excluding: &[&str]) -> Params {
+    let mut kept = kwargs.clone();
+    kept.retain(|key, _| !excluding.contains(&key.as_str()) && !is_litellm_owned_kwarg(key));
+    kept
+}
+
+// Without a supported list there is nothing to send, so the result is empty.
+#[must_use]
+pub fn remove_unsupported_params(
+    mut non_default_params: Params,
+    supported_openai_params: Option<&[String]>,
+) -> Params {
+    let Some(supported) = supported_openai_params else {
+        return Params::new();
+    };
+    non_default_params.retain(|key, _| supported.contains(key));
+    non_default_params
+}
+
+// A param the caller allowed moves to optional_params only when it was actually sent.
+#[must_use]
+pub fn apply_openai_param_overrides(
+    mut optional_params: Params,
+    non_default_params: &mut Params,
+    allowed_openai_params: &[String],
+) -> Params {
+    for param in allowed_openai_params {
+        if optional_params.contains_key(param) {
+            continue;
+        }
+        if let Some(value) = non_default_params.remove(param) {
+            optional_params.insert(param.clone(), value);
+        }
+    }
+    optional_params
+}
