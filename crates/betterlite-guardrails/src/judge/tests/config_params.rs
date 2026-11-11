@@ -119,7 +119,10 @@ fn judge_config_tests_behavior(#[case] case: Case) {
                     .expect_err("wrong type");
             assert!(matches!(
                 error,
-                JudgeError::InvalidParam { key: "judge_model" }
+                JudgeError::InvalidParam {
+                    key: "judge_model",
+                    ..
+                }
             ));
         }
         Case::IntegerThreshold => {
@@ -161,7 +164,8 @@ fn judge_config_tests_behavior(#[case] case: Case) {
             assert!(matches!(
                 error,
                 JudgeError::InvalidParam {
-                    key: "overall_threshold"
+                    key: "overall_threshold",
+                    ..
                 }
             ));
         }

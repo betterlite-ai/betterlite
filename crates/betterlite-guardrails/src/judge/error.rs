@@ -40,7 +40,11 @@ pub enum JudgeError {
     )]
     UnsupportedEventHook { hook: GuardrailEventHook },
     #[error("litellm_params.{key} is not the declared type")]
-    InvalidParam { key: &'static str },
+    InvalidParam {
+        key: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the judge model returned no choices")]
     NoChoices,
     #[error("the judge model call failed: {source}")]
