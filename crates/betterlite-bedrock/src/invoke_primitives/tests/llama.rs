@@ -33,8 +33,7 @@ fn convert(
 
 pub(super) fn llama_local_template() {
     custom_bypass();
-    local_asset();
-    missing_local_asset();
+    local_assets();
     generic_fallback();
     empty_delimiters();
 }
@@ -51,7 +50,7 @@ fn custom_bypass() {
     );
 }
 
-fn local_asset() {
+fn local_assets() {
     let exchange = messages(r#"[{"role":"user","content":"hi"}]"#);
     assert_eq!(
         convert(
@@ -63,10 +62,7 @@ fn local_asset() {
         .unwrap(),
         LLAMA3_RENDERED
     );
-}
-
-fn missing_local_asset() {
-    let exchange = messages(r#"[{"role":"user","content":"hi"}]"#);
+    // missing local assets fail with LiteLLM's exact message instead of a download
     let error = convert(
         LLAMA3_INSTRUCT_MODEL,
         &exchange,

@@ -73,9 +73,32 @@ pub async fn convert_messages_to_prompt(
             | BedrockInvokeProvider::Mistral
             | BedrockInvokeProvider::Meta
             | BedrockInvokeProvider::Llama,
-        ) => family_prompt(&conversion).await,
+        ) => {
+            let template = bedrock_template(&conversion.model.to_lowercase());
+            factory_prompt(
+                &conversion,
+                FactoryPrompt {
+                    model: conversion.model,
+                    custom_provider: Some("bedrock"),
+                    local_template: template,
+                    operation: "bedrock",
+                },
+            )
+            .await
+        }
         Some(BedrockInvokeProvider::Cohere) => cohere_prompt(conversion.messages),
-        Some(BedrockInvokeProvider::DeepseekR1) => deepseek_prompt(&conversion).await,
+        Some(BedrockInvokeProvider::DeepseekR1) => {
+            factory_prompt(
+                &conversion,
+                FactoryPrompt {
+                    model: DEEPSEEK_MODEL,
+                    custom_provider: None,
+                    local_template: Some(DEEPSEEK_MODEL),
+                    operation: "deepseek_r1",
+                },
+            )
+            .await
+        }
         Some(
             BedrockInvokeProvider::Ai21
             | BedrockInvokeProvider::Nova
@@ -110,45 +133,27 @@ fn custom_entry_prompt(
     })
 }
 
-async fn family_prompt(
-    conversion: &PromptConversion<'_>,
-) -> Result<ConvertedPrompt, ConversionError> {
-    let lower = conversion.model.to_lowercase();
-    if let Some(model) = bedrock_template(&lower)
-        && !has_local_template(conversion.prompts, model)
-    {
-        return Err(ConversionError::Factory(FactoryError::NoChatTemplate));
-    }
-    match prompt_factory(
-        conversion.prompts,
-        conversion.model,
-        conversion.messages,
-        Some("bedrock"),
-        conversion.now,
-    )
-    .await?
-    {
-        Output::Text(prompt) => Ok(ConvertedPrompt {
-            prompt,
-            chat_history: None,
-        }),
-        Output::Ollama(_) | Output::None => Err(ConversionError::NotText {
-            provider: "bedrock",
-        }),
-    }
+struct FactoryPrompt<'text> {
+    model: &'text str,
+    custom_provider: Option<&'text str>,
+    local_template: Option<&'text str>,
+    operation: &'static str,
 }
 
-async fn deepseek_prompt(
+async fn factory_prompt(
     conversion: &PromptConversion<'_>,
+    request: FactoryPrompt<'_>,
 ) -> Result<ConvertedPrompt, ConversionError> {
-    if !has_local_template(conversion.prompts, DEEPSEEK_MODEL) {
+    if let Some(template) = request.local_template
+        && !has_local_template(conversion.prompts, template)
+    {
         return Err(ConversionError::Factory(FactoryError::NoChatTemplate));
     }
     match prompt_factory(
         conversion.prompts,
-        DEEPSEEK_MODEL,
+        request.model,
         conversion.messages,
-        None,
+        request.custom_provider,
         conversion.now,
     )
     .await?
@@ -158,7 +163,7 @@ async fn deepseek_prompt(
             chat_history: None,
         }),
         Output::Ollama(_) | Output::None => Err(ConversionError::NotText {
-            provider: "deepseek_r1",
+            provider: request.operation,
         }),
     }
 }

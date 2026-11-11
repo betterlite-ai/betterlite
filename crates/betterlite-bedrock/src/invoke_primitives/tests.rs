@@ -117,7 +117,7 @@ fn authorization(signed: &AwsSignedRequest) -> &str {
         .unwrap()
 }
 
-fn sign_with_credentials(fixture: Credentials) -> AwsSignedRequest {
+fn sign_fixture(api_key: Option<&SecretString>, fixture: Option<Credentials>) -> AwsSignedRequest {
     let optional = params("{}");
     let data = request_data(r#"{"inputText":"hello"}"#);
     let headers = vec![(
@@ -126,26 +126,12 @@ fn sign_with_credentials(fixture: Credentials) -> AwsSignedRequest {
     )];
     runtime()
         .block_on(sign_request(
-            signing_request(&headers, &optional, &data, None, epoch(NOW)),
-            move |_settings, _region| ready(Ok::<Credentials, CredentialError>(fixture)),
-        ))
-        .unwrap()
-}
-
-fn sign_with_bearer(key: &SecretString) -> AwsSignedRequest {
-    let optional = params("{}");
-    let data = request_data(r#"{"inputText":"hello"}"#);
-    let headers = vec![(
-        "content-type".to_owned(),
-        Some("application/json".to_owned()),
-    )];
-    runtime()
-        .block_on(sign_request(
-            signing_request(&headers, &optional, &data, Some(key), epoch(NOW)),
-            |_settings, _region| {
-                ready(Err::<Credentials, CredentialError>(
+            signing_request(&headers, &optional, &data, api_key, epoch(NOW)),
+            move |_settings, _region| match fixture {
+                Some(credentials) => ready(Ok::<Credentials, CredentialError>(credentials)),
+                None => ready(Err::<Credentials, CredentialError>(
                     CredentialError::MissingCredentials,
-                ))
+                )),
             },
         ))
         .unwrap()
@@ -221,8 +207,8 @@ fn invoke_primitives_credential_identity_isolation() {
 }
 
 fn signing_identities() {
-    let first = sign_with_credentials(credentials("FIRSTKEY", "first-secret"));
-    let second = sign_with_credentials(credentials("SECONDKEY", "second-secret"));
+    let first = sign_fixture(None, Some(credentials("FIRSTKEY", "first-secret")));
+    let second = sign_fixture(None, Some(credentials("SECONDKEY", "second-secret")));
     assert_ne!(authorization(&first), authorization(&second));
     assert!(authorization(&first).contains("FIRSTKEY"));
     assert!(!authorization(&first).contains("SECONDKEY"));
@@ -237,8 +223,8 @@ fn signing_identities() {
 fn bearer_identities() {
     let first_key = SecretString::from("first-api-key".to_owned());
     let second_key = SecretString::from("second-api-key".to_owned());
-    let first = sign_with_bearer(&first_key);
-    let second = sign_with_bearer(&second_key);
+    let first = sign_fixture(Some(&first_key), None);
+    let second = sign_fixture(Some(&second_key), None);
     assert_eq!(authorization(&first), "Bearer first-api-key");
     assert_eq!(authorization(&second), "Bearer second-api-key");
     assert_ne!(first.headers, second.headers);
@@ -257,22 +243,21 @@ fn prompt_caches() {
 
 #[test]
 fn invoke_primitives_secret_safe_failure() {
-    signing_failure();
-    credential_failure();
+    signing_failures();
     url_failure();
     debug_output();
 }
 
-fn signing_failure() {
+fn signing_failures() {
     let secret = "fixture-secret-access-key";
-    let optional = params(
-        r#"{"aws_access_key_id":"AKID","aws_secret_access_key":"fixture-secret-access-key","aws_region_name":"US-East-1"}"#,
-    );
     let data = request_data("{}");
     let headers: Vec<(String, Option<String>)> = Vec::new();
-    let failure = runtime()
+    let invalid_region = params(
+        r#"{"aws_access_key_id":"AKID","aws_secret_access_key":"fixture-secret-access-key","aws_region_name":"US-East-1"}"#,
+    );
+    let region_failure = runtime()
         .block_on(sign_request(
-            signing_request(&headers, &optional, &data, None, epoch(NOW)),
+            signing_request(&headers, &invalid_region, &data, None, epoch(NOW)),
             |_settings, _region| {
                 ready(Ok::<Credentials, CredentialError>(credentials(
                     "AKID", secret,
@@ -280,17 +265,11 @@ fn signing_failure() {
             },
         ))
         .unwrap_err();
-    assert!(!format!("{failure} {failure:?}").contains(secret));
-}
-
-fn credential_failure() {
-    let secret = "fixture-secret-access-key";
-    let optional = params("{}");
-    let data = request_data("{}");
-    let headers: Vec<(String, Option<String>)> = Vec::new();
-    let failure = runtime()
+    assert!(!format!("{region_failure} {region_failure:?}").contains(secret));
+    let empty = params("{}");
+    let credential_failure = runtime()
         .block_on(sign_request(
-            signing_request(&headers, &optional, &data, None, epoch(NOW)),
+            signing_request(&headers, &empty, &data, None, epoch(NOW)),
             |_settings, _region| {
                 ready(Err::<Credentials, CredentialError>(
                     CredentialError::MissingCredentials,
@@ -298,7 +277,7 @@ fn credential_failure() {
             },
         ))
         .unwrap_err();
-    assert!(!format!("{failure} {failure:?}").contains(secret));
+    assert!(!format!("{credential_failure} {credential_failure:?}").contains(secret));
 }
 
 fn url_failure() {
@@ -320,7 +299,7 @@ fn url_failure() {
 fn debug_output() {
     let secret = "fixture-secret-access-key";
     let bearer = SecretString::from(secret.to_owned());
-    let signed = sign_with_bearer(&bearer);
+    let signed = sign_fixture(Some(&bearer), None);
     assert!(!format!("{signed:?}").contains(secret));
     // B682's error Debug redacts the supplied headers
     let header_error = error_class(
