@@ -35,6 +35,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+betterlite-context = { path = "../betterlite-context" }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true

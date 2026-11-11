@@ -1,7 +1,10 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
+use betterlite_context::request_records::RequestRecordProjection;
+use betterlite_context::request_records::record::{HandleKind, InternalHandle, RequestRecord};
 use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -709,6 +712,70 @@ fn remove_items_at_indices_ignores_out_of_range_and_duplicates() {
     assert_eq!(untouched, vec![1_i32]);
 }
 
+fn record_field<'record>(
+    record: &'record RequestRecord,
+    bucket: &str,
+    key: &str,
+) -> Option<&'record RequestRecord> {
+    let RequestRecord::Object(fields) = record else {
+        return None;
+    };
+    let Some(RequestRecord::Object(bucket_fields)) = fields.get(bucket) else {
+        return None;
+    };
+    bucket_fields.get(key)
+}
+
+fn opaque_span(identity: u64) -> RequestRecord {
+    RequestRecord::Handle(InternalHandle {
+        kind: HandleKind::Opaque,
+        identity,
+    })
+}
+
+fn span_bucket(identity: u64) -> RequestRecord {
+    RequestRecord::Object(BTreeMap::from([
+        ("litellm_parent_otel_span".to_owned(), opaque_span(identity)),
+        ("n".to_owned(), RequestRecord::Signed(1)),
+    ]))
+}
+
+fn snapshots_are_independent() {
+    let mut source = RequestRecord::Object(BTreeMap::from([
+        ("metadata".to_owned(), span_bucket(101)),
+        ("litellm_metadata".to_owned(), span_bucket(202)),
+    ]));
+    let mut snapshot = RequestRecordProjection::safe_copy(&mut source, false)
+        .unwrap()
+        .into_owned();
+    let placeholder = RequestRecord::String("placeholder".to_owned());
+    for name in ["metadata", "litellm_metadata"] {
+        assert_eq!(
+            record_field(&snapshot, name, "litellm_parent_otel_span"),
+            Some(&placeholder)
+        );
+        assert_eq!(
+            record_field(&source, name, "litellm_parent_otel_span"),
+            Some(&opaque_span(202))
+        );
+    }
+    let RequestRecord::Object(snapshot_fields) = &mut snapshot else {
+        panic!("the snapshot is not an object");
+    };
+    let Some(RequestRecord::Object(copied)) = snapshot_fields.get_mut("metadata") else {
+        panic!("the snapshot has no metadata bucket");
+    };
+    copied.insert("n".to_owned(), RequestRecord::Signed(2));
+    assert_eq!(
+        record_field(&source, "metadata", "n"),
+        Some(&RequestRecord::Signed(1))
+    );
+    assert_eq!(
+        record_field(&snapshot, "metadata", "n"),
+        Some(&RequestRecord::Signed(2))
+    );
+}
+
 fn trusted_flags_cannot_be_forged() {
     let trusted = TrustedHeaders {
         entries: additional_headers(r#"{"x-litellm-model-group":"g"}"#),
@@ -808,6 +875,7 @@ fn trusted_flags_cannot_be_forged() {
     remove_items_at_indices_ignores_out_of_range_and_duplicates
 )]
 #[case::trusted_flags_cannot_be_forged(trusted_flags_cannot_be_forged)]
+#[case::snapshots_are_independent(snapshots_are_independent)]
 fn call_helpers_call_helper_tests_behavior(#[case] scenario: fn()) {
     scenario();
 }
