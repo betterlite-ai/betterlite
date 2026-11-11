@@ -244,6 +244,28 @@ fn run_pkce_login_reports_a_denied_callback() {
 }
 
 #[test]
+fn run_pkce_login_reports_a_denied_callback_without_details() {
+    let http = login_http();
+    let log = Mutex::new(Vec::new());
+
+    let error = run_login(
+        &http,
+        &log,
+        &[("error", "access_denied")],
+        Duration::from_secs(5),
+    )
+    .expect_err("the denied sign-in");
+
+    let LoginError::Pkce(PkceFailure::Protocol(message)) = error else {
+        panic!("expected the denied sign-in message");
+    };
+    assert_eq!(
+        message,
+        "sign-in was not approved (access_denied): no details"
+    );
+}
+
+#[test]
 fn run_pkce_login_times_out_without_a_callback() {
     let http = login_http();
     let log = Mutex::new(Vec::new());
