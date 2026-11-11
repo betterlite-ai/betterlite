@@ -18,7 +18,7 @@ use betterlite_provider::ollama_generate::embed::{
 use betterlite_provider::ollama_generate::error::OllamaGenerateError;
 use betterlite_provider::ollama_generate::reply::{ReplyInput, transform_response};
 use betterlite_provider::ollama_generate::request::{
-    OllamaGenerateRequest, RequestInput, RequestParams, transform_request,
+    RequestInput, RequestParams, transform_request,
 };
 use betterlite_provider::ollama_generate::stream::{
     GenerateStreamChunk, GenerateStreamStep, OllamaGenerateIterator,
@@ -284,11 +284,9 @@ fn reply_value(response: &OllamaChatResponse) -> Value {
 }
 
 fn content_value(content: Option<&str>) -> Value {
-    match content {
-        None => Value::Null,
-        Some(text) => serde_json::from_str::<Value>(text)
-            .unwrap_or_else(|_error| Value::String(text.to_owned())),
-    }
+    content.map_or(Value::Null, |text| {
+        serde_json::from_str::<Value>(text).unwrap_or_else(|_error| Value::String(text.to_owned()))
+    })
 }
 
 fn calls_value(calls: &[ToolCall]) -> Value {
@@ -315,10 +313,10 @@ fn normalize_arguments(arguments: &str) -> Value {
 
 fn normalize_id(id: &str) -> String {
     for prefix in ["call_", "chatcmpl-"] {
-        if let Some(rest) = id.strip_prefix(prefix) {
-            if Uuid::parse_str(rest).is_ok() {
-                return format!("{prefix}<uuid>");
-            }
+        if let Some(rest) = id.strip_prefix(prefix)
+            && Uuid::parse_str(rest).is_ok()
+        {
+            return format!("{prefix}<uuid>");
         }
     }
     if Uuid::parse_str(id).is_ok() {
