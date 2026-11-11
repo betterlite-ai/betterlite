@@ -21,12 +21,9 @@ deviations:
   - what: The span queue is bounded at DEFAULT_MAX_QUEUE_SIZE and drops its oldest events past the bound.
     why: LiteLLM appends without a cap on the threshold path, so a dead intake grows memory without limit; betterlite keeps the bound every batch logger uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L536
-  - what: Caller span_id, name and parent_id come from the per-request callback parameters a LoggerEvent carries.
-    why: A LoggerEvent has no litellm_params field; standard_callback_dynamic_params is the per-request metadata map, so keys the pipeline does not copy there never reach the span. Wiring litellm_params into the event belongs to the logging pipeline.
+  - what: Caller span_id, name and parent_id, and the message-redaction headers, come from the per-request callback parameters a LoggerEvent carries.
+    why: A LoggerEvent has no litellm_params field; standard_callback_dynamic_params is the per-request metadata map, so keys or headers the pipeline does not copy there never reach the span. Wiring litellm_params into the event belongs to the logging pipeline.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L617-L667
   - what: The litellm_settings.datadog_llm_observability_params key is not parsed, so a turn_off_message_logging set there never reaches the logger.
     why: betterlite-config types litellm_settings and rejects a key it does not model, and that crate is outside this task's scope; the catalog reads the same init flag from callback_settings.datadog_llm_observability as an interim channel. The config loader task owns adding the section and the catalog read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L514-L529
-  - what: The litellm-disable-message-redaction and litellm-enable-message-redaction request headers only take effect when the per-request callback metadata map carries a headers object.
-    why: A LoggerEvent has no litellm_params, so the headers LiteLLM reads from litellm_params.metadata.headers are not on the event; the logging pipeline owns feeding them. The effective global litellm_settings.turn_off_message_logging flag is honored.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L723-L728

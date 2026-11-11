@@ -32,6 +32,11 @@ impl ToolTokenCounter for UnwiredCounter {
 }
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let global_turn_off = inputs
+        .config
+        .sections
+        .logging_privacy
+        .turn_off_message_logging;
     let init = DatadogLlmObsInit {
         dd_api_key: None,
         dd_site: None,
@@ -42,11 +47,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         batch_size: None,
         flush_interval_seconds: None,
         params: init_params(inputs)?,
-        global_turn_off: inputs
-            .config
-            .sections
-            .logging_privacy
-            .turn_off_message_logging,
+        global_turn_off,
     };
     let logger = DatadogLlmObsLogger::new(
         &init,
@@ -82,13 +83,8 @@ fn init_params(inputs: &CatalogInputs) -> Result<Option<DatadogLlmObsInitParams>
                         message: error.to_string(),
                     })?;
             }
-            dropped => {
-                // pydantic's DatadogLLMObsInitParams drops a key it does not declare
-                tracing::debug!(
-                    field = %dropped,
-                    "callback_settings.datadog_llm_observability.{dropped} is not an init param"
-                );
-            }
+            // pydantic's DatadogLLMObsInitParams drops a key it does not declare
+            dropped => tracing::debug!(field = %dropped, "the dropped init setting is ignored"),
         }
     }
     Ok(Some(params))
