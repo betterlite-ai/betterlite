@@ -1,0 +1,65 @@
+name: includes-root-and-included-models
+config: |
+  include:
+    - models.yaml
+  general_settings:
+    master_key: oracle-master
+  model_list:
+    - model_name: root-model
+      litellm_params:
+        model: openai/gpt-4o
+        api_base: "{{upstream}}"
+        api_key: root-key
+        max_retries: 0
+  router_settings:
+    num_retries: 0
+env: {}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-root-model}
+    body:
+      id: chatcmpl-root-model
+      object: chat.completion
+      created: 1700000102
+      model: gpt-4o
+      choices: [{index: 0, message: {role: assistant, content: Root!}, finish_reason: stop}]
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-included-model}
+    body:
+      id: chatcmpl-included-model
+      object: chat.completion
+      created: 1700000103
+      model: gpt-4o
+      choices: [{index: 0, message: {role: assistant, content: Included!}, finish_reason: stop}]
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+steps:
+  - request:
+      method: POST
+      path: /chat/completions
+      headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-root-model}
+      body: {model: root-model, messages: [{role: user, content: root}]}
+    compare:
+      headers: [content-type, llm_provider-content-type, llm_provider-x-request-id, x-litellm-call-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base, x-litellm-attempted-retries, x-litellm-attempted-fallbacks]
+      headers_present: [x-litellm-response-duration-ms, x-litellm-overhead-duration-ms, x-litellm-callback-duration-ms, x-litellm-version]
+      upstream_headers: [authorization, content-type]
+      ignore: []
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-included-model}
+      body: {model: included-model, messages: [{role: user, content: included}]}
+    compare:
+      headers: [content-type, llm_provider-content-type, llm_provider-x-request-id, x-litellm-call-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base, x-litellm-attempted-retries, x-litellm-attempted-fallbacks]
+      headers_present: [x-litellm-response-duration-ms, x-litellm-overhead-duration-ms, x-litellm-callback-duration-ms, x-litellm-version]
+      upstream_headers: [authorization, content-type]
+      ignore: []
+config_files:
+  models.yaml: |
+    model_list:
+      - model_name: included-model
+        litellm_params:
+          model: openai/gpt-4o
+          api_base: "{{upstream}}"
+          api_key: included-key
+          max_retries: 0
