@@ -38,6 +38,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 zeroize = "1.9.1"
 
 [dev-dependencies]

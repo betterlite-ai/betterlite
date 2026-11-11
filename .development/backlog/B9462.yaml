@@ -1,0 +1,14 @@
+id: B9462
+milestone: M6 guardrails
+title: XecGuard guardrail construction, policy scans and the logging-only scan
+status: todo
+depends_on: [B3800, B5471, B8218, B173, B3806]
+file: tasks/B9462-xecguard-runtime.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

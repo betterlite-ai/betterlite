@@ -38,6 +38,9 @@ description: >-
   no reflection or lazy lookup is involved. Env-default cases use `monkeypatch.setenv` and `importlib.reload(betterlite)` over
   their own explicit list. `LITELLM_LOCAL_MODEL_COST_MAP=True` keeps LiteLLM on its bundled map, so both sides load the same
   data. The check commands set it.
+
+
+  Export `modify_integration(integration_name, integration_params)` (litellm_logging.py L6867-L6871): for "supabase" with a `table_name` key it sets the table name B3979's Supabase logger reads in place of "request_logs"; any other name does nothing.
 scope:
   paths:
   - crates/betterlite-python/python/betterlite/__init__.py

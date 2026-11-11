@@ -152,7 +152,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B2488 owns all four SDK run functions and B2489 owns the dispatch/config seam and strict assistant JSON decoder. The run route does not depend on other assistant routes.
-- B004 owns create_response, ttft_keepalive_interval and final header behavior; B7324 owns open_sse_before_first_byte; B005 owns SSE parsing and keepalive resolution. This task wires their existing services and owns only assistant-specific generator framing.
+- B9801 owns create_response (first_chunk_answer, fed this task's frames as Emitted::Frame items) and B9802 owns get_custom_headers; this task builds its own final header step from B9802's custom_headers. B7324 owns open_sse_before_first_byte and ttft_keepalive_interval (ttft_interval_for). B005 owns SSE parsing and keepalive resolution. This task wires their existing services and owns only assistant-specific generator framing.
 - B1103 supplies authenticated request preparation, B012 hook/status operations, B003 shared error rendering and B002 config decoding. B1085/B1086 own other assistant HTTP handlers; B083/B1125 and B124 or its extracted owners retain the remaining proxy_server.py functions.
 pitfalls:
 - Assistant provider event names remain inside the serialized event JSON; this generator never emits an SSE event line.

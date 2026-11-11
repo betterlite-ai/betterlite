@@ -1,0 +1,13 @@
+id: B9561
+milestone: M8 platform
+title: Response cache on the gateway text completion, rerank and transcription calls
+status: todo
+depends_on: [B9560, B202, B085, B8636, B083, B1001, B4302, B4304, B4305]
+file: tasks/B9561-gateway-cache-other-calls.yaml
+covers: []
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
