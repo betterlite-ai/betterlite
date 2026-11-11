@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use super::GenAiInputError;
-use super::input::{Call, Content, Contents, InlineData, Part, SystemInstruction};
+use super::input::{Call, Content, Contents, InlineData, Part, PartFields, SystemInstruction};
 
 pub(super) fn messages(
     contents: &Contents,
@@ -50,15 +50,9 @@ fn user_messages(
     let mut tool_messages = Vec::new();
     for part in &content.parts {
         match part {
-            Part::Text(text) | Part::TextObject { text } => parts.push(ContentPart {
-                kind: String::from("text"),
-                fields: IndexMap::from([(String::from("text"), Value::String(text.clone()))]),
-            }),
-            Part::Inline { inline_data } => parts.push(image_part(inline_data)),
-            Part::Response { function_response } => {
-                tool_messages.push(tool_message(function_response)?);
-            }
-            Part::Call { .. } | Part::Other(_) => {}
+            Part::Text(text) => parts.push(text_part(text)),
+            Part::Fields(fields) => user_fields(fields, &mut parts, &mut tool_messages)?,
+            Part::Other(_) => {}
         }
     }
     if !parts.is_empty() {
@@ -83,6 +77,32 @@ fn user_messages(
     }
     messages.extend(tool_messages);
     Ok(())
+}
+
+fn user_fields(
+    fields: &PartFields,
+    parts: &mut Vec<ContentPart>,
+    tool_messages: &mut Vec<ChatMessage>,
+) -> Result<(), GenAiInputError> {
+    if let Some(text) = fields.text.as_deref() {
+        parts.push(text_part(text));
+        return Ok(());
+    }
+    if let Some(inline) = &fields.inline_data {
+        parts.push(image_part(inline));
+        return Ok(());
+    }
+    if let Some(response) = &fields.function_response {
+        tool_messages.push(tool_message(response)?);
+    }
+    Ok(())
+}
+
+fn text_part(text: &str) -> ContentPart {
+    ContentPart {
+        kind: String::from("text"),
+        fields: IndexMap::from([(String::from("text"), Value::String(text.to_owned()))]),
+    }
 }
 
 fn image_part(inline: &InlineData) -> ContentPart {
@@ -121,20 +141,13 @@ fn encode_json(value: Option<&Value>) -> Result<String, GenAiInputError> {
 }
 
 fn model_message(content: &Content) -> Result<ChatMessage, GenAiInputError> {
-    let text: String = content
-        .parts
-        .iter()
-        .filter_map(|part| match part {
-            Part::Text(text) | Part::TextObject { text } => Some(text.as_str()),
-            Part::Inline { .. } | Part::Response { .. } | Part::Call { .. } | Part::Other(_) => {
-                None
-            }
-        })
-        .collect();
+    let mut text = String::new();
     let mut tool_calls = Vec::new();
     for part in &content.parts {
-        if let Part::Call { function_call } = part {
-            tool_calls.push(tool_call(function_call)?);
+        match part {
+            Part::Text(part_text) => text.push_str(part_text),
+            Part::Fields(fields) => model_fields(fields, &mut text, &mut tool_calls)?,
+            Part::Other(_) => {}
         }
     }
     Ok(ChatMessage {
@@ -145,6 +158,22 @@ fn model_message(content: &Content) -> Result<ChatMessage, GenAiInputError> {
         tool_call_id: None,
         passthrough: IndexMap::new(),
     })
+}
+
+fn model_fields(
+    fields: &PartFields,
+    text: &mut String,
+    tool_calls: &mut Vec<ToolCall>,
+) -> Result<(), GenAiInputError> {
+    if let Some(part_text) = fields.text.as_deref() {
+        text.push_str(part_text);
+        return Ok(());
+    }
+    let Some(function_call) = &fields.function_call else {
+        return Ok(());
+    };
+    tool_calls.push(tool_call(function_call)?);
+    Ok(())
 }
 
 fn tool_call(call: &Call) -> Result<ToolCall, GenAiInputError> {

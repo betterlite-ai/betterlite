@@ -20,21 +20,18 @@ pub struct Content {
 #[serde(untagged)]
 pub enum Part {
     Text(String),
-    TextObject {
-        text: String,
-    },
-    Inline {
-        inline_data: InlineData,
-    },
-    Response {
-        #[serde(rename = "functionResponse")]
-        function_response: Call,
-    },
-    Call {
-        #[serde(rename = "functionCall")]
-        function_call: Call,
-    },
+    Fields(Box<PartFields>),
     Other(Value),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PartFields {
+    pub text: Option<String>,
+    pub inline_data: Option<InlineData>,
+    #[serde(rename = "functionResponse")]
+    pub function_response: Option<Call>,
+    #[serde(rename = "functionCall")]
+    pub function_call: Option<Call>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

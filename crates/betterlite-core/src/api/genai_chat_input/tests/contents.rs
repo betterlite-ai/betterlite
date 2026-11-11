@@ -218,6 +218,57 @@ fn a_user_part_with_an_unknown_shape_is_ignored() {
 }
 
 #[test]
+fn a_user_part_with_text_and_a_function_response_keeps_only_the_text() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [{"parts": [{
+            "text": "text wins",
+            "inline_data": {"mime_type": "image/png", "data": "QUJD"},
+            "functionResponse": {"name": "lookup", "response": {}},
+        }]}],
+    }));
+    assert_eq!(request.messages.len(), 1);
+    assert_eq!(
+        request.messages[0].content,
+        Some(MessageContent::Text(String::from("text wins")))
+    );
+}
+
+#[test]
+fn a_user_part_with_inline_data_and_a_function_response_keeps_only_the_image() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [{"parts": [{
+            "inline_data": {"mime_type": "image/png", "data": "QUJD"},
+            "functionResponse": {"name": "lookup", "response": {}},
+        }]}],
+    }));
+    assert_eq!(request.messages.len(), 1);
+    let Some(MessageContent::Parts(parts)) = &request.messages[0].content else {
+        panic!("expected content parts");
+    };
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].kind, "image_url");
+}
+
+#[test]
+fn a_user_part_with_a_function_call_and_response_uses_the_response() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [{"parts": [{
+            "functionCall": {"name": "ignored", "args": {}},
+            "functionResponse": {"name": "lookup", "response": {"answer": 7_i32}},
+        }]}],
+    }));
+    assert_eq!(request.messages.len(), 1);
+    assert_eq!(request.messages[0].role, Role::Tool);
+    assert_eq!(
+        request.messages[0].tool_call_id.as_deref(),
+        Some("call_lookup")
+    );
+}
+
+#[test]
 fn non_object_contents_parts_are_ignored() {
     let request = translate(json!({
         "model": "m",
@@ -230,15 +281,37 @@ fn non_object_contents_parts_are_ignored() {
 fn a_model_part_with_text_and_a_function_call_keeps_only_the_text() {
     let request = translate(json!({
         "model": "m",
-        "contents": [{"role": "model", "parts": [
-            {"text": "text wins", "functionCall": {"name": "lookup", "args": {}}},
-        ]}],
+        "contents": [{"role": "model", "parts": [{
+            "text": "text wins",
+            "inline_data": {"mime_type": "image/png", "data": "QUJD"},
+            "functionResponse": {"name": "other", "response": {}},
+            "functionCall": {"name": "lookup", "args": {}},
+        }]}],
     }));
     assert_eq!(
         request.messages[0].content,
         Some(MessageContent::Text(String::from("text wins")))
     );
     assert_eq!(request.messages[0].tool_calls, None);
+}
+
+#[test]
+fn a_model_part_with_a_function_call_and_other_keys_keeps_the_tool_call() {
+    let request = translate(json!({
+        "model": "m",
+        "contents": [{"role": "model", "parts": [{
+            "inline_data": {"mime_type": "image/png", "data": "QUJD"},
+            "functionResponse": {"name": "other", "response": {}},
+            "functionCall": {"name": "lookup", "args": {"id": 3_i32}},
+        }]}],
+    }));
+    assert_eq!(request.messages.len(), 1);
+    assert_eq!(request.messages[0].role, Role::Assistant);
+    assert_eq!(request.messages[0].content, None);
+    let calls = request.messages[0].tool_calls.as_ref().expect("tool calls");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].id, "call_lookup");
+    assert_eq!(calls[0].function.name, "lookup");
 }
 
 #[test]
