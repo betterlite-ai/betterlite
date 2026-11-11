@@ -1,0 +1,20 @@
+kind: helper
+name: host-model-identity-seed-clarifai
+call:
+  host_model_identity:
+    calls:
+      - kind: identity
+        host: clarifai
+        env: {CLARIFAI_API_KEY: env-key}
+        api_base: https://explicit.example/v1
+        api_key: explicit-key
+        models: [user.app.model, user.app, null, ""]
+      - kind: reply
+        host: clarifai
+        status: 200
+        body: '{"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}'
+        model: user.app.model
+        messages: [{role: user, content: hi}]
+        request_data: {model: user.app.model}
+env: {}
+compare: {ignore: []}

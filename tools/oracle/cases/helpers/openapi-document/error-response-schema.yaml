@@ -1,0 +1,8 @@
+kind: helper
+name: error-response-schema
+call:
+  b123:
+    op: error_response_schema
+env: {}
+compare:
+  ignore: []

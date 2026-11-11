@@ -1,0 +1,33 @@
+kind: helper
+name: heroku-list-content-and-missing-base
+call:
+  agent_host_policy:
+    scenarios:
+      - environment: {}
+        calls:
+          - {op: heroku_url}
+          - op: heroku_request
+            model: heroku-model
+            messages:
+              - role: user
+                content:
+                  - {type: text, text: first}
+                  - {type: image_url, image_url: https://img.example/a}
+              - role: user
+                content:
+                  - {type: image_url, image_url: https://img.example/b}
+              - {role: assistant, content: plain}
+            optional: {max_retries: 2, tool_choice: auto, temperature: 0.5}
+      - environment:
+          HEROKU_API_BASE: https://env.heroku.example/v1
+          HEROKU_API_KEY: env-key
+        calls:
+          - {op: info, host: heroku}
+          - {op: heroku_url}
+          - {op: heroku_url, api_base: https://explicit.example/v1/chat/completions}
+          - {op: heroku_url, api_base: ""}
+      - environment: {}
+        calls:
+          - {op: heroku_request, model: m, messages: [{role: user, content: hi}], async_mode: true}
+env: {}
+compare: {ignore: []}

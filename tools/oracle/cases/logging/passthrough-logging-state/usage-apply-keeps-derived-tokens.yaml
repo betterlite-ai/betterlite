@@ -1,0 +1,11 @@
+kind: helper
+name: usage-apply-keeps-derived-tokens
+call:
+  b3605:
+    operation: apply_usage
+    headers:
+      - [x-litellm-response-cost, "0.25"]
+    state:
+      combined_usage_total_tokens: 7
+env: {}
+compare: {ignore: []}

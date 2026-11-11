@@ -1,0 +1,15 @@
+kind: helper
+name: image-immediate-result
+call:
+  azure_image_transport:
+    steps:
+      - api_base: 'https://example.test/providers/black-forest-labs/flux%20pro/images/generations'
+        api_version: '2024-02-01'
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 200, headers: {x-ms-request-id: req-direct}, body: '{"created":1,"data":[{"url":"https://example.test/image.png"}]}'}
+env: {}
+compare: {ignore: []}

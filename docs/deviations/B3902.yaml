@@ -1,0 +1,31 @@
+task: B3902
+deviations:
+  - what: >-
+      x-langfuse-sdk-version carries the pinned LANGFUSE_SDK_VERSION "4.15.2" rather than the version of the
+      langfuse package installed beside LiteLLM.
+    why: >-
+      betterlite links no langfuse package, so nothing reads an installed version, an environment variable or
+      Cargo metadata; 4.15.2 is the release in LiteLLM's own lock file, inside its >=4.7,<5.0 range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L802-L802
+  - what: >-
+      A LANGFUSE_TIMEOUT that is negative or otherwise unusable fails exporter construction with a typed error,
+      where LiteLLM builds the exporter and lets httpx refuse the negative timeout on the first export.
+    why: >-
+      The timeout becomes a std Duration once, when the exporter is built, which is where an invalid value is
+      a configuration error; no working setup configures a negative timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L489-L494
+  - what: >-
+      An empty batch answered with 413 settles after one request and reports success. LiteLLM spends its
+      bounded rounds splitting the empty batch into ever more empty halves, sending fifteen requests.
+    why: >-
+      Halving an empty batch cannot make a body smaller, so betterlite stops at once; BatchSpanProcessor does
+      not call export with an empty batch, so a working setup never sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L673-L677
+  - what: >-
+      A redirect chain that passes the redirect limit ends the attempt: the batch is reported as failed and sent
+      once, with no retry. LiteLLM raises out of the export after the same single attempt, so its ledger never
+      counts the batch.
+    why: >-
+      LiteLLM retries only httpx.TransportError and litellm.Timeout, and TooManyRedirects is neither, so
+      betterlite matches the single attempt and reports the batch as failed instead of leaving it uncounted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L758-L760
