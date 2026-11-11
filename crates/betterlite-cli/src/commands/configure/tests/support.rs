@@ -13,6 +13,7 @@ use axum::response::{IntoResponse as _, Response};
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::private_json::files::PrivateFiles;
+use clap::Parser as _;
 use secrecy::SecretString;
 use serde::Serialize;
 use soft_canonicalize::soft_canonicalize;
@@ -26,8 +27,8 @@ use crate::agent_setup_profiles::{SavedSetup, Target, save_setup, settings_path_
 use crate::cli_context::CliContext;
 use crate::codex_settings::version::CodexVersion;
 use crate::commands::configure::args::{
-    ConfigureArgs, ConfigureTarget, ConnectionFlags, GroupConnection, ReconfigureArgs,
-    UnconfigureArgs, UnconfigureTarget,
+    ConfigureArgs, ConnectionFlags, GroupConnection, ReconfigureArgs, UnconfigureArgs,
+    UnconfigureTarget,
 };
 use crate::commands::configure::error::ConfigureCommandError;
 use crate::commands::configure::{AgentSetupCommand, SetupPorts, run};
@@ -101,12 +102,20 @@ pub(crate) fn group_configure() -> ConfigureArgs {
 }
 
 pub(crate) fn claude_configure(base_url: &str, api_key: &str) -> ConfigureArgs {
-    let mut args = group_configure();
-    args.command = Some(ConfigureTarget::Claude {
-        connection: ConnectionFlags::from(group_connection(Some(api_key), Some(base_url))),
-        model: Some(STARTING_MODEL.to_owned()),
-        default_model: false,
-    });
+    let arguments = [
+        "configure",
+        "claude",
+        "--api-key",
+        api_key,
+        "--gateway-url",
+        base_url,
+        "--model",
+        STARTING_MODEL,
+    ];
+    let parsed = TestCli::try_parse_from(arguments).unwrap();
+    let TestCommand::Configure(args) = parsed.command else {
+        panic!("expected the configure command");
+    };
     args
 }
 
