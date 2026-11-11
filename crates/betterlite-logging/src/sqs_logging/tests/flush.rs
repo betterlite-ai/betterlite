@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::time::{advance, timeout, yield_now};
+use tokio::task::yield_now;
+use tokio::time::{advance, timeout};
 use tokio_util::sync::CancellationToken;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::sqs_logging::SqsLogger;
 use crate::sqs_logging::flush::spawn_flush_loop;
 
@@ -110,7 +111,7 @@ async fn flush_loop_sends_after_the_interval() {
     advance(Duration::from_secs(10)).await;
     yield_now().await;
     let awaited = timeout(Duration::from_secs(1), records.wait_for(1)).await;
-    assert!(awaited.is_ok());
+    awaited.unwrap();
     shutdown.cancel();
 }
 
@@ -123,5 +124,5 @@ async fn flush_loop_stops_on_shutdown() {
     shutdown.cancel();
     logger.tasks.close();
     let awaited = timeout(Duration::from_secs(1), logger.tasks.wait()).await;
-    assert!(awaited.is_ok());
+    awaited.unwrap();
 }

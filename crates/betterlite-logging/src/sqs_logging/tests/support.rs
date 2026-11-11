@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::io::{Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use tokio::sync::Notify;
 use tokio_util::task::TaskTracker;
@@ -29,7 +30,9 @@ pub(crate) const SECRET_ACCESS_KEY: &str = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPL
 pub(crate) const FIXED_TIME_SECONDS: u64 = 1_767_323_045;
 
 pub(crate) fn fixed_time() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(FIXED_TIME_SECONDS)
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(FIXED_TIME_SECONDS))
+        .expect("the fixed time is representable")
 }
 
 pub(crate) struct FixedClock(pub(crate) SystemTime);
@@ -38,6 +41,16 @@ impl Clock for FixedClock {
     fn now(&self) -> SystemTime {
         self.0
     }
+}
+
+fn resolved(token: Option<&str>) -> Credentials {
+    Credentials::new(
+        ACCESS_KEY_ID,
+        SECRET_ACCESS_KEY,
+        token.map(str::to_owned),
+        None,
+        "test",
+    )
 }
 
 pub(crate) struct StaticCredentials;
@@ -49,13 +62,7 @@ impl CredentialSource for StaticCredentials {
     }
 
     async fn resolve(&self, _params: &CredentialParams) -> Result<Credentials, CredentialError> {
-        Ok(Credentials::new(
-            ACCESS_KEY_ID,
-            SECRET_ACCESS_KEY,
-            None,
-            None,
-            "test",
-        ))
+        Ok(resolved(None))
     }
 }
 
@@ -68,13 +75,7 @@ impl CredentialSource for SessionCredentials {
     }
 
     async fn resolve(&self, _params: &CredentialParams) -> Result<Credentials, CredentialError> {
-        Ok(Credentials::new(
-            ACCESS_KEY_ID,
-            SECRET_ACCESS_KEY,
-            Some("SESSIONTOKEN".to_owned()),
-            None,
-            "test",
-        ))
+        Ok(resolved(Some("SESSIONTOKEN")))
     }
 }
 
@@ -90,18 +91,15 @@ impl CredentialSource for RecordedCredentials {
     }
 
     async fn resolve(&self, params: &CredentialParams) -> Result<Credentials, CredentialError> {
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.push(params.clone());
-        Ok(Credentials::new(
-            ACCESS_KEY_ID,
-            SECRET_ACCESS_KEY,
-            None,
-            None,
-            "test",
-        ))
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(params.clone());
+        Ok(resolved(None))
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Recorded {
     pub(crate) url: String,
     pub(crate) headers: http::HeaderMap,
@@ -137,8 +135,15 @@ impl Records {
             .len()
     }
 
+    pub(crate) fn snapshot(&self) -> Vec<Recorded> {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     pub(crate) fn body(&self, index: usize) -> String {
-        let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        let entries = self.snapshot();
         String::from_utf8(entries[index].body.clone()).expect("the body is UTF-8")
     }
 }
@@ -155,13 +160,7 @@ pub(crate) struct RecordingDelivery {
 
 impl RecordingDelivery {
     pub(crate) fn delivering() -> Self {
-        Self {
-            records: Arc::new(Records::default()),
-            outcome: Outcome::Delivered {
-                status: 200,
-                body: Vec::new(),
-            },
-        }
+        Self::answering_bytes(200, Vec::new())
     }
 
     pub(crate) fn answering(status: u16, body: &str) -> Self {
@@ -186,7 +185,10 @@ impl RecordingDelivery {
 impl Delivery for RecordingDelivery {
     type Error = TransportError;
 
-    async fn post(&self, request: PostRequest) -> Result<PostResponse, TransportError> {
+    fn post(
+        &self,
+        request: PostRequest,
+    ) -> impl Future<Output = Result<PostResponse, TransportError>> + Send {
         self.records
             .entries
             .lock()
@@ -197,13 +199,13 @@ impl Delivery for RecordingDelivery {
                 body: request.body,
             });
         self.records.notify.notify_waiters();
-        match &self.outcome {
+        ready(match &self.outcome {
             Outcome::Delivered { status, body } => Ok(PostResponse {
                 status: *status,
                 body: body.clone(),
             }),
             Outcome::Failed => Err(TransportError::Closed),
-        }
+        })
     }
 }
 
@@ -298,7 +300,7 @@ pub(crate) fn payload_with_messages(messages: &str) -> StandardLoggingPayload {
 pub(crate) fn event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload: Arc::new(payload),
-        dynamic_params: Arc::new(betterlite_models::decisions::Json::Object(IndexMap::new())),
+        dynamic_params: Arc::new(Json::Object(IndexMap::new())),
         stream: false,
         guardrail_snapshot: None,
     })

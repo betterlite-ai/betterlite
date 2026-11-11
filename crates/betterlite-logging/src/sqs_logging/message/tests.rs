@@ -43,7 +43,7 @@ fn decrypted_matches(wrapped: &Wrapped, aad: &[u8], expected: &StandardLoggingPa
 #[case::ampersand_and_equals("a&b=c", "a%26b%3Dc")]
 #[case::plus_and_space("+ /", "%2B%20%2F")]
 #[case::unreserved("AZaz09_.-~", "AZaz09_.-~")]
-#[case::unicode("é", "%C3%A9")]
+#[case::unicode("\u{e9}", "%C3%A9")]
 fn form_body_percent_encodes_the_message_body(#[case] message: &str, #[case] encoded: &str) {
     assert_eq!(
         form_body(message),

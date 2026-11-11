@@ -12,7 +12,6 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::callback_logger::CallbackLogger;
 use crate::registry::catalog::{CatalogError, CatalogInputs};
 use crate::sqs_logging::tests::support::{event, payload};
 
@@ -65,7 +64,7 @@ async fn callback_logger_reports_a_missing_encryption_key() {
     let inputs = inputs(
         "callback_settings:\n  aws_sqs:\n    sqs_aws_use_application_level_encryption: true\n",
     );
-    let error = build(&inputs).expect_err("the key is missing");
+    let error = build(&inputs).err().expect("the key is missing");
     assert!(matches!(
         error,
         CatalogError::Init { message } if message.contains("sqs_app_encryption_key_b64")
@@ -75,7 +74,7 @@ async fn callback_logger_reports_a_missing_encryption_key() {
 #[tokio::test]
 async fn callback_logger_refuses_an_unknown_setting() {
     let inputs = inputs("callback_settings:\n  aws_sqs:\n    sqs_bogus_setting: 1\n");
-    let error = build(&inputs).expect_err("the setting is unknown");
+    let error = build(&inputs).err().expect("the setting is unknown");
     assert!(matches!(
         error,
         CatalogError::Init { message } if message.contains("sqs_bogus_setting")
@@ -89,5 +88,5 @@ async fn callback_logger_flush_loop_stops_on_shutdown() {
     inputs.shutdown.cancel();
     inputs.tracker.close();
     let awaited = timeout(Duration::from_secs(1), inputs.tracker.wait()).await;
-    assert!(awaited.is_ok());
+    awaited.unwrap();
 }

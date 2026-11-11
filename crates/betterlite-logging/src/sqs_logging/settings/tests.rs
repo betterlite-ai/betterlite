@@ -8,6 +8,7 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::batch::logger::DEFAULT_MAX_QUEUE_SIZE;
+use crate::sqs_logging::credentials::CredentialParams;
 use crate::sqs_logging::encryption::EncryptionError;
 use crate::sqs_logging::message::message_json;
 use crate::sqs_logging::tests::support::{environment, payload};
@@ -30,6 +31,10 @@ fn resolve(
     variables: &[(&str, &str)],
 ) -> Result<Settings, SettingsError> {
     Settings::resolve(&params(pairs), overrides, &environment(variables))
+}
+
+fn empty_overrides() -> Overrides {
+    Overrides::default()
 }
 
 fn key_b64() -> String {
@@ -70,10 +75,12 @@ fn resolves_the_connection_parameters_from_callback_settings() {
 
 #[test]
 fn callback_settings_win_over_supplied_overrides() {
-    let mut overrides = Overrides::default();
-    overrides.queue_url = Some("https://override.example.com".to_owned());
-    overrides.region = Some("override-region".to_owned());
-    overrides.use_ssl = Some(true);
+    let overrides = Overrides {
+        queue_url: Some("https://override.example.com".to_owned()),
+        region: Some("override-region".to_owned()),
+        use_ssl: Some(true),
+        ..empty_overrides()
+    };
     let settings = resolve(
         &[
             ("sqs_queue_url", "https://queue.example.com"),
@@ -94,13 +101,15 @@ fn callback_settings_win_over_supplied_overrides() {
 
 #[test]
 fn supplied_overrides_fill_in_missing_callback_settings() {
-    let mut overrides = Overrides::default();
-    overrides.queue_url = Some("https://override.example.com".to_owned());
-    overrides.region = Some("override-region".to_owned());
-    overrides.api_version = Some("2012-11-05".to_owned());
-    overrides.use_ssl = Some(false);
-    overrides.verify = Some(false);
-    overrides.endpoint_url = Some("http://localhost:4566".to_owned());
+    let overrides = Overrides {
+        queue_url: Some("https://override.example.com".to_owned()),
+        region: Some("override-region".to_owned()),
+        api_version: Some("2012-11-05".to_owned()),
+        use_ssl: Some(false),
+        verify: Some(false),
+        endpoint_url: Some("http://localhost:4566".to_owned()),
+        ..empty_overrides()
+    };
     let settings = resolve(&[], overrides, &[]).expect("the settings resolve");
     assert_eq!(
         settings.connection.queue_url.as_deref(),
@@ -181,7 +190,8 @@ fn an_invalid_environment_number_is_an_error() {
         Overrides::default(),
         &[("DEFAULT_SQS_BATCH_SIZE", "many")],
     )
-    .expect_err("the batch size is not a number");
+    .err()
+    .expect("the batch size is not a number");
     assert!(error.to_string().contains("DEFAULT_SQS_BATCH_SIZE"));
 }
 
@@ -217,7 +227,8 @@ fn a_missing_os_environ_reference_is_an_error() {
         Overrides::default(),
         &[],
     )
-    .expect_err("the environment variable is missing");
+    .err()
+    .expect("the environment variable is missing");
     assert!(matches!(
         error,
         SettingsError::MissingEnvironment {
@@ -234,7 +245,8 @@ fn an_unknown_callback_setting_is_an_error() {
         Overrides::default(),
         &[],
     )
-    .expect_err("the setting is not supported");
+    .err()
+    .expect("the setting is not supported");
     assert!(matches!(
         error,
         SettingsError::UnknownKey { name } if name == "sqs_unknown_setting"
@@ -244,7 +256,8 @@ fn an_unknown_callback_setting_is_an_error() {
 #[test]
 fn an_invalid_bool_setting_is_an_error() {
     let error = resolve(&[("sqs_use_ssl", "sometimes")], Overrides::default(), &[])
-        .expect_err("the setting is not a bool");
+        .err()
+        .expect("the setting is not a bool");
     assert!(matches!(
         error,
         SettingsError::Boolean {
@@ -272,7 +285,8 @@ fn encryption_requires_a_key() {
         Overrides::default(),
         &[],
     )
-    .expect_err("the key is missing");
+    .err()
+    .expect("the key is missing");
     assert!(matches!(error, SettingsError::MissingEncryptionKey));
 }
 
@@ -286,7 +300,8 @@ fn an_invalid_base64_key_is_an_error() {
         Overrides::default(),
         &[],
     )
-    .expect_err("the key is not base64");
+    .err()
+    .expect("the key is not base64");
     assert!(matches!(
         error,
         SettingsError::Encryption(EncryptionError::Decode(_))
@@ -303,7 +318,8 @@ fn a_wrong_key_length_is_an_error() {
         Overrides::default(),
         &[],
     )
-    .expect_err("the key is not 32 bytes");
+    .err()
+    .expect("the key is not 32 bytes");
     assert!(matches!(
         error,
         SettingsError::Encryption(EncryptionError::Crypto(_))
@@ -312,11 +328,13 @@ fn a_wrong_key_length_is_an_error() {
 
 #[test]
 fn a_supplied_cipher_enables_encryption() {
-    let mut overrides = Overrides::default();
-    overrides.encryption = Some(EncryptionOverrides {
-        key_b64: SecretString::from(key_b64()),
-        aad: Some("tenant=bill".to_owned()),
-    });
+    let overrides = Overrides {
+        encryption: Some(EncryptionOverrides {
+            key_b64: SecretString::from(key_b64()),
+            aad: Some("tenant=bill".to_owned()),
+        }),
+        ..empty_overrides()
+    };
     let settings = resolve(&[], overrides, &[]).expect("the settings resolve");
     let encryption = settings.encryption.expect("encryption is configured");
     let json = message_json(&payload(), Some(&encryption)).expect("the payload encrypts");
@@ -325,11 +343,13 @@ fn a_supplied_cipher_enables_encryption() {
 
 #[test]
 fn an_explicit_false_encryption_flag_wins_over_a_supplied_cipher() {
-    let mut overrides = Overrides::default();
-    overrides.encryption = Some(EncryptionOverrides {
-        key_b64: SecretString::from(key_b64()),
-        aad: None,
-    });
+    let overrides = Overrides {
+        encryption: Some(EncryptionOverrides {
+            key_b64: SecretString::from(key_b64()),
+            aad: None,
+        }),
+        ..empty_overrides()
+    };
     let settings = resolve(
         &[("sqs_aws_use_application_level_encryption", "False")],
         overrides,
@@ -357,10 +377,14 @@ fn credentials_are_read_from_callback_settings() {
         &[],
     )
     .expect("the settings resolve");
-    let credentials = settings.credentials;
+    assert_credentials(&settings.credentials);
+}
+
+fn assert_credentials(credentials: &CredentialParams) {
     assert_eq!(
         credentials
             .access_key_id
+            .as_ref()
             .expect("access key")
             .expose_secret(),
         "access"
@@ -368,6 +392,7 @@ fn credentials_are_read_from_callback_settings() {
     assert_eq!(
         credentials
             .secret_access_key
+            .as_ref()
             .expect("secret key")
             .expose_secret(),
         "secret"
@@ -375,6 +400,7 @@ fn credentials_are_read_from_callback_settings() {
     assert_eq!(
         credentials
             .session_token
+            .as_ref()
             .expect("session token")
             .expose_secret(),
         "token"
@@ -385,6 +411,7 @@ fn credentials_are_read_from_callback_settings() {
     assert_eq!(
         credentials
             .web_identity_token
+            .as_ref()
             .expect("web identity token")
             .expose_secret(),
         "identity"
@@ -398,9 +425,11 @@ fn credentials_are_read_from_callback_settings() {
 
 #[test]
 fn batch_overrides_come_from_the_constructor_arguments() {
-    let mut overrides = Overrides::default();
-    overrides.batch_size = Some(7);
-    overrides.flush_interval_seconds = Some(3);
+    let overrides = Overrides {
+        batch_size: Some(7),
+        flush_interval_seconds: Some(3),
+        ..empty_overrides()
+    };
     let settings = resolve(&[], overrides, &[]).expect("the settings resolve");
     assert_eq!(settings.batch.batch_size, 7);
     assert_eq!(settings.batch.flush_interval, Duration::from_secs(3));

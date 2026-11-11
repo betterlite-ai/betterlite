@@ -6,7 +6,7 @@ use secrecy::SecretString;
 
 use crate::sqs_logging::tests::support::environment;
 
-use super::{CredentialError, CredentialParams, EnvironmentCredentials};
+use super::{CredentialError, CredentialParams, CredentialSource as _, EnvironmentCredentials};
 
 fn credentials(variables: &[(&str, &str)]) -> EnvironmentCredentials {
     EnvironmentCredentials {

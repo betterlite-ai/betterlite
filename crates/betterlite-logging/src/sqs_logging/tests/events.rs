@@ -1,15 +1,16 @@
-use crate::callback_logger::CallbackLogger;
-use crate::fields::types::LoggingStatus;
+use crate::callback_logger::CallbackLogger as _;
+use crate::fields::payload::StandardLoggingPayload;
+use crate::fields::status::LoggingStatus;
 
 use super::support::{Harness, event, payload, payload_with_messages, settings_from_environment};
 
 const BASE64_MESSAGES: &str = r#"[{"role":"user","content":[{"type":"text","text":"data:image/png;base64,iVBORw0KGgo="},{"type":"text","text":"hello"}]}]"#;
 
-fn payload_with_base64() -> crate::fields::payload::StandardLoggingPayload {
+fn payload_with_base64() -> StandardLoggingPayload {
     payload_with_messages(BASE64_MESSAGES)
 }
 
-fn messages_text(payload: &crate::fields::payload::StandardLoggingPayload) -> String {
+fn messages_text(payload: &StandardLoggingPayload) -> String {
     serde_json::to_string(payload.messages.as_ref().expect("messages are set"))
         .expect("the messages serialize")
 }

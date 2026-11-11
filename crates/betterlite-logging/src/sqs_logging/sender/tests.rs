@@ -6,7 +6,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use secrecy::ExposeSecret as _;
 
-use crate::sqs_logging::credentials::CredentialSource;
+use crate::sqs_logging::credentials::{CredentialParams, CredentialSource};
 use crate::sqs_logging::health::DummyHealthPayload;
 use crate::sqs_logging::settings::Settings;
 use crate::sqs_logging::tests::support::{
@@ -55,7 +55,7 @@ async fn send_message_posts_the_signed_form_body() {
         .await
         .expect("the message sends");
     records.wait_for(1).await;
-    let entries = records.entries.lock().expect("the records lock");
+    let entries = records.snapshot();
     let posted = &entries[0];
     assert_eq!(posted.url, QUEUE_URL);
     assert_eq!(
@@ -107,7 +107,7 @@ async fn send_message_uses_the_configured_region() {
         .await
         .expect("the message sends");
     records.wait_for(1).await;
-    let entries = records.entries.lock().expect("the records lock");
+    let entries = records.snapshot();
     let authorization = entries[0]
         .headers
         .get("authorization")
@@ -127,7 +127,7 @@ async fn send_message_signs_with_the_session_token() {
         .await
         .expect("the message sends");
     records.wait_for(1).await;
-    let entries = records.entries.lock().expect("the records lock");
+    let entries = records.snapshot();
     assert_eq!(
         entries[0]
             .headers
@@ -142,6 +142,7 @@ async fn send_message_signs_with_the_session_token() {
 #[tokio::test]
 async fn send_message_forwards_every_credential_parameter() {
     let recorded = Arc::new(RecordedCredentials::default());
+    let recorded_source = Arc::clone(&recorded);
     let delivery = RecordingDelivery::delivering();
     let records = Arc::clone(&delivery.records);
     let sender = sender_with(
@@ -158,7 +159,7 @@ async fn send_message_forwards_every_credential_parameter() {
             ("sqs_aws_sts_endpoint", "https://sts.example.com"),
         ]),
         delivery,
-        recorded.clone(),
+        recorded_source,
     );
     sender
         .send_message(&payload())
@@ -166,7 +167,10 @@ async fn send_message_forwards_every_credential_parameter() {
         .expect("the message sends");
     records.wait_for(1).await;
     let calls = recorded.calls.lock().expect("the calls lock");
-    let forwarded = &calls[0];
+    assert_forwarded(&calls[0]);
+}
+
+fn assert_forwarded(forwarded: &CredentialParams) {
     assert_eq!(
         forwarded
             .access_key_id
@@ -294,14 +298,14 @@ async fn send_message_accepts_a_redirect_status() {
 #[tokio::test]
 async fn async_send_message_swallows_a_transport_failure() {
     let sender = sender(settings(), RecordingDelivery::failing());
-    let (_, log) = logged(sender.async_send_message(&payload())).await;
+    let ((), log) = logged(sender.async_send_message(&payload())).await;
     assert!(log.contains("Error sending to SQS"));
 }
 
 #[tokio::test]
 async fn async_send_message_swallows_an_error_status() {
     let sender = sender(settings(), RecordingDelivery::answering(503, "unavailable"));
-    let (_, log) = logged(sender.async_send_message(&payload())).await;
+    let ((), log) = logged(sender.async_send_message(&payload())).await;
     assert!(log.contains("Error sending to SQS"));
     assert!(log.contains("503"));
 }

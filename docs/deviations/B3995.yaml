@@ -1,0 +1,5 @@
+task: B3995
+deviations:
+  - what: async_send_message swallows all exceptions from credential fetch, signing and HTTP delivery, logging them without propagating to the caller.
+    why: Matches LiteLLM behavior where callback failures do not block the request; health checks may report healthy despite prior send errors if test-message construction succeeds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L308-L309
