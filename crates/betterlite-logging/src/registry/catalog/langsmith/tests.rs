@@ -10,7 +10,7 @@ use betterlite_http::proxy::ProxiedClient;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use super::build;
+use super::{build, resolve_settings};
 use crate::registry::catalog::{CatalogError, CatalogInputs, LoggerCatalog};
 
 fn inputs() -> CatalogInputs {
@@ -50,6 +50,20 @@ async fn callback_logger_is_built_once_per_process() {
     assert!(Arc::ptr_eq(&first, &second));
     assert_eq!(first.callback_name(), "langsmith");
     assert_eq!(tracker.len(), 1);
+}
+
+#[test]
+fn resolve_settings_reads_the_config_batch_size_and_redaction_flag() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings: {langsmith_batch_size: 10, redact_user_api_key_info: true}")
+    .expect("the config loads");
+    let mut inputs = inputs();
+    inputs.config = Arc::new(config);
+    let settings = resolve_settings(&inputs).expect("the settings resolve");
+    assert_eq!(settings.batch.batch_size, 10);
+    assert!(settings.redact_user_api_key_info);
 }
 
 #[tokio::test]

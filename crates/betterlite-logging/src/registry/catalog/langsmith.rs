@@ -8,14 +8,16 @@ use crate::argilla_logging::logger::SeededRandom;
 use crate::callback_logger::CallbackLogger;
 use crate::http_analytics_loggers::delivery::PooledDelivery;
 use crate::langsmith_logger::clock::SystemClock;
-use crate::langsmith_logger::settings;
+use crate::langsmith_logger::settings::{self, LangsmithSettings};
 use crate::langsmith_logger::{LangsmithDeps, LangsmithLogger};
 use crate::langsmith_payloads::ids::SystemIds;
 
 mod tests;
 
-pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-    let settings = settings::resolve(
+pub fn resolve_settings(
+    inputs: &CatalogInputs,
+) -> Result<LangsmithSettings, settings::SettingsError> {
+    settings::resolve(
         inputs.env.as_ref(),
         inputs.config.sections.langsmith_settings.batch_size,
         inputs
@@ -24,7 +26,10 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
             .logging_privacy
             .redact_user_api_key_info,
     )
-    .map_err(|error| CatalogError::Init {
+}
+
+pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let settings = resolve_settings(inputs).map_err(|error| CatalogError::Init {
         message: error.to_string(),
     })?;
     let random = StdRng::try_from_rng(&mut SysRng).map_err(|source| CatalogError::Init {
