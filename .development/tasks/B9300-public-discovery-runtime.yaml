@@ -1,0 +1,167 @@
+id: B9300
+title: Public discovery settings and native blog feed runtime
+description: >-
+  The public blog endpoint cannot call B4264's implementation: it lives entirely in
+  the oracle helper crate, even after B5100's parser corrections. Build the production
+  BlogFeed in betterlite-server::public_endpoints::blog_feed and the public_discovery
+  section in betterlite-config. B077 consumes both when it mounts the public hubs;
+  this task exports no HTTP router. Keep the gateway independent of oracle crates.
+
+  The config section reads litellm_settings.blog_posts_url, whose default is
+  LITELLM_BLOG_POSTS_URL or https://docs.litellm.ai/blog/rss.xml. A configured setting
+  wins over that environment default, because load_config sets litellm attributes
+  after import. Resolve os.environ/ references through the existing loader. Read
+  LITELLM_LOCAL_BLOG_POSTS here, default false; the case-insensitive string true
+  enables local mode. The same section reads public_mcp_servers as an optional
+  string list, default None,
+  public_mcp_hub_strict_whitelist as a boolean default true, and
+  public_model_groups_links as a display-name map default {}. Link values accept
+  the legacy URL string or an object, preserving that object's optional url/index
+  and additional JSON members without coercing them; use a typed union with a
+  passthrough member representation, not a map that restricts every value to text.
+  Links are display data and are never fetched. Read DOCS_TITLE, default LiteLLM API,
+  without a license gate, per the product decision. Expose these through
+  config.sections.public_discovery. B8614 seeds its registry settings from this
+  section and B077 passes the live values to the handlers. public_model_groups
+  stays with B839's model_public_settings section and public_agent_groups with
+  B8647's agent_routes section; do not parse those keys a second time here.
+
+  BlogPost has title, description, date and url strings; BlogPostsResponse has posts.
+  Bundle the pin's blog_posts.json in this module's assets directory. BlogFeed receives
+  B173's ProxiedClient, resolved settings, a clock and a local-post source at construction.
+  Use quick-xml already pinned in the workspace, with B5100's corrected parsing
+  behavior as prior art; do not build an XML tokenizer. Reuse the existing parser and
+  date logic through the architect's extraction described in the report, then place
+  production tests beside them. That extraction must preserve the existing oracle
+  tests and make their adapter call the production parser, not retain two copies.
+
+  parse_rss_to_posts takes bounded XML bytes and max_posts, default 1. Validate the
+  complete document even after collecting enough posts. Find the first direct,
+  unnamespaced channel and its direct item children; skip an item only when title
+  or link is missing, not when an existing element is empty. Preserve ElementTree's
+  initial text semantics for nested markup, entity decoding and CR/CRLF normalization.
+  Missing description or date becomes an empty string. Successful RFC 2822 date
+  parsing returns YYYY-MM-DD in the parsed offset, with the audited B5100 lenient
+  date cases; a failed date parse keeps the original text. Validate the parsed
+  collection as nonempty, warning when it is empty.
+
+  fetch_rss_feed sends one asynchronous GET to the configured URL with a five-second
+  timeout, no automatic retry and no redirect following, like httpx.get's defaults.
+  It accepts only successful statuses and returns text for the parser. Set a 16 MiB
+  decoded response cap and a parser nesting cap of 64; the limit failures follow the
+  existing warning-and-bundled-fallback path. All network reads use B173's bounded
+  transport. The URL never comes from a public request. No lock spans a network await.
+
+  get_blog_posts first checks local mode and loads the backup without touching the
+  remote cache. Otherwise take the clock before fetching: return a cached successful
+  list only when now minus last_fetch is strictly less than 3600 seconds. A backwards
+  clock therefore keeps it valid. A successful fetch and nonempty parse replace the
+  cached posts and timestamp with that pre-fetch time. Fetch, XML and empty-result
+  failures warn and load the backup without replacing either cache field, so the
+  next call retries. A failing backup load propagates to B077's endpoint-level
+  fallback; do not convert it into an empty success. Cache state belongs to one
+  server instance and is shared by its requests, never by two separately built apps.
+
+  Native tests use a recording transport, injected clock and fallible local source
+  for local_mode_skips_fetch, success_is_cached, expires_at_one_hour,
+  timestamp_precedes_fetch, failed_refresh_keeps_cache, fallback_is_not_cached,
+  backwards_clock_keeps_cache, backup_failure_propagates and independent_apps.
+  Real loopback transport tests prove the five-second deadline, non-2xx and redirect
+  handling, body cap and cancellation. Loader tests named loads_public_lists,
+  defaults_and_url_precedence, useful_link_variants and docs_title_without_license
+  load complete YAML with Loader::load and an injected environment.
+
+  Pure helper cases exercise only parse_rss_to_posts: first valid item, missing versus
+  empty title/link, initial text and entities, CRLF normalization, RFC 2822 and raw
+  invalid date, first empty channel and malformed trailing XML. The Python side calls
+  the pinned static parser. Stateful cache and network behavior stays in native tests
+  until B077's booted HTTP cases. Add the blog_feed parser cargo-fuzz target and corpus
+  replay, and seed B002's existing config_yaml decoder for this section. After the
+  architect's extraction of the 647-line audited parser/date implementation, allow
+  roughly 600 additional non-test lines for bounds, transport, settings and adapters;
+  the cited feed implementation has 85 nonblank noncomment lines excluding docstrings.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/public_endpoints/blog_feed.rs
+    - crates/betterlite-server/src/public_endpoints/blog_feed/**
+    - crates/betterlite-server/fuzz/fuzz_targets/blog_feed.rs
+    - crates/betterlite-server/fuzz/corpus/blog_feed/**
+    - crates/betterlite-config/src/sections/public_discovery.rs
+    - crates/betterlite-config/src/sections/public_discovery/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/public-discovery-*
+    - tools/oracle/cases/helpers/public-blog-parser/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L24-L160
+    why: Native ownership of the records, local loader, HTTP fetch, XML projection, validation, cache and wrapper; B4264/B5100 previously built only oracle-side versions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/blog_posts.json#L1-L10
+    why: Complete bundled backup, whose content is served when remote loading fails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L430-L433
+    why: Configured blog URL and its environment default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L506-L517
+    why: Public discovery list, strict-whitelist and useful-link defaults; unrelated search/index settings remain outside this section.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6620-L6628
+    why: Config assignments override the values set at module import.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1043-L1044
+    why: DOCS_TITLE default and the MIT license-gated branch enabled by the no-paid-tier decision.
+  - url: https://docs.rs/quick-xml/0.41.0/quick_xml/reader/struct.Reader.html
+    why: Existing dependency for event parsing without another XML implementation.
+dod:
+  - text: The production parser retains the pinned item selection, text, entity and date behavior and validates the entire document.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: Feed calls use the configured URL, five-second bounded transport, correct cache timestamp and TTL, and uncached warning fallback with propagated backup failures.
+    proof: [behavior-tests, transport-tests]
+  - text: Loader tests prove every public-discovery key, None versus empty MCP lists, both useful-link formats, config-over-env URL precedence and unlicensed DOCS_TITLE.
+    proof: [behavior-tests]
+  - text: Both the blog XML byte parser and the existing config YAML parser replay newly added seeds, including malformed and excessive input.
+    proof: [blog-corpus, config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: XML projection, cache timing or fallback state differs from the pinned behavior.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed::/) - test(/::transport::/) - test(replays_the_blog_feed_corpus)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::public_discovery::/)'
+    - id: transport-tests
+      why: Real requests retry, follow redirects, exceed their deadline or buffer unbounded RSS bytes.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed::tests::transport::/)'
+    - id: helper-python
+      why: New pure parser comparisons are missing or their Python adapter fails strict checking.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/public-blog-parser)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: blog-corpus
+      why: The production XML decoder has no new fuzz inputs or does not replay them.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/blog_feed.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/blog_feed)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed::tests::replays_the_blog_feed_corpus$/)'
+    - id: config-corpus
+      why: The new public discovery fields never reach the existing YAML decoder's corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/public-discovery-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/public-blog-parser/first-valid-item.yaml
+  - tools/oracle/cases/helpers/public-blog-parser/missing-and-empty-elements.yaml
+  - tools/oracle/cases/helpers/public-blog-parser/initial-text-and-entities.yaml
+  - tools/oracle/cases/helpers/public-blog-parser/crlf-normalization.yaml
+  - tools/oracle/cases/helpers/public-blog-parser/date-projection.yaml
+  - tools/oracle/cases/helpers/public-blog-parser/first-empty-channel.yaml
+  - tools/oracle/cases/helpers/public-blog-parser/malformed-trailing-xml.yaml
+deviations:
+  - what: RSS responses above 16 MiB or XML nested beyond 64 levels warn and serve the bundled posts.
+    why: LiteLLM's synchronous whole-document parser has no corresponding input cap; public requests must not cause unbounded buffering or nesting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L64-L75
+  - what: DOCS_TITLE changes the public model-hub title without a premium license.
+    why: The README decision enables this MIT branding branch without retaining the license check; the default remains LiteLLM API.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1043-L1044
+out_of_scope:
+  - B077 owns get_litellm_blog_posts, its final five-post slice, the endpoint-level fallback, hub metadata and HTTP composition; B3192 owns the separate autorouter preset cache.
+  - B4264 and B5100 retain their oracle operation and historical cases; the architect extracts their parser into this task's module and redirects that existing adapter before dispatch, without adding a production dependency on tools/oracle.
+  - B173 owns HTTP pooling and response limits; B002 owns Loader::load and the config_yaml byte decoder; this task reuses them.
+  - B839 owns public model/link mutations and the public_model_groups loader; B8647 owns the public_agent_groups loader and shared holder; B4776 owns the agent registry and B4731 the MCP registry.
+  - The adjacent public_skills_index, agent_search_embedding_model, mcp_tool_search and skill_search_embedding_model declarations are reference context only; this section does not read them.
+pitfalls:
+  - The endpoint's five-post limit does not change parse_rss_to_posts's default max_posts of one.
+  - A fallback must not overwrite the previous successful cache or last_fetch_time, even after that success has expired.
+  - LITELLM_BLOG_POSTS_URL is an import-time default, so litellm_settings.blog_posts_url takes precedence over it.
+  - Cache validity uses the clock captured before the GET and the strict comparison against 3600, not completion time or an inclusive boundary.
+  - public_mcp_servers is initially None and the registry's public_mcp_hub_strict_whitelist is true, so an empty allowlist must not publish every server.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

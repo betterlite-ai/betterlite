@@ -1519,6 +1519,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-dashboard-browser"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-db"
 version = "0.1.0"
 dependencies = [

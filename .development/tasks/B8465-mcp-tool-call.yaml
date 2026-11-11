@@ -17,8 +17,9 @@ description: >-
   OAuth headers. A spec_path server warns "pre_mcp_call hook returned extra_headers for
   OpenAPI-backed MCP server '<name>' ..." when the hook returned extra headers (they are ignored),
   takes B8460's resolve_openapi_tool_auth and resolve_openapi_upstream_auth with the caller's
-  original oauth2 headers, and runs B4680's OpenAPI tool handler under the concurrency limit with
-  the Authorization value, forwarded headers and resolved headers passed in. The result is the
+  original oauth2 headers, and calls B8970's mcp::managed_openapi::call under the concurrency limit
+  with the shared B4680 registry and an OpenApiCallContext holding the Authorization value,
+  forwarded headers and resolved headers. The result is the
   second task's result when hooks ran, else the first. Any other server goes to call_regular.
 
 
@@ -132,7 +133,7 @@ deviations:
     why: The rules forbid ContextVars for per-run data; the handler sees the same three values.
 
 out_of_scope:
-  - "_execute_mcp_tool, logging and post-call guardrails: B8198. _call_openapi_tool_handler: B4680."
+  - "_execute_mcp_tool, logging and post-call guardrails: B8198. _call_openapi_tool_handler: B8970, which calls B4680's registry."
   - "_get_byok_credential, _check_byok_credential and _get_user_oauth_extra_headers_from_db: B8196."
   - "pre_call_check and during_hook_task: B8464. create_client, static_headers and resolve_v2_auth: B8461."
   - The HTTP cases for tools/call come with the MCP routes in B136; helper cases cover the header build and server resolution.

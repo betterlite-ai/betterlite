@@ -150,7 +150,7 @@ out_of_scope:
   - "handle_exception_on_proxy and ProxyException (proxy/utils.py): B124. This task builds only the mapping from its own error to status and message, and the shared error renderer of the server turns it into the body."
   - "Category file decoding and loading (content_filter.py): B3692. DATA_ROOTS, category_dirs and find_category_file: B3691. safe_join and is_within: B4260. major_airlines.json and its use in the competitor intent check: B3697."
   - "The guardrail's own apply_guardrail logic and the GuardrailContract trait: B5471 and each provider task."
-  - "The list, info and form routes (B3684), mutations (B3685), submissions and the custom-code test route with `_execution_timeout_response` and `_run_test_guardrail` (B3686), the usage router mount at L2457 (B104)."
+  - "The list, info and form routes (B3684), mutations (B3685), submissions and the custom-code test route with `_execution_timeout_response` and `_run_test_guardrail` (B3686), the usage router mount at L2457 (B8772)."
 pitfalls:
   - "The 404 for an unknown guardrail is raised inside the try block, so it passes post_call_failure_hook and comes out as the proxy error body with type internal_server_error and code 404, not as `{\"detail\": ...}` like the three catalog routes."
   - "category_yaml checks the traversal twice: `safe_join` on the `.yaml` name first (400), then `is_within` on the file actually found (400). A symlink inside categories/ that points elsewhere passes the first and must fail the second."

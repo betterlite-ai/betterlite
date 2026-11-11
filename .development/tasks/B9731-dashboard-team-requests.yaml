@@ -1,0 +1,158 @@
+id: B9731
+title: Verify team pages, membership edits and CSV requests against the proxy
+description: >-
+  Exercise Teams, TeamsTable, TeamInfo, TeamMemberTab, MyUserTab, AvailableTeamsPanel,
+  DeletedTeamsPage and teamsCsvExport from the retained dashboard. Add HTTP comparisons and
+  41-team-pages.patch with its preimage/postimage record, removing only premiumUser disabling,
+  pricing links and the deleted-team Enterprise notice. Keep is_proxy_admin, team-admin edit
+  permissions, permitted tabs and allowed model/grant boundaries. LoggingSettings and
+  EditLoggingSettings edit metadata.logging through /team/update; they never call B057's
+  /team/<id>/callback routes. B058 organization activity is not a team-page dependency either.
+  B9730 has already removed the shared ModelMaxBudgetEditor subscription gate; reuse that
+  patch and leave its helper source out of 41-team-pages.patch.
+  Select the retained Teams.test.tsx, team/TeamInfo.test.tsx, team/TeamInfo.integration.test.tsx
+  and DeletedTeamsPage/DeletedTeamsPage.test.tsx through tests/teams/upstream-tests.json.
+  Update paid-presentation assertions only where this patch deliberately changes them.
+
+  Read inventory. TeamsTable sends GET /v2/team/list with page=1,page_size=50,
+  sort_by=created_at,sort_order=desc,search_team_id_match=prefix; search, team_id, team_alias,
+  organization_id and non-admin user_id are optional. Dropdowns use page_size=100 without
+  sorting, and useInfiniteTeams uses page_size=50 plus team_alias and optional organization_id.
+  CSV follows all pages with page_size=100 and the active table filters. DeletedTeamsPage uses
+  page=1,page_size=25,status=deleted without sort/search by default. Read teams[], total, page,
+  page_size,total_pages and rows' team_id,team_alias,organization_id,models,spend,max_budget,
+  budget_duration,budget_reset_at,tpm_limit,rpm_limit,members_count,keys_count,blocked,
+  access_group_ids and inherited access-group resource arrays; archives add deleted_at/deleted_by.
+  B813 owns this route and GET /team/list, whose legacy bare-array query accepts user_id,
+  organization_id,team_id,team_alias. useTeams/fetchTeams uses the legacy route, omitting user_id
+  for Admin/Admin Viewer and supplying it for other roles. Do not turn its array into a page.
+
+  TeamInfo GET /team/info?team_id=<id> is B812's route; read team_info, keys, team_memberships,
+  metadata, members_with_roles, object_permission and litellm_model_table. MyUserTab GET
+  /team/<encoded-id>/members/me is B1208's: user_id,team_id,team_alias,role,user_email,budget_id,
+  spend,total_spend and nested litellm_budget_table; a 404 is an intentional empty member view.
+  AvailableTeamsPanel GET /team/available (B1208) reads team IDs, aliases and descriptions from
+  the returned bare array. useTeamMetadataSchema GET /team/metadata_schema (B1208) reads fields[]
+  with key,label. Teams reads GET /get/default_team_settings
+  (B1657) values/field descriptors to seed creation; its TeamSSOSettings tab PATCHes
+  /update/default_team_settings with the edited defaults at the top level. member_permissions
+  GET /team/permissions_list?team_id=<id> (B810) reads team_member_permissions; POST
+  /team/permissions_update (B810) sends {team_id,team_member_permissions:[...]} and reloads.
+  CSV alone POSTs /budget/info (B829), {budgets:[<unique member-budget ids>]}, reading budget_id,
+  max_budget,budget_duration,tpm_limit,rpm_limit from the bare array. Skip that request if no ids.
+
+  Write inventory. POST /team/new is B804's and sends team_alias, optional organization_id,
+  models, max_budget,budget_duration,tpm_limit,rpm_limit, metadata as a parsed object,
+  team_member_budget/team_member_budget_duration, model_max_budget, object_permission and
+  access_group_ids. POST /team/update is B806's; team_id plus submitted fields includes nullable
+  budget/limit fields, default_team_member_models, model_aliases, router_settings and
+  metadata.logging/guardrails/policies. The UI reloads /team/info after success; networking's
+  local {data,team_id} annotation is not permission to wrap the real response differently.
+  POST /team/delete (B811) sends {team_ids:[id]}, then invalidates the table.
+  POST /team/member_add (B808) sends {team_id,member:{user_id or user_email,role,...limits}};
+  joining an available team uses the same route with role=user. POST /team/member_update (B808)
+  flattens {team_id,role,user_id,user_email?,max_budget_in_team?,tpm_limit?,rpm_limit?,
+  budget_duration?,allowed_models?,temp_budget_increase?,temp_budget_expiry?}; fields present
+  as empty inputs become null, absent fields stay absent. POST /team/member_delete (B1207)
+  flattens {team_id,user_id?,user_email?}. All three refetch info after success.
+  POST /team/bulk_member_add (B810), used by BulkEditUsers, sends team_id with members[] or
+  all_users=true and optional max_budget_in_team; B9732 covers its user-page payloads.
+  POST /team/<id>/member/<user>/reset_spend (B809) sends {reset_to:0}; POST on the sibling
+  reset_budget path sends no body. The hooks consume success and refresh membership budgets.
+  TeamInfo's reset dialog POSTs /management/v1/teams/<id>/members/bulk_update (B067), body
+  {members:[{user_id,max_budget_in_team:null}]}; read data[] row outcomes and effective limits,
+  not an invented all-or-nothing success flag.
+
+  The route owners' cases are planned, not present in this checkout: B813 v2-defaults-and-bounds,
+  deleted-page-projection and legacy-memberships-and-keys; B804 new-team; B806 team-update;
+  B808 add-member; B809 reset-member-default; B810 null-vs-empty-permissions; B812 team-info;
+  B1208 member/schema/available cases; B067 budget-omitted-null-and-shared-row; B829
+  info-found-missing-duplicate; B1657 get-user-and-team-default-schemas. None currently sends
+  the table's prefix-search query or the form-and-refresh sequences. Add the cases below using
+  B860 database fixtures and real HTTP steps, not handler adapters. Minimal rows come from the
+  fixture; construct richer teams with the same /team/new and /team/update routes. Capture
+  ids per gateway and compare JSON content type, status, error type/param/code, nullable fields,
+  count/order and grants. Settings-write cases set STORE_MODEL_IN_DB=true explicitly; its
+  default remains false. Use native_feature_eligibility=true from B1644 only in cases assigning
+  team-admin roles or exercising model_max_budget's paid gate, and label those cases accordingly.
+  Unrelated-user denial and normal list/create cases stay stock. A route mismatch is handed to
+  its owner, never repaired by registering another handler here. Budget about 480 case lines,
+  110 patch lines and 180 retained-component assertions.
+scope:
+  paths:
+    - ui/dashboard/patches/41-team-pages.patch
+    - ui/dashboard/patches/41-team-pages.json
+    - ui/dashboard/tests/teams/**
+    - tools/oracle/cases/ui/teams/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/teams/useTeams.ts#L41-L291
+    why: V2 table, legacy list, complete dropdown pagination and deleted-team query construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/TeamsPage/TeamsTable.tsx#L47-L97
+    why: The table opts into prefix search and sends its own sort/page defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/TeamsPage/teamsCsvExport.ts#L20-L95
+    why: CSV pagination, budget lookup body and consumed column fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/team/TeamInfo.tsx#L801-L943
+    why: Member actions, info refresh and null-reset bulk request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L2754-L2952
+    why: Member body nesting, present-to-null conversion and bulk-add variants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1330-L1791
+    why: B804 owns team creation and its model-budget eligibility branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2107-L2565
+    why: B806 owns team edits; logging edits are metadata writes here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3349-L4510
+    why: B808/B1207/B809/B810/B811 own the member, reset, bulk-add and team-deletion decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4841-L5288
+    why: B812 info and B1208 self-membership, metadata and available-team reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5591-L6436
+    why: B813 list routes and B810 permission routes, not new implementations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/teams.py#L100-L182
+    why: B067 owns the prefixed bulk-update decorator and ordered row results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L205-L231
+    why: B829's POST budget lookup returns an array for CSV enrichment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L875-L895
+    why: B1657's default-team settings read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1105-L1127
+    why: B1657's PATCH defaults route consumes the submitted object directly.
+dod:
+  - text: Table, deleted rows, complete selectors and CSV enrichment match the actual team-page request and response contracts.
+    proof: [team-cases, oracle, team-components]
+  - text: Team edits and member budget/permission operations preserve null versus omission, scoped access and subsequent readback.
+    proof: [oracle, team-components]
+checks:
+  optional: []
+  commands:
+    - id: team-cases
+      why: Generic management tests pass without any team-page HTTP sequence.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/teams)"
+    - id: team-components
+      why: Paid controls, CSV requests or member-form serialization differ in the retained UI.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/teams
+oracle_cases:
+  - tools/oracle/cases/ui/teams/prefix-table-search-and-sort.yaml
+  - tools/oracle/cases/ui/teams/legacy-and-all-page-selectors.yaml
+  - tools/oracle/cases/ui/teams/create-edit-info-and-delete.yaml
+  - tools/oracle/cases/ui/teams/deleted-table-query.yaml
+  - tools/oracle/cases/ui/teams/member-add-edit-delete.yaml
+  - tools/oracle/cases/ui/teams/member-resets-and-bulk-null.yaml
+  - tools/oracle/cases/ui/teams/self-membership-and-available-join.yaml
+  - tools/oracle/cases/ui/teams/permission-array-roundtrip.yaml
+  - tools/oracle/cases/ui/teams/metadata-schema-and-defaults.yaml
+  - tools/oracle/cases/ui/teams/csv-pages-and-budget-info.yaml
+  - tools/oracle/cases/ui/teams/admin-member-and-model-budget-eligible-mit.yaml
+deviations:
+  - what: Team forms and archived-team views have no premiumUser-only disabling or paid-tier notices; role and field permissions still govern edits.
+    why: All retained MIT controls follow the README no-paid-tier decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/team/TeamInfo.tsx#L2020-L2039
+out_of_scope:
+  - Every unchanged team component/helper remains B9090's source intake; backend functions remain with the route owners named in the request inventory.
+  - B9730 covers TeamVirtualKeysTable key requests; B9733 covers organization info; B9735 covers policies, guardrails, resources and public UI settings.
+  - B057 callback CRUD and B058 daily organization activity have no calls from these pages at the pin.
+pitfalls:
+  - The legacy team array and the v2 teams/total envelope must not be interchanged.
+  - A proxy admin who is not a member legitimately gets 404 from members/me.
+  - Resetting max_budget_in_team to null is a per-member bulk update, not resetting every member's spend.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -12,7 +12,7 @@ description: >-
   APPROLE_MOUNT_PATH/CLIENT_CERT/CLIENT_KEY/CERT_ROLE/NAMESPACE/LOGIN_NAMESPACE/
   SECRET_NAMESPACE/MOUNT_NAME/PATH_PREFIX, and CyberArk fields to CYBERARK_API_BASE/ACCOUNT/
   USERNAME/API_KEY/CLIENT_CERT/CLIENT_KEY/SSL_VERIFY/REFRESH_INTERVAL. Every override field
-  defaults None; downstream manager defaults remain B129's. The effective environment
+  defaults None; downstream manager defaults remain B4416's and B4418's. The effective environment
   projection removes missing, null or empty fields and stringifies other accepted values.
   Export RuntimeEnvironment, an explicit boot snapshot plus runtime overlay with immutable
   request snapshots and typed set/remove batches, for native settings consumers. Pass it to

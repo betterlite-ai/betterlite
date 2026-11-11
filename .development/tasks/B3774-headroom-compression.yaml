@@ -140,7 +140,7 @@ out_of_scope:
   - Initialization from guardrail registry (owned by B107).
   - ">-
     CustomGuardrail base class lifecycle (CustomGuardrail.__init__, add_standard_logging_guardrail_information_to_request_data, update_in_memory_litellm_params base implementation, log_guardrail_information decorator):
-    Framework base class for guardrail integration; no assigned task owner yet (B104 outline has no task file). Required for initialization and lifecycle; infrastructure dependency."
+    Framework base class for guardrail integration; owned by B5471 (construction and updates) and B3664 (invocation logging). Required for initialization and lifecycle; infrastructure dependency."
   - ">-
     HTTP client management (AsyncHTTPHandler.post): Infrastructure layer that provides pooled httpx clients with timeout handling; no assigned task owner yet.
     Injected as dependency rather than constructed here."

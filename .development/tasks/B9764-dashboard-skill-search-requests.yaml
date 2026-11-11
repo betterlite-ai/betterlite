@@ -1,0 +1,114 @@
+id: B9764
+title: Cover skill registration and search-tool forms through the proxy
+description: >-
+  Add approximately 550 lines of HTTP cases for the retained skills and search-tools pages.
+  These are two compact CRUD consumers, with all production logic already allocated.
+  B9090 imports their components, source-parsing helpers and tests; do not build /skills
+  endpoints for a page that actually manages Claude Code marketplace plugins.
+
+  Skills inventory. ClaudeCodePluginsPanel GET /claude-code/plugins?enabled_only=false
+  reads plugins[],total and each name,source,version,description,author,category,keywords,
+  enabled,domain,namespace. SkillSelector uses the same false default. B993 owns this
+  read; reuse B9735's search-and-skill-options case. AddPluginForm POST /claude-code/plugins
+  sends {name:trimmed_name,source,version?,description?,author?:{name,email?,url?},category?,
+  keywords?:[...],domain?,namespace?}. Preserve the parsed source variants
+  {source:github,repo}, {source:url,url}, {source:git-subdir,url,path} and
+  {source:archive,url,sha256?}, with the archive digest lowercased by the UI. The component
+  invalidates the list after success, and does not install or download the plugin. DELETE
+  /claude-code/plugins/{pluginName} sends no body and likewise triggers a reload. Both
+  writes are B992's. There are networking helpers for enable/disable but no caller in
+  these covered components at the pin, so add neither those requests nor their cases.
+
+  Search inventory. GET /search_tools/list has no query/body, returns search_tools[]
+  with search_tool_id,search_tool_name,litellm_params,search_tool_info,is_from_config and
+  created/updated timestamps; reuse the same B9735 case. GET
+  /search_tools/ui/available_providers reads providers[].provider_name,ui_friendly_name.
+  POST /search_tools and PUT /search_tools/{id} both send the wrapper
+  {search_tool:{search_tool_name,litellm_params:{search_provider,api_key},
+  search_tool_info?:{description}}}. An empty description is omitted. DELETE
+  /search_tools/{id} has no body. The write response is used only for success before
+  reloading the list. POST /search_tools/test_connection sends
+  {litellm_params:{search_provider,api_key}} and reads status,message,error_type,
+  test_query,results_count; an HTTP 200 can carry status:error. B3275 builds these six
+  methods and B8673 mounts them. The page does not call GET /search_tools/{id}.
+
+  SearchToolTester POST /v1/search/{search_tool_name} sends {query,max_results:5}, reading
+  results[].url,title,snippet; measured latency and history live in the client. B8275 owns
+  this route and the /search/{name},/v1/search,/search aliases; B8634 mounts it. Only the
+  named /v1 spelling is a request from this page. Exercise a populated result after create
+  and edit, then delete. Select tavily and set TAVILY_API_BASE to the local upstream
+  mock; B8021's adapter appends /search. The page body still contains only
+  search_provider and api_key. Do not add api_base to a supposedly exact form request.
+  Assert the test_connection upstream query is test with max_results=1, while the tester
+  supplies the user's query and 5. Credential masking applies to list/get, not the create
+  response; preserve B3275's actual behavior rather than promising stricter redaction.
+
+  All these calls use the configured gateway auth header, default Authorization Bearer,
+  and JSON writes use application/json. Use B860 database fixtures and HTTP setup, with
+  valid names/source URLs that never cause downloads. Compare admin success and an
+  ordinary user's denied mutation, plus the search connection's error-status-in-200 body.
+  Keep status, type/param/code when present, content-type and stable list fields; mask
+  only captured/generated IDs, timestamps and unstable human messages.
+
+  No matching skill/search HTTP case exists on disk. B992/B993 have future general
+  marketplace cases, B8673 future metadata/no-database/error cases and B8634 future
+  search routes, but none supplies the page's source variants and wrapped CRUD plus
+  named test sequence. Concurrent B091 plans a config-override lifecycle and Perplexity
+  connection cases with caller extras; those do not pin this Tavily form's exact field
+  omissions and max_results=5 tester request. B9735's shared list scenario is planned
+  and is reused here.
+scope:
+  paths:
+    - tools/oracle/cases/ui/skills-search/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7218-L7279
+    why: Plugin listing and creation use marketplace routes, with enabled_only=false.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7363-L7388
+    why: Plugin deletion has no request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5008-L5101
+    why: Search management wrappers and connection request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L6873-L6914
+    why: Named search execution sends max_results with the user's query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L277-L459
+    why: Dependency-owned plugin create and list decorators and projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L727-L770
+    why: Existing deletion route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L135-L475
+    why: List, create, update and delete are B3275, including response masking differences.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L555-L707
+    why: Connection test and provider metadata decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L17-L240
+    why: B8275's four named and body-selected search aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tavily/search/transformation.py#L49-L94
+    why: Existing Tavily adapter supports TAVILY_API_BASE, keeping the form body unchanged.
+dod:
+  - text: Skill source variants survive registration, false-filter listing and deletion through the existing marketplace endpoints.
+    proof: [skill-search-cases, oracle]
+  - text: Search provider metadata, wrapped form writes, connection-test results and named query execution match the retained page's contract.
+    proof: [skill-search-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: skill-search-cases
+      why: Marketplace helpers and isolated search errors do not prove the forms' actual HTTP bodies.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/skills-search)"
+oracle_cases:
+  - tools/oracle/cases/ui/skills-search/plugin-source-create-list-delete.yaml
+  - tools/oracle/cases/ui/skills-search/provider-and-wrapped-form-lifecycle.yaml
+  - tools/oracle/cases/ui/skills-search/connection-result-and-named-query.yaml
+  - tools/oracle/cases/ui/skills-search/nonadmin-write-boundaries.yaml
+  - tools/oracle/cases/ui/management-selectors/search-and-skill-options.yaml
+deviations: []
+out_of_scope:
+  - B992/B993 keep every marketplace function, B3275/B8673 all management behavior and B8275/B8634 the search call pipeline.
+  - All skills/search-tools page functions, selectors and tests are retained by B9090, including unused enable/disable helpers with no caller here at the pin.
+  - Provider signing, external plugin installation and agent skill invocation belong to their existing provider/agent tasks, not to these forms.
+pitfalls:
+  - Skill creation submits source=url for a generic repository URL, not an invented git discriminator.
+  - The search form wraps its payload in search_tool, while connection testing uses litellm_params at the top level.
+  - A search connection error can have HTTP status 200 and must still render as an error.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

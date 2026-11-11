@@ -23,7 +23,7 @@ description: >-
 
   B3695 supplies _filter_single_text; B3696 configures the text and templates; B3690 defines the typed
   detections. B002 extends the config loader for DEFAULT_MAX_RECURSE_DEPTH. Router.acompletion and
-  CustomGuardrail.raise_passthrough_exception/_event_hook_is_event_type are unresolved B104 callees.
+  CustomGuardrail.raise_passthrough_exception comes from B5471 and _event_hook_is_event_type from B3665.
 scope:
   paths:
   - crates/betterlite-guardrails/src/content_filter_inputs.rs
