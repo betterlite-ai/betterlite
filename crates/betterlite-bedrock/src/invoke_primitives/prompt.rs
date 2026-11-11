@@ -66,6 +66,12 @@ pub async fn convert_messages_to_prompt(
     if let Some(entry) = conversion.custom_prompt_dict.get(conversion.model) {
         return custom_entry_prompt(entry, &conversion);
     }
+    selected_prompt(conversion).await
+}
+
+async fn selected_prompt(
+    conversion: PromptConversion<'_>,
+) -> Result<ConvertedPrompt, ConversionError> {
     match conversion.provider {
         Some(
             BedrockInvokeProvider::Anthropic
@@ -77,12 +83,10 @@ pub async fn convert_messages_to_prompt(
             let template = bedrock_template(&conversion.model.to_lowercase());
             factory_prompt(
                 &conversion,
-                FactoryPrompt {
-                    model: conversion.model,
-                    custom_provider: Some("bedrock"),
-                    local_template: template,
-                    operation: "bedrock",
-                },
+                conversion.model,
+                Some("bedrock"),
+                template,
+                "bedrock",
             )
             .await
         }
@@ -90,12 +94,10 @@ pub async fn convert_messages_to_prompt(
         Some(BedrockInvokeProvider::DeepseekR1) => {
             factory_prompt(
                 &conversion,
-                FactoryPrompt {
-                    model: DEEPSEEK_MODEL,
-                    custom_provider: None,
-                    local_template: Some(DEEPSEEK_MODEL),
-                    operation: "deepseek_r1",
-                },
+                DEEPSEEK_MODEL,
+                None,
+                Some(DEEPSEEK_MODEL),
+                "deepseek_r1",
             )
             .await
         }
@@ -109,11 +111,15 @@ pub async fn convert_messages_to_prompt(
             | BedrockInvokeProvider::Stability
             | BedrockInvokeProvider::Moonshot,
         )
-        | None => Ok(ConvertedPrompt {
-            prompt: concatenated(conversion.messages)?,
-            chat_history: None,
-        }),
+        | None => fallback_prompt(conversion.messages),
     }
+}
+
+fn fallback_prompt(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError> {
+    Ok(ConvertedPrompt {
+        prompt: concatenated(messages)?,
+        chat_history: None,
+    })
 }
 
 fn custom_entry_prompt(
@@ -133,27 +139,23 @@ fn custom_entry_prompt(
     })
 }
 
-struct FactoryPrompt<'text> {
-    model: &'text str,
-    custom_provider: Option<&'text str>,
-    local_template: Option<&'text str>,
-    operation: &'static str,
-}
-
 async fn factory_prompt(
     conversion: &PromptConversion<'_>,
-    request: FactoryPrompt<'_>,
+    model: &str,
+    custom_provider: Option<&str>,
+    local_template: Option<&str>,
+    operation: &'static str,
 ) -> Result<ConvertedPrompt, ConversionError> {
-    if let Some(template) = request.local_template
+    if let Some(template) = local_template
         && !has_local_template(conversion.prompts, template)
     {
         return Err(ConversionError::Factory(FactoryError::NoChatTemplate));
     }
     match prompt_factory(
         conversion.prompts,
-        request.model,
+        model,
         conversion.messages,
-        request.custom_provider,
+        custom_provider,
         conversion.now,
     )
     .await?
@@ -163,7 +165,7 @@ async fn factory_prompt(
             chat_history: None,
         }),
         Output::Ollama(_) | Output::None => Err(ConversionError::NotText {
-            provider: request.operation,
+            provider: operation,
         }),
     }
 }
