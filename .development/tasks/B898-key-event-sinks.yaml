@@ -199,8 +199,8 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - Enterprise BaseEmailLogger imports and event branches are unavailable and not implemented.
-    B4410 owns the settings and B4415, B4417 and B4418 the concrete write and rotate operations, B116 legacy email
-    delivery, B737 team lookup and B784 outer lifecycle handling. This task passes secrets to their
+    B4410 owns the settings and B4415, B4417 and B4418 the concrete write and rotate operations, B4023 legacy email
+    logic (with B8891 bindings and B8400 SMTP), B737 team lookup and B784 outer lifecycle handling. This task passes secrets to their
     intended secure destination and adds no stored-cipher format or local database write.
   - 'litellm/proxy/hooks/key_management_event_hooks.py: B784 owns KeyManagementEventHooks.async_key_generated_hook
     (L36-L94), KeyManagementEventHooks.async_key_updated_hook (L97-L154), KeyManagementEventHooks.async_key_rotated_hook

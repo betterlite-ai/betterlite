@@ -26,7 +26,7 @@ scope:
   - crates/betterlite-python/tests/test_types_core_small_types.py
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L1-L320
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L1-L391
   why: The connection and routing option classes.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L1-L21
   why: Weight validators.

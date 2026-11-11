@@ -1,0 +1,5 @@
+The verdict is:
+```json
+{"score": 1}
+```
+done

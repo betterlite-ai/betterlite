@@ -85,7 +85,7 @@ out_of_scope:
 - "/model/info's use of the listing filters: B851 calls them itself."
 pitfalls:
 - 'B8634 already fills mount; add the two container routers and the utils router after its merges, and never merge a route a B1100 entry already merges, or axum panics on a duplicate path.'
-- 'The direct container call is required and the router one optional, so a proxy with no deployments still serves /v1/containers through DirectContainer.'
+- 'The direct container call is required and the router one optional, so a proxy with a router that has no deployments still serves /v1/containers. With no router at all (route_llm_request.py L491-L496 and L717), the direct call runs only when the request data carries an explicit api_key or api_base, or the CLI user_model is set (L717); otherwise the route answers ProxyModelNotFoundError.'
 - 'LiteLLM filters the (response id, lookup id) entries after the hidden and undiscoverable names are removed and before each model info is built, in both the admin branch and the caller branch, and in the caller branch before alias_listing_entries.'
 - 'model_list.rs is mounted by routes.rs, which this task must not edit, so the handler reads its state from the request extensions instead of a new parameter.'
 review_level: security

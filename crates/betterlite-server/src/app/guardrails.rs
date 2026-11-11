@@ -1,3 +1,4 @@
+pub mod policy_api;
 pub mod policy_mount;
 pub mod policy_tools;
 pub mod routes;

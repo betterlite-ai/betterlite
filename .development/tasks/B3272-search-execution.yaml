@@ -17,7 +17,7 @@ description: >-
 
   Query validation: string or list of strings only; reject other types or lists with non-strings.
   Optional parameter precedence: explicit arguments win over kwargs; kwargs contribute only unset options.
-  Provider lookup: raise ValueError if the provider has no search config; use BaseSearchConfig contract.
+  Provider lookup: raise ValueError if the provider has no search config; use BaseSearchConfig contract. The lookup takes the executable provider config from an injected `SearchConfigLookup` that this task defines. B048's `search_config(name)` registry implements it (B8673 wires that), so this task does not depend on B048 (B048 depends on the provider tasks, which depend on this one). B5360 supplies selector tags only and builds no search config.
   Credential/URL validation: call validate_environment for headers and resolve api_base trust; call get_complete_url
   for the full URL. Logging: use Logging.update_from_kwargs with model name, optional_params and litellm_params.
   Exception conversion: use litellm.exception_type (from betterlite-error) to wrap all exceptions with model,

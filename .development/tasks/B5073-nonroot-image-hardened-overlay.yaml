@@ -7,11 +7,11 @@ description: >-
 
   packaging/docker/Dockerfile.non_root has these stages, in this order.
   (1) pgbouncer-builder, the same stage as LiteLLM's lines 15-29: base image cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d (ARG LITELLM_BUILD_IMAGE, also used for ARG LITELLM_RUNTIME_IMAGE), ARG PGBOUNCER_VERSION=1.26.0 and ARG PGBOUNCER_SHA256=afd25dd61ee6775d37b40629b87ce08736b3e6955f3057bb212e410fbf21c71d, download, sha256sum -c, build, install to /usr/local/bin/pgbouncer.
-  (2) builder, FROM rust:1.98.0-bookworm (the version in rust-toolchain.toml). It copies Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/ and tools/ from the build context, then runs "cargo build --release --locked -p betterlite -p betterlite-db-admin" (B003 owns the first binary, B1232 the second). Install a system package here only if that locked build needs it. In the same stage copy packaging/docker/prod_entrypoint.sh, entrypoint.sh and component_entrypoint.sh to /app/docker/, strip CRLF with sed -i 's/\r$//' and chmod +x each (the same step as LiteLLM line 120-121). Create /var/lib/litellm/ui and /var/lib/litellm/assets as empty folders here (no tasks supply admin UI files yet, see notes).
-  (3) runtime, FROM the wolfi base. As root: apk upgrade, then apk add bash openssl tzdata libevent (bash is for entrypoint.sh, libevent for pgbouncer), each in LiteLLM's three-try loop. Copy /usr/local/bin/pgbouncer from stage 1, target/release/betterlite and target/release/betterlite-db-admin to /usr/local/bin/, /app/docker from the builder, and the two /var/lib/litellm folders. Set ENV HOME=/app and LITELLM_NON_ROOT=true. LITELLM_NON_ROOT=true makes the server default the UI folder to /var/lib/litellm/ui and the assets folder to /var/lib/litellm/assets; LITELLM_UI_PATH and LITELLM_ASSETS_PATH override them. Leave XDG_CACHE_HOME unset so it falls back to $HOME/.cache.
+  (2) builder, FROM rust:1.98.0-bookworm (the version in rust-toolchain.toml). It copies Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/ and tools/ from the build context, then runs "cargo build --release --locked -p betterlite -p betterlite-db-admin" (B003 owns the first binary, B1232 the second). Install a system package here only if that locked build needs it. In the same stage copy packaging/docker/prod_entrypoint.sh, entrypoint.sh and component_entrypoint.sh to /app/docker/, strip CRLF with sed -i 's/\r$//' and chmod +x each (the same step as LiteLLM line 120-121). Create /var/lib/litellm/assets as an empty folder here; the branding is a text wordmark, so the image carries no logo files.
+  (3) runtime, FROM the wolfi base. As root: apk upgrade, then apk add bash openssl tzdata libevent (bash is for entrypoint.sh, libevent for pgbouncer), each in LiteLLM's three-try loop. Copy /usr/local/bin/pgbouncer from stage 1, target/release/betterlite and target/release/betterlite-db-admin to /usr/local/bin/, /app/docker from the builder, and the /var/lib/litellm/assets folder. Copy the `ui` folder of B9091's export from the BuildKit named context `dashboard` (`--build-context dashboard=target/dashboard/dist`, prepared by tools/dashboard/build.sh build) to /var/lib/litellm/ui. Set ENV HOME=/app and LITELLM_NON_ROOT=true. LITELLM_NON_ROOT=true makes the server default the UI folder to /var/lib/litellm/ui and the assets folder to /var/lib/litellm/assets; LITELLM_UI_PATH and LITELLM_ASSETS_PATH override them. Leave XDG_CACHE_HOME unset so it falls back to $HOME/.cache.
 
 
-  Arbitrary-user rules for the runtime stage. One RUN creates /nonexistent, /app/.cache, /var/lib/litellm/ui and /var/lib/litellm/assets, chowns /app, /nonexistent and those two folders to nobody:nogroup, then makes every folder the server writes (/app/.cache and the two /var/lib/litellm folders) usable by any uid in group 0: chgrp -R 0, chmod -R g=u, chmod -R g+w and chmod -R g+rX. Binaries and /app/docker stay read-only for the arbitrary uid but readable and executable by all (chmod -R a+rX). The last user line is "USER 65534", a number and never "nobody", because the kubelet checks runAsNonRoot by parsing USER as an integer. Then EXPOSE 4000/tcp, ENTRYPOINT ["/app/docker/prod_entrypoint.sh"] and CMD ["--port", "4000"]. The file has no prisma, python, uv, npm, nodejs, venv or enterprise text anywhere, comments included.
+  Arbitrary-user rules for the runtime stage. One RUN creates /nonexistent, /app/.cache, /var/lib/litellm/ui and /var/lib/litellm/assets, chowns /app, /nonexistent and those two folders to nobody:nogroup, then makes every folder the server writes (/app/.cache and the two /var/lib/litellm folders) usable by any uid in group 0: chgrp -R 0, chmod -R g=u, chmod -R g+w and chmod -R g+rX. Binaries and /app/docker stay read-only for the arbitrary uid but readable and executable by all (chmod -R a+rX). The last user line is "USER 65534", a number and never "nobody", because the kubelet checks runAsNonRoot by parsing USER as an integer. Then EXPOSE 4000/tcp, ENTRYPOINT ["/app/docker/prod_entrypoint.sh"] and CMD ["--port", "4000"]. The file has no prisma, python, uv, venv or enterprise text anywhere, comments included, and no stage or package that puts Node or npm into the image; the UI is built outside by B9091 and only copied in.
 
 
   packaging/docker/docker-compose.hardened.yml is an overlay for packaging/docker/docker-compose.yml (B5072), run as "docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d" from packaging/docker/. It has the same two services as LiteLLM's file.
@@ -51,8 +51,10 @@ dod:
     proof: [group-zero-writable, runtime-env]
   - text: The image builds betterlite and betterlite-db-admin with cargo build --release --locked, copies both into /usr/local/bin, copies the three entrypoint scripts from packaging/docker/, and bundles pgbouncer at the pinned version and checksum.
     proof: [native-binaries, pgbouncer-pinned]
-  - text: Dockerfile.non_root contains no python, prisma, uv, npm, nodejs, venv or enterprise text.
+  - text: Dockerfile.non_root contains no python, prisma, uv, venv or enterprise text, and installs no Node or npm package in any stage.
     proof: [no-python-stack]
+  - text: The runtime stage copies the ui folder of the B9091 export from the dashboard named context to /var/lib/litellm/ui, which stays writable for group 0, and the overlay test script asserts the copy.
+    proof: [ui-bundle]
   - text: The overlay builds from packaging/docker/Dockerfile.non_root with context ../.. and target runtime, and mounts ./proxy_server_config.yaml read-only at /app/config.yaml.
     proof: [overlay-build]
   - text: The overlay runs litellm as user 101:101 with group 2345, a read-only root, ALL capabilities dropped, no-new-privileges, and the two noexec tmpfs mounts owned by uid and gid 101.
@@ -110,8 +112,11 @@ checks:
         grep -q 'PGBOUNCER_VERSION=1.26.0' packaging/docker/Dockerfile.non_root &&
         grep -q 'PGBOUNCER_SHA256=afd25dd61ee6775d37b40629b87ce08736b3e6955f3057bb212e410fbf21c71d' packaging/docker/Dockerfile.non_root
     - id: no-python-stack
-      why: The Dockerfile still carries a Python, Prisma, uv, Node, venv or enterprise line from LiteLLM.
-      run: "! grep -Eqi '[p]ython|prisma|uv sync|npm|nodejs|venv|enterprise' packaging/docker/Dockerfile.non_root"
+      why: The Dockerfile still carries a Python, Prisma, uv, venv or enterprise line from LiteLLM, or installs Node or npm.
+      run: "! grep -Eqi '[p]ython|prisma|uv sync|venv|enterprise|apk add.*(nodejs|npm)|FROM .*node' packaging/docker/Dockerfile.non_root"
+    - id: ui-bundle
+      why: The UI export is not copied from the dashboard context into /var/lib/litellm/ui.
+      run: grep -Eq '^COPY --from=dashboard .*ui.* /var/lib/litellm/ui' packaging/docker/Dockerfile.non_root
     - id: overlay-build
       why: The overlay build block, Dockerfile path or config mount differs from the task.
       run: >-
@@ -141,7 +146,7 @@ checks:
       run: bash packaging/docker/tests/non_root_image.sh | grep -qx ok
 oracle_cases: []
 deviations:
-  - what: The image is built from the Rust workspace with cargo and has no venv, Python, uv, Prisma binaries or Node; it installs betterlite and betterlite-db-admin into /usr/local/bin.
+  - what: The image is built from the Rust workspace with cargo and has no venv, Python, uv, Prisma binaries or Node (the UI export of B9091 arrives as a build context, so no Node or npm runs in or enters the image); it installs betterlite and betterlite-db-admin into /usr/local/bin.
     why: The native server and betterlite-db-admin (B1232) replace the Python proxy and prisma_migration.py, and B1232 records that no client generation or subprocess runs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/Dockerfile.non_root#L45-L122
   - what: The image has no /opt/prisma folder and sets no PRISMA_* variables; the overlay still sets PRISMA_BINARY_CACHE_DIR and LITELLM_MIGRATION_DIR.
@@ -160,7 +165,7 @@ out_of_scope:
   - B8543 owns docker/README.md (its hardened section), docker/tests/nonroot.yaml and the container-structure checks of the final image.
   - The docker-based tests (tests/proxy_migration_tests/test_offline_image_migration.py, test_component_image_serves_offline.py) and the image-scan workflow need a docker daemon, a built image and Postgres. They have no caller in the gate and are not ported here.
   - tests/unit/test_dockerfile_bedrock_realtime_extra.py checks uv sync lines, which this image does not have.
-  - The admin UI files that LiteLLM copies into /var/lib/litellm/ui; no task supplies a native UI bundle yet (see notes).
+  - The admin UI source, its build and its export belong to B144 and B9091. This task only copies the export's ui folder into the image.
 pitfalls:
   - OpenShift restricted-v2 ignores USER and runs a random uid such as 12345 in group 0, so owner nobody alone is not enough; every folder the server writes needs group 0 with g=u, and the uid also has no /etc/passwd entry, so HOME=/app must be set explicitly.
   - USER must be the number 65534 because the kubelet rejects a name with CreateContainerConfigError; a "USER nobody" line fails the final-user-numeric check.
@@ -170,6 +175,8 @@ pitfalls:
   - In the overlay, depends_on lists only squid, not the db service, because the base file from B5072 does not wait on the db either; do not add a service_healthy condition.
   - YAML list items under cap_drop, security_opt, tmpfs and group_add must be quoted exactly as the grep checks expect ("2345", "no-new-privileges:true"); an unquoted 2345 becomes a number and compose rejects it.
   - The grep for python, prisma and the others covers comments as well, so do not write a comment that mentions them.
+  - The dashboard named context is passed by B5072's base file (additional_contexts, ../../target/dashboard/dist) and merges into the overlay's build block, so the overlay does not repeat it. Run tools/dashboard/build.sh build before compose up.
+  - With SERVER_ROOT_PATH set to anything but "/", the server rewrites the UI files in place, and upstream skips the rewrite with a warning when the UI folder is not writable (proxy_server.py L2307-L2314). The overlay runs read_only true and does not mount /var/lib/litellm, so such a deployment needs either an export already built for that root path or LITELLM_UI_PATH pointing at a writable folder; the image's group-0 write bits cover the plain writable case.
   - Copy only Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/ and tools/ into the builder, not the whole context, so a developer's target/ or .git folder never lands in an image layer.
   - The CMD ["--port", "4000"] has no --config, and B003 requires --config, so running the image with no command exits with a usage error; only the overlay (and any caller passing --config) starts the server.
 review_level: standard

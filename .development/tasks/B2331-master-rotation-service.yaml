@@ -16,7 +16,7 @@ description: >-
   result, B8382 decrypt_model_list_from_db (decrypt_model_rows) supplies deployments, B836 _add_model_to_db is called
   sequentially with should_create_model_in_db=false and the new encryption key, and falsey
   conversions are omitted. Then one transaction, timeout exactly two minutes, update_many's each
-  row by model_id with encrypted litellm_params JSON. Commit before B120 publish_config_change
+  row by model_id with encrypted litellm_params JSON. Commit before B4144 publish_config_change
   using coordination_redis_cache and object_type litellm_proxymodeltable. Cases models_read_failure_skip,
   models_falsey_conversion_omitted, models_transaction_timeout_and_order,
   models_failure_rolls_back_only_models and model_publication_failure_stops_later_stores pin the effects.
@@ -114,7 +114,7 @@ deviations: []
 out_of_scope:
   - B785 owns migration HTTP wrappers; B061 owns scanning/walking and credential routes, except the
     two credential helpers moved here. B895 owns master-key activation. B2332 owns MCP rotations.
-  - B8382 owns ProxyConfig decrypt/encrypt methods, B836 model conversion, B120 configuration publication,
+  - B8382 owns ProxyConfig decrypt/encrypt methods, B836 model conversion, B4144 configuration publication,
     B137 SSO assertion rotation, B725 model rows, B730 credential/config rows, B770 table adapters,
     B2303 crypto and B2305 stored MCP contracts. Remaining key endpoint functions keep B770-B898 owners.
 pitfalls:

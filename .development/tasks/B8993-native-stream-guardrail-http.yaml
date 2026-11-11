@@ -1,0 +1,120 @@
+id: B8993
+title: Responses and Anthropic guardrail stream HTTP parity
+description: >-
+  B3672 and B3676 leave their asynchronous streaming paths to HTTP integration,
+  while B6260/B6370 currently prove only chat streams. Add about 700 lines of
+  native Responses and Anthropic HTTP cases. Build no iterator, endpoint, registry
+  or SSE parser here. Use B080's POST /v1/responses, /responses and
+  /openai/v1/responses, and B081's POST /v1/messages and
+  /claude_code_gateway/v1/messages with general_settings.enable_claude_code_gateway
+  enabled for the latter. /anthropic/v1/messages is a different passthrough
+  route and is not an alias of these handlers.
+
+  Configure named generic_guardrail_api guards with dummy credentials and mock
+  api_base. For delivered rewrites, configure a policy with pipeline.mode post_call,
+  a step naming the guardrail, on_pass allow and on_fail block, and attach the policy
+  using policy_attachments with scope "*". These are normal top-level policies and
+  guardrails config, not injected _guardrail_pipelines in the request. A pipeline
+  buffers the stream and opts into deliver_ended_stream_rewrites through B3246.
+  Merely setting streaming_buffer_until_moderated on an ordinary guardrail does not
+  enable that policy writeback contract. Use streaming_end_of_stream_only true and
+  streaming_sampling_rate 1 only in the standalone blocking cases, where B6260 owns
+  the flags and error timing.
+
+  Responses fixtures use a native OpenAI Responses deployment and valid created,
+  output-item, output-text delta/done and terminal events. The completed-text case
+  rewrites two content parts and compares every earlier delta/done event with the
+  completed envelope; the client must not receive the original text in one and the
+  masked text in the other. A terminal-incomplete case preserves incomplete status
+  and usage while rewriting partial output. A truncated stream without an envelope
+  still places the rewrite into the first writable output_text position and clears
+  the remaining positions. A separate truncated stream containing only a scanned
+  reasoning delta has no writable output_text position: the pipeline warns and
+  releases the original stream rather than silently dropping the text. A post-call
+  block must use native Responses error events and preserve the served prefix and
+  terminal semantics that B937/B3679 provide. Distribute the three route aliases
+  across those cases and keep all event type, item id and output/content indices.
+
+  Anthropic fixtures use a native Anthropic deployment and message_start,
+  content_block_start/delta/stop, message_delta and message_stop framing. A completed
+  text rewrite puts the full replacement in the first text_delta and blanks later
+  text deltas without altering surrounding block framing. A stream that ends before
+  reporting stop_reason still uses that writeback. A stream block must terminate in
+  the Anthropic protocol rather than OpenAI chunks; compare the input/output usage
+  fields that survive blocking. Exercise the gateway alias with the same enabled
+  configuration. The capture and returned event bodies must prove raw SSE frames
+  were scanned, not merely forwarded through B8632's stream bridge.
+
+  Add one response tool-argument rewrite per protocol using Vigil from B8990,
+  configured as vigil_guard with mode post_call, api_base at the mock and api_key
+  dummy. Its remote SANITIZED reply changes arguments while preserving the tool
+  call count, name and id. Responses function_call delta, done and completed item
+  arguments must agree; Anthropic input_json_delta fragments must reconstruct the
+  rewritten arguments, with the first fragment carrying the new value and later
+  fragments blank. Use a tool-only output so no unrelated text scan consumes the
+  scripted Vigil reply. GenericGuardrailAPI does not copy tool_calls from its remote
+  response, so it cannot stand in for this case.
+
+  Compare the HTTP status, content-type, error type/param/code and complete ordered
+  event sequence, as well as the scanner requests and provider URL/auth/body. Strip
+  only generated ids and timing fields already normalized by the endpoint's cases;
+  never ignore delta text, usage, terminal status or error payloads. Reuse the oracle's
+  existing SSE fixtures and decoder and run the ordinary betterlite-versus-LiteLLM
+  check. A new case missing on base is red automatically. Any production bridge fix
+  belongs to B8632/B6370/B6260, whose contracts must carry raw text/bytes through
+  guardrail scanning before this task runs; do not hide a bypass in expected differences.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/native-stream-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L215
+    why: The three Responses creation decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L164
+    why: Native Messages route and anthropic_messages call type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L136-L151
+    why: The gateway prefix, enable guard and Messages alias registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L879-L1105
+    why: Terminal-envelope scanning, fallback scans and undeliverable truncated rewrites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1201-L1320
+    why: Ended and unended scan paths and ModifyResponse usage preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1414-L1564
+    why: Text and tool writeback across parsed events and raw SSE frames.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L223-L268
+    why: Response tool argument sanitization used by the tool-only fixtures.
+dod:
+  - text: Responses completed, incomplete and truncated streams deliver coherent rewrites, while an undeliverable rewrite releases original events.
+    proof: [oracle]
+  - text: Anthropic ended and unended streams deliver one replacement across their original framing on both Messages routes.
+    proof: [oracle]
+  - text: Native stream blocks retain each protocol's errors and usage, and tool argument rewrites agree across every emitted representation.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/native-stream-http/responses-completed-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/responses-incomplete-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/responses-truncated-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/responses-undeliverable.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/responses-block.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/responses-tool-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/anthropic-ended-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/anthropic-unended-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/anthropic-block.yaml
+  - tools/oracle/cases/guardrails/native-stream-http/anthropic-tool-rewrite.yaml
+deviations: []
+out_of_scope:
+  - B3672 implements Responses streaming transformations; B3673/B3676 implement Anthropic stream interpretation and writeback.
+  - B3246 owns rewrite observation and restoration, B3247 pipeline execution, B6370 pipeline/iterator composition and B6260 sampling/buffering.
+  - B080/B081 register the HTTP routes, B8636 provides Responses production ports, and B8632 alone builds the streaming bridge.
+  - Chat stream tests remain B6260/B6370 and B105; native Google/A2A stream cases are B8992.
+pitfalls:
+  - Pipeline writeback is a different switch from ordinary streaming_buffer_until_moderated.
+  - An Anthropic body passed around the iterator as raw Bytes without scanning makes a blocking fixture falsely pass only if the capture assertion is missing.
+  - An undeliverable rewrite releases the original stream with a warning; replacing it with an empty success changes LiteLLM behavior.
+  - GenericGuardrailAPI remote replies cannot rewrite tool_calls, whereas Vigil's response scan can rewrite function.arguments.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

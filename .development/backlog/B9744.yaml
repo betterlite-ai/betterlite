@@ -1,0 +1,14 @@
+id: B9744
+milestone: M10 admin ui
+title: Lens and ROI page HTTP contracts and local worker instructions
+status: todo
+depends_on: [B9090, B9091, B9740, B5076, B8682, B9030, B8232, B055, B777, B778, B782, B007, B060, B8677]
+file: tasks/B9744-dashboard-lens-roi-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{lens,roi-calculator}/**"
+parent: B147
+split_from: B147
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

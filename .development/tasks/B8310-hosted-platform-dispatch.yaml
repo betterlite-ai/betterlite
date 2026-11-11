@@ -100,6 +100,7 @@ out_of_scope:
   - "The Cloudflare branch of validate_environment (utils.py L6957) belongs to B5364 with the rest of that function."
   - "Rerank routes and the shared rerank handler are B1014's; this task adds no route."
   - "The NVIDIA NIM branch of rerank() (rerank_api/main.py L334-L360) with its key error, base chain and case rerank-together-jina-nvidia.yaml: B1079 owns the whole rerank function."
+  - "Supplemental hosted-platform HTTP proofs belong to B9210, and Responses, decisions and search proofs to B9211."
 pitfalls:
   - "Groq puts the global api_key before groq_key, while Cloudflare puts cloudflare_api_key before the global api_key; keep each order."
   - "_complete_groq and _complete_cloudflare pass no provider_config; add a test that the handler gets None."

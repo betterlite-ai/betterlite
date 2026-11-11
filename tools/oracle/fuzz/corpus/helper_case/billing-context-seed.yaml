@@ -1,0 +1,27 @@
+kind: helper
+name: billing-context-seed
+call:
+  billing_context:
+    calls:
+      - function: identity
+        catalog:
+          - key: router-token
+            entry: {input_cost_per_token: 0}
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          custom_pricing: true
+          router_model_id: router-token
+      - function: response_time
+        response_time:
+          response: {kind: object, response_ms: 0}
+          total_time: 5.0
+      - function: breakdown
+        breakdowns:
+          - input_cost: 0.001
+            output_cost: 0.002
+            total_cost: 0.003
+            tool_usage_cost: 0.0
+            margin_percent: 0.0
+env: {}
+compare: {ignore: []}

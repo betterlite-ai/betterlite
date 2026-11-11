@@ -1,0 +1,22 @@
+id: B9092
+milestone: M10 admin ui
+title: Rebrand the retained dashboard shell and bundle its MIT notices
+status: todo
+depends_on: [B9090, B9091]
+file: tasks/B9092-dashboard-branding.yaml
+covers:
+  - "ui/litellm-dashboard/public/**"
+  - "ui/litellm-dashboard/src/app/{favicon.ico,globals.css,layout.tsx}"
+  - "ui/litellm-dashboard/src/app/{login,connect,onboarding}/**"
+  - "ui/litellm-dashboard/src/components/{Navbar,SidebarAccountMenu,ThemeToggle}/**"
+  - "ui/litellm-dashboard/src/components/liteadmin/**"
+  - "ui/litellm-dashboard/src/components/{DashboardHeader,DocsMenu,LicenseExpiryBanner,UpgradeBanner,leftnav,navbar,page_metadata}.*"
+  - "ui/litellm-dashboard/src/components/{DashboardHeader,DocsMenu,LicenseExpiryBanner,UpgradeBanner,leftnav,navbar}.test.*"
+  - "ui/litellm-dashboard/src/components/SidebarUsageCard.*"
+  - "litellm/proxy/{cached_logo.jpg,logo.png,logo_dark.png,logo_monogram.png,logo_monogram_dark.png}"
+parent: B144
+split_from: B144
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

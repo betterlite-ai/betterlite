@@ -11,7 +11,7 @@ description: >-
 
   oobabooga: OobaboogaError, OobaboogaConfig (get_error_class, transform_response, validate_environment) and the request and reply parts of oobabooga.py completion and embedding. The reply is decoded with a typed struct.
 
-  xinference: XInferenceImageGenerationConfig with get_supported_openai_params and map_openai_params, over the image contracts of B997.
+  xinference: XInferenceImageGenerationConfig with get_supported_openai_params and map_openai_params, over the image contracts of B997. get_xinference_image_generation_config (image_generation/__init__.py L12) only constructs that config for any model; build the construction at the B5360 selector seam and add no wrapper function.
 
   lemonade: cost_per_token from cost_calculator.py, returning LiteLLM's prompt and completion cost pair for a lemonade model. B1686 owns the cost dispatch that calls it; this task builds the function only.
 
@@ -80,7 +80,7 @@ deviations:
   []
 out_of_scope:
   - "B8157 owns the main.py _complete_* dispatch functions."
-  - "B1440 owns the shared openai_like embedding dispatch. B2224 owns lemonade get_model_info; B1686 owns the cost dispatch that must call lemonade cost_per_token, which it does not mention yet."
+  - "B1440 owns the shared openai_like embedding dispatch. B2224 owns lemonade get_model_info; B1686 owns the cost dispatch that calls lemonade cost_per_token and already names it."
   - "B2230 selects the chat configs for these providers."
 pitfalls:
   - "The oracle helper for this task is pre-registered as b8152 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."

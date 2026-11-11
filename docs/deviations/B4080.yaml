@@ -1,0 +1,14 @@
+task: B4080
+deviations:
+  - what: "The router handle is injected through betterlite-server rather than read from a global proxy_server import."
+    why: "betterlite isolates mutable shared state into the server crate, so judge primitives in betterlite-models remain pure functions and no module-level global is read at call time."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L21-L27"
+  - what: "_provider_qualified is a cache owned by the caller and built on the lru crate instead of a process-wide @lru_cache decorator."
+    why: "betterlite forbids lazy statics and reads no outside state at call time; a cache built for one resolution context never answers for another, which is what a config reload needs."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L61-L76"
+  - what: "JudgeTarget.models is an immutable set whose members are read through the value itself; LiteLLM's frozen dataclass holds the same frozenset."
+    why: "betterlite values immutability for concurrent dispatch, so a resolved target is shared between the resolvability gate and the dispatch without either mutating it."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L79-L90"
+  - what: "judge_acompletion returns a distinct nothing outcome and makes no SDK call when judge_target reports nothing; LiteLLM falls through to litellm.acompletion, which raises BadRequestError because no provider claims the name."
+    why: "The target resolution already proved no router deployment and no provider serve the name, so the SDK call cannot succeed; declining keeps a judge failure from a call no working setup could rely on, and the caller treats the nothing outcome as the same failed judge call."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L112-L138"
