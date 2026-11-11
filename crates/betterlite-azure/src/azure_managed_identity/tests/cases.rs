@@ -608,6 +608,13 @@ fn hosted_tokens() {
     );
 }
 
+fn rejected_client_id(fixture: &Fixture) -> ManagedIdentityError {
+    fixture
+        .credential(Some("user-client"))
+        .token(&fixture.io(), &[SCOPE])
+        .unwrap_err()
+}
+
 // the client id reaches the hosted protocols, which reject it for Service Fabric and Cloud Shell
 fn hosted_client_id() {
     let service_fabric = Fixture::new(&[
@@ -615,86 +622,71 @@ fn hosted_client_id() {
         ("IDENTITY_HEADER", "header-secret"),
         ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
     ]);
-    let fabric_error = service_fabric
-        .credential(Some("user-client"))
-        .token(&service_fabric.io(), &[SCOPE])
-        .unwrap_err();
     assert!(matches!(
-        fabric_error,
+        rejected_client_id(&service_fabric),
         ManagedIdentityError::Hosted(HostedIdentityError::ServiceFabricIdentityConfig)
     ));
     let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://shell.test/token")]);
-    let shell_error = cloud_shell
-        .credential(Some("user-client"))
-        .token(&cloud_shell.io(), &[SCOPE])
-        .unwrap_err();
     assert!(matches!(
-        shell_error,
+        rejected_client_id(&cloud_shell),
         ManagedIdentityError::Hosted(HostedIdentityError::CloudShellClientId)
     ));
     assert!(cloud_shell.hosted.recorded().is_empty());
 }
 
+fn settings_with(entries: &[(&str, &str)]) -> Settings {
+    let text = |key: &str| {
+        entries
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| (*value).to_owned())
+    };
+    Settings {
+        identity_endpoint: text("identity_endpoint"),
+        identity_header: text("identity_header").map(SecretString::from),
+        identity_server_thumbprint: text("identity_server_thumbprint"),
+        imds_endpoint: text("imds_endpoint"),
+        msi_endpoint: text("msi_endpoint"),
+        msi_secret: text("msi_secret").map(SecretString::from),
+        pod_identity_authority_host: text("pod_identity_authority_host"),
+    }
+}
+
 // the configured settings select the same protocols as the process environment
 fn settings_environment() {
-    fabric_settings_environment();
-    arc_settings_environment();
-    ml_settings_environment();
-}
-
-fn fabric_settings_environment() {
-    let fabric_settings = Settings {
-        identity_endpoint: Some("http://sf.test/token".to_owned()),
-        identity_header: Some(SecretString::from("header-secret")),
-        identity_server_thumbprint: Some(THUMBPRINT.to_owned()),
-        imds_endpoint: None,
-        msi_endpoint: None,
-        msi_secret: None,
-        pod_identity_authority_host: Some("http://pod.test".to_owned()),
-    };
-    let fabric = ManagedIdentityEnvironment::from_settings(&fabric_settings);
-    assert_eq!(
-        select(&fabric, None, false).unwrap().kind,
-        ManagedIdentityKind::ServiceFabric
-    );
-    assert_eq!(
-        fabric.pod_identity_authority_host.as_deref(),
-        Some("http://pod.test")
-    );
-}
-
-fn arc_settings_environment() {
-    let arc_settings = Settings {
-        identity_endpoint: Some("http://arc.test/token".to_owned()),
-        identity_header: None,
-        identity_server_thumbprint: None,
-        imds_endpoint: Some("http://arc.test/imds".to_owned()),
-        msi_endpoint: None,
-        msi_secret: None,
-        pod_identity_authority_host: None,
-    };
-    let arc = ManagedIdentityEnvironment::from_settings(&arc_settings);
-    assert_eq!(
-        select(&arc, None, false).unwrap().kind,
-        ManagedIdentityKind::Arc
-    );
-}
-
-fn ml_settings_environment() {
-    let ml_settings = Settings {
-        identity_endpoint: None,
-        identity_header: None,
-        identity_server_thumbprint: None,
-        imds_endpoint: None,
-        msi_endpoint: Some("http://ml.test/token".to_owned()),
-        msi_secret: Some(SecretString::from("ml-secret")),
-        pod_identity_authority_host: None,
-    };
-    let ml = ManagedIdentityEnvironment::from_settings(&ml_settings);
-    assert_eq!(
-        select(&ml, None, false).unwrap().kind,
-        ManagedIdentityKind::AzureMl
-    );
+    let cases = [
+        (
+            settings_with(&[
+                ("identity_endpoint", "http://sf.test/token"),
+                ("identity_header", "header-secret"),
+                ("identity_server_thumbprint", THUMBPRINT),
+                ("pod_identity_authority_host", "http://pod.test"),
+            ]),
+            ManagedIdentityKind::ServiceFabric,
+        ),
+        (
+            settings_with(&[
+                ("identity_endpoint", "http://arc.test/token"),
+                ("imds_endpoint", "http://arc.test/imds"),
+            ]),
+            ManagedIdentityKind::Arc,
+        ),
+        (
+            settings_with(&[
+                ("msi_endpoint", "http://ml.test/token"),
+                ("msi_secret", "ml-secret"),
+            ]),
+            ManagedIdentityKind::AzureMl,
+        ),
+    ];
+    for (settings, kind) in cases {
+        let environment = ManagedIdentityEnvironment::from_settings(&settings);
+        assert_eq!(select(&environment, None, false).unwrap().kind, kind);
+        assert_eq!(
+            environment.pod_identity_authority_host,
+            settings.pod_identity_authority_host
+        );
+    }
 }
 
 fn kind_names() {
@@ -843,13 +835,8 @@ fn arc_token() {
 
 // Arc takes a user-assigned identity only through a non-empty client id, which the SDK rejects
 fn arc_client_id() {
-    let user = arc_fixture();
-    let rejected = user
-        .credential(Some("user-client"))
-        .token(&user.io(), &[SCOPE])
-        .unwrap_err();
     assert!(matches!(
-        rejected,
+        rejected_client_id(&arc_fixture()),
         ManagedIdentityError::Arc(ArcIdentityError::UserAssignedIdentity)
     ));
     let system = arc_fixture();
