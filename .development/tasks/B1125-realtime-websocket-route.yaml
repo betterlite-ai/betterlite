@@ -25,7 +25,7 @@ description: >-
   user_model/user_temperature/user_request_timeout/user_max_tokens/user_api_base values; B004 owns their
   defaults and precedence. B014 route_request selects B1011's realtime transport. B012 supplies logging and
   redaction, B3003 owns release_or_invalidate_budget_reservation, and B2400 owns the ProxyLogging disconnect
-  adapter to B072's limiter. B8389 owns _log_model_access_denial (log_model_access_denial), called only for the caught model denial.
+  adapter to the limiter release that B3046 owns. B8389 owns _log_model_access_denial (log_model_access_denial), called only for the caught model denial.
   The query-template cache holds1000 model/intent pairs and returns a fresh dict to each connection;
   None omits a key, while an explicit empty string retains it. No guardrails or arbitrary query key is cached.
 

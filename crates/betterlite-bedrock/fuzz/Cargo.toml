@@ -45,6 +45,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_services_s3_access"
+path = "fuzz_targets/bedrock_services_s3_access.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_services_agentcore_stream"
 path = "fuzz_targets/bedrock_services_agentcore_stream.rs"
 test = false

@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-env = { path = "../betterlite-env" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 fancy-regex = "0.19.2"
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
@@ -25,6 +26,7 @@ sha1 = "0.11.0"
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 unicode-general-category = "1.1.0"
 unicode-normalization = "0.1.26"
@@ -33,7 +35,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true
 
 [lints]

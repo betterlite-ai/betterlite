@@ -1,0 +1,92 @@
+id: B9774
+title: Verify pass-through endpoint forms using their generated IDs
+description: >-
+  Supply page-shaped HTTP acceptance cases for PassThroughSettings, add_pass_through and
+  pass_through_info. B3617 reads settings, B8520 mutates them and B8640 mounts the service
+  over B8641's production store; do not register their routes again. The currently planned
+  write cases stop at missing DB/key. This part supplies database-backed form transactions
+  described in B150-route-audit.md, about 450 new case lines.
+
+  Start B1630 transcripts on B860/B5076's separate databases with
+  general_settings.store_model_in_db=true. All page calls carry the session Bearer key.
+  GET /config/pass_through_endpoint has no query/team argument and returns endpoints with
+  id,path,target,headers,methods,auth,include_subpath,cost_per_request,timeout,guardrails and
+  is_from_config. Create with POST to this same path: name/value header rows become a JSON
+  headers object; query rows become default_query_params; methods is an array and
+  include_subpath a Boolean. Send timeout and cost_per_request only when mounted, retaining
+  zero as a number. The auth control sends a Boolean when its premiumUser branch is exposed;
+  backend behavior is already native and is not a new licensing guard for this task.
+
+  Configure the destination as {{upstream}} and use only test-owned dummy headers, including
+  an environment-reference header if the retained form supplies one. Capture endpoints[0].id
+  from the creation response separately for each proxy. POST
+  /config/pass_through_endpoint/{encoded id} receives the edited path,target,headers,
+  include_subpath and supplied cost/timeout/auth fields. The helper parameter is misleadingly
+  named endpointPath, but the actual argument is the ID, not /my-upstream-path. Empty methods
+  and guardrails are omitted by the edit builder. default_query_params is not sent on edit;
+  inspect its readback instead of adding it to make the backend preserve it.
+
+  When selected, guardrails is a name-keyed mapping with request_fields and response_fields
+  arrays or null. Use a guardrail name supplied by the fixed configuration and verify this
+  structure survives the write/read path; forwarding/guardrail execution belongs to B102
+  and B104, not a settings-page request. Reuse B9735's v2/v1 guardrail selector and unscoped
+  pass-through catalog cases. The team-qualified read alias
+  /config/pass_through_endpoint/team/{team_id} remains B3617/B8640's and is not called by this
+  global editor. DELETE /config/pass_through_endpoint?endpoint_id=<captured id> has no body,
+  and the list reload must no longer show it. Keep the config-file row alongside a DB row:
+  its is_from_config flag is what makes the retained UI read-only, not a fabricated mutation.
+
+  Cover both exact-path and include_subpath form variants, saving an empty optional methods
+  selection, a guardrail mapping and absent auth, plus the auth-enabled projection. Compare
+  each mutation and list status/content-type and the source error type,param,code for viewer
+  and missing-key requests. Normalize generated IDs by captures only; do not ignore paths,
+  credentials' redaction, auth flags or the endpoint array to obtain equality.
+scope:
+  paths:
+    - tools/oracle/cases/ui/passthrough-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_pass_through.tsx#L115-L137
+    why: Creation uses the submitted form projection and returned generated endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/pass_through_info.tsx#L177-L222
+    why: Update sends the selected ID and deletion uses that same ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3261-L3389
+    why: Read/create/delete HTTP methods and query/body placement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L6566-L6600
+    why: Encoded update identifier is a path segment, not an endpoint_id query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3551-L3604
+    why: Both existing read decorators, including the unused-in-this-page team alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3607-L3912
+    why: B8520's three decorated mutation handlers, storage and runtime update ordering.
+dod:
+  - text: Create/edit/delete and list reload use per-proxy generated IDs, parsed maps and precisely the fields emitted by each form.
+    proof: [passthrough-form-cases, oracle]
+  - text: Optional methods/auth/guardrail projections and file-owned rows retain the source envelopes and credential-dependent errors.
+    proof: [passthrough-form-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: passthrough-form-cases
+      why: No new saved endpoint lifecycle exists beyond the owner's missing-database tests.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/passthrough-settings)"
+oracle_cases:
+  - tools/oracle/cases/ui/passthrough-settings/create-edit-delete-generated-id.yaml
+  - tools/oracle/cases/ui/passthrough-settings/subpath-default-query-and-empty-methods.yaml
+  - tools/oracle/cases/ui/passthrough-settings/guardrail-and-auth-form.yaml
+  - tools/oracle/cases/ui/passthrough-settings/config-and-database-rows.yaml
+  - tools/oracle/cases/ui/passthrough-settings/viewer-and-missing-key.yaml
+  - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
+  - tools/oracle/cases/ui/management-selectors/router-and-passthrough-options.yaml
+deviations: []
+out_of_scope:
+  - Source intake of the page, form builders, query rows, tables and tests remains B9090; there is no rewritten pass-through editor.
+  - B3617/B8520/B8640/B8641 own settings reads, mutations, registration and storage; B102 owns request forwarding after the editor has saved a route.
+  - Guardrail list implementations stay B3684/B8667 and their selector acceptance belongs to B9735.
+pitfalls:
+  - The update URL contains the UUID-like ID although the payload also contains the endpoint's path.
+  - Omitting empty guardrails on edit differs from explicitly sending an empty object.
+  - Creating an endpoint with default_query_params does not mean the edit modal resubmits that field.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

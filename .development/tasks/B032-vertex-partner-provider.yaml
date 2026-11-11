@@ -20,7 +20,7 @@ description: >-
   Own the package's get_vertex_ai_partner_model_config factory too: anthropic selects B1333,
   ai21 selects B1335's AI21 config, openapi or mistralai selects its Llama config, and every
   other publisher raises ValueError. The model argument does not influence a successful
-  choice. Export this closed response-config selector for B091 passthrough logging. Its 13
+  choice. Export this closed response-config selector for B3642 passthrough logging. Its 13
   nonblank noncomment function lines are tested through pure helper vertex_partner_factory,
   comparing returned config kind for claude, ai21, openapi, mistralai and unsupported publisher.
   Add booted-proxy HTTP fixtures for POST /v1/chat/completions and /chat/completions with

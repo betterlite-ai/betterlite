@@ -18,6 +18,7 @@ pub mod content;
 mod conversion;
 pub mod frontmatter;
 pub mod loading;
+pub mod preview;
 mod reload;
 pub mod render;
 mod sandbox;

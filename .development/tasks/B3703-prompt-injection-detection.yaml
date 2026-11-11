@@ -244,9 +244,9 @@ deviations:
 out_of_scope:
   - "get_formatted_prompt: B1688 builds it in betterlite-models::billing_text; this task only calls it."
   - "Registering the detect_prompt_injection callback name (callback_utils.py L325-L338, a branch of initialize_callbacks_on_proxy): no owner. B189 covers the file but merged without that function, and B3683 ports only the part the legacy default_on guardrails need. This task gives it PromptInjectionDetection::new and the config section."
-  - "ProxyStartupEvent._attach_router_to_prompt_injection_detectors (proxy_server.py L10145-L10151): B124 (the proxy_server umbrella, no task file yet) calls update_environment; this task only provides it."
+  - "ProxyStartupEvent._attach_router_to_prompt_injection_detectors (proxy_server.py L10145-L10151): B8373 (attach_router_to_detectors) calls update_environment; this task only provides it."
   - "Router.acompletion and its ModelResponse: the server implements InjectionJudge over its router."
-  - "Pre-call and during-call dispatch, the guardrails-only gate on enforces_request_content, and the mapping of a returned string to RejectedRequestError or HTTP 400 (proxy/utils.py): B124 (it lists ProxyLogging.pre_call_hook and during_call_hook, no task file yet). RejectedRequestError itself: B163. The string mapping has no task of its own."
+  - "Pre-call and during-call dispatch, the guardrails-only gate on enforces_request_content, and the mapping of a returned string to RejectedRequestError or HTTP 400 (proxy/utils.py): B8393 for pre_call_hook and B8392 for during_call_hook. RejectedRequestError itself: B163."
   - "LiteLLMPromptInjectionParams as a pydantic class in proxy/_types.py: built here only as the config section; the rest of _types.py is owned by its own tasks."
   - "Every other function in factory.py: owned by B177 and B222 to B229; this task owns only prompt_injection_detection_default_pt."
   - "vector_db_check: LiteLLM leaves it a TODO that does nothing at the pin, so it is parsed and ignored."

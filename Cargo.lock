@@ -1205,6 +1205,7 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
+ "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
@@ -1326,9 +1327,11 @@ version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
  "async-trait",
+ "axum",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-secrets",
@@ -1337,10 +1340,13 @@ dependencies = [
  "hex",
  "httparse",
  "indexmap 2.14.2",
+ "inquire",
  "keyring-core",
+ "mutants",
  "num-traits",
  "regex",
  "rstest",
+ "rust_decimal",
  "rustix",
  "secrecy",
  "serde",
@@ -1356,6 +1362,7 @@ dependencies = [
  "tokio",
  "toml_edit",
  "url",
+ "which",
  "windows-native-keyring-store",
 ]
 
@@ -1432,6 +1439,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-models",
  "betterlite-redact",
+ "hex",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1439,6 +1447,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -1472,6 +1481,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -1479,6 +1489,7 @@ dependencies = [
  "jiff",
  "jsonschema",
  "lopdf",
+ "num-traits",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -1518,6 +1529,10 @@ dependencies = [
  "strum",
  "thiserror",
 ]
+
+[[package]]
+name = "betterlite-dashboard-browser"
+version = "0.1.0"
 
 [[package]]
 name = "betterlite-db"
@@ -2017,6 +2032,7 @@ dependencies = [
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
+ "betterlite-env",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2423,6 +2439,9 @@ dependencies = [
 name = "betterlite-prompts-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
  "chrono",
  "indexmap 2.14.2",
@@ -2454,6 +2473,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "jsonwebtoken",
  "mutants",
  "pem",
  "rstest",
@@ -2469,6 +2489,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -2659,6 +2680,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
  "unicode-general-category",
 ]
 
@@ -2875,6 +2897,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
@@ -3592,6 +3615,18 @@ name = "conquer-util"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e763eef8846b13b380f37dfecda401770b0ca4e56e95170237bd7c25c7db3582"
+
+[[package]]
+name = "console"
+version = "0.16.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e96a4956774c13c126a8b5af4daa79384f4d826534c95a02d76afb39e2ab64e3"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "unicode-width",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "const-hex"
@@ -4324,6 +4359,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
+
+[[package]]
 name = "encodify"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4644,6 +4685,15 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
 ]
 
 [[package]]
@@ -5330,6 +5380,20 @@ checksum = "3b5cf4372d022092674a83b8febf5865f7a573cc0c5baec5e49c879b6a20978f"
 dependencies = [
  "block-padding 0.4.2",
  "hybrid-array",
+]
+
+[[package]]
+name = "inquire"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6654738b8024300cf062d04a1c13c10c8e2cea598ec1c47dc9b6641159429756"
+dependencies = [
+ "bitflags 2.13.2",
+ "console",
+ "dyn-clone",
+ "fuzzy-matcher",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

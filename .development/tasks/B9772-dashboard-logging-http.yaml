@@ -1,0 +1,132 @@
+id: B9772
+title: Cover logging, alert and router-settings form transactions
+description: >-
+  Write the exact settings.tsx, email/Teams, alerting, LoggingSettings, PluginSettings and
+  Fallbacks HTTP transactions catalogued in B150-route-audit.md. B8594/B8595/B8596 implement
+  config mutations/reads, B8675 mounts them, B4447/B8540 implement and mount service probes, and B8389 owns
+  alert descriptors. Their planned no-DB and startup-read cases do not cover successful
+  dashboard edits. Use independent B860/B5076 databases with store_model_in_db=true and
+  B1630 transcripts; keep all provider and webhook URLs on the local oracle upstream.
+
+  GET /get/config/callbacks supplies callbacks,available_callbacks,alerts,
+  active_alerting_destinations and router_settings. Keep name/type/variables/read_only and
+  active_alerts/alerts_to_webhook in comparison. Reuse B066's GET /callbacks/configs catalog,
+  whose logo/ui_name/required_params/optional_params/dynamic_params drive the form. The add
+  callback POST /config/update contains environment_variables with every defined form field
+  and litellm_settings.success_callback=[name]. Choose a catalog callback such as langfuse
+  with LANGFUSE_HOST directed to the mock and dummy credentials; read back its variables
+  and masking. POST /config/callback/delete sends callback_name and is followed by the same
+  callbacks GET. Send GET /health/services?service=langfuse after a save, using B8540's local
+  probe response fixture or a controlled failed probe; do not contact a real logging account.
+
+  The Slack form POSTs /config/update with general_settings.alert_to_webhook_url mapping
+  alert type to URL and alert_types=[type]. Email uses general_settings.alerting=["email"]
+  and only edited nonempty environment fields; unchanged masked SMTP_PASSWORD is absent.
+  Teams first refetches callbacks, then sends the deduplicated current destination list plus
+  ms_teams and only changed environment variables. Verify these different replacement/merge
+  bodies, then reuse B116's exact GET /health/services?service=slack,email,ms_teams cases.
+  GET /alerting/settings returns a bare descriptor array, not {data:[...]}; reuse B116's
+  configured read. The alerting editor performs two POST /config/field/update calls, each
+  config_type=general_settings: field_name=alerting_args with merged descriptor values minus
+  slack_alerting, followed by field_name=alerting with ["slack"] or []. Its merge gives existing
+  descriptor values precedence over submitted values. Retain that order and actual body.
+
+  LoggingSettings GETs /config/list?config_type=general_settings, reading field_name,
+  field_value and field_description. POST /config/update sends
+  general_settings.store_prompts_in_spend_logs plus mounted optional values:
+  maximum_spend_logs_retention_period,maximum_spend_logs_cleanup_batch_size,
+  maximum_spend_logs_cleanup_max_batches,maximum_spend_logs_cleanup_run_budget and
+  maximum_spend_logs_cleanup_batch_timeout. Use the duration strings and numeric batch sizes
+  accepted by their schemas. Clearing an optional control first POSTs /config/field/delete
+  with config_type and field_name; it does not send a made-up null to the final save.
+  PluginSettings GETs /config/field/info?field_name=plugins and reads field_value. Its update
+  sends field_name=plugins,config_type=general_settings and field_value as an array of
+  name/display_name/url/optional plugin_key objects. Removal resubmits the shorter array.
+
+  Fallbacks POSTs /config/update with router_settings copied from GET callbacks except
+  model_group_retry_policy, replacing fallbacks by [{primary:[fallback]}] or [] on clear.
+  Use fixed local model groups. The Test button POSTs /chat/completions with model,
+  messages=[{role:"user",content:"Hi, this is a test message"}] and mock_testing_fallbacks=true,
+  reading response.model. B004/B310/B8350 own its route, fallback execution and test switch;
+  compare the actual upstream transcript. Reuse B9735's model-group catalog and B077's public
+  cost-map read, whose model entries expose litellm_provider. The retained SDK's root/custom
+  header bug is recorded in the audit; HTTP parity does not claim to fix browser base routing.
+
+  The email-events panel emits GET /email/event_settings, PATCH that path with
+  settings=[{event,enabled}] and POST /email/event_settings/reset without a body. The supplied
+  non-enterprise checkout has no handler for any of them. Add stock 404 HTTP comparisons
+  with a page credential and no credential, preserving the not-found envelope and content
+  type; do not implement an email-event service or coerce a missing route into success.
+  Compare auth failures and every mutation's readback; omit only independently generated
+  timestamps, not entire settings arrays. This acceptance-only part is about 750 case lines.
+scope:
+  paths:
+    - tools/oracle/cases/ui/logging-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/settings.tsx#L393-L553
+    why: Callback selection, write payloads, Slack webhook maps and callback deletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/alerting/alerting_settings.tsx#L22-L75
+    why: Bare descriptor reads and sequential alerting_args/alerting writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/Settings/RouterSettings/Fallbacks/Fallbacks.tsx#L76-L242
+    why: Exact test-completion body, direct SDK base and router-settings projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5723-L5801
+    why: The three email-event requests still made by the retained client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17954-L18171
+    why: B8594's config-update decorator and persistence sequence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18258-L18370
+    why: B8595's config-field write used by alerts and plugins.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18525-L18585
+    why: Field-info route consumed by plugin settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18728-L19078
+    why: Decorated config list, field deletion and callback deletion handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19141-L19306
+    why: Callback/config read returns the collections these forms actually consume.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16633-L16754
+    why: B8389's descriptor route is reused through B116's settings case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L264-L612
+    why: B4447 owns service query dispatch and status responses, mounted through B8540's production adapters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L950-L971
+    why: Optional enterprise routers are absent in this checkout; their missing email API is not ported.
+dod:
+  - text: Callback, email, Teams, Slack, spend-log and plugin edits replay the pages' exact write/read sequences through the mounted config services.
+    proof: [logging-transcripts, oracle]
+  - text: The fallback editor and its mock-testing completion agree with the real router, while absent email-event routes remain observable not-found responses.
+    proof: [logging-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: logging-transcripts
+      why: Existing callback initialization cases do not exercise dashboard form updates.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/logging-settings)"
+oracle_cases:
+  - tools/oracle/cases/ui/logging-settings/callback-add-probe-and-delete.yaml
+  - tools/oracle/cases/ui/logging-settings/slack-webhook-and-email-masked-edit.yaml
+  - tools/oracle/cases/ui/logging-settings/teams-read-before-save.yaml
+  - tools/oracle/cases/ui/logging-settings/alerting-two-field-submit.yaml
+  - tools/oracle/cases/ui/logging-settings/spend-log-retention-and-clear.yaml
+  - tools/oracle/cases/ui/logging-settings/plugin-array-replacement.yaml
+  - tools/oracle/cases/ui/logging-settings/fallback-save-test-and-clear.yaml
+  - tools/oracle/cases/ui/logging-settings/email-events-stock-not-found.yaml
+  - tools/oracle/cases/ui/logging-settings/non-admin-config-write.yaml
+  - tools/oracle/cases/management/callback-metadata/phase-membership-and-catalog.yaml
+  - tools/oracle/cases/alerting/composed/slack-disabled.yaml
+  - tools/oracle/cases/alerting/composed/email-disabled.yaml
+  - tools/oracle/cases/alerting/composed/teams-disabled.yaml
+  - tools/oracle/cases/alerting/composed/settings-configured.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+  - tools/oracle/cases/public/hub-composition/cost-map-local.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every logging/alert/fallback component and its pure formatting helpers; this task adds no client patch or settings registry.
+  - B8594/B8595/B8596/B8675 retain all config route implementations; B8230 separately serves runtime plugin metadata and is not the editor's field-info route.
+  - B066 owns callback metadata, B4447/B8540/B116 health and alert delivery, B8389 descriptors, B004/B310/B8350 fallback inference, and B077 public model costs.
+  - Email-event handlers have no MIT implementation at the pin; licensing removal does not supply an absent enterprise service.
+pitfalls:
+  - Email overwrites alerting with [email], whereas Teams reads and unions the latest destinations before saving.
+  - The alerting form merges initial descriptor values last, so constructing a cleaner patch changes the request under test.
+  - A plugin edit goes to /config/field/update, not /api/plugins or /claude-code/plugins.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

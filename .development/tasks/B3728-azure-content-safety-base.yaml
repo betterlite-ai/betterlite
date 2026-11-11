@@ -102,7 +102,7 @@ deviations:
   - what: API version defaults to 2024-09-01; the legacy Javelin v1 stored by older releases resolves to this modern default.
     why: LiteLLM handles the migration from older releases that stored "v1" as the Javelin API version. betterlite performs the same resolution.
 out_of_scope:
-  - Modern guardrail initialization, configuration updates and logging are owned by B104 (CustomGuardrail framework).
+  - Modern guardrail construction and configuration updates are owned by B5471, and invocation logging by B3664.
   - Threshold evaluation, category filtering and the complete moderation guardrail hook are owned by B3730 (text moderation).
   - Prompt Shield-specific scans and billing are owned by B3729.
   - The legacy callback registration caller at litellm/proxy/common_utils/callback_utils.py:356 is owned by U3 (callback helpers).

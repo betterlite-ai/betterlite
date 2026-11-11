@@ -4,7 +4,7 @@ description: >-
   Add allowed_ip_routes for authenticated GET /get/allowed_ips, POST /add/allowed_ip and
   POST /delete/allowed_ip. Keep GET out of OpenAPI as the decorator specifies; it returns
   data equal to effective general_settings.allowed_ips, including null when absent. Reuse
-  B744's existing allowed_ips=None binding and B120's SettingsStore. Decode the two mutations
+  B744's existing allowed_ips=None binding and B4140's SettingsStore (carried by B8380). Decode the two mutations
   through decode_allowed_ip_request(bytes), requiring ip as a string without adding IP/CIDR
   validation, trimming or canonicalization. B052 supplies route authorization; the handlers
   have no additional role predicate.

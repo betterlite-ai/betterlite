@@ -1,0 +1,14 @@
+task: B857
+deviations:
+  - what: >-
+      The disabled-update schema check compares this build's B701 SchemaContract with the live
+      pg_catalog contract instead of spawning `prisma migrate diff` against schema.prisma. The
+      warning lists the differing catalog facts instead of the SQL commands Prisma would print.
+      Every failure stays a warning: an absent DATABASE_URL, an unavailable build contract, an
+      unreadable database or a difference all log and startup continues.
+    why: >-
+      Gateway code cannot spawn Prisma, and the packaged datamodel cannot be turned into live
+      catalog facts without a database. The upstream helper already swallows diff failures, but
+      `check_prisma_schema_diff` raises when DATABASE_URL is unset; a disabled-update deployment
+      must not fail startup just because the comparison cannot run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/check_migration.py#L47-L122

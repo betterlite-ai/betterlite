@@ -1,0 +1,14 @@
+kind: helper
+name: provider-controls-affinity-generated-session-is-skipped
+call:
+  provider_affinity:
+    operation: stable_session
+    params:
+      litellm_session_id: logging-generated
+      metadata:
+        session_id: metadata-generated
+        litellm_session_id_generated: true
+      litellm_metadata:
+        session_id: stable-session
+env: {}
+compare: {ignore: []}

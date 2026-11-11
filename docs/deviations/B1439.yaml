@@ -1,0 +1,20 @@
+task: B1439
+deviations:
+  - what: An elliptic curve private key on any curve other than P-256 or P-384 is refused as an authentication failure. LiteLLM's google-auth signer treats every curve that is not secp384r1 as ES256 and signs with it.
+    why: A JWT that names ES256 while the key is on another curve is not the signature GDCH verifies, and the aws-lc-rs backend, which the pinned google-auth release does not constrain, supports only P-256 and P-384; failing the credential load matches the 401 LiteLLM gives for a credential it cannot use.
+    link: https://files.pythonhosted.org/packages/ee/fc/2cdc74252746f547f81ff3f02d4d4234a3f411b5de5b61af97e633a060b9/google_auth-2.52.0-py3-none-any.whl
+  - what: A PKCS8 or SEC1 EC key whose curve is written as explicit parameters instead of a namedCurve object identifier is refused. LiteLLM's cryptography-based loader accepts explicit domain parameters.
+    why: The private key information betterlite hands to the token exchange and the aws-lc-rs loader are named-curve forms; a key GDCH issues carries a namedCurve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gdc/chat/transformation.py#L202-L217
+  - what: Credential bytes larger than 64 KiB and token replies larger than 64 KiB are refused. LiteLLM parses both without a limit.
+    why: Both are decoded from outside bytes, so each decoder has a fixed bound and a fuzz target; 64 KiB is far above a real GDCH descriptor or token reply.
+    link: ""
+  - what: A credential JSON object with duplicate keys is refused. Python's json.loads keeps the last value of a duplicated key.
+    why: serde rejects duplicate fields, and a duplicated type tag silently choosing one credential kind is the kind of overwrite the repository's no-silent-drops rule forbids.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gdc/chat/transformation.py#L202-L217
+  - what: The token exchange gives up when the deployment's outbound deadline passes, including between retries. LiteLLM has no deadline on the GDCH token exchange and can wait as long as the token endpoint keeps the connection open.
+    why: Every outbound call has a timeout in betterlite; a token endpoint that stops answering must not pin a request forever.
+    link: ""
+  - what: A credential that opens more than 128 levels of JSON nesting and then ends or breaks is refused as an authentication failure. LiteLLM treats text that is not valid JSON as a plain bearer token.
+    why: serde_json stops at 128 levels with the same error for an unfinished document as for a complete one, so the two cannot be told apart without a second parser; refusing is the safe side because a complete document that deep must be refused.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gdc/chat/transformation.py#L202-L217

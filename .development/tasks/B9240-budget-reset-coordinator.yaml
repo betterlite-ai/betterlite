@@ -1,0 +1,110 @@
+id: B9240
+title: Elect the budget reset worker and run the five reset phases
+description: >-
+  The reset phases exist in B3011 to B3013, but nobody builds ResetBudgetJob's
+  constructor, lease election or reset_budget entry point. Build betterlite-db::budget_sweep
+  around those services. This is the lower callable that B8372 schedules; it must not
+  depend on the server, the scheduler or B071's HTTP integration tests. Own _Lease
+  at L374-L379 and ResetBudgetJob.__init__, _new_batch, _lease_is_held, _acquire_lease
+  and reset_budget at L459-L552 of reset_budget_job.py, 57 nonblank noncomment lines
+  excluding docstrings plus the lease enum. The other functions remain with the phases.
+
+  BudgetSweep holds an optional database handle, the phase services, B1690's optional
+  PodLockManager and the immutable BudgetResetSettings snapshot supplied by B2317.
+  Resolve an absent settings argument from the injected current config snapshot when
+  building the job, not from a global or on every tick. Its defaults are timezone UTC
+  and midnight; litellm_settings.timezone and litellm_settings.budget_reset_time are
+  already parsed by B2317. Explicit settings win. Keep the logging sink and database
+  shared with the phase instances. _new_batch is the same database's batch factory:
+  pass that store into the phases' existing B2311 unit-of-work construction rather
+  than adding a Python-shaped one-line accessor or making a phase call this coordinator.
+  The coordinator does not start a transaction around the five phases.
+
+  At each tick, no database returns immediately, before any lease operation. With
+  no lock manager or a manager without Redis, use Lease::Unguarded. Otherwise call
+  the existing manager's acquire_lock for cronjob_id reset_budget_job with a fixed
+  900-second TTL, retaining its default reentrant acquisition. These are constants,
+  not new config keys or environment variables. A successful acquire is Leader.
+  A false acquire needs a second read of the manager's exact lock key,
+  cronjob_lock:reset_budget_job. A present owner means Follower: emit the debug skip
+  diagnostic and do no reset work. A missing owner means Unguarded and warns before
+  sweeping. An unreadable owner warns at the read site, then follows the same
+  unguarded warning and sweep path. Redis failure must not masquerade as contention
+  and strand all due budgets. Use the existing cache decoder and error handling,
+  not a new Redis protocol or lock implementation.
+
+  Leaders and unguarded workers await, in this order, B3012's key reset, B3012's
+  user reset, B3013's team reset, B3011's budget-tier sweep and B3013's window reset.
+  Their chunking, rollover, cache invalidation and local error swallowing remain
+  unchanged. If a phase actually returns an error, stop the later phases and return
+  it with its source intact. Release the lease after success or an escaped phase
+  error only when this invocation acquired Leader; Followers and Unguarded workers
+  never release someone else's lease. B1690 owns release failures and its warning
+  policy. There is no renewal loop or new process-local exclusion: the pin has a
+  fixed lease, and B8370 separately controls scheduled max_instances. Use an owned
+  cancellation-safe cleanup path on the caller's task tracker if the phase future
+  is dropped; never detach an async unlock or hold a mutex across an await.
+
+  Provide a production constructor over the concrete lower services and a test seam
+  for a recording lease backend and phase runner. An exhaustive ResetPhase enum
+  dispatches the five known phases; no string registry or stub-only production
+  implementation. Tests must prove that the real phase adapter maps every enum to
+  its lower service, in addition to coordinator tests over recorded calls. Put
+  errors in budget_sweep/error.rs and tests beside the implementation. Name the
+  assembly test sweep_assembly, the rstest lease table sweep_lease_election, and
+  the phase tests sweep_phase_order, sweep_error_short_circuit and sweep_leader_cleanup.
+  No byte
+  parser is introduced. Native tests cover this stateful job; B071 supplies its
+  booted HTTP comparisons after B8372 has registered the real callable.
+scope:
+  paths:
+    - crates/betterlite-db/src/budget_sweep.rs
+    - crates/betterlite-db/src/budget_sweep/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L374-L379
+    why: Owned three-way lease state, including the distinction between leader and unguarded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L454-L552
+    why: Owned job construction, batch source, lease read and acquisition, ordered phases and finally release.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1813-L1821
+    why: Context only; reset_budget_job uses a fixed 900-second lease, unlike the general cron TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10628-L10645
+    why: B8372's caller constructs the job with the spend writer's lock manager and registers its bound reset method.
+dod:
+  - text: Explicit reset settings and the shared database reach the real five-phase adapter, while missing settings use the injected B2317 snapshot and a missing database does nothing.
+    proof: [assembly-tests]
+  - text: Lease cases absent_manager, manager_without_redis, acquired, held_by_other, missing_after_failed_acquire and unreadable_after_failed_acquire select the correct state, TTL, warnings and reset behavior.
+    proof: [lease-tests]
+  - text: ordered_success runs keys, users, teams, tiers and windows sequentially; each escaped_phase_error stops the suffix; leader_success, leader_failure and leader_cancel release exactly once, whereas follower and unguarded never release.
+    proof: [phase-tests]
+checks:
+  optional: []
+  commands:
+    - id: assembly-tests
+      why: The coordinator has no production phase adapter, resolves a different settings snapshot or calls the lease without a database.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/::sweep_assembly(::|$)/)'
+    - id: lease-tests
+      why: Redis outages skip resets, contention runs them, the job uses the wrong key or TTL, or reentrant acquisition is changed.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/::sweep_lease_election(::|$)/)'
+    - id: phase-tests
+      why: Phase order, short-circuiting, leader cleanup or task ownership is absent or wrong.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/::sweep_phase_order(::|$)/) | test(/::sweep_error_short_circuit(::|$)/) | test(/::sweep_leader_cleanup(::|$)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "reset_budget_job.py L1-L89, L130-L149, L312-L371, L554-L659, L1011-L1034 and L1561-L1628: B3009 owns the row protocols, rollover arithmetic, chunk driver, retry/invalidation machinery, phase failure logging and common entity reset calculations."
+  - "reset_budget_job.py L92-L127, L152-L310, L661-L678 and L732-L850: B3010 owns linked-row protocols, all counter/cache-key and query helpers, cascade records, collection, commit and non-end-user invalidation."
+  - "reset_budget_job.py L445-L451, L680-L730 and L852-L938: B3011 owns cascade event metadata, the paged end-user invalidation walk and budget-table reset phase."
+  - "reset_budget_job.py L940-L987 and L1036-L1260: B3012 owns key/user write helpers and their reset phases."
+  - "reset_budget_job.py L382-L442, L989-L1009 and L1262-L1558: B3013 owns window source records and writes, team updates, team reset and all window reset/carry/roll/page functions."
+  - "Scheduling, interval randomness, disable_reset_budget and the shared spend-writer lock handle are B8372; lifecycle start/stop is B8613/B8374. No scheduler registration is added here."
+  - "Reset settings parsing/calculation is B2317, database transactions are B2311, and Redis lock acquisition/release/owner decoding is B1690."
+pitfalls:
+  - A failed acquire_lock alone does not establish contention; only a readable owner justifies skipping this tick.
+  - RESET_BUDGET_JOB_LOCK_TTL_SECONDS is 900 even when DEFAULT_CRON_JOB_LOCK_TTL_SECONDS is configured differently.
+  - Unguarded work must not call release_lock because another worker may acquire the lease after this worker's failed read.
+  - The budget-tier phase follows teams and precedes window resets; wrapping all five in one transaction changes committed partial progress.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

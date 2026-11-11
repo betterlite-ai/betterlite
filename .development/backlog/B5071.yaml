@@ -2,7 +2,7 @@ id: B5071
 milestone: M11 distribution
 title: Native source and database container images
 status: todo
-depends_on: [B003, B1232, B5070]
+depends_on: [B003, B1232, B5070, B9091, B144]
 file: tasks/B5071-source-container-images.yaml
 covers:
   - "Dockerfile"
