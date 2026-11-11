@@ -88,7 +88,7 @@ pub enum Stop {
 #[serde(deny_unknown_fields)]
 pub struct Thinking {
     #[serde(rename = "type")]
-    pub kind: ThinkingType,
+    pub kind: Option<ThinkingType>,
     pub budget_tokens: Option<i64>,
     pub display: Option<ThinkingDisplay>,
 }

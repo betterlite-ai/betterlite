@@ -247,13 +247,18 @@ fn typed_names_are_all_modeled_and_reserved() {
 
 fn decimal_values_keep_their_exact_text() {
     let mapping = mapping(
-        r#"{"temperature": 0.1, "top_p": 2.5, "presence_penalty": -1.25}"#,
+        r#"{"temperature": 0.123456789012345678901234567, "top_p": 0.30000000000000000001}"#,
         "{}",
     )
     .unwrap();
-    assert_eq!(mapping.standard["temperature"].to_string(), "0.1");
-    assert_eq!(mapping.standard["top_p"].to_string(), "2.5");
-    assert_eq!(mapping.standard["presence_penalty"].to_string(), "-1.25");
+    assert_eq!(
+        mapping.standard["temperature"].to_string(),
+        "0.123456789012345678901234567"
+    );
+    assert_eq!(
+        mapping.standard["top_p"].to_string(),
+        "0.30000000000000000001"
+    );
 }
 
 fn dropped_names_are_sorted_and_unique() {
@@ -367,6 +372,23 @@ fn extra_body_model_key_is_dropped_and_reported() {
     assert_eq!(mapping.dropped_fields, ["model"]);
 }
 
+fn extra_body_typed_name_is_rejected() {
+    let error = mapping(r#"{"extra_body": {"temperature": 0.2}}"#, "{}").unwrap_err();
+    assert!(matches!(error, ParameterError::ReservedParameter { name } if name == "temperature"));
+}
+
+fn thinking_without_type_maps_through() {
+    let mapping = mapping(
+        r#"{"thinking": {"budget_tokens": 2048}}"#,
+        r#"{"allowed_openai_params": ["thinking"]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        mapping.standard["thinking"],
+        value(r#"{"budget_tokens": 2048}"#)
+    );
+}
+
 fn extra_body_reserved_key_is_rejected() {
     let error = mapping(r#"{"extra_body": {"api_key": "sk-test"}}"#, "{}").unwrap_err();
     assert!(matches!(error, ParameterError::ReservedParameter { name } if name == "api_key"));
@@ -437,6 +459,8 @@ fn nested_drop_paths_are_rejected() {
 )]
 #[case::extra_body_model_key_is_dropped_and_reported(extra_body_model_key_is_dropped_and_reported)]
 #[case::extra_body_reserved_key_is_rejected(extra_body_reserved_key_is_rejected)]
+#[case::extra_body_typed_name_is_rejected(extra_body_typed_name_is_rejected)]
+#[case::thinking_without_type_maps_through(thinking_without_type_maps_through)]
 #[case::extra_body_whole_drop_removes_provider_fields(
     extra_body_whole_drop_removes_provider_fields
 )]
