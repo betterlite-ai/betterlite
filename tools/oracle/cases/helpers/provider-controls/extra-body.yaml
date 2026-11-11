@@ -1,0 +1,17 @@
+kind: helper
+name: provider-controls-extra-body-json-identity
+call:
+  provider_controls:
+    operation: extra_body
+    body:
+      metadata:
+        prompt:
+          name: prompt-name
+          version: 2
+      temperature: 0.2
+      flags:
+        - true
+        - null
+        - x
+env: {}
+compare: {ignore: []}
