@@ -15,6 +15,7 @@ use crate::policy::ownership::{transcribe_job_access_refusal, transcribe_owned_s
 use crate::policy::storage::{transcribe_media_buckets, transcribe_storage_refusal};
 use crate::records::{GetTranscriptionJobRequest, JobLookup, JobLookupError, JobLookupFuture};
 use crate::start_request::OwnedStartRequest;
+use std::future::ready;
 
 #[fixture]
 fn principal() -> Principal {
@@ -165,7 +166,7 @@ fn rounds_seconds_for_transcription_job_cost() {
     );
     assert_eq!(
         transcribe_max_job_cost(Decimal::new(2, 3)),
-        Ok(Decimal::new(72, 1))
+        Ok(Decimal::new(576, 1))
     );
     assert_eq!(
         transcription_job_cost(Decimal::MAX, Decimal::MAX),
@@ -374,6 +375,44 @@ async fn transcribe_job_access_refusal_returns_404_for_lookup_failure_and_foreig
     );
 }
 
+struct RejectedJobLookup(&'static str);
+
+impl RejectedJobLookup {
+    fn rejection(&self) -> JobLookupError {
+        JobLookupError::Rejected {
+            status: 400,
+            aws_error_type: Some(self.0.to_owned()),
+        }
+    }
+}
+
+impl JobLookup for RejectedJobLookup {
+    fn get_transcription_job<'lookup>(
+        &'lookup self,
+        _request: &'lookup GetTranscriptionJobRequest,
+    ) -> JobLookupFuture<'lookup> {
+        Box::pin(ready(Err(self.rejection())))
+    }
+}
+
+#[rstest]
+#[case::not_found("NotFoundException")]
+#[case::bad_request("BadRequestException")]
+#[tokio::test]
+async fn job_access_refusal_returns_404_for_a_rejected_lookup(
+    principal: Principal,
+    #[case] error_type: &'static str,
+) {
+    let lookup = RejectedJobLookup(error_type);
+    assert_eq!(
+        transcribe_job_access_refusal(r#""job-1""#, Some(&principal), &lookup)
+            .await
+            .unwrap()
+            .status_code,
+        404
+    );
+}
+
 #[rstest]
 #[tokio::test]
 async fn admin_only_refusal_storage_refusal_and_job_access_refusal_bypass_admin(
@@ -396,6 +435,14 @@ async fn admin_only_refusal_storage_refusal_and_job_access_refusal_bypass_admin(
         )
         .await,
         None
+    );
+}
+
+#[test]
+fn max_job_cost_is_eight_hours() {
+    assert_eq!(
+        transcribe_max_job_cost(Decimal::new(1, 2)),
+        Ok(Decimal::from(288_i32))
     );
 }
 
