@@ -310,6 +310,11 @@ fn media_optional_params_image_bedrock_without_a_config_class_is_an_error() {
 #[case::unknown_size(r#"{"size": "7x7"}"#, r#"{"aspectRatio": "1:1"}"#)]
 #[case::count_only(r#"{"n": 4}"#, r#"{"sampleCount": 4}"#)]
 #[case::zero_count(r#"{"n": 0}"#, r#"{"sampleCount": 0}"#)]
+#[case::negative_count(r#"{"n": -1}"#, r#"{"sampleCount": -1}"#)]
+#[case::count_above_i64(
+    r#"{"n": 9223372036854775808}"#,
+    r#"{"sampleCount": 9223372036854775808}"#
+)]
 #[case::nulls(r#"{"n": null, "size": null}"#, "{}")]
 fn media_optional_params_image_vertex_ai_maps_n_and_size(
     #[case] passed: &str,

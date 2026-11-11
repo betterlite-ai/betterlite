@@ -14,7 +14,10 @@ use serde_json::{Value, json, to_value};
 
 use super::{Call, Failure, Function, required};
 
-fn answer<T: Serialize>(result: Result<T, u16>) -> Result<Value, Failure> {
+fn answer<T>(result: Result<T, u16>) -> Result<Value, Failure>
+where
+    T: Serialize,
+{
     match result {
         Ok(value) => Ok(to_value(value)?),
         Err(status) => Err(Failure::Status(status)),
@@ -82,7 +85,7 @@ fn pre_process_call(call: &Call) -> Result<Value, Failure> {
 
 fn fallback_params(call: &Call) -> Result<Value, Failure> {
     let provider = required(call.custom_llm_provider.as_deref(), "custom_llm_provider")?;
-    if matches!(call.function, Function::FunctionFallback) {
+    if matches!(call.function, Function::OllamaFallback) {
         let mut remaining = call.non_default_params.clone();
         let processed = function_fallback::pre_process_optional_params(
             &call.passed_params,
@@ -157,7 +160,7 @@ pub(super) fn run(call: &Call) -> Result<Value, Failure> {
         Function::SelectNonDefault | Function::FilterOutLitellm => named_params(call),
         Function::BedrockRoute => route_for_request(call),
         Function::PreProcess | Function::RemoveSensitiveKeys => pre_process_call(call),
-        Function::FunctionFallback | Function::AddProviderSpecific => fallback_params(call),
+        Function::OllamaFallback | Function::AddProviderSpecific => fallback_params(call),
         Function::PeekAliases | Function::StripAliases => alias_params(call),
         Function::Transcription | Function::ImageGeneration => media_params(call),
     }
