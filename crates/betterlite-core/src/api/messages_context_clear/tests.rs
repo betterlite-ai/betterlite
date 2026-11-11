@@ -218,6 +218,54 @@ fn a_threshold_beyond_machine_words_is_not_met() {
 }
 
 #[test]
+fn a_threshold_above_the_integer_range_is_not_met() {
+    let counter = ScriptedCounter::new(&[0]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"value":10000000000000000000000000000000000000000}}"#,
+        &counter,
+    );
+    assert!(outcome.applied.is_none());
+    assert_eq!(counter.call_count(), 1);
+}
+
+#[test]
+fn a_threshold_below_the_integer_range_is_met() {
+    let counter = ScriptedCounter::new(&[0, 0]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"value":-10000000000000000000000000000000000000000}}"#,
+        &counter,
+    );
+    let applied = outcome.applied.expect("edit");
+    assert_eq!(applied.cleared_tool_uses, Some(1));
+    assert_eq!(applied.cleared_input_tokens, Some(0));
+}
+
+#[test]
+fn a_keep_value_above_the_integer_range_keeps_everything() {
+    let counter = ScriptedCounter::new(&[]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"type":"tool_uses","value":0},"keep":{"value":10000000000000000000000000000000000000000}}"#,
+        &counter,
+    );
+    assert!(outcome.applied.is_none());
+    assert_eq!(counter.call_count(), 0);
+}
+
+#[test]
+fn a_keep_value_below_the_integer_range_uses_the_default() {
+    let counter = ScriptedCounter::new(&[10, 4]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"type":"tool_uses","value":0},"keep":{"value":-10000000000000000000000000000000000000000}}"#,
+        &counter,
+    );
+    assert_eq!(outcome.applied.expect("edit").cleared_tool_uses, Some(1));
+}
+
+#[test]
 fn tool_use_threshold_triggers_above_it() {
     let counter = ScriptedCounter::new(&[100, 40]);
     let outcome = run_editor(

@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use betterlite_models::decisions::Json;
+use serde_json::Number;
 
 use crate::api::messages_context_clear::blocks::{clear_tool_results, tool_ids};
 use crate::api::messages_context_clear::constants::{
@@ -33,13 +34,28 @@ fn is_tool_uses(kind: Option<&Json>) -> bool {
     text == "tool_uses"
 }
 
+// an integer beyond i128 keeps its side of the range: a huge threshold can never be exceeded and a huge keep keeps everything
 fn integer_value(value: &Json) -> Option<i128> {
     match value {
         Json::Bool(true) => Some(1),
         Json::Bool(false) => Some(0),
-        Json::Number(number) => number.as_i128(),
+        Json::Number(number) => number_value(number),
         Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
+}
+
+fn number_value(number: &Number) -> Option<i128> {
+    if let Some(value) = number.as_i128() {
+        return Some(value);
+    }
+    let literal = number.to_string();
+    let (negative, magnitude) = literal
+        .strip_prefix('-')
+        .map_or((false, literal.as_str()), |magnitude| (true, magnitude));
+    if !magnitude.chars().all(|digit| digit.is_ascii_digit()) {
+        return None;
+    }
+    Some(if negative { i128::MIN } else { i128::MAX })
 }
 
 fn exceeds(count: usize, threshold: i128) -> bool {
