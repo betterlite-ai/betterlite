@@ -64,6 +64,7 @@ class SentModel(TypedDict):
     status: str
 
 
+@final
 class SentAudit(TypedDict):
     id: str
     updated_at: str
@@ -76,7 +77,7 @@ class SentAudit(TypedDict):
     updated_values: str | None
 
 
-SentRecord: TypeAlias = SentModel | SentAudit
+SentRecord: TypeAlias = SentAudit | SentModel
 SENT_BATCH = TypeAdapter(list[SentRecord])
 SCENARIOS = TypeAdapter(list[Scenario])
 
