@@ -8,7 +8,7 @@ use super::support::{ResizableMemory, local_memory};
 use crate::dual_cache::limited_size::LimitedSizeOrderedDict;
 use crate::dual_cache::{
     BATCH_CACHE_SIZE_VARIABLE, CacheOptions, DEFAULT_BATCH_CACHE_EXPIRY,
-    DEFAULT_MAX_SIZE_IN_MEMORY, DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE,
+    DEFAULT_MAX_SIZE_IN_MEMORY, DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, Ttl,
     lock_read, lock_write,
 };
 use crate::types::pipeline::RedisPipelineIncrement;
@@ -171,7 +171,7 @@ async fn set_cache_applies_the_default_memory_ttl() {
     let cache = DualCache::new(local_memory(1000.0), None, settings(Some(30.0_f64)));
     cache.set_cache("key", &text("value"), write(None, false));
     let ttl = cache.async_get_ttl("key").await.expect("the memory ttl");
-    assert_eq!(ttl, Some(1030.0_f64));
+    assert_eq!(ttl, Some(Ttl::Expiry(1030.0_f64)));
 }
 
 #[tokio::test]
@@ -179,7 +179,7 @@ async fn set_cache_keeps_an_explicit_ttl_over_the_default() {
     let cache = DualCache::new(local_memory(1000.0), None, settings(Some(30.0_f64)));
     cache.set_cache("key", &text("value"), write(Some(5.0_f64), false));
     let ttl = cache.async_get_ttl("key").await.expect("the memory ttl");
-    assert_eq!(ttl, Some(1005.0_f64));
+    assert_eq!(ttl, Some(Ttl::Expiry(1005.0_f64)));
 }
 
 #[tokio::test]
@@ -313,7 +313,7 @@ async fn async_get_ttl_reports_the_memory_expiry_before_redis() {
     cache.set_cache("key", &text("value"), write(Some(7.0_f64), false));
     assert_eq!(
         cache.async_get_ttl("key").await.expect("the memory ttl"),
-        Some(1007.0_f64)
+        Some(Ttl::Expiry(1007.0_f64))
     );
     assert_eq!(cache.async_get_ttl("absent").await.expect("a miss"), None);
 }

@@ -9,7 +9,7 @@ use betterlite_redis::request_batch::scope::{
 use super::support::{
     FakeRedis, Reply, ResizableMemory, connect_cache, local_memory, settings_for_tests, write,
 };
-use crate::dual_cache::{DualCache, DualCacheError, MAX_REDIS_BATCH_CACHE_SIZE, lock_read};
+use crate::dual_cache::{DualCache, DualCacheError, MAX_REDIS_BATCH_CACHE_SIZE, Ttl, lock_read};
 use crate::types::pipeline::RedisPipelineIncrement;
 
 const DEADLINE: Duration = Duration::from_millis(500);
@@ -37,7 +37,7 @@ async fn attach_redis_cache_keeps_the_first_tier() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn get_cache_falls_back_to_redis_and_backfills_memory() {
     let server = FakeRedis::start().await;
-    server.script("GET", vec![Reply::Bulk("from-redis".to_owned())]);
+    server.script("GET", vec![Reply::Bulk("\"from-redis\"".to_owned())]);
     let cache = DualCache::new(
         local_memory(1000.0),
         Some(connect_cache(server.addr).await),
@@ -46,7 +46,7 @@ async fn get_cache_falls_back_to_redis_and_backfills_memory() {
     assert_eq!(cache.get_cache("key", false), Some(text("from-redis")));
     assert_eq!(
         cache.async_get_ttl("key").await.expect("the backfill ttl"),
-        Some(1030.0_f64)
+        Some(Ttl::Expiry(1030.0_f64))
     );
     assert_eq!(cache.get_cache("key", false), Some(text("from-redis")));
     assert_eq!(server.commands("GET").len(), 1);
@@ -122,11 +122,11 @@ async fn async_set_cache_pipeline_applies_one_ttl_to_every_entry() {
     );
     assert_eq!(
         cache.async_get_ttl("first").await.expect("the first ttl"),
-        Some(1030.0_f64)
+        Some(Ttl::Expiry(1030.0_f64))
     );
     assert_eq!(
         cache.async_get_ttl("second").await.expect("the second ttl"),
-        Some(1030.0_f64)
+        Some(Ttl::Expiry(1030.0_f64))
     );
 }
 
@@ -380,7 +380,7 @@ async fn async_get_ttl_falls_back_to_redis_on_a_memory_miss() {
     );
     assert_eq!(
         cache.async_get_ttl("key").await.expect("the Redis ttl"),
-        Some(42.0_f64)
+        Some(Ttl::Seconds(42))
     );
 }
 

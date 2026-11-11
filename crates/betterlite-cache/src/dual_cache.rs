@@ -19,6 +19,7 @@ use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::redis_counters::RedisCountersError;
+use serde::Serialize;
 use thiserror::Error;
 
 use self::limited_size::LimitedSizeOrderedDict;
@@ -87,6 +88,14 @@ impl DualCacheSettings {
             redis_delete_chunk_size: size,
         }
     }
+}
+
+// DualCache.async_get_ttl answers the memory tier's float expiry or Redis's whole seconds left
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Ttl {
+    Expiry(f64),
+    Seconds(i64),
 }
 
 #[derive(Clone, Copy, Debug, Default)]

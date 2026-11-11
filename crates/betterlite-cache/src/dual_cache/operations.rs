@@ -6,13 +6,12 @@ use betterlite_redis::request_batch::scope::{
     active_post_call_redis_batch, active_request_redis_batch,
 };
 use indexmap::IndexMap;
-use num_traits::ToPrimitive as _;
 
 use super::limited_size::LimitedSizeOrderedDict;
 use super::{
     CacheOptions, DEFAULT_BATCH_CACHE_EXPIRY, DEFAULT_MAX_SIZE_IN_MEMORY, Deferred, DualCache,
-    DualCacheError, DualCacheSettings, MemoryMaxSize, increments, lock_read, lock_write, logged,
-    reads, value, writes,
+    DualCacheError, DualCacheSettings, MemoryMaxSize, Ttl, increments, lock_read, lock_write,
+    logged, reads, value, writes,
 };
 use crate::backend::memory::MemoryCacheOps;
 use crate::types::pipeline::RedisPipelineIncrement;
@@ -220,16 +219,16 @@ impl<Memory: MemoryCacheOps> DualCache<Memory> {
         Ok(())
     }
 
-    pub async fn async_get_ttl(&self, key: &str) -> Result<Option<f64>, DualCacheError> {
+    pub async fn async_get_ttl(&self, key: &str) -> Result<Option<Ttl>, DualCacheError> {
         let entries = self.in_memory_cache.ttl_entries()?;
         if let Some((_name, expiry)) = entries.into_iter().find(|(name, _expiry)| name == key) {
-            return Ok(Some(expiry));
+            return Ok(Some(Ttl::Expiry(expiry)));
         }
         let Some(redis) = self.redis() else {
             return Ok(None);
         };
         let seconds = redis.async_get_ttl(key).await?;
-        Ok(seconds.and_then(|remaining| remaining.to_f64()))
+        Ok(seconds.map(Ttl::Seconds))
     }
 
     pub fn increment_cache(

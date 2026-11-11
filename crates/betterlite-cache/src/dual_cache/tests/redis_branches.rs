@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use serde_json::Number;
 
 use crate::backend::memory::MemoryCacheOps as _;
@@ -203,6 +204,25 @@ async fn a_redis_integer_beyond_the_memory_tier_is_still_returned() {
     assert_eq!(cache.get_cache("key", false), Some(wide.clone()));
     assert_eq!(cache.async_get_cache("key", false).await, Some(wide));
     assert_eq!(cache.get_cache("key", true), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_float_inside_an_object_survives_the_memory_tier() {
+    let server = FakeRedis::start().await;
+    server.script(
+        "GET",
+        vec![Reply::Bulk(
+            r#"{"model": "gpt-4o", "spend": 12.5}"#.to_owned(),
+        )],
+    );
+    let cache = with_redis(&server).await;
+    let spend = Number::from_f64(12.5).expect("a finite float");
+    let expected = Json::Object(IndexMap::from([
+        ("model".to_owned(), Json::Text("gpt-4o".to_owned())),
+        ("spend".to_owned(), Json::Number(spend)),
+    ]));
+    assert_eq!(cache.get_cache("key", false), Some(expected.clone()));
+    assert_eq!(cache.get_cache("key", true), Some(expected));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
