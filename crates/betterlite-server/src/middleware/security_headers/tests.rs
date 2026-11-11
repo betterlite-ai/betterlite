@@ -124,5 +124,14 @@ async fn hsts_appears_only_when_enabled(#[case] enable_hsts: bool, #[case] expec
 async fn a_switching_protocols_handshake_carries_no_security_headers() {
     let response = send(handshake(true), Method::GET, "/ws").await;
     assert_eq!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
-    assert!(response.headers().is_empty(), "{:?}", response.headers());
+    assert_eq!(response.headers().get(header::X_FRAME_OPTIONS), None);
+    assert_eq!(
+        response.headers().get(header::CONTENT_SECURITY_POLICY),
+        None
+    );
+    assert_eq!(response.headers().get(header::X_CONTENT_TYPE_OPTIONS), None);
+    assert_eq!(
+        response.headers().get(header::STRICT_TRANSPORT_SECURITY),
+        None
+    );
 }

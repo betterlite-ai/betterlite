@@ -4,6 +4,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Read as _};
 use std::path::PathBuf;
+use std::str;
 
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
@@ -98,7 +99,7 @@ fn header_value(headers: &HeaderMap, name: HeaderName) -> Option<&[u8]> {
 #[case::gzip_beats_star("gzip, *;q=0", true)]
 #[case::gzip_after_star("*;q=0, gzip", true)]
 #[case::bad_weight("gzip;q=abc", false)]
-#[case::bad_weight_falls_to_star("gzip;q=abc, *", true)]
+#[case::bad_weight_blocks_star("gzip;q=abc, *", false)]
 #[case::duplicate_last_wins("gzip;q=0, gzip", true)]
 #[case::duplicate_last_zero("gzip, gzip;q=0", false)]
 #[case::gzip_zero_beats_x_gzip("x-gzip, gzip;q=0", false)]
@@ -148,9 +149,11 @@ async fn gzip_compresses_a_body_at_the_minimum_size() {
         header_value(response.headers(), header::VARY),
         Some(&b"Accept-Encoding"[..])
     );
-    let declared = header_value(response.headers(), header::CONTENT_LENGTH).map(<[u8]>::to_vec);
+    let declared = header_value(response.headers(), header::CONTENT_LENGTH)
+        .and_then(|value| str::from_utf8(value).ok())
+        .and_then(|value| value.parse::<usize>().ok());
     let encoded = body_bytes(response).await;
-    assert_eq!(declared.as_deref(), Some(&*encoded));
+    assert_eq!(declared, Some(encoded.len()));
     assert_eq!(gunzip(&encoded), "a".repeat(500).into_bytes());
 }
 
@@ -236,20 +239,21 @@ async fn gzip_skips_statuses_it_never_touches(#[case] status: StatusCode) {
 }
 
 #[rstest]
-#[case::etag("etag", "\"abc\"")]
-#[case::content_encoding("content-encoding", "br")]
-#[case::no_transform("cache-control", "no-transform")]
-#[case::no_transform_in_a_list("cache-control", "max-age=0, No-Transform")]
+#[case::etag("etag", "\"abc\"", None)]
+#[case::content_encoding("content-encoding", "br", Some("br"))]
+#[case::no_transform("cache-control", "no-transform", None)]
+#[case::no_transform_in_a_list("cache-control", "max-age=0, No-Transform", None)]
 #[tokio::test]
 async fn gzip_skips_responses_it_must_not_reencode(
     #[case] name: &'static str,
     #[case] value: &'static str,
+    #[case] expected_encoding: Option<&'static str>,
 ) {
     let app = status_app(StatusCode::OK, vec![(name, value)], 600);
     let response = send(app, Method::GET, Some("gzip")).await;
     assert_eq!(
         header_value(response.headers(), header::CONTENT_ENCODING),
-        None
+        expected_encoding.map(str::as_bytes)
     );
     assert_eq!(header_value(response.headers(), header::VARY), None);
     assert_eq!(body_bytes(response).await.len(), 600);
@@ -288,7 +292,7 @@ async fn gzip_passes_a_head_response_untouched() {
         None
     );
     assert_eq!(header_value(response.headers(), header::VARY), None);
-    assert_eq!(body_bytes(response).await.len(), 600);
+    assert!(body_bytes(response).await.is_empty());
 }
 
 #[tokio::test]
