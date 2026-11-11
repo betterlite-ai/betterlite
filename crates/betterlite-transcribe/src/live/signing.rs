@@ -26,24 +26,9 @@ pub trait AwsSigner: Send + Sync {
     async fn sign_s3_get(&self, region: &str, url: &str) -> Result<AwsSignedRequest, ProbeError>;
 }
 
-pub trait SigningClock: Send + Sync {
-    fn now(&self) -> SystemTime;
-}
-
 #[async_trait]
 pub trait CredentialSource: Send + Sync {
     async fn credentials(&self, region: &str) -> Result<Credentials, ProbeError>;
-}
-
-#[derive(Clone, Copy)]
-pub struct SystemClock;
-
-impl SigningClock for SystemClock {
-    // the wall clock has no value a unit test could pin
-    #[cfg_attr(test, mutants::skip)]
-    fn now(&self) -> SystemTime {
-        SystemTime::now()
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -61,7 +46,7 @@ impl CredentialSource for ResolverCredentials<'_> {
     }
 }
 
-// every request is signed with the clock's reading at that moment, like LiteLLM's run_aws_signing
+// the clock is read per request, like LiteLLM's run_aws_signing
 #[derive(Clone, Copy)]
 pub struct ClockedSigner<C, K> {
     pub(super) credentials: C,
@@ -97,7 +82,7 @@ pub(super) fn signed_get(
 impl<C, K> AwsSigner for ClockedSigner<C, K>
 where
     C: CredentialSource,
-    K: SigningClock,
+    K: Fn() -> SystemTime + Send + Sync,
 {
     async fn sign_json_post(
         &self,
@@ -114,13 +99,13 @@ where
             body,
             headers,
             credentials: &credentials,
-            now: self.clock.now(),
+            now: (self.clock)(),
         })
         .map_err(ProbeError::Signing)
     }
 
     async fn sign_s3_get(&self, region: &str, url: &str) -> Result<AwsSignedRequest, ProbeError> {
         let credentials = self.credentials.credentials(region).await?;
-        signed_get(&credentials, region, url, self.clock.now())
+        signed_get(&credentials, region, url, (self.clock)())
     }
 }

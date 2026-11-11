@@ -1,5 +1,6 @@
 use std::io::Error as IoError;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use betterlite_bedrock::credentials::AwsCredentialResolver;
 use betterlite_bedrock::credentials::error::CredentialError;
@@ -95,7 +96,7 @@ pub async fn price_transcription_job_live(
 ) -> Result<Decimal, PricingError> {
     let signer = signing::ClockedSigner {
         credentials: signing::ResolverCredentials(deps.resolver),
-        clock: signing::SystemClock,
+        clock: SystemTime::now,
     };
     let http = PooledHttp { client: deps.http };
     let lookup = TranscribeJobLookup::new(&deps.region, signer, http.clone());

@@ -20,7 +20,7 @@ use crate::live::exchange::{
     BodyStream, HttpAnswer, HttpMethod, HttpTransport, OutboundHttp, header_pairs, signed_headers,
 };
 use crate::live::probe::download_and_measure;
-use crate::live::signing::{AwsSigner, ClockedSigner, CredentialSource, SigningClock, signed_get};
+use crate::live::signing::{AwsSigner, ClockedSigner, CredentialSource, signed_get};
 use crate::live::{ProbeError, S3MediaProbe, TranscribeJobLookup, price_fail_closed};
 use crate::media_pricing::{JobPricing, MediaDurationProbe, PricingError};
 use crate::media_source::MediaSizeGuard;
@@ -703,19 +703,6 @@ async fn fail_closed_retries_an_unavailable_job_lookup() {
     assert_eq!(lookup.calls(), 2);
 }
 
-// each reading is one hour after the last, so a signature built from a stored instant shows
-struct HourlyClock(AtomicU64);
-
-impl SigningClock for HourlyClock {
-    fn now(&self) -> SystemTime {
-        let hours = self.0.fetch_add(1, Ordering::SeqCst);
-        let seconds = hours.saturating_mul(3600).saturating_add(1_700_000_000);
-        UNIX_EPOCH
-            .checked_add(Duration::from_secs(seconds))
-            .unwrap()
-    }
-}
-
 struct StaticCredentials;
 
 #[async_trait]
@@ -729,10 +716,18 @@ impl CredentialSource for StaticCredentials {
     }
 }
 
-fn hourly_signer() -> ClockedSigner<StaticCredentials, HourlyClock> {
+// each reading is an hour after the last, so a signature built from a stored instant shows
+fn hourly_signer() -> ClockedSigner<StaticCredentials, impl Fn() -> SystemTime + Send + Sync> {
+    let readings = AtomicU64::new(0);
     ClockedSigner {
         credentials: StaticCredentials,
-        clock: HourlyClock(AtomicU64::new(0)),
+        clock: move || {
+            let hours = readings.fetch_add(1, Ordering::SeqCst);
+            let seconds = hours.saturating_mul(3600).saturating_add(1_700_000_000);
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(seconds))
+                .unwrap()
+        },
     }
 }
 
