@@ -162,7 +162,7 @@ out_of_scope:
   - Batch initialization and periodic flush base behavior; B256 supplies CustomBatchLogger.
   - Configuration key resolution from config.yaml; B002's loader handles all config inputs.
   - Datadog tag normalization; B3930 supplies normalize_datadog_tag_value.
-  - Exporter initialization and callback registration; B113 composes the logger with others.
+  - Registering built loggers into the success and failure lists at startup belongs to B8399.
 
 pitfalls:
   - The DD_SITE environment variable must not have a trailing slash when constructing the upload URL; datadoghq.com is the correct format, not datadoghq.com/.

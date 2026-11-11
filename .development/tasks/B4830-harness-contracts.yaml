@@ -39,6 +39,10 @@ references:
     why: Sandbox and Process protocol methods (declarations only, no implementations)
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/base.py#L1-L43
     why: BaseHarnessHandler abstract class and methods
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/__init__.py#L1-L98
+    why: Package re-exports and __all__ for the harness types, errors and options.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/__init__.py#L1-L25
+    why: Sandbox package re-exports and __all__.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L1-L152
     why: BaseHarnessConfig and BaseCLIHarnessConfig abstract classes, HarnessSessionSetup/HarnessTurnRequest/HarnessTurnResponse records, event_list helper
 dod:

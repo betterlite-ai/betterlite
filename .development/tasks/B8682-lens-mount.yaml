@@ -7,6 +7,10 @@ description: >-
   and crates/betterlite-server/src/app/edge/lens.rs with app/edge/lens/ (declared by the skeleton). It never edits
   routes.rs, server.rs, app.rs or B4503 and B4505's modules.
 
+  Compaction. LiteLLM runs the lens billing call (lens/billing.py L79) through base_process_llm_request with the
+  compaction executor installed. The production billing port built here calls B9810's GatewayCompaction once at its
+  dispatch.
+
 
   Auth placement. LiteLLM's admin Lens routes depend on user_api_key_auth and are listed in litellm_native_routes, so
   `edge::mount` merges the admin router, inside the key auth layers. The worker routes have no user_api_key_auth

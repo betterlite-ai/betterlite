@@ -170,7 +170,7 @@ out_of_scope:
   - "Collector creation and registration, including the litellm_total_users, litellm_active_users and litellm_teams_count gauges: B3875."
   - "get_paginated_teams (team_endpoints.py:5934-5965): B813. _list_key_helper: B897. UserRepository, OrganizationRepository and count_billable_users: B723. The teamtable and endusertable bindings: B726. PodLockManager: B1690."
   - "Scheduler startup, the scheduler itself and the call site at proxy_server.py:11062-11067 beyond the condition: B124. The type-specific loggers' lookup in the callback list (get_custom_loggers_for_type): B189."
-  - "_increment_remaining_budget_metrics and the per-request budget updates: B3883 and the per-request owner."
+  - "_increment_remaining_budget_metrics and the per-request budget updates: B9480 (the fan-out) over B3883's lookups."
   - "_mount_metrics_endpoint (prometheus.py:4565-4592): B3886."
 
 pitfalls:

@@ -1,0 +1,142 @@
+id: B9695
+title: Prove the standalone chat app requests and let users rotate their own keys without the paid gate
+description: >-
+  Add HTTP oracle cases for the requests the /ui/chat app sends (chat, keys, usage, logs,
+  MCP apps and credentials, connect flow) and a reviewed 81-chat-keys.patch for its one paid
+  gate. B9090 takes in app/chat and components/chat unchanged and B9091 builds them; nothing is
+  ported. Every route has an owner and nothing is registered here.
+
+  The paid gate. KeysPanel hides the Rotate column, its skeleton cell and the rotation hint
+  text when premiumUser is false, so a user cannot rotate a key from the chat app. The backend
+  mirror is the license branch in B895's regenerate route, and B895 already drops it under the
+  no-paid-tier decision. The patch shows the column, the button and the hint for every user
+  and keeps the modal's own checks: duration and grace_period must match the duration pattern
+  and an expired key needs a new duration. app/chat/layout.tsx and api-keys/page.tsx keep
+  passing the prop; only KeysPanel stops reading it. Do not set premium_user anywhere.
+  ui/dashboard/tests/chat-app/upstream-tests.json reruns the retained layout.test.tsx,
+  page.integration.test.tsx, ChatShell.test.tsx and LogsPanel.test.tsx unchanged, and a new
+  KeysPanel test renders with premiumUser false, opens Rotate and checks that only the filled
+  fields are sent.
+
+  Keys and rotation. KeysPanel lists GET /key/list?user_id=<id>&page=1&size=100&return_full_object=true&include_team_keys=true&include_created_by_keys=true&substring_matching=true
+  (B782) and reads keys[].token, token_id, key_name, key_alias, spend, max_budget, expires,
+  created_at, tpm_limit, rpm_limit and duration. B9730's table cases send page=1&size=50
+  with expand=user and sorting, so this query is not covered. Rotation sends POST
+  /key/<token or token_id>/regenerate (B895) with only the filled fields among key_alias,
+  max_budget (float), tpm_limit and rpm_limit (integers), duration and grace_period, and reads
+  key. B9730's regenerate-form-eligible-mit is an admin rotating another key with the full
+  form; add an internal_user rotating their own key with only key_alias and grace_period, then
+  the list again, and an expired key rotated with a duration. These cases set
+  native_feature_eligibility true (B1644) because stock LiteLLM refuses regeneration without a
+  license.
+
+  Usage and logs. UsagePanel sends GET /user/daily/activity/aggregated?start_date=<YYYY-MM-DD>&end_date=<YYYY-MM-DD>&user_id=<id>&timezone=<minutes offset>
+  for 7, 30 or 90 days (B3097, mounted by B8482) and reads metadata totals and
+  results[].date, metrics.spend and metrics.api_requests. LogsPanel sends GET
+  /spend/logs/ui?start_date=<UTC "YYYY-MM-DD HH:mm:ss">&end_date=<same>&page=<n>&page_size=<PAGE_SIZE>&user_id=<id>&sort_by=startTime&sort_order=desc
+  (B1732, mounted by B8662) and reads data[], total and total_pages; the detail sends GET
+  /spend/logs/ui/<request_id>?start_date=<row startTime in UTC> (B1729) and shows its request
+  and response. B9741's log cases use page_size 25 with group_by_session and no user filter; add
+  the chat app's user-scoped page, page 2 and the detail. Seed spend rows through B9740's
+  fixture seeds and daily rows through the existing daily_usage seed so the windows are fixed
+  relative to the case run.
+
+  Chat. app/chat/page.tsx reads GET /model_group/info (B060) for the model picker and sends
+  POST /responses through the SDK with {model, input, litellm_trace_id,
+  previous_response_id on later turns, tools of type "mcp" with server_url "<proxy
+  base>/mcp/<encoded server_name>" and server_label the server name when apps are picked,
+  tool_choice "auto"} and stream true (B080). Add a two-turn streamed chat and a turn with one
+  MCP app against a mock MCP server.
+
+  MCP apps and credentials. MCPAppsPanel lists GET /v1/mcp/server?connected_app_view=true in
+  connect mode (B4720, mounted by B8625; B9735 never sends this flag), lists tools with GET
+  /mcp-rest/tools/list?server_id=<id> (B4727, mounted by B8626), and reads GET
+  /v1/mcp/server/<id>/oauth-user-credential/status, treating a non-2xx as
+  {has_credential:false, is_expired:false}. MCPCredentialsTab lists GET /v1/mcp/user-credentials,
+  treating a non-2xx as [], and revokes with DELETE /v1/mcp/server/<id>/oauth-user-credential
+  (B4723, mounted by B8700). B9761's saved-server-oauth-status covers the status read and
+  B8700's user-credentials-hides-unseen-server-names the bare list; add the connect-mode list
+  with connected_app_reachable for a session caller, and a list, revoke, list transcript.
+  ConnectFlowSurface reads GET /authorize/flow?flow=<handle> with cookies and no bearer (B7971,
+  mounted by B8702); add the read after starting a flow, and with an unknown handle.
+
+  Use B860's Postgres fixture with B5076's bootstrap, an internal_user with two keys, and mock
+  upstreams for the model and MCP server. Compare status, content type, stream frames the page
+  reads and the stable body fields above. About 90 patch, 110 component-test and 420 case
+  lines.
+scope:
+  paths:
+    - ui/dashboard/patches/81-chat-keys.patch
+    - ui/dashboard/patches/81-chat-keys.json
+    - ui/dashboard/tests/chat-app/**
+    - tools/oracle/cases/ui/chat-app/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/chat/KeysPanel.tsx#L86-L151
+    why: The user-scoped key list and the rotation body with only filled fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/chat/KeysPanel.tsx#L171-L279
+    why: premiumUser hides the hint, the Rotate column and its skeleton cell.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/chat/UsagePanel.tsx#L92-L110
+    why: The user usage request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1298-L1346
+    why: user_id carries the first entity id and timezone is always sent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/chat/LogsPanel.tsx#L244-L280
+    why: UTC date strings, user filter, sort and the detail start_date.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/chat/page.tsx#L185-L225
+    why: The chat page uses the Responses builder with previous_response_id and MCP servers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/responses_api.tsx#L140-L180
+    why: MCP tool entries with absolute URLs and server_name labels.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4755-L4768
+    why: The connect-flow read with cookies and the connected_app_view flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7743-L7799
+    why: Revoke, status and user credential list, with the non-2xx fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1500-L1528
+    why: The regenerate request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5716-L5986
+    why: B895's regenerate routes and the license branch.
+dod:
+  - text: The chat app's key list, own-key rotation, usage, logs, detail and Responses chat match LiteLLM through the booted proxy.
+    proof: [chat-app-cases, oracle]
+  - text: The MCP app list in connect mode, credential list and revoke, and the connect-flow read match LiteLLM.
+    proof: [chat-app-cases, oracle]
+  - text: Any chat app user can open Rotate without a paid claim, and only the filled fields are sent.
+    proof: [chat-app-components, chat-app-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: chat-app-cases
+      why: No booted-proxy case sends the chat app's user-scoped requests.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/chat-app)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/chat-app
+    - id: chat-app-components
+      why: The retained KeysPanel keeps the paid gate or sends unfilled fields after the patch.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/chat-app
+oracle_cases:
+  - tools/oracle/cases/ui/chat-app/user-key-list.yaml
+  - tools/oracle/cases/ui/chat-app/rotate-own-key-eligible-mit.yaml
+  - tools/oracle/cases/ui/chat-app/rotate-expired-key-with-duration.yaml
+  - tools/oracle/cases/ui/chat-app/user-usage-windows.yaml
+  - tools/oracle/cases/ui/chat-app/user-logs-pages-and-detail.yaml
+  - tools/oracle/cases/ui/chat-app/responses-chat-two-turns.yaml
+  - tools/oracle/cases/ui/chat-app/responses-chat-with-mcp-app.yaml
+  - tools/oracle/cases/ui/chat-app/mcp-apps-connect-mode.yaml
+  - tools/oracle/cases/ui/chat-app/mcp-credentials-list-and-revoke.yaml
+  - tools/oracle/cases/ui/chat-app/connect-flow-status.yaml
+deviations:
+  - what: The chat app shows key rotation to every user instead of only premium users.
+    why: README decision of 2026-10-24 has no paid tier; B895 already drops the backend license check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/chat/KeysPanel.tsx#L177-L278
+out_of_scope:
+  - B9090 retains every unpatched function under app/chat and components/chat; B9091 builds them and B146 opens the chat app in the browser.
+  - B782, B895, B3097, B1732, B1729, B060, B080, B4720, B4723, B4727 and B7971 own the handlers; B8482, B8662, B8625, B8626, B8700 and B8702 own the mounts.
+  - The shell, login and UI settings reads are B144's; MCP OAuth start and BYOK forms are B9761's.
+pitfalls:
+  - The usage query sends the first user id as user_id, not as a comma list like the team form.
+  - The log detail's start_date is the row's startTime in UTC, not the list window's start.
+  - The status and credential list calls turn any error into an empty answer, so only the HTTP case shows a missing route.
+  - Rotation uses token and falls back to token_id; a list row with neither cannot be rotated.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
