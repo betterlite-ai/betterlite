@@ -12,7 +12,10 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
-use tokio::time::timeout;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::yield_now;
+use tokio::time::{advance, timeout};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -257,12 +260,15 @@ fn field<'json>(object: &'json Json, name: &str) -> &'json Json {
 
 #[tokio::test]
 async fn resolves_by_name_to_an_argilla_logger() {
-    let catalog = LoggerCatalog::new(configured_inputs());
+    let inputs = configured_inputs();
+    let tracker = inputs.tracker.clone();
+    let catalog = LoggerCatalog::new(inputs);
     let logger = catalog
         .resolve_logger("argilla")
         .expect("the name is available")
         .expect("the logger builds");
     assert_eq!(logger.callback_name(), "argilla");
+    assert_eq!(tracker.len(), 1);
 }
 
 #[test]
@@ -426,4 +432,61 @@ async fn the_flush_loop_stops_on_shutdown() {
     inputs.tracker.close();
     let awaited = timeout(Duration::from_secs(1), inputs.tracker.wait()).await;
     awaited.expect("the flush loop stops on shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_flush_loop_resolves_the_dataset_on_its_first_tick() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+    let address = listener.local_addr().expect("the bound address");
+    let base = format!("http://{address}");
+    let inputs = inputs(
+        CONFIGURED,
+        &[
+            ("ARGILLA_API_KEY", "argilla-key"),
+            ("ARGILLA_BASE_URL", base.as_str()),
+        ],
+    );
+    let _logger = build(&inputs).expect("the logger builds");
+
+    let serve = async {
+        let accepted = timeout(Duration::from_secs(30), listener.accept()).await;
+        let (mut stream, _) = accepted
+            .expect("the flush loop connects")
+            .expect("one request");
+        let head = read_head(&mut stream).await;
+        answer(&mut stream, DATASET_BODY).await;
+        head
+    };
+    let tick = async {
+        yield_now().await;
+        advance(Duration::from_secs(5)).await;
+    };
+    let (head, ()) = tokio::join!(serve, tick);
+    assert!(head.contains("GET /api/v1/me/datasets?name=litellm-completion"));
+}
+
+async fn read_head(stream: &mut TcpStream) -> String {
+    let mut buffer = Vec::new();
+    loop {
+        let mut chunk = [0_u8; 1024];
+        let read = stream.read(&mut chunk).await.expect("a request read");
+        assert!(read > 0, "the client closed before sending a request");
+        buffer.extend_from_slice(&chunk[..read]);
+        if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+            let end = position.saturating_add(4);
+            return String::from_utf8(buffer[..end].to_vec()).expect("a UTF-8 request head");
+        }
+    }
+}
+
+async fn answer(stream: &mut TcpStream, body: &str) {
+    let response = format!(
+        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(response.as_bytes())
+        .await
+        .expect("the response write");
+    stream.flush().await.expect("the response flush");
 }

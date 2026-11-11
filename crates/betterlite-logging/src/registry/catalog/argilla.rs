@@ -120,26 +120,23 @@ fn spawn_flush_loop(adapter: &Arc<Production>, interval: Duration, shutdown: Can
     });
 }
 
-// CustomBatchLogger.periodic_flush started by ArgillaLogger.__init__, stopped by the server's shutdown token.
+// CustomBatchLogger.periodic_flush started by ArgillaLogger.__init__: the first tick resolves the dataset, then each tick flushes.
 async fn run_flush_loop(adapter: &Production, interval: Duration, shutdown: CancellationToken) {
     loop {
         let _woken = timeout(interval, shutdown.cancelled()).await;
         if shutdown.is_cancelled() {
             break;
         }
-        flush_connected(adapter).await;
-    }
-}
-
-async fn flush_connected(adapter: &Production) {
-    let Some(logger) = adapter.connection.connected.get() else {
-        return;
-    };
-    let report = logger.flush_queue().await;
-    if report.cancelled {
-        tracing::warn!(
-            batch = report.batch,
-            "Argilla flush cancelled; records stay queued"
-        );
+        let Ok(logger) = adapter.connection.logger().await else {
+            tracing::error!("the Argilla logger could not connect; the flush loop stops");
+            break;
+        };
+        let report = logger.flush_queue().await;
+        if report.cancelled {
+            tracing::warn!(
+                batch = report.batch,
+                "Argilla flush cancelled; records stay queued"
+            );
+        }
     }
 }

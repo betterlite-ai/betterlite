@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io::{Result as IoResult, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -10,17 +11,23 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use tracing::Level;
+use tracing::subscriber::set_default;
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::adapter::GalileoAdapter;
+use super::payload::response_object;
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::galileo::delivery::config::GalileoConfig;
 use crate::galileo::delivery::headers::Header;
 use crate::galileo::delivery::transport::{HttpResponse, TraceIds, Transport, TransportError};
 use crate::galileo::delivery::{GalileoDelivery, State};
+use crate::galileo_payloads::content::ResponseObj;
 use crate::registry::catalog::{CatalogInputs, LoggerCatalog};
 
 const PAYLOAD: &str = r#"{
@@ -59,6 +66,9 @@ const CONFIGURED: &[(&str, &str)] = &[
     ("GALILEO_API_KEY", "key-0123456789"),
     ("GALILEO_PROJECT_ID", "project-1"),
 ];
+
+// message_model_dump's record for {"role": "assistant", "content": "Hi"}, the tool_calls shape litellm.types.utils.Message declares.
+const CHAT_OUTPUT: &str = r#"{"content": "Hi", "role": "assistant", "tool_calls": null, "function_call": null, "provider_specific_fields": null}"#;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Posted {
@@ -251,16 +261,19 @@ async fn a_success_event_posts_the_mapped_record() {
             .contains(&("Galileo-API-Key".to_owned(), "key-0123456789".to_owned()))
     );
     let payload = calls[0].payload.as_ref().expect("the post carries a body");
-    let trace = trace_of(payload);
-    assert_eq!(field(&trace, "type"), &Json::Text("trace".to_owned()));
-    assert_eq!(field(&trace, "id"), &Json::Text("id-0".to_owned()));
-    assert_eq!(field(&trace, "name"), &Json::Text("completion".to_owned()));
-    assert_eq!(field(&trace, "input"), &Json::Text("Hello".to_owned()));
+    assert_success_trace(&trace_of(payload));
+}
+
+fn assert_success_trace(trace: &Json) {
+    assert_eq!(field(trace, "type"), &Json::Text("trace".to_owned()));
+    assert_eq!(field(trace, "id"), &Json::Text("id-0".to_owned()));
+    assert_eq!(field(trace, "name"), &Json::Text("completion".to_owned()));
+    assert_eq!(field(trace, "input"), &Json::Text("Hello".to_owned()));
     assert_eq!(
-        field(&trace, "created_at"),
+        field(trace, "created_at"),
         &Json::Text("2024-01-01T00:00:00Z".to_owned())
     );
-    let Json::List(spans) = field(&trace, "spans") else {
+    let Json::List(spans) = field(trace, "spans") else {
         panic!("the trace nests one span");
     };
     let span = spans.first().expect("one span");
@@ -272,6 +285,13 @@ async fn a_success_event_posts_the_mapped_record() {
     assert_eq!(field(metrics, "num_output_tokens"), &number(3));
     assert_eq!(field(metrics, "num_total_tokens"), &number(5));
     assert_eq!(field(metrics, "duration_ns"), &number(1_500_000_000));
+    assert_eq!(
+        field(span, "output"),
+        &Json::Object(IndexMap::from([
+            ("role".to_owned(), Json::Text("assistant".to_owned())),
+            ("content".to_owned(), Json::Text(CHAT_OUTPUT.to_owned())),
+        ]))
+    );
 }
 
 #[tokio::test]
@@ -333,4 +353,208 @@ async fn a_cancelled_adapter_posts_nothing() {
         .await
         .expect("the event is accepted");
     assert!(capture.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_failure_event_writes_the_diagnostic_line() {
+    let capture = Capture::default();
+    let adapter = adapter(delivery(CONFIGURED), &capture, CancellationToken::new());
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::DEBUG)
+        .with_writer(buffer.clone())
+        .finish();
+    {
+        let _guard = set_default(subscriber);
+        adapter
+            .async_log_failure_event(Arc::new(event()))
+            .await
+            .expect("the failure event is diagnostic only");
+    };
+    assert!(buffer.text().contains("On Async Failure"));
+    assert!(capture.calls().is_empty());
+}
+
+#[test]
+fn the_production_trace_ids_are_distinct_uuids() {
+    let ids = super::UuidTraceIds;
+    let first = ids.next_id();
+    let second = ids.next_id();
+    uuid::Uuid::parse_str(&first).expect("the first id is a UUID");
+    uuid::Uuid::parse_str(&second).expect("the second id is a UUID");
+    assert_ne!(first, second);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Family {
+    Chat,
+    TextCompletion,
+    Embedding,
+    Speech,
+    Image,
+    Transcription,
+    Rerank,
+    Responses,
+    Realtime,
+    PassThrough,
+    Generic,
+    Unknown,
+}
+
+fn family_of(object: &ResponseObj) -> Family {
+    match object {
+        ResponseObj::Chat { .. } => Family::Chat,
+        ResponseObj::TextCompletion { .. } => Family::TextCompletion,
+        ResponseObj::Embedding => Family::Embedding,
+        ResponseObj::Speech => Family::Speech,
+        ResponseObj::Image { .. } => Family::Image,
+        ResponseObj::Transcription { .. } => Family::Transcription,
+        ResponseObj::Rerank { .. } => Family::Rerank,
+        ResponseObj::ResponsesApi { .. } => Family::Responses,
+        ResponseObj::RealtimeList { .. } => Family::Realtime,
+        ResponseObj::PassThroughDict { .. } => Family::PassThrough,
+        ResponseObj::GenericDict { .. } => Family::Generic,
+        ResponseObj::Unknown => Family::Unknown,
+    }
+}
+
+fn json(text: &str) -> Json {
+    serde_json::from_str(text).expect("the test JSON decodes")
+}
+
+#[rstest]
+#[case::embedding("embedding", "{}", Family::Embedding)]
+#[case::async_embedding("aembedding", "{}", Family::Embedding)]
+#[case::speech("speech", "{}", Family::Speech)]
+#[case::async_speech("aspeech", "{}", Family::Speech)]
+#[case::image("image_generation", r#"{"data": [{"url": "u"}]}"#, Family::Image)]
+#[case::async_image("aimage_generation", r#"{"data": []}"#, Family::Image)]
+#[case::transcription("transcription", r#"{"text": "hello"}"#, Family::Transcription)]
+#[case::async_transcription("atranscription", r#"{"text": "hello"}"#, Family::Transcription)]
+#[case::rerank("rerank", r#"{"results": [{"index": 0}]}"#, Family::Rerank)]
+#[case::async_rerank("arerank", r#"{"results": []}"#, Family::Rerank)]
+#[case::responses("responses", r#"{"output": [{"type": "message"}]}"#, Family::Responses)]
+#[case::async_responses("aresponses", r#"{"output": []}"#, Family::Responses)]
+#[case::realtime("_arealtime", "[1, 2]", Family::Realtime)]
+#[case::pass_through("pass_through_endpoint", r#"{"response": "ok"}"#, Family::PassThrough)]
+#[case::chat(
+    "completion",
+    r#"{"choices": [{"message": {"role": "assistant", "content": "Hi"}}]}"#,
+    Family::Chat
+)]
+#[case::text_completion(
+    "completion",
+    r#"{"choices": [{"text": "Hi"}]}"#,
+    Family::TextCompletion
+)]
+#[case::generic_dict("completion", r#"{"other": 1}"#, Family::Generic)]
+#[case::unknown("completion", "null", Family::Unknown)]
+fn every_call_type_selects_its_response_family(
+    #[case] call_type: &str,
+    #[case] response: &str,
+    #[case] expected: Family,
+) {
+    assert_eq!(
+        family_of(&response_object(call_type, &json(response))),
+        expected
+    );
+}
+
+#[test]
+fn the_chat_message_comes_from_the_first_choice() {
+    let object = response_object(
+        "completion",
+        &json(r#"{"choices": [{"message": {"role": "assistant", "content": "Hi"}}]}"#),
+    );
+    let ResponseObj::Chat { message } = object else {
+        panic!("the chat family is selected");
+    };
+    assert_eq!(
+        message,
+        Some(json(r#"{"role": "assistant", "content": "Hi"}"#))
+    );
+}
+
+#[test]
+fn a_text_completion_carries_its_text() {
+    let object = response_object("completion", &json(r#"{"choices": [{"text": "Hi"}]}"#));
+    let ResponseObj::TextCompletion { text } = object else {
+        panic!("the text completion family is selected");
+    };
+    assert_eq!(text, Some("Hi".to_owned()));
+}
+
+#[test]
+fn an_image_carries_its_data() {
+    let object = response_object("image_generation", &json(r#"{"data": [{"url": "u"}]}"#));
+    let ResponseObj::Image { data } = object else {
+        panic!("the image family is selected");
+    };
+    assert_eq!(data, Some(json(r#"[{"url": "u"}]"#)));
+}
+
+#[test]
+fn a_transcription_carries_its_text() {
+    let object = response_object("transcription", &json(r#"{"text": "hello"}"#));
+    let ResponseObj::Transcription { text } = object else {
+        panic!("the transcription family is selected");
+    };
+    assert_eq!(text, Some("hello".to_owned()));
+}
+
+#[test]
+fn a_rerank_carries_its_results() {
+    let object = response_object("rerank", &json(r#"{"results": [{"index": 0}]}"#));
+    let ResponseObj::Rerank { results } = object else {
+        panic!("the rerank family is selected");
+    };
+    assert_eq!(results, json(r#"[{"index": 0}]"#));
+}
+
+#[test]
+fn a_responses_call_carries_its_output() {
+    let object = response_object("responses", &json(r#"{"output": [{"type": "message"}]}"#));
+    let ResponseObj::ResponsesApi { output } = object else {
+        panic!("the responses family is selected");
+    };
+    assert_eq!(output, json(r#"[{"type": "message"}]"#));
+}
+
+#[derive(Clone, Default)]
+struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+impl Buffer {
+    fn text(&self) -> String {
+        String::from_utf8(
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        )
+        .expect("the captured output is UTF-8")
+    }
+}
+
+impl Write for Buffer {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for Buffer {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
 }

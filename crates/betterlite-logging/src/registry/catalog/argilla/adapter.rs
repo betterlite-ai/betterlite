@@ -45,7 +45,7 @@ impl<T, R> ArgillaAdapter<T, R> {
 
 impl<T: Transport, R: RandomSource> Connection<T, R> {
     // LiteLLM resolves the dataset once in ArgillaLogger.__init__; betterlite builds the logger on the first event it receives.
-    async fn logger(&self) -> Result<&ArgillaLogger<T, R>, LoggerError> {
+    pub(super) async fn logger(&self) -> Result<&ArgillaLogger<T, R>, LoggerError> {
         self.connected
             .get_or_try_init(|| async {
                 let pending = self
@@ -53,7 +53,7 @@ impl<T: Transport, R: RandomSource> Connection<T, R> {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .take()
-                    .ok_or_else(|| delivery_error("the Argilla logger is already connecting"))?;
+                    .ok_or_else(|| delivery_error("the Argilla logger is not connected"))?;
                 ArgillaLogger::connect(pending.settings, pending.transport, pending.random)
                     .await
                     .map_err(|failure| delivery_error(&failure.to_string()))
