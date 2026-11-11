@@ -1,6 +1,7 @@
+use betterlite_models::billing_text::error::BillingTextError;
 use betterlite_models::billing_text::{
-    BillingTextError, ChoiceText, EventText, FormattedPromptData, PromptCallType, ResponseText,
-    count_characters, get_formatted_prompt, get_response_string,
+    ChoiceText, EventText, FormattedPromptData, PromptCallType, ResponseText, count_characters,
+    get_formatted_prompt, get_response_string,
 };
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
