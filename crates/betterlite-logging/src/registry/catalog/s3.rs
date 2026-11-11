@@ -12,6 +12,12 @@ use crate::legacy_s3::transport;
 mod tests;
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let logger = build_logger(inputs)?;
+    let erased: Arc<dyn CallbackLogger> = logger;
+    Ok(erased)
+}
+
+fn build_logger(inputs: &CatalogInputs) -> Result<Arc<S3Logger>, CatalogError> {
     let name = CallbackName::S3.as_str();
     let params = inputs
         .callback_settings

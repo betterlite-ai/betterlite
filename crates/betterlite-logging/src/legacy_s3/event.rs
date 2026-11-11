@@ -47,7 +47,7 @@ pub fn build(
     let body = body(payload, settings, environment)?;
     Ok(ObjectUpload {
         object_key: object_key(
-            settings.path.as_deref().unwrap_or_default(),
+            &settings.path,
             &prefix,
             start_time,
             &file_name,

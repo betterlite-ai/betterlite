@@ -1,4 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_context::aws_partition::get_aws_partition;
 use indexmap::IndexMap;
 use thiserror::Error;
 
@@ -44,4 +45,13 @@ pub fn resolve(
         table_name,
         region_name,
     })
+}
+
+// boto3.resource builds the regional endpoint from the same region and partition pair
+#[must_use]
+pub fn endpoint_url(region_name: &str) -> String {
+    format!(
+        "https://dynamodb.{region_name}.{}/",
+        get_aws_partition(Some(region_name)).dns_suffix
+    )
 }

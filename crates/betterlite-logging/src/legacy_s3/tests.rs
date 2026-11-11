@@ -347,17 +347,42 @@ async fn callback_logger_sends_the_sync_event_through_the_task_tracker() {
 }
 
 #[rstest]
-#[case::preview_and_prefix("True", "True", "team", "/team/")]
-#[case::preview_off("False", "True", "team", "/")]
-#[case::prefix_off("True", "False", "team", "/")]
-#[case::no_alias("True", "True", "none", "/")]
-#[case::empty_alias("True", "True", "", "//")]
+#[case::preview_and_prefix(
+    "True",
+    "True",
+    "team",
+    "/team/2009-02-13/time-23-31-30-000000_sqs-health-check.json"
+)]
+#[case::preview_off(
+    "False",
+    "True",
+    "team",
+    "/2009-02-13/time-23-31-30-000000_sqs-health-check.json"
+)]
+#[case::prefix_off(
+    "True",
+    "False",
+    "team",
+    "/2009-02-13/time-23-31-30-000000_sqs-health-check.json"
+)]
+#[case::no_alias(
+    "True",
+    "True",
+    "none",
+    "/2009-02-13/time-23-31-30-000000_sqs-health-check.json"
+)]
+#[case::empty_alias(
+    "True",
+    "True",
+    "",
+    "//2009-02-13/time-23-31-30-000000_sqs-health-check.json"
+)]
 #[tokio::test]
 async fn callback_logger_applies_the_team_prefix_only_with_preview_features(
     #[case] preview: &str,
     #[case] use_prefix: &str,
     #[case] alias: &str,
-    #[case] expected_prefix: &str,
+    #[case] expected_path: &str,
 ) {
     let harness = harness(
         &[
@@ -378,12 +403,7 @@ async fn callback_logger_applies_the_team_prefix_only_with_preview_features(
         .await
         .expect("the event is accepted");
     let requests = recorded(&harness.requests);
-    let object_path = path(&requests[0]);
-    assert!(
-        object_path.starts_with(expected_prefix),
-        "{object_path} starts with {expected_prefix}"
-    );
-    assert!(object_path.ends_with("/2009-02-13/time-23-31-30-000000_sqs-health-check.json"));
+    assert_eq!(path(&requests[0]), expected_path);
 }
 
 #[rstest]

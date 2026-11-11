@@ -23,7 +23,7 @@ fn reads_the_connection_keys() {
     ]))
     .expect("the settings resolve");
     assert_eq!(settings.bucket_name.as_deref(), Some("logs"));
-    assert_eq!(settings.path.as_deref(), Some("team-logs"));
+    assert_eq!(settings.path, "team-logs");
     assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
     assert_eq!(
         settings.endpoint_url.as_deref(),
@@ -77,7 +77,7 @@ fn reads_the_credentials_and_flags() {
 fn leaves_every_optional_key_unset() {
     let settings = resolve(&params(&[])).expect("the settings resolve");
     assert!(settings.bucket_name.is_none());
-    assert!(settings.path.is_none());
+    assert!(settings.path.is_empty());
     assert!(settings.region_name.is_none());
     assert!(settings.endpoint_url.is_none());
     assert!(settings.access_key_id.is_none());

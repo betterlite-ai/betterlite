@@ -30,7 +30,7 @@ fn environment() -> BTreeMap<String, String> {
 fn settings() -> Settings {
     Settings {
         bucket_name: Some("logs".to_owned()),
-        path: None,
+        path: String::new(),
         region_name: Some("us-east-1".to_owned()),
         endpoint_url: None,
         access_key_id: Some(SecretString::from("access")),

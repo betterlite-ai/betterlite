@@ -12,7 +12,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::registry::catalog::{CatalogError, CatalogInputs};
 
-use super::build;
+use super::{build, build_logger};
 
 fn inputs(source: &str) -> CatalogInputs {
     let config = ConfigLoader {
@@ -78,6 +78,9 @@ async fn callback_logger_reads_the_team_prefix_settings() {
     let inputs = inputs(
         "callback_settings:\n  s3:\n    s3_bucket_name: logs\n    s3_use_team_prefix: true\n    enable_preview_features: true\n",
     );
-    let logger = build(&inputs).expect("the logger builds");
-    assert_eq!(logger.callback_name(), "s3");
+    let logger = build_logger(&inputs).expect("the logger builds");
+    assert!(logger.uploads.settings.use_team_prefix);
+    assert!(logger.uploads.settings.preview_features);
+    assert_eq!(logger.uploads.settings.bucket_name.as_deref(), Some("logs"));
+    assert!(logger.uploads.transport.is_some());
 }

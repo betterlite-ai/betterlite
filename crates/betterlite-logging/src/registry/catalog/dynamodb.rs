@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use betterlite_config::sections::callback_settings::CallbackEntry;
 use betterlite_config::sections::callback_settings::names::CallbackName;
-use betterlite_context::aws_partition::get_aws_partition;
 
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
@@ -16,6 +15,14 @@ use crate::sqs_logging::credentials::{CredentialParams, EnvironmentCredentials};
 mod tests;
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let logger = build_logger(inputs)?;
+    let erased: Arc<dyn CallbackLogger> = logger;
+    Ok(erased)
+}
+
+fn build_logger(
+    inputs: &CatalogInputs,
+) -> Result<Arc<DynamoDbLogger<HttpDynamoClient<PooledDelivery>>>, CatalogError> {
     let name = CallbackName::Dynamodb.as_str();
     let params = inputs
         .callback_settings
@@ -26,11 +33,6 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         settings::resolve(&params, inputs.env.as_ref()).map_err(|error| CatalogError::Init {
             message: error.to_string(),
         })?;
-    let endpoint = format!(
-        "https://dynamodb.{}.{}/",
-        resolved.region_name,
-        get_aws_partition(Some(&resolved.region_name)).dns_suffix
-    );
     let client = HttpDynamoClient {
         delivery: PooledDelivery {
             client: inputs.http.clone(),
@@ -40,7 +42,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         }),
         params: CredentialParams::default(),
         clock: Arc::new(SystemClock),
-        endpoint,
+        endpoint: settings::endpoint_url(&resolved.region_name),
         region: resolved.region_name.clone(),
     };
     Ok(Arc::new(DynamoDbLogger {

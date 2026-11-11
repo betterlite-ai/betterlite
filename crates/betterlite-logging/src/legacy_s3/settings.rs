@@ -38,7 +38,7 @@ pub enum SettingsError {
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     pub bucket_name: Option<String>,
-    pub path: Option<String>,
+    pub path: String,
     pub region_name: Option<String>,
     pub endpoint_url: Option<String>,
     pub access_key_id: Option<SecretString>,
@@ -91,7 +91,11 @@ impl<'params> Values<'params> {
 pub fn resolve(params: &IndexMap<String, String>) -> Result<Settings, SettingsError> {
     let mut values = Values::new(params);
     let bucket_name = values.remaining.remove(BUCKET_SETTING).map(str::to_owned);
-    let path = values.remaining.remove(PATH_SETTING).map(str::to_owned);
+    let path = values
+        .remaining
+        .remove(PATH_SETTING)
+        .map(str::to_owned)
+        .unwrap_or_default();
     let region_name = values.remaining.remove(REGION_SETTING).map(str::to_owned);
     let endpoint_url = values.remaining.remove(ENDPOINT_SETTING).map(str::to_owned);
     let access_key_id = values

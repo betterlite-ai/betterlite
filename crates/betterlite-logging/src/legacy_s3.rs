@@ -21,10 +21,10 @@ use settings::Settings;
 
 pub const CALLBACK_NAME: &str = "s3";
 
-struct Uploads {
-    settings: Settings,
-    transport: Option<S3Transport>,
-    environment: Arc<dyn EnvironmentLookup + Send + Sync>,
+pub struct Uploads {
+    pub settings: Settings,
+    pub transport: Option<S3Transport>,
+    pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
 }
 
 impl Uploads {
@@ -61,8 +61,8 @@ impl Uploads {
 }
 
 pub struct S3Logger {
-    uploads: Arc<Uploads>,
-    tasks: TaskTracker,
+    pub uploads: Arc<Uploads>,
+    pub tasks: TaskTracker,
 }
 
 impl S3Logger {

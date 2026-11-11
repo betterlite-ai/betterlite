@@ -22,7 +22,7 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 fn settings() -> Settings {
     Settings {
         bucket_name: Some("logs".to_owned()),
-        path: None,
+        path: String::new(),
         region_name: Some("us-east-1".to_owned()),
         endpoint_url: None,
         access_key_id: None,
@@ -46,7 +46,7 @@ fn empty() -> BTreeMap<String, String> {
 #[test]
 fn builds_the_day_partitioned_key_and_download_name() {
     let mut configured = settings();
-    configured.path = Some("team-logs/".to_owned());
+    configured.path = "team-logs/".to_owned();
     let object = build(&payload(), &configured, &empty()).expect("the object builds");
     assert_eq!(
         object.object_key,
@@ -76,6 +76,19 @@ fn prefixes_the_team_alias_only_when_the_preview_gate_is_open() {
 fn a_closed_preview_gate_keeps_the_key_unprefixed() {
     let mut configured = settings();
     configured.use_team_prefix = true;
+    let mut standard = payload();
+    standard.metadata.user_api_key_team_alias = Some("team".to_owned());
+    let object = build(&standard, &configured, &empty()).expect("the object builds");
+    assert_eq!(
+        object.object_key,
+        "2009-02-13/time-23-31-30-000000_sqs-health-check.json"
+    );
+}
+
+#[test]
+fn a_disabled_team_prefix_keeps_the_key_unprefixed() {
+    let mut configured = settings();
+    configured.preview_features = true;
     let mut standard = payload();
     standard.metadata.user_api_key_team_alias = Some("team".to_owned());
     let object = build(&standard, &configured, &empty()).expect("the object builds");

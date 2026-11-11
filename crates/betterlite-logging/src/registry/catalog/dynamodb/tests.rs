@@ -12,7 +12,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::registry::catalog::{CatalogError, CatalogInputs};
 
-use super::build;
+use super::{build, build_logger};
 
 fn inputs(source: &str, variables: &[(&str, &str)]) -> CatalogInputs {
     let config = ConfigLoader {
@@ -51,6 +51,18 @@ async fn callback_logger_builds_the_dynamodb_logger() {
     let inputs = configured();
     let logger = build(&inputs).expect("the logger builds");
     assert_eq!(logger.callback_name(), "dynamodb");
+}
+
+#[tokio::test]
+async fn callback_logger_reads_the_table_and_region_settings() {
+    let inputs = configured();
+    let logger = build_logger(&inputs).expect("the logger builds");
+    assert_eq!(logger.settings.table_name, "logs");
+    assert_eq!(logger.settings.region_name, "us-east-1");
+    assert_eq!(
+        logger.client.endpoint,
+        "https://dynamodb.us-east-1.amazonaws.com/"
+    );
 }
 
 #[tokio::test]

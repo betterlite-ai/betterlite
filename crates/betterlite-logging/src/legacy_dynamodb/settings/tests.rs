@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
 
-use super::{SettingsError, resolve};
+use super::{SettingsError, endpoint_url, resolve};
 
 fn params(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
     pairs
@@ -80,6 +80,22 @@ fn rejects_an_unknown_setting() {
     )
     .expect_err("the setting is unknown");
     assert!(matches!(error, SettingsError::UnknownKey { name } if name == "dynamodb_typo"));
+}
+
+#[test]
+fn builds_the_partition_aware_endpoint() {
+    assert_eq!(
+        endpoint_url("us-east-1"),
+        "https://dynamodb.us-east-1.amazonaws.com/"
+    );
+    assert_eq!(
+        endpoint_url("cn-north-1"),
+        "https://dynamodb.cn-north-1.amazonaws.com.cn/"
+    );
+    assert_eq!(
+        endpoint_url("us-gov-west-1"),
+        "https://dynamodb.us-gov-west-1.amazonaws.com/"
+    );
 }
 
 #[test]
