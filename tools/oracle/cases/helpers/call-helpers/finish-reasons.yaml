@@ -1,0 +1,8 @@
+kind: helper
+name: finish-reasons
+call:
+  call_helpers:
+    function: finish_reasons
+    values: [stop_sequence, end_turn, max_tokens, tool_use, refusal, compaction, COMPLETE, ERROR_TOXIC, ERROR, eos_token, eos, STOP, MAX_TOKENS, SAFETY, FINISH_REASON_UNSPECIFIED, MALFORMED_FUNCTION_CALL, LANGUAGE, OTHER, BLOCKLIST, IMAGE_SAFETY, TOO_MANY_TOOL_CALLS, NO_IMAGE, ESCALATION, MISSING_THOUGHT_SIGNATURE, network_error, sensitive, guardrail_intervened, stop, length, tool_calls, function_call, content_filter, content_filtered, error, something_new]
+env: {}
+compare: {ignore: []}
