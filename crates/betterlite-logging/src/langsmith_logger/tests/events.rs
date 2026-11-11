@@ -31,6 +31,24 @@ async fn a_sampled_out_event_never_queues() {
 }
 
 #[tokio::test]
+async fn a_draw_equal_to_the_rate_is_not_sampled_out() {
+    let options = Options {
+        environment: &[("LANGSMITH_SAMPLING_RATE", "0")],
+        batch_size: Some(5),
+        draws: &[0.0_f64],
+        redact: false,
+    };
+    let built = harness(&options, FakeDelivery::answering(200));
+    built
+        .logger
+        .async_log_success_event(Arc::new(event(dynamic(&[]))))
+        .await
+        .expect("the event is logged");
+    assert_eq!(built.logger.queue.pending().len(), 1);
+    assert!(built.delivery.posts().is_empty());
+}
+
+#[tokio::test]
 async fn a_draw_below_the_rate_queues_the_run() {
     let options = Options {
         environment: &[("LANGSMITH_SAMPLING_RATE", "1")],

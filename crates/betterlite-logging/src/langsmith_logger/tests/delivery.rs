@@ -120,6 +120,34 @@ async fn two_credential_sets_post_one_batch_each() {
 }
 
 #[tokio::test]
+async fn two_tenants_share_a_key_but_post_separately() {
+    let options = Options {
+        environment: &[("LANGSMITH_API_KEY", "shared-key")],
+        batch_size: Some(2),
+        draws: &[0.0_f64, 0.0_f64],
+        redact: false,
+    };
+    let built = harness(&options, FakeDelivery::answering(200));
+    let first = event(dynamic(&[("langsmith_tenant_id", text("tenant-a"))]));
+    let second = event(dynamic(&[("langsmith_tenant_id", text("tenant-b"))]));
+    built
+        .logger
+        .async_log_success_event(Arc::new(first))
+        .await
+        .expect("the event is logged");
+    built
+        .logger
+        .async_log_success_event(Arc::new(second))
+        .await
+        .expect("the event is logged");
+    let posts = built.delivery.posts();
+    assert_eq!(posts.len(), 2);
+    assert_eq!(header(&posts[0].headers, "x-api-key"), Some("shared-key"));
+    assert_eq!(header(&posts[0].headers, "x-tenant-id"), Some("tenant-a"));
+    assert_eq!(header(&posts[1].headers, "x-tenant-id"), Some("tenant-b"));
+}
+
+#[tokio::test]
 async fn a_run_without_an_api_key_is_skipped_with_a_warning() {
     let options = Options {
         environment: &[],
