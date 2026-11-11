@@ -65,6 +65,8 @@ fn provider_base_config_cases(
 #[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "yes")], true)]
 #[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", " 0 ")], false)]
 #[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "off")], false)]
+#[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "always")], true)]
+#[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "y")], true)]
 #[case::loads_litellm_drop_params("", &[], false)]
 #[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", "")], false)]
 #[case::loads_litellm_drop_params("", &[("LITELLM_DROP_PARAMS", " ")], false)]
@@ -78,7 +80,11 @@ fn provider_base_config_drop_params_cases(
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     let loaded = ConfigLoader { lookup }.load(source).unwrap();
-    assert_eq!(loaded.litellm_settings.drop_params, Some(expected));
+    assert_eq!(loaded.litellm_settings.drop_params, expected);
+    assert_eq!(
+        loaded.sections.drop_params.policy.global_drop_params,
+        expected
+    );
 }
 
 #[test]

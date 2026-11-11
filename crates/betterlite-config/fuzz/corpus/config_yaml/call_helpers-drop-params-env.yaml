@@ -1,4 +1,2 @@
-litellm_settings:
-  drop_params: false
 environment_variables:
   LITELLM_DROP_PARAMS: "not-a-flag"

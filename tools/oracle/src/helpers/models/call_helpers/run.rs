@@ -42,7 +42,8 @@ pub(super) fn run(input: &Input) -> Value {
                 "trusted": process_response_headers(HeaderSource::Internal(&internal)),
             })
         }
-        Input::SnapshotIsolation { record } => json!(record),
+        // the B2204 independent snapshot is a plain clone; a Handle clone keeps its identity
+        Input::SnapshotIsolation { record } => json!(record.clone()),
         Input::FilterInternal { record, additional } => {
             let names: BTreeSet<String> = additional.iter().cloned().collect();
             json!(RequestRecordProjection::filter_internal(

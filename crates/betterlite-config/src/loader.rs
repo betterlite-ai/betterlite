@@ -85,8 +85,17 @@ impl<L: EnvironmentLookup> ConfigLoader<L> {
         if !paths.is_empty() {
             return Err(ConfigError::Unsupported { paths });
         }
-        let sections = raw_sections.convert(&self.lookup)?;
-        convert(raw, sections, &self.lookup)
+        // LiteLLM's env fallback warns and turns the flag on, unlike the request-level flag which warns and off
+        let drop_params =
+            drop_params_env_flag(self.lookup.lookup("LITELLM_DROP_PARAMS").as_deref());
+        if drop_params.warned {
+            tracing::warn!("LITELLM_DROP_PARAMS is not a flag value, treating it as on");
+        }
+        let sections = raw_sections.convert(&DropParamsLookup {
+            lookup: &self.lookup,
+            enabled: drop_params.enabled,
+        })?;
+        convert(raw, sections, &self.lookup, drop_params.enabled)
     }
 }
 
@@ -132,7 +141,31 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
 }
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
-fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Config, ConfigError> {
+// sections read the drop-params env through this lookup, so the loader resolves it once, warn-and-on included
+struct DropParamsLookup<'lookup, L> {
+    lookup: &'lookup L,
+    enabled: bool,
+}
+
+impl<L: EnvironmentLookup> EnvironmentLookup for DropParamsLookup<'_, L> {
+    fn lookup(&self, name: &str) -> Option<String> {
+        if name == "LITELLM_DROP_PARAMS" {
+            return Some(self.enabled.to_string());
+        }
+        self.lookup.lookup(name)
+    }
+
+    fn system_home(&self) -> Option<PathBuf> {
+        self.lookup.system_home()
+    }
+}
+
+fn convert(
+    raw: RawConfig,
+    sections: Sections,
+    lookup: Lookup<'_>,
+    drop_params: bool,
+) -> Result<Config, ConfigError> {
     let mut model_list = Vec::with_capacity(raw.model_list.len());
     for (index, deployment) in raw.model_list.into_iter().enumerate() {
         model_list.push(convert_deployment(deployment, index, lookup)?);
@@ -141,7 +174,7 @@ fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Con
         model_list,
         general_settings: convert_general(raw.general_settings, lookup)?,
         router_settings: convert_router(raw.router_settings, lookup)?,
-        litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
+        litellm_settings: convert_litellm(raw.litellm_settings, lookup, drop_params)?,
         environment_variables: convert_environment(raw.environment_variables, lookup)?,
         sections,
     })
@@ -172,13 +205,17 @@ fn convert_router(raw: RawRouter, lookup: Lookup<'_>) -> Result<RouterSettings, 
     })
 }
 
-fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSettings, ConfigError> {
+fn convert_litellm(
+    raw: RawLiteLlm,
+    lookup: Lookup<'_>,
+    drop_params_env: bool,
+) -> Result<LiteLlmSettings, ConfigError> {
     let retries_path = "litellm_settings.num_retries";
     let timeout_path = "litellm_settings.request_timeout";
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
-    let drop_params = Some(drop_params_setting(raw.drop_params, lookup));
+    let drop_params = raw.drop_params.unwrap_or(drop_params_env);
     Ok(LiteLlmSettings {
         ssl_verify: raw.ssl_verify,
         ssl_certificate: raw.ssl_certificate,
@@ -196,18 +233,6 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
         modify_params,
         default_max_tokens,
     })
-}
-
-// LiteLLM's env fallback warns and turns the flag on, unlike the request-level flag which warns and off
-fn drop_params_setting(configured: Option<bool>, lookup: Lookup<'_>) -> bool {
-    if let Some(value) = configured {
-        return value;
-    }
-    let flag = drop_params_env_flag(lookup.lookup("LITELLM_DROP_PARAMS").as_deref());
-    if flag.warned {
-        tracing::warn!("LITELLM_DROP_PARAMS is not a flag value, treating it as on");
-    }
-    flag.enabled
 }
 
 fn environment_defaults(

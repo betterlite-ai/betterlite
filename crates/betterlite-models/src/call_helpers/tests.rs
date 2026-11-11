@@ -709,13 +709,7 @@ fn remove_items_at_indices_ignores_out_of_range_and_duplicates() {
     assert_eq!(untouched, vec![1_i32]);
 }
 
-fn independent_snapshots_and_unforgeable_trusted_flags() {
-    let source = string_headers(r#"{"x-request-id":"abc","x-ratelimit-limit-requests":"9"}"#);
-    let mut first = process_response_headers(HeaderSource::Upstream(&source));
-    let second = process_response_headers(HeaderSource::Upstream(&source));
-    assert_eq!(first, second);
-    first.insert(String::from("llm_provider-added"), value("1"));
-    assert!(!second.contains_key("llm_provider-added"));
+fn trusted_flags_cannot_be_forged() {
     let trusted = TrustedHeaders {
         entries: additional_headers(r#"{"x-litellm-model-group":"g"}"#),
     };
@@ -813,9 +807,7 @@ fn independent_snapshots_and_unforgeable_trusted_flags() {
 #[case::remove_items_at_indices_ignores_out_of_range_and_duplicates(
     remove_items_at_indices_ignores_out_of_range_and_duplicates
 )]
-#[case::independent_snapshots_and_unforgeable_trusted_flags(
-    independent_snapshots_and_unforgeable_trusted_flags
-)]
+#[case::trusted_flags_cannot_be_forged(trusted_flags_cannot_be_forged)]
 fn call_helpers_call_helper_tests_behavior(#[case] scenario: fn()) {
     scenario();
 }
