@@ -1,0 +1,14 @@
+name: finops-duplicate
+config: config
+env: {}
+request: {method: GET, path: /health/liveliness, headers: {}, body: null}
+upstream: []
+database:
+  seed:
+    users: [{user_id: alice}]
+    budgets: [{budget_id: budget-1, user_id: alice}]
+    finops:
+      organizations:
+        - {organization_id: org-key, organization_alias: Key Org, budget_id: budget-1, created_by: alice, updated_by: alice}
+        - {organization_id: org-key, organization_alias: Key Org, budget_id: budget-1, created_by: alice, updated_by: alice}
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
