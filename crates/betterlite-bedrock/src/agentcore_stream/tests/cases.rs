@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::agentcore_stream::adapter::MAX_BODY_BYTES;
 use crate::agentcore_stream::line::{LineError, MAX_LINE_BYTES, decode_agentcore_line};
 use crate::agentcore_stream::tests::support::{
-    MODEL, Outcome, Scenario, block_on, capture, ids, open_stream, run, sorted_pairs,
+    MODEL, Outcome, Scenario, capture, ids, run, sorted_pairs,
 };
 use crate::agentcore_stream::transport::HandlerKind;
 use crate::agentcore_stream::{AgentCoreStreamError, CHUNK_OBJECT, FIRST_RESPONSE, PROVIDER};
@@ -80,7 +80,7 @@ fn assert_stop_chunk(chunk: &Chunk, usage: Option<(u64, u64, u64)>) {
 }
 
 fn line_error(error: AgentCoreStreamError) -> LineError {
-    let AgentCoreStreamError::Line { source } = error else {
+    let AgentCoreStreamError::Line(source) = error else {
         panic!("expected a line error");
     };
     source
@@ -489,7 +489,7 @@ fn projection_error() {
     for outcome in both(&projection, &ids(2)) {
         assert!(matches!(
             outcome.emitted.unwrap_err(),
-            AgentCoreStreamError::Reply { .. }
+            AgentCoreStreamError::Reply(_)
         ));
     }
 }
@@ -501,28 +501,12 @@ fn stream_http_errors() {
     projection_error();
 }
 
-#[rstest]
-#[case::sync(HandlerKind::Sync)]
-#[case::async_stream(HandlerKind::Async)]
-fn agentcore_stream_emits_earlier_chunks_before_a_line_error(#[case] kind: HandlerKind) {
-    let reads = [
-        "data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"first\"}}}}\n\
-         data: {\"event\":{\"contentBlockDelta\":5}}\n",
-    ];
-    let mut stream = open_stream(kind, &Scenario::sse(&reads), &ids(2)).unwrap();
-    let first = block_on(stream.next_chunk()).unwrap().unwrap();
-    assert_eq!(first.choices[0].delta.content.as_deref(), Some("first"));
-    let error = block_on(stream.next_chunk()).unwrap_err();
-    assert!(matches!(line_error(error), LineError::DeltaEventNotObject));
-    assert!(block_on(stream.next_chunk()).unwrap().is_none());
-}
-
 #[test]
 fn agentcore_stream_bounded_inputs() {
     let long_read = "x".repeat(MAX_LINE_BYTES.saturating_add(1));
     let mut buffer = Vec::new();
-    let failure = decode_agentcore_line(&mut buffer, long_read.as_bytes()).unwrap_err();
-    assert!(matches!(failure.error, LineError::TooLarge { .. }));
+    let error = decode_agentcore_line(&mut buffer, long_read.as_bytes()).unwrap_err();
+    assert!(matches!(error, LineError::TooLarge { .. }));
     let mut scenario = Scenario::json("{}");
     scenario.reads = vec!["x".repeat(MAX_BODY_BYTES.saturating_add(1))];
     let outcome = run(HandlerKind::Sync, &scenario, &ids(2));

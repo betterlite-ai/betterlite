@@ -316,15 +316,6 @@ impl Fixture {
     }
 }
 
-pub(super) fn open_stream(
-    kind: HandlerKind,
-    scenario: &Scenario,
-    ids: &[Uuid],
-) -> Result<AgentCoreStream, AgentCoreStreamError> {
-    let fixture = Fixture::new(kind, scenario, ids);
-    fixture.open(kind, scenario)
-}
-
 pub(super) fn run(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Outcome {
     let fixture = Fixture::new(kind, scenario, ids);
     let opened = fixture.open(kind, scenario);

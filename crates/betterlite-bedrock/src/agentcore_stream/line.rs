@@ -38,30 +38,14 @@ pub enum LineError {
     UsageNegative { field: &'static str },
 }
 
-// The events decoded before a bad line stay available so the stream can emit them before the error.
-#[derive(Debug)]
-pub struct LineFailure {
-    pub events: Vec<LineEvent>,
-    pub error: LineError,
-}
-
-impl LineFailure {
-    const fn empty(error: LineError) -> Self {
-        Self {
-            events: Vec::new(),
-            error,
-        }
-    }
-}
-
 pub fn decode_agentcore_line(
     buffer: &mut Vec<u8>,
     bytes: &[u8],
-) -> Result<Vec<LineEvent>, LineFailure> {
+) -> Result<Vec<LineEvent>, LineError> {
     if bytes.len() > MAX_LINE_BYTES && !bytes.contains(&b'\n') {
-        return Err(LineFailure::empty(LineError::TooLarge {
+        return Err(LineError::TooLarge {
             limit: MAX_LINE_BYTES,
-        }));
+        });
     }
     buffer.extend_from_slice(bytes);
     let mut events = Vec::new();
@@ -70,30 +54,21 @@ pub fn decode_agentcore_line(
         .get(start..)
         .and_then(|rest| rest.iter().position(|byte| *byte == b'\n'))
     {
-        let Some(end) = start.checked_add(offset) else {
-            return Err(LineFailure::empty(LineError::TooLarge {
-                limit: MAX_LINE_BYTES,
-            }));
-        };
+        let end = start.checked_add(offset).ok_or(LineError::TooLarge {
+            limit: MAX_LINE_BYTES,
+        })?;
         if let Some(line) = buffer.get(start..end) {
-            let decoded = decode_line(line, &mut events);
-            if let Err(error) = decoded {
-                buffer.drain(..end.saturating_add(1));
-                return Err(LineFailure { events, error });
-            }
+            decode_line(line, &mut events)?;
         }
-        let Some(next) = end.checked_add(1) else {
-            return Err(LineFailure::empty(LineError::TooLarge {
-                limit: MAX_LINE_BYTES,
-            }));
-        };
-        start = next;
+        start = end.checked_add(1).ok_or(LineError::TooLarge {
+            limit: MAX_LINE_BYTES,
+        })?;
     }
     buffer.drain(..start);
     if buffer.len() > MAX_LINE_BYTES {
-        return Err(LineFailure::empty(LineError::TooLarge {
+        return Err(LineError::TooLarge {
             limit: MAX_LINE_BYTES,
-        }));
+        });
     }
     Ok(events)
 }
@@ -167,30 +142,25 @@ fn usage_event(
     event: &IndexMap<String, Json>,
     events: &mut Vec<LineEvent>,
 ) -> Result<(), LineError> {
-    match event.get("metadata") {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::Object(metadata)) => match metadata.get("usage") {
-            None => Ok(()),
-            Some(usage) => {
-                events.push(LineEvent::Usage(usage_value(usage)?));
-                Ok(())
-            }
-        },
+    let reported = match event.get("metadata") {
+        None | Some(Json::Null) => return Ok(()),
+        Some(Json::Object(metadata)) => metadata.get("usage"),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(LineError::MetadataNotObject)
+            return Err(LineError::MetadataNotObject);
         }
-    }
-}
-
-fn usage_value(value: &Json) -> Result<AgentCoreUsage, LineError> {
-    let Json::Object(fields) = value else {
+    };
+    let Some(usage) = reported else {
+        return Ok(());
+    };
+    let Json::Object(fields) = usage else {
         return Err(LineError::UsageNotObject);
     };
-    Ok(AgentCoreUsage {
+    events.push(LineEvent::Usage(AgentCoreUsage {
         input_tokens: token(fields, "inputTokens")?,
         output_tokens: token(fields, "outputTokens")?,
         total_tokens: token(fields, "totalTokens")?,
-    })
+    }));
+    Ok(())
 }
 
 fn token(fields: &IndexMap<String, Json>, field: &'static str) -> Result<u64, LineError> {

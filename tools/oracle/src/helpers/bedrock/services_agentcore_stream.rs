@@ -1,5 +1,8 @@
-use betterlite_bedrock::agentcore_stream::StreamRequest;
-use betterlite_bedrock::agentcore_stream::transport::HandlerKind;
+use std::sync::Arc;
+
+use betterlite_bedrock::agentcore_stream::adapter::open;
+use betterlite_bedrock::agentcore_stream::transport::{HandlerKind, StreamHandler};
+use betterlite_bedrock::agentcore_stream::{IdSource, StreamDeps, StreamRequest};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -7,7 +10,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
-use self::fixture::{Fixture, drain, header_map};
+use self::fixture::{FixedIds, FixtureHandler, NoLogger, drain, header_map};
 use self::project::outcome;
 use crate::helpers::HelperError;
 
@@ -45,7 +48,7 @@ struct Scenario {
     #[serde(default = "default_messages")]
     messages: Json,
     #[serde(default)]
-    supplied: Option<Kind>,
+    supplied: Option<String>,
 }
 
 const fn default_status() -> u16 {
@@ -62,13 +65,6 @@ fn default_data() -> Json {
 
 const fn default_messages() -> Json {
     Json::List(Vec::new())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Kind {
-    Sync,
-    Async,
 }
 
 pub(crate) struct Op;
@@ -96,49 +92,79 @@ async fn execute(input: &Input, ids: &[Uuid]) -> crate::helpers::HelperResult {
     Ok(json!({ "sync": sync, "async": asynchronous }))
 }
 
+type Handlers = (Option<Arc<FixtureHandler>>, Arc<FixtureHandler>);
+
+fn build_handlers(scenario: &Scenario, kind: HandlerKind) -> Result<Handlers, Box<HelperError>> {
+    let supplied_kind = match scenario.supplied.as_deref() {
+        Some("sync") => Some(HandlerKind::Sync),
+        Some("async") => Some(HandlerKind::Async),
+        Some(other) => return Err(failure(format!("unknown supplied client kind {other}"))),
+        None => None,
+    };
+    let supplied = supplied_kind
+        .map(|chosen| FixtureHandler::new(chosen, scenario))
+        .transpose()?
+        .map(Arc::new);
+    Ok((supplied, Arc::new(FixtureHandler::new(kind, scenario)?)))
+}
+
+fn build_deps<'deps>(
+    supplied: Option<&Arc<FixtureHandler>>,
+    default: &Arc<FixtureHandler>,
+    ids: &Arc<FixedIds>,
+    logger: &'deps NoLogger,
+) -> StreamDeps<'deps> {
+    let supplied_handler: Option<Arc<dyn StreamHandler>> = supplied.map(|handler| {
+        let cloned: Arc<dyn StreamHandler> = Arc::<FixtureHandler>::clone(handler);
+        cloned
+    });
+    let default_handler: Arc<dyn StreamHandler> = Arc::<FixtureHandler>::clone(default);
+    let ids_handler: Arc<dyn IdSource> = Arc::<FixedIds>::clone(ids);
+    StreamDeps {
+        supplied: supplied_handler,
+        default: default_handler,
+        ids: ids_handler,
+        logger,
+    }
+}
+
 async fn run_scenario(
     model: &str,
     ids: &[Uuid],
     scenario: &Scenario,
     kind: HandlerKind,
 ) -> Result<Value, Box<HelperError>> {
-    let headers = header_map(&scenario.request_headers)?;
-    let fixture = Fixture::new(kind, scenario, ids)?;
+    let (supplied, default) = build_handlers(scenario, kind)?;
+    let logger = NoLogger;
+    let id_source = Arc::new(FixedIds::new(ids));
     let request = StreamRequest {
         model,
         api_base: &scenario.api_base,
-        headers,
+        headers: header_map(&scenario.request_headers)?,
         data: &scenario.data,
         signed_json_body: scenario.signed_json_body.as_deref(),
         messages: &scenario.messages,
     };
-    let opened = fixture.open(&request, kind).await;
-    let (provider, emitted) = match opened {
+    let deps = build_deps(supplied.as_ref(), &default, &id_source, &logger);
+    let (provider, emitted) = match open(&request, &deps, kind).await {
         Ok(mut stream) => {
             let provider = stream.provider;
             (Some(provider), drain(&mut stream).await)
         }
         Err(error) => (None, Err(error)),
     };
-    let handler = if scenario.supplied == Some(kind_of(kind)) {
+    let handler = if scenario.supplied.as_deref() == Some(kind_name(kind)) {
         "supplied"
     } else {
         "default"
     };
-    Ok(outcome(&fixture, handler, provider, &emitted, scenario))
+    Ok(outcome(handler, provider, &emitted))
 }
 
-const fn kind_of(kind: HandlerKind) -> Kind {
+const fn kind_name(kind: HandlerKind) -> &'static str {
     match kind {
-        HandlerKind::Sync => Kind::Sync,
-        HandlerKind::Async => Kind::Async,
-    }
-}
-
-const fn handler_kind(kind: Kind) -> HandlerKind {
-    match kind {
-        Kind::Sync => HandlerKind::Sync,
-        Kind::Async => HandlerKind::Async,
+        HandlerKind::Sync => "sync",
+        HandlerKind::Async => "async",
     }
 }
 

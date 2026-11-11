@@ -66,35 +66,17 @@ pub struct StreamDeps<'deps> {
 #[derive(Debug, Error)]
 pub enum AgentCoreStreamError {
     #[error("the AgentCore request failed")]
-    Transport {
-        #[source]
-        source: TransportError,
-    },
+    Transport(#[source] TransportError),
     #[error("the AgentCore response body could not be read")]
-    Body {
-        #[source]
-        source: HttpError,
-    },
+    Body(#[source] HttpError),
     #[error("the AgentCore endpoint is not a URL")]
-    Url {
-        #[source]
-        source: url::ParseError,
-    },
+    Url(#[source] url::ParseError),
     #[error("the AgentCore request body could not be encoded")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the AgentCore stream line is invalid: {source}")]
-    Line {
-        #[source]
-        source: LineError,
-    },
+    Encode(#[source] serde_json::Error),
+    #[error("the AgentCore stream line is invalid: {0}")]
+    Line(#[source] LineError),
     #[error("the AgentCore JSON reply could not be projected")]
-    Reply {
-        #[source]
-        source: AgentCoreResponseError,
-    },
+    Reply(#[source] AgentCoreResponseError),
     #[error("bedrock provider error ({status})")]
     Provider {
         status: u16,
@@ -112,7 +94,6 @@ pub struct AgentCoreStream {
     pub chunks: Option<Chunks>,
     pub buffer: Vec<u8>,
     pub pending: VecDeque<Chunk>,
-    pub failure: Option<AgentCoreStreamError>,
 }
 
 impl AgentCoreStream {
@@ -125,21 +106,18 @@ impl AgentCoreStream {
             chunks: Some(chunks),
             buffer: Vec::new(),
             pending: VecDeque::new(),
-            failure: None,
         }
     }
 
     #[must_use]
     pub fn ready(model: &str, ids: Arc<dyn IdSource>, content: &str) -> Self {
         let mut pending = VecDeque::new();
-        pending.push_back(content_chunk(model, ids.as_ref(), content));
-        pending.push_back(chunk(
+        pending.push_back(chunk_for(
             model,
             ids.as_ref(),
-            Delta::default(),
-            Some("stop".to_owned()),
-            None,
+            LineEvent::Content(content.to_owned()),
         ));
+        pending.push_back(chunk_for(model, ids.as_ref(), LineEvent::MessageStop));
         Self {
             provider: PROVIDER,
             model: model.to_owned(),
@@ -147,7 +125,6 @@ impl AgentCoreStream {
             chunks: None,
             buffer: Vec::new(),
             pending,
-            failure: None,
         }
     }
 
@@ -155,9 +132,6 @@ impl AgentCoreStream {
         loop {
             if let Some(chunk) = self.pending.pop_front() {
                 return Ok(Some(chunk));
-            }
-            if let Some(error) = self.failure.take() {
-                return Err(error);
             }
             let Some(events) = self.next_events().await? else {
                 return Ok(None);
@@ -179,21 +153,14 @@ impl AgentCoreStream {
         match next {
             Some(Ok(bytes)) => match line::decode_agentcore_line(&mut self.buffer, &bytes) {
                 Ok(events) => Ok(Some(events)),
-                Err(failure) => {
+                Err(source) => {
                     self.chunks = None;
-                    for event in failure.events {
-                        self.pending
-                            .push_back(chunk_for(&self.model, self.ids.as_ref(), event));
-                    }
-                    self.failure = Some(AgentCoreStreamError::Line {
-                        source: failure.error,
-                    });
-                    Ok(Some(Vec::new()))
+                    Err(AgentCoreStreamError::Line(source))
                 }
             },
             Some(Err(source)) => {
                 self.chunks = None;
-                Err(AgentCoreStreamError::Body { source })
+                Err(AgentCoreStreamError::Body(source))
             }
             None => {
                 self.chunks = None;
@@ -229,22 +196,6 @@ fn chunk_for(model: &str, ids: &dyn IdSource, event: LineEvent) -> Chunk {
             chunk(model, ids, Delta::default(), Some("stop".to_owned()), None)
         }
     }
-}
-
-fn content_chunk(model: &str, ids: &dyn IdSource, content: &str) -> Chunk {
-    chunk(
-        model,
-        ids,
-        Delta {
-            role: Some("assistant".to_owned()),
-            content: Some(content.to_owned()),
-            refusal: None,
-            tool_calls: None,
-            function_call: None,
-        },
-        None,
-        None,
-    )
 }
 
 fn chunk(

@@ -85,18 +85,21 @@ pub async fn open(
     kind: HandlerKind,
 ) -> Result<AgentCoreStream, AgentCoreStreamError> {
     let handler = handler_for(deps, kind);
-    let url =
-        Url::parse(request.api_base).map_err(|source| AgentCoreStreamError::Url { source })?;
+    let url = Url::parse(request.api_base).map_err(AgentCoreStreamError::Url)?;
+    let body = match request.signed_json_body {
+        Some(bytes) if !bytes.is_empty() => bytes.to_vec(),
+        Some(_) | None => serde_json::to_vec(request.data).map_err(AgentCoreStreamError::Encode)?,
+    };
     let head = handler
         .post(PostRequest {
             url,
             headers: request.headers.clone(),
-            body: request_body(request)?,
+            body,
             stream: true,
             deadline: TransportLimits::DEFAULT.read_timeout,
         })
         .await
-        .map_err(|source| AgentCoreStreamError::Transport { source })?;
+        .map_err(AgentCoreStreamError::Transport)?;
     let mut chunks = head.chunks;
     check_status(&head.headers, head.status, request.api_base, &mut chunks).await?;
     deps.logger.post_call(StreamPostCall {
@@ -105,7 +108,7 @@ pub async fn open(
         original_response: FIRST_RESPONSE,
         complete_input_dict: request.data,
     });
-    if content_type(&head.headers).is_some_and(|value| value.contains("application/json")) {
+    if is_json(&head.headers) {
         let content = json_reply(head.status, &head.headers, &mut chunks).await?;
         return Ok(AgentCoreStream::ready(
             request.model,
@@ -120,14 +123,6 @@ pub async fn open(
     ))
 }
 
-fn request_body(request: &StreamRequest<'_>) -> Result<Vec<u8>, AgentCoreStreamError> {
-    match request.signed_json_body {
-        Some(bytes) if !bytes.is_empty() => Ok(bytes.to_vec()),
-        Some(_) | None => serde_json::to_vec(request.data)
-            .map_err(|source| AgentCoreStreamError::Encode { source }),
-    }
-}
-
 async fn check_status(
     headers: &HeaderMap,
     status: u16,
@@ -138,12 +133,9 @@ async fn check_status(
         return Ok(());
     }
     let error_body = read_body(chunks).await?;
-    Err(provider_error(
-        status,
-        body_text(error_body),
-        headers,
-        Some(api_base),
-    ))
+    let message = String::from_utf8(error_body)
+        .unwrap_or_else(|error| format!("{} bytes that are not text", error.as_bytes().len()));
+    Err(provider_error(status, message, headers, Some(api_base)))
 }
 
 async fn json_reply(
@@ -173,44 +165,37 @@ async fn json_reply(
             ));
         }
     };
-    let reply =
-        parse_json_reply(&value).map_err(|source| AgentCoreStreamError::Reply { source })?;
+    let reply = parse_json_reply(&value).map_err(AgentCoreStreamError::Reply)?;
     Ok(reply.content)
 }
 
 async fn read_body(chunks: &mut Chunks) -> Result<Vec<u8>, AgentCoreStreamError> {
     let mut body = Vec::new();
     while let Some(chunk) = chunks.next().await {
-        let bytes = chunk.map_err(|source| AgentCoreStreamError::Body { source })?;
+        let bytes = chunk.map_err(AgentCoreStreamError::Body)?;
         if body
             .len()
             .checked_add(bytes.len())
             .is_none_or(|size| size > MAX_BODY_BYTES)
         {
-            return Err(AgentCoreStreamError::Body {
-                source: HttpError::TooLarge {
-                    limit: MAX_BODY_BYTES,
-                },
-            });
+            return Err(AgentCoreStreamError::Body(HttpError::TooLarge {
+                limit: MAX_BODY_BYTES,
+            }));
         }
         body.extend_from_slice(&bytes);
     }
     Ok(body)
 }
 
-fn body_text(body: Vec<u8>) -> String {
-    String::from_utf8(body)
-        .unwrap_or_else(|error| format!("{} bytes that are not text", error.as_bytes().len()))
-}
-
-fn content_type(headers: &HeaderMap) -> Option<String> {
+fn is_json(headers: &HeaderMap) -> bool {
     let values: Vec<&str> = headers
         .get_all("content-type")
         .iter()
         .filter_map(|value| value.to_str().ok())
         .collect();
-    if values.is_empty() {
-        return None;
-    }
-    Some(values.join(", ").to_lowercase())
+    !values.is_empty()
+        && values
+            .join(", ")
+            .to_lowercase()
+            .contains("application/json")
 }
