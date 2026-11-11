@@ -104,7 +104,7 @@ async fn spend_of(fixture: &PostgresFixture, id: &str) -> String {
 async fn set_spend(fixture: &PostgresFixture, id: &str, spend: &str) {
     run_statement(
         fixture,
-        "UPDATE \"LiteLLM_DailyUserSpend\" SET \"spend\" = $1::numeric::double precision WHERE \"id\" = $2",
+        "UPDATE \"LiteLLM_DailyUserSpend\" SET \"spend\" = $1::text::numeric::double precision WHERE \"id\" = $2",
         &[&spend, &id],
     )
     .await;
@@ -139,14 +139,14 @@ async fn check_sampling_boundary(admin_url: &SecretString, count: usize, limit: 
 async fn check_updated_bounds(client: &Client, first: &str, last: &str, count: usize) {
     let inclusive = scalar_i64(
         client,
-        "SELECT count(*) FROM \"LiteLLM_DailyUserSpend\" WHERE \"updated_at\" >= $1::timestamp(3) AND \"updated_at\" <= $2::timestamp(3)",
+        "SELECT count(*) FROM \"LiteLLM_DailyUserSpend\" WHERE \"updated_at\" >= $1::text::timestamp(3) AND \"updated_at\" <= $2::text::timestamp(3)",
         &[&first, &last],
     )
     .await;
     assert_eq!(inclusive, i64::try_from(count).unwrap());
     let exclusive = scalar_i64(
         client,
-        "SELECT count(*) FROM \"LiteLLM_DailyUserSpend\" WHERE \"updated_at\" > $1::timestamp(3) AND \"updated_at\" < $2::timestamp(3)",
+        "SELECT count(*) FROM \"LiteLLM_DailyUserSpend\" WHERE \"updated_at\" > $1::text::timestamp(3) AND \"updated_at\" < $2::text::timestamp(3)",
         &[&first, &last],
     )
     .await;
