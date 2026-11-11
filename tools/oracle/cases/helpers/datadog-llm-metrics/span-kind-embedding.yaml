@@ -1,0 +1,9 @@
+kind: helper
+name: datadog-llm-metrics-span-kind-embedding
+call:
+  b3937:
+    function: span_kind
+    call_type: "embedding"
+    parent_id: "parent-span"
+env: {}
+compare: {ignore: []}
