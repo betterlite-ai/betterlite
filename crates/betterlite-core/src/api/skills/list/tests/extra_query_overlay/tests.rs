@@ -158,3 +158,25 @@ async fn extra_query_overlay_rejects_a_wrong_typed_source() {
         "the source field does not have the declared type"
     );
 }
+
+#[tokio::test]
+async fn extra_query_overlay_rejects_a_fractional_limit() {
+    let number: Number = serde_json::from_str("5.5").expect("5.5 is a JSON number");
+    let values = kwargs();
+    let request = call_with_query(
+        None,
+        None,
+        None,
+        map(&[("limit", Json::Number(number))]),
+        &values,
+    );
+    let failure = failure_of(request).await;
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a fractional limit is a 400, not a provider error");
+    };
+    assert_eq!(details.body_param.as_deref(), Some("limit"));
+    assert_eq!(
+        details.message,
+        "the limit field does not have the declared type"
+    );
+}
