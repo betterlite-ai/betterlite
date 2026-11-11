@@ -28,6 +28,17 @@ deviations:
       they enter, as docs/compatibility.md says.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/provider_affinity.py#L56-L83
   - what: >-
+      The optional deployment keys (azure, vertex, AWS and S3 credentials, gigachat, timeout, tpm,
+      rpm, itpm, otpm, use_xai_oauth, provider_affinity_header and the custom pricing fields),
+      drop_params and no-log are taken only from trusted config and server code. A request-side
+      input that names one of them is rejected when the request options decode, while LiteLLM
+      copies whatever completion kwargs carry into litellm_params.
+    why: >-
+      These keys include provider credentials, a configured timeout and the logging bypass, so a
+      client that sends them must not stand in for the deployment. No working setup relies on a
+      proxy client supplying deployment credentials through a chat body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L250-L254
+  - what: >-
       DEFAULT_MAX_RECURSE_DEPTH is a caller-supplied parameter that defaults to 100 instead of an
       import-time environment read; the config/server layer owns reading the variable.
     why: >-

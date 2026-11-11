@@ -1,6 +1,8 @@
 use indexmap::IndexMap;
 use serde::Deserialize;
 
+use crate::controls::json_value::JsonValue;
+
 pub const GENERATED_SESSION_METADATA_KEY: &str = "litellm_session_id_generated";
 
 const FORBIDDEN_AFFINITY_HEADERS: [&str; 19] = [
@@ -25,7 +27,7 @@ const FORBIDDEN_AFFINITY_HEADERS: [&str; 19] = [
     "x-goog-api-key",
 ];
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct AffinityParams {
     pub provider_affinity_header: Option<String>,
     pub session_id: Option<String>,
@@ -34,10 +36,24 @@ pub struct AffinityParams {
     pub litellm_metadata: Option<SessionMetadata>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+// The typed session view of a metadata object; every other key rides along untouched so the empty check and the logging copy stay exact.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct SessionMetadata {
     pub session_id: Option<String>,
+    pub trace_id: Option<String>,
     pub litellm_session_id_generated: Option<bool>,
+    #[serde(flatten)]
+    pub other: IndexMap<String, JsonValue>,
+}
+
+impl SessionMetadata {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.session_id.is_none()
+            && self.trace_id.is_none()
+            && self.litellm_session_id_generated.is_none()
+            && self.other.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]

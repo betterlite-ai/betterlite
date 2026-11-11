@@ -6,6 +6,7 @@ use betterlite_models::controls::call_params::{
 use betterlite_models::controls::control_options::{ControlOptions, parse_control_options};
 use betterlite_models::controls::extra_body::check_extra_body;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::controls::optional_params::OptionalParams;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
@@ -90,9 +91,11 @@ fn trusted_credentials(fields: &TrustedCredentialsInput) -> serde_json::Value {
             api_key: fields.trusted.api_key.clone(),
             api_base: fields.trusted.api_base.clone(),
             custom_llm_provider: fields.trusted.custom_llm_provider.clone(),
-            provider_affinity_header: None,
             control: ControlOptions::default(),
             credentials,
+            drop_params: None,
+            no_log: None,
+            optional: OptionalParams::default(),
         };
         let params = call_params(&trusted, &RequestCall::default());
         let credential_keys = params

@@ -50,11 +50,15 @@ fn empty_params() -> ParamsSpec {
 fn affinity_params(spec: &ParamsSpec) -> AffinityParams {
     let metadata = spec.metadata.as_ref().map(|meta| SessionMetadata {
         session_id: meta.session.map(str::to_owned),
+        trace_id: None,
         litellm_session_id_generated: meta.generated,
+        other: IndexMap::default(),
     });
     let litellm_metadata = spec.litellm_metadata.as_ref().map(|meta| SessionMetadata {
         session_id: meta.session.map(str::to_owned),
+        trace_id: None,
         litellm_session_id_generated: meta.generated,
+        other: IndexMap::default(),
     });
     AffinityParams {
         provider_affinity_header: spec.header.map(str::to_owned),
@@ -192,6 +196,14 @@ fn affinity_params(spec: &ParamsSpec) -> AffinityParams {
 #[case::metadata_session_id_is_used(
     Scenario::Session(ParamsSpec { header: None, session: None, litellm_session: None, metadata: Some(MetaSpec { session: Some("metadata"), generated: None }), litellm_metadata: Some(MetaSpec { session: Some("litellm-metadata"), generated: None }) }),
     Expected::Session(Some("metadata"))
+)]
+#[case::generated_litellm_metadata_skips_litellm_session_id(
+    Scenario::Session(ParamsSpec { header: None, session: None, litellm_session: Some("litellm"), metadata: None, litellm_metadata: Some(MetaSpec { session: None, generated: Some(true) }) }),
+    Expected::Session(None)
+)]
+#[case::generated_litellm_metadata_keeps_a_stable_metadata_session(
+    Scenario::Session(ParamsSpec { header: None, session: None, litellm_session: Some("litellm"), metadata: Some(MetaSpec { session: Some("stable"), generated: None }), litellm_metadata: Some(MetaSpec { session: None, generated: Some(true) }) }),
+    Expected::Session(Some("stable"))
 )]
 #[case::all_sessions_generated_gives_none(
     Scenario::Session(ParamsSpec { header: None, session: None, litellm_session: Some("litellm"), metadata: Some(MetaSpec { session: Some("generated"), generated: Some(true) }), litellm_metadata: Some(MetaSpec { session: None, generated: Some(true) }) }),
