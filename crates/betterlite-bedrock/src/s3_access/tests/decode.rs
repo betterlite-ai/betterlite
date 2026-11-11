@@ -36,6 +36,27 @@ fn decode_managed_file_id_cases(#[case] file_id: &str, #[case] expected: Result<
     );
 }
 
+// The ids below are the same managed text without trailing padding: 54 characters (two short) and 55 (one short).
+#[rstest]
+#[case::two_short(
+    "bGl0ZWxsbV9wcm94eTtsbG1fb3V0cHV0X2ZpbGVfaWQsczM6Ly9iLw",
+    Ok("s3://b/")
+)]
+#[case::one_short(
+    "bGl0ZWxsbV9wcm94eTtsbG1fb3V0cHV0X2ZpbGVfaWQsczM6Ly9iL2s",
+    Ok("s3://b/k")
+)]
+#[case::two_short_with_a_stray_byte("bGl0ZWxsbV9wcm94eTtsbG1fb3V0cHV0X2ZpbGVfaWQsczM6Ly9iLw!", Err(()))]
+#[case::one_short_with_a_stray_byte("bGl0ZWxsbV9wcm94eTtsbG1fb3V0cHV0X2ZpbGVfaWQsczM6Ly9iL2s!", Err(()))]
+fn padding_is_counted_on_the_raw_length(#[case] file_id: &str, #[case] expected: Result<&str, ()>) {
+    assert_eq!(
+        decode_managed_file_id(file_id)
+            .as_deref()
+            .map_err(|_error| ()),
+        expected
+    );
+}
+
 #[test]
 fn a_marker_without_a_value_decodes_to_the_empty_string() {
     assert_eq!(
