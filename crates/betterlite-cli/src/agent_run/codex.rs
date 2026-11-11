@@ -6,7 +6,6 @@ use crate::opencode::ModelSyncSkipped;
 use betterlite_logging::private_json::files::FileAccess;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitStatus;
 use std::process::Stdio;
 use std::string::FromUtf8Error;
 use std::time::Duration;
@@ -68,7 +67,7 @@ async fn run_debug_command(invocation: &DebugInvocation) -> Result<DebugOutput, 
         Err(_elapsed) => return Err(DebugFailure::Timeout),
     };
     Ok(DebugOutput {
-        code: exit_code(output.status),
+        code: output.status.code().unwrap_or(-1_i32),
         stdout: String::from_utf8(output.stdout).map_err(DebugFailure::Decode)?,
         stderr: String::from_utf8(output.stderr).map_err(DebugFailure::Decode)?,
     })
@@ -85,20 +84,6 @@ fn batch_command(arguments: &str) -> Result<tokio_process::Command, DebugFailure
         Err(DebugFailure::Io(io::Error::other(format!(
             "cmd.exe is unavailable for `{arguments}`"
         ))))
-    }
-}
-fn exit_code(status: ExitStatus) -> i32 {
-    if let Some(code) = status.code() {
-        return code;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt as _;
-        status.signal().and_then(i32::checked_neg).unwrap_or(-1_i32)
-    }
-    #[cfg(not(unix))]
-    {
-        -1_i32
     }
 }
 #[must_use]

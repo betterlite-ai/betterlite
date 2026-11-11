@@ -5,13 +5,16 @@ pub trait Messages {
     fn warn(&mut self, message: &str) -> io::Result<()>;
     fn notice(&mut self, message: &str) -> io::Result<()>;
 }
-pub struct StreamMessages;
-impl Messages for StreamMessages {
+pub struct StreamMessages<Notices, Warnings> {
+    pub notices: Notices,
+    pub warnings: Warnings,
+}
+impl<Notices: Write, Warnings: Write> Messages for StreamMessages<Notices, Warnings> {
     fn warn(&mut self, message: &str) -> io::Result<()> {
-        warn(&mut io::stderr(), message)
+        warn(&mut self.warnings, message)
     }
     fn notice(&mut self, message: &str) -> io::Result<()> {
-        warn(&mut io::stdout(), message)
+        warn(&mut self.notices, message)
     }
 }
 pub struct NoticeBuffer<'messages> {
