@@ -40,7 +40,11 @@ fn mask_node(masker: &SensitiveDataMasker, value: &mut Json, sensitive: bool) {
         Json::Object(inner) => mask_object(masker, inner),
         Json::List(items) => {
             for item in items {
-                mask_node(masker, item, sensitive);
+                match item {
+                    Json::Text(text) if sensitive => *text = masker.mask_value(text),
+                    Json::Object(_) | Json::List(_) => mask_node(masker, item, sensitive),
+                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
+                }
             }
         }
         Json::Text(text) if sensitive => *text = masker.mask_value(text),

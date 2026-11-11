@@ -183,7 +183,7 @@ fn the_passthrough_keys_are_listed_and_sensitive_ones_masked() {
 }
 
 #[test]
-fn a_sensitive_number_flag_and_list_are_masked_as_text() {
+fn a_sensitive_number_and_flag_are_masked_and_a_list_masks_only_its_text() {
     let kwargs = redis_kwargs(&parsed(
         r#"{"secret_number": 123456789, "secret_flag": true, "secret_list": ["first-secret-value", 4]}"#,
     ));
@@ -191,7 +191,10 @@ fn a_sensitive_number_flag_and_list_are_masked_as_text() {
     assert_eq!(kwargs.get("secret_flag"), Some(&masked("true")));
     assert_eq!(
         kwargs.get("secret_list"),
-        Some(&Json::List(vec![masked("first-secret-value"), masked("4")]))
+        Some(&Json::List(vec![
+            masked("first-secret-value"),
+            number(4_i64)
+        ]))
     );
 }
 
