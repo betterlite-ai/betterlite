@@ -34,6 +34,6 @@ def run_request_flags(input_value: Input) -> Json:
     request = input_value["request"]
     pass_through = input_value.get("is_pass_through")
     return {
-        "async": UTILS._is_async_request(request, is_pass_through=pass_through is True),  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2318-L2321
-        "streaming": UTILS._is_streaming_request(request, input_value["call_type"]),  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2361-L2364
+        "async": UTILS._is_async_request(request, is_pass_through=pass_through is True),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2318-L2321
+        "streaming": UTILS._is_streaming_request(request, input_value["call_type"]),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2361-L2364
     }
