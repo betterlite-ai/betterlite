@@ -15,7 +15,7 @@ description: >-
 
   Decisions: HostedVLLMDecisionsConfig and resolve_api_key over the decisions records of B3510.
 
-  The __init__.py files of image_edit and videos only export the config and need no code beyond that.
+  The __init__.py files of image_edit and videos also define get_hosted_vllm_image_edit_config (L8) and get_hosted_vllm_video_config (L8): each constructs the config for any model. Build that construction at the existing selector seams (B5360, B3332) and add no wrapper function.
 
   Where the source and this text differ, the source at the pinned commit wins.
 scope:

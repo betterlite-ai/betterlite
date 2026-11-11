@@ -1,0 +1,15 @@
+kind: helper
+name: messages-context-clear-visible-polyfill-edits
+call:
+  messages_context_clear:
+    action: visible_edits
+    applied_edits:
+      - {type: compact_20260112}
+      - {type: compact_20260112, error: denied}
+      - {type: compact_20260112, warnings: [pause_after_compaction_ignored]}
+      - {type: clear_tool_uses_20250919, cleared_tool_uses: 2, cleared_input_tokens: 10}
+      - {}
+    compaction_block: null
+    error: null
+env: {}
+compare: {ignore: []}

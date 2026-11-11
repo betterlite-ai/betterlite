@@ -6,8 +6,8 @@ description: >-
 
   Four pieces.
 
-  One, `RateLimiterAssembly`, the port of the handler constructor (parallel_request_limiter_v3.py L102
-  to L122) and of `_get_batch_rate_limiter`. Its constructor takes every owner it needs and nothing is
+  One, `RateLimiterAssembly`, the port of the handler constructor (parallel_request_limiter_v3.py L761
+  to L837) and of `_get_batch_rate_limiter` (L839 to L854). Its constructor takes every owner it needs and nothing is
   global: the rate_limiter_settings section of B3031, the LimiterClock and FailClosedPolicy of B3031, the
   window store of B3032, the atomic counters of B3033, the settlement of B3034, the gauges of B3035, the
   WindowedAdmission of B3036, the token adjustments of B3037, a boxed ModelGroupResolver, and the batch
@@ -24,8 +24,8 @@ description: >-
 
   Three, `select_call_type_limiter(call_type: CallType) -> LimiterChoice`, the port of the branch in
   `_get_batch_rate_limiter` and its caller. `LimiterChoice` is an enum with the variants `Main` and
-  `Batch`. `CallType::AcreateBatch` gives `Batch`. Every other call type gives `Main`. Read L751 to L837 in
-  the LiteLLM file to see the exact call types, and match them with an exhaustive `match` on the existing
+  `Batch`. `CallType::AcreateBatch` gives `Batch`. Every other call type gives `Main`. Read L839 to L854 and
+  L3338 to L3343 in the LiteLLM file to see the exact call types, and match them with an exhaustive `match` on the existing
   `CallType` enum in crates/betterlite-core/src/routes.rs. Do not add a wildcard arm. The batch limiter is
   built lazily in Python, but here it is built at boot, because a constructor with no I/O has nothing to defer.
 
@@ -54,13 +54,15 @@ scope:
   lint_tables: false
 
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L102-L122
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L761-L837
     why: The constructor lines that create the cache, window size, scripts and clock.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L597-L604
     why: The CallTypeRateLimiter protocol the trait ports.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L751-L837
-    why: The batch limiter lookup and the call types that pick it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L839-L854
+    why: The lazy batch limiter lookup.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3338-L3343
+    why: get_rate_limiter_for_call_type, the call type that picks the batch limiter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L117-L122
     why: The model group alias lookup through the proxy router.
 
 dod:

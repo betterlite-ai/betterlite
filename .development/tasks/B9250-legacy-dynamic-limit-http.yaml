@@ -1,0 +1,178 @@
+id: B9250
+title: Exercise legacy, dynamic and session limits through the proxy
+description: >-
+  B3047 through B3054 build the legacy counters, dynamic priority policy and session iteration
+  limiter, but their tests do not send HTTP through the running proxy. B8399 already owns the
+  default hook map and LEGACY_MULTI_INSTANCE_RATE_LIMITING selection; B8749 builds the named
+  dynamic callback adapters. Add the missing HTTP and application-level tests over these owners.
+  B072 will consume this case directory in its final limiter suite, so this part implements no
+  new handler, callback registry or route mount.
+
+  Put eight cases in tools/oracle/cases/http/legacy-dynamic-limits/. Follow the existing untagged
+  HTTP Case with steps format, not a helper adapter and not --self-check. The literal kind: http
+  is not accepted by today's loader. The existing database fixture provisions a user and the two
+  independent databases; it does not accept arbitrary quota or metadata fields. In case steps,
+  use the master key on POST /team/new and POST /key/generate to create the relevant limits and
+  priority metadata, capturing generated keys as secrets. Then call POST /v1/chat/completions
+  using that key. The unchanged chat aliases are /chat/completions,
+  /engines/{model}/chat/completions and /openai/deployments/{model}/chat/completions; B072 covers
+  those aliases. Each case has a fresh proxy pair and finite mock responses. Use an OpenAI
+  deployment, model_name limited-chat, litellm_params.model openai/gpt-4o-mini, api_base
+  {{upstream}} and a dummy configured api_key, with retries and fallbacks disabled. Assertions
+  compare error status/type/param/code, deterministic response headers and the upstream transcript.
+  Ignore only /error/message for betterlite's wording and genuinely generated setup values with
+  a reason; never mask the entire error or all quota headers. No enterprise package is loaded.
+
+  legacy-selection uses LEGACY_MULTI_INSTANCE_RATE_LIMITING=TrUe and a virtual key with RPM 2,
+  positive TPM and no parallel cap. Give these mock responses zero usage so asynchronous token
+  charging cannot race the header comparison. Two requests succeed and a third rejects.
+  Compare x-ratelimit-remaining-requests,
+  x-ratelimit-limit-requests, x-ratelimit-remaining-tokens and x-ratelimit-limit-tokens on success.
+  The failure carries retry-after until the next local-time minute; compare its presence here
+  and the numeric (0, 60] range in the native tests. legacy-zero-cap uses max_parallel_requests 0
+  and proves the first inference request is 429 with no upstream attempt. Selection defaults to
+  v3 when the environment value is absent or its lowercase text differs from true; B072 covers
+  that side. The legacy minute counter TTL stays 60, independent of the v3 window setting.
+
+  dynamic-legacy sets litellm_settings.callbacks to [dynamic_rate_limiter]. Use finite model RPM
+  and TPM, no priority_reservation, and zero response usage to keep token headers stable. Compare the callback's six
+  headers: x-litellm-model_group, x-ratelimit-remaining-litellm-project-tokens,
+  x-ratelimit-remaining-litellm-project-requests, x-ratelimit-remaining-model-tokens,
+  x-ratelimit-remaining-model-requests and x-ratelimit-current-active-projects. Include a zero
+  capacity request so the hook rejects before router dispatch, checking TPM before RPM when both
+  are zero. Keep the first successful request isolated from later background usage changes when
+  comparing headers; the native test below waits for tracked callbacks before inspecting counts.
+
+  dynamic-model-cap sets callbacks [dynamic_rate_limiter_v3], leaves priority_reservation null
+  and uses a model RPM cap of 2. Compare successful model_saturation_check headers, then the
+  model-cap 429, retry-after, rate_limit_type and x-litellm-rate-limiter-version v3 on success.
+  It must reject in the proxy hook rather than because the router reports no healthy deployment.
+  dynamic-priority-pools configures low 0.25 and high 0.75 in priority_reservation, model RPM 4,
+  and priority_reservation_settings.saturation_check_cache_ttl 0. At the default saturation
+  threshold 0.50, two low-priority calls may borrow capacity while under-saturated; the next low
+  call rejects, and a high-priority key can still proceed. Check x-litellm-priority and
+  x-litellm-saturation together with retry-after and rate_limit_type. The rejection must not
+  consume the other pool's capacity. Explicit weights pass through the normalized-weight path
+  in the open-source code without requiring LITELLM_LICENSE; do not fabricate a license.
+
+  dynamic-priority-headers uses team priority high and key priority low, then keys with no
+  priority and with a non-Latin-1 priority. The header uses the team value, defaults to default
+  when absent, and is omitted for the non-Latin-1 case while the v3 version header remains.
+  Leave priority_reservation null here so this is a header test, not a zero-allocation rejection.
+  dynamic-token-accounting uses general_settings.token_rate_limit_type output, a small positive
+  model TPM ceiling and a mock completion_tokens value above it. The case compares the response
+  usage and immediate headers; dynamic_callback_shares_state drains asynchronous success work
+  before asserting that the next actual HTTP request is rejected for tokens. Do not make the
+  oracle depend on a background callback finishing before an immediate next request, and do not
+  add an invented sleep field or mutate the cache to manufacture the result.
+  The configured callback's hook and success logger must be the same handler over the same cache.
+
+  session-iterations creates a key with metadata.max_iterations 1, sends metadata.session_id
+  first-session twice (success, then 429), sends second-session once (success), then a request
+  without session_id (success). Do not configure RPM/TPM limits that could hide the session
+  decision. LITELLM_MAX_ITERATIONS_TTL defaults to 3600 through B3054; no new environment name
+  is introduced. The limit is increment-before-check, so a rejected attempt is still counted.
+
+  Settings are consumed through the existing sections: priority_reservation defaults to null;
+  priority_reservation_settings defaults to default_priority 0.25, saturation_threshold 0.50 and
+  saturation_check_cache_ttl 60, and the v3 window is LITELLM_RATE_LIMIT_WINDOW_SIZE with default
+  60. The legacy dynamic weight defaults to 1 when no reservation applies. This part changes no
+  setting parser. It adds no byte decoder, dependency or fuzz target.
+
+  Native tests go in the test-only module app::inference::priority_parity, with tests.rs beside
+  it. Boot B8610's application and run startup, using B8803's actual route and B8749's installed
+  callbacks. legacy_time_header checks the retry-after range on a real zero-cap response.
+  legacy_completion_releases runs with max_parallel_requests 1 and nonzero response usage,
+  drains tracked success work, then proves the next request can enter and observes the charged
+  tokens through the existing cache accessor; legacy release happens in the asynchronous logger,
+  not the post-call header hook, so this assertion needs that explicit completion boundary.
+  dynamic_callback_shares_state waits for tracked success work, then proves a single
+  usage charge is visible to admission and that only one dynamic hook/logger instance exists.
+  team_priority_and_key_charge uses different team and key priorities to prove that admission
+  and response headers use team metadata while success accounting uses key metadata, as the pin
+  does. session_rejections_keep_count checks the counter after a rejected attempt through the
+  installed hook. Use existing typed cache accessors and bounded waits; do not call Python
+  handlers with proxy globals from a helper adapter. The HTTP cases cover client-visible effects,
+  while these tests pin asynchronous ordering that an immediate sequential request cannot guarantee.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/priority_parity.rs
+    - crates/betterlite-server/src/app/inference/priority_parity/**
+    - tools/oracle/cases/http/legacy-dynamic-limits/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L45
+    why: Context for B8399's single default hook and case-insensitive true legacy selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L67-L202
+    why: Legacy admission dimensions, zero-cap error and local-minute retry-after, implemented by B3047.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L803-L855
+    why: The four legacy remaining/limit response headers from B3048.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L85-L271
+    why: Existing legacy dynamic capacity checks and six post-call headers whose HTTP evidence is missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L126-L352
+    why: Existing priority precedence, normalized allocation and shared default pool used by the cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L420-L570
+    why: Model capacity is always enforced, priority is conditionally enforced, and rejected atomic checks do not count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L659-L780
+    why: Team-first response priority, Latin-1 omission and key-only success-token attribution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L71-L221
+    why: Existing session lookup, max_iterations precedence, increment-before-check and fallback counter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12016
+    why: The existing chat route with authentication; the case uses /v1/chat/completions and does not alter its other three aliases.
+dod:
+  - text: Legacy selection, remaining-limit headers and first-call zero-cap denial match the pinned proxy through real HTTP.
+    proof: [new-cases, oracle, legacy-header, legacy-completion]
+  - text: Both configured dynamic callbacks are reachable, expose their headers, enforce model and priority capacity, and the v3 callback charges success usage once to the appropriate scope.
+    proof: [new-cases, oracle, callback-identity, priority-attribution]
+  - text: Session exhaustion rejects only the exhausted session and preserves increment-before-check accounting.
+    proof: [new-cases, oracle, rejected-iterations]
+checks:
+  optional: []
+  commands:
+    - id: new-cases
+      why: no new HTTP cases cover the limiter callbacks previously tested only in isolation
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/legacy-dynamic-limits)"
+    - id: legacy-header
+      why: legacy rejection loses the retry-after range contract
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::priority_parity::tests::legacy_time_header($|::)/)'
+    - id: legacy-completion
+      why: the selected legacy callback does not release capacity or charge response tokens
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::priority_parity::tests::legacy_completion_releases($|::)/)'
+    - id: callback-identity
+      why: the dynamic callback is constructed twice or does not account usage through its registered logger
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::priority_parity::tests::dynamic_callback_shares_state($|::)/)'
+    - id: priority-attribution
+      why: the team and key priority sources are conflated
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::priority_parity::tests::team_priority_and_key_charge($|::)/)'
+    - id: rejected-iterations
+      why: rejected session attempts are not counted
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::priority_parity::tests::session_rejections_keep_count($|::)/)'
+oracle_cases:
+  - tools/oracle/cases/http/legacy-dynamic-limits/legacy-selection.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/legacy-zero-cap.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-legacy.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-model-cap.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-priority-pools.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-priority-headers.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-token-accounting.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/session-iterations.yaml
+deviations: []
+out_of_scope:
+  - "This task owns HTTP and native integration evidence, not replacement limiter implementations. B072 owns the v3 lifecycle and combined suite."
+  - "parallel_request_limiter.py __init__, print_verbose, check_key_in_limits, time_to_next_minute, raise_rate_limit_error and get_all_cache_objects: B3047; async_pre_call_hook: B3049; _response_total_tokens, async_log_success_event, async_log_failure_event and async_post_call_success_hook: B3048."
+  - "parallel_request_limiter.py get_internal_user_object L769-L801 has no caller at the pin, as B3048 records; there is no implementation or case here."
+  - "dynamic_rate_limiter.py DynamicRateLimiterCache.__init__, async_get_cache and async_set_cache_sadd, and every _PROXY_DynamicRateLimitHandler method: B3050."
+  - "dynamic_rate_limiter_v3.py _get_priority_settings, _is_latin1_encodable, __init__, update_variables, both saturation-cache helpers, priority lookup/weight/normalization/allocation, _check_model_saturation and both descriptor constructors: B3051."
+  - "dynamic_rate_limiter_v3.py _check_rate_limits and async_pre_call_hook: B3052; async_post_call_success_hook and async_log_success_event: B3053."
+  - "max_iterations_limiter.py __init__, async_pre_call_hook, _get_session_id, _get_max_iterations, _make_cache_key, _increment_and_get, _in_memory_increment and its Redis script: B3054."
+  - "Hook selection and default callback adaptation are B8399; configured dynamic hooks and their logger registration are B8749. B8610 and B8803 own application construction and chat integration. B055 and B804 own setup routes."
+  - "No new paid-feature policy: B3050/B3051 already record their no-license deviations, and these cases choose open-source-reachable branches rather than asserting those deviations as parity."
+pitfalls:
+  - "The legacy dynamic post-call hook assigns additional_headers, so its six-header shape must not be silently replaced by the v3 merge behavior."
+  - "A model-cap denial and a priority-pool denial have different x-litellm-saturation and rate_limit_type headers even though both answer 429."
+  - "saturation_check_cache_ttl 0 requests fresh observations, whereas the default 60 can hide the threshold crossing in a short test."
+  - "A rejected session call still increments session_iterations, so retrying cannot restore the previous count."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

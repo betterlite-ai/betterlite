@@ -7,6 +7,7 @@ file: tasks/B8274-agent-skills-routes.yaml
 covers:
   - "litellm/proxy/discovery_endpoints/__init__.py"
   - "litellm/proxy/discovery_endpoints/agent_skills_endpoints.py"
+  - "litellm/types/proxy/discovery_endpoints/agent_skills_endpoints.py"
 parent: B078
 split_from: B078
 resolution: null

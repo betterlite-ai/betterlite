@@ -1471,6 +1471,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -1517,6 +1518,10 @@ dependencies = [
  "strum",
  "thiserror",
 ]
+
+[[package]]
+name = "betterlite-dashboard-browser"
+version = "0.1.0"
 
 [[package]]
 name = "betterlite-db"
@@ -2453,6 +2458,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "jsonwebtoken",
  "mutants",
  "pem",
  "rstest",
@@ -2468,6 +2474,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -2874,6 +2881,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",

@@ -8,6 +8,8 @@ use crate::http;
 use crate::paths::free_port;
 use crate::process::{Gateway, GatewaySpec, sync_litellm};
 
+pub(crate) mod dashboard_fixture;
+
 pub(crate) struct GatewayInput<'input> {
     pub(crate) options: &'input Options,
     pub(crate) group_dir: &'input Path,

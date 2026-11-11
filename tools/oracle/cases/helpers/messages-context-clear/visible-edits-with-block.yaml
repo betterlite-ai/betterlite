@@ -1,0 +1,12 @@
+kind: helper
+name: messages-context-clear-visible-edits-with-block
+call:
+  messages_context_clear:
+    action: visible_edits
+    applied_edits:
+      - {type: compact_20260112}
+      - {type: compact_20260112}
+    compaction_block: {type: compaction, content: summary}
+    error: null
+env: {}
+compare: {ignore: []}

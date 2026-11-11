@@ -4,9 +4,16 @@
 )]
 
 mod artifacts;
+pub mod budget_http;
 pub mod case;
 mod cli;
 mod compare;
+pub mod config_include_fixtures;
+pub mod daily_usage_fixture;
+pub mod dashboard_fixture;
+pub mod dashboard_governance_fixture;
+pub mod discovery_http;
+pub mod finops_fixture;
 mod gateway;
 #[expect(
     clippy::mod_module_files,
@@ -18,7 +25,9 @@ mod gateway;
 pub mod helpers;
 pub mod http;
 pub mod http_scenarios;
+pub mod insights_http;
 pub mod mock;
+pub mod model_insights_http;
 pub mod multipart_oracle;
 pub mod oracle_comparison_contracts;
 pub mod paths;
@@ -34,6 +43,7 @@ pub mod routing_probe_ipc;
 pub mod routing_scenarios;
 pub mod runner;
 pub mod sdk_http;
+pub mod search_http;
 pub mod websocket_driver;
 pub mod websocket_oracle;
 

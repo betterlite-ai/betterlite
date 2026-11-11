@@ -154,8 +154,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L176-L220
 out_of_scope:
   - "PolicyValidator.is_wildcard_pattern (policy_validator.py L53-L64): no caller at the pin; active scope validation calls RouteChecks._is_wildcard_pattern instead."
-  - "GuardrailRegistry.list_in_memory_guardrails (unresolved): B104 has no concrete task file to determine its owner."
-  - "PolicyValidateRequest (validation_types.py L69-L78): request envelope for /policy/validate route owned by B3250; route parsing is proven by B3250's oracle cases."
+  - "GuardrailRegistry.list_in_memory_guardrails: owned by B3682 (registry records), with B3683 for startup reconcile; B9320 supplies the validator adapter over the live registry."
+  - "PolicyValidateRequest (validation_types.py L69-L78): request envelope for /policy/validate route owned by B3250; route parsing is proven by B9324's oracle cases."
   - "PolicyRegistry._parse_policy: owned by B3241 since B3245 calls it from validate_policy_config."
   - "RouteChecks._is_wildcard_pattern: owned by B882 since B3245 calls it for pattern detection."
   - "VerificationTokenRepository and TeamRepository database operations: owned by B722 and B724 respectively; B3245 uses their table.find_first methods."

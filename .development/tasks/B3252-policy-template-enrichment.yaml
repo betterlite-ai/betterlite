@@ -43,8 +43,7 @@ description: >-
     `_generate_competitor_variations`, L907-L939), character for character. The discovery prompt is the template's own
     `llm_enrichment.prompt` with `{{<parameter>}}` replaced by the brand name.
   - The three constants from litellm/constants.py L2053-L2055: MAX_COMPETITOR_NAMES (env var MAX_COMPETITOR_NAMES, default 100),
-    COMPETITOR_LLM_TEMPERATURE (env var COMPETITOR_LLM_TEMPERATURE, default 0.3) and DEFAULT_COMPETITOR_DISCOVERY_MODEL (`gpt-4o-mini`, not an env var). Read the two env vars once at server start into a
-    `CompetitorSettings` struct with betterlite-env's `number`, and pass it in. A value that is not a number is a startup error that names the variable.
+    COMPETITOR_LLM_TEMPERATURE (env var COMPETITOR_LLM_TEMPERATURE, default 0.3) and DEFAULT_COMPETITOR_DISCOVERY_MODEL (`gpt-4o-mini`, not an env var). This task takes `CompetitorSettings` as injected values. B9320's config section reads the two env vars once at server start with betterlite-env's `number` and owns the settings DoD. A value that is not a number is a startup error that names the variable.
 
 
   Model access. LiteLLM calls `proxy_server.llm_router.acompletion(model, messages, temperature, stream)`. Do not import a router. Define the
@@ -52,7 +51,7 @@ description: >-
   `complete(&self, model, prompt, temperature) -> Result<String, ModelClientError>` (the first choice's message content, empty text when none) and
   `stream_text(&self, model, prompt, temperature)` returning a stream of content deltas (each chunk's first choice's delta content, empty when
   none). `ModelClientError` carries a message string. The "router is not initialized" case is an error whose text is exactly `LLM router not initialized`.
-  Production wiring to the router belongs to the task that builds the router handle; see notes. Tests use a fake client.
+  Production wiring to the router is B9321's (it builds the production client over the router handle). Tests use a fake client.
 
 
   Routes, in crates/betterlite-server/src/policy_template_routes.rs and policy_template_routes/. Both are POST, tag "policy management", in
@@ -102,12 +101,7 @@ description: >-
   Oracle. The helper operation for this task (the skeleton names it b3252 in the policy helper group) runs LiteLLM's own functions through
   `function`: `clean_line`, `parse_variations`, `build_definitions` (a template id from the backup file, competitors, brand name, variations map), `refinement_prompt`, and
   `local_template_ids` (ids of `_load_policy_templates_from_local_backup()` in order) plus `local_template` (one record by id). The Python adapter imports them from
-  litellm.proxy.management_endpoints.policy_endpoints.endpoints. HTTP cases go in tools/oracle/cases/policies/templates-enrich/. They use the master key `oracle-master`,
-  template `aviation-operations-security` (it has llm_enrichment parameter `brand_name`) and: 404 unknown template, 400 template without enrichment (`baseline-pii-protection`), 400 missing brand,
-  422 bad body, 401 without key; enrich with `competitors` given and no model in the config (the router is None in LiteLLM, so variations are empty);
-  enrich with `competitors` given and an `oracle-model` openai deployment with an `upstream` reply carrying
-  variation lines; enrich with discovery from an upstream reply; stream in the three modes and the no-router error event (the oracle reads each `data:` line as JSON).
-  Copy the config and `upstream` shape of tools/oracle/cases/chat/openai-basic.yaml and openai-stream.yaml.
+  litellm.proxy.management_endpoints.policy_endpoints.endpoints. B9324 owns the HTTP cases for both routes in tools/oracle/cases/policies/templates-enrich/, since they need B9321's mount; this task proves the routes with router-local route tests.
 
 scope:
   paths:
@@ -124,7 +118,6 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/enrich_request.rs
     - crates/betterlite-server/fuzz/corpus/enrich_request/**
     - tools/oracle/cases/helpers/policy-templates/**
-    - tools/oracle/cases/policies/templates-enrich/**
     - "tools/oracle/fuzz/corpus/helper_case/policy-templates-*"
     - tools/oracle/helpers/b3252.py
     - tools/oracle/helpers/b3252/**
@@ -169,11 +162,11 @@ dod:
   - text: >-
       POST /policy/templates/enrich returns the three keys, uses given competitors or discovers them, swallows model errors into empty lists and maps, and
       answers 404, 400 and 422 with LiteLLM's detail texts in the stated order.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       POST /policy/templates/enrich/stream sends the event types and texts of the three modes in order, dedupes and caps names, ends with an error event
       without done on a model error, and sets the event-stream headers and the keep-alive wrapper.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       The enrich body decoder rejects malformed bytes and wrong shapes with the shared 422 without panicking and has committed corpus inputs.
     proof: [request-corpus]
@@ -205,18 +198,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/policy-templates/build-definitions-aviation.yaml
   - tools/oracle/cases/helpers/policy-templates/build-definitions-generic.yaml
   - tools/oracle/cases/helpers/policy-templates/refinement-prompt.yaml
-  - tools/oracle/cases/policies/templates-enrich/unknown-template-404.yaml
-  - tools/oracle/cases/policies/templates-enrich/no-enrichment-400.yaml
-  - tools/oracle/cases/policies/templates-enrich/missing-brand-400.yaml
-  - tools/oracle/cases/policies/templates-enrich/bad-body-422.yaml
-  - tools/oracle/cases/policies/templates-enrich/no-auth-401.yaml
-  - tools/oracle/cases/policies/templates-enrich/given-competitors-no-router.yaml
-  - tools/oracle/cases/policies/templates-enrich/given-competitors-with-variations.yaml
-  - tools/oracle/cases/policies/templates-enrich/discovery-from-model.yaml
-  - tools/oracle/cases/policies/templates-enrich/stream-discovery.yaml
-  - tools/oracle/cases/policies/templates-enrich/stream-given-competitors.yaml
-  - tools/oracle/cases/policies/templates-enrich/stream-refinement.yaml
-  - tools/oracle/cases/policies/templates-enrich/stream-no-router-error.yaml
 
 deviations:
   - what: The local records come from 18 embedded fragment files and not from a policy_templates_backup.json read at run time.
