@@ -1,9 +1,14 @@
-use std::io::{self, Read as _};
+use std::collections::BTreeMap;
+use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::blocking::{Client, ClientBuilder};
-use reqwest::redirect::Policy;
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 use tokio::task::JoinSet;
 
 use super::error::AgentSetupError;
@@ -21,9 +26,19 @@ pub const GATEWAY_CLIENT_HEADER: &str = "x-gateway-client";
 pub const CLAUDE_CODE_CLIENT: &str = "claude-code";
 const LISTED_MODELS_SHOWN: usize = 20;
 pub(crate) const MAX_LISTING_BYTES: usize = 16 * 1024 * 1024;
+const PROXY_VARIABLES: [&str; 8] = [
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+];
 
 struct HttpGet {
-    client: Client,
+    client: ProxiedClient,
 }
 
 impl ProxyGet for HttpGet {
@@ -33,34 +48,67 @@ impl ProxyGet for HttpGet {
         headers: &[(String, SecretString)],
         timeout: Duration,
     ) -> Result<ProxyResponse, io::Error> {
-        let mut request = self.client.get(url).timeout(timeout);
+        let mut request = self.client.client.get(url).timeout(timeout);
         for (name, value) in headers {
             request = request.header(name.as_str(), value.expose_secret());
         }
-        let response = request.send().map_err(io::Error::other)?;
-        let status = response.status().as_u16();
-        let limit = u64::try_from(MAX_LISTING_BYTES).unwrap_or(u64::MAX);
-        let mut body = Vec::new();
-        response
-            .take(limit.saturating_add(1))
-            .read_to_end(&mut body)?;
-        if body.len() > MAX_LISTING_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "the /v1/models response is too large",
-            ));
-        }
-        Ok(ProxyResponse { status, body })
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(io::Error::other)?;
+        runtime.block_on(async {
+            let mut response = request.send().await.map_err(io::Error::other)?;
+            let status = response.status().as_u16();
+            let mut body = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(io::Error::other)? {
+                append_chunk(&mut body, &chunk)?;
+            }
+            Ok(ProxyResponse { status, body })
+        })
     }
+}
+
+fn append_chunk(body: &mut Vec<u8>, chunk: &[u8]) -> Result<(), io::Error> {
+    if body.len().saturating_add(chunk.len()) > MAX_LISTING_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the /v1/models response is too large",
+        ));
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
+}
+
+fn listing_client(variables: &BTreeMap<String, String>) -> Result<ProxiedClient, PiSyncError> {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), variables).map_err(|source| {
+        PiSyncError::Unreachable {
+            source: io::Error::other(source),
+        }
+    })?;
+    ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| PiSyncError::Unreachable {
+        source: io::Error::other(source),
+    })
+}
+
+fn proxy_environment(environment: &dyn EnvironmentLookup) -> BTreeMap<String, String> {
+    let mut variables = BTreeMap::new();
+    for name in PROXY_VARIABLES {
+        if let Some(value) = environment.lookup(name) {
+            variables.insert(name.to_owned(), value);
+        }
+    }
+    variables
 }
 
 pub async fn fetch_listing(
     base_url: &str,
     credential: &StaticToken,
     target: Target,
+    environment: &(dyn EnvironmentLookup + Send + Sync),
 ) -> Result<Vec<ListedModel>, AgentSetupError> {
     let base = base_url.to_owned();
     let key = credential.token.clone();
+    let variables = proxy_environment(environment);
     let extra: &'static [(&'static str, &'static str)] = match target {
         Target::Claude => &[
             (ANTHROPIC_VERSION_HEADER, ANTHROPIC_VERSION_VALUE),
@@ -70,12 +118,7 @@ pub async fn fetch_listing(
     };
     let mut tasks = JoinSet::new();
     tasks.spawn_blocking(move || {
-        let client = ClientBuilder::new()
-            .redirect(Policy::none())
-            .build()
-            .map_err(|source| PiSyncError::Unreachable {
-                source: io::Error::other(source),
-            })?;
+        let client = listing_client(&variables)?;
         fetch_model_listing(&base, &key, &HttpGet { client }, extra)
     });
     let Some(joined) = tasks.join_next().await else {
@@ -124,13 +167,21 @@ pub struct ListingRequest<'request> {
     pub credential: StaticToken,
     pub target: Target,
     pub repair: bool,
+    pub environment: &'request (dyn EnvironmentLookup + Send + Sync),
     pub prompter: &'request mut dyn Prompter,
 }
 
 pub async fn connection_listing(
     request: &mut ListingRequest<'_>,
 ) -> Result<(StaticToken, Vec<ListedModel>), AgentSetupError> {
-    match fetch_listing(request.base_url, &request.credential, request.target).await {
+    let first = fetch_listing(
+        request.base_url,
+        &request.credential,
+        request.target,
+        request.environment,
+    )
+    .await;
+    match first {
         Ok(models) => Ok((request.credential.clone(), models)),
         Err(error) => {
             if !request.repair || !matches!(&error, AgentSetupError::ListingRejected { .. }) {
@@ -143,7 +194,13 @@ pub async fn connection_listing(
                 }
             };
             let refreshed = resolve_credential(request.context, Some(&replacement))?;
-            let models = fetch_listing(request.base_url, &refreshed, request.target).await?;
+            let models = fetch_listing(
+                request.base_url,
+                &refreshed,
+                request.target,
+                request.environment,
+            )
+            .await?;
             Ok((refreshed, models))
         }
     }

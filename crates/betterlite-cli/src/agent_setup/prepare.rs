@@ -85,6 +85,7 @@ async fn listed_setup(
         credential,
         target: request.target,
         repair,
+        environment: request.environment,
         prompter: &mut *request.prompter,
     };
     let (active, listing) = connection_listing(&mut listing_request).await?;

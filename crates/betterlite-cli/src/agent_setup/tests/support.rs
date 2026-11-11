@@ -83,6 +83,13 @@ impl FakeEnvironment {
             home: Some(home.to_owned()),
         }
     }
+
+    pub(crate) fn without_home() -> Self {
+        Self {
+            variables: BTreeMap::new(),
+            home: None,
+        }
+    }
 }
 
 impl EnvironmentLookup for FakeEnvironment {

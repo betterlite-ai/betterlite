@@ -1,9 +1,12 @@
+async fn fetch(base_url: &str, target: Target) -> Result<Vec<ListedModel>, AgentSetupError> {
+    let environment = FakeEnvironment::without_home();
+    fetch_listing(base_url, &token("sk-test"), target, &environment).await
+}
+
 #[tokio::test]
 async fn listing_sends_the_claude_code_headers() {
     let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[("claude-3", None)]))]).await;
-    let models = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap();
+    let models = fetch(&proxy.base_url, Target::Claude).await.unwrap();
     assert_eq!(models.len(), 1);
     let requests = proxy.requests();
     assert_eq!(requests.len(), 1);
@@ -16,9 +19,7 @@ async fn listing_sends_the_claude_code_headers() {
 #[tokio::test]
 async fn listing_sends_only_the_bearer_for_codex() {
     let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[("codex-1", None)]))]).await;
-    let models = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Codex)
-        .await
-        .unwrap();
+    let models = fetch(&proxy.base_url, Target::Codex).await.unwrap();
     assert_eq!(models.len(), 1);
     let requests = proxy.requests();
     assert_eq!(requests[0].header("authorization"), Some("Bearer sk-test"));
@@ -33,9 +34,7 @@ async fn listing_does_not_follow_a_redirect() {
         Answer::Status(200, listing(&[("claude-3", None)])),
     ])
     .await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     assert!(matches!(error, AgentSetupError::ListingFailed { .. }));
     let requests = proxy.requests();
     assert_eq!(requests.len(), 1);
@@ -45,9 +44,7 @@ async fn listing_does_not_follow_a_redirect() {
 #[tokio::test]
 async fn listing_reports_a_rejected_key_401() {
     let proxy = MockProxy::start(vec![Answer::Status(401, "{}".to_owned())]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     let AgentSetupError::ListingRejected { status, .. } = &error else {
         panic!("expected a rejection, got {error:?}");
     };
@@ -60,9 +57,7 @@ async fn listing_reports_a_rejected_key_401() {
 #[tokio::test]
 async fn listing_reports_a_rejected_key_403() {
     let proxy = MockProxy::start(vec![Answer::Status(403, "{}".to_owned())]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     let AgentSetupError::ListingRejected { status, .. } = &error else {
         panic!("expected a rejection, got {error:?}");
     };
@@ -72,9 +67,7 @@ async fn listing_reports_a_rejected_key_403() {
 #[tokio::test]
 async fn listing_reports_another_status_as_a_proxy_health_problem() {
     let proxy = MockProxy::start(vec![Answer::Status(500, "{}".to_owned())]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     assert!(matches!(error, AgentSetupError::ListingFailed { .. }));
     let text = error.to_string();
     assert!(text.contains(&proxy.base_url));
@@ -84,18 +77,14 @@ async fn listing_reports_another_status_as_a_proxy_health_problem() {
 #[tokio::test]
 async fn listing_reports_a_bad_body_as_a_proxy_health_problem() {
     let proxy = MockProxy::start(vec![Answer::Status(200, "not json".to_owned())]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     assert!(matches!(error, AgentSetupError::ListingFailed { .. }));
 }
 
 #[tokio::test]
 async fn listing_empty_for_claude_names_claude_code() {
     let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[]))]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     assert!(matches!(error, AgentSetupError::ListingEmpty { .. }));
     let text = error.to_string();
     assert!(text.contains("no models for your key"));
@@ -106,9 +95,7 @@ async fn listing_empty_for_claude_names_claude_code() {
 #[tokio::test]
 async fn listing_empty_for_codex_names_codex() {
     let proxy = MockProxy::start(vec![Answer::Status(200, listing(&[]))]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Codex)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Codex).await.unwrap_err();
     assert!(matches!(error, AgentSetupError::ListingEmpty { .. }));
     assert!(
         error
@@ -123,9 +110,7 @@ async fn listing_unreachable_names_the_proxy_and_the_url_options() {
     let address = listener.local_addr().unwrap();
     drop(listener);
     let base_url = format!("http://{address}");
-    let error = fetch_listing(&base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&base_url, Target::Claude).await.unwrap_err();
     let AgentSetupError::ListingUnreachable {
         base_url: reported, ..
     } = &error
@@ -147,9 +132,7 @@ async fn listing_accepts_a_body_exactly_at_the_cap() {
     body.push_str(json);
     assert_eq!(body.len(), MAX_LISTING_BYTES);
     let proxy = MockProxy::start(vec![Answer::Status(200, body)]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     assert!(
         matches!(error, AgentSetupError::ListingEmpty { .. }),
         "{error:?}"
@@ -160,9 +143,7 @@ async fn listing_accepts_a_body_exactly_at_the_cap() {
 async fn listing_rejects_a_body_over_the_cap() {
     let body = "x".repeat(MAX_LISTING_BYTES.saturating_add(1));
     let proxy = MockProxy::start(vec![Answer::Status(200, body)]).await;
-    let error = fetch_listing(&proxy.base_url, &token("sk-test"), Target::Claude)
-        .await
-        .unwrap_err();
+    let error = fetch(&proxy.base_url, Target::Claude).await.unwrap_err();
     assert!(matches!(error, AgentSetupError::ListingTooLarge { .. }));
     assert!(error.to_string().contains(&proxy.base_url));
 }
@@ -172,6 +153,7 @@ async fn listing_repair_skips_a_non_rejected_failure() {
     let proxy = MockProxy::start(vec![Answer::Status(500, "{}".to_owned())]).await;
     let ctx = context(&proxy.base_url, Some("sk-old"));
     let mut prompter = ScriptedPrompter::new(Vec::new());
+    let environment = FakeEnvironment::without_home();
     let error = {
         let mut request = ListingRequest {
             context: &ctx,
@@ -179,6 +161,7 @@ async fn listing_repair_skips_a_non_rejected_failure() {
             credential: token("sk-old"),
             target: Target::Claude,
             repair: true,
+            environment: &environment,
             prompter: &mut prompter,
         };
         connection_listing(&mut request).await.unwrap_err()
@@ -244,6 +227,7 @@ async fn listing_repair_relists_with_the_replacement_key() {
     .await;
     let ctx = context(&proxy.base_url, Some("sk-old"));
     let mut prompter = ScriptedPrompter::new(vec![Reply::Secret("sk-new".to_owned())]);
+    let environment = FakeEnvironment::without_home();
     let (active, models) = {
         let mut request = ListingRequest {
             context: &ctx,
@@ -251,6 +235,7 @@ async fn listing_repair_relists_with_the_replacement_key() {
             credential: token("sk-old"),
             target: Target::Claude,
             repair: true,
+            environment: &environment,
             prompter: &mut prompter,
         };
         connection_listing(&mut request).await.unwrap()
@@ -281,6 +266,7 @@ async fn listing_repair_asks_again_for_an_empty_replacement() {
         Reply::Secret(String::new()),
         Reply::Secret("sk-new".to_owned()),
     ]);
+    let environment = FakeEnvironment::without_home();
     let (active, _models) = {
         let mut request = ListingRequest {
             context: &ctx,
@@ -288,6 +274,7 @@ async fn listing_repair_asks_again_for_an_empty_replacement() {
             credential: token("sk-old"),
             target: Target::Claude,
             repair: true,
+            environment: &environment,
             prompter: &mut prompter,
         };
         connection_listing(&mut request).await.unwrap()
@@ -301,6 +288,7 @@ async fn listing_repair_off_reports_the_rejection() {
     let proxy = MockProxy::start(vec![Answer::Status(401, "{}".to_owned())]).await;
     let ctx = context(&proxy.base_url, Some("sk-old"));
     let mut prompter = ScriptedPrompter::new(Vec::new());
+    let environment = FakeEnvironment::without_home();
     let error = {
         let mut request = ListingRequest {
             context: &ctx,
@@ -308,6 +296,7 @@ async fn listing_repair_off_reports_the_rejection() {
             credential: token("sk-old"),
             target: Target::Claude,
             repair: false,
+            environment: &environment,
             prompter: &mut prompter,
         };
         connection_listing(&mut request).await.unwrap_err()
@@ -326,6 +315,7 @@ async fn listing_repair_second_failure_uses_its_own_kind() {
     .await;
     let ctx = context(&proxy.base_url, Some("sk-old"));
     let mut prompter = ScriptedPrompter::new(vec![Reply::Secret("sk-new".to_owned())]);
+    let environment = FakeEnvironment::without_home();
     let error = {
         let mut request = ListingRequest {
             context: &ctx,
@@ -333,6 +323,7 @@ async fn listing_repair_second_failure_uses_its_own_kind() {
             credential: token("sk-old"),
             target: Target::Claude,
             repair: true,
+            environment: &environment,
             prompter: &mut prompter,
         };
         connection_listing(&mut request).await.unwrap_err()
@@ -350,6 +341,7 @@ async fn listing_repair_rejects_a_bad_replacement_key() {
         Reply::Secret(String::new()),
         Reply::Secret("  ".to_owned()),
     ]);
+    let environment = FakeEnvironment::without_home();
     let error = {
         let mut request = ListingRequest {
             context: &ctx,
@@ -357,6 +349,7 @@ async fn listing_repair_rejects_a_bad_replacement_key() {
             credential: token("sk-old"),
             target: Target::Claude,
             repair: true,
+            environment: &environment,
             prompter: &mut prompter,
         };
         connection_listing(&mut request).await.unwrap_err()
