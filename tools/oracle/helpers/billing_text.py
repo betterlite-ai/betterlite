@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 from litellm.litellm_core_utils.llm_response_utils.get_formatted_prompt import (
-    get_formatted_prompt,
+    get_formatted_prompt,  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_formatted_prompt.py#L5
 )
 from litellm.types.utils import (
     Choices,
@@ -12,7 +12,10 @@ from litellm.types.utils import (
     ModelResponseStream,
     StreamingChoices,
 )
-from litellm.utils import _count_characters, get_response_string
+from litellm.utils import (
+    _count_characters,  # type: ignore[unused-ignore]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5383
+    get_response_string,
+)
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -42,9 +45,13 @@ class ResponseInput(TypedDict, total=False):
     choices: list[ChoiceInput]
 
 
-class Call(TypedDict, total=False):
-    function: Literal["count_characters", "formatted_prompt", "response_string"]
+class CountCall(TypedDict):
+    function: Literal["count_characters"]
     text: str
+
+
+class PromptCall(TypedDict):
+    function: Literal["formatted_prompt"]
     call_type: Literal[
         "acompletion",
         "completion",
@@ -55,7 +62,14 @@ class Call(TypedDict, total=False):
         "moderation",
     ]
     data: dict[str, Json]
+
+
+class ResponseCall(TypedDict):
+    function: Literal["response_string"]
     response: ResponseInput
+
+
+Call: TypeAlias = CountCall | PromptCall | ResponseCall
 
 
 class Input(TypedDict):
