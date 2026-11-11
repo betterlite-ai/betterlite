@@ -447,7 +447,7 @@ fn a_fallback_module_without_messages_gets_an_empty_template() {
 fn a_fallback_module_without_a_model_is_rejected(#[case] params: &str) {
     let messages = list(r#"[{"role":"user","content":"hi"}]"#);
     let error = transform_request("m", &messages, &object(params)).unwrap_err();
-    assert!(matches!(error, SapChatError::FallbackModel));
+    assert!(matches!(error, SapChatError::Fallback(_)));
     assert_eq!(error.status(), None);
 }
 
@@ -456,7 +456,7 @@ fn a_fallback_module_that_is_not_an_object_is_rejected() {
     let messages = list(r#"[{"role":"user","content":"hi"}]"#);
     let error = transform_request("m", &messages, &object(r#"{"fallback_sap_modules":["x"]}"#))
         .unwrap_err();
-    assert!(matches!(error, SapChatError::FallbackEntry));
+    assert!(matches!(error, SapChatError::Fallback(_)));
 }
 
 #[test]

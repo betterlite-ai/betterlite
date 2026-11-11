@@ -7,9 +7,7 @@ use crate::sap_models::masking::MaskingModuleConfig;
 use crate::sap_models::presence::{Field, Given, optional};
 use crate::sap_models::validate_masking_module;
 
-pub const DEFAULT_MODEL_VERSION: &str = "latest";
 const INPUT_TYPES: [&str; 3] = ["text", "document", "query"];
-const BOUNDED_KEYS: [&str; 2] = ["timeout", "max_retries"];
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(try_from = "i64")]
@@ -116,24 +114,13 @@ fn model_fields(model: &str, optional_params: &Object) -> Result<Object, SapEmbe
             parameters(optional_params.get("parameters"))?,
         ),
     ]);
-    for name in BOUNDED_KEYS {
+    for name in ["timeout", "max_retries"] {
         if let Some(given) = optional_params
             .get(name)
             .filter(|value| !matches!(value, Json::Null))
         {
             fields.insert(name.to_owned(), given.clone());
         }
-    }
-    Ok(fields)
-}
-
-fn input_fields(
-    input: &RequestInput,
-    optional_params: &Object,
-) -> Result<Object, SapEmbeddingError> {
-    let mut fields = Object::from([(String::from("text"), embedding_text(input)?)]);
-    if let Some(kind) = input_type(optional_params.get("type"))? {
-        fields.insert(String::from("type"), kind);
     }
     Ok(fields)
 }
@@ -156,6 +143,10 @@ pub fn transform_embedding_request(
     {
         modules.insert(String::from("masking"), validate_masking_module(masking)?);
     }
+    let mut input_fields = Object::from([(String::from("text"), embedding_text(input)?)]);
+    if let Some(kind) = input_type(optional_params.get("type"))? {
+        input_fields.insert(String::from("type"), kind);
+    }
     let body = Json::Object(Object::from([
         (
             String::from("config"),
@@ -164,10 +155,7 @@ pub fn transform_embedding_request(
                 Json::Object(modules),
             )])),
         ),
-        (
-            String::from("input"),
-            Json::Object(input_fields(input, optional_params)?),
-        ),
+        (String::from("input"), Json::Object(input_fields)),
     ]));
     let text = serde_json::to_string(&body).map_err(SapEmbeddingError::Encode)?;
     let request: EmbeddingRequest =
@@ -186,7 +174,7 @@ fn parameters(given: Option<&Json>) -> Result<Json, SapEmbeddingError> {
 
 fn version(given: Option<&Json>) -> Result<Json, SapEmbeddingError> {
     match given {
-        None | Some(Json::Null) => Ok(Json::Text(DEFAULT_MODEL_VERSION.to_owned())),
+        None | Some(Json::Null) => Ok(Json::Text(String::from("latest"))),
         Some(value @ Json::Text(_)) => Ok(value.clone()),
         Some(_) => Err(SapEmbeddingError::Version),
     }

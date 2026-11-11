@@ -15,14 +15,8 @@ pub enum SapChatError {
     Model(#[from] SapModelError),
     #[error(transparent)]
     Orchestration(#[from] SapOrchestrationError),
-    #[error("`fallback_sap_modules` must be a list")]
-    FallbackModules,
-    #[error("each entry in `fallback_sap_modules` must be an object")]
-    FallbackEntry,
-    #[error("Each entry in `fallback_sap_modules` must include a 'model' key.")]
-    FallbackModel,
-    #[error("`fallback_sap_modules` messages must be a list")]
-    FallbackMessages,
+    #[error("{0}")]
+    Fallback(&'static str),
     #[error("`tools` must be a list")]
     Tools,
     #[error("`response_format` must be an object")]
@@ -38,39 +32,26 @@ pub enum SapChatError {
 impl SapChatError {
     // LiteLLM wraps a credentials ValueError as a 400 and lets every other setup failure through
     pub(crate) fn credentials(error: SapAuthError) -> Self {
-        match error {
-            wrapped @ (SapAuthError::NoCredentials
-            | SapAuthError::MissingCredentials
-            | SapAuthError::IncompleteCredentials) => Self::Orchestration(SapOrchestrationError {
+        let wrapped = matches!(
+            error,
+            SapAuthError::NoCredentials
+                | SapAuthError::MissingCredentials
+                | SapAuthError::IncompleteCredentials
+        );
+        if wrapped {
+            return Self::Orchestration(SapOrchestrationError {
                 status_code: CREDENTIALS_STATUS,
-                message: wrapped.to_string(),
-            }),
-            other @ (SapAuthError::ConfigFileNotFound { .. }
-            | SapAuthError::ConfigNotJson { .. }
-            | SapAuthError::ConfigRead { .. }
-            | SapAuthError::TokenRequest { .. }
-            | SapAuthError::NoOrchestrationDeployment
-            | SapAuthError::DeploymentEntry
-            | SapAuthError::ConfigurationLookup { .. }
-            | SapAuthError::InvalidHeader { .. }) => Self::Auth(other),
+                message: error.to_string(),
+            });
         }
+        Self::Auth(error)
     }
 
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
-        match self {
-            Self::Orchestration(error) => Some(error.status_code),
-            Self::Auth(_)
-            | Self::Model(_)
-            | Self::FallbackModules
-            | Self::FallbackEntry
-            | Self::FallbackModel
-            | Self::FallbackMessages
-            | Self::Tools
-            | Self::ResponseFormat
-            | Self::PlaceholderDefaults
-            | Self::StreamOptions
-            | Self::Response(_) => None,
+        if let Self::Orchestration(error) = self {
+            return Some(error.status_code);
         }
+        None
     }
 }

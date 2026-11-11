@@ -3,7 +3,6 @@ import json
 import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, cast
@@ -52,25 +51,10 @@ def optional_string(value: Json) -> str | None:
     return string_value(value, "string")
 
 
-@dataclass
-class Session:
-    token: str
-    base_url: str
-    resource_group: str
-    deployment_url: str
-
-
-def session_value(call: dict[str, Json]) -> Session | None:
-    value = call.get("session")
-    if value is None:
-        return None
-    fields = object_value(value, "session")
-    return Session(
-        token=string_value(fields.get("token"), "token"),
-        base_url=optional_string(fields.get("base_url")) or BASE_URL,
-        resource_group=optional_string(fields.get("resource_group")) or RESOURCE_GROUP,
-        deployment_url=string_value(fields.get("deployment_url"), "deployment_url"),
-    )
+def session_field(call: dict[str, Json], name: str, default: str = "") -> str:
+    session = object_value(call.get("session") or {}, "session")
+    found = optional_string(session.get(name))
+    return default if found is None else found
 
 
 @contextmanager
@@ -105,31 +89,33 @@ def patched_environment(call: dict[str, Json]) -> Generator[None, None, None]:
         yield
 
 
-class TokenCreator:
-    def __init__(self, token: str) -> None:
-        self.token = token
-
-    def __call__(self) -> str:
-        return self.token
-
-
 def fixed_token_creator(
     token: str,
     base_url: str,
     resource_group: str,
     *_args: object,
     **_kwargs: object,
-) -> tuple[TokenCreator, str, str]:
-    return TokenCreator(token), base_url, resource_group
+) -> tuple[Callable[[], str], str, str]:
+    return (lambda: token), base_url, resource_group
+
+
+def creator_for(
+    call: dict[str, Json], fallback: str = AUTHORIZATION
+) -> Callable[..., tuple[Callable[[], str], str, str]]:
+    return partial(
+        fixed_token_creator,
+        session_field(call, "token", fallback),
+        session_field(call, "base_url", BASE_URL),
+        session_field(call, "resource_group", RESOURCE_GROUP),
+    )
 
 
 @contextmanager
-def patched_creator(session: Session | None) -> Generator[None, None, None]:
-    if session is None:
+def patched_creator(call: dict[str, Json]) -> Generator[None, None, None]:
+    if call.get("session") is None:
         yield
         return
-    creator = partial(fixed_token_creator, session.token, session.base_url, session.resource_group)
-    with patch.object(sap_chat, "get_token_creator", creator):
+    with patch.object(sap_chat, "get_token_creator", creator_for(call)):
         yield
 
 
@@ -139,18 +125,11 @@ def header_pairs(headers: dict[str, str]) -> Json:
     return cast(Json, pairs)
 
 
-def chat_config(session: Session | None) -> sap_chat.GenAIHubOrchestrationConfig:
-    config = sap_chat.GenAIHubOrchestrationConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-    if session is not None:
-        config.__dict__["deployment_url"] = session.deployment_url  # pyright: ignore[reportUnknownMemberType,reportIndexIssue]
-    return config
-
-
 def chat_environment(call: dict[str, Json]) -> Json:
-    session = session_value(call)
     service_key = optional_string(call.get("service_key"))
-    with patched_environment(call), patched_creator(session):
-        config = chat_config(session)
+    with patched_environment(call), patched_creator(call):
+        config = sap_chat.GenAIHubOrchestrationConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+        config.__dict__["deployment_url"] = session_field(call, "deployment_url")  # pyright: ignore[reportUnknownMemberType,reportIndexIssue]
         headers = cast(
             dict[str, str],
             config.validate_environment({}, "m", [], {}, {}, api_key=service_key),  # pyright: ignore[reportUnknownMemberType]
@@ -160,9 +139,9 @@ def chat_environment(call: dict[str, Json]) -> Json:
 
 
 def chat_request(call: dict[str, Json]) -> Json:
-    params = object_value(call.get("optional_params") or {}, "optional_params")
-    messages = array_value(call.get("messages") or [], "messages")
     config = sap_chat.GenAIHubOrchestrationConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+    messages = array_value(call.get("messages") or [], "messages")
+    params = object_value(call.get("optional_params") or {}, "optional_params")
     return cast(
         Json,
         config.transform_request(  # pyright: ignore[reportUnknownMemberType]
@@ -200,16 +179,6 @@ class Recorder:
         )
 
 
-def response_usage(usage: Json) -> Json:
-    if usage is None:
-        return None
-    fields = object_value(usage, "usage")
-    return {
-        name: fields.get(name)
-        for name in ("prompt_tokens", "completion_tokens", "total_tokens")
-    }
-
-
 def chat_response_view(response: ModelResponse) -> Json:
     dumped = cast(dict[str, Json], response.model_dump(mode="json", exclude_none=True))  # pyright: ignore[reportUnknownMemberType]
     choices: list[Json] = []
@@ -223,13 +192,20 @@ def chat_response_view(response: ModelResponse) -> Json:
                 "message": {"role": message.get("role"), "content": message.get("content")},
             }
         )
+    usage = dumped.get("usage")
+    usage_fields = None if usage is None else object_value(usage, "usage")
     return {
         "id": dumped.get("id"),
         "object": dumped.get("object"),
         "created": dumped.get("created"),
         "model": dumped.get("model"),
         "choices": choices,
-        "usage": response_usage(dumped.get("usage")),
+        "usage": None
+        if usage_fields is None
+        else {
+            name: usage_fields.get(name)
+            for name in ("prompt_tokens", "completion_tokens", "total_tokens")
+        },
     }
 
 
@@ -239,15 +215,19 @@ def chat_response(call: dict[str, Json]) -> Json:
     optional_params: dict[str, Json] = {}
     if call.get("response_format") is not None:
         optional_params["response_format"] = call.get("response_format")
-    raw_text = string_value(call.get("raw_text"), "raw_text")
-    messages = array_value(call.get("messages") or [], "messages")
     response = config.transform_response(  # pyright: ignore[reportUnknownMemberType]
         model=string_value(call.get("model"), "model"),
-        raw_response=cast(httpx.Response, FakeResponse(raw_text)),
+        raw_response=cast(
+            httpx.Response,
+            FakeResponse(string_value(call.get("raw_text"), "raw_text")),
+        ),
         model_response=ModelResponse(),
         logging_obj=cast("sap_chat.LiteLLMLoggingObj", recorder),
         request_data=cast(dict[str, Json], call.get("request_data") or {}),
-        messages=cast("list[AllMessageValues]", messages),
+        messages=cast(
+            "list[AllMessageValues]",
+            array_value(call.get("messages") or [], "messages"),
+        ),
         optional_params=optional_params,
         litellm_params={},
         encoding=None,
@@ -257,49 +237,21 @@ def chat_response(call: dict[str, Json]) -> Json:
     return {"response": chat_response_view(response), "post_call": recorder.calls}
 
 
-def embedding_config(session: Session | None) -> sap_embed.GenAIHubEmbeddingConfig:
-    fixture = session or Session(AUTHORIZATION, BASE_URL, RESOURCE_GROUP, "")
-    creator = partial(fixed_token_creator, fixture.token, fixture.base_url, fixture.resource_group)
-    with patch.object(sap_embed, "get_token_creator", creator):
+def embedding_config(call: dict[str, Json]) -> sap_embed.GenAIHubEmbeddingConfig:
+    with patch.object(sap_embed, "get_token_creator", creator_for(call)):
         config = sap_embed.GenAIHubEmbeddingConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-    config.__dict__["deployment_url"] = fixture.deployment_url  # pyright: ignore[reportUnknownMemberType,reportIndexIssue]
+    config.__dict__["deployment_url"] = session_field(call, "deployment_url")  # pyright: ignore[reportUnknownMemberType,reportIndexIssue]
     return config
-
-
-def embedding_prepare(session: Session | None) -> Json:
-    config = embedding_config(session)
-    headers = cast(dict[str, str], config.validate_environment({}))  # pyright: ignore[reportUnknownMemberType]
-    url = config.get_complete_url(None, None, "m", {}, {}, None)  # pyright: ignore[reportUnknownMemberType]
-    return {"headers": header_pairs(headers), "url": url}
-
-
-def embedding_view(response: EmbeddingResponse) -> Json:
-    dumped = cast(dict[str, Json], response.model_dump(mode="json", exclude_none=True))  # pyright: ignore[reportUnknownMemberType]
-    data: list[Json] = []
-    for item in array_value(dumped.get("data") or [], "data"):
-        fields = object_value(item, "embedding")
-        data.append(
-            {
-                "object": fields.get("object"),
-                "embedding": fields.get("embedding"),
-                "index": fields.get("index"),
-            }
-        )
-    return {
-        "object": dumped.get("object"),
-        "model": dumped.get("model"),
-        "data": data,
-        "usage": response_usage(dumped.get("usage")),
-    }
 
 
 def embedding_call(call: dict[str, Json]) -> Json:
     function = string_value(call.get("function"), "function")
-    session = session_value(call)
+    config = embedding_config(call)
     if function == "prepare":
-        return embedding_prepare(session)
+        headers = cast(dict[str, str], config.validate_environment({}))  # pyright: ignore[reportUnknownMemberType]
+        url = config.get_complete_url(None, None, "m", {}, {}, None)  # pyright: ignore[reportUnknownMemberType]
+        return {"headers": header_pairs(headers), "url": url}
     if function == "response":
-        config = embedding_config(session)
         response = config.transform_embedding_response(  # pyright: ignore[reportUnknownMemberType]
             model="m",
             raw_response=cast(
@@ -313,16 +265,14 @@ def embedding_call(call: dict[str, Json]) -> Json:
             optional_params={},
             litellm_params={},
         )
-        return embedding_view(response)
+        return cast(Json, response.model_dump(mode="json"))  # pyright: ignore[reportUnknownMemberType]
     if function == "error_class":
-        config = embedding_config(session)
         error = config.get_error_class(  # pyright: ignore[reportUnknownMemberType]
             string_value(call.get("message"), "message"),
             cast(int, call.get("status")),
             {},
         )
         return {"status": error.status_code, "message": error.message}
-    config = embedding_config(session)
     return cast(
         Json,
         config.transform_embedding_request(  # pyright: ignore[reportUnknownMemberType]
@@ -334,20 +284,10 @@ def embedding_call(call: dict[str, Json]) -> Json:
     )
 
 
-def outcome(function: Callable[[dict[str, Json]], Json], call: Json) -> Json:
-    try:
-        return {"ok": True, "value": function(object_value(call, "call"))}
-    except Exception as error:  # noqa: BLE001 - the helper reports whichever error the call raised
-        carried: object = getattr(error, "status_code", None)
-        status = carried if isinstance(carried, int) and not isinstance(carried, bool) else None
-        return {"ok": False, "status": status}
-
-
 def supported_params(call: dict[str, Json]) -> Json:
     model = string_value(call.get("model"), "model")
-    family = optional_string(call.get("family")) or "chat"
-    if family == "embedding":
-        config = embedding_config(None)
+    if optional_string(call.get("family")) == "embedding":
+        config = embedding_config(call)
         return list(cast(list[Json], config.get_supported_openai_params(model)))  # pyright: ignore[reportUnknownMemberType]
     chat = sap_chat.GenAIHubOrchestrationConfig()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
     return list(cast(list[Json], chat.get_supported_openai_params(model)))  # pyright: ignore[reportUnknownMemberType]
@@ -366,4 +306,12 @@ def run(input_value: dict[str, Json]) -> Json:
     function = functions.get(operation)
     if function is None:
         raise ValueError(f"unknown operation {operation}")
-    return [outcome(function, call) for call in calls]
+    outcomes: list[Json] = []
+    for call in calls:
+        try:
+            outcomes.append({"ok": True, "value": function(object_value(call, "call"))})
+        except Exception as error:  # noqa: BLE001 - the helper reports whichever error the call raised
+            carried: object = getattr(error, "status_code", None)
+            status = carried if isinstance(carried, int) and not isinstance(carried, bool) else None
+            outcomes.append({"ok": False, "status": status})
+    return outcomes

@@ -4,24 +4,17 @@ use super::error::SapChatError;
 use crate::sap_models::validate_chat_completion_tool;
 use crate::sap_models::validate_response_format;
 
-pub(crate) const DEFAULT_MODEL_VERSION: &str = "latest";
 const OPTIONAL_MODULES: [&str; 4] = ["grounding", "masking", "filtering", "translation"];
 
-struct PromptParts {
-    version: Json,
-    tools: Vec<Json>,
-    format: Option<Json>,
-    defaults: Option<Object>,
-    params: Object,
-}
+type PromptParts = (Json, Vec<Json>, Option<Json>, Option<Object>);
 
-fn prompt_parts(model_name: &str, mut params: Object) -> Result<PromptParts, SapChatError> {
+fn prompt_parts(model_name: &str, params: &mut Object) -> Result<PromptParts, SapChatError> {
     // SAP AI Core rejects strict as a model param for GPT models, while Anthropic models accept it
     if model_name.starts_with("gpt") {
         params.shift_remove("strict");
     }
     let version = match params.shift_remove("model_version") {
-        None | Some(Json::Null) => Json::Text(DEFAULT_MODEL_VERSION.to_owned()),
+        None | Some(Json::Null) => Json::Text(String::from("latest")),
         Some(given) => given,
     };
     let tools = match params.shift_remove("tools") {
@@ -42,42 +35,15 @@ fn prompt_parts(model_name: &str, mut params: Object) -> Result<PromptParts, Sap
         Some(Json::Object(fields)) => (!fields.is_empty()).then_some(fields),
         Some(_) => return Err(SapChatError::PlaceholderDefaults),
     };
-    Ok(PromptParts {
-        version,
-        tools,
-        format,
-        defaults,
-        params,
-    })
+    Ok((version, tools, format, defaults))
 }
 
 pub(crate) fn build_prompt_module(
     model_name: &str,
     template: &[Json],
-    params: Object,
+    mut params: Object,
 ) -> Result<Json, SapChatError> {
-    let PromptParts {
-        version,
-        tools,
-        format,
-        defaults,
-        params: mut remaining,
-    } = prompt_parts(model_name, params)?;
-    let optional = optional_modules(&mut remaining);
-    let prompt = prompt_payload(template, tools, format, defaults);
-    let model = model_details(model_name, remaining, version);
-    let mut module = Object::from([(
-        String::from("prompt_templating"),
-        Json::Object(Object::from([
-            (String::from("prompt"), Json::Object(prompt)),
-            (String::from("model"), Json::Object(model)),
-        ])),
-    )]);
-    module.extend(optional);
-    Ok(Json::Object(module))
-}
-
-fn optional_modules(params: &mut Object) -> Object {
+    let (version, tools, format, defaults) = prompt_parts(model_name, &mut params)?;
     let mut optional = Object::new();
     for name in OPTIONAL_MODULES {
         let moves = params
@@ -87,15 +53,21 @@ fn optional_modules(params: &mut Object) -> Object {
             optional.insert(name.to_owned(), given);
         }
     }
-    optional
-}
-
-fn model_details(model_name: &str, params: Object, version: Json) -> Object {
-    Object::from([
+    let prompt = prompt_payload(template, tools, format, defaults);
+    let model = Object::from([
         (String::from("name"), Json::Text(model_name.to_owned())),
         (String::from("params"), Json::Object(params)),
         (String::from("version"), version),
-    ])
+    ]);
+    let mut module = Object::from([(
+        String::from("prompt_templating"),
+        Json::Object(Object::from([
+            (String::from("prompt"), Json::Object(prompt)),
+            (String::from("model"), Json::Object(model)),
+        ])),
+    )]);
+    module.extend(optional);
+    Ok(Json::Object(module))
 }
 
 fn prompt_payload(

@@ -8,7 +8,6 @@ use crate::sap_stream::Mode;
 
 const FENCE_PATTERN: &str = r"(?s)^```(?:json)?\s*\n?(.*?)\n?```$";
 const JSON_FORMATS: [&str; 2] = ["json_object", "json_schema"];
-const ANTHROPIC_PREFIX: &str = "anthropic";
 
 pub struct PostCall<'call> {
     pub input: &'call [Json],
@@ -61,7 +60,7 @@ pub const fn get_model_response_iterator(sync_stream: bool) -> Mode {
 }
 
 fn wants_fence_strip(model: &str, response_format: Option<&Json>) -> bool {
-    if !model.starts_with(ANTHROPIC_PREFIX) {
+    if !model.starts_with("anthropic") {
         return false;
     }
     let kind = response_format
