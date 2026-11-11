@@ -1,0 +1,24 @@
+# Each AZURE_SENTINEL_* variable and its AZURE_* fallback (AZURE_SENTINEL_TENANT_ID, AZURE_SENTINEL_CLIENT_SECRET, AZURE_SENTINEL_STREAM_NAME and the audit stream) is read in LiteLLM's order, and an empty value counts as unset
+kind: helper
+name: azure-sentinel-required-env-vars
+call:
+  b4002:
+    scenarios:
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_TENANT_ID: tenant-fallback, AZURE_CLIENT_ID: client-fallback, AZURE_CLIENT_SECRET: secret-fallback}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-sentinel, AZURE_TENANT_ID: tenant-fallback, AZURE_SENTINEL_CLIENT_ID: client-sentinel, AZURE_CLIENT_ID: client-fallback, AZURE_SENTINEL_CLIENT_SECRET: secret-sentinel, AZURE_CLIENT_SECRET: secret-fallback}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: "", AZURE_TENANT_ID: tenant-fallback, AZURE_SENTINEL_CLIENT_ID: "", AZURE_CLIENT_ID: client-fallback, AZURE_SENTINEL_CLIENT_SECRET: "", AZURE_CLIENT_SECRET: secret-fallback}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1, AZURE_SENTINEL_STREAM_NAME: Custom-Models}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1, AZURE_SENTINEL_STREAM_NAME: Custom-Models, AZURE_SENTINEL_AUDIT_STREAM_NAME: Custom-Audit}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1, AZURE_SENTINEL_STREAM_NAME: "", AZURE_SENTINEL_AUDIT_STREAM_NAME: ""}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1}
+        init: {stream_name: Custom-Arg}
+      - environment: {AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: "", AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_CLIENT_SECRET: ""}
+      - environment: {AZURE_TENANT_ID: tenant-1}
+env: {}
+compare: {ignore: []}
