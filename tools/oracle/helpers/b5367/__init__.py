@@ -64,7 +64,7 @@ def install_state(input_value: Input, markers: Markers) -> None:
     )
     STATE.provider_list = [] if providers is None else providers
     STATE._custom_providers = [] if custom_providers is None else custom_providers  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1528
-    LOGGING._init_custom_logger_compatible_class = Recorder(input_value.get("resolver"), markers)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4502
+    LOGGING._init_custom_logger_compatible_class = Recorder(input_value.get("resolver"), markers)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4502
     UTILS.get_litellm_logging_class = LoggingClassGetter()
     UTILS.callback_list = ["held by the case"]
 

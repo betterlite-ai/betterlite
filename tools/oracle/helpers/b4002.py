@@ -59,7 +59,13 @@ class Scenario:
 
 
 @final
-class AuditRecord(TypedDict):
+class SentModel(TypedDict):
+    id: str
+    status: str
+
+
+@final
+class SentAudit(TypedDict):
     id: str
     updated_at: str
     changed_by: str
@@ -71,15 +77,7 @@ class AuditRecord(TypedDict):
     updated_values: str | None
 
 
-@final
-class StatusRecord(TypedDict):
-    id: str
-    status: str
-
-
-SentRecord: TypeAlias = AuditRecord | StatusRecord
-
-
+SentRecord: TypeAlias = SentAudit | SentModel
 SENT_BATCH = TypeAdapter(list[SentRecord])
 SCENARIOS = TypeAdapter(list[Scenario])
 
