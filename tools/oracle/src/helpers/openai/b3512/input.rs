@@ -36,7 +36,7 @@ pub(crate) struct SignStep {
     pub(crate) state: String,
     pub(crate) question: String,
     pub(crate) instructions: String,
-    pub(crate) now: i64,
+    pub(crate) now: u64,
 }
 
 #[derive(Debug, Deserialize)]

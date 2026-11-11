@@ -57,10 +57,10 @@ fn config_step() -> Value {
 }
 
 fn sign_step(case: &SignStep) -> HelperResult {
-    let now = case.now;
+    let now = epoch(case.now)?;
     let config = StrandsDeciderDecisionsConfig {
         credentials: None,
-        clock: Arc::new(move || epoch(now)),
+        clock: Arc::new(move || now),
     };
     let request = ir_request(&case.state, &case.question, &case.instructions);
     let wire = config
@@ -157,11 +157,10 @@ fn ir_request(state: &str, question: &str, instructions: &str) -> ir::DecisionRe
     }
 }
 
-fn epoch(seconds: i64) -> SystemTime {
-    u64::try_from(seconds)
-        .ok()
-        .and_then(|bounded| UNIX_EPOCH.checked_add(Duration::from_secs(bounded)))
-        .unwrap_or(UNIX_EPOCH)
+fn epoch(seconds: u64) -> HelperResult<SystemTime> {
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(seconds))
+        .ok_or_else(|| helper_error("the signing time overflows SystemTime"))
 }
 
 fn helper_error(message: &str) -> Box<HelperError> {
