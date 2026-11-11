@@ -137,3 +137,24 @@ async fn extra_query_overlay_rejects_a_wrong_typed_page() {
         "the page field does not have the declared type"
     );
 }
+
+#[tokio::test]
+async fn extra_query_overlay_rejects_a_wrong_typed_source() {
+    let values = kwargs();
+    let request = call_with_query(
+        None,
+        None,
+        None,
+        map(&[("source", Json::Bool(false))]),
+        &values,
+    );
+    let failure = failure_of(request).await;
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a wrong-typed field is a 400, not a provider error");
+    };
+    assert_eq!(details.body_param.as_deref(), Some("source"));
+    assert_eq!(
+        details.message,
+        "the source field does not have the declared type"
+    );
+}
