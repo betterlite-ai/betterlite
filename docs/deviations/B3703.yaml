@@ -1,0 +1,14 @@
+task: B3703
+deviations:
+  - what: The info log line on a heuristics hit names the keyword and the ratio but leaves out the user's text.
+    why: LiteLLM logs "Rejected user input - {user_input}", which copies a possibly sensitive prompt into the proxy log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L142-L145
+  - what: A DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD value that is not a finite decimal (text, nan, inf) fails config loading with an error that names the variable.
+    why: Python fails at import with a ValueError for text, and accepts nan and inf, which make every comparison false or true; a finite Decimal keeps the strict comparison exact.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1886
+  - what: Verbose output has no print to stdout when litellm.set_verbose is on; only tracing log lines are written.
+    why: betterlite has no global verbose flag, and the repo rules forbid global state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L85-L86
+  - what: The model call goes through an injected InjectionJudge trait instead of llm_router.acompletion.
+    why: betterlite-guardrails cannot depend on the router or server crates; the server implements the trait over its router.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L255-L264

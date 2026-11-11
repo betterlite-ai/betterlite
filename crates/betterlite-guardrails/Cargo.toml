@@ -41,7 +41,7 @@ serde_with = { version = "3.24.0", default-features = false, features = ["macros
 sha2.workspace = true
 strfmt = "0.2.6"
 thiserror.workspace = true
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tracing.workspace = true
 tree-sitter = "0.27.1"
 tree-sitter-python = "0.25.0"
