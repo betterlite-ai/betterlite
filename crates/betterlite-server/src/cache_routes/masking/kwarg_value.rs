@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_redis::redis_connection_settings::model::nodes::{
     ClusterNodeInput, SentinelNodeInput,
@@ -44,31 +46,41 @@ where
     }
 }
 
-impl KwargValue for Vec<ClusterNodeInput> {
+impl<T> KwargValue for Vec<T>
+where
+    T: KwargValue,
+{
     fn kwarg(&self) -> Json {
-        Json::List(
+        Json::List(self.iter().map(KwargValue::kwarg).collect())
+    }
+}
+
+impl<T> KwargValue for BTreeMap<String, T>
+where
+    T: KwargValue,
+{
+    fn kwarg(&self) -> Json {
+        Json::Object(
             self.iter()
-                .map(|node| {
-                    let mut fields = Extra::new();
-                    fields.insert("host".to_owned(), node.host.kwarg());
-                    fields.insert("port".to_owned(), node.port.kwarg());
-                    Json::Object(fields)
-                })
+                .map(|(name, value)| (name.clone(), value.kwarg()))
                 .collect(),
         )
     }
 }
 
-impl KwargValue for Vec<SentinelNodeInput> {
+impl KwargValue for ClusterNodeInput {
     fn kwarg(&self) -> Json {
-        Json::List(
-            self.iter()
-                .map(|node| {
-                    let SentinelNodeInput::Tuple((host, port)) = node;
-                    Json::List(vec![host.kwarg(), port.kwarg()])
-                })
-                .collect(),
-        )
+        let mut fields = Extra::new();
+        fields.insert("host".to_owned(), self.host.kwarg());
+        fields.insert("port".to_owned(), self.port.kwarg());
+        Json::Object(fields)
+    }
+}
+
+impl KwargValue for SentinelNodeInput {
+    fn kwarg(&self) -> Json {
+        let Self::Tuple((host, port)) = self;
+        Json::List(vec![host.kwarg(), port.kwarg()])
     }
 }
 
@@ -88,13 +100,8 @@ impl KwargValue for PassthroughValue {
             Self::Bool(flag) => flag.kwarg(),
             Self::Number(number) => number.kwarg(),
             Self::Text(text) => text.kwarg(),
-            Self::List(items) => Json::List(items.iter().map(KwargValue::kwarg).collect()),
-            Self::Map(fields) => Json::Object(
-                fields
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.kwarg()))
-                    .collect(),
-            ),
+            Self::List(items) => items.kwarg(),
+            Self::Map(fields) => fields.kwarg(),
         }
     }
 }
