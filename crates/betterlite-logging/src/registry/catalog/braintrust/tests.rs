@@ -208,17 +208,22 @@ fn fixture(replies: &[&'static str]) -> (BraintrustAdapter<Captured>, Captured, 
     (adapter, capture, tracker)
 }
 
-fn event_with(requester: &str, call_type: &str, response: &str) -> LoggerEvent {
-    let payload = PAYLOAD
-        .replace("__REQUESTER__", requester)
-        .replace("__CALL_TYPE__", call_type)
-        .replace("__RESPONSE__", response);
+fn event_of(payload: &str) -> LoggerEvent {
     LoggerEvent {
-        payload: Arc::new(serde_json::from_str(&payload).expect("the fixture payload decodes")),
+        payload: Arc::new(serde_json::from_str(payload).expect("the fixture payload decodes")),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
         stream: false,
         guardrail_snapshot: None,
     }
+}
+
+fn event_with(requester: &str, call_type: &str, response: &str) -> LoggerEvent {
+    event_of(
+        &PAYLOAD
+            .replace("__REQUESTER__", requester)
+            .replace("__CALL_TYPE__", call_type)
+            .replace("__RESPONSE__", response),
+    )
 }
 
 fn json(text: &str) -> Json {
@@ -432,15 +437,60 @@ fn an_invalid_start_time_is_reported() {
         .replace("__REQUESTER__", REQUESTER)
         .replace("__CALL_TYPE__", "completion")
         .replace("__RESPONSE__", CHAT_RESPONSE);
-    let event = LoggerEvent {
-        payload: Arc::new(serde_json::from_str(&broken).expect("the fixture payload decodes")),
-        dynamic_params: Arc::new(Json::Object(IndexMap::new())),
-        stream: false,
-        guardrail_snapshot: None,
-    };
     let error = adapter
-        .log_success_event(&event)
+        .log_success_event(&event_of(&broken))
         .expect_err("the event is rejected");
     assert!(matches!(error, LoggerError::Delivery { callback, .. } if callback == "braintrust"));
     assert!(capture.requests().is_empty());
+}
+
+#[tokio::test]
+async fn a_cost_failure_posts_a_null_total_cost() {
+    let (adapter, capture, tracker) = fixture(&[]);
+    let event = event_of(
+        &PAYLOAD
+            .replace(
+                r#""response_cost": 0.5,"#,
+                r#""response_cost": 0.5, "response_cost_failure_debug_info": {"error": "no price"},"#,
+            )
+            .replace("__REQUESTER__", REQUESTER)
+            .replace("__CALL_TYPE__", "completion")
+            .replace("__RESPONSE__", CHAT_RESPONSE),
+    );
+    adapter
+        .log_success_event(&event)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_insert_request(&requests, "proj-1");
+    let posted = posted_event(&requests[0].body);
+    assert_eq!(member(member(posted, "metrics"), "total_cost"), &Json::Null);
+}
+
+#[tokio::test]
+async fn a_guardrail_cost_stays_out_of_the_total_cost() {
+    let (adapter, capture, tracker) = fixture(&[]);
+    let event = event_of(
+        &PAYLOAD
+            .replace(
+                r#""response_cost": 0.5,"#,
+                r#""response_cost": 0.75, "cost_breakdown": {"total_cost": 0.75, "guardrail_cost": 0.25},"#,
+            )
+            .replace("__REQUESTER__", REQUESTER)
+            .replace("__CALL_TYPE__", "completion")
+            .replace("__RESPONSE__", CHAT_RESPONSE),
+    );
+    adapter
+        .log_success_event(&event)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_insert_request(&requests, "proj-1");
+    let posted = posted_event(&requests[0].body);
+    assert_eq!(
+        member(member(posted, "metrics"), "total_cost"),
+        &json("0.5")
+    );
 }

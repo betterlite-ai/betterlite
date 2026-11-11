@@ -362,6 +362,26 @@ async fn the_request_tags_supply_the_step_tags() {
 }
 
 #[tokio::test]
+async fn the_user_agent_tags_are_not_step_tags() {
+    let (adapter, capture, tracker) = fixture();
+    let with_user_agent = event_from(&PAYLOAD.replace(
+        r#""request_tags": []"#,
+        r#""request_tags": ["User-Agent: curl", "User-Agent: curl/8.5"]"#,
+    ));
+    adapter
+        .log_success_event(&with_user_agent)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_request(&requests);
+    assert_eq!(
+        field(&requests[0].body, "tags_0"),
+        &json(r#"["tier", "prod"]"#)
+    );
+}
+
+#[tokio::test]
 async fn the_requester_tags_win_over_the_request_tags() {
     let (adapter, capture, tracker) = fixture();
     let with_own_tags = event_from(

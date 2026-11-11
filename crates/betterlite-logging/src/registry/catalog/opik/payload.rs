@@ -26,11 +26,24 @@ pub(super) fn callback_kwargs(payload: &StandardLoggingPayload) -> IndexMap<Stri
             Json::Text(provider.clone()),
         );
     }
-    fields.insert("response_cost".to_owned(), number(payload.response_cost));
-    if let Some(debug) = payload.cost_failure_info.as_ref() {
-        fields.insert("response_cost_failure_debug_info".to_owned(), debug.clone());
-    }
+    fields.insert("response_cost".to_owned(), response_cost_json(payload));
     fields
+}
+
+// LiteLLM's kwargs carry the LLM cost alone and null when the calculator failed; the payload's response_cost adds the guardrail cost instead
+fn response_cost_json(payload: &StandardLoggingPayload) -> Json {
+    if payload.cost_failure_info.is_some() {
+        return Json::Null;
+    }
+    let charged = payload
+        .cost_breakdown
+        .as_ref()
+        .and_then(|breakdown| breakdown.guardrail_cost)
+        .unwrap_or(Decimal::ZERO);
+    payload
+        .response_cost
+        .checked_sub(charged)
+        .map_or_else(|| Json::Null, number)
 }
 
 fn payload_json(payload: &StandardLoggingPayload) -> Json {

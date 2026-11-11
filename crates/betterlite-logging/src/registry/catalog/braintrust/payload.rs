@@ -48,7 +48,7 @@ pub(super) struct Prepared {
     messages: Option<Json>,
     standard_logging_object: Json,
     metadata: Json,
-    response_cost: Json,
+    response_cost: Option<Json>,
     call_type: String,
     response: Option<ResponseBody>,
     start_time: DateTime<Utc>,
@@ -63,7 +63,7 @@ impl Prepared {
             messages: payload.messages.clone(),
             standard_logging_object: standard_logging_object(payload)?,
             metadata: metadata_object(payload),
-            response_cost: number(payload.response_cost),
+            response_cost: total_cost(payload),
             call_type: payload.call_type.clone(),
             response: classify_response(payload),
             start_time: utc_at(payload.start_time)
@@ -84,7 +84,7 @@ impl Prepared {
             messages: self.messages.as_ref(),
             standard_logging_object: Some(&self.standard_logging_object),
             metadata: Some(&self.metadata),
-            response_cost: Some(&self.response_cost),
+            response_cost: self.response_cost.as_ref(),
             call_type: Some(self.call_type.as_str()),
             response: self.response.as_ref().map(ResponseBody::object),
             // the payload keeps no provider-handoff instant, and LiteLLM sets time to first token only when it has one
@@ -134,6 +134,22 @@ fn classify_response(payload: &StandardLoggingPayload) -> Option<ResponseBody> {
         kind,
         body: response.clone(),
     })
+}
+
+// LiteLLM's kwargs carry the LLM cost alone and null when the calculator failed; the payload's response_cost adds the guardrail cost instead
+fn total_cost(payload: &StandardLoggingPayload) -> Option<Json> {
+    if payload.cost_failure_info.is_some() {
+        return None;
+    }
+    let charged = payload
+        .cost_breakdown
+        .as_ref()
+        .and_then(|fields| fields.guardrail_cost);
+    let cost = match charged {
+        Some(amount) => payload.response_cost.checked_sub(amount)?,
+        None => payload.response_cost,
+    };
+    Some(number(cost))
 }
 
 fn number(value: Decimal) -> Json {

@@ -438,6 +438,61 @@ async fn a_success_event_posts_the_mapped_trace_and_span() {
 }
 
 #[tokio::test]
+async fn a_cost_failure_posts_no_cost_and_no_debug_info() {
+    let (adapter, capture, tracker) = fixture(512);
+    let failed_cost = event_from(&PAYLOAD.replace(
+        r#""response_cost": 0.5,"#,
+        r#""response_cost": 0.5, "response_cost_failure_debug_info": {"error": "no price"},"#,
+    ));
+    adapter
+        .log_success_event(&failed_cost)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_requests(&requests);
+    let trace = batch_entry(&requests[0].body, "traces");
+    let metadata = member(trace, "metadata");
+    assert_eq!(
+        member(member(metadata, "cost"), "total_tokens"),
+        &Json::Null
+    );
+    let Json::Object(fields) = metadata else {
+        panic!("the trace metadata is an object");
+    };
+    assert!(!fields.contains_key("response_cost_failure_debug_info"));
+    let Json::Object(span) = batch_entry(&requests[1].body, "spans") else {
+        panic!("the span is an object");
+    };
+    assert!(!span.contains_key("total_cost"));
+}
+
+#[tokio::test]
+async fn a_guardrail_cost_stays_out_of_the_posted_cost() {
+    let (adapter, capture, tracker) = fixture(512);
+    let guarded = event_from(&PAYLOAD.replace(
+        r#""response_cost": 0.5,"#,
+        r#""response_cost": 0.75, "cost_breakdown": {"total_cost": 0.75, "guardrail_cost": 0.25},"#,
+    ));
+    adapter
+        .log_success_event(&guarded)
+        .expect("the event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    let requests = capture.requests();
+    assert_requests(&requests);
+    let trace = batch_entry(&requests[0].body, "traces");
+    assert_eq!(
+        member(member(member(trace, "metadata"), "cost"), "total_tokens"),
+        &json("0.5")
+    );
+    assert_eq!(
+        member(batch_entry(&requests[1].body, "spans"), "total_cost"),
+        &json("0.5")
+    );
+}
+
+#[tokio::test]
 async fn an_async_success_event_flushes_the_queue_at_the_batch_size() {
     let (adapter, capture, _tracker) = fixture(1);
     adapter

@@ -38,15 +38,30 @@ fn metadata_fields(payload: &StandardLoggingPayload) -> IndexMap<String, Json> {
     }
 }
 
+const USER_AGENT_TAG: &str = "User-Agent: ";
+
+// request_tags is the logged metadata tags followed by the User-Agent tags _get_request_tags appends, and only the former are metadata.tags
+fn metadata_tags(payload: &StandardLoggingPayload) -> Vec<Json> {
+    let logged = payload
+        .request_tags
+        .iter()
+        .take_while(|tag| !matches!(tag, Json::Text(text) if text.starts_with(USER_AGENT_TAG)))
+        .count();
+    payload.request_tags.iter().take(logged).cloned().collect()
+}
+
 // a request's own metadata rides nested in the standard payload, and literalai reads step_id and the literalai_* keys flat
 fn request_metadata(payload: &StandardLoggingPayload) -> IndexMap<String, Json> {
     let mut fields = metadata_fields(payload);
     if let Some(Json::Object(requester)) = payload.metadata.requester_metadata.as_ref() {
         fields.extend(requester.clone());
     }
-    // the proxy merges the body, key and team tags into litellm_params.metadata.tags, which literalai reads before literalai_tags
-    if !fields.contains_key("tags") && !payload.request_tags.is_empty() {
-        fields.insert("tags".to_owned(), Json::List(payload.request_tags.clone()));
+    // the proxy merges the body, key, team and project tags into litellm_params.metadata.tags, which literalai reads before literalai_tags
+    if !fields.contains_key("tags") {
+        let tags = metadata_tags(payload);
+        if !tags.is_empty() {
+            fields.insert("tags".to_owned(), Json::List(tags));
+        }
     }
     fields
 }
