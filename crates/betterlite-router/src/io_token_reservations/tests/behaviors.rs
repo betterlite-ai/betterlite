@@ -17,7 +17,7 @@ pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 21] = [
+const CASES: [(&str, fn()); 22] = [
     ("full_reservation_stashes_both_channels", || {
         super::runtime().block_on(full_reservation_stashes_both_channels());
     }),
@@ -80,6 +80,9 @@ const CASES: [(&str, fn()); 21] = [
     }),
     ("store_counter_unavailable_is_none", || {
         super::runtime().block_on(store_counter_unavailable_is_none());
+    }),
+    ("store_counter_rejects_oversized_key", || {
+        super::runtime().block_on(store_counter_rejects_oversized_key());
     }),
 ];
 
@@ -389,6 +392,15 @@ async fn store_counter_unavailable_is_none() {
     let fixture = support::store_fixture().await;
     fixture.server.set_down(true);
     let key = format!("global_router:dep-a:itpm:{}", support::minute());
+    assert_eq!(
+        IoCounter::increment_counter(&fixture.store, &key, 1, 60).await,
+        None
+    );
+}
+
+async fn store_counter_rejects_oversized_key() {
+    let fixture = support::store_fixture().await;
+    let key = "k".repeat(1025);
     assert_eq!(
         IoCounter::increment_counter(&fixture.store, &key, 1, 60).await,
         None

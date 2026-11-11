@@ -115,9 +115,7 @@ impl IoTokenReservations {
         if value <= 0 {
             return;
         }
-        let Some(by) = value.checked_neg() else {
-            return;
-        };
+        let by = value.checked_neg().unwrap_or_default();
         let _released: Option<i64> = self
             .counter
             .increment_counter(key, by, ROUTING_ARGS_TTL_SECONDS)

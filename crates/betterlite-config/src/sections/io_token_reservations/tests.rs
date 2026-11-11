@@ -68,6 +68,12 @@ fn model_info_is_the_last_fallback() {
 }
 
 #[test]
+fn a_text_value_is_trimmed() {
+    let source = deployment("    itpm: \" 42 \"\n");
+    assert_eq!(one_deployment(&source).itpm, Some(42));
+}
+
+#[test]
 fn an_explicit_zero_is_kept() {
     let source = deployment("    itpm: 0\n    litellm_params: {itpm: 3}\n");
     assert_eq!(one_deployment(&source).itpm, Some(0));

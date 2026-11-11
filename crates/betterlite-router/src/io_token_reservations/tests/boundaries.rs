@@ -20,7 +20,11 @@ pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 24] = [
+const CASES: [(&str, fn()); 26] = [
+    ("channel_labels", channel_labels),
+    ("otpm_failure_without_itpm_releases_nothing", || {
+        super::runtime().block_on(otpm_failure_without_itpm_releases_nothing());
+    }),
     ("current_equal_to_limit_passes", || {
         super::runtime().block_on(current_equal_to_limit_passes());
     }),
@@ -96,6 +100,29 @@ const CASES: [(&str, fn()); 24] = [
         super::runtime().block_on(cancelled_output_increment_keeps_input());
     }),
 ];
+
+fn channel_labels() {
+    assert_eq!(IoChannel::Itpm.label(), "ITPM");
+    assert_eq!(IoChannel::Otpm.label(), "OTPM");
+}
+
+async fn otpm_failure_without_itpm_releases_nothing() {
+    let counter = Arc::new(RecordingCounter::new(Behavior::Record, Behavior::Record));
+    let deployment = support::deployment(None, Some(15));
+    let reservations = support::service(Arc::clone(&counter), Some(10));
+    let mut request = support::body();
+    request.insert("max_tokens".to_owned(), support::number(20));
+    let error = reservations
+        .pre_call_check(&deployment, &mut request)
+        .await
+        .unwrap_err();
+    assert_eq!(rate_limit(error), (IoChannel::Otpm, 15, 20));
+    let keys = support::keys(&deployment);
+    assert_eq!(counter.value(&keys.itpm), 0);
+    assert_eq!(counter.value(&keys.otpm), 0);
+    let values: Vec<i64> = counter.calls().iter().map(|call| call.value).collect();
+    assert_eq!(values, vec![20, -20]);
+}
 
 fn rate_limit(error: IoPreCallError) -> (IoChannel, i64, i64) {
     match error {

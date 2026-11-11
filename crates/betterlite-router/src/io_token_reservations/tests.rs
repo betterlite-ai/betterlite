@@ -39,13 +39,16 @@ fn runtime() -> Runtime {
 #[case::tokenizer_counts_text("tokenizer_counts_text")]
 #[case::store_counter_increments_and_reports("store_counter_increments_and_reports")]
 #[case::store_counter_unavailable_is_none("store_counter_unavailable_is_none")]
+#[case::store_counter_rejects_oversized_key("store_counter_rejects_oversized_key")]
 fn io_token_reservations_behaviors(#[case] name: &str) {
     behaviors::run(name);
 }
 
 #[rstest]
+#[case::channel_labels("channel_labels")]
 #[case::current_equal_to_limit_passes("current_equal_to_limit_passes")]
 #[case::current_over_limit_by_one_fails("current_over_limit_by_one_fails")]
+#[case::otpm_failure_without_itpm_releases_nothing("otpm_failure_without_itpm_releases_nothing")]
 #[case::zero_limit_one_token_fails("zero_limit_one_token_fails")]
 #[case::negative_limit_always_fails("negative_limit_always_fails")]
 #[case::negative_max_tokens_reserves_nothing("negative_max_tokens_reserves_nothing")]
