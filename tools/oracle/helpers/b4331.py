@@ -183,11 +183,8 @@ class Scenario:
         kind = string_value(step.get("kind"), "kind")
         if self.declare_step(kind, step):
             return
-        if await self.runtime_step(kind, step):
-            return
-        if await self.request_step(kind, step):
-            return
-        raise ValueError(f"unknown step {kind}")
+        if not await self.control_step(kind, step):
+            raise ValueError(f"unknown step {kind}")
 
     def declare_step(self, kind: str, step: dict[str, Json]) -> bool:
         if kind == "batch":
@@ -200,7 +197,7 @@ class Scenario:
             return False
         return True
 
-    async def runtime_step(self, kind: str, step: dict[str, Json]) -> bool:
+    async def control_step(self, kind: str, step: dict[str, Json]) -> bool:
         if kind == "await":
             await self.settle(integer_value(step.get("handle"), "handle"))
         elif kind == "flush_post_call":
@@ -209,12 +206,7 @@ class Scenario:
             await asyncio.sleep(integer_value(step.get("millis"), "millis") / 1000)
         elif kind == "drain":
             await drain_post_call_redis_batches()
-        else:
-            return False
-        return True
-
-    async def request_step(self, kind: str, step: dict[str, Json]) -> bool:
-        if kind == "nested":
+        elif kind == "nested":
             await self.nested(integer_value(step.get("cache"), "cache"))
         elif kind == "create_request":
             _ = self.record_request(RequestRedisBatches(post_call_deadline=self.deadline))
