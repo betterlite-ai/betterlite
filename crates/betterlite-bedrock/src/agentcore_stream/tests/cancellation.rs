@@ -28,6 +28,7 @@ async fn agentcore_stream_releases_transport_on_drop() {
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_one_frame(listener, closed));
     let client = proxied_client();
+    assert_eq!(client.kind(), HandlerKind::Async);
     let drain_client = client.clone();
     let transport: Arc<dyn StreamHandler> = Arc::new(client);
     let logger = FixtureLogger::default();

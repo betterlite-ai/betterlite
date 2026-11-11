@@ -312,14 +312,6 @@ impl Fixture {
         };
         block_on(adapter::open(&request, &deps, kind))
     }
-
-    fn posts(&self) -> Vec<RecordedRequest> {
-        let mut posts = self.default.posts();
-        if let Some(supplied) = &self.supplied {
-            posts.extend(supplied.posts());
-        }
-        posts
-    }
 }
 
 pub(super) fn run(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Outcome {
@@ -332,14 +324,20 @@ pub(super) fn run(kind: HandlerKind, scenario: &Scenario, ids: &[Uuid]) -> Outco
         }
         Err(error) => (None, Err(error)),
     };
+    let default_posts = fixture.default.posts();
+    let handler = if default_posts.is_empty() {
+        "supplied"
+    } else {
+        "default"
+    };
+    let mut posts = default_posts;
+    if let Some(supplied) = &fixture.supplied {
+        posts.extend(supplied.posts());
+    }
     Outcome {
-        handler: if scenario.supplied == Some(kind) {
-            "supplied"
-        } else {
-            "default"
-        },
+        handler,
         provider,
-        posts: fixture.posts(),
+        posts,
         post_calls: fixture.logger.calls(),
         remaining_ids: fixture.id_source.remaining(),
         emitted,

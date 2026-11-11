@@ -8,7 +8,9 @@ use crate::agentcore_stream::tests::support::{
     MODEL, Outcome, Scenario, capture, ids, run, sorted_pairs,
 };
 use crate::agentcore_stream::transport::HandlerKind;
-use crate::agentcore_stream::{AgentCoreStreamError, CHUNK_OBJECT, FIRST_RESPONSE, PROVIDER};
+use crate::agentcore_stream::{
+    AgentCoreStreamError, CHUNK_OBJECT, FIRST_RESPONSE, IdSource as _, PROVIDER, UuidV4,
+};
 use crate::bedrock_settings::ErrorHeaders;
 
 #[rstest]
@@ -498,11 +500,43 @@ fn agentcore_stream_bounded_inputs() {
     let mut buffer = Vec::new();
     let error = decode_agentcore_line(&mut buffer, long_read.as_bytes()).unwrap_err();
     assert!(matches!(error, LineError::TooLarge { .. }));
-    let mut scenario = Scenario::json("{}");
-    scenario.reads = vec!["x".repeat(MAX_BODY_BYTES.saturating_add(1))];
-    let outcome = run(HandlerKind::Sync, &scenario, &ids(2));
-    assert!(matches!(
-        outcome.emitted.unwrap_err(),
-        AgentCoreStreamError::Provider { .. }
-    ));
+    let mut exact = Vec::new();
+    let boundary = "x".repeat(MAX_LINE_BYTES);
+    assert!(
+        decode_agentcore_line(&mut exact, boundary.as_bytes())
+            .unwrap()
+            .is_empty()
+    );
+    let mut complete = String::from("data: ");
+    complete.push_str(&"x".repeat(MAX_LINE_BYTES));
+    complete.push('\n');
+    let mut complete_buffer = Vec::new();
+    assert!(
+        decode_agentcore_line(&mut complete_buffer, complete.as_bytes())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[rstest]
+fn agentcore_stream_body_cap(#[values(HandlerKind::Sync, HandlerKind::Async)] kind: HandlerKind) {
+    let padding = " ".repeat(MAX_BODY_BYTES.saturating_sub(2));
+    let at_limit = Scenario::json(&format!("{padding}{{}}"));
+    assert_eq!(run(kind, &at_limit, &ids(2)).emitted.unwrap().len(), 2);
+    let mut over = Scenario::json("{}");
+    over.reads = vec!["x".repeat(MAX_BODY_BYTES.saturating_add(1))];
+    let AgentCoreStreamError::Provider { cause, .. } =
+        run(kind, &over, &ids(2)).emitted.unwrap_err()
+    else {
+        panic!("a body over the cap fails as a provider error");
+    };
+    assert!(cause.cause.error.message.contains("larger than"));
+}
+
+#[test]
+fn uuid_v4_source_returns_a_random_id() {
+    let source = UuidV4;
+    let first = source.next_id();
+    assert_ne!(first, Uuid::nil());
+    assert_ne!(first, source.next_id());
 }
