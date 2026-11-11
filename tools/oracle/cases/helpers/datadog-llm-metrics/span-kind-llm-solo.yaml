@@ -1,0 +1,9 @@
+kind: helper
+name: datadog-llm-metrics-span-kind-llm-solo
+call:
+  b3937:
+    function: span_kind
+    call_type: "completion"
+    parent_id: null
+env: {}
+compare: {ignore: []}
