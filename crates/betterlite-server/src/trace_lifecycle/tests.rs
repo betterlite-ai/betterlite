@@ -12,14 +12,14 @@ use super::error::TraceLifecycleError;
 use super::ports::ReceiverHandle as _;
 use super::session::Started;
 use super::spend_logger::{CALLBACK_NAME, ClickHouseSpendLoggers};
-use super::{REGISTRATION_LISTS, start};
+use super::start;
 
 mod support;
 
 use support::{
-    BuildBehavior, FailingLoggers, FakeFactory, FakeReceiver, RecordingStorage, StartBehavior,
-    assert_only_identity, capture_log, event, log_text, register_operator, setup, spend_loggers,
-    spend_settings,
+    BuildBehavior, FailingLoggerError, FailingLoggers, FakeFactory, FakeReceiver,
+    FakeReceiverError, RecordingStorage, StartBehavior, assert_only_identity, capture_log, event,
+    log_text, register_operator, setup, spend_loggers, spend_settings,
 };
 
 async fn start_tracing(
@@ -123,9 +123,12 @@ async fn unexpected_error_propagates() {
         .await
         .err()
         .unwrap();
-    assert!(
-        matches!(error, TraceLifecycleError::Unexpected { message } if message == "the receiver pool vanished")
-    );
+    assert!(matches!(
+        error,
+        TraceLifecycleError::Receiver {
+            source: FakeReceiverError::Unexpected
+        }
+    ));
     assert!(registry.loggers(CallbackPhase::Success).is_empty());
 }
 
@@ -136,9 +139,12 @@ async fn logger_build_error_propagates() {
         .await
         .err()
         .unwrap();
-    assert!(
-        matches!(error, TraceLifecycleError::Unexpected { message } if message == "the spend logger could not be built")
-    );
+    assert!(matches!(
+        error,
+        TraceLifecycleError::SpendLogger {
+            source: FailingLoggerError
+        }
+    ));
     assert_eq!(factory.start_count(), 1);
     assert!(registry.loggers(CallbackPhase::Success).is_empty());
     assert!(registry.loggers(CallbackPhase::Failure).is_empty());
@@ -182,8 +188,35 @@ async fn five_lists_same_instance() {
     assert!(Arc::ptr_eq(&success[0], &failure[0]));
     assert!(Arc::ptr_eq(&success[0], &stream[0]));
     assert_eq!(success[0].callback_name(), CALLBACK_NAME);
-    assert_only_identity(&registry, &REGISTRATION_LISTS, CALLBACK_NAME);
+    assert_only_identity(&registry, &[CallbackList::Callbacks], CALLBACK_NAME);
+    assert_only_identity(&registry, &[CallbackList::Success], CALLBACK_NAME);
+    assert_only_identity(&registry, &[CallbackList::Failure], CALLBACK_NAME);
     started.session.close(&mut registry).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn full_callbacks_list_keeps_the_phase_lists() {
+    let storage = Arc::new(RecordingStorage::default());
+    let factory = FakeFactory::new(Arc::clone(&storage));
+    let mut registry = CallbackRegistry::new(1);
+    register_operator(&mut registry, &[CallbackList::Callbacks]);
+    let started = start_tracing(&factory, &mut registry)
+        .await
+        .expect("a full callbacks list does not fail startup");
+    assert_only_identity(&registry, &[CallbackList::Callbacks], "clickhouse");
+    assert_only_identity(&registry, &[CallbackList::Success], CALLBACK_NAME);
+    assert_only_identity(&registry, &[CallbackList::Failure], CALLBACK_NAME);
+    let success = registry.loggers(CallbackPhase::Success);
+    let failure = registry.loggers(CallbackPhase::Failure);
+    assert_eq!(success.len(), 1);
+    assert_eq!(failure.len(), 1);
+    assert!(Arc::ptr_eq(&success[0], &failure[0]));
+    success[0]
+        .async_log_success_event(event("completion", "success"))
+        .await
+        .unwrap();
+    started.session.close(&mut registry).await;
+    assert_eq!(storage.insertions().len(), 1);
 }
 
 #[tokio::test(start_paused = true)]

@@ -12,7 +12,7 @@ use betterlite_logging::registry::phases::CallbackList;
 use betterlite_logging::registry::sink::CallbackSink;
 use indexmap::IndexMap;
 
-use error::TraceLifecycleError;
+use error::{ReceiverFailure, StartupFailure, TraceLifecycleError};
 use ports::{ReceiverFactory, ReceiverHandle};
 use session::{Started, TraceSession};
 use spend_logger::{CALLBACK_NAME, SpendLoggerFactory, TraceSpendLogger};
@@ -31,19 +31,26 @@ pub async fn start<Factory, Loggers>(
     factory: &Factory,
     loggers: &Loggers,
     registry: &mut CallbackRegistry,
-) -> Result<Option<Started<Factory::Receiver>>, TraceLifecycleError>
+) -> Result<Option<Started<Factory::Receiver>>, TraceLifecycleError<Factory::Error, Loggers::Error>>
 where
     Factory: ReceiverFactory,
+    Factory::Receiver: ReceiverHandle<Error = Factory::Error>,
     Loggers: SpendLoggerFactory<<Factory::Receiver as ReceiverHandle>::Storage>,
 {
     if !enabled {
         return Ok(None);
     }
-    let Some(receiver) = started_receiver(factory).await? else {
+    let Some(receiver) = started_receiver(factory)
+        .await
+        .map_err(|source| TraceLifecycleError::Receiver { source })?
+    else {
         return Ok(None);
     };
+    let spend = loggers
+        .build(receiver.storage())
+        .map_err(|source| TraceLifecycleError::SpendLogger { source })?;
     let logger = Arc::new(TraceSpendLogger {
-        spend: loggers.build(receiver.storage())?,
+        spend,
         lens: loggers.lens(),
     });
     let identity = CallbackIdentity {
@@ -65,32 +72,36 @@ where
 
 async fn started_receiver<Factory>(
     factory: &Factory,
-) -> Result<Option<Factory::Receiver>, TraceLifecycleError>
+) -> Result<Option<Factory::Receiver>, Factory::Error>
 where
     Factory: ReceiverFactory,
+    Factory::Receiver: ReceiverHandle<Error = Factory::Error>,
 {
     let receiver = match factory.build() {
         Ok(receiver) => receiver,
-        Err(error) => return unavailable(error),
+        Err(source) => return unavailable(source),
     };
     match receiver.start().await {
         Ok(()) => Ok(Some(receiver)),
-        Err(error) => unavailable(error),
+        Err(source) => unavailable(source),
     }
 }
 
-fn unavailable<Receiver>(
-    error: TraceLifecycleError,
-) -> Result<Option<Receiver>, TraceLifecycleError> {
-    match error {
-        TraceLifecycleError::MissingSetting { .. }
-        | TraceLifecycleError::Storage { .. }
-        | TraceLifecycleError::Runtime { .. }
-        | TraceLifecycleError::InvalidValue { .. } => {
-            tracing::warn!(error = %error, "Agent tracing unavailable");
+fn unavailable<Receiver, ReceiverError>(
+    source: ReceiverError,
+) -> Result<Option<Receiver>, ReceiverError>
+where
+    ReceiverError: ReceiverFailure,
+{
+    match source.startup_failure() {
+        StartupFailure::MissingSetting
+        | StartupFailure::Storage
+        | StartupFailure::Runtime
+        | StartupFailure::InvalidValue => {
+            tracing::warn!(error = %source, "Agent tracing unavailable");
             Ok(None)
         }
-        TraceLifecycleError::Unexpected { .. } => Err(error),
+        StartupFailure::Unexpected => Err(source),
     }
 }
 

@@ -24,7 +24,7 @@ use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 
-use crate::trace_lifecycle::error::TraceLifecycleError;
+use crate::trace_lifecycle::error::{ReceiverFailure, StartupFailure};
 use crate::trace_lifecycle::ports::{ReceiverFactory, ReceiverHandle};
 use crate::trace_lifecycle::spend_logger::{
     ClickHouseSpendLoggers, SharedStorage, SpendLoggerFactory,
@@ -178,6 +178,35 @@ pub(crate) enum StartBehavior {
     InvalidValue,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FakeReceiverError {
+    #[error("missing setting {setting}")]
+    MissingSetting { setting: String },
+    #[error("agent tracing storage failed")]
+    Storage {
+        #[source]
+        source: io::Error,
+    },
+    #[error("the ingest semaphore is closed")]
+    Runtime,
+    #[error("the concurrency limit is negative")]
+    InvalidValue,
+    #[error("the receiver pool vanished")]
+    Unexpected,
+}
+
+impl ReceiverFailure for FakeReceiverError {
+    fn startup_failure(&self) -> StartupFailure {
+        match self {
+            Self::MissingSetting { .. } => StartupFailure::MissingSetting,
+            Self::Storage { .. } => StartupFailure::Storage,
+            Self::Runtime => StartupFailure::Runtime,
+            Self::InvalidValue => StartupFailure::InvalidValue,
+            Self::Unexpected => StartupFailure::Unexpected,
+        }
+    }
+}
+
 pub(crate) struct FakeFactory {
     storage: Arc<RecordingStorage>,
     build_behavior: BuildBehavior,
@@ -218,8 +247,9 @@ impl FakeFactory {
 
 impl ReceiverFactory for FakeFactory {
     type Receiver = FakeReceiver;
+    type Error = FakeReceiverError;
 
-    fn build(&self) -> Result<FakeReceiver, TraceLifecycleError> {
+    fn build(&self) -> Result<FakeReceiver, FakeReceiverError> {
         self.builds.fetch_add(1, Ordering::SeqCst);
         match self.build_behavior {
             BuildBehavior::Built => Ok(FakeReceiver {
@@ -227,12 +257,10 @@ impl ReceiverFactory for FakeFactory {
                 start_behavior: self.start_behavior,
                 starts: Arc::clone(&self.starts),
             }),
-            BuildBehavior::MissingSetting => Err(TraceLifecycleError::MissingSetting {
+            BuildBehavior::MissingSetting => Err(FakeReceiverError::MissingSetting {
                 setting: "CLICKHOUSE_URL".to_owned(),
             }),
-            BuildBehavior::Unexpected => Err(TraceLifecycleError::Unexpected {
-                message: "the receiver pool vanished".to_owned(),
-            }),
+            BuildBehavior::Unexpected => Err(FakeReceiverError::Unexpected),
         }
     }
 }
@@ -245,41 +273,42 @@ pub(crate) struct FakeReceiver {
 
 impl ReceiverHandle for FakeReceiver {
     type Storage = RecordingStorage;
+    type Error = FakeReceiverError;
 
     fn storage(&self) -> Arc<RecordingStorage> {
         Arc::clone(&self.storage)
     }
 
-    fn start(&self) -> impl Future<Output = Result<(), TraceLifecycleError>> + Send {
+    fn start(&self) -> impl Future<Output = Result<(), FakeReceiverError>> + Send {
         self.starts.fetch_add(1, Ordering::SeqCst);
         let behavior = self.start_behavior;
         async move {
             match behavior {
                 StartBehavior::Started => Ok(()),
-                StartBehavior::Io => Err(TraceLifecycleError::Storage {
+                StartBehavior::Io => Err(FakeReceiverError::Storage {
                     source: io::Error::other("schema setup failed"),
                 }),
-                StartBehavior::Runtime => Err(TraceLifecycleError::Runtime {
-                    message: "the ingest semaphore is closed".to_owned(),
-                }),
-                StartBehavior::InvalidValue => Err(TraceLifecycleError::InvalidValue {
-                    message: "the concurrency limit is negative".to_owned(),
-                }),
+                StartBehavior::Runtime => Err(FakeReceiverError::Runtime),
+                StartBehavior::InvalidValue => Err(FakeReceiverError::InvalidValue),
             }
         }
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("the spend logger could not be built")]
+pub(crate) struct FailingLoggerError;
+
 pub(crate) struct FailingLoggers;
 
 impl<Storage: ClickHouseStorage> SpendLoggerFactory<Storage> for FailingLoggers {
+    type Error = FailingLoggerError;
+
     fn build(
         &self,
         _storage: Arc<Storage>,
-    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, TraceLifecycleError> {
-        Err(TraceLifecycleError::Unexpected {
-            message: "the spend logger could not be built".to_owned(),
-        })
+    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, FailingLoggerError> {
+        Err(FailingLoggerError)
     }
 
     fn lens(&self) -> LensAnalysis {

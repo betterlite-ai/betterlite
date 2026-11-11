@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+use std::error::Error;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -15,8 +17,6 @@ use betterlite_logging::clickhouse::clickhouse_logging::spend_logger::{
 use betterlite_logging::clickhouse::clickhouse_logging::storage::ClickHouseStorage;
 use betterlite_logging::trace_types::SpendLogRecord;
 use tokio_util::task::TaskTracker;
-
-use crate::trace_lifecycle::error::TraceLifecycleError;
 
 pub const CALLBACK_NAME: &str = "ClickHouseSpendLogger";
 
@@ -46,10 +46,12 @@ impl<Storage: ClickHouseStorage> ClickHouseStorage for SharedStorage<Storage> {
 }
 
 pub trait SpendLoggerFactory<Storage: ClickHouseStorage>: Send + Sync {
+    type Error: Error + Send + Sync + 'static;
+
     fn build(
         &self,
         storage: Arc<Storage>,
-    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, TraceLifecycleError>;
+    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, Self::Error>;
 
     // B4001's projection marks rows from the Lens context injected here, so one shared context paints them all
     fn lens(&self) -> LensAnalysis;
@@ -62,10 +64,12 @@ pub struct ClickHouseSpendLoggers {
 }
 
 impl<Storage: ClickHouseStorage> SpendLoggerFactory<Storage> for ClickHouseSpendLoggers {
+    type Error = Infallible;
+
     fn build(
         &self,
         storage: Arc<Storage>,
-    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, TraceLifecycleError> {
+    ) -> Result<ClickHouseSpendLogger<SharedStorage<Storage>>, Infallible> {
         Ok(ClickHouseSpendLogger {
             batch: ClickHouseBatchLogger::new(
                 SharedStorage { shared: storage },
