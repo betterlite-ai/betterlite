@@ -1348,6 +1348,7 @@ dependencies = [
  "sha2 0.11.1",
  "shlex",
  "soft-canonicalize",
+ "strum",
  "subtle",
  "tempfile",
  "thiserror",
