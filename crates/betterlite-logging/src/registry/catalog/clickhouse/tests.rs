@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::io::Read as _;
+use std::io::{Read as _, Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -25,7 +25,7 @@ use url::Url;
 
 use super::adapter::ClickHouseAdapter;
 use super::build;
-use super::rows::{compressed_rows, content_token};
+use super::rows::{LimitedWriter, compressed_rows, content_token};
 use super::storage::{ClickHouseHttpStorage, ClickHouseStorageError};
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
@@ -409,6 +409,33 @@ fn the_encoded_rows_are_capped_at_the_insert_limit(#[case] shortfall: usize, #[c
             Err(ClickHouseStorageError::InsertTooLarge)
         ));
     }
+}
+
+#[derive(Default)]
+struct FlushCounter {
+    flushes: usize,
+}
+
+impl Write for FlushCounter {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        self.flushes = self.flushes.saturating_add(1);
+        Ok(())
+    }
+}
+
+#[test]
+fn the_limited_writer_flushes_its_inner_writer() {
+    let mut writer = LimitedWriter {
+        inner: FlushCounter::default(),
+        remaining: 8,
+        exceeded: false,
+    };
+    writer.flush().expect("the flush is passed on");
+    assert_eq!(writer.inner.flushes, 1);
 }
 
 #[test]

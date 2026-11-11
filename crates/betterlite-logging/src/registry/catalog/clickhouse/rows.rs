@@ -21,10 +21,10 @@ pub(super) fn content_token(rows: &[SpendLogRecord]) -> Result<String, ClickHous
 }
 
 // counts the encoded bytes before compression, the way LiteLLM's native insert caps a batch
-struct LimitedWriter<W> {
-    inner: W,
-    remaining: usize,
-    exceeded: bool,
+pub(super) struct LimitedWriter<W> {
+    pub(super) inner: W,
+    pub(super) remaining: usize,
+    pub(super) exceeded: bool,
 }
 
 impl<W: Write> Write for LimitedWriter<W> {
