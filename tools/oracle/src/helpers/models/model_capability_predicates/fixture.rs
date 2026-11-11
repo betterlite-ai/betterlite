@@ -93,10 +93,11 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn load(input: &FixtureInput) -> Result<Self, FixtureError> {
-        let bytes =
-            serde_json::to_vec(&input.model_cost).map_err(|source| FixtureError::Json { source })?;
+        let bytes = serde_json::to_vec(&input.model_cost)
+            .map_err(|source| FixtureError::Json { source })?;
         Ok(Self {
-            map: ModelCostMap::parse(&bytes).map_err(|source| FixtureError::ModelCost { source })?,
+            map: ModelCostMap::parse(&bytes)
+                .map_err(|source| FixtureError::ModelCost { source })?,
             catalog: typed_catalog(&input.model_cost)?,
             generalizations: CatalogGeneralizations::default(),
             provider_catalog: fireworks_catalog(&input.model_cost),
@@ -150,8 +151,7 @@ fn typed_catalog(entries: &IndexMap<String, Box<RawValue>>) -> Result<ModelCatal
     let mut typed: IndexMap<String, Box<RawValue>> = IndexMap::new();
     for (key, entry) in entries {
         let single = IndexMap::from([(key.clone(), entry.clone())]);
-        let bytes =
-            serde_json::to_vec(&single).map_err(|source| FixtureError::Json { source })?;
+        let bytes = serde_json::to_vec(&single).map_err(|source| FixtureError::Json { source })?;
         if ModelCatalog::parse(&bytes, UnknownFields::Warn).is_ok() {
             typed.insert(key.clone(), entry.clone());
         }

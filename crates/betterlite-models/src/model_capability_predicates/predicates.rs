@@ -6,7 +6,7 @@ use super::details::{self, CapabilityError, MetadataValue};
 use super::{CapabilityEnvironment, CapabilityPredicates, CapabilityRequest};
 
 // LiteLLM's PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA, as the provider slugs it compares.
-const GLOBALLY_RESPONSE_SCHEMA_PROVIDERS: [&str; 5] = [
+const RESPONSE_SCHEMA_PROVIDERS: [&str; 5] = [
     "predibase",
     "fireworks_ai",
     "lm_studio",
@@ -172,7 +172,7 @@ where
                 return false;
             }
         };
-        if GLOBALLY_RESPONSE_SCHEMA_PROVIDERS.contains(&target.provider.as_str()) {
+        if RESPONSE_SCHEMA_PROVIDERS.contains(&target.provider.as_str()) {
             return true;
         }
         let resolved = CapabilityRequest {

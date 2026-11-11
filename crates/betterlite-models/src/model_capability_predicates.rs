@@ -25,7 +25,37 @@ pub struct CapabilityEnvironment<'environment, Source, Transport> {
     pub provider_generation: u64,
 }
 
-// The nine public delegates are default methods so each stays a named row without a one-line free function.
+// LiteLLM's nine named capability delegates, each one shared-factory call with the key its name spells.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NamedCapability {
+    SystemMessages,
+    ParallelCalls,
+    FunctionCalling,
+    ToolChoice,
+    PromptCaching,
+    Reasoning,
+    NoneReasoningEffort,
+    MidConversationSystem,
+    NativeStructuredOutput,
+}
+
+impl NamedCapability {
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::SystemMessages => "supports_system_messages",
+            Self::ParallelCalls => "supports_parallel_function_calling",
+            Self::FunctionCalling => "supports_function_calling",
+            Self::ToolChoice => "supports_tool_choice",
+            Self::PromptCaching => "supports_prompt_caching",
+            Self::Reasoning => "supports_reasoning",
+            Self::NoneReasoningEffort => "supports_none_reasoning_effort",
+            Self::MidConversationSystem => "supports_mid_conversation_system",
+            Self::NativeStructuredOutput => "supports_native_structured_output",
+        }
+    }
+}
+
 pub trait CapabilityPredicates {
     fn supports_factory(
         &mut self,
@@ -55,66 +85,11 @@ pub trait CapabilityPredicates {
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send;
 
-    fn supports_system_messages(
+    fn supports_named(
         &mut self,
         request: &CapabilityRequest<'_>,
+        capability: NamedCapability,
     ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_system_messages")
-    }
-
-    fn supports_parallel_function_calling(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_parallel_function_calling")
-    }
-
-    fn supports_function_calling(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_function_calling")
-    }
-
-    fn supports_tool_choice(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_tool_choice")
-    }
-
-    fn supports_prompt_caching(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_prompt_caching")
-    }
-
-    fn supports_reasoning(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_reasoning")
-    }
-
-    fn supports_none_reasoning_effort(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_none_reasoning_effort")
-    }
-
-    fn supports_mid_conversation_system(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_mid_conversation_system")
-    }
-
-    fn supports_native_structured_output(
-        &mut self,
-        request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = bool> + Send {
-        self.supports_factory(request, "supports_native_structured_output")
+        self.supports_factory(request, capability.key())
     }
 }

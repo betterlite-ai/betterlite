@@ -24,13 +24,18 @@ fn helper_seeds_select_model_capability_predicates() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no model_capability_predicates seeds");
-    for (stem, source) in &seeds {
-        let case: HelperCase = serde_saphyr::from_str(source).unwrap();
-        validate_helper(Path::new("<helper>"), &case).unwrap();
-        assert_eq!(case.call.operation, "model_capability_predicates");
-        Op::check(&case.call.input).unwrap();
-        let input = case.call.input.as_object().unwrap();
-        assert_eq!(input.len(), 2, "{stem}: fixture and steps");
-        assert!(!input["steps"].as_array().unwrap().is_empty(), "{stem}");
-    }
+    let checked: Vec<&str> = seeds
+        .iter()
+        .map(|(stem, source)| {
+            let case: HelperCase = serde_saphyr::from_str(source).unwrap();
+            validate_helper(Path::new("<helper>"), &case).unwrap();
+            assert_eq!(case.call.operation, "model_capability_predicates", "{stem}");
+            Op::check(&case.call.input).unwrap();
+            let input = case.call.input.as_object().unwrap();
+            assert_eq!(input.len(), 2, "{stem}: fixture and steps");
+            assert!(!input["steps"].as_array().unwrap().is_empty(), "{stem}");
+            stem.as_str()
+        })
+        .collect();
+    assert_eq!(checked.len(), seeds.len());
 }

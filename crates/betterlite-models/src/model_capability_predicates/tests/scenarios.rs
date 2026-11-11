@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use tracing::Level;
 use tracing::subscriber::set_default;
 
-use super::super::{CapabilityPredicates as _, CapabilityRequest};
+use super::super::{CapabilityPredicates as _, CapabilityRequest, NamedCapability};
 use super::fixture::{Fixture, Session};
 use crate::decisions::Json;
 
@@ -357,7 +357,7 @@ async fn named_message_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_system_messages(&system)
+            .supports_named(&system, NamedCapability::SystemMessages)
             .await
     );
     let parallel = CapabilityRequest {
@@ -367,7 +367,7 @@ async fn named_message_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_parallel_function_calling(&parallel)
+            .supports_named(&parallel, NamedCapability::ParallelCalls)
             .await
     );
     let function = CapabilityRequest {
@@ -377,7 +377,7 @@ async fn named_message_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_function_calling(&function)
+            .supports_named(&function, NamedCapability::FunctionCalling)
             .await
     );
     named_choice_wrappers(session).await;
@@ -392,7 +392,7 @@ async fn named_choice_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_tool_choice(&tool_choice)
+            .supports_named(&tool_choice, NamedCapability::ToolChoice)
             .await
     );
     let caching = CapabilityRequest {
@@ -402,14 +402,19 @@ async fn named_choice_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_prompt_caching(&caching)
+            .supports_named(&caching, NamedCapability::PromptCaching)
             .await
     );
     let reasoning = CapabilityRequest {
         model: "reasoning-model",
         custom_llm_provider: provider,
     };
-    assert!(session.environment().supports_reasoning(&reasoning).await);
+    assert!(
+        session
+            .environment()
+            .supports_named(&reasoning, NamedCapability::Reasoning)
+            .await
+    );
 }
 
 async fn named_reasoning_wrappers(session: &mut Session<'_>) {
@@ -421,7 +426,7 @@ async fn named_reasoning_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_none_reasoning_effort(&effort)
+            .supports_named(&effort, NamedCapability::NoneReasoningEffort)
             .await
     );
     let mid_system = CapabilityRequest {
@@ -431,7 +436,7 @@ async fn named_reasoning_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_mid_conversation_system(&mid_system)
+            .supports_named(&mid_system, NamedCapability::MidConversationSystem)
             .await
     );
     let structured = CapabilityRequest {
@@ -441,7 +446,7 @@ async fn named_reasoning_wrappers(session: &mut Session<'_>) {
     assert!(
         session
             .environment()
-            .supports_native_structured_output(&structured)
+            .supports_named(&structured, NamedCapability::NativeStructuredOutput)
             .await
     );
     silent_system_messages(session).await;
@@ -454,7 +459,7 @@ async fn silent_system_messages(session: &mut Session<'_>) {
     };
     let silent_answer = session
         .environment()
-        .supports_system_messages(&silent)
+        .supports_named(&silent, NamedCapability::SystemMessages)
         .await;
     assert!(!silent_answer);
 }

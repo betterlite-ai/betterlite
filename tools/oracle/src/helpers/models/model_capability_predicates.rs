@@ -3,7 +3,7 @@ mod tests;
 
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::{
-    CapabilityEnvironment, CapabilityPredicates as _, CapabilityRequest,
+    CapabilityEnvironment, CapabilityPredicates as _, CapabilityRequest, NamedCapability,
 };
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::dynamic::{
@@ -26,7 +26,8 @@ enum Function {
     SupportsNativeStreaming,
     SupportsResponseSchema,
     SupportsSystemMessages,
-    SupportsParallelFunctionCalling,
+    #[serde(rename = "supports_parallel_function_calling")]
+    SupportsParallelCalls,
     SupportsFunctionCalling,
     SupportsToolChoice,
     SupportsPromptCaching,
@@ -54,7 +55,7 @@ const fn core_of(function: Function) -> Option<Core> {
         Function::SupportsNativeStreaming => Some(Core::NativeStreaming),
         Function::SupportsResponseSchema => Some(Core::ResponseSchema),
         Function::SupportsSystemMessages
-        | Function::SupportsParallelFunctionCalling
+        | Function::SupportsParallelCalls
         | Function::SupportsFunctionCalling
         | Function::SupportsToolChoice
         | Function::SupportsPromptCaching
@@ -65,17 +66,19 @@ const fn core_of(function: Function) -> Option<Core> {
     }
 }
 
-const fn named_key(function: Function) -> Option<&'static str> {
+const fn named_capability(function: Function) -> Option<NamedCapability> {
     match function {
-        Function::SupportsSystemMessages => Some("supports_system_messages"),
-        Function::SupportsParallelFunctionCalling => Some("supports_parallel_function_calling"),
-        Function::SupportsFunctionCalling => Some("supports_function_calling"),
-        Function::SupportsToolChoice => Some("supports_tool_choice"),
-        Function::SupportsPromptCaching => Some("supports_prompt_caching"),
-        Function::SupportsReasoning => Some("supports_reasoning"),
-        Function::SupportsNoneReasoningEffort => Some("supports_none_reasoning_effort"),
-        Function::SupportsMidConversationSystem => Some("supports_mid_conversation_system"),
-        Function::SupportsNativeStructuredOutput => Some("supports_native_structured_output"),
+        Function::SupportsSystemMessages => Some(NamedCapability::SystemMessages),
+        Function::SupportsParallelCalls => Some(NamedCapability::ParallelCalls),
+        Function::SupportsFunctionCalling => Some(NamedCapability::FunctionCalling),
+        Function::SupportsToolChoice => Some(NamedCapability::ToolChoice),
+        Function::SupportsPromptCaching => Some(NamedCapability::PromptCaching),
+        Function::SupportsReasoning => Some(NamedCapability::Reasoning),
+        Function::SupportsNoneReasoningEffort => Some(NamedCapability::NoneReasoningEffort),
+        Function::SupportsMidConversationSystem => Some(NamedCapability::MidConversationSystem),
+        Function::SupportsNativeStructuredOutput => {
+            Some(NamedCapability::NativeStructuredOutput)
+        }
         Function::SupportsFactory
         | Function::DeclaredValueFactory
         | Function::IsExplicitlyDisabledFactory
@@ -160,9 +163,9 @@ fn missing_key(function: Function) -> Box<HelperError> {
     })
 }
 
-fn required(function: Function, key: Option<&str>) -> Result<&str, Box<HelperError>> {
-    key.ok_or_else(|| missing_key(function))
-}
+// The three keyed factories read the same declaration; a step without one is a malformed call.
+
+
 
 async fn answer<Source, Transport>(
     step: &Step,
@@ -177,9 +180,10 @@ where
         custom_llm_provider: step.custom_llm_provider.as_deref(),
     };
     let Some(core) = core_of(step.function) else {
-        let key = named_key(step.function).ok_or_else(|| missing_key(step.function))?;
+        let capability =
+            named_capability(step.function).ok_or_else(|| missing_key(step.function))?;
         return Ok(Value::Bool(
-            environment.supports_factory(&request, key).await,
+            environment.supports_named(&request, capability).await,
         ));
     };
     core_answer(core, step, &request, environment).await
@@ -195,22 +199,27 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let key = step.key.as_deref();
+    let declared = step.key.as_deref();
     let value = match core {
-        Core::Factory => Value::Bool(
+        Core::Factory => {
+            let key = declared.ok_or_else(|| missing_key(step.function))?;
+            Value::Bool(environment.supports_factory(request, key).await)
+        }
+        Core::DeclaredValue => {
+            let key = declared.ok_or_else(|| missing_key(step.function))?;
             environment
-                .supports_factory(request, required(step.function, key)?)
-                .await,
-        ),
-        Core::DeclaredValue => environment
-            .declared_value_factory(request, required(step.function, key)?)
-            .await
-            .map_or(Value::Null, Value::String),
-        Core::Disabled => Value::Bool(
-            environment
-                .is_explicitly_disabled_factory(request, required(step.function, key)?)
-                .await,
-        ),
+                .declared_value_factory(request, key)
+                .await
+                .map_or(Value::Null, Value::String)
+        }
+        Core::Disabled => {
+            let key = declared.ok_or_else(|| missing_key(step.function))?;
+            Value::Bool(
+                environment
+                    .is_explicitly_disabled_factory(request, key)
+                    .await,
+            )
+        }
         Core::NativeStreaming => {
             let flagged = environment.supports_native_streaming(request).await;
             serde_json::to_value(flagged).map_err(|error| serialization_failure(&error))?
