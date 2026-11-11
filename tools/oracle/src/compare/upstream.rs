@@ -151,6 +151,7 @@ fn compare_body(
             message: GENERATED_FILENAMES_DIFFER.to_owned(),
         });
     }
+    // two decoded captures compare part by part, so only their random boundaries may differ
     let Some(pointer) = first_part_difference(&left_parts, &right_parts) else {
         return Ok(());
     };
