@@ -1,0 +1,14 @@
+task: B3993
+deviations:
+  - what: Terminal error classification is conservative; unknown, empty and non-XML bodies fail safe toward retry.
+    why: LiteLLM only drops objects for the seven fixed XML codes on 400 and 403; every other body or status stays in the retry path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L98-L101
+  - what: A 200 response whose body is valid JSON but not a JSON object returns None instead of the parsed value.
+    why: LiteLLM's declared return type is dict | None and its only caller reads spend-log fields from the object; a scalar or list would break that lookup instead of being useful, so betterlite treats it like an unreadable object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L982-L983
+  - what: GET signing resolves the region through the configured value, AWS_REGION, AWS_REGION_NAME and the us-west-2 default, as PUT does.
+    why: LiteLLM passes the unset s3_region_name straight to S3SigV4Auth for GET, so a deployment that relies on the environment for its region uploads objects but can never read them back; no working setup can rely on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L971
+  - what: An upload without a bucket or with an invalid region is rejected with a typed error when the transport is built.
+    why: LiteLLM builds the request from whatever strings the config produced and fails later inside the uploader; a working S3 logger always has a bucket and a valid region, so rejecting them early cannot break a working setup, and it keeps a request for a malformed host from being built at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L401-L411
