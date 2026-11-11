@@ -71,12 +71,8 @@ fn duplicate_metadata_seed() -> FixtureSeed {
 }
 
 fn missing_metadata_organization_seed() -> FixtureSeed {
-    seed_with_key_metadata(vec![metadata_row(
-        "sk-alice-token",
-        None,
-        Some("org-missing"),
-        None,
-    )])
+    let row = metadata_row("sk-alice-token", None, Some("org-missing"), None);
+    seed_with_key_metadata(vec![row])
 }
 
 fn missing_team_organization_seed() -> FixtureSeed {

@@ -1,3 +1,5 @@
+use std::result::Result as StdResult;
+
 use secrecy::ExposeSecret as _;
 use tokio_postgres::Client;
 use tokio_postgres::types::ToSql;
@@ -5,6 +7,8 @@ use tokio_postgres::types::ToSql;
 use super::FinOpsFixtureError;
 use super::model::{ConfigRow, FinOpsUsageRow, KeyMetadataRow, OrganizationRow, UsageApiKey};
 use crate::seed::FixtureSeed;
+
+type FixtureResult<T> = StdResult<T, FinOpsFixtureError>;
 
 const ORGANIZATION_INSERT: &str = "INSERT INTO \"LiteLLM_OrganizationTable\" (\"organization_id\",\"organization_alias\",\"budget_id\",\"models\",\"created_by\",\"updated_by\") VALUES ($1,$2,$3,$4,$5,$6)";
 
@@ -17,55 +21,49 @@ const DAILY_USAGE_INSERT: &str = "INSERT INTO \"LiteLLM_DailyUserSpend\" (\"id\"
 
 const CONFIG_INSERT: &str = "INSERT INTO \"LiteLLM_Config\" (\"param_name\",\"param_value\") VALUES ($1, to_jsonb($2::text))";
 
-async fn execute(
-    client: &Client,
-    statement: &str,
-    params: &[&(dyn ToSql + Sync)],
-) -> Result<(), FinOpsFixtureError> {
+async fn execute(client: &Client, sql: &str, values: &[&(dyn ToSql + Sync)]) -> FixtureResult<()> {
     client
-        .execute(statement, params)
+        .execute(sql, values)
         .await
         .map_err(FinOpsFixtureError::Database)?;
     Ok(())
 }
 
-pub(super) async fn organizations(
-    client: &Client,
-    rows: &[OrganizationRow],
-) -> Result<(), FinOpsFixtureError> {
+fn organization_params(row: &OrganizationRow) -> [&(dyn ToSql + Sync); 6] {
+    [
+        &row.organization_id,
+        &row.organization_alias,
+        &row.budget_id,
+        &row.models,
+        &row.created_by,
+        &row.updated_by,
+    ]
+}
+
+pub(super) async fn organizations(client: &Client, rows: &[OrganizationRow]) -> FixtureResult<()> {
     for row in rows {
-        execute(
-            client,
-            ORGANIZATION_INSERT,
-            &[
-                &row.organization_id,
-                &row.organization_alias,
-                &row.budget_id,
-                &row.models,
-                &row.created_by,
-                &row.updated_by,
-            ],
-        )
-        .await?;
+        execute(client, ORGANIZATION_INSERT, &organization_params(row)).await?;
     }
     Ok(())
 }
 
-pub(super) async fn key_metadata(
-    client: &Client,
-    rows: &[KeyMetadataRow],
-) -> Result<(), FinOpsFixtureError> {
+async fn execute_metadata(client: &Client, row: &KeyMetadataRow) -> FixtureResult<()> {
+    let token = FixtureSeed::key_hash(row.token.expose_secret());
+    execute(
+        client,
+        KEY_METADATA_UPDATE,
+        &[&row.key_alias, &row.organization_id, &token],
+    )
+    .await?;
+    if let Some(organization_id) = &row.team_organization_id {
+        execute(client, TEAM_METADATA_UPDATE, &[&organization_id, &token]).await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn key_metadata(client: &Client, rows: &[KeyMetadataRow]) -> FixtureResult<()> {
     for row in rows {
-        let token = FixtureSeed::key_hash(row.token.expose_secret());
-        execute(
-            client,
-            KEY_METADATA_UPDATE,
-            &[&row.key_alias, &row.organization_id, &token],
-        )
-        .await?;
-        if let Some(organization_id) = &row.team_organization_id {
-            execute(client, TEAM_METADATA_UPDATE, &[&organization_id, &token]).await?;
-        }
+        execute_metadata(client, row).await?;
     }
     Ok(())
 }
@@ -88,26 +86,12 @@ fn money_text(row: &FinOpsUsageRow) -> MoneyText {
     }
 }
 
-pub(super) async fn daily_usage(
-    client: &Client,
-    rows: &[FinOpsUsageRow],
-) -> Result<(), FinOpsFixtureError> {
-    for row in rows {
-        let api_key = match &row.api_key {
-            UsageApiKey::Key(token) => FixtureSeed::key_hash(token.expose_secret()),
-            UsageApiKey::OrphanHash(hash) => hash.clone(),
-        };
-        execute_usage(client, row, &api_key, &money_text(row)).await?;
-    }
-    Ok(())
-}
-
-async fn execute_usage(
-    client: &Client,
-    row: &FinOpsUsageRow,
-    api_key: &str,
-    money: &MoneyText,
-) -> Result<(), FinOpsFixtureError> {
+async fn execute_usage(client: &Client, row: &FinOpsUsageRow) -> FixtureResult<()> {
+    let api_key = match &row.api_key {
+        UsageApiKey::Key(token) => FixtureSeed::key_hash(token.expose_secret()),
+        UsageApiKey::OrphanHash(hash) => hash.clone(),
+    };
+    let money = money_text(row);
     execute(
         client,
         DAILY_USAGE_INSERT,
@@ -143,16 +127,24 @@ async fn execute_usage(
     .await
 }
 
-pub(super) async fn config_rows(
-    client: &Client,
-    rows: &[ConfigRow],
-) -> Result<(), FinOpsFixtureError> {
+pub(super) async fn daily_usage(client: &Client, rows: &[FinOpsUsageRow]) -> FixtureResult<()> {
     for row in rows {
-        let value = row
-            .serialized_value
-            .as_ref()
-            .map(|secret| secret.expose_secret().to_owned());
-        execute(client, CONFIG_INSERT, &[&row.name.as_wire(), &value]).await?;
+        execute_usage(client, row).await?;
+    }
+    Ok(())
+}
+
+async fn execute_config(client: &Client, row: &ConfigRow) -> FixtureResult<()> {
+    let value = row
+        .serialized_value
+        .as_ref()
+        .map(|secret| secret.expose_secret().to_owned());
+    execute(client, CONFIG_INSERT, &[&row.name.as_wire(), &value]).await
+}
+
+pub(super) async fn config_rows(client: &Client, rows: &[ConfigRow]) -> FixtureResult<()> {
+    for row in rows {
+        execute_config(client, row).await?;
     }
     Ok(())
 }

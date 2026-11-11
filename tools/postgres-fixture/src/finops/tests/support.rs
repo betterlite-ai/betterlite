@@ -83,21 +83,18 @@ fn fixture_budgets() -> Vec<BudgetRow> {
     }]
 }
 
+fn fill_fixture(seed: &mut FixtureSeed, finops: FinOpsSeed) {
+    seed.users = fixture_users();
+    seed.keys = fixture_keys();
+    seed.teams = fixture_teams();
+    seed.budgets = fixture_budgets();
+    seed.finops = Some(finops);
+}
+
 pub(super) fn fixture_with(finops: FinOpsSeed) -> FixtureSeed {
-    FixtureSeed {
-        users: fixture_users(),
-        keys: fixture_keys(),
-        teams: fixture_teams(),
-        memberships: Vec::new(),
-        budgets: fixture_budgets(),
-        jwt_mappings: Vec::new(),
-        daily_usage: None,
-        finops: Some(finops),
-        discovery_skills: None,
-        search_tools: None,
-        dashboard: None,
-        dashboard_governance: None,
-    }
+    let mut seed = FixtureSeed::default();
+    fill_fixture(&mut seed, finops);
+    seed
 }
 
 pub(super) fn organization(id: &str, alias: &str) -> OrganizationRow {
