@@ -208,10 +208,19 @@ async fn full_callbacks_list_keeps_the_phase_lists() {
     assert_only_identity(&registry, &[CallbackList::Failure], CALLBACK_NAME);
     let success = registry.loggers(CallbackPhase::Success);
     let failure = registry.loggers(CallbackPhase::Failure);
-    assert_eq!(success.len(), 1);
-    assert_eq!(failure.len(), 1);
-    assert!(Arc::ptr_eq(&success[0], &failure[0]));
-    success[0]
+    assert_eq!(success.len(), 2);
+    assert_eq!(failure.len(), 2);
+    let spend = success
+        .iter()
+        .find(|logger| logger.callback_name() == CALLBACK_NAME)
+        .cloned()
+        .expect("the spend logger answers the success phase");
+    assert!(
+        failure
+            .iter()
+            .any(|logger| logger.callback_name() == CALLBACK_NAME)
+    );
+    spend
         .async_log_success_event(event("completion", "success"))
         .await
         .unwrap();

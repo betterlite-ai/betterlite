@@ -3,6 +3,7 @@ pub mod ports;
 pub mod session;
 pub mod spend_logger;
 
+use std::error::Error;
 use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger;
@@ -98,11 +99,23 @@ where
         | StartupFailure::Storage
         | StartupFailure::Runtime
         | StartupFailure::InvalidValue => {
-            tracing::warn!(error = %source, "Agent tracing unavailable");
+            tracing::warn!(error = %error_text(&source), "Agent tracing unavailable");
             Ok(None)
         }
         StartupFailure::Unexpected => Err(source),
     }
+}
+
+// LiteLLM's warning prints the exception's str, so a wrapped cause has to reach the log line too
+fn error_text(source: &dyn Error) -> String {
+    let mut text = source.to_string();
+    let mut cause = source.source();
+    while let Some(inner) = cause {
+        text.push_str(": ");
+        text.push_str(&inner.to_string());
+        cause = inner.source();
+    }
+    text
 }
 
 mod tests;
