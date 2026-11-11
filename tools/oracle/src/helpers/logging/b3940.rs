@@ -50,7 +50,9 @@ struct Init {
 #[derive(Deserialize)]
 #[serde(tag = "do", rename_all = "snake_case")]
 enum Action {
-    Success { payload: StandardLoggingPayload },
+    Success {
+        payload: Box<StandardLoggingPayload>,
+    },
     SendBatch,
     Flush,
 }
@@ -97,7 +99,7 @@ async fn perform(
     match action {
         Action::Success { payload } => {
             logger
-                .async_log_success_event(event(payload.clone()))
+                .async_log_success_event(event(payload.as_ref().clone()))
                 .await
                 .map_err(value_error)?;
         }

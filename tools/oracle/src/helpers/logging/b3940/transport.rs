@@ -60,8 +60,8 @@ impl Transport for ScriptedTransport {
     ) -> impl Future<Output = Result<PutResponse, Self::Error>> + Send {
         let url = request.url.to_string();
         let content_type = header(&request, "content-type");
-        let api_key = header(&request, "dd-api-key");
-        let app_key = header(&request, "dd-application-key");
+        let credential = header(&request, "dd-api-key");
+        let application = header(&request, "dd-application-key");
         let raw = request.body;
         async move {
             let body = serde_json::from_slice::<Value>(&raw).map_err(ScriptedError::Body)?;
@@ -72,8 +72,8 @@ impl Transport for ScriptedTransport {
                     "url": url,
                     "method": "PUT",
                     "content_type": content_type,
-                    "api_key": api_key,
-                    "app_key": app_key,
+                    "api_key": credential,
+                    "app_key": application,
                     "body": body,
                 }));
             let reply = self
