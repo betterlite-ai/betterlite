@@ -1,0 +1,107 @@
+id: B8970
+title: MCP managed OpenAPI dispatch and separator diagnostic
+description: >-
+  Finish two manager leaves that the earlier splits did not implement. B8465 sends managed
+  OpenAPI calls to _call_openapi_tool_handler but assigns it to B4680, whose task explicitly
+  leaves that caller out. Build mcp::managed_openapi in betterlite-server for this function.
+  Separately build mcp::startup_diagnostics for the module-level separator probe; keep these
+  responsibilities in different files. Neither module registers a route or constructs a registry.
+
+  managed_openapi::call takes the shared B4680 ToolRegistry, a call record containing the
+  B6590 MCPServer, bare tool name, parsed arguments and B4683 OpenApiCallContext, and B8190
+  WireCompat. The default at callers is Legacy. Obtain the registry key with B6594
+  get_server_prefix and add_server_prefix_to_name, using the injected PrefixPolicy, including
+  its default separator "-". Do not concatenate server.name by hand: aliases and short prefixes
+  must resolve to the same key B6764 registered. Clone the registry entry before awaiting its
+  ToolHandler::call, forwarding the three context fields without changing any credential.
+
+  A missing entry logs an error and returns a completed CallToolResult with isError true and
+  one text block identifying the missing OpenAPI tool; it is not a thrown 404. A successful
+  handler goes through B8190's handler-outcome semantics and complete_call_tool_result.
+  OpenApiToolOutput::Json must retain its original JSON value and text; do not stringify it
+  into a second Text result and lose structuredContent. Legacy retains object structured
+  content only, modern also retains non-object JSON, and this entry never returns an interim
+  InputRequiredResult. Reuse the existing conversion, including its input-required refusal.
+  ToolHandlerError::OpenApi(OpenApiToolError::UpstreamAuth) propagates with status, challenge
+  and server intact. Every other handler failure logs an error and becomes a completed error
+  tool result. Use betterlite's error wording and docs/compatibility.md for textual values;
+  do not reproduce Python repr or exception class names. Own a local error enum for the
+  propagated challenge. Authorization, concurrency limits, deadlines and pre/post hooks
+  remain in the callers, so this leaf adds no second policy check or timeout.
+
+  startup_diagnostics::check_separator(separator) uses B4716's existing SEP-986 validator on
+  the exact probe "litellm" + separator + "probe". An invalid probe emits one warning naming
+  MCP_TOOL_PREFIX_SEPARATOR, its value and the SEP-986 proposal URL used by the source, then
+  continues startup; it never rejects configuration or repairs the separator. The caller
+  supplies B8620's config value, default "-", and calls this once per MCP area construction,
+  not once per server or request. The optional-import stub that always accepts a name is
+  unnecessary because the validator is compiled in. Do not port the SDK validator again.
+
+  Tests under managed_openapi::tests cover alias_key, short_prefix_key, arguments_and_context,
+  missing_registration, text_result, object_result, legacy_array, modern_array,
+  upstream_auth_preserved and ordinary_failure_result. A handler that tries a registry write
+  while awaiting proves the registry lock was released. startup_diagnostics::tests uses a
+  capturing subscriber for valid_separator_silent, invalid_separator_warns and warning_does_not_fail.
+  The pure helper cases compare only the separator probe's validity with the pinned SDK's
+  validate_tool_name; no helper invokes a manager method that reads proxy globals. B136 adds
+  HTTP coverage of the managed call, including its different REST and JSON-RPC auth surfaces.
+  The owned manager slices have 80 nonblank, non-comment lines, 65 excluding docstrings; expect
+  about 200 implementation and adapter lines plus 250 test lines. No byte decoder is added.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/managed_openapi.rs
+    - crates/betterlite-server/src/mcp/managed_openapi/**
+    - crates/betterlite-server/src/mcp/startup_diagnostics.rs
+    - crates/betterlite-server/src/mcp/startup_diagnostics/**
+    - tools/oracle/cases/helpers/mcp-separator-probe/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-separator-probe-*
+    - tools/oracle/helpers/b8970.py
+    - tools/oracle/helpers/b8970/**
+    - tools/oracle/src/helpers/server/b8970.rs
+    - tools/oracle/src/helpers/server/b8970/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L225-L251
+    why: Own the separator probe and warn-and-continue behavior; reuse the SDK validator already assigned to B4716.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5732-L5809
+    why: Own the managed registry lookup, invocation, completion conversion and preserved upstream auth failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/result_conversion.py#L67-L115
+    why: B8190's conversion contract, called here rather than implemented again.
+dod:
+  - text: The managed call finds the registration using the configured prefix, forwards arguments and credential context, and releases the registry lock before awaiting the handler.
+    proof: [dispatch-tests]
+  - text: Missing tools and ordinary failures become completed error results, successful values preserve the revision's structured content, and upstream authentication failures retain their typed challenge.
+    proof: [dispatch-tests]
+  - text: The separator probe matches the pinned validator and emits a warning without failing startup only when the probe is invalid.
+    proof: [diagnostic-tests, oracle, helper-python, helper-corpus]
+checks:
+  optional: []
+  commands:
+    - id: dispatch-tests
+      why: The manager's OpenAPI caller is absent or loses its registry key, context, result or challenge.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::managed_openapi::/)'
+    - id: diagnostic-tests
+      why: The import-time warning has no startup equivalent or incorrectly stops startup.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::startup_diagnostics::/)'
+    - id: helper-python
+      why: The separator oracle adapter fails strict Python checks.
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: No new separator-probe operation seed reaches the helper-case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-separator-probe-*')" && grep -rlq 'b8970' tools/oracle/fuzz/corpus/helper_case/mcp-separator-probe-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-separator-probe/separators.yaml
+deviations: []
+out_of_scope:
+  - "All other manager functions: B6760 OAuth decisions and extraction, B6761 discovery fetch, B6762 discovery slots, B6763 row building and warning helpers, B6764 config loading/OpenAPI registration, B6765 mutation and invalidation, B4731 registry reads and tool ownership, B6591 allowed-server/toolset union, B6592 health and instructions, B4682 initial tool-name mapping, B8460 credential utilities, B8461 client construction, B8462 listing, B8463 prompt/resource discovery, B8464 prechecks and B8465 dispatch/concurrency/retry."
+  - "B4680 owns every registry method; B4683 owns OpenAPI execution; B8190 owns every function in result_conversion.py and tool_outcome.py."
+  - "B8465 calls managed_openapi::call at its existing OpenAPI dispatch seam; B8620 invokes check_separator once in McpState::build. Their task specifications need the architect's handoff changes before dispatch."
+  - "operations.py _handle_local_mcp_tool remains B8198; configured Python handlers and their startup adapter are B8871 under B124."
+pitfalls:
+  - The input name is already bare when _call_openapi_tool_handler runs, so applying a prefix twice makes every valid registration look missing.
+  - Catching UpstreamAuth with ordinary handler failures removes the WWW-Authenticate challenge needed by the REST caller.
+  - The separator probe includes litellm and probe on either side, so validating only the separator is a different check.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

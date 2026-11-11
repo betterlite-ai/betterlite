@@ -1,0 +1,32 @@
+kind: helper
+name: message-utilities-prompt-template
+call:
+  b5366:
+    calls:
+      - function: register_prompt_template
+        model: llama-2
+        resolved_model: null
+        roles:
+          system: {pre_message: "[INST] <<SYS>>\n", post_message: "\n<</SYS>>\n [/INST]\n"}
+        initial_prompt_value: You are a good assistant
+        final_prompt_value: Now answer
+      - function: register_prompt_template
+        model: openai/gpt-4o-mini
+        resolved_model: gpt-4o-mini
+        roles: {}
+      - function: register_prompt_template
+        model: my-model
+        resolved_model: null
+        roles: {}
+        tokenizer_config: {tokenizer: x}
+      - function: get_empty_usage
+      - function: should_run_mock_completion
+        mock_response: 0
+        mock_tool_calls: []
+        mock_timeout: "0"
+      - function: should_run_mock_completion
+        mock_response: null
+        mock_tool_calls: null
+        mock_timeout: null
+env: {}
+compare: {ignore: []}

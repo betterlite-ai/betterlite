@@ -92,7 +92,7 @@ deviations: []
 out_of_scope:
   - "SettingsStore, ownership and source rules: B4140. The config param cache: B8397. Bucket download: B4143."
   - "ProxyConfig.load_config and the config file read itself: B002's loader and B4142's includes, with each key in its config section task."
-  - "Secret manager init from the raw config (_initialize_secret_manager_from_raw_config): B4412."
+  - "Secret manager init from the raw config (_initialize_secret_manager_from_raw_config): B8873. reload_config calls it on the parsed config before the whole-file reference resolution (B4412 only builds the KMS clients)."
 pitfalls:
   - The cache size hook needs whether the key came from the database before the row is applied, so read it first.
   - Pass-through endpoints merge by path with database entries first; a file entry whose path the database also has is dropped.

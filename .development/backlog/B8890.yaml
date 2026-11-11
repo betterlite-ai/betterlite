@@ -1,0 +1,14 @@
+id: B8890
+milestone: M7 observability
+title: Shared alert runtime construction and live updates
+status: todo
+depends_on: [B4020, B4021, B4022, B4023, B4024, B4027, B173, B256, B4293, B8611]
+file: tasks/B8890-alert-runtime.yaml
+covers:
+  - "litellm/integrations/SlackAlerting/slack_alerting.py"
+parent: B116
+split_from: B116
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -141,7 +141,7 @@ deviations:
 out_of_scope:
   - ContentFilterConfigModel and ContentFilterPattern (owned by B3660)
   - ContentFilterAction and BlockedWord (owned by B3660)
-  - GuardrailConfigModel base class and per-role/per-hook inheritance (owned by B104)
+  - GuardrailConfigModel base class and per-role/per-hook inheritance (owned by B3660)
   - Dynamic provider discovery, factory registry and callback construction (owned by B3680-B3682)
   - Enterprise-package conditional imports or hide-secrets initialization (out of MIT scope)
 

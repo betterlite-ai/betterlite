@@ -142,7 +142,7 @@ async fn invoke(
     let mut argv = vec![OsString::from("betterlite-db-admin")];
     argv.extend(arguments.iter().map(|argument| OsString::from(*argument)));
     let mut recorder = Recorder::default();
-    let status = run(argv, environment, backend, &mut recorder).await;
+    let status = Box::pin(run(argv, environment, backend, &mut recorder)).await;
     (status, recorder)
 }
 
@@ -389,7 +389,13 @@ async fn start_log_precedes_backend() {
         OsString::from("betterlite-db-admin"),
         OsString::from("migrate"),
     ];
-    let status = run(argv, pinned_environment(), &harness.backend, &mut recorder).await;
+    let status = Box::pin(run(
+        argv,
+        pinned_environment(),
+        &harness.backend,
+        &mut recorder,
+    ))
+    .await;
     assert_eq!(status, ExitStatus::Success);
     let lines = harness.log.lock().expect("log").clone();
     let start = lines

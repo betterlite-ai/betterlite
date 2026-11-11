@@ -8,7 +8,7 @@ use determinator::rules::DeterminatorRules;
 use crate::affected::{RULES, arguments, packages};
 use crate::git::git;
 
-const LOCK: &str = "version = 4\n\n[[package]]\nname = \"alpha\"\nversion = \"0.0.0\"\n\n[[package]]\nname = \"beta\"\nversion = \"0.0.0\"\ndependencies = [\n \"alpha\",\n]\n\n[[package]]\nname = \"gamma\"\nversion = \"0.0.0\"\n";
+const LOCK: &str = "version = 4\n\n[[package]]\nname = \"alpha\"\nversion = \"0.0.0\"\n\n[[package]]\nname = \"beta\"\nversion = \"0.0.0\"\ndependencies = [\n \"alpha\",\n]\n\n[[package]]\nname = \"betterlite-dashboard-browser\"\nversion = \"0.0.0\"\n\n[[package]]\nname = \"gamma\"\nversion = \"0.0.0\"\n";
 
 fn member(root: &Path, name: &str, dependency: &str) {
     fs::create_dir_all(root.join(name).join("src")).unwrap();
@@ -45,12 +45,14 @@ fn only_edited_leaves_out_the_packages_that_depend_on_the_edit() {
     git(root, &["init", "--quiet", "-b", "main"]).unwrap();
     fs::write(
         root.join("Cargo.toml"),
-        "[workspace]\nmembers = [\"alpha\", \"beta\", \"gamma\"]\nresolver = \"3\"\n",
+        "[workspace]\nmembers = [\"alpha\", \"beta\", \"betterlite-dashboard-browser\", \"gamma\"]\nresolver = \"3\"\n",
     )
     .unwrap();
     fs::write(root.join("Cargo.lock"), LOCK).unwrap();
     member(root, "alpha", "");
     member(root, "beta", "alpha = { path = \"../alpha\" }\n");
+    // rules.toml marks this package by name, and determinator fails on a name the workspace lacks
+    member(root, "betterlite-dashboard-browser", "");
     member(root, "gamma", "");
     let base = commit(root);
     fs::write(root.join("alpha/src/lib.rs"), "pub const A: u8 = 1;\n").unwrap();

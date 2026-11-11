@@ -1,0 +1,12 @@
+kind: helper
+name: provider-api-base-model-alias-map
+call:
+  b7320:
+    model: my-copilot
+    model_alias_map:
+      my-copilot: github_copilot/gpt-4
+    hooks:
+      github_copilot: https://copilot.test/api
+      chatgpt: https://chatgpt.test/api
+env: {}
+compare: {ignore: []}

@@ -108,7 +108,7 @@ out_of_scope:
   - "decode_managed_container_id_for_request, the optional-param helpers, encode_container_id_in_response and get_provider_container_config: B3361 owns them; this task calls them."
   - "ContainerObject, ContainerListResponse and the optional-param record types: B3360 owns them."
   - "GenericLiteLLMParams: B010 owns it. The @client decorator: B012 owns it."
-  - "Proxy routes for /v1/containers: B094 and its proxy parts register them. No route reaches this code yet, so there are no HTTP oracle cases."
+  - "Proxy routes for /v1/containers: B7430 registers them in the router, B7326 holds the handlers and B8635 mounts them and owns the basic HTTP cases. No route reaches this code yet, so there are no HTTP oracle cases."
 pitfalls:
   - >-
     The two no-config errors differ in wording ("container operations are not supported for X" on create, "Container provider config not found for provider: X" on list); keep each text exact.

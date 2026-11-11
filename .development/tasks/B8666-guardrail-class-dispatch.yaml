@@ -60,6 +60,13 @@ description: >-
   name and the error text, never the parameters, and that guardrail is skipped.
 
 
+  Vigil. The `LiveGuardrail` variant for Vigil holds B8990's `vigil_runtime::VigilGuard`. `LiveGuardrail::build`
+  supplies B3799's `AsyncPostHandler` over B173's pooled transport and resolves absent explicit credentials through
+  B8500's secret lookup, so `ClassPorts` carries the secret-lookup handle that B8613 supplies. Before a Vigil hook
+  returns success or failure, merge the Prisma and moderation scan records through B8994's guardrail_metadata
+  utilities. B8990 owns the constructor, apply and config-model logic; this task only builds and dispatches it.
+
+
   callback.rs. `LiveCallback` pairs a `GuardrailCallback` with its `Arc<LiveGuardrail>` and implements B8390's
   `ProxyCallback` (the hook methods forward to the live guardrail, `overrides` comes from it) and `GuardrailCallback`
   (guardrail_name, run_in_parallel, scan_raw_request, use_native_during_call_hook, event_hook_is_set and
@@ -134,7 +141,7 @@ deviations:
   - what: A held guardrail reaches its class through one match on its spec instead of a Python subclass instance.
     why: Guardrail callbacks are data in betterlite (B3682), and Rust has no class dictionary to inspect; clients see the same hooks run.
 out_of_scope:
-  - "The classes and their hooks: each class task under B105 to B109. The spec types: B3682 and B8521."
+  - "The classes and their hooks: each class task under B105 to B109, including B8773 for the content filter class. The spec types: B3682 and B8521."
   - "Building the one GuardrailClasses and installing its callbacks: B8613. ProxyLogging and its add_guardrail_callbacks: B8399. The unified hook path: B3680."
   - "Setting the embedder slot from the router embedder, and the routes that use ComplianceGuardrails, ContentFilterRunner and the pipeline hooks: B8790."
   - "The tool policy adapters, the read-through and the suggestion model: B8665."
