@@ -27,7 +27,7 @@ fn settings(variables: &[(&str, &str)]) -> Settings {
 #[case::loads_imds_endpoint("IMDS_ENDPOINT", "http://arc.test/imds", |settings: &Settings| settings.imds_endpoint.clone(), false, false)]
 #[case::loads_msi_endpoint("MSI_ENDPOINT", "http://ml.test/token", |settings: &Settings| settings.msi_endpoint.clone(), false, false)]
 #[case::loads_msi_secret("MSI_SECRET", "fixture-msi-secret", |settings: &Settings| settings.msi_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), true, false)]
-#[case::loads_pod_identity_authority_host("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://169.254.170.2", |settings: &Settings| settings.pod_identity_authority_host.clone(), false, false)]
+#[case::loads_azure_pod_identity_authority_host("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://169.254.170.2", |settings: &Settings| settings.pod_identity_authority_host.clone(), false, false)]
 #[case::rejects_unrelated_key("UNRELATED_IDENTITY_ENDPOINT", "http://elsewhere.test/token", |settings: &Settings| settings.identity_endpoint.clone(), false, true)]
 fn azure_managed_identity_config_cases(
     #[case] name: &str,
