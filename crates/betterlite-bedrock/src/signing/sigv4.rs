@@ -8,7 +8,6 @@ use aws_sigv4::sign::v4;
 use aws_smithy_runtime_api::client::identity::Identity;
 use secrecy::ExposeSecret as _;
 use std::time::SystemTime;
-const PROVIDER_NAME: &str = "betterlite-bedrock";
 #[derive(Debug, Clone, Copy)]
 pub struct Signable<'source> {
     pub method: &'source str,
@@ -76,7 +75,7 @@ fn identity(credentials: &Credentials) -> Identity {
             .as_ref()
             .map(|token| token.expose_secret().to_owned()),
         None,
-        PROVIDER_NAME,
+        "betterlite-bedrock",
     ))
 }
 // botocore signs with a caller-supplied X-Amz-Content-SHA256 instead of hashing the body

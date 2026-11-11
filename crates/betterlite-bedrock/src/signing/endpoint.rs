@@ -1,7 +1,8 @@
 use super::body::Body;
 use super::error::SigningError;
 use super::headers::{
-    filter_for_signature, prepare, reattach, replace, resolved, set_exact, without_computed,
+    filter_for_signature, override_authorization, prepare, reattach, resolved, set_exact,
+    without_computed,
 };
 use super::request::AwsSignedRequest;
 use super::sigv4::{Signable, sign_request};
@@ -23,12 +24,8 @@ pub struct RequestHeaders<'source> {
     pub now: SystemTime,
 }
 pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, SigningError> {
-    let bearer = if request.supports_bearer_token {
-        bedrock_bearer_token(request.api_key, request.configured_bearer)
-    } else {
-        None
-    };
-    if let Some(token) = bearer {
+    let bearer = bedrock_bearer_token(request.api_key, request.configured_bearer);
+    if let Some(token) = bearer.filter(|_| request.supports_bearer_token) {
         return Ok(bearer_signed(request, &token));
     }
     let Some(credentials) = request.credentials else {
@@ -36,7 +33,7 @@ pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, 
     };
     let has_token = credentials.session_token.is_some();
     let signature = without_computed(filter_for_signature(request.headers), has_token);
-    let computed = sign_request(&Signable {
+    let mut headers = sign_request(&Signable {
         method: "POST",
         url: request.endpoint,
         headers: &signature,
@@ -46,11 +43,12 @@ pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, 
         credentials,
         now: request.now,
     })?;
-    let mut headers = computed;
     reattach(request.headers, &mut headers, has_token);
-    if let Some(value) = extra_authorization(request.extra_headers) {
-        replace(&mut headers, "Authorization".to_owned(), value.to_owned());
-    }
+    let extra = request
+        .extra_headers
+        .iter()
+        .find(|(name, _)| name == "Authorization");
+    override_authorization(&mut headers, extra.map(|(_, value)| value.as_str()));
     Ok(AwsSignedRequest {
         method: "POST".to_owned(),
         url: request.endpoint.to_owned(),
@@ -71,11 +69,4 @@ fn bearer_signed(request: RequestHeaders<'_>, token: &SecretString) -> AwsSigned
         headers: prepare(resolved(&headers), request.data.content_length(), "POST"),
         body: request.data.bytes().to_vec(),
     }
-}
-fn extra_authorization(extra: &[(String, String)]) -> Option<&str> {
-    let (_, value) = extra.iter().find(|(name, _)| name == "Authorization")?;
-    if value.starts_with("AWS4-HMAC-SHA256") {
-        return None;
-    }
-    Some(value.as_str())
 }

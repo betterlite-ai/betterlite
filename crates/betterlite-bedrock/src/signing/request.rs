@@ -7,23 +7,11 @@ pub struct AwsSignedRequest {
 }
 impl Debug for AwsSignedRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let headers: Vec<String> = self
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                if name.eq_ignore_ascii_case("authorization")
-                    || name.eq_ignore_ascii_case("x-amz-security-token")
-                {
-                    format!("{name}: <redacted>")
-                } else {
-                    format!("{name}: {value}")
-                }
-            })
-            .collect();
+        let names: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
         f.debug_struct("AwsSignedRequest")
             .field("method", &self.method)
             .field("url", &self.url)
-            .field("headers", &headers)
+            .field("header_names", &names)
             .field("body_length", &self.body.len())
             .finish()
     }

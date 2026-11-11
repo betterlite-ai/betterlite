@@ -50,21 +50,17 @@ where
         .map_or(Ok(None), |raw| {
             parse_string(raw, "aws_bedrock_runtime_endpoint")
         })?;
-    if request.bearer_token.is_some() {
-        return Ok(RequestTarget {
-            region,
-            endpoint,
-            credentials: None,
-        });
-    }
-    let settings = auth_settings(auth, &region);
-    let credentials = resolve_credentials(&settings, &region)
-        .await
-        .map_err(SigningError::Credential)?;
+    let credentials = if request.bearer_token.is_some() {
+        None
+    } else {
+        let settings = auth_settings(auth, &region);
+        let resolved = resolve_credentials(&settings, &region).await;
+        Some(resolved.map_err(SigningError::Credential)?)
+    };
     Ok(RequestTarget {
         region,
         endpoint,
-        credentials: Some(credentials),
+        credentials,
     })
 }
 pub(crate) fn resolve_region(
@@ -109,8 +105,7 @@ fn read_string(
     parameters: &BTreeMap<String, Box<RawValue>>,
     field: &'static str,
 ) -> Result<Option<String>, SigningError> {
-    let Some(raw) = parameters.get(field) else {
-        return Ok(None);
-    };
-    parse_string(raw, field)
+    parameters
+        .get(field)
+        .map_or(Ok(None), |raw| parse_string(raw, field))
 }

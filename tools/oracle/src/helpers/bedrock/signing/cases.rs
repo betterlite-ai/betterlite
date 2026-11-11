@@ -2,10 +2,8 @@ use super::input::{
     BatchRequest as BatchRequestInput, OffLoop, RequestTarget as RequestTargetInput,
     ServiceRequest as ServiceRequestInput,
 };
-use super::ops::{
-    credentials_json, credentials_of, epoch, input_error, optional_headers, runtime, signed_result,
-};
-use crate::helpers::HelperError;
+use super::ops::{credentials_json, credentials_of, epoch, runtime, signed_result};
+use crate::helpers::{HelperError, OrHelperError as _};
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::signing::batch::sign_batch_request;
@@ -21,7 +19,7 @@ use tracing::subscriber::with_default;
 use tracing_subscriber::registry;
 pub(super) fn service_request_case(case: &ServiceRequestInput) -> Result<Value, Box<HelperError>> {
     let fixture = credentials_of(&case.credentials);
-    let headers = optional_headers(&case.headers);
+    let headers: Vec<_> = case.headers.clone().into_iter().collect();
     let request = case.request(&headers, epoch(case.now)?);
     let result = runtime()?.block_on(sign_service_request(request, |_settings, _region| {
         ready(Ok::<Credentials, CredentialError>(fixture.clone()))
@@ -52,8 +50,7 @@ pub(super) fn request_target_case(case: &RequestTargetInput) -> Result<Value, Bo
     let Ok(target) = outcome else {
         return Ok(json!({"ok": false, "status": null}));
     };
-    let remaining =
-        serde_json::to_value(&parameters).map_err(|error| input_error(error.to_string()))?;
+    let remaining = serde_json::to_value(&parameters).or_value_error()?;
     Ok(json!({
         "ok": true,
         "region": target.region,
@@ -82,27 +79,20 @@ pub(super) fn off_loop_case(case: &OffLoop) -> Result<Value, Box<HelperError>> {
 async fn observed_steps(probe: &Probe, failure_message: &str) -> Vec<Value> {
     let executor = AwsSigningExecutor::default();
     let unsigned = |_error: SigningError| json!({"ok": false, "status": null});
-    let run_probe = probe.clone();
-    let inline_probe = probe.clone();
-    let offloaded_probe = probe.clone();
-    let failure_text = failure_message.to_owned();
+    let observe = |kind: &'static str| {
+        let owned = probe.clone();
+        move || owned.observe(kind)
+    };
+    let failure = failure_message.to_owned();
     vec![
-        executor
-            .run(move || run_probe.observe("run"))
+        executor.run(observe("run")).await.unwrap_or_else(unsigned),
+        sign_request_off_loop_if_aws(&executor, false, observe("inline"))
             .await
             .unwrap_or_else(unsigned),
-        sign_request_off_loop_if_aws(&executor, false, move || inline_probe.observe("inline"))
+        sign_request_off_loop_if_aws(&executor, true, observe("offloaded"))
             .await
             .unwrap_or_else(unsigned),
-        sign_request_off_loop_if_aws(&executor, true, move || {
-            offloaded_probe.observe("offloaded")
-        })
-        .await
-        .unwrap_or_else(unsigned),
-        match executor
-            .run(move || Err::<Value, String>(failure_text))
-            .await
-        {
+        match executor.run(move || Err::<Value, String>(failure)).await {
             Ok(Ok(value)) => value,
             Ok(Err(message)) => json!({"kind": "failure", "failed": true, "value": message}),
             Err(error) => unsigned(error),

@@ -24,7 +24,7 @@ from litellm.llms.bedrock.base_aws_llm import (
     sign_request_off_loop_if_aws,
 )
 from litellm.llms.bedrock.common_utils import CommonBatchFilesUtils
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
 if TYPE_CHECKING:
     from litellm.types.llms.bedrock import BedrockCreateBatchRequest
@@ -34,11 +34,7 @@ ServiceName: TypeAlias = Literal[
 ]
 
 
-class Fixture(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class Keys(Fixture):
+class Keys(BaseModel):
     access_key_id: str
     secret_access_key: str
     session_token: str | None = None
@@ -51,20 +47,12 @@ class Keys(Fixture):
         )
 
 
-class TextData(Fixture):
-    text: str
-
-
-class Base64Data(Fixture):
-    base64: str
-
-
-class RequestHeaders(Fixture):
+class RequestHeaders(BaseModel):
     credentials: Keys | None = None
     region: str
     extra_headers: dict[str, str]
     endpoint: str
-    data: TextData | Base64Data
+    data: dict[Literal["text", "base64"], str]
     headers: dict[str, str | None]
     api_key: str | None = None
     configured_bearer_token: str | None = None
@@ -72,7 +60,7 @@ class RequestHeaders(Fixture):
     now: int
 
 
-class ServiceRequest(Fixture):
+class ServiceRequest(BaseModel):
     credentials: Keys
     service_name: ServiceName
     headers: dict[str, str | None]
@@ -85,7 +73,7 @@ class ServiceRequest(Fixture):
     now: int
 
 
-class JsonPost(Fixture):
+class JsonPost(BaseModel):
     credentials: Keys
     service_name: str
     region: str | None = None
@@ -95,14 +83,14 @@ class JsonPost(Fixture):
     now: int
 
 
-class RequestTarget(Fixture):
+class RequestTarget(BaseModel):
     credentials: Keys
     optional_params: dict[str, Json]
     model: str | None = None
     bearer_token: str | None = None
 
 
-class BatchRequest(Fixture):
+class BatchRequest(BaseModel):
     credentials: Keys
     service_name: str
     data: str | dict[str, Json]
@@ -112,18 +100,10 @@ class BatchRequest(Fixture):
     now: int
 
 
-class OffLoop(Fixture):
+class OffLoop(BaseModel):
     context: str
     value: str
     failure: str
-
-
-class Calls(Fixture):
-    calls: list[Json]
-
-
-def fixed_clock(epoch: int) -> Callable[[], datetime]:
-    return lambda: datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
 
 
 def secret_lookup(_name: str, default: str | None = None) -> str | None:
@@ -134,10 +114,6 @@ def bearer_lookup(name: str, token: str | None) -> str | None:
     return token if name == "AWS_BEARER_TOKEN_BEDROCK" else None
 
 
-def session_factory() -> SimpleNamespace:
-    return SimpleNamespace(region_name=None)
-
-
 class Resolver:
     def __init__(self, credentials: Credentials) -> None:
         self.credentials = credentials
@@ -146,14 +122,6 @@ class Resolver:
     def __call__(self, _auth_params: object, _region: object) -> Credentials:
         self.calls += 1
         return self.credentials
-
-
-class NonAwsConfig:
-    pass
-
-
-class AwsConfig(SignsRequestsWithAWS):
-    pass
 
 
 def signed_json(method: str, url: str, headers: Mapping[str, object], body: object) -> Json:
@@ -170,21 +138,18 @@ def signed_json(method: str, url: str, headers: Mapping[str, object], body: obje
 
 @contextmanager
 def clock(epoch: int) -> Generator[None, None, None]:
-    with patch.object(botocore.auth, "get_current_datetime", fixed_clock(epoch)):
+    frozen = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
+    with patch.object(botocore.auth, "get_current_datetime", lambda: frozen):
         yield
 
 
 @contextmanager
-def harness(
-    configured_bearer: str | None, resolver: Resolver | None
-) -> Generator[None, None, None]:
+def harness(bearer: str | None, resolver: Resolver | None) -> Generator[None, None, None]:
     with (
         patch.dict(os.environ, {}, clear=True),
         patch.object(base_aws_llm, "get_secret", secret_lookup),
-        patch.object(
-            base_aws_llm, "get_secret_str", partial(bearer_lookup, token=configured_bearer)
-        ),
-        patch("boto3.Session", session_factory),
+        patch.object(base_aws_llm, "get_secret_str", partial(bearer_lookup, token=bearer)),
+        patch("boto3.Session", lambda: SimpleNamespace(region_name=None)),
     ):
         if resolver is None:
             yield
@@ -195,11 +160,8 @@ def harness(
 
 def request_headers(payload: Json) -> Json:
     case = RequestHeaders.model_validate(payload)
-    data = (
-        case.data.text
-        if isinstance(case.data, TextData)
-        else b64decode(case.data.base64, validate=True)
-    )
+    encoded = case.data.get("base64")
+    data = case.data["text"] if encoded is None else b64decode(encoded, validate=True)
     with harness(case.configured_bearer_token, None), clock(case.now):
         get_headers = BaseAWSLLM().get_request_headers  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
         prepped = get_headers(
@@ -304,12 +266,12 @@ async def off_loop_steps(case: OffLoop) -> list[Json]:
         {
             "kind": "inline",
             "failed": False,
-            **await sign_request_off_loop_if_aws(NonAwsConfig(), observe),
+            **await sign_request_off_loop_if_aws(object(), observe),
         },
         {
             "kind": "offloaded",
             "failed": False,
-            **await sign_request_off_loop_if_aws(AwsConfig(), observe),
+            **await sign_request_off_loop_if_aws(SignsRequestsWithAWS(), observe),
         },
     ]
     try:
@@ -350,4 +312,8 @@ def run_call(call: Json) -> Json:
 
 def run(input_value: dict[str, Json]) -> Json:
     _ = litellm
-    return {"steps": [run_call(call) for call in Calls.model_validate(input_value).calls]}
+    return {
+        "steps": [
+            run_call(call) for call in TypeAdapter(list[Json]).validate_python(input_value["calls"])
+        ]
+    }

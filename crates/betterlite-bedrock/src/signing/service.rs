@@ -1,6 +1,6 @@
 use super::error::SigningError;
 use super::headers::{
-    filter_for_signature, find_value, reattach, replace, resolved, set_exact, without_computed,
+    filter_for_signature, override_authorization, reattach, resolved, set_exact, without_computed,
 };
 use super::request::AwsSignedRequest;
 use super::sigv4::{Signable, sign_request};
@@ -124,11 +124,11 @@ fn sigv4_signed(
         now: request.now,
     })?;
     reattach(&headers, &mut signed, has_token);
-    if let Some(value) = find_value(&headers, "authorization")
-        && !value.starts_with("AWS4-HMAC-SHA256")
-    {
-        replace(&mut signed, "Authorization".to_owned(), value.to_owned());
-    }
+    let supplied = headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .find_map(|(_, value)| value.as_deref());
+    override_authorization(&mut signed, supplied);
     Ok(AwsSignedRequest {
         method: "POST".to_owned(),
         url: request.api_base.to_owned(),

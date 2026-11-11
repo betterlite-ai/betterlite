@@ -5,19 +5,8 @@ pub fn filter_for_signature(headers: &[(String, Option<String>)]) -> Vec<(String
         .filter_map(|(name, value)| {
             let present = value.as_ref()?;
             let lower = name.to_ascii_lowercase();
-            let signed = matches!(
-                lower.as_str(),
-                "host"
-                    | "content-type"
-                    | "date"
-                    | "x-amz-date"
-                    | "x-amz-security-token"
-                    | "x-amz-content-sha256"
-                    | "x-amz-algorithm"
-                    | "x-amz-credential"
-                    | "x-amz-signedheaders"
-                    | "x-amz-signature"
-            ) || lower.starts_with("x-amz-")
+            let signed = matches!(lower.as_str(), "host" | "content-type" | "date")
+                || lower.starts_with("x-amz-")
                 || lower.starts_with("x-amzn-");
             signed.then_some((name.clone(), present.clone()))
         })
@@ -28,15 +17,10 @@ pub fn reattach(
     signed: &mut Vec<(String, String)>,
     has_token: bool,
 ) {
-    for (name, value) in original {
-        let Some(present) = value else {
-            continue;
-        };
-        if computed(name, has_token) {
-            continue;
-        }
-        signed.push((name.clone(), present.clone()));
-    }
+    let kept = original
+        .iter()
+        .filter(|(name, _)| !computed(name, has_token));
+    signed.extend(kept.filter_map(|(name, value)| Some((name.clone(), value.clone()?))));
 }
 // botocore only replaces a stale x-amz-security-token when the credentials carry one
 const fn computed(name: &str, has_token: bool) -> bool {
@@ -55,15 +39,10 @@ pub fn resolved(headers: &[(String, Option<String>)]) -> Vec<(String, String)> {
         .filter_map(|(name, value)| Some((name.clone(), value.as_ref()?.clone())))
         .collect()
 }
-#[must_use]
-pub fn find_value<'source>(
-    headers: &'source [(String, Option<String>)],
-    name: &str,
-) -> Option<&'source str> {
-    headers
-        .iter()
-        .filter(|(header, _)| header.eq_ignore_ascii_case(name))
-        .find_map(|(_, value)| value.as_deref())
+pub fn override_authorization(signed: &mut Vec<(String, String)>, supplied: Option<&str>) {
+    if let Some(value) = supplied.filter(|value| !value.starts_with("AWS4-HMAC-SHA256")) {
+        replace(signed, "Authorization".to_owned(), value.to_owned());
+    }
 }
 pub fn set_exact(headers: &mut Vec<(String, Option<String>)>, name: &str, value: String) {
     match headers.iter_mut().find(|(existing, _)| existing == name) {
@@ -81,14 +60,12 @@ pub fn replace(headers: &mut Vec<(String, String)>, name: String, value: String)
     }
 }
 #[must_use]
-pub fn without_computed(headers: Vec<(String, String)>, has_token: bool) -> Vec<(String, String)> {
-    let mut kept = Vec::with_capacity(headers.len());
-    for (name, value) in headers {
-        if !computed(&name, has_token) {
-            kept.push((name, value));
-        }
-    }
-    kept
+pub fn without_computed(
+    mut headers: Vec<(String, String)>,
+    has_token: bool,
+) -> Vec<(String, String)> {
+    headers.retain(|(name, _)| !computed(name, has_token));
+    headers
 }
 #[must_use]
 pub fn merge_computed(
