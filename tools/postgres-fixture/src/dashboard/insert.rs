@@ -14,7 +14,7 @@ const COLUMNS: &str = "\"request_id\",\"call_type\",\"api_key\",\"spend\",\"tota
 
 const TIMESTAMP_CAST: &str = "::text::timestamp(3)";
 const SPEND_CAST: &str = "::text::numeric::double precision";
-const JSON_CAST: &str = "::jsonb";
+const JSON_CAST: &str = "::text::jsonb";
 
 struct Bindings<'log> {
     placeholders: Vec<String>,
@@ -31,10 +31,10 @@ impl<'log> Bindings<'log> {
         self.placeholders.push(format!("${position}{cast}"));
     }
 
-    // an omitted payload column keeps the value the pinned schema defaults it to
-    fn bind_json(&mut self, value: Option<&'log String>) {
+    // an omitted model or payload keeps the value the pinned schema defaults it to
+    fn bind_or_default(&mut self, value: Option<&'log String>, cast: &str) {
         match value {
-            Some(text) => self.bind(text, JSON_CAST),
+            Some(text) => self.bind(text, cast),
             None => self.placeholders.push("DEFAULT".to_owned()),
         }
     }
@@ -75,7 +75,7 @@ pub(super) async fn insert_log(
     client
         .execute(&statement, &bindings.params)
         .await
-        .map_err(DashboardFixtureError::Database)?;
+        .map_err(|source| DashboardFixtureError::Insert { row, source })?;
     Ok(())
 }
 
@@ -106,7 +106,7 @@ fn bind_log<'log>(
     bindings.bind(&log.end_time, TIMESTAMP_CAST);
     bindings.bind(&log.completion_start_time, TIMESTAMP_CAST);
     bindings.bind(&log.request_duration_ms, "");
-    bindings.bind(&log.model, "");
+    bindings.bind_or_default(log.model.as_ref(), "");
     bindings.bind(&log.model_id, "");
     bindings.bind(&log.model_group, "");
     bindings.bind(&log.custom_llm_provider, "");
@@ -118,6 +118,6 @@ fn bind_log<'log>(
     bindings.bind(&log.cache_hit, "");
     bindings.bind(&log.litellm_call_id, "");
     for payload in payloads {
-        bindings.bind_json(payload.as_ref());
+        bindings.bind_or_default(payload.as_ref(), JSON_CAST);
     }
 }

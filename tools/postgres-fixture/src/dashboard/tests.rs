@@ -435,9 +435,9 @@ fn round_trip_logs() -> Vec<SpendLogSeed> {
 
 const ALICE_ROW: &str = r#"acompletion|<api-key>|1.25|100|60|40|2026-01-01 10:00:00.123|2026-01-01 10:00:02.456|2026-01-01 10:00:01.000|2333|openai/gpt-5|model-id|default|openai|alice|team-red|customer|session-shared|success|True|call-alice|{}|["tag-a", "tag-b"]|[{"role": "user", "content": "hello"}]|{"id": "chatcmpl-1"}|{"url": "http://localhost/v1/chat/completions"}"#;
 
-const BOB_ROW: &str = r#"acompletion|<api-key>|-0.5|0|0|0|2026-01-01 11:00:00.000|2026-01-01 11:00:01.000|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|session-shared|<null>|<null>|<null>|{"project_id": "project-x"}|<null>|<null>|<null>|<null>"#;
+const BOB_ROW: &str = r#"acompletion|<api-key>|-0.5|0|0|0|2026-01-01 11:00:00.000|2026-01-01 11:00:01.000|<null>|<null>||<null>|<null>|<null>|<null>|<null>|<null>|session-shared|<null>|<null>|<null>|{"project_id": "project-x"}|[]|{}|{}|{}"#;
 
-const MINIMAL_ROW: &str = "aembedding|<api-key>|0|0|0|0|2026-01-02 00:00:00.000|2026-01-02 00:00:01.000|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|{}|[]|{}|{}|{}";
+const MINIMAL_ROW: &str = "aembedding|<api-key>|0|0|0|0|2026-01-02 00:00:00.000|2026-01-02 00:00:01.000|<null>|<null>||<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|<null>|{}|[]|{}|{}|{}";
 
 fn expected_row(template: &str, token: &str) -> String {
     template.replace("<api-key>", &FixtureSeed::key_hash(token))
@@ -493,7 +493,7 @@ async fn assert_duplicate_request_id_fails(client: &Client, seed: &FixtureSeed) 
     let dashboard = seed.dashboard.as_ref().unwrap();
     let error = dashboard::seed(client, dashboard, seed).await.unwrap_err();
     assert!(
-        matches!(error, DashboardFixtureError::Database(_)),
+        matches!(error, DashboardFixtureError::Insert { .. }),
         "a duplicate request_id is an insert failure, not an upsert: {error:?}"
     );
     assert_eq!(
@@ -730,7 +730,9 @@ async fn dashboard_seed_rejects_bad_rows_and_cleans_up_insert_failures() {
             .await;
     assert!(matches!(
         result,
-        Err(FixtureError::Dashboard(DashboardFixtureError::Database(_)))
+        Err(FixtureError::Dashboard(
+            DashboardFixtureError::Insert { .. }
+        ))
     ));
     assert!(
         !database_exists(&admin_url, "dashboard_bad_timestamp").await,

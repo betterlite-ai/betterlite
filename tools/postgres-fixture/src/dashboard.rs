@@ -160,6 +160,12 @@ pub enum DashboardFixtureError {
         #[source]
         source: Utf8Error,
     },
+    #[error("dashboard log row {row} failed to insert")]
+    Insert {
+        row: usize,
+        #[source]
+        source: tokio_postgres::Error,
+    },
     #[error("dashboard fixture database operation failed: {0}")]
     Database(#[source] tokio_postgres::Error),
 }
