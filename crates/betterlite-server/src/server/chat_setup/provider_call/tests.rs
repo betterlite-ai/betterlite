@@ -19,6 +19,8 @@ use tower::ServiceExt as _;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 
+mod stream;
+
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
 
 #[derive(Deserialize)]
