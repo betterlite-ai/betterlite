@@ -157,7 +157,7 @@ async fn postgres_failed_ledger_write_reports_both_errors() {
         create_ledger(&database).await;
         let catalog = [migration(
             "20240101000000_drop",
-            "DROP TABLE _prisma_migrations; SELECT 1 / 0;",
+            "BEGIN; DROP TABLE _prisma_migrations; COMMIT; SELECT 1 / 0;",
         )];
         let jitter = FakeJitter(0);
         let steps = database.steps(&catalog, &jitter);
@@ -215,6 +215,11 @@ async fn postgres_lock_contention_is_typed() {
     with_schema(|database| async move {
         let jitter = FakeJitter(0);
         let steps = database.steps(&[], &jitter);
+        let released = steps
+            .deploy_lock_held()
+            .await
+            .expect("the lock state reads");
+        assert!(!released, "no session holds the Prisma migration lock yet");
         let holder = database.pool.get().await.expect("a holder session");
         holder
             .execute("SELECT pg_advisory_lock($1)", &[&PRISMA_LOCK_KEY])
@@ -232,20 +237,6 @@ async fn postgres_lock_contention_is_typed() {
             .execute("SELECT pg_advisory_unlock($1)", &[&PRISMA_LOCK_KEY])
             .await
             .expect("the holder releases the lock");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn postgres_released_lock_reads_not_held() {
-    with_schema(|database| async move {
-        let jitter = FakeJitter(0);
-        let steps = database.steps(&[], &jitter);
-        let held = steps
-            .deploy_lock_held()
-            .await
-            .expect("the lock state reads");
-        assert!(!held, "no session holds the Prisma migration lock");
     })
     .await;
 }

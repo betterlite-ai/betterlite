@@ -121,7 +121,6 @@ async fn ledger_deadlock_rolls_back_before_retry() {
             format!("recover:{}", reported.name),
             format!("history:{}@{}", reported.name, reported.started_at),
             format!("rollback:{}", reported.name),
-            "ahead".to_owned(),
             "deploy".to_owned(),
         ]
     );

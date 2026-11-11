@@ -3,6 +3,8 @@ use std::slice::from_ref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use tokio::net::TcpListener;
+
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
@@ -174,6 +176,10 @@ fn recoverable_name_rejects_hostile_names(#[case] name: &str, #[case] recoverabl
 
 #[tokio::test]
 async fn recovery_query_timeout_is_typed() {
+    // A listener that never answers keeps the connection handshake pending past the command timeout.
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("a listener");
+    let address = listener.local_addr().expect("the bound address");
+    let url = format!("postgresql://user:pass@{address}/db");
     let catalog = [migration(
         "20240101000000_known",
         "CREATE TABLE known_probe (id integer)",
@@ -182,14 +188,14 @@ async fn recovery_query_timeout_is_typed() {
     let steps = PgSteps::new(PgStepsInputs {
         schema: "public".to_owned(),
         catalog: &catalog,
-        prisma_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
-        deploy_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
-        lock_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
-        database_url: SecretString::from("postgresql://user:pass@127.0.0.1:1/db"),
+        prisma_url: SecretString::from(url.clone()),
+        deploy_url: SecretString::from(url.clone()),
+        lock_url: SecretString::from(url.clone()),
+        database_url: SecretString::from(url),
         direct_url: None,
         schema_prisma: &[],
         current_build: None,
-        command_timeout: Duration::ZERO,
+        command_timeout: Duration::from_millis(50),
         lock_timeout: LOCK_TIMEOUT,
         jitter: &jitter,
         next_id,
@@ -444,12 +450,12 @@ async fn native_legacy_mode_warns_and_runs_v2() {
             "CREATE TABLE legacy_mode_probe (id integer)",
         )];
         let jitter = FakeJitter(0);
-        let setup = inputs(
-            Some(database.url.expose_secret()),
-            Some(database.url.expose_secret()),
-            &catalog,
-            &jitter,
+        let url = format!(
+            "{}&schema={}",
+            database.url.expose_secret(),
+            database.schema
         );
+        let setup = inputs(Some(&url), Some(&url), &catalog, &jitter);
         let (logs, subscriber) = capture_logs();
         let guard = set_default(subscriber);
         setup_database_v2(
