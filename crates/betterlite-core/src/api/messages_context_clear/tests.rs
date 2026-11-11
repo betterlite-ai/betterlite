@@ -197,6 +197,27 @@ fn noninteger_trigger_value_uses_the_default_threshold(#[case] value: &str) {
 }
 
 #[test]
+fn a_negative_input_threshold_is_always_met() {
+    let counter = ScriptedCounter::new(&[0, 0]);
+    let outcome = run_editor(conversation(), r#"{"trigger":{"value":-1}}"#, &counter);
+    let applied = outcome.applied.expect("edit");
+    assert_eq!(applied.cleared_tool_uses, Some(1));
+    assert_eq!(applied.cleared_input_tokens, Some(0));
+}
+
+#[test]
+fn a_threshold_beyond_machine_words_is_not_met() {
+    let counter = ScriptedCounter::new(&[0]);
+    let outcome = run_editor(
+        conversation(),
+        r#"{"trigger":{"value":1000000000000000000000000000000}}"#,
+        &counter,
+    );
+    assert!(outcome.applied.is_none());
+    assert_eq!(counter.call_count(), 1);
+}
+
+#[test]
 fn tool_use_threshold_triggers_above_it() {
     let counter = ScriptedCounter::new(&[100, 40]);
     let outcome = run_editor(
