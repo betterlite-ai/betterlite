@@ -6,7 +6,7 @@ use super::batches::RequestRedisBatches;
 use super::lock;
 
 // litellm.caching.redis_batch._open_post_call: requests with declared post-call writes, held weakly so a finished request leaves the registry by itself.
-static OPEN_POST_CALL: Mutex<Vec<Weak<RequestRedisBatches>>> = Mutex::new(Vec::new());
+pub(super) static OPEN_POST_CALL: Mutex<Vec<Weak<RequestRedisBatches>>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Copy)]
 pub(super) enum Change {
@@ -16,6 +16,7 @@ pub(super) enum Change {
 
 pub(super) fn apply(request: &Arc<RequestRedisBatches>, change: Change) {
     let mut open = lock(&OPEN_POST_CALL);
+    open.retain(|held| held.strong_count() > 0);
     let held = Arc::downgrade(request);
     match change {
         Change::Register => {

@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 use super::support::{cache, cache_with_timeout, command_names};
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 use crate::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
-use crate::request_batch::registry::{Change, apply, drain_post_call_redis_batches};
+use crate::request_batch::lock;
+use crate::request_batch::registry::{self, Change, apply, drain_post_call_redis_batches};
 use crate::request_batch::scope::request_redis_batch_scope;
 
 #[tokio::test]
@@ -79,6 +80,28 @@ async fn request_batch_drain_flushes_open_requests_concurrently() {
         started.elapsed() < Duration::from_millis(350),
         "both backends time out together, not one after the other"
     );
+}
+
+#[tokio::test]
+async fn request_batch_flush_all_forgets_an_idle_request() {
+    let server = FakeServer::start().await;
+    server.script("INCRBYFLOAT", Reply::Bulk("1.5".to_owned()));
+    let cached = cache(&server, Some("ns")).await;
+
+    let (request, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {}).await;
+    let writes = request.post_call(&cached);
+    writes
+        .increment("counter", 1.5, None)
+        .await
+        .expect("the post-call write");
+    request.flush_all().await;
+    let stored = Arc::downgrade(&request);
+    drop(request);
+
+    let held = lock(&registry::OPEN_POST_CALL)
+        .iter()
+        .any(|weak| weak.ptr_eq(&stored));
+    assert!(!held, "flush_all drops an idle request from the registry");
 }
 
 #[tokio::test]

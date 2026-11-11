@@ -77,7 +77,7 @@ impl RequestRedisBatches {
         }
     }
 
-    pub async fn flush_all(&self) {
+    pub async fn flush_all(self: &Arc<Self>) {
         join_all(
             Self::pending(&self.batches)
                 .iter()
@@ -90,6 +90,7 @@ impl RequestRedisBatches {
         };
         if !post_call_pending {
             self.cancel_deadline();
+            registry::apply(self, registry::Change::Discard);
         }
     }
 
