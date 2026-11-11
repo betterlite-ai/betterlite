@@ -1,0 +1,12 @@
+task: B3936
+deviations:
+  - what: >-
+      The budget reset decoder reads a bounded ISO 8601 grammar: a date, or a date and a time
+      separated by T or a space with seconds, an optional fraction and a Z or +HH:MM offset, and a
+      string longer than 64 characters is refused before it is parsed.
+    why: >-
+      LiteLLM hands the value to datetime.fromisoformat, which also reads week and ordinal dates,
+      the basic YYYYMMDD form, a comma before the fraction and offsets without minutes. The field is
+      written by datetime.isoformat(), which the decoder reads, so no working setup produces the
+      other forms; the bound keeps a hostile metadata string from being parsed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L1073-L1076

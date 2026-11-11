@@ -1,0 +1,27 @@
+kind: helper
+name: clarifai-dot-arity-and-response-null
+call:
+  host_model_identity:
+    calls:
+      - kind: identity
+        host: clarifai
+        env: {CLARIFAI_API_KEY: env-key}
+        api_base: https://explicit.example/v1
+        api_key: explicit-key
+        models: [user.app.model, user.app, null, "", user..model, a.b.c.d]
+      - kind: reply
+        host: clarifai
+        status: 200
+        body: '{"id":"reply-1","created":1700000001,"model":null,"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'
+        model: user.app.model
+        messages: [{role: user, content: hello}]
+        request_data: {model: user.app.model, messages: []}
+      - kind: reply
+        host: clarifai
+        status: 200
+        body: '{"id":"reply-2","created":1700000002,"model":"provider-model","choices":[],"usage":null}'
+        model: user.app.model
+        messages: []
+        request_data: {model: user.app.model}
+compare: {ignore: []}
+env: {}

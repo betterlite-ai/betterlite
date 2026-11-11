@@ -46,6 +46,8 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-logging/src/otel/integrations/arize_attributes/truthy.rs"
+    - "crates/betterlite-logging/src/otel/integrations/arize_attributes.rs"
     - crates/betterlite-logging/src/otel/legacy_attributes.rs
     - crates/betterlite-logging/src/otel/legacy_attributes/**
     - crates/betterlite-logging/fuzz/fuzz_targets/legacy_raw_response.rs

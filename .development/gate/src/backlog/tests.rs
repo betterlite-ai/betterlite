@@ -21,6 +21,7 @@ fn entries_load_in_id_order_and_misnamed_files_are_problems() {
     fs::write(folder.join("B010.yaml"), entry("B010")).unwrap();
     fs::write(folder.join("B009.yaml"), entry("B099")).unwrap();
     fs::write(folder.join("notes.txt"), "not an entry").unwrap();
+    fs::create_dir_all(folder.join(".claude").join(".cc-writes")).unwrap();
     let (backlog, problems) = read_backlog(&development).unwrap();
     let ids: Vec<&str> = backlog.tasks.iter().map(|task| task.id.as_str()).collect();
     assert_eq!(ids, ["B010", "B099", "B1000"]);

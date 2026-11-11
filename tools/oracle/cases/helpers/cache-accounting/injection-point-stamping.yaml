@@ -1,0 +1,45 @@
+kind: helper
+name: cache-accounting-injection-point-stamping
+call:
+  b4123:
+    operation: stamping
+    probes:
+      - points: [{location: message, role: system, index: null, control: {type: ephemeral}}, {location: tool_config, control: null}]
+        model: gpt-5.6
+        custom_llm_provider: openai
+        api_base: https://api.openai.com/v1
+      - points: [{location: message, role: user, index: 2, control: null}, {location: message, role: null, index: "last", control: null}, {location: tool_config, control: null}]
+        external_breakpoints: 2
+        model: gpt-5.6
+        custom_llm_provider: openai
+        api_base: https://gateway.example/v1
+      - points: [{location: message, role: user}]
+        external_breakpoints: 3
+        model: gpt-5.6
+        custom_llm_provider: anthropic
+        api_base: https://api.openai.com/v1
+      - points: [{location: message, control: null}]
+        external_breakpoints: 1
+        model: claude-3-5-sonnet
+        custom_llm_provider: anthropic
+      - points: [{location: message, role: user, control: {type: ephemeral}, _litellm_openai_dialect: true}]
+        model: gpt-5.6
+        custom_llm_provider: openai
+        api_base: https://gateway.example
+      - points: [{location: message, role: user, _litellm_external_breakpoints: 1}]
+        external_breakpoints: 3
+        model: gpt-5.6
+        custom_llm_provider: openai
+        api_base: https://api.openai.com
+      - points: []
+        external_breakpoints: 2
+        model: gpt-5.6
+        custom_llm_provider: openai
+        api_base: https://api.openai.com
+      - points: [{location: message, role: user}]
+        model: gpt-5.6
+        custom_llm_provider: openai
+        api_base: https://gateway.example
+        prompt_cache_options: {}
+env: {}
+compare: {ignore: []}

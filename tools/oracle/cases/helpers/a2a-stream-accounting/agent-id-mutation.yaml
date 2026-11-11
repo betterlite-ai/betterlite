@@ -1,0 +1,17 @@
+kind: helper
+name: a2a-stream-accounting-agent-id-mutation
+call:
+  b4810:
+    function: set_agent_id
+    instances:
+      - agent_id: agent-9
+        details:
+          litellm_params: {cost_per_query: 0.5}
+          metadata: {user_api_key: hash-1}
+      - agent_id: null
+        details: {agent_id: keep-me}
+      - agent_id: other-agent
+        logging: false
+        details: {metadata: {user_id: u-1}}
+env: {}
+compare: {ignore: []}

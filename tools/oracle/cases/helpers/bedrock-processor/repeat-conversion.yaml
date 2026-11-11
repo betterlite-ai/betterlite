@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-processor-repeat-conversion
+call:
+  bedrock_processor:
+    function: convert_twice
+    messages:
+      - {role: assistant, content: draft}
+      - {role: user, content: "  "}
+      - role: assistant
+        content:
+          - {type: thinking, thinking: why}
+          - {type: text, text: after thinking}
+    modify_params: true
+env: {}
+compare: {ignore: []}
