@@ -1,0 +1,25 @@
+kind: helper
+name: messages-context-clear-clear-trigger-thresholds
+call:
+  messages_context_clear:
+    action: editor
+    model: gpt-4o-mini
+    messages:
+      - role: assistant
+        content:
+          - {type: tool_use, id: a, name: lookup, input: {query: one}}
+          - {type: tool_use, id: b, name: lookup, input: {query: two}}
+          - {type: tool_use, id: c, name: lookup, input: {query: three}}
+          - {type: tool_use, id: d, name: lookup, input: {query: four}}
+      - role: user
+        content:
+          - {type: tool_result, tool_use_id: a, content: result a}
+          - {type: tool_result, tool_use_id: b, content: result b}
+          - {type: tool_result, tool_use_id: c, content: result c}
+          - {type: tool_result, tool_use_id: d, content: result d}
+    tools: null
+    system: null
+    edit_spec: {}
+    counter: {mode: scripted, values: [100001, 80]}
+env: {}
+compare: {ignore: []}
