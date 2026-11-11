@@ -195,6 +195,9 @@ fn expected_client_errors_skip_provider_originated_failures() {
     assert!(!is_expected_client_error(Some(&facts(
         r#"{"base_llm_exception": true, "status_code": 400}"#
     ))));
+    assert!(is_expected_client_error(Some(&facts(
+        r#"{"llm_provider": "", "status_code": 400}"#
+    ))));
     assert!(!is_expected_client_error(Some(&facts("{}"))));
     assert!(!is_expected_client_error(None));
 }
@@ -210,7 +213,7 @@ fn expected_client_errors_keep_limiter_rejections_and_http_exceptions() {
         r#"{"category": "vendor_rate_limit", "status_code": 429}"#
     ))));
     assert!(is_expected_client_error(Some(&facts(
-        r#"{"http_exception": true, "status_code": 429}"#
+        r#"{"http_exception": true, "llm_provider": "openai", "status_code": 429}"#
     ))));
     assert!(!is_expected_client_error(Some(&facts(
         r#"{"llm_provider": "openai", "category": "litellm_rate_limit", "status_code": 500}"#
@@ -696,7 +699,7 @@ fn tool_call_indices_are_removed() {
 
 fn remove_items_at_indices_ignores_out_of_range_and_duplicates() {
     let mut items = vec![0_i32, 1_i32, 2_i32, 3_i32, 4_i32];
-    remove_items_at_indices(&mut items, &[1, 3, 3, -1, 99]);
+    remove_items_at_indices(&mut items, &[1, 3, 3, -1, 5, 99]);
     assert_eq!(items, vec![0_i32, 2_i32, 4_i32]);
     let mut empty: Vec<i32> = Vec::new();
     remove_items_at_indices(&mut empty, &[0, 2]);
