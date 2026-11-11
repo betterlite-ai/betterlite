@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::controls::json_value::JsonValue;
-use betterlite_openai::chat::{FunctionCall, ToolCall};
+use betterlite_openai::chat::{FunctionCall, ToolCall, choice_finish_reason};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue, Method};
@@ -9,15 +10,16 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
-use url::Url;
 
-use crate::openai_dispatch::chat_body;
 use crate::operation::{
-    ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult, success,
+    ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult, RequestKind,
+    success,
 };
+use crate::prepared::body::{authorization_value, chat_fields, encode};
 use crate::prepared::deployment::Deployment;
-use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest, Upstream};
-use crate::transform_retry::{TransformOnUnprocessable, TransformRetry};
+use crate::prepared::{PreparedChat, PreparedHttp, PreparedKind, PreparedRequest, Upstream};
+use crate::provider::Adapter;
+use crate::transform_retry::{TransformOnUnprocessable, TransformRetry, send_with_retry};
 
 // LiteLLM's aiohttp_openai transformation defaults the base to the bare OpenAI host, without its /v1 segment
 pub const DEFAULT_AIOHTTP_BASE: &str = "https://api.openai.com";
@@ -45,14 +47,14 @@ pub struct AiohttpChatResponse {
     pub system_fingerprint: Option<String>,
 }
 
+// finish_reason and role arrive optional and leave filled in, the way LiteLLM's Choices and Message build them
 #[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct AiohttpChoice {
     #[serde(default)]
     pub index: u32,
     pub message: AiohttpMessage,
-    #[serde(default = "default_finish_reason")]
-    pub finish_reason: String,
+    pub finish_reason: Option<String>,
     pub logprobs: Option<JsonValue>,
     pub provider_specific_fields: Option<BTreeMap<String, JsonValue>>,
     #[serde(flatten)]
@@ -62,7 +64,7 @@ pub struct AiohttpChoice {
 #[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct AiohttpMessage {
-    pub role: String,
+    pub role: Option<String>,
     #[serialize_always]
     pub content: Option<String>,
     pub function_call: Option<FunctionCall>,
@@ -71,51 +73,64 @@ pub struct AiohttpMessage {
     pub extra: IndexMap<String, JsonValue>,
 }
 
-fn default_finish_reason() -> String {
-    String::from("stop")
-}
+impl Adapter for AiohttpOpenAi {
+    const NAME: &'static str = "aiohttp_openai";
 
-impl AiohttpOpenAi {
-    pub fn prepare(
+    fn prepare(
         &self,
         request: &OperationRequest,
         deployment: &Deployment,
         catalog: &CatalogCapabilities,
     ) -> Result<PreparedRequest, OperationError> {
-        if let OperationRequest::Chat(chat) = request {
-            return chat_request(chat, deployment, catalog, false);
+        match request.kind() {
+            RequestKind::Chat(chat) => chat_request(chat, deployment, catalog, false),
+            RequestKind::Stream(chat) => chat_request(chat, deployment, catalog, true),
+            RequestKind::Embedding(_) | RequestKind::Other => Err(unsupported()),
         }
-        if let OperationRequest::Stream(chat) = request {
-            return chat_request(chat, deployment, catalog, true);
-        }
-        Err(unsupported())
     }
 
-    pub fn decode(
+    async fn execute(
+        &self,
+        client: &ProxiedClient,
+        prepared: &PreparedRequest,
+        deployment: &Deployment,
+    ) -> Result<Upstream, OperationError> {
+        send_with_retry(client, prepared, deployment, self).await
+    }
+
+    fn decode(
         &self,
         prepared: &PreparedRequest,
         upstream: Upstream,
     ) -> Result<OperationResult, OperationError> {
-        match upstream {
-            Upstream::Streaming(response) => {
-                if let PreparedRequest::Stream(_) = prepared {
-                    return Ok(OperationResult::Stream(Box::new(response)));
+        match (prepared.kind(), upstream) {
+            (PreparedKind::Chat(chat), Upstream::Buffered(response)) => {
+                let checked = success(response)?;
+                let mut decoded: AiohttpChatResponse = serde_json::from_slice(&checked.body)
+                    .map_err(|source| OperationError::Decode {
+                        operation: "chat",
+                        source,
+                    })?;
+                normalize(&mut decoded);
+                // the proxy answers with the model the client asked for, not the one the upstream reported
+                if let Some(model) = chat.client_model.as_ref().filter(|model| !model.is_empty()) {
+                    decoded.model = Some(model.clone());
                 }
+                Ok(OperationResult::Chat(ChatCompletion::AiohttpOpenAi(
+                    Box::new(decoded),
+                )))
+            }
+            (PreparedKind::Stream(_), Upstream::Streaming(response)) => {
+                Ok(OperationResult::Stream(Box::new(response)))
+            }
+            // a refused stream arrives as a finished body, which the caller renders as the provider's own error
+            (PreparedKind::Stream(_), Upstream::Buffered(response)) => {
+                success(response)?;
                 Err(unsupported())
             }
-            Upstream::Buffered(response) => {
-                if let PreparedRequest::Chat(_) = prepared {
-                    let checked = success(response)?;
-                    let mut decoded: AiohttpChatResponse = serde_json::from_slice(&checked.body)
-                        .map_err(|source| OperationError::Decode {
-                            operation: "chat",
-                            source,
-                        })?;
-                    normalize(&mut decoded);
-                    return Ok(OperationResult::Chat(ChatCompletion::AiohttpOpenAi(
-                        Box::new(decoded),
-                    )));
-                }
+            (PreparedKind::Chat(_) | PreparedKind::Embedding(_), Upstream::Streaming(_))
+            | (PreparedKind::Embedding(_), Upstream::Buffered(_))
+            | (PreparedKind::Other, Upstream::Buffered(_) | Upstream::Streaming(_)) => {
                 Err(unsupported())
             }
         }
@@ -124,10 +139,9 @@ impl AiohttpOpenAi {
 
 impl TransformOnUnprocessable for AiohttpOpenAi {}
 
-#[must_use]
 fn unsupported() -> OperationError {
     OperationError::UnsupportedOperation {
-        provider: String::from("aiohttp_openai"),
+        provider: String::from(AiohttpOpenAi::NAME),
         operation: String::from("provider endpoint"),
     }
 }
@@ -147,31 +161,24 @@ fn chat_request(
     catalog: &CatalogCapabilities,
     stream: bool,
 ) -> Result<PreparedRequest, OperationError> {
-    let body = chat_body(&chat.request, &chat.model, catalog)?;
-    let written = complete_url(&deployment.api_base);
-    let url = Url::parse(&written).map_err(|source| OperationError::Endpoint {
-        value: written,
-        source,
-    })?;
+    let mut fields = chat_fields(&chat.request, &chat.model, catalog)?;
+    // OpenAILikeChatConfig.map_openai_params sends max_completion_tokens as max_tokens
+    if let Some(limit) = fields.shift_remove("max_completion_tokens") {
+        fields.insert(String::from("max_tokens"), limit);
+    }
     // the aiohttp transformation answers Bearer {api_key} and never reads an environment key
     let bearer = deployment.api_key.as_ref().map_or_else(
         || String::from("Bearer None"),
         |key| format!("Bearer {}", key.expose_secret()),
     );
     let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::try_from(bearer).map_err(|source| OperationError::InvalidHeader {
-            name: String::from("authorization"),
-            source,
-        })?,
-    );
+    headers.insert(AUTHORIZATION, authorization_value(&bearer)?);
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     let http = PreparedHttp {
         method: Method::POST,
-        url,
+        url: deployment.endpoint.clone(),
         headers,
-        body,
+        body: encode(fields)?,
         deadline: deployment.timeout,
         body_limit: None,
     };
@@ -187,14 +194,31 @@ fn chat_request(
     })
 }
 
-// LiteLLM passes the raw choice to its typed records, whose proxy serialization drops every null
+// LiteLLM builds Choices(**choice): it maps the finish reason, fills the role and drops nulls and an empty tool_calls
 fn normalize(response: &mut AiohttpChatResponse) {
     for choice in &mut response.choices {
+        let raw = choice.finish_reason.take();
+        let (reason, native) = choice_finish_reason(raw.as_deref());
+        choice.finish_reason = Some(reason);
+        if let Some(given) = raw
+            && !native.is_empty()
+        {
+            choice
+                .provider_specific_fields
+                .get_or_insert_default()
+                .insert(String::from("native_finish_reason"), JsonValue::Text(given));
+        }
         choice
             .extra
             .retain(|_name, value| !matches!(value, JsonValue::Null));
-        choice
-            .message
+        let message = &mut choice.message;
+        message
+            .role
+            .get_or_insert_with(|| String::from("assistant"));
+        if message.tool_calls.as_ref().is_some_and(Vec::is_empty) {
+            message.tool_calls = None;
+        }
+        message
             .extra
             .retain(|_name, value| !matches!(value, JsonValue::Null));
     }

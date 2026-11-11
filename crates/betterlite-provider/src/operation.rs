@@ -109,6 +109,35 @@ pub enum OperationRequest {
     VertexEmbedding(VertexEmbeddingRequest),
 }
 
+// The three operations the OpenAI-shaped adapters run; this one match is where a new request variant has to be placed
+pub(crate) enum RequestKind<'request> {
+    Chat(&'request ChatOperation),
+    Stream(&'request ChatOperation),
+    Embedding(&'request EmbeddingOperation),
+    Other,
+}
+
+impl OperationRequest {
+    #[rustfmt::skip]
+    pub(crate) fn kind(&self) -> RequestKind<'_> {
+        match self {
+            Self::Chat(chat) => RequestKind::Chat(chat),
+            Self::Stream(chat) => RequestKind::Stream(chat),
+            Self::Embedding(embedding) => RequestKind::Embedding(embedding),
+            Self::AiohttpOpenAi(_) | Self::OpenAi(_) | Self::Azure(_) | Self::AzureAi(_)
+            | Self::Anthropic(_) | Self::Bedrock(_) | Self::VertexAi(_) | Self::Gemini(_)
+            | Self::XaiMistral(_) | Self::EmbeddingRerank(_) | Self::Compatible(_) | Self::Legacy(_)
+            | Self::SelfHosted(_) | Self::Image(_) | Self::Rerank(_) | Self::File(_)
+            | Self::Batch(_) | Self::Responses(_) | Self::Transcription(_) | Self::Speech(_)
+            | Self::Messages(_) | Self::OpenAiMedia(_) | Self::OpenAiResource(_) | Self::OpenAiAssistant(_)
+            | Self::AzureMedia(_) | Self::AzureResource(_) | Self::FoundryResource(_) | Self::BedrockChat(_)
+            | Self::BedrockOther(_) | Self::BedrockServices(_) | Self::BedrockImage(_) | Self::BedrockAgent(_)
+            | Self::BedrockInteractive(_) | Self::VertexPartner(_) | Self::VertexMedia(_) | Self::VertexService(_)
+            | Self::VertexEmbedding(_) => RequestKind::Other,
+        }
+    }
+}
+
 // The two chat projections keep their own shape: the aiohttp adapter copies only the fields LiteLLM copies
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]

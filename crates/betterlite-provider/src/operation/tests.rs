@@ -22,6 +22,7 @@ use crate::aiohttp_openai_dispatch::AiohttpOpenAi;
 use crate::openai_dispatch::OpenAi;
 use crate::prepared::deployment::Deployment;
 
+use crate::provider::Adapter as _;
 mod status;
 
 fn deployment() -> Deployment {

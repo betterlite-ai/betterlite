@@ -1,6 +1,7 @@
 use crate::azure_dispatch::AzureRequest;
 use crate::openai_dispatch::OpenAi;
 use crate::operation::{OperationError, OperationRequest};
+use crate::provider::Adapter as _;
 
 use super::{catalog, chat, deployment};
 

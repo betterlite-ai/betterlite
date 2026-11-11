@@ -21,6 +21,7 @@ use crate::operation::{
 };
 use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedRequest, Upstream};
+use crate::provider::Adapter as _;
 
 fn deployment() -> Deployment {
     Deployment {

@@ -106,32 +106,51 @@ pub enum PreparedRequest {
     VertexEmbedding(VertexEmbeddingPrepared),
 }
 
+// The prepared calls that hold an HTTP request; this one match is where a new prepared variant has to be placed
+pub(crate) enum PreparedKind<'prepared> {
+    Chat(&'prepared PreparedChat),
+    Stream(&'prepared PreparedChat),
+    Embedding(&'prepared PreparedChat),
+    Other,
+}
+
 impl PreparedRequest {
+    #[rustfmt::skip]
+    pub(crate) fn kind(&self) -> PreparedKind<'_> {
+        match self {
+            Self::Chat(prepared) => PreparedKind::Chat(prepared),
+            Self::Stream(prepared) => PreparedKind::Stream(prepared),
+            Self::Embedding(prepared) => PreparedKind::Embedding(prepared),
+            Self::AiohttpOpenAi(_) | Self::OpenAi(_) | Self::Azure(_) | Self::AzureAi(_)
+            | Self::Anthropic(_) | Self::Bedrock(_) | Self::VertexAi(_) | Self::Gemini(_)
+            | Self::XaiMistral(_) | Self::EmbeddingRerank(_) | Self::Compatible(_) | Self::Legacy(_)
+            | Self::SelfHosted(_) | Self::Image(_) | Self::Rerank(_) | Self::File(_)
+            | Self::Batch(_) | Self::Responses(_) | Self::Transcription(_) | Self::Speech(_)
+            | Self::Messages(_) | Self::OpenAiMedia(_) | Self::OpenAiResource(_) | Self::OpenAiAssistant(_)
+            | Self::AzureMedia(_) | Self::AzureResource(_) | Self::FoundryResource(_) | Self::BedrockChat(_)
+            | Self::BedrockOther(_) | Self::BedrockServices(_) | Self::BedrockImage(_) | Self::BedrockAgent(_)
+            | Self::BedrockInteractive(_) | Self::VertexPartner(_) | Self::VertexMedia(_) | Self::VertexService(_)
+            | Self::VertexEmbedding(_) => PreparedKind::Other,
+        }
+    }
+
     #[must_use]
-    pub const fn retry(&self) -> TransformRetry {
-        if let Self::Chat(prepared) = self {
-            return prepared.retry;
+    pub fn retry(&self) -> TransformRetry {
+        match self.kind() {
+            PreparedKind::Chat(prepared)
+            | PreparedKind::Stream(prepared)
+            | PreparedKind::Embedding(prepared) => prepared.retry,
+            PreparedKind::Other => TransformRetry::DISABLED,
         }
-        if let Self::Stream(prepared) = self {
-            return prepared.retry;
-        }
-        if let Self::Embedding(prepared) = self {
-            return prepared.retry;
-        }
-        TransformRetry::DISABLED
     }
 
     fn http(&self) -> Option<&PreparedHttp> {
-        if let Self::Chat(prepared) = self {
-            return Some(&prepared.http);
+        match self.kind() {
+            PreparedKind::Chat(prepared)
+            | PreparedKind::Stream(prepared)
+            | PreparedKind::Embedding(prepared) => Some(&prepared.http),
+            PreparedKind::Other => None,
         }
-        if let Self::Stream(prepared) = self {
-            return Some(&prepared.http);
-        }
-        if let Self::Embedding(prepared) = self {
-            return Some(&prepared.http);
-        }
-        None
     }
 
     pub(crate) async fn send(&self, client: &ProxiedClient) -> Result<Upstream, OperationError> {
@@ -180,6 +199,7 @@ impl Upstream {
     }
 }
 
+pub(crate) mod body;
 pub mod deployment;
 
 mod tests;
