@@ -30,9 +30,9 @@ pub(super) fn run(input: &Input) -> Value {
         Input::TokenLimits { values } => token_limits(values),
         Input::ExpectedClientError { facts } => expected_client_errors(facts),
         Input::MetadataBucket { steps } => metadata_buckets(steps),
-        Input::TrustedFlags { steps } => trusted_flags(steps),
+        Input::TrustedFlags { steps } => Value::Array(steps.iter().map(trusted_flag).collect()),
         Input::ModelReconstruction { values } => model_names(values),
-        Input::ResponseHeaders { steps } => header_steps(steps),
+        Input::ResponseHeaders { steps } => Value::Array(steps.iter().map(header_step).collect()),
         Input::UpstreamInternalHeader { upstream, trusted } => {
             let internal = TrustedHeaders {
                 entries: trusted.clone(),
@@ -106,10 +106,6 @@ fn metadata_buckets(steps: &[MetadataSlots]) -> Value {
     )
 }
 
-fn trusted_flags(steps: &[TrustedStep]) -> Value {
-    Value::Array(steps.iter().map(trusted_flag).collect())
-}
-
 fn trusted_flag(step: &TrustedStep) -> Value {
     match step {
         TrustedStep::LitellmMetadata { litellm_params } => {
@@ -146,10 +142,6 @@ fn model_names(values: &[ModelNameInput]) -> Value {
             })
             .collect(),
     )
-}
-
-fn header_steps(steps: &[HeaderStep]) -> Value {
-    Value::Array(steps.iter().map(header_step).collect())
 }
 
 fn header_step(step: &HeaderStep) -> Value {
