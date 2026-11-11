@@ -66,18 +66,6 @@ call:
           additional_drop_params: null
         remove_sensitive_keys: false
         add_provider_specific_params: false
-      - function: embedding_pre_process
-        request:
-          passed_params: {dimensions: 8, encoding_format: float, user: u, custom_field: 1}
-          special_params: {}
-          custom_llm_provider: openai
-          additional_drop_params: null
-      - function: embedding_pre_process
-        request:
-          passed_params: {dimensions: 8, encoding_format: null}
-          special_params: {}
-          custom_llm_provider: openai
-          additional_drop_params: [dimensions]
       - function: remove_sensitive_keys
         params: {api_key: sk-1, authorization: Bearer x, temperature: 0.5, nested: {api_key: sk-2}, AccessToken: t, client_secret: s, Credentials: c, user: u}
       - function: remove_sensitive_keys

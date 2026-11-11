@@ -130,10 +130,7 @@ fn extra_body_that_is_not_an_object_is_rejected() {
     let error = add("{}", r#"{"extra_body": "text"}"#, "openai", &[]).unwrap_err();
     assert!(matches!(
         error,
-        NonDefaultParamsError::WrongType {
-            field: "extra_body",
-            ..
-        }
+        NonDefaultParamsError::WrongType("extra_body", _)
     ));
     assert_eq!(error.status_code(), 400);
 }

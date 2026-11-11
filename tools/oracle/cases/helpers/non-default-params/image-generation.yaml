@@ -180,15 +180,5 @@ call:
         params: {n: 2, custom_field: 1}
         additional_drop_params: null
         drop_params: null
-      - function: vertex_aspect_ratio
-        size: null
-      - function: vertex_aspect_ratio
-        size: 1792x1024
-      - function: vertex_aspect_ratio
-        size: 1024x1792
-      - function: vertex_aspect_ratio
-        size: 512x512
-      - function: vertex_aspect_ratio
-        size: 1x1
 env: {}
 compare: {ignore: []}

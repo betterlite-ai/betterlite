@@ -2,7 +2,7 @@ use betterlite_models::controls::extra_body::check_extra_body;
 use betterlite_models::controls::json_value::JsonValue;
 
 use super::error::NonDefaultParamsError;
-use super::names::{EXTRA_BODY_PROVIDERS, EXTRA_BODY_ROUTING_KEYS, OPENAI_COMPATIBLE_PROVIDERS};
+use super::names::{EXTRA_BODY_PROVIDERS, EXTRA_BODY_ROUTING_KEYS, is_openai_compatible_provider};
 use super::{JsonObject, Params};
 
 pub struct ProviderSpecificRequest<'request> {
@@ -12,17 +12,6 @@ pub struct ProviderSpecificRequest<'request> {
     pub additional_drop_params: &'request [String],
 }
 
-fn requested_extra_body(passed_params: &Params) -> Result<JsonObject, NonDefaultParamsError> {
-    match passed_params.get("extra_body") {
-        None | Some(JsonValue::Null) => Ok(JsonObject::new()),
-        Some(JsonValue::Object(fields)) => Ok(fields.clone()),
-        Some(_) => Err(NonDefaultParamsError::WrongType {
-            field: "extra_body",
-            expected: "an object",
-        }),
-    }
-}
-
 // OpenAI-style providers take unknown params inside extra_body; every other provider gets them at the top level.
 pub fn add_provider_specific_params(
     mut optional_params: Params,
@@ -30,8 +19,7 @@ pub fn add_provider_specific_params(
 ) -> Result<Params, NonDefaultParamsError> {
     let provider = request.custom_llm_provider;
     let drops = request.additional_drop_params;
-    if !EXTRA_BODY_PROVIDERS.contains(&provider) && !OPENAI_COMPATIBLE_PROVIDERS.contains(&provider)
-    {
+    if !EXTRA_BODY_PROVIDERS.contains(&provider) && !is_openai_compatible_provider(provider) {
         for (key, value) in request.passed_params {
             if !request.openai_params.contains(&key.as_str())
                 && !matches!(value, JsonValue::Null)
@@ -45,7 +33,11 @@ pub fn add_provider_specific_params(
     if drops.iter().any(|param| param == "extra_body") {
         return Ok(optional_params);
     }
-    let mut extra_body = requested_extra_body(request.passed_params)?;
+    let mut extra_body = match request.passed_params.get("extra_body") {
+        None | Some(JsonValue::Null) => JsonObject::new(),
+        Some(JsonValue::Object(fields)) => fields.clone(),
+        Some(_) => return Err(NonDefaultParamsError::WrongType("extra_body", "an object")),
+    };
     for (key, value) in request.passed_params {
         if key != "extra_body"
             && !request.openai_params.contains(&key.as_str())

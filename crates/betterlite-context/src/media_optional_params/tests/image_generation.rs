@@ -176,10 +176,7 @@ fn media_optional_params_image_provider_config_rejects_an_unsupported_param() {
         matches!(&error, MediaParamsError::ImageUnsupported { param, .. } if param == "quality")
     );
     assert_eq!(error.status_code(), 400);
-    assert_eq!(
-        error.to_string(),
-        "litellm.UnsupportedParamsError: Setting `quality` is not supported by other, m. To drop it from the call, set `litellm.drop_params = True`."
-    );
+    assert_eq!(error.to_string(), "quality is not supported by other for m");
 }
 
 #[test]
@@ -193,7 +190,7 @@ fn media_optional_params_image_error_names_a_missing_provider_and_model_as_none(
     let error = get_optional_params_image_gen(&config).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "litellm.UnsupportedParamsError: Setting `quality` is not supported by None, None. To drop it from the call, set `litellm.drop_params = True`."
+        "quality is not supported by None for None"
     );
 }
 
@@ -335,7 +332,7 @@ fn media_optional_params_image_vertex_ai_rejects_wrong_types(
     #[case] field: &str,
 ) {
     let error = generate(passed, Some("vertex_ai")).unwrap_err();
-    assert!(matches!(&error, MediaParamsError::WrongType { field: name, .. } if *name == field));
+    assert!(matches!(&error, MediaParamsError::WrongType(name, _) if *name == field));
     assert_eq!(error.status_code(), 400);
 }
 
@@ -344,7 +341,7 @@ fn media_optional_params_image_vertex_ai_rejects_other_params() {
     let error = generate(r#"{"n": 1, "quality": "hd"}"#, Some("vertex_ai")).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "litellm.UnsupportedParamsError: Setting `quality` is not supported by vertex_ai, m. To drop it from the call, set `litellm.drop_params = True`."
+        "quality is not supported by vertex_ai for m"
     );
 }
 

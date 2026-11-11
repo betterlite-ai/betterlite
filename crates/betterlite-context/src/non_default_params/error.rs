@@ -9,13 +9,8 @@ pub struct MapperError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum NonDefaultParamsError {
-    #[error("litellm.UnsupportedParamsError: {message}")]
-    Unsupported { message: String },
-    #[error("{field} must be {expected}")]
-    WrongType {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("{0} must be {1}")]
+    WrongType(&'static str, &'static str),
     #[error(transparent)]
     ExtraBody(#[from] ExtraBodyError),
     #[error(transparent)]
@@ -28,7 +23,7 @@ impl NonDefaultParamsError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::Mapper(error) => error.status_code,
-            Self::Unsupported { .. } | Self::WrongType { .. } | Self::ExtraBody(_) => 400,
+            Self::WrongType(..) | Self::ExtraBody(_) => 400,
         }
     }
 }

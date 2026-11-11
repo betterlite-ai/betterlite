@@ -37,27 +37,27 @@ pub fn pre_process_optional_params(
             optional_params.insert((*name).to_owned(), value.clone());
         }
     }
-    let mut add_function_to_prompt = false;
     let sends_functions = ["functions", "function_call", "tools"]
         .iter()
         .any(|name| non_default_params.contains_key(*name));
     if custom_llm_provider == "ollama" && sends_functions {
         optional_params.insert("format".to_owned(), JsonValue::Text("json".to_owned()));
-        add_function_to_prompt = true;
-        let key = if non_default_params.contains_key("tools") {
-            "tools"
+        let moved = if let Some(tools) = non_default_params.remove("tools") {
+            non_default_params.remove("tool_choice");
+            Some(tools)
         } else {
-            "functions"
+            non_default_params.remove("functions")
         };
-        if let Some(functions) = non_default_params.remove(key) {
+        if let Some(functions) = moved {
             optional_params.insert("functions_unsupported_model".to_owned(), functions);
-            if key == "tools" {
-                non_default_params.remove("tool_choice");
-            }
         }
+        return PreProcessedOptional {
+            optional_params,
+            add_function_to_prompt: true,
+        };
     }
     PreProcessedOptional {
         optional_params,
-        add_function_to_prompt,
+        add_function_to_prompt: false,
     }
 }

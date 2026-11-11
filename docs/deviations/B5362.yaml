@@ -12,3 +12,6 @@ deviations:
   - what: When several params are unsupported, the error names the first one in key order, which is sorted, where LiteLLM names the first one in the order the caller passed them.
     why: Params are a sorted map, so the caller's insertion order is not kept. The status is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3550-L3560
+  - what: A value of the wrong type for `response_format`, `extra_body`, image `n` or `size`, or transcription `additional_drop_params` is a 400 that names the field, where LiteLLM raises `TypeError` or `AttributeError` and the proxy answers 500.
+    why: A working setup never sends those values, and an unhandled exception is the wrong answer for input the caller can fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3731-L3734

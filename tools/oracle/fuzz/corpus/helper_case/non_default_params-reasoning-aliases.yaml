@@ -43,21 +43,5 @@ call:
         optional_params: {reasoning_summary: top, extra_body: {reasoningSummary: nested, keep: 1}}
       - function: strip_aliases
         optional_params: {extra_body: [reasoningSummary]}
-      - function: remove_additional_properties
-        schema: {type: object, additionalProperties: false, properties: {a: {type: object, additionalProperties: false}}}
-      - function: remove_additional_properties
-        schema: {anyOf: [{type: object, additionalProperties: true}, {type: string}], items: [{additionalProperties: false}]}
-      - function: remove_additional_properties
-        schema: [{additionalProperties: false}, 1, null, "text"]
-      - function: remove_additional_properties
-        schema: {type: string}
-      - function: remove_strict
-        schema: {type: object, strict: true, properties: {a: {type: string, strict: false}}}
-      - function: remove_strict
-        schema: {anyOf: [{strict: true}, {type: string}], $defs: {x: {strict: true}}}
-      - function: remove_strict
-        schema: [{strict: true}, 1, "strict"]
-      - function: remove_strict
-        schema: {type: string}
 env: {}
 compare: {ignore: []}

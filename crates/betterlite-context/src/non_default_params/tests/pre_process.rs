@@ -5,9 +5,10 @@ use rstest::rstest;
 use super::params;
 use crate::non_default_params::Params;
 use crate::non_default_params::error::NonDefaultParamsError;
+use crate::non_default_params::names::{DEFAULT_CHAT_COMPLETION_PARAMS, OPENAI_EMBEDDING_PARAMS};
 use crate::non_default_params::pre_process::{
-    CHAT_ENDPOINT, EMBEDDING_ENDPOINT, PreProcessOptions, PreProcessRequest,
-    base_pre_process_params, pre_process_non_default_params, remove_sensitive_keys,
+    PreProcessOptions, PreProcessRequest, base_pre_process_params, pre_process_non_default_params,
+    remove_sensitive_keys,
 };
 
 const PLAIN: PreProcessOptions = PreProcessOptions {
@@ -47,8 +48,11 @@ fn request<'request>(
 fn pre_process_special_param_filter(#[case] provider: &str, #[case] key: &str, #[case] kept: bool) {
     let special = params(&format!(r#"{{"{key}": "v"}}"#));
     let passed = params("{}");
-    let processed =
-        base_pre_process_params(&request(&passed, &special, provider, &[]), &CHAT_ENDPOINT);
+    let processed = base_pre_process_params(
+        &request(&passed, &special, provider, &[]),
+        DEFAULT_CHAT_COMPLETION_PARAMS,
+        &["messages"],
+    );
     assert_eq!(processed.passed_params.contains_key(key), kept);
 }
 
@@ -64,7 +68,8 @@ fn pre_process_filter_selects_by_the_chat_defaults() {
     let drops = vec!["user".to_owned()];
     let processed = base_pre_process_params(
         &request(&passed, &special, "openai", &drops),
-        &CHAT_ENDPOINT,
+        DEFAULT_CHAT_COMPLETION_PARAMS,
+        &["messages"],
     );
     assert_eq!(
         processed.non_default_params,
@@ -82,7 +87,8 @@ fn pre_process_filter_selects_by_the_embedding_defaults() {
     let special = params("{}");
     let processed = base_pre_process_params(
         &request(&passed, &special, "openai", &[]),
-        &EMBEDDING_ENDPOINT,
+        OPENAI_EMBEDDING_PARAMS,
+        &["input"],
     );
     assert_eq!(
         processed.non_default_params,
@@ -144,10 +150,7 @@ fn pre_process_filter_rejects_a_response_format_that_is_not_an_object() {
         .unwrap_err();
     assert!(matches!(
         error,
-        NonDefaultParamsError::WrongType {
-            field: "response_format",
-            ..
-        }
+        NonDefaultParamsError::WrongType("response_format", _)
     ));
     assert_eq!(error.status_code(), 400);
 }

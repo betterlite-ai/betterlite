@@ -43,10 +43,10 @@ fn parse_additional_drop_params(params: &Params) -> Result<Vec<String>, MediaPar
             .collect(),
         Some(_) => None,
     };
-    names.ok_or(MediaParamsError::WrongType {
-        field: "additional_drop_params",
-        expected: "a list of strings",
-    })
+    names.ok_or(MediaParamsError::WrongType(
+        "additional_drop_params",
+        "a list of strings",
+    ))
 }
 
 pub fn transcription_optional_params(
@@ -61,24 +61,25 @@ pub fn transcription_optional_params(
     );
     let mut non_default_params =
         select_non_default_params(&passed_params, TRANSCRIPTION_DEFAULTS, &[]);
-    let optional_params = match request.mapper {
-        _ if matches!(provider, "openai" | "azure") => non_default_params,
-        Some(mapper) => {
-            let supported = mapper.supported_openai_params(request.model);
-            let drop = drop_policy.litellm_drop_params || drop_policy.drop_params == Some(true);
-            drop_unsupported_params(&mut non_default_params, &supported, drop).map_err(
-                |_first| MediaParamsError::TranscriptionUnsupported {
-                    provider: provider.to_owned(),
-                },
-            )?;
-            mapper.map_openai_params(
-                &non_default_params,
-                Params::new(),
-                request.model,
-                drop_policy.drop_params.unwrap_or(false),
-            )?
-        }
-        None => Params::new(),
+    let optional_params = if matches!(provider, "openai" | "azure") {
+        non_default_params
+    } else if let Some(mapper) = request.mapper {
+        let supported = mapper.supported_openai_params(request.model);
+        let drop = drop_policy.litellm_drop_params || drop_policy.drop_params == Some(true);
+        drop_unsupported_params(&mut non_default_params, &supported, drop).map_err(|first| {
+            MediaParamsError::TranscriptionUnsupported {
+                param: first.0,
+                provider: provider.to_owned(),
+            }
+        })?;
+        mapper.map_openai_params(
+            &non_default_params,
+            Params::new(),
+            request.model,
+            drop_policy.drop_params.unwrap_or(false),
+        )?
+    } else {
+        Params::new()
     };
     let additional_drop_params = parse_additional_drop_params(request.params)?;
     Ok(add_provider_specific_params(

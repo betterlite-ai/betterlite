@@ -3,23 +3,8 @@ use betterlite_models::controls::json_value::JsonValue;
 use super::Params;
 use super::error::NonDefaultParamsError;
 use super::extra_body::{ProviderSpecificRequest, add_provider_specific_params};
-use super::filters::select_non_default_params;
-use super::names::{DEFAULT_CHAT_COMPLETION_PARAMS, OPENAI_EMBEDDING_PARAMS};
-
-pub struct EndpointParams {
-    pub default_names: &'static [&'static str],
-    pub endpoint_specific: &'static [&'static str],
-}
-
-pub const CHAT_ENDPOINT: EndpointParams = EndpointParams {
-    default_names: DEFAULT_CHAT_COMPLETION_PARAMS,
-    endpoint_specific: &["messages"],
-};
-
-pub const EMBEDDING_ENDPOINT: EndpointParams = EndpointParams {
-    default_names: OPENAI_EMBEDDING_PARAMS,
-    endpoint_specific: &["input"],
-};
+use super::filters::{select_non_default_params, supports_vertex_params};
+use super::names::DEFAULT_CHAT_COMPLETION_PARAMS;
 
 const NEVER_NON_DEFAULT: &[&str] = &[
     "model",
@@ -58,9 +43,7 @@ fn special_param_is_dropped(key: &str, custom_llm_provider: &str) -> bool {
         _ if key.starts_with("aws_") => {
             custom_llm_provider != "bedrock" && !custom_llm_provider.starts_with("sagemaker")
         }
-        _ if key.starts_with("vertex_") => {
-            !matches!(custom_llm_provider, "vertex_ai" | "vertex_ai_beta" | "gdc")
-        }
+        _ if key.starts_with("vertex_") => !supports_vertex_params(custom_llm_provider),
         _ => false,
     }
 }
@@ -68,7 +51,8 @@ fn special_param_is_dropped(key: &str, custom_llm_provider: &str) -> bool {
 #[must_use]
 pub fn base_pre_process_params(
     request: &PreProcessRequest<'_>,
-    endpoint: &EndpointParams,
+    default_names: &str,
+    endpoint_specific: &[&str],
 ) -> PreProcessed {
     let mut passed_params = request.passed_params.clone();
     for (key, value) in request.special_params {
@@ -76,19 +60,13 @@ pub fn base_pre_process_params(
             passed_params.insert(key.clone(), value.clone());
         }
     }
-    let candidates: Params = passed_params
-        .iter()
-        .filter(|(key, _)| {
-            !NEVER_NON_DEFAULT.contains(&key.as_str())
-                && !endpoint.endpoint_specific.contains(&key.as_str())
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    let non_default_params = select_non_default_params(
-        &candidates,
-        endpoint.default_names,
-        request.additional_drop_params,
-    );
+    let mut candidates = passed_params.clone();
+    candidates.retain(|key, _| {
+        !NEVER_NON_DEFAULT.contains(&key.as_str()) && !endpoint_specific.contains(&key.as_str())
+    });
+    let names: Vec<&str> = default_names.split_whitespace().collect();
+    let non_default_params =
+        select_non_default_params(&candidates, &names, request.additional_drop_params);
     PreProcessed {
         passed_params,
         non_default_params,
@@ -100,24 +78,25 @@ pub fn pre_process_non_default_params(
     request: &PreProcessRequest<'_>,
     options: PreProcessOptions,
 ) -> Result<Params, NonDefaultParamsError> {
-    let processed = base_pre_process_params(request, &CHAT_ENDPOINT);
+    let processed = base_pre_process_params(request, DEFAULT_CHAT_COMPLETION_PARAMS, &["messages"]);
     let mut non_default_params = processed.non_default_params;
     if matches!(
         non_default_params.get("response_format"),
         Some(value) if !matches!(value, JsonValue::Object(_))
     ) {
-        return Err(NonDefaultParamsError::WrongType {
-            field: "response_format",
-            expected: "an object",
-        });
+        return Err(NonDefaultParamsError::WrongType(
+            "response_format",
+            "an object",
+        ));
     }
     if options.add_provider_specific_params {
+        let openai_params: Vec<&str> = DEFAULT_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
         non_default_params = add_provider_specific_params(
             non_default_params,
             &ProviderSpecificRequest {
                 passed_params: &processed.passed_params,
                 custom_llm_provider: request.custom_llm_provider,
-                openai_params: DEFAULT_CHAT_COMPLETION_PARAMS,
+                openai_params: &openai_params,
                 additional_drop_params: request.additional_drop_params,
             },
         )?;

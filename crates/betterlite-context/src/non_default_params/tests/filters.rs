@@ -6,8 +6,8 @@ use rstest::rstest;
 use super::params;
 use crate::non_default_params::filters::{
     apply_openai_param_overrides, bedrock_route_for_request, filter_out_litellm_params,
-    get_non_default_params, provider_rejectable_params, remove_unsupported_params,
-    select_non_default_params,
+    get_non_default_params, get_standard_openai_params, provider_rejectable_params,
+    remove_unsupported_params, select_non_default_params, supports_vertex_params,
 };
 use crate::non_default_params::names::{
     OPENAI_CHAT_COMPLETION_PARAMS, OPENAI_TRANSCRIPTION_PARAMS,
@@ -59,6 +59,33 @@ fn provider_rejectable_filter_skips_unvalidated(#[case] name: &str) {
     assert_eq!(rejectable.into_iter().collect::<Vec<_>>(), ["temperature"]);
 }
 
+#[rstest]
+#[case::keeps_set_names(
+    r#"{"temperature": 1, "top_k": 2, "n": null}"#,
+    r#"{"temperature": 1}"#
+)]
+#[case::keeps_falsy_set_values(
+    r#"{"user": "", "stream": false, "stop": []}"#,
+    r#"{"user": "", "stream": false, "stop": []}"#
+)]
+#[case::drops_unknown_names(r#"{"api_key": "k", "top_k": 2}"#, r#"{"api_key": "k"}"#)]
+fn standard_openai_filter_keeps_the_known_names(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(get_standard_openai_params(&params(input)), params(expected));
+}
+
+#[rstest]
+#[case::vertex_ai("vertex_ai", true)]
+#[case::vertex_ai_beta("vertex_ai_beta", true)]
+#[case::gdc("gdc", true)]
+#[case::bedrock("bedrock", false)]
+#[case::unknown("not_a_provider", false)]
+fn supports_vertex_filter_matches_the_provider_configs(
+    #[case] provider: &str,
+    #[case] supported: bool,
+) {
+    assert_eq!(supports_vertex_params(provider), supported);
+}
+
 #[test]
 fn provider_rejectable_filter_ignores_null_and_unknown() {
     let rejectable =
@@ -101,8 +128,9 @@ fn filter_out_litellm_params_filter_cases(
 #[test]
 fn filter_out_litellm_params_filter_uses_the_endpoint_name_lists() {
     let kwargs = params(r#"{"temperature": 1, "language": "de", "extra": 3}"#);
+    let chat: Vec<&str> = OPENAI_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
     assert_eq!(
-        filter_out_litellm_params(&kwargs, OPENAI_CHAT_COMPLETION_PARAMS),
+        filter_out_litellm_params(&kwargs, &chat),
         params(r#"{"extra": 3, "language": "de"}"#)
     );
     assert_eq!(

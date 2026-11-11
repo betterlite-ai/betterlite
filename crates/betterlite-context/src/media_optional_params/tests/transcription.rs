@@ -99,12 +99,13 @@ fn media_optional_params_transcription_unsupported_param_is_rejected() {
     let error = transcribe("other", passed, DropPolicy::default(), Some(&SUPPORTED)).unwrap_err();
     assert!(matches!(
         &error,
-        MediaParamsError::TranscriptionUnsupported { provider } if provider == "other"
+        MediaParamsError::TranscriptionUnsupported { param, provider }
+            if param == "prompt" && provider == "other"
     ));
     assert_eq!(error.status_code(), 400);
     assert_eq!(
         error.to_string(),
-        "litellm.UnsupportedParamsError: Setting user/encoding format is not supported by other. To drop it from the call, set `litellm.drop_params = True`."
+        "setting prompt is not supported by other"
     );
 }
 
@@ -222,10 +223,7 @@ fn media_optional_params_transcription_additional_drop_params_must_be_names(#[ca
     let error = transcribe("other", passed, DropPolicy::default(), None).unwrap_err();
     assert!(matches!(
         error,
-        MediaParamsError::WrongType {
-            field: "additional_drop_params",
-            ..
-        }
+        MediaParamsError::WrongType("additional_drop_params", _)
     ));
     assert_eq!(error.status_code(), 400);
 }

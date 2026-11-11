@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 use betterlite_models::controls::json_value::JsonValue;
 
 use super::Params;
-use super::names::{DEFAULT_CHAT_COMPLETION_PARAMS, PROVIDER_UNVALIDATED_PARAMS};
+use super::names::{
+    DEFAULT_CHAT_COMPLETION_PARAMS, OPENAI_CHAT_COMPLETION_PARAMS, PROVIDER_UNVALIDATED_PARAMS,
+};
 use crate::owned_parameter_names::is_litellm_owned_kwarg;
 
 // Every default in the tables is null, so a value is non-default when it is not null.
@@ -37,9 +39,23 @@ where
 }
 
 #[must_use]
+pub fn get_standard_openai_params(params: &Params) -> Params {
+    params
+        .iter()
+        .filter(|(key, value)| {
+            OPENAI_CHAT_COMPLETION_PARAMS
+                .split_whitespace()
+                .any(|name| name == key.as_str())
+                && !matches!(value, JsonValue::Null)
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+#[must_use]
 pub fn get_non_default_params(passed_params: &Params) -> Params {
-    let mut selected =
-        select_non_default_params(passed_params, DEFAULT_CHAT_COMPLETION_PARAMS, &[]);
+    let names: Vec<&str> = DEFAULT_CHAT_COMPLETION_PARAMS.split_whitespace().collect();
+    let mut selected = select_non_default_params(passed_params, &names, &[]);
     selected.retain(|key, _| !matches!(key.as_str(), "model" | "custom_llm_provider"));
     selected
 }
@@ -57,6 +73,12 @@ pub fn filter_out_litellm_params(kwargs: &Params, excluding: &[&str]) -> Params 
     let mut kept = kwargs.clone();
     kept.retain(|key, _| !excluding.contains(&key.as_str()) && !is_litellm_owned_kwarg(key));
     kept
+}
+
+// gdc is the only provider config besides vertex_ai that sets supports_vertex_params.
+#[must_use]
+pub fn supports_vertex_params(custom_llm_provider: &str) -> bool {
+    matches!(custom_llm_provider, "vertex_ai" | "vertex_ai_beta" | "gdc")
 }
 
 // Without a supported list there is nothing to send, so the result is empty.

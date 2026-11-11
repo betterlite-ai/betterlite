@@ -8,7 +8,7 @@ use crate::non_default_params::extra_body::{
 };
 use crate::non_default_params::filters::select_non_default_params;
 use crate::non_default_params::mapper::{DropPolicy, OptionalParamsMapper};
-use crate::non_default_params::names::OPENAI_COMPATIBLE_PROVIDERS;
+use crate::non_default_params::names::is_openai_compatible_provider;
 
 const IMAGE_DEFAULTS: &[&str] = &[
     "n",
@@ -62,10 +62,7 @@ fn vertex_optional_params(params: &Params) -> Result<Params, MediaParamsError> {
             optional_params.insert("sampleCount".to_owned(), JsonValue::Number(count.clone()));
         }
         Some(_) => {
-            return Err(MediaParamsError::WrongType {
-                field: "n",
-                expected: "an integer",
-            });
+            return Err(MediaParamsError::WrongType("n", "an integer"));
         }
     }
     match params.get("size") {
@@ -75,10 +72,7 @@ fn vertex_optional_params(params: &Params) -> Result<Params, MediaParamsError> {
             optional_params.insert("aspectRatio".to_owned(), JsonValue::Text(ratio.to_owned()));
         }
         Some(_) => {
-            return Err(MediaParamsError::WrongType {
-                field: "size",
-                expected: "a string",
-            });
+            return Err(MediaParamsError::WrongType("size", "a string"));
         }
     }
     Ok(optional_params)
@@ -95,95 +89,104 @@ fn unsupported_error(
     }
 }
 
-struct BranchOutput {
-    optional_params: Params,
-    dropped: Vec<String>,
-}
-
-enum Plan<'request> {
-    Mapped {
-        config: Option<&'request dyn OptionalParamsMapper>,
-        supported: Vec<String>,
-        drop_for_config: bool,
-    },
-    Passthrough,
-    Empty,
-}
-
-fn plan_branch<'request>(
-    request: &ImageGenerationRequest<'request>,
-    provider_supported: Option<&[String]>,
+fn drop_unsupported(
+    request: &ImageGenerationRequest<'_>,
+    non_default_params: &mut Params,
+    supported: &[String],
     drop: bool,
-) -> Result<Plan<'request>, MediaParamsError> {
+) -> Result<Vec<String>, MediaParamsError> {
+    drop_unsupported_params(non_default_params, supported, drop)
+        .map_err(|first| unsupported_error(request, first))
+}
+
+fn branch_params(
+    request: &ImageGenerationRequest<'_>,
+    supported_by_config: Option<&[String]>,
+    mut non_default_params: Params,
+    drop_policy: DropPolicy,
+) -> Result<(Params, Vec<String>), MediaParamsError> {
+    let drop = drop_policy.litellm_drop_params || drop_policy.drop_params == Some(true);
     match (request.provider_config, request.custom_llm_provider) {
-        (Some(config), _) => Ok(Plan::Mapped {
-            config: Some(config),
-            supported: provider_supported.unwrap_or_default().to_vec(),
-            drop_for_config: drop,
-        }),
+        (Some(config), _) => {
+            let supported = supported_by_config.unwrap_or_default();
+            let dropped = drop_unsupported(request, &mut non_default_params, supported, drop)?;
+            let mapped = config.map_openai_params(
+                &non_default_params,
+                Params::new(),
+                request.model.unwrap_or_default(),
+                drop,
+            )?;
+            Ok((mapped, dropped))
+        }
         (None, Some("bedrock")) => {
             let config = request
                 .bedrock_config
                 .ok_or(MediaParamsError::MissingBedrockConfig)?;
-            Ok(Plan::Mapped {
-                config: Some(config),
-                supported: config.supported_openai_params(request.model.unwrap_or_default()),
-                drop_for_config: false,
-            })
+            let supported = config.supported_openai_params(request.model.unwrap_or_default());
+            let dropped = drop_unsupported(request, &mut non_default_params, &supported, drop)?;
+            let mapped = config.map_openai_params(
+                &non_default_params,
+                Params::new(),
+                request.model.unwrap_or_default(),
+                false,
+            )?;
+            Ok((mapped, dropped))
         }
-        (None, Some("vertex_ai")) => Ok(Plan::Mapped {
-            config: None,
-            supported: vec!["n".to_owned(), "size".to_owned()],
-            drop_for_config: false,
-        }),
+        (None, Some("vertex_ai")) => {
+            let supported = ["n".to_owned(), "size".to_owned()];
+            let dropped = drop_unsupported(request, &mut non_default_params, &supported, drop)?;
+            Ok((vertex_optional_params(request.params)?, dropped))
+        }
         (None, Some(name))
-            if matches!(name, "openai" | "azure")
-                || OPENAI_COMPATIBLE_PROVIDERS.contains(&name) =>
+            if matches!(name, "openai" | "azure") || is_openai_compatible_provider(name) =>
         {
-            Ok(Plan::Passthrough)
+            Ok((non_default_params, Vec::new()))
         }
-        (None, Some(_) | None) => Ok(Plan::Empty),
+        (None, Some(_) | None) => Ok((Params::new(), Vec::new())),
     }
 }
 
-fn run_branch(
+pub fn get_optional_params_image_gen(
     request: &ImageGenerationRequest<'_>,
-    mut non_default_params: Params,
-    provider_supported: Option<&[String]>,
-) -> Result<BranchOutput, MediaParamsError> {
-    let drop =
-        request.drop_policy.litellm_drop_params || request.drop_policy.drop_params == Some(true);
-    match plan_branch(request, provider_supported, drop)? {
-        Plan::Passthrough => Ok(BranchOutput {
-            optional_params: non_default_params,
-            dropped: Vec::new(),
-        }),
-        Plan::Empty => Ok(BranchOutput {
-            optional_params: Params::new(),
-            dropped: Vec::new(),
-        }),
-        Plan::Mapped {
-            config,
-            supported,
-            drop_for_config,
-        } => {
-            let dropped = drop_unsupported_params(&mut non_default_params, &supported, drop)
-                .map_err(|first| unsupported_error(request, first))?;
-            let optional_params = match config {
-                Some(mapper) => mapper.map_openai_params(
-                    &non_default_params,
-                    Params::new(),
-                    request.model.unwrap_or_default(),
-                    drop_for_config,
-                )?,
-                None => vertex_optional_params(request.params)?,
-            };
-            Ok(BranchOutput {
-                optional_params,
-                dropped,
-            })
-        }
+) -> Result<Params, MediaParamsError> {
+    let mut passed_params = request.params.clone();
+    passed_params.retain(|key, _| !kwarg_is_dropped(key, request.custom_llm_provider));
+    let supported_by_config = request
+        .provider_config
+        .map(|config| config.supported_openai_params(request.model.unwrap_or_default()));
+    let default_names: Vec<&str> = IMAGE_DEFAULTS
+        .iter()
+        .copied()
+        .chain(supported_by_config.iter().flatten().map(String::as_str))
+        .collect();
+    let non_default_params = select_non_default_params(
+        &passed_params,
+        &default_names,
+        request.additional_drop_params,
+    );
+    let (mut optional_params, dropped) = branch_params(
+        request,
+        supported_by_config.as_deref(),
+        non_default_params,
+        request.drop_policy,
+    )?;
+    for key in &dropped {
+        passed_params.remove(key);
     }
+    let openai_params: Vec<&str> = supported_by_config.as_ref().map_or(default_names, |names| {
+        names.iter().map(String::as_str).collect()
+    });
+    optional_params = add_provider_specific_params(
+        optional_params,
+        &ProviderSpecificRequest {
+            passed_params: &passed_params,
+            custom_llm_provider: request.custom_llm_provider.unwrap_or_default(),
+            openai_params: &openai_params,
+            additional_drop_params: request.additional_drop_params,
+        },
+    )?;
+    drop_empty_values(&mut optional_params);
+    Ok(optional_params)
 }
 
 fn drop_empty_values(optional_params: &mut Params) {
@@ -193,45 +196,4 @@ fn drop_empty_values(optional_params: &mut Params) {
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) => true,
     });
-}
-
-pub fn get_optional_params_image_gen(
-    request: &ImageGenerationRequest<'_>,
-) -> Result<Params, MediaParamsError> {
-    let provider = request.custom_llm_provider;
-    let mut passed_params = request.params.clone();
-    passed_params.retain(|key, _| !kwarg_is_dropped(key, provider));
-    let provider_supported = request
-        .provider_config
-        .map(|config| config.supported_openai_params(request.model.unwrap_or_default()));
-    let default_names: Vec<&str> = IMAGE_DEFAULTS
-        .iter()
-        .copied()
-        .chain(provider_supported.iter().flatten().map(String::as_str))
-        .collect();
-    let non_default_params = select_non_default_params(
-        &passed_params,
-        &default_names,
-        request.additional_drop_params,
-    );
-    let branch = run_branch(request, non_default_params, provider_supported.as_deref())?;
-    for key in &branch.dropped {
-        passed_params.remove(key);
-    }
-    let openai_params: Vec<&str> = provider_supported
-        .as_ref()
-        .map_or(default_names, |supported| {
-            supported.iter().map(String::as_str).collect()
-        });
-    let mut optional_params = add_provider_specific_params(
-        branch.optional_params,
-        &ProviderSpecificRequest {
-            passed_params: &passed_params,
-            custom_llm_provider: provider.unwrap_or_default(),
-            openai_params: &openai_params,
-            additional_drop_params: request.additional_drop_params,
-        },
-    )?;
-    drop_empty_values(&mut optional_params);
-    Ok(optional_params)
 }
