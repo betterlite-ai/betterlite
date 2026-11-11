@@ -76,10 +76,8 @@ fn embedding_map(params: &Object, optional_params: &Object, drop_params: bool) -
 }
 
 fn embedding_headers(api_key: Option<&str>) -> HelperResult {
-    let Some(key) = api_key else {
-        return Ok(failure());
-    };
-    validate_environment(&Headers::new(), Some(&SecretString::from(key.to_owned()))).map_or_else(
+    let secret = api_key.map(|key| SecretString::from(key.to_owned()));
+    validate_environment(&Headers::new(), secret.as_ref()).map_or_else(
         |_| Ok(failure()),
         |headers| Ok(serde_json::to_value(headers)?),
     )
