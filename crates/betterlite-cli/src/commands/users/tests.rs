@@ -90,6 +90,16 @@ fn list_users_rejects_a_response_without_a_users_key() {
 }
 
 #[test]
+fn list_users_rejects_a_non_list_users_value() {
+    let server = TestServer::start(vec![Answer::json(200, r#"{"users":"not-a-list"}"#)]);
+
+    let (result, stdout) = run(UsersCommand::List(ListUsers), &server);
+
+    assert!(matches!(result, Err(UsersError::Response { .. })));
+    assert!(stdout.is_empty(), "{stdout}");
+}
+
+#[test]
 fn get_user_sends_the_id_and_prints_the_response() {
     let server = TestServer::start(vec![Answer::json(200, r#"{"user_id":"u1"}"#)]);
 

@@ -85,6 +85,18 @@ fn list_rejects_a_response_that_is_not_an_object() {
 }
 
 #[test]
+fn list_prints_an_empty_table_for_a_response_without_a_credentials_key() {
+    let server = TestServer::start(vec![Answer::json(200, r#"{"success":true}"#)]);
+
+    let (result, stdout, stderr) = run(list(OutputFormat::Table), &server);
+
+    result.unwrap();
+    assert!(stdout.contains("Credentials"), "{stdout}");
+    assert!(stdout.contains("Credential Name"), "{stdout}");
+    assert!(stderr.is_empty(), "{stderr}");
+}
+
+#[test]
 fn get_prints_the_credential_response() {
     let server = TestServer::start(vec![Answer::json(200, r#"{"credential_name":"openai"}"#)]);
 

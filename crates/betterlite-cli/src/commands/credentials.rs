@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use clap::{Args, Subcommand};
 use http::Method;
 use serde::Deserialize;
+use serde_json::value::RawValue;
 
 use crate::pkce_login::HttpResponse;
 
@@ -82,6 +84,7 @@ pub enum CredentialsError {
 
 #[derive(Debug, Deserialize)]
 struct CredentialsView {
+    #[serde(default)]
     credentials: Vec<CredentialItem>,
 }
 
@@ -137,11 +140,7 @@ fn list_credentials(
             }
         });
     }
-    let view: CredentialsView =
-        serde_json::from_slice(&response.body).map_err(|source| CredentialsError::Response {
-            path: CREDENTIALS_PATH,
-            source,
-        })?;
+    let view = parse_credentials(&response.body)?;
     write_table(
         "Credentials",
         &["Credential Name", "Custom LLM Provider"],
@@ -164,6 +163,19 @@ fn credential_rows(view: CredentialsView) -> Vec<Vec<String>> {
             ]
         })
         .collect()
+}
+
+fn parse_credentials(body: &[u8]) -> Result<CredentialsView, CredentialsError> {
+    // serde reads an empty array as an empty struct, so require the top level to be an object first
+    let _object: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_slice(body).map_err(|source| CredentialsError::Response {
+            path: CREDENTIALS_PATH,
+            source,
+        })?;
+    serde_json::from_slice(body).map_err(|source| CredentialsError::Response {
+        path: CREDENTIALS_PATH,
+        source,
+    })
 }
 
 fn send_or_abort(

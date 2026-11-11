@@ -4,7 +4,6 @@ use clap::{Args, Subcommand};
 use http::Method;
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use serde_json::value::RawValue;
 
 use super::tables::{write_json_response, write_table};
 use super::{Client, ClientError, Payload, Request};
@@ -71,7 +70,8 @@ pub enum UsersError {
 
 #[derive(Debug, Deserialize)]
 struct UsersView {
-    users: Box<RawValue>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    users: Option<Vec<UserItem>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,20 +121,10 @@ fn list_users(
             path: LIST_PATH,
             source,
         })?;
-    let users_raw = view.users.get();
-    if users_raw.trim_start() == "null" {
+    let Some(users) = view.users.filter(|users| !users.is_empty()) else {
         let _unused = writeln!(stdout, "No users found.");
         return Ok(());
-    }
-    let users: Vec<UserItem> =
-        serde_json::from_str(users_raw).map_err(|source| UsersError::Response {
-            path: LIST_PATH,
-            source,
-        })?;
-    if users.is_empty() {
-        let _unused = writeln!(stdout, "No users found.");
-        return Ok(());
-    }
+    };
     write_table(
         "Users",
         &["User ID", "Email", "Role", "Teams"],
