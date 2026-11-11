@@ -156,7 +156,9 @@ fn explicit_region() {
         None,
         InvokeEnvironment {
             region_name: Some("ap-south-1"),
-            ..InvokeEnvironment::default()
+            region: None,
+            session_region: None,
+            runtime_endpoint: None,
         },
     )
     .unwrap();
@@ -176,7 +178,8 @@ fn environment_regions() {
         InvokeEnvironment {
             region_name: Some("ap-south-1"),
             region: Some("ca-central-1"),
-            ..InvokeEnvironment::default()
+            session_region: None,
+            runtime_endpoint: None,
         },
     )
     .unwrap();
@@ -187,8 +190,10 @@ fn environment_regions() {
         &empty(),
         None,
         InvokeEnvironment {
+            region_name: None,
             region: Some("ca-central-1"),
-            ..InvokeEnvironment::default()
+            session_region: None,
+            runtime_endpoint: None,
         },
     )
     .unwrap();
