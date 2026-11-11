@@ -40,7 +40,7 @@ test("prepare publishes the selected export and leaves proprietary subtrees out"
   assert.equal(await exists(path.join(fixture.paths.outDir, "ui/litellm-dashboard/_experimental/out")), false);
   assert.equal(await exists(path.join(fixture.paths.outDir, "ui/enterprise")), false);
   assert.equal(await exists(path.join(fixture.paths.outDir, "README.md")), false);
-  assert.deepEqual(await fs.readdir(path.join(fixture.base, "cache")), []);
+  assert.equal(await exists(fixture.paths.cacheDir), false);
 });
 
 test("prepare fetches the pinned commit into the private cache", async (t) => {
@@ -280,6 +280,28 @@ test("a patch that changes a pinned dependency file is rejected", async (t) => {
   await rejected(
     prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir }),
     "patch-protected",
+  );
+});
+
+test("a patch whose +++ header names another path is rejected", async (t) => {
+  const fixture = await createFixture(t);
+  const listed = "ui/litellm-dashboard/next.config.mjs";
+  const smuggled = "litellm/proxy/extra.py";
+  const patch = [
+    `diff --git a/${listed} b/${listed}`,
+    `--- a/${listed}`,
+    `+++ b/${smuggled}`,
+    "@@ -1 +1 @@",
+    `-${fixture.files[listed].replace(/\n$/, "")}`,
+    "+export default {};",
+    "",
+  ].join("\n");
+  await writePatchPair(fixture.paths.patchesDir, "10-smuggle.patch", patch, [
+    { path: listed, preimage: hashText(fixture.files[listed]), postimage: hashText("export default {};\n") },
+  ]);
+  await rejected(
+    prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir }),
+    "patch-form",
   );
 });
 

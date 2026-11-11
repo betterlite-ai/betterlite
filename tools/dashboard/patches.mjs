@@ -110,8 +110,17 @@ function prefixed(value, prefix, patch) {
   return relativePath(value.slice(prefix.length), patch);
 }
 
+function headerPath(value, prefix, paths, patch) {
+  if (value === "/dev/null") return;
+  const file = prefixed(value, prefix, patch);
+  if (!paths.has(file)) {
+    throw new PatchError("patch-form", `${patch}: a ${prefix === "a/" ? "---" : "+++"} header names ${file}, which no diff header names`);
+  }
+}
+
 export function patchPaths(text, patch) {
   const paths = new Set();
+  let header = true;
   for (const line of text.split("\n")) {
     if (line.startsWith("rename from ") || line.startsWith("rename to ")) {
       throw new PatchError("patch-form", `${patch}: renames are not part of the patch contract`);
@@ -119,10 +128,23 @@ export function patchPaths(text, patch) {
     if (line.startsWith("copy from ") || line.startsWith("copy to ")) {
       throw new PatchError("patch-form", `${patch}: copies are not part of the patch contract`);
     }
-    if (!line.startsWith("diff --git ")) continue;
-    const [first, second] = twoPaths(line.slice("diff --git ".length));
-    paths.add(prefixed(first, "a/", patch));
-    paths.add(prefixed(second, "b/", patch));
+    if (line.startsWith("diff --git ")) {
+      const [first, second] = twoPaths(line.slice("diff --git ".length));
+      const left = prefixed(first, "a/", patch);
+      const right = prefixed(second, "b/", patch);
+      if (left !== right) {
+        throw new PatchError("patch-form", `${patch}: ${left} and ${right} differ inside one diff; renames and copies are not part of the contract`);
+      }
+      paths.add(left);
+      header = true;
+    } else if (header && line.startsWith("--- ")) {
+      headerPath(line.slice(4), "a/", paths, patch);
+    } else if (header && line.startsWith("+++ ")) {
+      headerPath(line.slice(4), "b/", paths, patch);
+      header = false;
+    } else if (line.startsWith("@@") || line.startsWith("GIT binary patch")) {
+      header = false;
+    }
   }
   if (paths.size === 0) {
     throw new PatchError("patch-form", `${patch}: no 'diff --git' header names a target`);

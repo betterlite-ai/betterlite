@@ -274,8 +274,7 @@ async function obtainArchive(settings, pin, source) {
     throw new SourceError("archive-mismatch", `git archive produced SHA-256 ${actual}, the pin expects ${pin.archiveSha256}`);
   }
   if (!source.cached) {
-    await fs.mkdir(settings.cacheDir, { recursive: true });
-    const temporary = path.join(settings.cacheDir, `archive-${process.pid}-${Date.now()}.tar`);
+    const temporary = path.join(path.dirname(settings.outDir), `.archive-${process.pid}-${Date.now()}.tar`);
     await fs.writeFile(temporary, bytes);
     return { file: temporary, temporary: true };
   }
