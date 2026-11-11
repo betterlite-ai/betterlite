@@ -103,8 +103,9 @@ pub struct ChatRequest {
     pub context_window_fallbacks: Option<Vec<FallbackChainEntry>>,
     #[serde(default, skip_serializing)]
     pub content_policy_fallbacks: Option<Vec<FallbackChainEntry>>,
+    // an absent or null disable_fallbacks leaves fallbacks on
     #[serde(default, skip_serializing)]
-    pub disable_fallbacks: bool,
+    pub disable_fallbacks: Option<bool>,
     // parameters betterlite does not model: LiteLLM forwards unknown ones and filters the OpenAI ones it knows
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,

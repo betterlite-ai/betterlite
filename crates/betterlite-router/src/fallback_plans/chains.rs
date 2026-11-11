@@ -1,19 +1,16 @@
 use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
 
-// the provider names a model group can carry, and the inference that names the provider of a group that carries none
 pub struct ProviderNames<'names> {
     pub slugs: &'names [String],
     pub inferred: &'names dyn Fn(&str) -> Option<String>,
 }
 
-// the chain one lookup group resolved to, and whether it is the "*" entry rather than a group-specific one
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainMatch<'plan> {
     pub targets: Vec<&'plan FallbackTarget>,
     pub generic: bool,
 }
 
-// The chain a lookup name resolves to: exact match, stripped or provider-prefixed match, then the generic "*" entry
 #[must_use]
 pub fn get_fallback_model_group<'plan>(
     chain: &'plan [FallbackChainEntry],
@@ -67,7 +64,6 @@ fn chain_keys(chain: &[FallbackChainEntry]) -> Vec<&str> {
         .collect()
 }
 
-// An exact match or a bare entry wins, then the last stripped match, then the generic entry
 fn select<'plan>(
     resolved: Option<ChainMatch<'plan>>,
     stripped: Option<&'plan [FallbackTarget]>,
@@ -88,7 +84,6 @@ fn select<'plan>(
     })
 }
 
-// First lookup group with a specifically keyed chain wins; the generic "*" chain applies only after every group missed
 #[must_use]
 pub fn resolve_for_lookup_groups<'plan>(
     chain: &'plan [FallbackChainEntry],

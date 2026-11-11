@@ -54,7 +54,9 @@ impl Section for Raw {
     {
         let router = self.router_settings;
         let litellm = self.litellm_settings;
-        let mut fallbacks = chain(router.fallbacks, litellm.fallbacks, "fallbacks")?;
+        let (ordinary, ordinary_path) =
+            configured(router.fallbacks, litellm.fallbacks, "fallbacks");
+        let mut fallbacks = one_group_entries(ordinary, &ordinary_path)?;
         let defaults = router.default_fallbacks.or(litellm.default_fallbacks);
         if let Some(targets) = defaults {
             fallbacks.push(FallbackChainEntry::Group(IndexMap::from([(
@@ -62,34 +64,42 @@ impl Section for Raw {
                 targets,
             )])));
         }
+        let (policy, policy_path) = configured(
+            router.content_policy_fallbacks,
+            litellm.content_policy_fallbacks,
+            "content_policy_fallbacks",
+        );
         Ok(Settings {
             fallbacks,
-            context_window_fallbacks: chain(
+            context_window_fallbacks: configured(
                 router.context_window_fallbacks,
                 litellm.context_window_fallbacks,
                 "context_window_fallbacks",
-            )?,
-            content_policy_fallbacks: chain(
-                router.content_policy_fallbacks,
-                litellm.content_policy_fallbacks,
-                "content_policy_fallbacks",
-            )?,
+            )
+            .0,
+            content_policy_fallbacks: one_group_entries(policy, &policy_path)?,
             max_fallbacks: max_fallbacks(router.max_fallbacks.or(litellm.max_fallbacks), lookup)?,
         })
     }
 }
 
-// LiteLLM accepts a chain entry only as a dictionary keyed by exactly one model group
-fn chain(
+fn configured(
     router: Option<Vec<FallbackChainEntry>>,
     litellm: Option<Vec<FallbackChainEntry>>,
     name: &str,
-) -> Result<Vec<FallbackChainEntry>, ConfigError> {
-    let (entries, path) = match (router, litellm) {
+) -> (Vec<FallbackChainEntry>, String) {
+    match (router, litellm) {
         (Some(entries), _) => (entries, format!("router_settings.{name}")),
         (None, Some(entries)) => (entries, format!("litellm_settings.{name}")),
-        (None, None) => return Ok(Vec::new()),
-    };
+        (None, None) => (Vec::new(), format!("router_settings.{name}")),
+    }
+}
+
+// LiteLLM validates the ordinary and content-policy lists only, and context-window chains keep bare and multi-key entries
+fn one_group_entries(
+    entries: Vec<FallbackChainEntry>,
+    path: &str,
+) -> Result<Vec<FallbackChainEntry>, ConfigError> {
     for (index, entry) in entries.iter().enumerate() {
         if !matches!(entry, FallbackChainEntry::Group(group) if group.len() == 1) {
             return Err(ConfigError::InvalidScalar {

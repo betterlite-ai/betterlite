@@ -3,18 +3,19 @@ pub mod types;
 pub type Input = types::Input;
 pub type Output = types::Output;
 
+use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_config::sections::fallback_plans::chains::FallbackChainEntry;
 use betterlite_router::fallback_plans::attempts::AttemptedTargets;
 use betterlite_router::fallback_plans::chains::ProviderNames;
-use betterlite_router::fallback_plans::controls::{mid_stream_hop, per_request_fallback_controls};
+use betterlite_router::fallback_plans::controls::HopRequest;
 use betterlite_router::fallback_plans::groups::{
     Bucket, MetadataValues, RequestMetadata, carry_pre_routing_selection,
     clear_pre_routing_selection, fallback_lookup_groups, fallbacks_disabled_for_request,
     get_pre_routing_selection, record_disable_fallbacks, record_pre_routing_selection,
 };
 use betterlite_router::fallback_plans::plan::{
-    DepthOutcome, FallbackBudget, FallbackPlans, RequestOverrides, ResolvedChain, SelectedChains,
-    advance_depth, resolve_chain,
+    DepthOutcome, FallbackBudget, RequestOverrides, ResolvedChain, SelectedChains, advance_depth,
+    resolve_chain, select_chains,
 };
 
 use self::types::{
@@ -37,10 +38,10 @@ pub(crate) fn run(
     let attempted = AttemptedTargets::from_targets(&payload.attempted);
     let overrides = overrides(payload);
     let configured = plans(payload);
-    let selected = configured.chains(&overrides);
+    let selected = select_chains(&configured, &overrides);
     let disabled = fallbacks_disabled_for_request(&state, payload.state.disable_fallbacks);
     apply(&mut state, payload);
-    let hop = hop_output(payload, &overrides, &state, selected);
+    let hop = hop_output(payload, overrides, &state);
     let mut snapshot = request_metadata(&payload.snapshot);
     carry_pre_routing_selection(&state, &mut snapshot);
     let (ordinary, context_window, content_policy) =
@@ -61,11 +62,10 @@ pub(crate) fn run(
     ))))
 }
 
-// LiteLLM validates every configured chain entry as a dictionary keyed by one model group
+// LiteLLM validates the ordinary and content-policy chains only, so a context-window chain keeps bare and multi-key entries
 fn validate(payload: &Payload) -> Result<(), OperationError> {
     let chains = [
         &payload.config.fallbacks,
-        &payload.config.context_window_fallbacks,
         &payload.config.content_policy_fallbacks,
     ];
     for chain in chains {
@@ -88,8 +88,8 @@ fn lookup_groups(state: &RequestMetadata, payload: &Payload) -> Vec<String> {
         .collect()
 }
 
-fn plans(payload: &Payload) -> FallbackPlans {
-    FallbackPlans {
+fn plans(payload: &Payload) -> Settings {
+    Settings {
         fallbacks: payload.config.fallbacks.clone(),
         context_window_fallbacks: payload.config.context_window_fallbacks.clone(),
         content_policy_fallbacks: payload.config.content_policy_fallbacks.clone(),
@@ -151,26 +151,24 @@ fn apply(state: &mut RequestMetadata, payload: &Payload) {
 
 fn hop_output(
     payload: &Payload,
-    overrides: &RequestOverrides<'_>,
+    overrides: RequestOverrides<'_>,
     live: &RequestMetadata,
-    selected: SelectedChains<'_>,
 ) -> HopOutput {
     let model = payload.state.model.as_deref().unwrap_or_default();
-    let hop = mid_stream_hop(
+    let hop = HopRequest {
         model,
-        per_request_fallback_controls(overrides),
-        live,
-        selected.budget,
-    );
+        overrides,
+        metadata: live.clone(),
+    };
     HopOutput {
         model: hop.model.to_owned(),
-        fallbacks: hop.controls.fallbacks.map(<[FallbackChainEntry]>::to_vec),
+        fallbacks: hop.overrides.fallbacks.map(<[FallbackChainEntry]>::to_vec),
         context_window_fallbacks: hop
-            .controls
+            .overrides
             .context_window_fallbacks
             .map(<[FallbackChainEntry]>::to_vec),
         content_policy_fallbacks: hop
-            .controls
+            .overrides
             .content_policy_fallbacks
             .map(<[FallbackChainEntry]>::to_vec),
     }

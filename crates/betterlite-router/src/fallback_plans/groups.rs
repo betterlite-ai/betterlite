@@ -6,14 +6,12 @@ pub struct MetadataValues {
     pub disable_fallbacks: bool,
 }
 
-// the router-internal values a fallback hop reads and writes on one request
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Bucket {
     pub present: bool,
     pub values: MetadataValues,
 }
 
-// The two metadata buckets LiteLLM shares across the copies of a request's keyword arguments
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RequestMetadata {
     pub metadata: Bucket,
@@ -38,7 +36,6 @@ impl RequestMetadata {
     }
 }
 
-// Ordered keys for resolving a fallback chain: the tier a pre-routing hook selected, then the routed group, the requested group and the original one
 #[must_use]
 pub fn fallback_lookup_groups<'state>(
     state: &'state RequestMetadata,
@@ -60,7 +57,6 @@ pub fn fallback_lookup_groups<'state>(
     groups
 }
 
-// The model a pre-routing hook selected for this request, if one did
 #[must_use]
 pub fn get_pre_routing_selection(state: &RequestMetadata) -> Option<&str> {
     for bucket in [&state.metadata, &state.litellm_metadata] {
@@ -93,7 +89,6 @@ pub fn carry_pre_routing_selection(live: &RequestMetadata, snapshot: &mut Reques
     }
 }
 
-// True when this request opted out of fallbacks, from the raw kwarg or the bucket the wrapper stamps after popping it
 #[must_use]
 pub fn fallbacks_disabled_for_request(
     state: &RequestMetadata,

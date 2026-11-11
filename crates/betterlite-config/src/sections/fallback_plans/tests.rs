@@ -107,10 +107,6 @@ fn parameterized_targets_keep_their_overrides() {
     "litellm_settings:\n  fallbacks: [{gpt-4: [claude]}, claude]\n",
     "litellm_settings.fallbacks[1]"
 )]
-#[case::context_window(
-    "litellm_settings:\n  context_window_fallbacks: [claude]\n",
-    "litellm_settings.context_window_fallbacks[0]"
-)]
 #[case::content_policy(
     "litellm_settings:\n  content_policy_fallbacks: [claude]\n",
     "litellm_settings.content_policy_fallbacks[0]"
@@ -118,6 +114,29 @@ fn parameterized_targets_keep_their_overrides() {
 fn rejects_chain_entries_that_name_no_single_group(#[case] source: &str, #[case] named: &str) {
     let error = settings(source, &[]).unwrap_err();
     assert!(error.contains(named), "{error}");
+}
+
+#[test]
+fn context_window_chains_keep_the_entries_litellm_never_validates() {
+    let source =
+        "router_settings:\n  context_window_fallbacks: [long-ctx, {gpt-4: [a], gpt-3.5: [b]}]\n";
+    let loaded = settings(source, &[]).unwrap();
+    assert_eq!(
+        loaded.context_window_fallbacks,
+        vec![
+            FallbackChainEntry::Target(FallbackTarget::Model(String::from("long-ctx"))),
+            FallbackChainEntry::Group(IndexMap::from([
+                (
+                    String::from("gpt-4"),
+                    vec![FallbackTarget::Model(String::from("a"))]
+                ),
+                (
+                    String::from("gpt-3.5"),
+                    vec![FallbackTarget::Model(String::from("b"))]
+                ),
+            ])),
+        ]
+    );
 }
 
 #[rstest]

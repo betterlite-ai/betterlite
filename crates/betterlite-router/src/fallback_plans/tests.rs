@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_config::sections::fallback_plans::Settings;
 use betterlite_config::sections::fallback_plans::chains::{
     FallbackChainEntry, FallbackTarget, ParameterizedTarget,
 };
@@ -12,14 +13,14 @@ use crate::fallback_plans::attempts::{AttemptedTargets, attempt_key, has_unattem
 use crate::fallback_plans::chains::{
     ChainMatch, ProviderNames, get_fallback_model_group, resolve_for_lookup_groups,
 };
-use crate::fallback_plans::controls::{mid_stream_hop, per_request_fallback_controls};
+use crate::fallback_plans::controls::HopRequest;
 use crate::fallback_plans::groups::{
     Bucket, MetadataValues, RequestMetadata, carry_pre_routing_selection,
     clear_pre_routing_selection, fallback_lookup_groups, fallbacks_disabled_for_request,
     get_pre_routing_selection, record_disable_fallbacks, record_pre_routing_selection,
 };
 use crate::fallback_plans::plan::{
-    DepthOutcome, FallbackBudget, FallbackPlans, RequestOverrides, advance_depth, resolve_chain,
+    DepthOutcome, FallbackBudget, RequestOverrides, advance_depth, resolve_chain, select_chains,
 };
 
 const SLUGS: [&str; 2] = ["openai", "anthropic"];
@@ -253,8 +254,8 @@ fn canonical_targets_keep_distinct_parameters() {
         ],
     );
     let recorded = AttemptedTargets::from_targets(&[first]);
-    assert!(recorded.contains(&reordered));
-    assert!(!recorded.contains(&colliding));
+    assert!(recorded.keys.contains(&attempt_key(&reordered)));
+    assert!(!recorded.keys.contains(&attempt_key(&colliding)));
 }
 
 fn request_chains_resolve(slugs: &[String]) {
@@ -263,9 +264,9 @@ fn request_chains_resolve(slugs: &[String]) {
         slugs,
         inferred: &plain,
     };
-    let plans = FallbackPlans {
+    let settings = Settings {
         fallbacks: vec![group("gpt-4", vec![name("router")])],
-        context_window_fallbacks: Vec::new(),
+        context_window_fallbacks: vec![group("gpt-4", vec![name("router-long")])],
         content_policy_fallbacks: Vec::new(),
         max_fallbacks: 5,
     };
@@ -276,19 +277,24 @@ fn request_chains_resolve(slugs: &[String]) {
         content_policy_fallbacks: None,
         depth: 2,
     };
-    let selected = plans.chains(&overrides);
+    let selected = select_chains(&settings, &overrides);
     assert_eq!(selected.budget.depth, 2);
     assert_eq!(selected.budget.max_fallbacks, 5);
     let attempted = AttemptedTargets::default();
     let resolved = resolve_chain(selected.ordinary, &["gpt-4"], &names, &attempted).unwrap();
     assert_eq!(target_models(&resolved.targets), ["request"]);
     assert!(resolved.has_unattempted);
-    let disabled = plans.chains(&RequestOverrides {
-        fallbacks: Some(&[]),
-        context_window_fallbacks: None,
-        content_policy_fallbacks: None,
-        depth: 0,
-    });
+    let window = resolve_chain(selected.context_window, &["gpt-4"], &names, &attempted).unwrap();
+    assert_eq!(target_models(&window.targets), ["router-long"]);
+    let disabled = select_chains(
+        &settings,
+        &RequestOverrides {
+            fallbacks: Some(&[]),
+            context_window_fallbacks: None,
+            content_policy_fallbacks: None,
+            depth: 0,
+        },
+    );
     assert!(resolve_chain(disabled.ordinary, &["gpt-4"], &names, &attempted).is_none());
     let tried = AttemptedTargets::from_targets(&[name("request")]);
     let retried = resolve_chain(selected.ordinary, &["gpt-4"], &names, &tried).unwrap();
@@ -331,8 +337,9 @@ fn attempt_identity_compares_canonical_targets(
 ) {
     let target = parameterized("claude", parameters);
     let recorded = AttemptedTargets::from_targets(attempted);
-    assert_eq!(recorded.contains(&target), same);
-    assert!(attempt_key(&target).is_some());
+    let key = attempt_key(&target);
+    assert_eq!(recorded.keys.contains(&key), same);
+    assert_eq!(key == attempt_key(&attempted[0]), same);
 }
 
 #[test]
@@ -340,10 +347,11 @@ fn has_unattempted_counts_every_target() {
     let chain = vec![name("one"), name("two")];
     let partial = AttemptedTargets::from_targets(&[name("one")]);
     let refs: Vec<&FallbackTarget> = chain.iter().collect();
-    assert!(has_unattempted_targets(Some(refs.as_slice()), &partial));
+    assert!(has_unattempted_targets(refs.as_slice(), &partial));
     let complete = AttemptedTargets::from_targets(&chain);
-    assert!(!has_unattempted_targets(Some(refs.as_slice()), &complete));
-    assert!(!has_unattempted_targets(None, &partial));
+    assert!(!has_unattempted_targets(refs.as_slice(), &complete));
+    let empty: [&FallbackTarget; 0] = [];
+    assert!(!has_unattempted_targets(&empty, &partial));
 }
 
 #[test]
@@ -408,25 +416,19 @@ fn the_hop_copies_the_metadata_and_keeps_the_controls() {
         content_policy_fallbacks: Some(&empty),
         depth: 1,
     };
-    let budget = FallbackBudget {
-        depth: 1,
-        max_fallbacks: 5,
+    let hop = HopRequest {
+        model: "gpt-4",
+        overrides,
+        metadata: live.clone(),
     };
-    let hop = mid_stream_hop(
-        "gpt-4",
-        per_request_fallback_controls(&overrides),
-        &live,
-        budget,
-    );
     assert_eq!(hop.model, "gpt-4");
-    assert_eq!(hop.controls.fallbacks, Some(request.as_slice()));
-    assert_eq!(hop.controls.context_window_fallbacks, None);
+    assert_eq!(hop.overrides.fallbacks, Some(request.as_slice()));
+    assert_eq!(hop.overrides.context_window_fallbacks, None);
     assert!(
-        hop.controls
+        hop.overrides
             .content_policy_fallbacks
             .is_some_and(<[FallbackChainEntry]>::is_empty)
     );
-    assert_eq!(hop.budget, budget);
     assert_eq!(hop.metadata, live);
     record_pre_routing_selection(&mut live, "changed");
     assert_eq!(get_pre_routing_selection(&hop.metadata), Some("tier"));
