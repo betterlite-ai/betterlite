@@ -6,7 +6,8 @@ use serde_json::Number;
 
 use crate::controls::json_value::JsonValue;
 use crate::controls::multipart::{
-    FormField, FormFieldError, FormValue, flatten_form_field_values, serialize_multipart_fields,
+    FormField, FormFieldError, FormValue, MAX_FORM_FIELD_BYTES, flatten_form_field_values,
+    serialize_multipart_fields,
 };
 
 enum Action {
@@ -24,6 +25,7 @@ enum Expected {
     Form(Vec<(&'static str, FormValue)>),
     Multipart(Vec<(&'static str, &'static str)>),
     Error(FormFieldError),
+    Accepted,
 }
 
 fn object(entries: Vec<(&str, JsonValue)>) -> JsonValue {
@@ -44,6 +46,10 @@ fn integer(value: i64) -> JsonValue {
 
 fn text(value: &str) -> JsonValue {
     JsonValue::Text(value.to_owned())
+}
+
+fn text_of_size(size: usize) -> JsonValue {
+    JsonValue::Text("a".repeat(size))
 }
 
 fn nested_arrays(depth: usize) -> JsonValue {
@@ -123,6 +129,20 @@ fn varied_scalars() -> JsonValue {
     Action::Flatten { sources: vec![object(vec![("list", nested_arrays(2))])], max_depth: 0 },
     Expected::Error(FormFieldError::TooDeep { limit: 0 })
 )]
+#[case::form_fields_at_the_byte_limit_are_allowed(
+    Action::Flatten {
+        sources: vec![object(vec![("k", text_of_size(MAX_FORM_FIELD_BYTES - 1))])],
+        max_depth: 100,
+    },
+    Expected::Accepted
+)]
+#[case::form_fields_past_the_byte_limit_fail(
+    Action::Flatten {
+        sources: vec![object(vec![("k", text_of_size(MAX_FORM_FIELD_BYTES))])],
+        max_depth: 100,
+    },
+    Expected::Error(FormFieldError::TooLarge { limit: MAX_FORM_FIELD_BYTES })
+)]
 #[case::a_source_that_is_not_an_object_fails(
     Action::Flatten { sources: vec![array(vec![])], max_depth: 100 },
     Expected::Error(FormFieldError::NotAnObject)
@@ -146,6 +166,13 @@ fn varied_scalars() -> JsonValue {
 #[case::multipart_past_the_depth_limit_fails(
     Action::Serialize { data: object(vec![("a", object(vec![("b", integer(1))]))]), max_depth: 0 },
     Expected::Error(FormFieldError::TooDeep { limit: 0 })
+)]
+#[case::multipart_past_the_byte_limit_fails(
+    Action::Serialize {
+        data: object(vec![("k", text_of_size(MAX_FORM_FIELD_BYTES))]),
+        max_depth: 100,
+    },
+    Expected::Error(FormFieldError::TooLarge { limit: MAX_FORM_FIELD_BYTES })
 )]
 #[case::multipart_data_that_is_not_an_object_fails(
     Action::Serialize { data: array(vec![]), max_depth: 100 },
@@ -182,6 +209,15 @@ fn provider_controls_tests_behavior(#[case] action: Action, #[case] expected: Ex
                 serialize_multipart_fields(&data, max_depth).map(|fields| fields.len()),
                 Err(expected_error)
             );
+        }
+        (Action::Flatten { sources, max_depth }, Expected::Accepted) => {
+            let borrowed: Vec<Option<&JsonValue>> = sources.iter().map(Some).collect();
+            flatten_form_field_values(&borrowed, max_depth)
+                .expect("the fields are within the byte limit");
+        }
+        (Action::Serialize { data, max_depth }, Expected::Accepted) => {
+            serialize_multipart_fields(&data, max_depth)
+                .expect("the fields are within the byte limit");
         }
         (Action::Flatten { .. }, Expected::Multipart(_))
         | (Action::Serialize { .. }, Expected::Form(_)) => {

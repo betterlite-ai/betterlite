@@ -19,6 +19,15 @@ deviations:
       denial of service. The depth bound matches LiteLLM's own DEFAULT_MAX_RECURSE_DEPTH.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L109-L133
   - what: >-
+      Multipart form field names plus values are capped at 10,000,000 bytes; a body past the cap
+      fails with a typed FormFieldError::TooLarge, which the caller answers with a 400. LiteLLM
+      bounds only nesting depth, so about 1 MiB of form source can expand to roughly 25 GB of
+      field names.
+    why: >-
+      Each child field name repeats its whole ancestor path, so a small nested body multiplies
+      into huge names and an unbounded request is a free denial of service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L16-L74
+  - what: >-
       Affinity session ids are strings. A non-string session_id, litellm_session_id or metadata
       session_id is rejected with an error that names the field, while LiteLLM converts any value
       with Python's str().

@@ -1,6 +1,7 @@
 use crate::controls::json_value::JsonValue;
 
 pub const DEFAULT_MAX_RECURSE_DEPTH: usize = 100;
+pub const MAX_FORM_FIELD_BYTES: usize = 10_000_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FormValue {
@@ -24,6 +25,8 @@ pub struct MultipartField {
 pub enum FormFieldError {
     #[error("form field nesting exceeds {limit}")]
     TooDeep { limit: usize },
+    #[error("form fields exceed the {limit} byte limit")]
+    TooLarge { limit: usize },
     #[error("a form source must be a JSON object")]
     NotAnObject,
 }
@@ -44,6 +47,7 @@ pub fn flatten_form_field_values(
         lists: ListStyle::Repeated,
         fields: Vec::new(),
         pending: Vec::new(),
+        used: 0,
     };
     for source in sources.iter().flatten() {
         let JsonValue::Object(entries) = source else {
@@ -69,6 +73,7 @@ pub fn serialize_multipart_fields(
         lists: ListStyle::Expanded,
         fields: Vec::new(),
         pending: Vec::new(),
+        used: 0,
     };
     for (name, value) in entries {
         flattener.flatten_root(name, value)?;
@@ -99,10 +104,12 @@ struct Flattener<'value> {
     lists: ListStyle,
     fields: Vec<FormField>,
     pending: Vec<(String, &'value JsonValue, usize)>,
+    used: usize,
 }
 
 impl<'value> Flattener<'value> {
     fn flatten_root(&mut self, name: &str, value: &'value JsonValue) -> Result<(), FormFieldError> {
+        self.charge(name.len())?;
         self.pending.push((name.to_owned(), value, 0));
         while let Some((field, current, depth)) = self.pending.pop() {
             if depth > self.max_depth {
@@ -118,29 +125,36 @@ impl<'value> Flattener<'value> {
                         .iter()
                         .rev()
                         .map(|(key, child)| (key.as_str(), child)),
-                ),
-                JsonValue::Array(items) => self.push_array(field, items, depth),
+                )?,
+                JsonValue::Array(items) => self.push_array(field, items, depth)?,
                 JsonValue::Null => {}
                 JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) => {
-                    self.push_scalar(field, current);
+                    self.push_scalar(field, current)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn push_scalar(&mut self, name: String, value: &JsonValue) {
+    fn push_scalar(&mut self, name: String, value: &JsonValue) -> Result<(), FormFieldError> {
         if let Some(text) = form_scalar_text(value)
             && !text.is_empty()
         {
+            self.charge(text.len())?;
             self.fields.push(FormField {
                 name,
                 value: FormValue::Single(text),
             });
         }
+        Ok(())
     }
 
-    fn push_array(&mut self, name: String, items: &'value [JsonValue], depth: usize) {
+    fn push_array(
+        &mut self,
+        name: String,
+        items: &'value [JsonValue],
+        depth: usize,
+    ) -> Result<(), FormFieldError> {
         let all_scalars = items.iter().all(|item| {
             !matches!(
                 item,
@@ -154,24 +168,47 @@ impl<'value> Flattener<'value> {
                 .filter(|text| !text.is_empty())
                 .collect();
             if !values.is_empty() {
+                let value_bytes = values
+                    .iter()
+                    .fold(0_usize, |total, value| total.saturating_add(value.len()));
+                self.charge(value_bytes)?;
                 self.fields.push(FormField {
                     name,
                     value: FormValue::Repeated(values),
                 });
             }
-            return;
+            return Ok(());
         }
-        self.push_children(&name, depth, items.iter().rev().map(|item| ("", item)));
+        self.push_children(&name, depth, items.iter().rev().map(|item| ("", item)))
     }
 
-    fn push_children<'child, I>(&mut self, name: &str, depth: usize, children: I)
+    fn push_children<'child, I>(
+        &mut self,
+        name: &str,
+        depth: usize,
+        children: I,
+    ) -> Result<(), FormFieldError>
     where
         I: DoubleEndedIterator<Item = (&'child str, &'value JsonValue)>,
     {
         for (suffix, child) in children {
+            let name_bytes = name.len().saturating_add(suffix.len()).saturating_add(2);
+            self.charge(name_bytes)?;
             self.pending
                 .push((format!("{name}[{suffix}]"), child, depth.saturating_add(1)));
         }
+        Ok(())
+    }
+
+    const fn charge(&mut self, bytes: usize) -> Result<(), FormFieldError> {
+        let total = self.used.saturating_add(bytes);
+        if total > MAX_FORM_FIELD_BYTES {
+            return Err(FormFieldError::TooLarge {
+                limit: MAX_FORM_FIELD_BYTES,
+            });
+        }
+        self.used = total;
+        Ok(())
     }
 }
 
