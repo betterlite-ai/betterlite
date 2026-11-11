@@ -1,0 +1,17 @@
+kind: helper
+name: strands-bearer-token
+call:
+  b3512:
+    steps:
+      - kind: sign
+        api_base: arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/my-runtime
+        headers:
+          Authorization: Bearer runtime-jwt
+        api_key: runtime-jwt
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+        now: 1767225600
+env: {}
+compare: {ignore: []}
