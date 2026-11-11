@@ -70,19 +70,20 @@ fn resolve<L>(params: Params, path: &str, lookup: &L) -> Result<UserContext, Con
 where
     L: EnvironmentLookup,
 {
-    Ok(UserContext {
-        camel: params
-            .user_context_camel
-            .map(|value| resolve_value(value, &format!("{path}.userContext"), lookup))
-            .transpose()?,
-        snake: params
-            .user_context_snake
-            .map(|value| resolve_value(value, &format!("{path}.user_context"), lookup))
-            .transpose()?,
-    })
+    let camel_path = format!("{path}.userContext");
+    let snake_path = format!("{path}.user_context");
+    let camel = params
+        .user_context_camel
+        .map(|value| resolve_json(value, &camel_path, lookup))
+        .transpose()?;
+    let snake = params
+        .user_context_snake
+        .map(|value| resolve_json(value, &snake_path, lookup))
+        .transpose()?;
+    Ok(UserContext { camel, snake })
 }
 
-fn resolve_value<L>(value: JsonValue, path: &str, lookup: &L) -> Result<JsonValue, ConfigError>
+fn resolve_json<L>(value: JsonValue, path: &str, lookup: &L) -> Result<JsonValue, ConfigError>
 where
     L: EnvironmentLookup,
 {
@@ -92,7 +93,7 @@ where
             let resolved = fields
                 .into_iter()
                 .map(|(key, item)| {
-                    resolve_value(item, &format!("{path}.{key}"), lookup)
+                    resolve_json(item, &format!("{path}.{key}"), lookup)
                         .map(|resolved| (key, resolved))
                 })
                 .collect::<Result<_, _>>()?;
