@@ -17,7 +17,7 @@ pub(super) fn run(name: &str) {
     support::run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 22] = [
+const CASES: [(&str, fn()); 23] = [
     ("full_reservation_stashes_both_channels", || {
         super::runtime().block_on(full_reservation_stashes_both_channels());
     }),
@@ -64,6 +64,10 @@ const CASES: [(&str, fn()); 22] = [
     (
         "usage_falls_back_to_standard_logging",
         usage_falls_back_to_standard_logging,
+    ),
+    (
+        "usage_completion_only_resolves",
+        usage_completion_only_resolves,
     ),
     (
         "usage_missing_keeps_reservation",
@@ -319,7 +323,7 @@ fn usage_falls_back_to_standard_logging() {
         None,
         Some(UsageTokens {
             prompt_tokens: 7,
-            completion_tokens: 2,
+            completion_tokens: 0,
             cached_tokens: 3,
         }),
     );
@@ -327,6 +331,25 @@ fn usage_falls_back_to_standard_logging() {
         usage,
         ReconcileUsage {
             billable_input: 4,
+            completion_tokens: 0,
+            usage_resolved: true,
+        }
+    );
+}
+
+fn usage_completion_only_resolves() {
+    let usage = resolve_reconcile_usage(
+        None,
+        Some(UsageTokens {
+            prompt_tokens: 0,
+            completion_tokens: 2,
+            cached_tokens: 0,
+        }),
+    );
+    assert_eq!(
+        usage,
+        ReconcileUsage {
+            billable_input: 0,
             completion_tokens: 2,
             usage_resolved: true,
         }

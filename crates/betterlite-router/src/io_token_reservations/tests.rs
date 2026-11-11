@@ -33,6 +33,7 @@ fn runtime() -> Runtime {
 #[case::failing_release_still_reports_rate_limit("failing_release_still_reports_rate_limit")]
 #[case::usage_excludes_cached_tokens("usage_excludes_cached_tokens")]
 #[case::usage_falls_back_to_standard_logging("usage_falls_back_to_standard_logging")]
+#[case::usage_completion_only_resolves("usage_completion_only_resolves")]
 #[case::usage_missing_keeps_reservation("usage_missing_keeps_reservation")]
 #[case::messages_and_prompt_estimate_zero("messages_and_prompt_estimate_zero")]
 #[case::tokenizer_counts_messages("tokenizer_counts_messages")]
