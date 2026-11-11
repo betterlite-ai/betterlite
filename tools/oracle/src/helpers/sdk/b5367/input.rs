@@ -52,10 +52,6 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(super) custom_providers: Vec<String>,
     #[serde(default)]
-    pub(super) litellm_params: Value,
-    #[serde(default)]
-    pub(super) turn_off_message_logging: Option<bool>,
-    #[serde(default)]
     pub(super) credentials: Vec<CredentialSpec>,
 }
 

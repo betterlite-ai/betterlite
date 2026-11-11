@@ -61,7 +61,6 @@ struct Session {
     correlation: CorrelationContext,
     redactor: Redactor,
     lists: CallbackLists,
-    litellm_params: RequestMap,
 }
 
 impl Session {
@@ -84,7 +83,6 @@ impl Session {
             correlation: CorrelationContext::default(),
             redactor: redactor()?,
             lists,
-            litellm_params: request_map(&input.litellm_params)?,
         })
     }
 }
@@ -128,8 +126,8 @@ fn invoke(
             clock: &mut clock,
         },
         breadcrumbs: None,
-        litellm_params: session.litellm_params.clone(),
-        turn_off_message_logging: input.turn_off_message_logging.unwrap_or(false),
+        litellm_params: RequestMap::default(),
+        turn_off_message_logging: false,
         is_async_call: input.is_async_call.unwrap_or(true),
     };
     let evaluator = Rules {
