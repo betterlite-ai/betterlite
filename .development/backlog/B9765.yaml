@@ -1,0 +1,17 @@
+id: B9765
+milestone: M10 admin ui
+title: Exercise vector-store registration, upload and search page requests
+status: todo
+depends_on: [B860, B5076, B1067, B1069, B1070, B3465, B1601, B060, B9735]
+file: tasks/B9765-dashboard-vector-store-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/vector-stores/**"
+  - "ui/litellm-dashboard/src/components/vector_store_management/**"
+  - "ui/litellm-dashboard/src/components/vector_store_providers.*"
+  - "ui/litellm-dashboard/src/components/vector_store_providers.test.*"
+parent: B149
+split_from: B149
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

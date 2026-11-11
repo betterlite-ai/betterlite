@@ -1,0 +1,1 @@
+{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"thinking":{"type":"enabled","budget_tokens":2048},"reasoning_effort":"low","service_tier":"auto","drop_params":true,"additional_drop_params":["temperature"],"allowed_openai_params":["thinking"],"vendor_flag":{"mode":"fast"}}

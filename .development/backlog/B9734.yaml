@@ -1,0 +1,14 @@
+id: B9734
+milestone: M10 admin ui
+title: Verify access-group pages and show the pinned project-route limitation
+status: todo
+depends_on: [B9090, B9091, B860, B5076, B821, B822, B8680]
+file: tasks/B9734-dashboard-access-project-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{access-groups,projects}/**"
+parent: B145
+split_from: B145
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

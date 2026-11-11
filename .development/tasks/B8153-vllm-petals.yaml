@@ -79,7 +79,7 @@ out_of_scope:
   - "B8150 owns the hosted_vllm chat config that VLLMConfig extends."
 pitfalls:
   - "The oracle helper for this task is pre-registered as b8153 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
-  - "get_models lists models over HTTP with the injected client; it never uses a request-supplied URL."
+  - "VLLMModelInfo.get_api_key always returns None (common_utils.py L56-L57), so get_models raises ValueError before any HTTP call at the pin. Port that failure; a later HTTP listing, if the architect wants one, uses the injected client and never a request-supplied URL."
   - "VLLMError exists twice in LiteLLM (common_utils.py and handler.py); build the common_utils one and map the handler one onto it."
 budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

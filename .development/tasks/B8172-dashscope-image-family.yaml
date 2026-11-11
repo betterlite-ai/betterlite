@@ -4,7 +4,7 @@ description: >-
   Build dashscope_image and dashscope_family in crates/betterlite-openai. dashscope_image covers
   litellm/llms/dashscope/image_generation/transformation.py. dashscope_family covers litellm/llms/dashscope/qwencloud.py,
   litellm/llms/dashscope/qwen_ai_platform.py and the selector and key functions of litellm/llms/dashscope/common_utils.py
-  (L42-L109) that B8171 left out. The image_generation/__init__.py file only re-exports. Nothing reads an environment
+  (L42-L109) that B8171 left out. The image_generation/__init__.py file re-exports the config and defines get_dashscope_image_generation_config (L10-L11), which has no caller at the pin, so it is not built. Nothing reads an environment
   variable. The caller passes every key and base as a plain argument. Dispatch wiring and the main.py credential call
   site (main.py L7204-L7213) belong to B8312.
 

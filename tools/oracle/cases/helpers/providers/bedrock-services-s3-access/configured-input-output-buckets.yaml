@@ -1,0 +1,14 @@
+kind: helper
+name: configured-input-output-buckets
+call:
+  bedrock_services_s3_access:
+    operation: configured_input_output_buckets
+    trusted:
+      - [s3_output_bucket_name, trusted-out]
+    request_bucket_name: request-in
+    request_output_bucket_name: request-out
+    environment:
+      AWS_S3_BUCKET_NAME: env-in
+      AWS_S3_OUTPUT_BUCKET_NAME: env-out
+env: {}
+compare: {ignore: []}

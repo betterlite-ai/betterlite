@@ -1,0 +1,142 @@
+id: B8990
+title: Vigil guardrail construction and ordered scan execution
+description: >-
+  B3799 shipped Vigil's analysis, retry, metadata and output helpers, but no class calls
+  them. Build VigilGuard in betterlite-guardrails::vigil_runtime, implementing B5471's
+  GuardrailContract. Own VigilGuardGuardrail.__init__, get_config_model,
+  get_supported_event_hooks and apply_guardrail, L97-L268 of vigil_guard.py. These are
+  151 nonblank, noncomment source lines; the helper implementations remain B3799's.
+  B8218 supplies the initializer arguments and B8666 constructs and dispatches the live
+  class. The class takes its transport, resolved environment and GuardrailBase through
+  construction; it does not register itself or read process globals.
+
+  Add the config section vigil_runtime with an empty Raw config view and Settings
+  containing optional api_base and SecretString api_key defaults read through
+  EnvironmentLookup from VIGIL_GUARD_URL and VIGIL_GUARD_API_KEY. Both default to absent;
+  empty environment strings are unset. General guardrails[].litellm_params fields
+  api_base, api_key, timeout and unreachable_fallback are already read by B3662 and
+  passed by B8218. B8666 resolves missing explicit credentials through the shared
+  B8500 get_secret_str service for those two names before constructing the class,
+  using its configured manager and environment; the section's environment defaults
+  are the no-manager projection, not a bypass of managed secret lookup. It passes
+  the resolved defaults in Settings. A nonempty explicit field wins over its
+  resolved default. Require both base and key, trim trailing slashes from the selected base,
+  and report the missing field without exposing a key. Use B3799's VigilGuardSettings
+  and RequestTimeout: total 10 seconds and connect 5 seconds without an override,
+  otherwise total timeout and connect min(timeout, 5 seconds). Use the existing
+  duration conversion and transport policy, including their bounded-input errors.
+  No URL may come from a request. The fallback is fail_closed unless the resolved
+  lowercase value is fail_open. Feed the base constructor supported hooks pre_call
+  and post_call; an explicitly supplied supported_event_hooks value takes precedence,
+  as the source's forwarded mapping does. Base flags, strict mode validation,
+  logging_only support and parameter updates stay with B5471. Return B3799's Vigil
+  config model from the config-model contract and the two hooks from the hook contract.
+
+  apply_guardrail receives B5471's GuardrailApiInputs and the original request data.
+  Retain blank text positions, but scan only strings with non-whitespace content.
+  Extract nonblank function.arguments through B3799's tool_call_arguments only for
+  input type response. If neither scan list has work, return the original inputs
+  without collecting metadata or using transport. Otherwise collect metadata once
+  with B3799 and use source user_input for request and model_output for response.
+  Await each text in order, then each response tool call in order; do not parallelize
+  or add a retry above B3799's one transient retry. ALLOWED retains the original;
+  SANITIZED uses resolve_sanitized_text; BLOCKED returns GuardrailFailure::GuardrailRaised
+  with status 400, blocked_content true, wrap_default_message false and B3799's
+  build_block_reason. A missing or unrecognized decision logs the guardrail name and
+  source, then returns the partial output for fail_open or raises the unwrapped
+  guardrail failure for fail_closed, without blocked_content true. Backend transport
+  or response-JSON failures use handle_backend_failure with the partial result.
+  Local conversion/configuration errors are not backend failures and must not be
+  swallowed by fail_open.
+
+  On a text-stage fail-open, keep earlier sanitized texts followed by the current and
+  remaining original texts, leave all tool calls original and perform no further
+  analysis. A tool-stage failure keeps every completed text rewrite and earlier tool
+  rewrites and stops before subsequent tool calls. Apply tool updates using
+  set_tool_call_arguments. Finish through build_output: equality preserves every
+  original input field; a changed result retains texts and any supplied images/tools,
+  includes tool_calls only when they changed, and drops structured_messages, model
+  and stream_holdback_chars. Bridge B5471's records to B3799's Inputs with typed,
+  fieldwise conversions; its legacy stream_holdback_chars Vec is not the public
+  scalar contract, so never serialize the entire input through that type. Preserve
+  the original GuardrailApiInputs for the unchanged result. B3664/B3680 record the
+  invocation at the dispatch boundary; this class must not append a second record.
+
+  Use B3799's AsyncPostHandler as the injected transport contract. B8666 supplies
+  its production implementation over B173's pooled bounded client and passes
+  config.sections.vigil_runtime; this task tests with a scripted handler and adds
+  no second HTTP implementation. Its own error enum retains B3799 errors as sources
+  before mapping deliberate interventions to the shared GuardrailFailure contract.
+  Tests in vigil_runtime::tests use the rstest function vigil_runtime_cases and
+  cover empty and whitespace skip, request tools not
+  scanned, text-before-tool order, early block, partial fail-open at each stage,
+  unknown decisions under both fallback modes, unchanged full-record preservation
+  and removal of stale structured_messages after sanitization. Section tests load
+  actual YAML plus an injected env map and prove absent and environment defaults,
+  including secret-safe Debug. Runtime tests consume those loaded Settings and the
+  B8218 arguments to check explicit override, trailing slash, missing key/base and
+  timeout resolution; no guardrails dependency may point back from the config crate.
+  Exercise ConfigLoader::load on UTF-8 bytes with the vigil_runtime cargo-fuzz target
+  in betterlite-config; commit valid, malformed, null and nested config seeds and
+  replay that same loader in sections::vigil_runtime::tests. HTTP verification is
+  B104's responsibility after the existing server dispatch is connected; no helper
+  adapter may pretend this asynchronous I/O class is a pure function. Allow about
+  420 runtime/config lines, 70 fuzz lines and 250 test lines.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/vigil_runtime.rs
+    - crates/betterlite-guardrails/src/vigil_runtime/**
+    - crates/betterlite-config/src/sections/vigil_runtime.rs
+    - crates/betterlite-config/src/sections/vigil_runtime/**
+    - crates/betterlite-config/fuzz/fuzz_targets/vigil_runtime.rs
+    - crates/betterlite-config/fuzz/corpus/vigil_runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L97-L151
+    why: Owned constructor, environment defaults, timeout policy and class metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L153-L268
+    why: Owned ordered text/tool orchestration and the distinction between backend failure and policy block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/__init__.py#L11-L24
+    why: Caller built by B8218/B8521/B8666; no second initializer is required.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L270-L479
+    why: B3799's reused failure, output, transport, metadata and sanitization helpers.
+dod:
+  - text: Config-loaded environment defaults and explicit initializer arguments produce the required base/key, timeout pair and supported hooks without printing credentials.
+    proof: [settings-tests, runtime-tests]
+  - text: The real GuardrailContract implementation scans texts then response tool arguments and preserves the exact early-return, block and partial fail-open behavior.
+    proof: [runtime-tests]
+  - text: A no-op returns every original input field; a rewrite removes stale structured messages and includes tool_calls only when rewritten.
+    proof: [runtime-tests]
+  - text: New config corpus inputs reach ConfigLoader::load and replay without panics, and section mutants are caught.
+    proof: [config-corpus, mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: runtime-tests
+      why: A missing class, incorrect scan order or lost partial rewrite must fail independently of configuration loading.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::vigil_runtime_cases($|::)/)'
+    - id: settings-tests
+      why: The environment section or constructor precedence may otherwise remain unused.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::vigil_runtime::/) - test(replays_the_vigil_runtime_corpus)'
+    - id: config-corpus
+      why: A replay over only an old corpus cannot prove the new section was exercised.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/vigil_runtime)" &&
+        test -f crates/betterlite-config/fuzz/fuzz_targets/vigil_runtime.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::vigil_runtime::tests::replays_the_vigil_runtime_corpus$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B3799 owns all constants, records and helpers outside VigilGuardGuardrail L97-L268, including _handle_backend_failure, _build_output, tool-call helpers, _analyze, _post_with_retry, _is_transient, block reason, sanitization and metadata collection.
+  - B5471 owns CustomGuardrail construction, settings, failure types and default methods; B3664 owns invocation recording and B3665 the execution gate.
+  - B8218 builds Vigil initializer arguments, B8521 holds its spec variant, and B8666 alone builds the live callback and its pooled transport adapter.
+  - B104 adds the Vigil HTTP cases through the mounted inference and direct-apply routes.
+pitfalls:
+  - An unknown decision is a backend-policy failure and does not set blocked_content true, unlike the explicit BLOCKED decision.
+  - A failure while scanning the second text must retain the first sanitized text and skip every tool analysis.
+  - Only response tool arguments enter the scan; supplying tools or request tool_calls alone cannot create a Vigil request.
+  - Preserving structured_messages after a SANITIZED result would allow the original text to override the rewrite downstream.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

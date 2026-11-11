@@ -1,0 +1,182 @@
+id: B9743
+title: Match cost forms and optimization queries and fix CloudZero proxy-base handling
+description: >-
+  These retained pages call existing services, not missing dashboard-specific endpoints.
+  B066 composes B1650 cost settings, B1651 estimates and B3125 prompt-caching requests;
+  B073 mounts B3076 CloudZero; B355/B356/B357 own benchmark and shadow-evaluation routes;
+  B8675 mounts B8595 config-field routes; B3684/B3685 own guardrail list/create. Keep all their
+  implementation ownership. Add only the page-shaped HTTP gaps identified in B147-route-audit.md,
+  component tests, and a small intake patch. Do not port cost calculations, auto-router logic,
+  spend SQL, exporter encryption or schedules into the dashboard task.
+
+  pricing-form-readback.yaml uses store_model_in_db=true, the independent dashboard schema,
+  and a configured OpenAI model with fixed input/output token prices. GET then PATCH the raw
+  maps at /config/cost_discount_config and /config/cost_margin_config, preserving response.values.
+  Exercise a provider discount, a margin {percentage,fixed_amount} and a zero-valued edit, then
+  reload. GET/PATCH /config/block_requests_for_models_without_pricing uses {enabled:true} and
+  reads enabled. POST /cost/estimate sends model,input_tokens,output_tokens and both request
+  count fields exactly as the calculator serializes them: unused/zero counts become null,
+  not omitted or 0. Include a second estimate with a positive daily count. Compare provider,
+  token prices and request/daily/monthly input/output/margin totals. B1650/B1651 already plan
+  isolated validation and role cases; this is the form-to-reload-to-estimate composition.
+
+  cloudzero-modal-and-settings.yaml begins with GET /cloudzero/settings returning unconfigured
+  null fields, then POST /cloudzero/init with the modal's api_key,connection_id,timezone UTC.
+  GET settings, PUT /cloudzero/settings with the standalone form's connection/timezone but
+  omitted empty api_key, and GET again to prove the key is preserved and still masked. On an
+  empty daily table send both POST /cloudzero/export forms: {operation:replace_hourly} from
+  the settings card, and {limit:100000,operation:replace_hourly} from the usage modal. Follow
+  B073's existing initialization/cleanup contract and DELETE /cloudzero/delete at the end.
+  No rows means the manual exports complete before external delivery. Do not introduce a fake
+  configurable CloudZero URL or call a real billing account. cloudzero-preview-ten.yaml uses
+  B9260's daily rows and POST /cloudzero/dry-run with {limit:10}, without credentials; compare
+  the preview and summary, not only its status. B073 already plans generic CRUD, role and
+  empty-export cases; these exact omission/limit forms are the missing page contract.
+
+  optimization-usage-and-cache.yaml sends the user aggregate and cache_leakage_keys queries
+  with start_date,end_date,timezone=-60,include_current_utc_day=true, model/api_key/user_id
+  selections and no explicit leakage limit. Use B9260's rich daily seed to make caching and
+  compression savings observable. GET /v1/tool/spend uses the same selected YYYY-MM-DD range.
+  GET /auto_router/benchmarks uses benchmarksWindow's dates, optional api_key,user_id, and
+  consumes groups/totals even when no router rollup exists. benchmarksWindow does not always
+  add a day: it extends an interval ending today to UTC today only when UTC today exceeds the
+  local date. Freeze that boundary in the component test and send the resulting concrete
+  query in the case. B355 has routing probes, not this booted HTTP request.
+
+  caching-requests-and-settings.yaml seeds B9740 log rows with metadata.usage_object,
+  cost_breakdown and the pinned gateway-injected-cache marker. GET
+  /cost_optimization/prompt_caching/requests sends ISO start_date ending T00:00:00.000Z and
+  end_date ending T23:59:59.999Z, filter=all,page_size=10; repeat with injected and hits, then
+  send the exact returned cursor_start_time/cursor_request_id pair when the fixture has more
+  than ten rows. Compare requests,has_more,next_cursor and all displayed savings/token fields.
+  B3125's existing HTTP list only covers validation/database errors, not this populated result.
+  The same case GETs /config/list?config_type=general_settings and POSTs /config/field/update
+  with config_type general_settings, field_name enable_anthropic_prompt_caching and true;
+  then anthropic_prompt_caching_ttl="1h" and openai_system_messages_first=true. Reset the TTL
+  via POST /config/field/delete with field_name/config_type only, then reload the list. Verify
+  actual defaults from B8595 instead of inventing a new five-minute string in the response.
+
+  shadow-form-lifecycle.yaml first fetches /v2/model/info?include_team_models=true&page=1&size=1000
+  and follows total_pages for the complete auto-router/plain-chat catalog. Compare data[].model_name,
+  litellm_params.model and routing configuration, model_info.id/mode/team_id/db_model. The form also
+  sends /key/list?page=1&size=50 with return_full_object/include_team_keys/include_created_by_keys/
+  substring_matching all true and optional key_alias, without the main table's expand/sort fields;
+  /user/list?page=1&page_size=50 with optional user_email; and /v2/team/list?page=1&page_size=20
+  with optional team_alias and non-admin user_id. B782/B796/B813/B850 own these selectors; their
+  generic table requests do not prove the 1000-model and no-expand key forms. Reuse an already
+  materialized exact selector case instead of copying it. Then perform GET /auto_router/shadow_eval, POST /auto_router/shadow_eval/start,
+  GET /auto_router/shadow_eval/{job_id}, POST /auto_router/shadow_eval/{job_id}/stop with no body,
+  then list/detail readback. Send the form's api_key_ids,team_ids,user_ids arrays, models and
+  router_names, direction forward, shadow_percentage=10,duration_days=7,max_budget=10 and
+  judge_model. A second flow uses direction reverse, models=[] and baseline_model. Configure
+  one ui-router deployment with model auto_router/complexity_router, complexity_router_default_model
+  ui-model and complexity_router_config tiers SIMPLE/MEDIUM/COMPLEX/REASONING all mapped to
+  ui-model, plus ordinary configured ui-model and ui-judge OpenAI aliases with dummy credentials
+  and local mock bases. Keep adaptive disabled and send no traffic to sample, so the job
+  lifecycle is deterministic and incurs no model calls. Use the real B356 registry/catalog
+  binding; report missing startup wiring to its owner instead of seeding a fake registry.
+  Capture generated job ids per proxy. Assert status 201 on creation, remaining budget,
+  targets/arms, zero usage, stopped state and stable response fields. Include a view-only
+  caller's rejected start with the same valid form; UI visibility alone is not authorization.
+
+  compression-form.yaml GETs /v2/guardrails/list, POSTs /guardrails with a trimmed guardrail_name
+  and litellm_params {guardrail:headroom,mode:pre_call,api_base:<local mock URL>,default_on:true},
+  then lists again. There is no provider completion and no expected Headroom traffic. The
+  component fallback to /guardrails/list after any v2 failure, including non-2xx or invalid JSON,
+  is tested with the real getGuardrailsList function; do not narrow it to 404 or emulate a missing
+  v2 route on the booted proxy. B8667 already mounts both B3684 read aliases and B3685 creation.
+
+  Add 52-cost-pages.patch and its checked hashes. Replace cloudzero_export_modal's hardcoded
+  root-relative fetch calls with the retained apiClient, preserving its distinct export body
+  and discovered custom auth header. Treat settings with neither api_key_masked nor connection_id
+  as unconfigured, just as useCloudZeroSettings already does, so initial save chooses /init.
+  Correct its bundled /cloudzero.png asset path through the retained asset/base-path mechanism.
+  Remove subscription advertisements and premium-only presentation from the covered cost
+  components while preserving admin/viewer checks. Do not set premium_user=true globally.
+  Tests in ui/dashboard/tests/cost name cloudzeroModalUsesDiscoveredBase, cloudzeroEmptySettingsInit,
+  pricingFormNullCounts, optimizationDateAndCursorQueries, shadowFormsAndPolling and
+  compressionFallsBackAfterV2Failure. Run retained CloudZero, modal integration, calculator, caching,
+  shadow and compression tests selected by upstream-tests.json. Use actual networking and
+  typed fetchClient/$api setup, not a separately invented client. Compare HTTP content types,
+  statuses, config values and all stable response fields, masking only generated ids/timestamps
+  and secret values individually. Error type/param/code or detail shape stays compared.
+  About 650 HTTP lines and 100 patch lines plus focused tests fit this unit; retained sources
+  and all backend functions are supplied by dependencies.
+scope:
+  paths:
+    - ui/dashboard/patches/52-cost-pages.patch
+    - ui/dashboard/patches/52-cost-pages.json
+    - ui/dashboard/tests/cost/**
+    - tools/oracle/cases/ui/cost/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/cloudzero_export_modal.tsx#L49-L166
+    why: Root-relative fetches, null settings interpretation and the modal-only 100000 export limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/cost-tracking/_components/pricing_calculator/use_multi_cost_estimate.ts#L46-L83
+    why: Calculator sends explicit null request counts and reads the complete estimate response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/cost-optimization/_components/useAutoRouterBenchmarks.ts#L6-L37
+    why: UTC-today extension is conditional, not an unconditional next-day end bound.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/cost-optimization/_components/PromptCachingRequestsTable.tsx#L22-L65
+    why: ISO day bounds, default page size ten and the paired cursor request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/cost-optimization/_components/ShadowEvalStartForm.tsx#L204-L223
+    why: Exact forward/reverse payload and field omission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L192-L241
+    why: B1650 owns discount reads/writes, alongside the margin and block switches in this file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L563-L612
+    why: B1651's estimator decorator and parsed form fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L133-L211
+    why: B3076's settings read/update preserve omitted API keys; B073 supplies the mount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L345-L515
+    why: B3076 already owns initialization, preview and export; this task supplies exact page bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1580-L1645
+    why: B356 creates jobs only after writer authorization and actual configured-router resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1802-L1926
+    why: B357 list/detail and B356 stop routes already exist as assigned work.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_caching_requests.py#L128-L180
+    why: B3125 owns success/error request-list behavior; no SQL belongs to this client task.
+dod:
+  - text: Real HTTP matches the cost page's null estimate fields, persisted maps, CloudZero omission/limits and optimization query/cursor forms.
+    proof: [cost-http-cases, oracle, cost-components]
+  - text: Shadow jobs and compression setup consume the actual form bodies and response states, preserving writer authorization and no-body stop semantics.
+    proof: [cost-http-cases, oracle, cost-components]
+  - text: The CloudZero modal initializes correctly and all covered cost controls respect discovered bases, custom auth headers and genuine roles without paid advertisements.
+    proof: [cost-components, oracle]
+checks:
+  optional: []
+  commands:
+    - id: cost-http-cases
+      why: Missing page-shaped HTTP transcripts leave cost, exporter or shadow controls unproven against the proxy.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/cost)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/cost
+    - id: cost-components
+      why: A retained cost control uses the wrong base, body, cursor or response state despite passing server cases.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/cost
+oracle_cases:
+  - tools/oracle/cases/ui/cost/pricing-form-readback.yaml
+  - tools/oracle/cases/ui/cost/cloudzero-modal-and-settings.yaml
+  - tools/oracle/cases/ui/cost/cloudzero-preview-ten.yaml
+  - tools/oracle/cases/ui/cost/optimization-usage-and-cache.yaml
+  - tools/oracle/cases/ui/cost/caching-requests-and-settings.yaml
+  - tools/oracle/cases/ui/cost/shadow-form-lifecycle.yaml
+  - tools/oracle/cases/ui/cost/compression-form.yaml
+deviations:
+  - what: CloudZero modal calls use the discovered proxy base and recognize unconfigured null settings before choosing POST /cloudzero/init.
+    why: Root-relative fetch and truthy empty settings otherwise break non-root deployments and initial setup against the unchanged API.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/cloudzero_export_modal.tsx#L49-L116
+  - what: Cost pages omit subscription-only advertisements while retaining role and server permission checks.
+    why: The README no-paid-tier decision applies to these MIT controls as well as the dashboard shell.
+out_of_scope:
+  - B9090 retains every cost page, CloudZero component and modal function except the reviewed patch; B9091 owns npm and bundle construction.
+  - B1650/B1651/B3125/B066 own cost and cache endpoints; B3076/B073 own CloudZero; B355/B356/B357 own router reads and job lifecycle.
+  - B8595/B8675 own config-field routes, B3684/B3685 own guardrails, B8482 owns daily queries and B1607 tool spend; B146 retains the imported PromptCachingPanel.
+  - External CloudZero delivery, shadow sampling/judging and Headroom inference stay with their existing backend tasks; these cases never send billable production traffic.
+pitfalls:
+  - The usage modal sends limit 100000 while the standalone export omits limit entirely.
+  - benchmarksWindow extends only a current local day that trails UTC, whereas caching requests add explicit ISO start/end-of-day times.
+  - Both cursor_start_time and cursor_request_id must come from the same response cursor.
+  - A raw key is returned once for generation, but shadow api_key_ids and analysis selectors use stored hashes.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

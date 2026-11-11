@@ -119,7 +119,7 @@ deviations:
 out_of_scope:
   - "user_api_key_auth_websocket: B756. The proxy_server.py app object and the mount of this route: B8608."
   - "create_vertex_ai_live_websocket_endpoint (L3742-L3756): no caller at the pin. No cases."
-  - "create_websocket_passthrough_route and the generic websocket helpers: B3612 and B3628 own them; this task only calls the relay port."
+  - "create_websocket_passthrough_route is not built: its only caller is the unused generic WebSocket factory, and B3612 excludes both (no caller at the pin). The relay itself is B3612's and the OpenAI-style routes are B3628's; this task only calls the relay port."
   - "get_vertex_region, get_default_vertex_location: B1304. _ensure_access_token_async: B1303. get_vertex_base_url: B3622 (passthrough_vertex_base_url). get_vertex_credentials, get_vertex_credentials_from_router_deployments, set_default_vertex_config and VertexPassThroughCredentials: B3602."
   - "_rewrite_vertex_live_setup_model, _resolved_vertex_live_setup and extract_model_from_vertex_ai_setup, which apply the rewriter to frames: B3611. The relay loops, the logging of the model and the cost: B3612."
   - "Vertex Live usage logging (vertex_ai_live_passthrough_handler in success_handler.py and its logging handler): the pass-through logging tasks own it, not the route."

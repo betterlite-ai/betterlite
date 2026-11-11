@@ -16,10 +16,10 @@ description: >-
   The URL is the base (api_base, else the MINIMAX_API_BASE value, else https://api.minimax.io) plus /v1/t2a_v2. The body is
   {model, text, stream: false, output_format (default "hex"), voice_setting: {voice_id, speed, vol: 1.0, pitch: 0},
   audio_setting: {sample_rate: 32000, bitrate: 128000, format, channel: 1}} plus every extra_body key not already present.
-  The reply decoder works on the bytes. A non-zero base_resp.status_code gives MinimaxException with the status_msg text. A
+  The reply decoder works on the bytes. A top-level status that is present and not 0 gives MinimaxException with the HTTP status of the raw reply and the text "MiniMax TTS error: " plus the top-level ced value ("Unknown error" when ced is absent, "API returned status N" when it is empty); base_resp.status_code is never read. A
   reply with an audio_url gives MinimaxException status 500, "URL output format is not yet supported". The audio is
-  data.audio, else data.audio_file. It is hex decoded, and when hex decoding fails it is base64 decoded. The result is the
-  binary audio with the format as content type. The decoder gets a fuzz target.
+  data.audio, else the top-level audio_file (never data.audio_file). It is hex decoded, and when hex decoding fails it is base64 decoded. The result is the
+  binary audio with the raw reply's headers (content-encoding and transfer-encoding removed, content-length reset), so the content type is the upstream one and no audio MIME type is inferred from the format. The decoder gets a fuzz target.
 
   modelscope_image. Options are n, size, response_format and user. Unsupported options are dropped when drop_params is true
   and otherwise raise the OpenAI-style unsupported error of the base. Other keys are copied. The URL is the base trimmed of

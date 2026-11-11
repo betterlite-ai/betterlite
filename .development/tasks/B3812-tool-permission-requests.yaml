@@ -133,8 +133,8 @@ deviations:
 
 out_of_scope:
   - >-
-      CustomGuardrail.should_run_guardrail implementation; owned by the guardrail base contract (B104 or similar).
-      log_guardrail_information decorator; owned by the custom guardrail integration.
+      CustomGuardrail.should_run_guardrail implementation; owned by B3665.
+      log_guardrail_information decorator; owned by B3664.
       add_guardrail_to_applied_guardrails_header callback utility; owned by the callback infrastructure.
   - >-
       ToolPermissionGuardrail state and configuration (rules, default_action, on_disallowed_action); loaded and managed by B3810.
