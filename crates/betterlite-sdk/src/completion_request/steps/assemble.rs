@@ -1,5 +1,5 @@
 use super::convert::{builtin_messages, convert, messages_from_builtin, typed_from};
-use super::messages::optional;
+use super::messages::{optional, text_of};
 use super::params::{drop_params_flag, provider_name};
 use crate::completion_request::Preparation;
 use crate::completion_request::args::JsonObject;
@@ -47,6 +47,11 @@ fn named_arguments(state: &Preparation<'_>) -> RequestResult<JsonObject> {
     override_field(&mut params, "thinking", state.thinking.as_ref())?;
     override_field(&mut params, "max_retries", state.call.max_retries.as_ref())?;
     override_field(&mut params, "base_model", state.call.base_model.as_ref())?;
+    override_field(
+        &mut params,
+        "allowed_openai_params",
+        Some(&allowed_params(state)?),
+    )?;
     Ok(params)
 }
 struct MappingInputs {
@@ -56,10 +61,14 @@ struct MappingInputs {
     allowed: Vec<String>,
     provider: String,
 }
-fn list_inputs(kwargs: &JsonObject) -> RequestResult<(Vec<String>, Vec<String>)> {
-    let drop = optional::<Vec<String>>(kwargs, "additional_drop_params")?.unwrap_or_default();
-    let allowed = optional::<Vec<String>>(kwargs, "allowed_openai_params")?.unwrap_or_default();
-    Ok((drop, allowed))
+fn allowed_params(state: &Preparation<'_>) -> RequestResult<Vec<String>> {
+    let mut allowed =
+        optional::<Vec<String>>(&state.kwargs, "allowed_openai_params")?.unwrap_or_default();
+    let bridged = state.call.model_info.get("mode").and_then(text_of) == Some("responses");
+    if bridged && !state.skip_bridge {
+        allowed.push(String::from("reasoning_effort"));
+    }
+    Ok(allowed)
 }
 fn parameter_policy(state: &Preparation<'_>, inputs: &MappingInputs) -> ParameterPolicy {
     let dropped = state.settings.drop_params == Some(true)
@@ -156,7 +165,9 @@ fn processed_non_default(
     convert::<JsonObject, _>(&processed)
 }
 pub(crate) fn assemble(state: &mut Preparation<'_>) -> RequestResult<()> {
-    let (additional_drop, allowed) = list_inputs(&state.kwargs)?;
+    let additional_drop =
+        optional::<Vec<String>>(&state.kwargs, "additional_drop_params")?.unwrap_or_default();
+    let allowed = allowed_params(state)?;
     let inputs = MappingInputs {
         named: convert::<Params, _>(&named_arguments(state)?)?,
         extra: convert::<Params, _>(&state.non_default)?,

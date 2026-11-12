@@ -824,6 +824,27 @@ async fn provider_ollama_function_calling_falls_back_to_prompt() {
     assert!(text.contains("Produce JSON OUTPUT ONLY"));
 }
 
+#[tokio::test]
+async fn bridge_allowed_params_gain_reasoning_effort() {
+    let mut fixture = Fixture::new();
+    fixture.settings.route_all_to_responses = true;
+    run(&fixture).await.unwrap();
+    let policies = fixture.metadata.policies.lock().unwrap().clone();
+    assert!(
+        policies[0]
+            .allowed_openai_params
+            .contains(&String::from("reasoning_effort"))
+    );
+}
+
+#[tokio::test]
+async fn bridge_allowed_params_stay_plain_without_the_bridge() {
+    let fixture = Fixture::new();
+    run(&fixture).await.unwrap();
+    let policies = fixture.metadata.policies.lock().unwrap().clone();
+    assert!(policies[0].allowed_openai_params.is_empty());
+}
+
 fn convert<Out, In>(value: &In) -> super::error::RequestResult<Out>
 where
     In: serde::Serialize + ?Sized,

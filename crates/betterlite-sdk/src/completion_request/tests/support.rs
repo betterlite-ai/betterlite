@@ -10,7 +10,9 @@ use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::controls::optional_params::OptionalParams;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::params::{ChatParameters, ParameterError, ParameterMapping};
+use betterlite_models::params::{
+    ChatParameters, ParameterError, ParameterMapping, ParameterPolicy,
+};
 use betterlite_models::request_pricing::register::CustomPricingRequest;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use betterlite_openai::openai_base_config::Object;
@@ -54,6 +56,7 @@ pub(super) struct FakeMetadata {
     pub events: Arc<Mutex<Vec<String>>>,
     pub lookups: Arc<Mutex<Vec<Lookup>>>,
     pub parameters: Arc<Mutex<Vec<ChatParameters>>>,
+    pub policies: Arc<Mutex<Vec<ParameterPolicy>>>,
 }
 
 fn provider_identity(name: Option<&str>) -> ProviderIdentity {
@@ -113,6 +116,7 @@ impl ModelMetadata for FakeMetadata {
     ) -> Result<ParameterMapping, ParameterError> {
         lock(&self.events).push(String::from("mapping"));
         lock(&self.parameters).push(request.parameters.clone());
+        lock(&self.policies).push(request.policy.clone());
         Ok(self.mapping.clone().unwrap_or_default())
     }
 }
@@ -327,6 +331,20 @@ pub(super) fn message(role: &str, content: &str) -> Json {
     ]))
 }
 
+fn pricing_fake(events: Arc<Mutex<Vec<String>>>) -> FakePricing {
+    FakePricing {
+        requests: Arc::new(Mutex::new(Vec::new())),
+        events,
+    }
+}
+
+fn logging_fake(events: Arc<Mutex<Vec<String>>>) -> FakeLogging {
+    FakeLogging {
+        updates: Arc::new(Mutex::new(Vec::new())),
+        events,
+    }
+}
+
 impl Fixture {
     pub(super) fn new() -> Self {
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -343,6 +361,7 @@ impl Fixture {
                 events: Arc::clone(&events),
                 lookups: Arc::new(Mutex::new(Vec::new())),
                 parameters: Arc::new(Mutex::new(Vec::new())),
+                policies: Arc::new(Mutex::new(Vec::new())),
             },
             prompt: FakePrompt {
                 should_run: false,
@@ -359,14 +378,8 @@ impl Fixture {
                 search: None,
                 events: Arc::clone(&events),
             },
-            pricing: FakePricing {
-                requests: Arc::new(Mutex::new(Vec::new())),
-                events: Arc::clone(&events),
-            },
-            logging: FakeLogging {
-                updates: Arc::new(Mutex::new(Vec::new())),
-                events: Arc::clone(&events),
-            },
+            pricing: pricing_fake(Arc::clone(&events)),
+            logging: logging_fake(Arc::clone(&events)),
             events,
         }
     }
