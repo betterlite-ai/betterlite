@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-defaults-empty-payload
+call:
+  b3545: {"function": "defaults", "payload": {}}
+env: {}
+compare:
+  ignore: []

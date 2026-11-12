@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-invoke-primitives-base-options
+call:
+  bedrock_invoke_primitives:
+    base_options:
+      non_default:
+        max_completion_tokens: 9
+        temperature: 0.2
+        max_tokens: 5
+        stream: false
+        top_p: 1
+      optional:
+        max_tokens: 1
+        keep: x
+      config:
+        max_tokens: 7
+        top_k: 5
+        stream: true
+env: {}
+compare: {ignore: []}

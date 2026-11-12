@@ -1,0 +1,1 @@
+{"jobArn":"","status":"Submitted","submitTime":null,"lastModifiedTime":null,"endTime":null,"jobExpirationTime":null,"message":"","inputDataConfig":{"s3InputDataConfig":{}},"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":null}}}

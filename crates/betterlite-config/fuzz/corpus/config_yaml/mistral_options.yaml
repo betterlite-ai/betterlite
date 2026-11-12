@@ -1,0 +1,19 @@
+model_list:
+  - model_name: mistral-small
+    litellm_params:
+      model: mistral/mistral-small-latest
+      api_base: os.environ/MISTRAL_AZURE_API_BASE
+      api_key: os.environ/MISTRAL_API_KEY
+      temperature: 0
+      top_p: 1
+      max_tokens: 64
+      tool_choice: auto
+      random_seed: 7
+      safe_prompt: false
+      stop: ["END"]
+    model_info:
+      supports_reasoning: true
+litellm_settings:
+  drop_params: true
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

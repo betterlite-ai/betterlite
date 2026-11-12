@@ -1,0 +1,15 @@
+kind: helper
+name: openai-reasoning-models-catalog-before-default-key
+call:
+  openai_reasoning_models:
+    catalog_before_default_key:
+      probes:
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_none_reasoning_effort: true}, other-model: {litellm_provider: openai, default_reasoning_effort: high}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, default_reasoning_effort: none, supports_none_reasoning_effort: false}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, default_reasoning_effort: high, supports_none_reasoning_effort: true}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_none_reasoning_effort: true}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_none_reasoning_effort: false}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {}, effective_effort: none}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {}, effective_effort: low}
+env: {}
+compare: {ignore: []}

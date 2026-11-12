@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-content-no-break-space-chat
+call:
+  b3545: {"function": "summary", "protocol": "chat", "response": {"choices": [{"message": {"provider_specific_fields": {"compaction_blocks": [{"type": "compaction", "signature": "sig", "content": "\u00a0"}]}}}]}}
+env: {}
+compare:
+  ignore: []

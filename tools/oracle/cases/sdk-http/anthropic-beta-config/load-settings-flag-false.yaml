@@ -1,0 +1,16 @@
+kind: sdk_http
+name: anthropic-beta-config-load-settings-flag-false
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'false'}
+call:
+  anthropic_beta_config:
+    url: mock
+    steps: [load]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {anthropic: {custom: renamed}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

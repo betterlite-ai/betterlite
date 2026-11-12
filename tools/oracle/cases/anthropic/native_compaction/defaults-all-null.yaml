@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-defaults-all-null
+call:
+  b3545: {"function": "defaults", "payload": {"context_management": null, "response_format": null, "stop": null, "stop_sequences": null, "tool_choice": null}}
+env: {}
+compare:
+  ignore: []

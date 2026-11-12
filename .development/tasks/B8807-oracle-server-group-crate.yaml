@@ -1,0 +1,169 @@
+id: B8807
+title: Oracle helper group server as its own crate
+description: >-
+  Why. The oracle helper groups become crates one at a time, so an edit in one group lints and builds that group
+  instead of all of betterlite-oracle. B8806 built the shared crate betterlite-oracle-helper-api and moved the redact
+  group. This task moves the server group the same way. It is the group with the most work still ahead: 536
+  operations, 504 of them stubs, 11,794 lines (main at cacee881e6). The other 44 groups stay where they are, and the
+  shared crate doesn't change.
+
+
+  The group crate. Create package betterlite-oracle-server in place, in tools/oracle/src/helpers/server, so no
+  operation file moves: add tools/oracle/src/helpers/server/Cargo.toml with `[lib] path = "lib.rs"`, and move
+  tools/oracle/src/helpers/server.rs to tools/oracle/src/helpers/server/lib.rs with `git mv`. There it calls
+  `betterlite_oracle_helper_api::helper_group!` with the same 536 pairs in the same order. Its dependencies are
+  betterlite-oracle-helper-api, the 13 workspace crates the group's code names outside its tests (betterlite,
+  betterlite-auth, betterlite-config, betterlite-core, betterlite-db, betterlite-guardrails, betterlite-http,
+  betterlite-mcp, betterlite-ocr, betterlite-roi, betterlite-semantic, betterlite-server, betterlite-transcribe) and the
+  outside crates its files use, never betterlite-oracle. List the package by path in the root Cargo.toml `members`
+  (the `tools/*` glob doesn't reach it), add it to tools/oracle/Cargo.toml, and add it to the crates deny.toml lets
+  depend on betterlite-server. In helpers/mod.rs drop `mod server;` and take the server entry of `GROUPS` from the new
+  crate, in the same position.
+
+
+  Two lines outside the tests name an oracle path the group crate doesn't have, and they are the only such lines that
+  change. tools/oracle/src/helpers/server/auth_identity.rs imports `crate::compare::helper::HelperError` and takes
+  `crate::helpers::HelperError` instead. tools/oracle/src/helpers/server/b4682/operations/scan.rs declares
+  `pub(in crate::helpers::server::b4682) fn run_scan` and names `crate::b4682` instead. Every other file under the
+  group folder, apart from Cargo.toml, lib.rs and the tests.rs files below, stays byte for byte as it is; a check
+  enforces that.
+
+
+  The group's tests stay with the group. Its nine tests.rs files reach the oracle's runner through a dev-dependency
+  on betterlite-oracle, the way the redact tests do, with rstest and serde-saphyr beside it. Six of them change.
+  assets/tests.rs and blog_feed/tests.rs import `betterlite_oracle::case::helper::HelperCase` and
+  `betterlite_oracle::helpers::{HelperRun, run_case}`, and their `#[files]` parameter gets `#[base_dir = "../../.."]`
+  and keeps its glob. b3190/tests.rs and b3191/tests.rs name the same three items by those paths, and they read case
+  files under `env!("CARGO_MANIFEST_DIR")`, now the group folder, so they join "../../.." first. b3693/tests.rs used
+  `load_cases` and `LoadedCase`, both crate-private in betterlite-oracle. Every file in
+  tools/oracle/cases/guardrails/pattern-matching is a b3693 helper case (152 of 152 on main), so the test keeps its
+  name `replays_pattern_matching_oracle_cases` and takes the shape of the assets test: a
+  `#[files("cases/guardrails/pattern-matching/*.yaml")]` parameter with the same base_dir, each file read as a
+  `HelperCase` and run with `run_case`. `load_cases` and `LoadedCase` stay crate-private. blog_feed/parser/tests.rs
+  reads the fuzz corpus at `CARGO_MANIFEST_DIR` joined with "fuzz/corpus/blog_feed", and that becomes
+  "../../../fuzz/corpus/blog_feed". b3300/tests.rs, b4682/tests.rs and blog_feed/date_parse/tests.rs compile in the
+  group crate as they are. The case files and the corpus don't move.
+
+
+  Lints. The new crate inherits the workspace lints (`[lints] workspace = true`). The exceptions tools/oracle/src/lib.rs
+  carries for helper code (`clippy::disallowed_types` at the crate root, and `clippy::mod_module_files`,
+  `clippy::disallowed_methods`, `clippy::absolute_paths` and `clippy::map_err_ignore` on `mod helpers`) don't reach a
+  new crate, so lib.rs repeats, with a reason, only the ones that fire in the group, the way
+  tools/oracle/src/helpers/redact/lib.rs does. An `#[expect]` that never fires is itself an error.
+
+
+  Nothing a helper case can observe changes: same operations, same inputs, same output, same case files. No test is
+  deleted and no operation is renamed.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/server.rs
+  - tools/oracle/src/helpers/server/Cargo.toml
+  - tools/oracle/src/helpers/server/lib.rs
+  - tools/oracle/src/helpers/server/auth_identity.rs
+  - tools/oracle/src/helpers/server/b4682/operations/scan.rs
+  - tools/oracle/src/helpers/server/assets/tests.rs
+  - tools/oracle/src/helpers/server/b3190/tests.rs
+  - tools/oracle/src/helpers/server/b3191/tests.rs
+  - tools/oracle/src/helpers/server/b3693/tests.rs
+  - tools/oracle/src/helpers/server/blog_feed/tests.rs
+  - tools/oracle/src/helpers/server/blog_feed/parser/tests.rs
+  lint_tables: false
+references:
+- url: https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
+  why: A workspace member is listed by path, and the tools/* glob matches only direct children of tools.
+- url: https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-path-field
+  why: "`[lib] path` lets the group crate keep its files where they are instead of under src/."
+- url: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#development-dependencies
+  why: Dev-dependencies are used only by tests, so the group's tests may depend on the crate that depends on the group.
+- url: https://docs.rs/rstest/0.27.0/rstest/attr.rstest.html#files-path-as-input-arguments
+  why: "`#[base_dir]` moves the folder a `#[files]` glob starts from, relative to the crate root."
+- url: https://doc.rust-lang.org/reference/visibility-and-privacy.html#pubin-path-pubcrate-pubsuper-and-pubself
+  why: "`pub(in path)` names a module by its path from the crate root, so scan.rs has to name the group's own module path."
+- url: https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html#the-wrappers-field-optional
+  why: A crate in deny.toml's wrappers list is the only kind allowed to depend on betterlite-server directly.
+dod:
+- text: >-
+    betterlite-oracle-server is a workspace package at tools/oracle/src/helpers/server, it doesn't depend on
+    betterlite-oracle outside its tests, betterlite-oracle depends on it, tools/oracle/src/helpers/server.rs is gone,
+    helpers/mod.rs takes the server group from the new crate, and under the group folder only Cargo.toml, lib.rs, the
+    tests.rs files and the one line each in auth_identity.rs and b4682/operations/scan.rs changed.
+  proof:
+  - crate-layout
+- text: The server group's nine test files run in betterlite-oracle-server and pass, the ones that replay cases against the pinned LiteLLM answers included.
+  proof:
+  - server-tests
+- text: >-
+    The oracle still decodes and runs every registered operation, the server ones through the new crate, and the
+    cases of the server operations this task touches still match LiteLLM.
+  proof:
+  - registry-tests
+  - oracle
+- text: The new crate passes the workspace lints, the dependency policy and the unused-dependency check.
+  proof:
+  - clippy
+  - deny
+  - shear
+  - hooks
+checks:
+  optional: []
+  commands:
+  - id: crate-layout
+    why: the server package is missing or in the wrong folder, it depends on betterlite-oracle, the old group file is still there, mod.rs still declares the group, or a group file outside the allowed list was edited
+    run: >-
+      test ! -e tools/oracle/src/helpers/server.rs &&
+      ! grep -q -x 'mod server;' tools/oracle/src/helpers/mod.rs &&
+      grep -q -F 'betterlite_oracle_server::GROUP,' tools/oracle/src/helpers/mod.rs &&
+      test -z "$(git diff --name-only --no-renames "$GATE_BASE" -- tools/oracle/src/helpers/server | grep -v -x -E 'tools/oracle/src/helpers/server/(Cargo\.toml|lib\.rs|auth_identity\.rs|b4682/operations/scan\.rs|(.+/)?tests\.rs)')" &&
+      git diff --numstat --no-renames "$GATE_BASE" -- tools/oracle/src/helpers/server/auth_identity.rs tools/oracle/src/helpers/server/b4682/operations/scan.rs | awk '$1 == 1 && $2 == 1 {n++} END {exit n != 2}' &&
+      cargo metadata --locked --offline --no-deps --format-version 1 | jq -e '
+      (.packages | map(select(.name == "betterlite-oracle-server")) | first) as $server |
+      (.packages | map(select(.name == "betterlite-oracle")) | first) as $oracle |
+      ($server.manifest_path | endswith("/tools/oracle/src/helpers/server/Cargo.toml")) and
+      ([$server.dependencies[] | select(.kind == null) | .name] | (index("betterlite-oracle-helper-api") != null) and (index("betterlite-oracle") == null)) and
+      ([$oracle.dependencies[] | select(.kind == null) | .name] | index("betterlite-oracle-server") != null)'
+  - id: server-tests
+    why: a test of the server group is missing from its crate or no longer passes there
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-oracle-server -E 'test(/::tests::/)' --message-format oneline) &&
+      for name in assets::tests::matches_pinned_assets b3190::tests::replays_b3190_against_litellm b3191::tests::replays_b3191_against_litellm b3300::tests::an_invalid_request_format_carries_litellms_400 b3693::tests::replays_pattern_matching_oracle_cases b4682::tests::override_input_uses_the_production_service blog_feed::date_parse::tests::formats_valid_dates blog_feed::parser::tests::replays_xml_fuzz_corpus blog_feed::tests::matches_pinned_blog_feed; do grep -q "$name" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-oracle-server --no-tests=fail -E 'test(/::tests::/)'
+  - id: registry-tests
+    why: the oracle's registry no longer decodes or runs an operation after the server group left the crate
+    run: >-
+      test -f tools/oracle/src/helpers/server/lib.rs &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::tests::/) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/assets
+- tools/oracle/cases/helpers/auth-identity
+- tools/oracle/cases/helpers/catalog-guard
+- tools/oracle/cases/helpers/blog_feed
+- tools/oracle/cases/helpers/public-endpoints
+- tools/oracle/cases/helpers/agent-fields
+- tools/oracle/cases/helpers/ocr
+deviations: []
+out_of_scope:
+- The other 44 helper groups stay modules of betterlite-oracle, and redact stays as B8806 left it.
+- betterlite-oracle-helper-api doesn't change. This group needs no `OrHelperError`, so that trait stays in the oracle crate.
+- The helper runner (run_case, run_pair, invoke, the answer cache and the Python side) and the case loader (load_cases, LoadedCase, HelperCase and its fields) stay in betterlite-oracle with the visibility they have.
+- Case files, the fuzz corpus, the Python adapters under tools/oracle/helpers, dispatch.py and the fuzz crate don't change.
+- The open task files whose commands filter `helpers::server::` (B3867, B4660, B4661, B4686, B4775) get their commands rewritten by the architect after this task merges. This task changes nothing under .development/.
+pitfalls:
+- "The operation files write full paths (`impl crate::helpers::Helper for Op`, `Box<crate::helpers::HelperError>`). The shared macro gives the group crate a `crate::helpers` module with exactly Helper, HelperResult and HelperError, so `crate::helpers::run_case`, `crate::helpers::HelperRun` and `crate::case` don't resolve there: the tests name them through `betterlite_oracle::`."
+- "`env!(\"CARGO_MANIFEST_DIR\")` and the rstest `#[files]` glob both start at the manifest folder of the crate that holds the test, tools/oracle/src/helpers/server, three levels below tools/oracle."
+- "tools/oracle/fuzz/fuzz_targets/blog_feed_xml.rs includes blog_feed/date_parse.rs and blog_feed/parser.rs by `#[path]`, so those two files stay where they are and unchanged. The byte-for-byte check covers them."
+- "The two From impls in the group (`From<Failure>` in blog_feed.rs, `From<Invalid>` in assets.rs) convert the group's own error types into `Box<HelperError>`, so the orphan rule allows them in the group crate as they are."
+- "`cargo clippy -p betterlite-oracle-server --lib` builds the group without betterlite-oracle, so a feature its files rely on has to be on in its own manifest. Copy each dependency's version and features from tools/oracle/Cargo.toml (serde_json keeps arbitrary_precision and raw_value, or the JSON a helper prints changes)."
+- "After the move, betterlite-oracle names some crates nowhere else: on main, betterlite-roi, betterlite-semantic, betterlite-transcribe, rmcp, soft-canonicalize and quick-xml appear only in the server group. Remove from tools/oracle/Cargo.toml the ones cargo shear reports as unused."
+- "deny.toml lists the crates allowed to depend on betterlite-server directly; the group crate goes on that list. The group names neither reqwest nor betterlite-router, so those two entries stay as they are."
+- "helpers/tests.rs reads the operation names from every line of `<group>/lib.rs` that opens with a quote, so lib.rs keeps the pairs on such lines and no other line in it (an expect reason included) opens with a quote."
+- "helpers/mod.rs holds a `GROUPS` array of 46. It stays at 46 entries in the same order, with only the server entry, between secrets and streaming, coming from the new crate."
+- "Packages named betterlite-server and betterlite-server-fuzz already exist. `-p betterlite-oracle-server` selects only the new crate, and a jq or grep test on package names has to compare the whole name."
+- "`cargo nextest run -p betterlite-oracle-server` builds betterlite-oracle as a dev-dependency, so the first run takes as long as an oracle build."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 4
+review_level: standard
