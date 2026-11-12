@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-defaults-response-format-set
+call:
+  b3545: {"function": "defaults", "payload": {"response_format": {"x": 1}}}
+env: {}
+compare:
+  ignore: []

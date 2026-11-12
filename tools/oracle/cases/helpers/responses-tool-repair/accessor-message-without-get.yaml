@@ -1,0 +1,12 @@
+kind: helper
+name: accessor-message-without-get
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {__object__: {attrs: {role: user}, get: absent}}
+    tools: []
+    cache: {}
+env: {}
+compare:
+  ignore: []

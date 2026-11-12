@@ -1,0 +1,5 @@
+task: B3545
+deviations:
+  - what: Chat dispatch checks that messages is a list of objects with a known role, and passes each message through unchanged. LiteLLM validates every message against its full message TypedDict, which rejects a bad content or tool_calls shape and drops keys the TypedDict does not declare.
+    why: The per-role message shapes belong to the chat message types, and this task has no copy of them to validate against.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/compaction.py#L35-L48

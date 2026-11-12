@@ -9,10 +9,11 @@ use crate::spec::agents::{PLACEHOLDERS, Rung};
 fn every_placeholder_gets_its_own_value() {
     let rung = Rung {
         runner: "codex-worker".to_owned(),
-        model: "m".to_owned(),
+        model: "r".to_owned(),
         effort: "e".to_owned(),
         attempts: 1,
         timeout_minutes: 1,
+        fix_model: None,
         tasks: None,
     };
     let invocation = Invocation {
@@ -27,6 +28,7 @@ fn every_placeholder_gets_its_own_value() {
         log: Path::new("/l"),
         prompt: "",
         session: Some("s"),
+        model: "m",
     };
     let argument = "{home}|{model}|{git_common_dir}|{worktree}|{schema_text}|{effort}|{schema}|{output}|{instructions}|{writable_roots}|{sandbox_settings}|{session}";
     let expanded = expand(argument, &rung, &invocation, "t").unwrap();

@@ -1,0 +1,11 @@
+task: B1135
+deviations:
+  - what: Each call that omits kwargs gets a fresh empty mapping, so a mapping method that edits its kwargs cannot change the next call's default.
+    why: LiteLLM declares kwargs={} as a shared mutable default on map_openai_params, and a provider that writes to it leaks values between calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/text_to_speech/transformation.py#L67-L74
+  - what: get_error_class returns the BaseLlmException value instead of raising it.
+    why: A Rust trait method hands the error back and the caller chooses to return or propagate it; the status, message and headers are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/text_to_speech/transformation.py#L136-L143
+  - what: validate_environment and complete_url have default bodies that a provider may skip overriding, where LiteLLM marks both abstract.
+    why: The task keeps the inherited bodies (empty headers, and a rejection of only a missing api_base) callable from a finite test subclass.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/text_to_speech/transformation.py#L80-L105

@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-defaults-stop-empty-string
+call:
+  b3545: {"function": "defaults", "payload": {"stop": ""}}
+env: {}
+compare:
+  ignore: []
