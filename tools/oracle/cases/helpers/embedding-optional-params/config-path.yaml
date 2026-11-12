@@ -1,0 +1,93 @@
+kind: helper
+name: embedding-optional-params-config-path
+call:
+  b5363:
+    calls:
+      - model: m
+        custom_llm_provider: hosted_vllm
+        user: u
+        kwargs: {timeout: 30}
+        provider_config: {supported: [timeout, dimensions, encoding_format, user], mapped: {user: u}}
+      - model: m
+        custom_llm_provider: hosted_vllm
+        dimensions: 8
+        kwargs: {}
+        provider_config: {supported: [timeout, dimensions, encoding_format, user], mapped: {dimensions: 8}}
+      - model: m
+        custom_llm_provider: hosted_vllm
+        additional_drop_params: [timeout]
+        kwargs: {timeout: 30}
+        provider_config: {supported: [timeout], mapped: {}}
+      - model: cohere.embed-english-v3
+        custom_llm_provider: sagemaker
+        encoding_format: float
+        dimensions: 8
+        kwargs: {input_type: search_document}
+        provider_config: {supported: [encoding_format, dimensions, input_type], mapped: {embedding_types: [float], output_dimension: 8}}
+      - model: amazon.titan-embed-text-v2:0
+        custom_llm_provider: sagemaker
+        dimensions: 8
+        kwargs: {}
+        provider_config: {supported: [], mapped: {}}
+      - model: embed-english-v3.0
+        custom_llm_provider: cohere
+        encoding_format: float
+        dimensions: 256
+        kwargs: {}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {embedding_types: [float], output_dimension: 256}}
+      - model: embed-english-v3.0
+        custom_llm_provider: cohere
+        user: u
+        kwargs: {}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {}}
+      - model: embed-english-v3.0
+        custom_llm_provider: cohere
+        user: u
+        dimensions: 8
+        drop_params: true
+        kwargs: {}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {output_dimension: 8}}
+      - model: embed-english-v3.0
+        custom_llm_provider: cohere
+        user: u
+        dimensions: 8
+        litellm_drop_params: true
+        kwargs: {}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {output_dimension: 8}}
+      - model: embed-english-v3.0
+        custom_llm_provider: cohere
+        dimensions: 8
+        additional_drop_params: [dimensions]
+        kwargs: {}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {}}
+      - model: jina-embeddings-v3
+        custom_llm_provider: jina_ai
+        user: u
+        kwargs: {}
+        provider_config: {supported: [dimensions], mapped: {}}
+      - model: m
+        custom_llm_provider: infinity
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        provider_config: {supported: [encoding_format, modality, dimensions], mapped: {encoding_format: float, output_dimension: 8}}
+      - model: voyage-3
+        custom_llm_provider: voyage
+        encoding_format: float
+        dimensions: 8
+        kwargs: {custom_field: 1, extra_body: {a: 1}}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {encoding_format: float, output_dimension: 8}}
+      - model: voyage-context-3
+        custom_llm_provider: voyage
+        encoding_format: float
+        dimensions: 8
+        kwargs: {custom_field: 1}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {encoding_format: float, output_dimension: 8}}
+      - model: voyage-multimodal-3
+        custom_llm_provider: voyage
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        provider_config: {supported: [dimensions], mapped: {}}
+env: {}
+compare: {ignore: []}
