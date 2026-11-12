@@ -125,7 +125,10 @@ fn cache_diagnostics_redact_payload_and_key() {
     assert!(missing.unwrap().is_none());
     assert!(!keyed_log.contains("sk-live-secret"), "{keyed_log}");
     assert!(!keyed_log.contains(key), "{keyed_log}");
-    assert!(keyed_log.contains("UserApiKeyAuth"), "{keyed_log}");
+    assert!(
+        keyed_log.contains("UserApiKeyCache.get_cache"),
+        "{keyed_log}"
+    );
 }
 
 #[rstest]

@@ -130,6 +130,13 @@ impl RecordingTier {
     fn record(&self, operation: &str) {
         lock(&self.log).push(format!("{}:{operation}", self.name));
     }
+
+    fn remove(&self, operation: &str, key: &str) -> Result<(), DualCacheError> {
+        self.record(operation);
+        let mut state = lock(&self.state);
+        state.deleted.push(key.to_owned());
+        state.delete_failure.take().map_or(Ok(()), Err)
+    }
 }
 
 #[async_trait]
@@ -202,14 +209,11 @@ impl AuthCacheTier for RecordingTier {
     }
 
     fn delete(&self, key: &str) -> Result<(), DualCacheError> {
-        self.record("delete");
-        let mut state = lock(&self.state);
-        state.deleted.push(key.to_owned());
-        state.delete_failure.take().map_or(Ok(()), Err)
+        self.remove("delete", key)
     }
 
     async fn async_delete(&self, key: &str) -> Result<(), DualCacheError> {
-        self.delete(key)
+        self.remove("async_delete", key)
     }
 
     fn delete_pre_call(&self, key: &str) -> Result<Option<BatchResult<()>>, DualCacheError> {
