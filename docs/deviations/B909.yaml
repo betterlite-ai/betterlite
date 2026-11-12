@@ -1,0 +1,5 @@
+task: B909
+deviations:
+  - what: Serialized thinking blocks over the configured JSON byte limit are rejected with an error before they are parsed.
+    why: Every untrusted byte slice goes through the B1087 API boundary before it is parsed, so the decoder cannot allocate without a cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L1481-L1516

@@ -1,0 +1,24 @@
+kind: helper
+name: reasoning-replay
+call:
+  responses_input_messages:
+    request:
+      input:
+        - type: reasoning
+          content: " x "
+          encrypted_content: '[{"type":"thinking","signature":"sig","thinking":"t","extra":{"k":1}},{"type":"thinking","signature":""}]'
+        - {type: reasoning, content: more}
+        - {type: message, role: assistant, content: answer}
+        - type: reasoning
+          content:
+            - {type: text, text: " a "}
+            - {type: encrypted_content, text: ignored}
+            - {type: text, text: b}
+        - {role: user, content: u}
+        - {type: reasoning, content: " tail "}
+        - {type: reasoning, content: "", summary: [{text: s}]}
+    replay_reasoning: true
+    cache: []
+env: {}
+compare:
+  ignore: []
