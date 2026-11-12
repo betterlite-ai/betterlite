@@ -27,12 +27,8 @@ pub enum AzureTokenError {
     ProviderTypeError { message: String },
     #[error("Failed to get Azure AD token: {message}")]
     ProviderFailed { message: String },
-    #[error("{message}")]
-    Source {
-        class: String,
-        status: Option<u16>,
-        message: String,
-    },
+    #[error(transparent)]
+    Source(#[from] SourceFailure),
 }
 
 impl AzureTokenError {
@@ -41,27 +37,17 @@ impl AzureTokenError {
         match self {
             Self::TokenNotString { .. } | Self::ProviderTypeError { .. } => "TypeError",
             Self::ProviderFailed { .. } => "RuntimeError",
-            Self::Source { class, .. } => class,
+            Self::Source(failure) => &failure.class,
         }
     }
 
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
-            Self::Source { status, .. } => *status,
+            Self::Source(failure) => failure.status,
             Self::TokenNotString { .. }
             | Self::ProviderTypeError { .. }
             | Self::ProviderFailed { .. } => None,
-        }
-    }
-}
-
-impl From<SourceFailure> for AzureTokenError {
-    fn from(failure: SourceFailure) -> Self {
-        Self::Source {
-            class: failure.class,
-            status: failure.status,
-            message: failure.message,
         }
     }
 }
@@ -86,63 +72,39 @@ fn resolve_provider<'request>(
     params: &DeploymentSettings,
     sources: &'request dyn CredentialSources,
 ) -> Result<Option<Arc<dyn CallableTokenProvider + 'request>>, AzureTokenError> {
-    let client_id = params.client_id.as_deref().filter(|text| !text.is_empty());
-    let identity = (
-        params.tenant_id.as_deref().filter(|text| !text.is_empty()),
-        client_id,
-        params
-            .client_secret
-            .as_ref()
-            .filter(|secret| !secret.expose_secret().is_empty()),
-    );
-    if let (Some(tenant), Some(client), Some(secret)) = identity {
-        tracing::debug!("Using Azure AD Token Provider from Entra ID for Azure Auth");
-        let record = ClientSecretRecord {
-            tenant_id: tenant.to_owned(),
-            client_id: client.to_owned(),
-            client_secret: secret.clone(),
-            scope: params.azure_scope.clone(),
-        };
-        return sources
-            .client_secret(&record)
-            .map(Some)
-            .map_err(AzureTokenError::from);
+    let nonempty = |text: &&str| !text.is_empty();
+    let revealed = |secret: &&SecretString| !secret.expose_secret().is_empty();
+    match (
+        params.tenant_id.as_deref().filter(nonempty),
+        params.client_id.as_deref().filter(nonempty),
+        params.client_secret.as_ref().filter(revealed),
+        params.azure_username.as_deref().filter(nonempty),
+        params.azure_password.as_ref().filter(revealed),
+    ) {
+        (Some(tenant), Some(client), Some(client_secret), _, _) => {
+            tracing::debug!("Using Azure AD Token Provider from Entra ID for Azure Auth");
+            let record = ClientSecretRecord {
+                tenant_id: tenant.to_owned(),
+                client_id: client.to_owned(),
+                client_secret: client_secret.clone(),
+                scope: params.azure_scope.clone(),
+            };
+            Ok(Some(sources.client_secret(&record)?))
+        }
+        (_, Some(client), _, Some(user), Some(password)) => {
+            tracing::debug!("Using Azure Username and Password for Azure Auth");
+            // the username and password credential discovers its tenant from the account realm
+            let record = UsernamePasswordRecord {
+                client_id: client.to_owned(),
+                username: user.to_owned(),
+                password: password.clone(),
+                tenant_id: None,
+                scope: params.azure_scope.clone(),
+            };
+            Ok(Some(sources.username_password(&record)?))
+        }
+        _ => Ok(None),
     }
-    username_provider(params, client_id, sources)
-}
-
-fn username_provider<'request>(
-    params: &DeploymentSettings,
-    client_id: Option<&str>,
-    sources: &'request dyn CredentialSources,
-) -> Result<Option<Arc<dyn CallableTokenProvider + 'request>>, AzureTokenError> {
-    let login = (
-        params
-            .azure_username
-            .as_deref()
-            .filter(|text| !text.is_empty()),
-        params
-            .azure_password
-            .as_ref()
-            .filter(|secret| !secret.expose_secret().is_empty()),
-        client_id,
-    );
-    let (Some(user), Some(pass), Some(client)) = login else {
-        return Ok(None);
-    };
-    tracing::debug!("Using Azure Username and Password for Azure Auth");
-    // the username and password credential discovers its tenant from the account realm
-    let record = UsernamePasswordRecord {
-        client_id: client.to_owned(),
-        username: user.to_owned(),
-        password: pass.clone(),
-        tenant_id: None,
-        scope: params.azure_scope.clone(),
-    };
-    sources
-        .username_password(&record)
-        .map(Some)
-        .map_err(AzureTokenError::from)
 }
 
 fn apply_oidc(
@@ -199,7 +161,7 @@ fn apply_refresh<'request>(
                 "Error calling Azure AD token provider: {}. Follow docs - https://docs.litellm.ai/docs/providers/azure/#azure-ad-token-refresh---defaultazurecredential",
                 failure.message
             );
-            return Err(AzureTokenError::from(failure));
+            return Err(AzureTokenError::Source(failure));
         }
     }
     if provider.is_none() && token.is_none() {

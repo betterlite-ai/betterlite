@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use secrecy::SecretString;
+use thiserror::Error;
 
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use crate::oidc_exchange::OidcExchangeInput;
@@ -17,7 +18,8 @@ pub struct ProviderFailure {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("{message}")]
 pub struct SourceFailure {
     pub class: String,
     pub status: Option<u16>,

@@ -2,6 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use secrecy::{ExposeSecret as _, SecretString};
 
+use betterlite_config::sections::azure_credentials::DeploymentSettings;
+
 use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::headers::{
     ClientAuthParams, HeaderLookup, get_azure_request_auth_headers, process_azure_headers,
@@ -40,8 +42,7 @@ pub(super) fn static_ad_token() {
     provider_overrides_static_token();
     empty_provider_token_accepted();
     non_string_provider_token();
-    provider_type_error();
-    provider_other_error();
+    provider_errors();
 }
 
 fn explicit_static_token() {
@@ -92,65 +93,75 @@ fn non_string_provider_token() {
     assert_eq!(error.class(), "TypeError");
 }
 
-fn provider_type_error() {
-    let sources = FixtureSources::new();
-    let settings = params();
-    let (caller, _calls) = provider(Outcome::Raise {
-        class: "TypeError".to_owned(),
-        message: "provider type".to_owned(),
-    });
-    let request = super::support::request(&settings, false, Some(caller), &sources);
-    let error = run(&request).unwrap_err();
-    assert_eq!(error.class(), "TypeError");
-    assert_eq!(error.to_string(), "provider type");
-}
-
-fn provider_other_error() {
-    let sources = FixtureSources::new();
-    let settings = params();
-    let (caller, _calls) = provider(Outcome::Raise {
-        class: "ClientAuthenticationError".to_owned(),
-        message: "boom".to_owned(),
-    });
-    let request = super::support::request(&settings, false, Some(caller), &sources);
-    let error = run(&request).unwrap_err();
-    assert_eq!(error.class(), "RuntimeError");
-    assert_eq!(error.to_string(), "Failed to get Azure AD token: boom");
+fn provider_errors() {
+    let cases = [
+        ("TypeError", "provider type", "TypeError", "provider type"),
+        (
+            "ClientAuthenticationError",
+            "boom",
+            "RuntimeError",
+            "Failed to get Azure AD token: boom",
+        ),
+    ];
+    for (raised, message, class, text) in cases {
+        let sources = FixtureSources::new();
+        let settings = params();
+        let (caller, _calls) = provider(Outcome::Raise {
+            class: raised.to_owned(),
+            message: message.to_owned(),
+        });
+        let request = super::support::request(&settings, false, Some(caller), &sources);
+        let error = run(&request).unwrap_err();
+        assert_eq!(error.class(), class);
+        assert_eq!(error.to_string(), text);
+    }
 }
 
 pub(super) fn client_secret_precedence() {
     client_secret_from_explicit_values();
     static_token_does_not_suppress_client_secret();
-    existing_provider_suppresses_client_secret();
+    existing_provider_suppresses_sources();
     client_secret_precedes_username_password();
 }
 
-fn client_secret_from_explicit_values() {
-    let sources = FixtureSources::new();
+fn client_secret_params() -> DeploymentSettings {
     let mut settings = params();
     settings.tenant_id = Some("tenant".to_owned());
     settings.client_id = Some("client".to_owned());
     settings.client_secret = Some(SecretString::from("secret"));
-    let request = super::support::request(&settings, false, None, &sources);
-    assert_eq!(
-        run(&request).unwrap().as_deref(),
-        Some("client-secret-token")
-    );
+    settings
+}
+
+fn username_params() -> DeploymentSettings {
+    let mut settings = params();
+    settings.client_id = Some("client".to_owned());
+    settings.azure_username = Some("user".to_owned());
+    settings.azure_password = Some(SecretString::from("password"));
+    settings
+}
+
+fn single_source_call(settings: &DeploymentSettings, token: &str, call: &str) {
+    let sources = FixtureSources::new();
+    let request = super::support::request(settings, false, None, &sources);
+    assert_eq!(run(&request).unwrap().as_deref(), Some(token));
     assert_eq!(
         sources.calls(),
-        vec![format!(
-            "client_secret:tenant:client:secret:{}",
-            settings.azure_scope
-        )]
+        vec![format!("{call}:{}", settings.azure_scope)]
+    );
+}
+
+fn client_secret_from_explicit_values() {
+    let settings = client_secret_params();
+    single_source_call(
+        &settings,
+        "client-secret-token",
+        "client_secret:tenant:client:secret",
     );
 }
 
 fn static_token_does_not_suppress_client_secret() {
     let sources = FixtureSources::new();
-    let mut settings = params();
-    settings.tenant_id = Some("tenant".to_owned());
-    settings.client_id = Some("client".to_owned());
-    settings.client_secret = Some(SecretString::from("secret"));
+    let mut settings = client_secret_params();
     settings.azure_ad_token = Some(SecretString::from("static-token"));
     let request = super::support::request(&settings, false, None, &sources);
     assert_eq!(
@@ -160,12 +171,11 @@ fn static_token_does_not_suppress_client_secret() {
     assert_eq!(sources.calls().len(), 1);
 }
 
-fn existing_provider_suppresses_client_secret() {
+fn existing_provider_suppresses_sources() {
+    let mut settings = client_secret_params();
+    settings.azure_username = Some("user".to_owned());
+    settings.azure_password = Some(SecretString::from("password"));
     let sources = FixtureSources::new();
-    let mut settings = params();
-    settings.tenant_id = Some("tenant".to_owned());
-    settings.client_id = Some("client".to_owned());
-    settings.client_secret = Some(SecretString::from("secret"));
     let (caller, calls) = provider(Outcome::Token("caller-token".to_owned()));
     let request = super::support::request(&settings, false, Some(caller), &sources);
     assert_eq!(run(&request).unwrap().as_deref(), Some("caller-token"));
@@ -174,55 +184,28 @@ fn existing_provider_suppresses_client_secret() {
 }
 
 fn client_secret_precedes_username_password() {
-    let sources = FixtureSources::new();
-    let mut settings = params();
-    settings.tenant_id = Some("tenant".to_owned());
-    settings.client_id = Some("client".to_owned());
-    settings.client_secret = Some(SecretString::from("secret"));
+    let mut settings = client_secret_params();
     settings.azure_username = Some("user".to_owned());
     settings.azure_password = Some(SecretString::from("password"));
-    let request = super::support::request(&settings, false, None, &sources);
-    assert_eq!(
-        run(&request).unwrap().as_deref(),
-        Some("client-secret-token")
+    single_source_call(
+        &settings,
+        "client-secret-token",
+        "client_secret:tenant:client:secret",
     );
-    assert_eq!(sources.calls().len(), 1);
-    assert!(sources.calls()[0].starts_with("client_secret:"));
 }
 
 pub(super) fn username_password() {
     username_password_from_explicit_values();
-    existing_provider_suppresses_username_password();
     username_password_needs_client_id();
 }
 
 fn username_password_from_explicit_values() {
-    let sources = FixtureSources::new();
-    let mut settings = params();
-    settings.client_id = Some("client".to_owned());
-    settings.azure_username = Some("user".to_owned());
-    settings.azure_password = Some(SecretString::from("password"));
-    let request = super::support::request(&settings, false, None, &sources);
-    assert_eq!(run(&request).unwrap().as_deref(), Some("username-token"));
-    assert_eq!(
-        sources.calls(),
-        vec![format!(
-            "username_password:client:user:password:None:{}",
-            settings.azure_scope
-        )]
+    let settings = username_params();
+    single_source_call(
+        &settings,
+        "username-token",
+        "username_password:client:user:password:None",
     );
-}
-
-fn existing_provider_suppresses_username_password() {
-    let sources = FixtureSources::new();
-    let mut settings = params();
-    settings.client_id = Some("client".to_owned());
-    settings.azure_username = Some("user".to_owned());
-    settings.azure_password = Some(SecretString::from("password"));
-    let (caller, _calls) = provider(Outcome::Token("caller-token".to_owned()));
-    let request = super::support::request(&settings, false, Some(caller), &sources);
-    assert_eq!(run(&request).unwrap().as_deref(), Some("caller-token"));
-    assert!(sources.calls().is_empty());
 }
 
 fn username_password_needs_client_id() {
@@ -377,7 +360,6 @@ fn cache_evicts_beyond_capacity() {
 pub(super) fn header_case_insensitive_preservation() {
     auth_headers_preserved();
     token_adds_authorization();
-    provider_token_adds_authorization();
     invalid_provider_output_falls_through();
     api_key_fallback();
     provider_failure_propagates();
@@ -405,32 +387,26 @@ fn auth_headers_preserved() {
 
 fn token_adds_authorization() {
     let plain = pairs(&[("X-Other", "value")]);
-    let client = ClientAuthParams {
+    let (caller, calls) = provider(Outcome::Token("provider-token".to_owned()));
+    let from_token = ClientAuthParams {
         azure_ad_token: Some(SecretString::from("token")),
         azure_ad_token_provider: None,
         api_key: None,
     };
-    assert_eq!(
-        get_azure_request_auth_headers(&plain, &client).unwrap(),
-        pairs(&[("X-Other", "value"), ("Authorization", "Bearer token")])
-    );
-}
-
-fn provider_token_adds_authorization() {
-    let plain = pairs(&[("X-Other", "value")]);
-    let (caller, calls) = provider(Outcome::Token("provider-token".to_owned()));
-    let client = ClientAuthParams {
+    let from_provider = ClientAuthParams {
         azure_ad_token: Some(SecretString::from("")),
         azure_ad_token_provider: Some(caller),
         api_key: Some("key-1".to_owned()),
     };
-    assert_eq!(
-        get_azure_request_auth_headers(&plain, &client).unwrap(),
-        pairs(&[
-            ("X-Other", "value"),
-            ("Authorization", "Bearer provider-token")
-        ])
-    );
+    for (client, bearer) in [(from_token, "token"), (from_provider, "provider-token")] {
+        assert_eq!(
+            get_azure_request_auth_headers(&plain, &client).unwrap(),
+            pairs(&[
+                ("X-Other", "value"),
+                ("Authorization", &format!("Bearer {bearer}"))
+            ])
+        );
+    }
     assert_eq!(counted(&calls), 1);
 }
 

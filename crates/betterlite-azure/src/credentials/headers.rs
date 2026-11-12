@@ -60,15 +60,16 @@ pub fn get_azure_request_auth_headers(
     headers: &[(String, String)],
     client: &ClientAuthParams,
 ) -> Result<Vec<(String, String)>, ProviderFailure> {
-    if headers.iter().any(|(name, _)| {
+    let mut output = headers.to_vec();
+    let has_auth = headers.iter().any(|(name, _)| {
         AUTH_HEADERS
             .iter()
             .any(|auth| name.eq_ignore_ascii_case(auth))
-    }) {
-        return Ok(headers.to_vec());
+    });
+    if has_auth {
+        return Ok(output);
     }
     if let Some(token) = resolve_azure_ad_token(client)? {
-        let mut output = headers.to_vec();
         output.push((
             "Authorization".to_owned(),
             format!("Bearer {}", token.expose_secret()),
@@ -76,11 +77,9 @@ pub fn get_azure_request_auth_headers(
         return Ok(output);
     }
     if let Some(api_key) = client.api_key.as_deref().filter(|key| !key.is_empty()) {
-        let mut output = headers.to_vec();
         output.push(("api-key".to_owned(), api_key.to_owned()));
-        return Ok(output);
     }
-    Ok(headers.to_vec())
+    Ok(output)
 }
 
 fn resolve_azure_ad_token(
@@ -107,16 +106,12 @@ pub fn redact_azure_auth_headers(headers: &[(String, String)]) -> Vec<(String, S
     headers
         .iter()
         .map(|(name, value)| {
-            let redacted = AUTH_HEADERS
+            let secret = AUTH_HEADERS
                 .iter()
                 .any(|auth| name.eq_ignore_ascii_case(auth));
             (
                 name.clone(),
-                if redacted {
-                    REDACTED.to_owned()
-                } else {
-                    value.clone()
-                },
+                if secret { REDACTED } else { value }.to_owned(),
             )
         })
         .collect()

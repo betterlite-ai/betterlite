@@ -2,7 +2,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::{resolve_secret, resolve_string};
+use crate::resolve::{SecretText, resolve_string};
 use crate::sections::Section;
 
 mod tests;
@@ -80,73 +80,33 @@ impl Settings {
     }
 }
 
-impl DeploymentParams {
-    fn resolve<L>(self, lookup: &L) -> Result<DeploymentSettings, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        let azure_ad_token = resolve_secret(
-            self.azure_ad_token,
-            &format!("{PARAMS_PATH}.azure_ad_token"),
-            lookup,
-        )?;
-        let client_secret = resolve_secret(
-            self.client_secret,
-            &format!("{PARAMS_PATH}.client_secret"),
-            lookup,
-        )?;
-        let azure_password = resolve_secret(
-            self.azure_password,
-            &format!("{PARAMS_PATH}.azure_password"),
-            lookup,
-        )?;
-        let tenant_id = resolve_text(self.tenant_id, "tenant_id", lookup)?;
-        let client_id = resolve_text(self.client_id, "client_id", lookup)?;
-        let azure_scope = resolve_text(self.azure_scope, "azure_scope", lookup)?;
-        let azure_username = resolve_text(self.azure_username, "azure_username", lookup)?;
-        // LiteLLM reads each value with `explicit or environment`, so an empty explicit value falls through
-        Ok(DeploymentSettings {
-            azure_ad_token: first_secret(azure_ad_token, lookup.lookup("AZURE_AD_TOKEN")),
-            tenant_id: tenant_id
-                .filter(|value| !value.is_empty())
-                .or_else(|| lookup.lookup("AZURE_TENANT_ID")),
-            client_id: client_id
-                .filter(|value| !value.is_empty())
-                .or_else(|| lookup.lookup("AZURE_CLIENT_ID")),
-            client_secret: first_secret(client_secret, lookup.lookup("AZURE_CLIENT_SECRET")),
-            azure_scope: azure_scope
-                .filter(|value| !value.is_empty())
-                .or_else(|| lookup.lookup("AZURE_SCOPE"))
-                .unwrap_or_else(|| DEFAULT_SCOPE.to_owned()),
-            azure_username: azure_username
-                .filter(|value| !value.is_empty())
-                .or_else(|| lookup.lookup("AZURE_USERNAME")),
-            azure_password: first_secret(azure_password, lookup.lookup("AZURE_PASSWORD")),
-        })
-    }
-}
-
-fn resolve_text<L>(
-    value: Option<String>,
+// LiteLLM reads `explicit or environment`; the variable is AZURE_ plus the field without its azure_ prefix
+fn value_or_environment<T, L>(
+    value: Option<T>,
     field: &str,
     lookup: &L,
-) -> Result<Option<String>, ConfigError>
+) -> Result<Option<T>, ConfigError>
 where
+    T: SecretText + From<String>,
     L: EnvironmentLookup,
 {
-    let path = format!("{PARAMS_PATH}.{field}");
-    value
-        .map(|text| resolve_string(text, &path, lookup))
-        .transpose()
-}
-
-fn first_secret(
-    explicit: Option<SecretString>,
-    environment: Option<String>,
-) -> Option<SecretString> {
-    explicit
-        .filter(|secret| !secret.expose_secret().is_empty())
-        .or_else(|| environment.map(SecretString::from))
+    let explicit = value
+        .map(|text| {
+            resolve_string(
+                text.secret_text(),
+                &format!("{PARAMS_PATH}.{field}"),
+                lookup,
+            )
+        })
+        .transpose()?;
+    let variable = format!(
+        "AZURE_{}",
+        field.trim_start_matches("azure_").to_uppercase()
+    );
+    Ok(explicit
+        .filter(|text| !text.is_empty())
+        .or_else(|| lookup.lookup(&variable))
+        .map(T::from))
 }
 
 impl Section for Raw {
@@ -159,8 +119,36 @@ impl Section for Raw {
         let deployments = self
             .model_list
             .into_iter()
-            .map(|deployment| deployment.litellm_params.resolve(lookup))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|deployment| {
+                let params = deployment.litellm_params;
+                Ok(DeploymentSettings {
+                    azure_ad_token: value_or_environment(
+                        params.azure_ad_token,
+                        "azure_ad_token",
+                        lookup,
+                    )?,
+                    tenant_id: value_or_environment(params.tenant_id, "tenant_id", lookup)?,
+                    client_id: value_or_environment(params.client_id, "client_id", lookup)?,
+                    client_secret: value_or_environment(
+                        params.client_secret,
+                        "client_secret",
+                        lookup,
+                    )?,
+                    azure_scope: value_or_environment(params.azure_scope, "azure_scope", lookup)?
+                        .unwrap_or_else(|| DEFAULT_SCOPE.to_owned()),
+                    azure_username: value_or_environment(
+                        params.azure_username,
+                        "azure_username",
+                        lookup,
+                    )?,
+                    azure_password: value_or_environment(
+                        params.azure_password,
+                        "azure_password",
+                        lookup,
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>, ConfigError>>()?;
         Ok(Settings {
             enable_azure_ad_token_refresh: self
                 .litellm_settings

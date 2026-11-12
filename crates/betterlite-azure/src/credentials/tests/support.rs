@@ -87,8 +87,10 @@ impl FixtureSources {
 
     fn provider(
         &self,
+        call: String,
         outcome: &Result<Outcome, SourceFailure>,
     ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+        self.record(call);
         match outcome {
             Ok(script) => Ok(Arc::new(ScriptedProvider {
                 outcome: script.clone(),
@@ -104,37 +106,21 @@ impl CredentialSources for FixtureSources {
         &'source self,
         record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        self.record(format!(
-            "client_secret:{}:{}:{}:{}",
-            record.tenant_id,
-            record.client_id,
-            record.client_secret.expose_secret(),
-            record.scope
-        ));
-        self.provider(&self.client_secret)
+        self.provider(client_call(record), &self.client_secret)
     }
 
     fn username_password<'source>(
         &'source self,
         record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        self.record(format!(
-            "username_password:{}:{}:{}:{:?}:{}",
-            record.client_id,
-            record.username,
-            record.password.expose_secret(),
-            record.tenant_id,
-            record.scope
-        ));
-        self.provider(&self.username_password)
+        self.provider(username_call(record), &self.username_password)
     }
 
     fn sdk_refresh<'source>(
         &'source self,
         scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        self.record(format!("sdk_refresh:{scope}"));
-        self.provider(&self.sdk_refresh)
+        self.provider(format!("sdk_refresh:{scope}"), &self.sdk_refresh)
     }
 
     fn default_credential<'source>(
@@ -162,6 +148,33 @@ impl CredentialSources for FixtureSources {
         ));
         self.oidc.clone().map(SecretString::from)
     }
+}
+
+fn client_call(record: &ClientSecretRecord) -> String {
+    let ClientSecretRecord {
+        tenant_id,
+        client_id,
+        client_secret,
+        scope,
+    } = record;
+    format!(
+        "client_secret:{tenant_id}:{client_id}:{}:{scope}",
+        client_secret.expose_secret()
+    )
+}
+
+fn username_call(record: &UsernamePasswordRecord) -> String {
+    let UsernamePasswordRecord {
+        client_id,
+        username,
+        password,
+        tenant_id,
+        scope,
+    } = record;
+    format!(
+        "username_password:{client_id}:{username}:{}:{tenant_id:?}:{scope}",
+        password.expose_secret()
+    )
 }
 
 pub(super) fn params() -> DeploymentSettings {

@@ -3,26 +3,25 @@ name: static-ad-token
 call:
   azure_credentials:
     token:
-      steps:
-        - cache: []
-          params: {azure_ad_token: explicit-token}
-        - cache: []
-          environment: {AZURE_AD_TOKEN: environment-token}
-        - cache: []
-          params: {azure_ad_token: ""}
-          environment: {AZURE_AD_TOKEN: environment-token}
-        - cache: []
-          params: {}
-        - cache: []
-          params: {azure_ad_token: explicit-token}
-          provider: {outcome: token, token: provider-token}
-        - cache: []
-          provider: {outcome: token, token: ""}
-        - cache: []
-          provider: {outcome: non_text, type_name: NoneType}
-        - cache: []
-          provider: {outcome: raise, class_name: TypeError, message: provider-type}
-        - cache: []
-          provider: {outcome: raise, class_name: ClientAuthenticationError, message: boom}
+      - cache: []
+        params: {azure_ad_token: explicit-token}
+      - cache: []
+        environment: {AZURE_AD_TOKEN: environment-token}
+      - cache: []
+        params: {azure_ad_token: ""}
+        environment: {AZURE_AD_TOKEN: environment-token}
+      - cache: []
+        params: {}
+      - cache: []
+        params: {azure_ad_token: explicit-token}
+        provider: {outcome: token, token: provider-token}
+      - cache: []
+        provider: {outcome: token, token: ""}
+      - cache: []
+        provider: {outcome: non_text, type_name: NoneType}
+      - cache: []
+        provider: {outcome: raise, class_name: TypeError, message: provider-type}
+      - cache: []
+        provider: {outcome: raise, class_name: ClientAuthenticationError, message: boom}
 env: {}
 compare: {ignore: []}
