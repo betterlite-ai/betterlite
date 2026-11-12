@@ -742,6 +742,7 @@ pub(super) fn converse_projection_error() {
     converse_failures();
     dispatch_failures();
     message_start_failure();
+    streaming_error_text();
 }
 
 fn converse_failures() {
@@ -808,6 +809,23 @@ fn dispatch_failures() {
             field: "completions[0]"
         }
     ));
+}
+
+fn streaming_error_text() {
+    let mut decoder = state(MODEL, false, &[FIRST]);
+    let direct = decoder
+        .converse_chunk_parser(&event(r#"{"delta": {"toolUse": {}}}"#))
+        .unwrap_err();
+    assert_eq!(
+        direct.to_string(),
+        "Received streaming error - the Bedrock event field delta.toolUse.input is required"
+    );
+    let routed = decoder
+        .chunk_parser(&event(r#"{"contentBlockIndex": []}"#))
+        .unwrap_err();
+    assert!(matches!(routed, ConverseEventError::Streaming(_)));
+    let outer = chunk_error(&mut decoder, r#"{"outputs": 5}"#);
+    assert!(!outer.to_string().starts_with("Received streaming error"));
 }
 
 fn message_start_failure() {

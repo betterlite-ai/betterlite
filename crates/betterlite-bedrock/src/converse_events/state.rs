@@ -16,6 +16,11 @@ impl ConverseStreamState {
         &mut self,
         chunk: &Json,
     ) -> Result<ConverseChunk, ConverseEventError> {
+        self.project_event(chunk)
+            .map_err(|source| ConverseEventError::Streaming(Box::new(source)))
+    }
+
+    fn project_event(&mut self, chunk: &Json) -> Result<ConverseChunk, ConverseEventError> {
         let fields = wire::object(chunk, "converse event")?;
         initialize_response_id(self, fields)?;
         let index = wire::content_index(fields.get("contentBlockIndex"))?;

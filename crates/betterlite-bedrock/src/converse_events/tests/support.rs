@@ -83,7 +83,12 @@ pub(super) fn assert_projection(state: &mut ConverseStreamState, source: &str, e
 }
 
 pub(super) fn converse_error(state: &mut ConverseStreamState, source: &str) -> ConverseEventError {
-    state.converse_chunk_parser(&event(source)).unwrap_err()
+    let ConverseEventError::Streaming(inner) =
+        state.converse_chunk_parser(&event(source)).unwrap_err()
+    else {
+        panic!("the Converse parser must wrap its failures");
+    };
+    *inner
 }
 
 pub(super) fn chunk_error(state: &mut ConverseStreamState, source: &str) -> ConverseEventError {
