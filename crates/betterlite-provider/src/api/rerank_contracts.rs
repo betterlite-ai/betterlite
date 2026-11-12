@@ -127,6 +127,8 @@ pub trait BaseRerankConfig: Send + Sync {
     fn validate_environment(&self, request: EnvironmentRequest<'_>)
     -> Result<Headers, Self::Error>;
 
+    // an empty Params is Params::default(), so the Ok(Default::default()) mutant is equivalent
+    #[cfg_attr(test, mutants::skip)]
     fn transform_rerank_request(
         &self,
         _model: &str,
