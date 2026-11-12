@@ -156,6 +156,12 @@ fn resolves_references_through_the_deepest_mapping_yaml_allows() {
 }
 
 #[test]
+fn a_config_nested_past_the_yaml_budget_fails_the_load() {
+    let error = load(&nested_settings_yaml(70), &[]).unwrap_err();
+    assert_eq!(error.category(), "yaml");
+}
+
+#[test]
 fn an_unset_depth_variable_keeps_the_litellm_default() {
     let lookup = BTreeMap::<String, String>::new();
     assert_eq!(recursion_depth(&lookup).unwrap(), 100);
