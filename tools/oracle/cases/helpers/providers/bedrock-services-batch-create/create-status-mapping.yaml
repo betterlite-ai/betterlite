@@ -1,0 +1,38 @@
+kind: helper
+name: create-status-mapping
+call:
+  bedrock_services_batch_create:
+    operation: create_status_mapping
+    scenarios:
+      - response_body: '{"jobArn": "arn:aws:bedrock:us-west-2:1:model-invocation-job/job", "status": "Submitted"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Validating"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Scheduled"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "InProgress"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "PartiallyCompleted"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Completed"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Failed"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Stopping"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Stopped"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "Expired"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job"}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": null}'
+        clock: [111, 222]
+      - response_body: '{"jobArn": "job", "status": "SomeFutureStatus"}'
+        clock: [111, 222]
+      - response_body: not-json
+        clock: [111, 222]
+      - response_body: ""
+        clock: [111, 222]
+env: {}
+compare: {ignore: []}

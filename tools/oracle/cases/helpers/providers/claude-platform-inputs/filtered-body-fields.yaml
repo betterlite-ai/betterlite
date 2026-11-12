@@ -1,0 +1,30 @@
+kind: helper
+name: claude-platform-filtered-body-fields
+call:
+  claude_platform_inputs:
+    filtered_body_fields:
+      calls:
+        - params: {model: claude, context_management: null}
+        - params: {model: claude, context_management: null}
+          log_dropped: false
+        - params:
+            workspace_id: w
+            aws_workspace_id: aw
+            anthropic_workspace_id: u
+            anthropic-workspace-id: h
+            claude_platform_unsupported_params: []
+            aws_region_name: us-west-2
+            aws_access_key_id: key
+            temperature: 0
+            stream: false
+            messages: []
+        - params: {max_tokens: 16, context_management: null, stop: [end], thinking: null}
+          unsupported: [max_tokens, stop]
+        - params: {model: claude, context_management: null}
+          unsupported: []
+        - params: {z_key: z, a_key: a, kept: k}
+          unsupported: [a_key, z_key]
+        - params: {aws_region_name: us-west-2}
+          unsupported: [aws_region_name]
+env: {}
+compare: {ignore: []}

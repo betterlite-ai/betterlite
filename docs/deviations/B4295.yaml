@@ -1,0 +1,11 @@
+task: B4295
+deviations:
+  - what: The Rust names drop the async prefix and stay within 30 characters, so set_cache_pre_call, delete_cache_pre_call, increment_cache_post_call, pipeline_increment_post_call and log_deferred_increment_failure stand for LiteLLM's async_set_cache_pre_call, async_delete_cache_pre_call, async_increment_cache_post_call, async_increment_cache_pipeline_post_call and _log_deferred_increment_failure.
+    why: The coding rules cap names at 30 characters, and betterlite's memory tier writes and deletes synchronously.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L609-L642
+  - what: set_cache_pre_call is a plain function that returns the deferred batch result or None at once, where LiteLLM's async_set_cache_pre_call awaits the in-memory write in _set_on_batch before returning the batch result.
+    why: The in-memory tier offers synchronous set and delete, so awaiting would wrap work that has already run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L520-L540
+  - what: A settled deferred increment logs "post-call Redis increment failed" as a tracing warning and a cancelled one logs nothing. LiteLLM passes the failure to log_redis_failure, which also logs an open circuit breaker at debug and throttles repeated timeout lines.
+    why: That classifier and throttle are a server-level policy owned by B393, and betterlite-cache does not depend on betterlite-server.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L72-L77

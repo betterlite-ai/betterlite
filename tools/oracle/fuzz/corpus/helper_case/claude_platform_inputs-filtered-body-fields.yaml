@@ -1,0 +1,14 @@
+kind: helper
+name: claude_platform_inputs_filtered_body_fields
+call:
+  claude_platform_inputs:
+    filtered_body_fields:
+      calls:
+        - params: {model: claude, context_management: null}
+          unsupported: null
+          log_dropped: true
+        - params: {max_tokens: 16, stop: [end], thinking: null}
+          unsupported: [max_tokens]
+          log_dropped: false
+env: {}
+compare: {ignore: []}

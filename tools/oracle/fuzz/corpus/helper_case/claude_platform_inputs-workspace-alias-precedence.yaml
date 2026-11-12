@@ -1,0 +1,16 @@
+kind: helper
+name: claude_platform_inputs_workspace_alias_precedence
+call:
+  claude_platform_inputs:
+    workspace_alias_precedence:
+      cases:
+        - optional_params: {workspace_id: optional-workspace}
+          deployment: {workspace_id: deployment-workspace}
+          litellm_settings: {}
+          environment: {}
+        - optional_params: {}
+          deployment: {}
+          litellm_settings: {workspace_id: module-workspace}
+          environment: {ANTHROPIC_AWS_WORKSPACE_ID: env-workspace}
+env: {}
+compare: {ignore: []}

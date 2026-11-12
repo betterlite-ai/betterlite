@@ -1,0 +1,16 @@
+kind: helper
+name: langgraph-chat-request-stream-mode
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: request
+    cases:
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {}, stream: true}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {stream_mode: 'values'}, stream: true}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {stream_mode: 'values'}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {stream_mode: ''}, stream: true}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {stream_mode: null}, stream: true}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {stream: true}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {stream: true}, stream: true}

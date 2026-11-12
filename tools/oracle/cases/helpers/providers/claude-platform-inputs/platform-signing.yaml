@@ -1,0 +1,60 @@
+kind: helper
+name: claude-platform-platform-signing
+call:
+  claude_platform_inputs:
+    platform_signing:
+      calls:
+        - sign:
+            headers: {content-type: application/json, x-custom: keep}
+            request_data: {model: claude-fixture, max_tokens: 16}
+            api_base: https://aws-external-anthropic.eu-west-1.api.aws/v1/messages
+            api_key: explicit-fixture-key
+            credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'}
+            now: 1767225600
+        - sign:
+            headers: {content-type: application/json}
+            request_data: {model: claude-fixture, max_tokens: 16}
+            api_base: https://aws-external-anthropic.eu-west-1.api.aws/v1/messages
+            environment: {ANTHROPIC_AWS_API_KEY: environment-fixture-key}
+            credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'}
+            now: 1767225600
+        - sign:
+            headers: {content-type: application/json}
+            request_data: {model: claude-fixture, max_tokens: 16}
+            api_base: https://aws-external-anthropic.eu-west-1.api.aws/v1/messages
+            api_key: ''
+            environment: {ANTHROPIC_AWS_API_KEY: environment-fixture-key}
+            credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'}
+            now: 1767225600
+        - sign:
+            headers: {content-type: application/json}
+            optional_params: {aws_region_name: eu-west-1}
+            request_data: {model: claude-fixture, max_tokens: 16}
+            api_base: https://aws-external-anthropic.eu-west-1.api.aws/v1/messages
+            api_key: ''
+            credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'}
+            now: 1767225600
+        - sign:
+            headers: {content-type: application/json}
+            request_data: {model: claude-fixture, max_tokens: 16}
+            api_base: https://aws-external-anthropic.eu-west-1.api.aws/v1/messages
+            environment: {AWS_BEARER_TOKEN_BEDROCK: fixture-bearer-token}
+            credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'}
+            now: 1767225600
+        - sign:
+            headers: {content-type: application/json}
+            request_data: {model: claude-fixture, max_tokens: 16}
+            api_base: https://aws-external-anthropic.eu-west-1.api.aws/v1/messages
+            api_key: explicit-fixture-key
+            environment: {AWS_BEARER_TOKEN_BEDROCK: fixture-bearer-token}
+            credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'}
+            now: 1767225600
+        - error_class:
+            message: fixture message
+            status_code: 400
+            headers: [[x-amzn-errortype, fixture]]
+        - error_class:
+            message: fixture unauthorized
+            status_code: 401
+env: {}
+compare: {ignore: []}

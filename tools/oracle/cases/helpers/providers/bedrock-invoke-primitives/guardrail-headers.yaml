@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-invoke-primitives-guardrail-headers
+call:
+  bedrock_invoke_primitives:
+    guardrail_headers:
+      values:
+        - {guardrailIdentifier: id}
+        - {guardrailIdentifier: id, guardrailVersion: '1', trace: enabled, extra: true}
+        - {guardrailIdentifier: id, trace: enabled_full}
+        - {guardrailIdentifier: '', guardrailVersion: ''}
+        - {guardrailVersion: '1'}
+        - {guardrailIdentifier: 5}
+        - {guardrailIdentifier: null}
+        - {guardrailIdentifier: id, guardrailVersion: 1}
+        - {guardrailIdentifier: id, guardrailVersion: null}
+        - {guardrailIdentifier: id, trace: null}
+        - {guardrailIdentifier: id, trace: bogus}
+        - {guardrailIdentifier: id, trace: Absent}
+        - {guardrailIdentifier: id, trace: 5}
+        - text
+        - 5
+        - null
+        - [a]
+env: {}
+compare: {ignore: []}
