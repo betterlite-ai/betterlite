@@ -1,7 +1,7 @@
 use std::str::FromStr as _;
 
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_logging::python_json::dumps_object;
+use betterlite_logging::python_json::{dumps, dumps_object};
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
@@ -16,7 +16,7 @@ use crate::count_tokens::transform_request;
 
 use super::error::CountCallError;
 use super::handler::{CountTokensHandlerRequest, ParamMap};
-use super::reply::{CountResponse, decode_bedrock_count_reply};
+use super::reply::CountResponse;
 
 pub(super) fn read_field<T>(
     parameters: &ParamMap,
@@ -46,9 +46,12 @@ pub(super) fn transformed_body(
 pub(super) fn reply_fields(
     response: &UpstreamResponse,
 ) -> Result<Option<CountResponse>, CountCallError> {
-    let reply = decode_bedrock_count_reply(&response.body)?;
-    let value = dumps_object(&reply);
+    let parsed = serde_json::from_slice::<Json>(&response.body).map_err(CountCallError::Decode)?;
+    let value = dumps(&parsed);
     tracing::debug!(subject = "reply", %value, "Bedrock response: {value}");
+    let Json::Object(reply) = parsed else {
+        return Err(CountCallError::NotAnObject);
+    };
     let transformed = transform_response(&reply);
     let fields = IndexMap::from([("input_tokens".to_owned(), transformed.input_tokens)]);
     let finished = dumps_object(&fields);

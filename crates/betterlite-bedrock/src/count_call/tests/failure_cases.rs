@@ -84,9 +84,20 @@ async fn unreadable_reply() {
 }
 
 async fn non_object_reply() {
-    let (outcome, _logs) = failing(Reply::ok("[]")).await;
+    let (outcome, logs) = failing(Reply::ok("[]")).await;
     assert!(outcome.error);
     assert_eq!(outcome.status_code, Some(500));
+    let debug = logs.of(Kind::Debug);
+    let reply = debug
+        .iter()
+        .find(|entry| entry.subject.as_deref() == Some("reply"))
+        .unwrap();
+    assert_eq!(reply.value.as_deref(), Some("[]"));
+    assert!(
+        debug
+            .iter()
+            .all(|entry| entry.subject.as_deref() != Some("final"))
+    );
     assert!(
         outcome
             .error_message

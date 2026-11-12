@@ -247,7 +247,7 @@ async def count_once(
     counter: BaseTokenCounter,
     client: AsyncHTTPHandler,
 ) -> TokenCountResponse | None:
-    litellm.in_memory_llm_clients_cache.set_cache(key=CLIENT_KEY, value=client)
+    litellm.in_memory_llm_clients_cache.set_cache(key=CLIENT_KEY, value=client)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/llm_caching_handler.py#L58
     request_model = call.get("request_model")
     return await counter.count_tokens(
         model_to_use=call["model"],
