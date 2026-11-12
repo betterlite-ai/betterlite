@@ -1,0 +1,5 @@
+kind: helper
+name: host-resolution-none
+call: {"b3910": {"operation": "host", "environment": {}}}
+env: {}
+compare: {ignore: []}
