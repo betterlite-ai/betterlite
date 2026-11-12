@@ -56,7 +56,7 @@ fn decimal(source: &str) -> Decimal {
 fn field<'json>(value: &'json Json, name: &str) -> Option<&'json Json> {
     match value {
         Json::Object(fields) => fields.get(name),
-        _ => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
@@ -107,7 +107,7 @@ fn insert_optionals(fields: &mut IndexMap<String, Json>, request: &MapCohereRera
     );
     fields.insert(
         "rank_fields".to_owned(),
-        request.rank_fields.as_deref().map_or(Json::Null, |names| {
+        request.rank_fields.map_or(Json::Null, |names| {
             Json::List(names.iter().map(|name| Json::Text(name.clone())).collect())
         }),
     );
@@ -483,10 +483,10 @@ fn rerank_query_cost(
     #[case] expected: &str,
 ) {
     let fixture = Fixture::default();
-    let info = info.map(model_info);
-    let counted = counted.map(billed_units);
+    let priced = info.map(model_info);
+    let units = counted.map(billed_units);
     let (prompt, completion) =
-        fixture.calculate_rerank_cost("rerank-model", None, counted.as_ref(), info.as_ref());
+        fixture.calculate_rerank_cost("rerank-model", None, units.as_ref(), priced.as_ref());
     assert_eq!(prompt, decimal(expected));
     assert_eq!(completion, Decimal::ZERO);
 }

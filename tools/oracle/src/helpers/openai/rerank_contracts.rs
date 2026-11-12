@@ -192,7 +192,7 @@ fn insert_optionals(fields: &mut IndexMap<String, Json>, request: &MapCohereRera
     );
     fields.insert(
         "rank_fields".to_owned(),
-        request.rank_fields.as_deref().map_or(Json::Null, |names| {
+        request.rank_fields.map_or(Json::Null, |names| {
             Json::List(
                 names
                     .iter()
