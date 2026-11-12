@@ -1,0 +1,16 @@
+kind: helper
+name: openai-image-generation-seed-image-raw-response-headers
+call:
+  openai_image_generation:
+    function: image_raw_response_headers
+    probes:
+      - model: gpt-image-1
+        prompt: a dog
+        optional_params: {}
+        api_key: sk-seed
+        api_base: https://example.test/v1
+        timeout: 45
+        is_async: true
+        reply: {status: 200, headers: {x-request-id: req-seed}, body: '{"created":1700000000,"data":[]}'}
+env: {}
+compare: {ignore: []}
