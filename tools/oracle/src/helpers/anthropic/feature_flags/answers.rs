@@ -78,12 +78,11 @@ impl Call {
 }
 
 fn one_shot_answer(case: &OneShot) -> Value {
-    let tools = case.tools.as_deref().unwrap_or_default();
     json!({
         "one_shot": is_one_shot_subagent_request(
             &case.messages,
             &case.system,
-            tools,
+            case.tools.as_deref().unwrap_or_default(),
             case.user_agent.as_deref(),
         ),
     })
@@ -137,11 +136,15 @@ fn pdf_answer(case: &Pdf) -> Value {
 
 fn tools_answer(case: &Tools) -> Value {
     let tools = case.tools.as_deref().unwrap_or_default();
+    let mut native = Vec::new();
+    if !tools.is_empty() {
+        native.extend(tools.iter().map(is_native_web_search_tool));
+    }
     json!({
         "tool_search": is_tool_search_used(tools),
         "programmatic": uses_programmatic_calls(tools),
         "input_examples": uses_input_examples(tools),
-        "native": tools.iter().map(is_native_web_search_tool).collect::<Vec<_>>(),
+        "native": native,
     })
 }
 
@@ -162,11 +165,10 @@ fn eager_used_answer(case: &EagerUsed) -> Value {
 
 fn computer_answer(case: &Computer) -> Value {
     let tools = case.tools.as_deref().unwrap_or_default();
-    let betas: Vec<&'static str> = case
-        .versions
-        .iter()
-        .map(|version| computer_tool_beta_header(version))
-        .collect();
+    let mut betas = Vec::with_capacity(case.versions.len());
+    for version in &case.versions {
+        betas.push(computer_tool_beta_header(version));
+    }
     json!({
         "computer_tool": tools.iter().find_map(computer_tool_version),
         "betas": betas,
@@ -184,12 +186,12 @@ fn skills_answer(case: &Skills) -> Value {
                 .map(|text| text.split(',').map(str::to_owned).collect())
         })
         .collect();
+    let tools = case.tools.as_deref().unwrap_or_default();
     let search_betas: Vec<&'static str> = case
         .providers
         .iter()
         .map(|provider| tool_search_beta_header(provider))
         .collect();
-    let tools = case.tools.as_deref().unwrap_or_default();
     json!({
         "code_execution": is_code_execution_tool_used(tools),
         "container_skills": is_container_with_skills_used(&case.params),
@@ -199,11 +201,15 @@ fn skills_answer(case: &Skills) -> Value {
 }
 
 fn conversation_answer(case: &Conversation) -> Value {
+    let mcp = case
+        .mcp_servers
+        .as_deref()
+        .is_some_and(|servers| !servers.is_empty());
     json!({
         "thinking_display": has_thinking_display_updates(Some(&case.thinking)),
         "tool_change": has_tool_change(&case.messages),
         "output_config": has_output_config(&case.messages),
-        "mcp": case.mcp_servers.as_deref().is_some_and(|servers| !servers.is_empty()),
+        "mcp": mcp,
     })
 }
 
