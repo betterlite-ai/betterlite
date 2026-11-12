@@ -125,6 +125,12 @@ repos:
         files: ^tools/oracle/helpers/(.*\.py|pyrightconfig\.json)$
         pass_filenames: false
         require_serial: true
+      - id: basedpyright-changed-helpers
+        name: basedpyright on the helper files the change touches, as this machine runs it
+        entry: bash .development/hooks/python.sh pyright-files
+        language: system
+        files: ^tools/oracle/helpers/.*\.py$
+        require_serial: true
       - id: clippy
         name: cargo clippy
         entry: cargo clippy --workspace --all-targets --locked -- -D warnings

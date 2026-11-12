@@ -19,13 +19,17 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
   flows=$(pgrep -f -a '^bash .*/dispatch-flow\.sh B[0-9]+ ')
   flows=$(grep -o -E 'dispatch-flow\.sh B[0-9]+' <<< "${flows}")
   flows=$(sort -u <<< "${flows//dispatch-flow.sh /}")
-  count=$(grep -c . <<< "${flows}")
+  # a merged task's flow has freed its checkout and only waits for main's run, so it takes no slot and blocks no dependent
+  open=$(for id in ${flows}; do
+    grep -q '^status: done' "${main}/.development/backlog/${id}.yaml" 2> /dev/null || echo "${id}"
+  done)
+  count=$(grep -c . <<< "${open}")
   journals=$(for journal in "${main}"/.git/betterlite/B*; do
     j=${journal##*/}
     [[ ${j} =~ ^B[0-9]+$ ]] || continue
     grep -q '^status: done' "${main}/.development/backlog/${j}.yaml" 2> /dev/null || echo "${j}"
   done)
-  held=$(grep . <<< "${flows}"$'\n'"${journals}")
+  held=$(grep . <<< "${open}"$'\n'"${journals}")
   held=$(sort -u <<< "${held}")
   waiting=0
   slots=$(pgrep -f -a '^bash .*/next-slot[0-9]*\.sh B[0-9]+ ')

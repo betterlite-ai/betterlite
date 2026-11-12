@@ -82,31 +82,29 @@ fn build_router(
     Arc<InFlightRequests>,
 ) {
     let app = Arc::new(app::gate_app(input));
-    let scalar_root = if input.scalar_root {
-        input.root_path.clone()
-    } else {
-        String::new()
-    };
     let stack = AdmissionStack {
         admission: Arc::new(AdmissionControl::from_settings(settings)),
         in_flight: Arc::new(InFlightRequests::default()),
-        scalar_root,
     };
     let inner = Router::new()
         .fallback(app::dispatch)
         .with_state(Arc::clone(&app));
     let stacked = stack.wrap(inner);
-    let router = if input.scalar_root {
-        stacked
-    } else {
-        let roots = request_root_paths::Settings {
-            server_root_path: String::new(),
-            server_root_paths: vec![input.root_path.clone()],
-        };
-        match RootPaths::from_settings(&roots) {
-            Some(paths) => paths.wrap(stacked),
-            None => stacked,
-        }
+    let roots = request_root_paths::Settings {
+        server_root_path: if input.scalar_root {
+            input.root_path.clone()
+        } else {
+            String::new()
+        },
+        server_root_paths: if input.scalar_root {
+            Vec::new()
+        } else {
+            vec![input.root_path.clone()]
+        },
+    };
+    let router = match RootPaths::from_settings(&roots) {
+        Some(paths) => paths.wrap(stacked),
+        None => stacked,
     };
     (router, app, stack.admission, stack.in_flight)
 }

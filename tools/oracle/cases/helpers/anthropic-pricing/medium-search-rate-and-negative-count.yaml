@@ -1,0 +1,13 @@
+kind: helper
+name: medium-search-rate-and-negative-count
+call:
+  anthropic_pricing:
+    kind: search_cost
+    model_info: {input_cost_per_token: 0.25}
+    search_context:
+      search_context_size_low: 0.01
+      search_context_size_medium: 0.01
+      search_context_size_high: 0.05
+    record: {kind: mapping, value: {web_search_requests: -2}}
+compare: {ignore: []}
+env: {}

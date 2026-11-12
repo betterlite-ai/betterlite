@@ -240,7 +240,29 @@ impl BreakerGate for Allow {
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
+// an open circuit breaker rejects every guarded call before a command reaches Redis
+pub(crate) struct RejectingGate;
+
+impl BreakerGate for RejectingGate {
+    fn enter(&self, name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        Err(BreakerOpen { name })
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
+}
+
 pub(crate) async fn connect_cache(addr: SocketAddr) -> Arc<RedisCache> {
+    connect_cache_with_gate(addr, Arc::new(Allow)).await
+}
+
+pub(crate) async fn connect_cache_with_gate(
+    addr: SocketAddr,
+    gate: Arc<dyn BreakerGate>,
+) -> Arc<RedisCache> {
     let wire = format!(
         r#"{{"host":"{}","port":{},"socket_timeout":{SOCKET_TIMEOUT_SECONDS},"socket_connect_timeout":{SOCKET_TIMEOUT_SECONDS}}}"#,
         addr.ip(),
@@ -257,7 +279,7 @@ pub(crate) async fn connect_cache(addr: SocketAddr) -> Arc<RedisCache> {
         factory: Arc::new(LiveClientFactory::new(None)),
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(Allow),
-        gate: Arc::new(Allow),
+        gate,
     };
     let env = BTreeMap::<String, String>::new();
     let cache = connect(options, &env)
