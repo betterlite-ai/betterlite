@@ -1,7 +1,9 @@
 use super::messages::{optional, text_of};
 use crate::completion_request::Preparation;
 use crate::completion_request::args::{CompletionArgs, CompletionSettings, JsonObject};
-use crate::completion_request::call::{FallbackCall, ModelListCall, PreparedCompletion};
+use crate::completion_request::call::{
+    FallbackCall, ModelListCall, PreparedCompletion, PreparedTimeout,
+};
 use crate::completion_request::error::{CompletionRequestError, RequestResult};
 use crate::completion_request::ports::{ProviderLookup, TimeoutRequest};
 use betterlite_models::decisions::Json;
@@ -118,16 +120,14 @@ pub(crate) fn hidden_params(state: &mut Preparation<'_>, provider: &str) {
         .hidden_params
         .insert(String::from("region_name"), region);
 }
-pub(crate) fn timeout(state: &mut Preparation<'_>, provider: &str) -> RequestResult<()> {
-    let resolved = state.ports.timeout.resolve(&TimeoutRequest {
+pub(crate) fn timeout(state: &Preparation<'_>, provider: &str) -> RequestResult<PreparedTimeout> {
+    state.ports.timeout.resolve(&TimeoutRequest {
         model_timeout: state.args.timeout.as_ref(),
         timeout: state.kwargs.get("timeout"),
         request_timeout: state.kwargs.get("request_timeout"),
         configured_request_timeout: state.settings.request_timeout,
         custom_llm_provider: provider,
-    })?;
-    state.call.timeout = Some(resolved);
-    Ok(())
+    })
 }
 fn pricing_gate(kwargs: &JsonObject) -> bool {
     let given =

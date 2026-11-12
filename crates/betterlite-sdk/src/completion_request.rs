@@ -74,7 +74,8 @@ async fn run(state: &mut Preparation<'_>) -> RequestResult<PreparedCompletion> {
     steps::messages::drop_tool_keys(state, &provider);
     steps::headers::provider_specific(state, &provider)?;
     steps::provider::hidden_params(state, &provider);
-    steps::provider::timeout(state, &provider)?;
+    let timeout = steps::provider::timeout(state, &provider)?;
+    state.call.timeout = Some(timeout);
     steps::provider::pricing(state, &provider).await?;
     steps::provider::custom_prompt(state);
     steps::messages::file_ids(state)?;
