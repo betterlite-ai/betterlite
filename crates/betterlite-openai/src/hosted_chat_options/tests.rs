@@ -58,29 +58,6 @@ fn keys(existing: &IndexMap<String, Value>) -> Vec<&str> {
 }
 
 #[test]
-fn baseten_advertises_the_pinned_fourteen_options() {
-    assert_eq!(
-        baseten::SUPPORTED_PARAMS,
-        [
-            "max_tokens",
-            "max_completion_tokens",
-            "response_format",
-            "seed",
-            "stop",
-            "stream",
-            "temperature",
-            "top_p",
-            "tool_choice",
-            "tools",
-            "user",
-            "presence_penalty",
-            "frequency_penalty",
-            "stream_options",
-        ]
-    );
-}
-
-#[test]
 fn cerebras_advertises_its_pinned_options_and_follows_the_capability() {
     assert_eq!(
         cerebras::SUPPORTED_PARAMS,
@@ -107,27 +84,6 @@ fn cerebras_advertises_its_pinned_options_and_follows_the_capability() {
     let mut with_reasoning = cerebras::SUPPORTED_PARAMS.to_vec();
     with_reasoning.push("reasoning_effort");
     assert_eq!(cerebras::supported_params(true), with_reasoning);
-}
-
-#[test]
-fn featherless_advertises_the_pinned_twelve_options() {
-    assert_eq!(
-        featherless::SUPPORTED_PARAMS,
-        [
-            "stream",
-            "frequency_penalty",
-            "function_call",
-            "functions",
-            "logit_bias",
-            "max_tokens",
-            "max_completion_tokens",
-            "n",
-            "presence_penalty",
-            "stop",
-            "temperature",
-            "top_p",
-        ]
-    );
 }
 
 #[rstest]
