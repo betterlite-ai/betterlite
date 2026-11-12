@@ -470,6 +470,18 @@ fn a_transport_error_mid_stream_is_logged_and_ends_the_stream() {
 }
 
 #[test]
+fn an_overlong_line_is_logged_and_ends_the_stream() {
+    let (chunks, log) = capture(Level::ERROR, || {
+        runtime().block_on(collect(stream_from(vec![Ok(vec![
+            b'x';
+            MAX_LINE_BYTES + 1
+        ])])))
+    });
+    assert!(chunks.is_empty());
+    assert!(log.contains("a streamed line is longer than"), "{log}");
+}
+
+#[test]
 fn a_field_type_error_mid_stream_is_logged_and_ends_the_stream() {
     let (chunks, log) = capture(Level::ERROR, || {
         runtime().block_on(collect(stream_of(&[r#"data: {"content": 5}"#])))
