@@ -36,12 +36,53 @@ fn api_key(settings: &Settings) -> Option<String> {
         .map(|value| value.expose_secret().to_owned())
 }
 
-fn base_from(extra: &str, variables: &[(&str, &str)]) -> Option<String> {
-    deployment(&load(extra, variables)).api_base.clone()
+fn check_text_chain(key: &str, variable: &str, read: fn(&AzureCredentials) -> Option<String>) {
+    assert_eq!(read(deployment(&load("", &[]))), None);
+    let explicit = format!("      {key}: deployment-value\n");
+    assert_eq!(
+        read(deployment(&load(
+            &explicit,
+            &[(variable, "environment-value")]
+        )))
+        .as_deref(),
+        Some("deployment-value")
+    );
+    let module = format!("litellm_settings:\n  {key}: module-value\n");
+    assert_eq!(
+        read(deployment(&load(
+            &module,
+            &[(variable, "environment-value")]
+        )))
+        .as_deref(),
+        Some("module-value")
+    );
+    assert_eq!(
+        read(deployment(&load(&module, &[]))).as_deref(),
+        Some("module-value")
+    );
+    let blank = format!("      {key}: \"\"\n");
+    assert_eq!(read(deployment(&load(&blank, &[]))), None);
+    assert_eq!(
+        read(deployment(&load("", &[(variable, "environment-value")]))).as_deref(),
+        Some("environment-value")
+    );
+    assert_eq!(
+        read(deployment(&load("", &[(variable, "")]))).as_deref(),
+        Some("")
+    );
+    check_text_reference(key, variable, read);
 }
 
-fn version_from(extra: &str, variables: &[(&str, &str)]) -> Option<String> {
-    deployment(&load(extra, variables)).api_version.clone()
+fn check_text_reference(key: &str, variable: &str, read: fn(&AzureCredentials) -> Option<String>) {
+    let reference = format!("      {key}: os.environ/{variable}\n");
+    assert_eq!(
+        read(deployment(&load(
+            &reference,
+            &[(variable, "environment-value")]
+        )))
+        .as_deref(),
+        Some("environment-value")
+    );
 }
 
 #[rstest]
@@ -61,41 +102,9 @@ fn azure_urls_config_cases(#[case] case: u8) {
 }
 
 fn loads_azure_api_base() {
-    assert_eq!(base_from("", &[]), None);
-    assert_eq!(
-        base_from(
-            "      api_base: https://deployment.example\n",
-            &[("AZURE_API_BASE", "https://environment.example")],
-        )
-        .as_deref(),
-        Some("https://deployment.example")
-    );
-    let module = "litellm_settings:\n  api_base: https://module.example\n";
-    assert_eq!(
-        base_from(module, &[]).as_deref(),
-        Some("https://module.example")
-    );
-    assert_eq!(
-        base_from(module, &[("AZURE_API_BASE", "https://environment.example")]).as_deref(),
-        Some("https://module.example")
-    );
-    assert_eq!(base_from("      api_base: \"\"\n", &[]), None);
-    assert_eq!(
-        base_from("", &[("AZURE_API_BASE", "https://environment.example")]).as_deref(),
-        Some("https://environment.example")
-    );
-    assert_eq!(
-        base_from("", &[("AZURE_API_BASE", "")]).as_deref(),
-        Some("")
-    );
-    assert_eq!(
-        base_from(
-            "      api_base: os.environ/AZURE_API_BASE\n",
-            &[("AZURE_API_BASE", "https://environment.example")],
-        )
-        .as_deref(),
-        Some("https://environment.example")
-    );
+    check_text_chain("api_base", "AZURE_API_BASE", |credentials| {
+        credentials.api_base.clone()
+    });
 }
 
 fn loads_azure_openai_api_key() {
@@ -171,30 +180,9 @@ fn loads_azure_api_key() {
 }
 
 fn loads_azure_api_version() {
-    assert_eq!(version_from("", &[]), None);
-    assert_eq!(
-        version_from(
-            "      api_version: 2024-02-01\n",
-            &[("AZURE_API_VERSION", "2025-02-01-preview")],
-        )
-        .as_deref(),
-        Some("2024-02-01")
-    );
-    let module = "litellm_settings:\n  api_version: module-version\n";
-    assert_eq!(
-        version_from(module, &[("AZURE_API_VERSION", "environment-version")]).as_deref(),
-        Some("module-version")
-    );
-    assert_eq!(version_from(module, &[]).as_deref(), Some("module-version"));
-    assert_eq!(version_from("      api_version: \"\"\n", &[]), None);
-    assert_eq!(
-        version_from("", &[("AZURE_API_VERSION", "environment-version")]).as_deref(),
-        Some("environment-version")
-    );
-    assert_eq!(
-        version_from("", &[("AZURE_API_VERSION", "")]).as_deref(),
-        Some("")
-    );
+    check_text_chain("api_version", "AZURE_API_VERSION", |credentials| {
+        credentials.api_version.clone()
+    });
 }
 
 fn rejects_unrelated_key() {

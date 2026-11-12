@@ -4,6 +4,7 @@ use std::sync::Arc;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_config::sections::azure_url_policy::{AzureCredentials, Settings};
+use betterlite_config::types::Config;
 use secrecy::SecretString;
 
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -14,6 +15,8 @@ use crate::oidc_exchange::OidcExchangeInput;
 
 const BASE: &str =
     "model_list:\n  - model_name: azure-urls\n    litellm_params:\n      model: azure/gpt-4o\n";
+const TOKEN_BASE: &str =
+    "model_list:\n  - model_name: azure-token\n    litellm_params:\n      model: azure/gpt-4o\n";
 
 pub(super) fn environment_map(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
     entries
@@ -22,14 +25,18 @@ pub(super) fn environment_map(entries: &[(&str, &str)]) -> BTreeMap<String, Stri
         .collect()
 }
 
-pub(super) fn load(extra: &str, environment: &[(&str, &str)]) -> Settings {
+fn config(source: &str, environment: &[(&str, &str)]) -> Config {
     ConfigLoader {
         lookup: environment_map(environment),
     }
-    .load(&format!("{BASE}{extra}"))
+    .load(source)
     .unwrap()
-    .sections
-    .azure_url_policy
+}
+
+pub(super) fn load(extra: &str, environment: &[(&str, &str)]) -> Settings {
+    config(&format!("{BASE}{extra}"), environment)
+        .sections
+        .azure_url_policy
 }
 
 pub(super) fn credentials(extra: &str, environment: &[(&str, &str)]) -> AzureCredentials {
@@ -41,20 +48,14 @@ pub(super) fn credentials(extra: &str, environment: &[(&str, &str)]) -> AzureCre
 }
 
 pub(super) fn token_settings(extra: &str, environment: &[(&str, &str)]) -> DeploymentSettings {
-    let source = format!(
-        "model_list:\n  - model_name: azure-token\n    litellm_params:\n      model: azure/gpt-4o\n{extra}"
-    );
-    ConfigLoader {
-        lookup: environment_map(environment),
-    }
-    .load(&source)
-    .unwrap()
-    .sections
-    .azure_credentials
-    .deployments
-    .first()
-    .unwrap()
-    .clone()
+    let source = format!("{TOKEN_BASE}{extra}");
+    config(&source, environment)
+        .sections
+        .azure_credentials
+        .deployments
+        .first()
+        .unwrap()
+        .clone()
 }
 
 pub(super) fn environment_headers(

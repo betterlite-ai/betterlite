@@ -91,45 +91,24 @@ impl Settings {
     }
 }
 
-impl ModuleSettings {
-    fn resolve<L>(self, lookup: &L) -> Result<ModuleInputs, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        Ok(ModuleInputs {
-            base: optional_text(self.api_base, "litellm_settings.api_base", lookup)?,
-            key: resolve_secret(self.api_key, "litellm_settings.api_key", lookup)?,
-            azure_key: resolve_secret(self.azure_key, "litellm_settings.azure_key", lookup)?,
-            version: optional_text(self.api_version, "litellm_settings.api_version", lookup)?,
-        })
-    }
-}
-
-impl DeploymentParams {
-    fn resolve<L>(self, index: usize, lookup: &L) -> Result<DeploymentInputs, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        let path = format!("model_list.{index}.litellm_params");
-        Ok(DeploymentInputs {
-            base: optional_text(self.base, &format!("{path}.api_base"), lookup)?,
-            key: resolve_secret(self.key, &format!("{path}.api_key"), lookup)?,
-            version: optional_text(self.version, &format!("{path}.api_version"), lookup)?,
-        })
-    }
-}
-
-fn optional_text<L>(
-    value: Option<String>,
-    path: &str,
+fn resolve_common<L>(
+    params: DeploymentParams,
+    prefix: &str,
     lookup: &L,
-) -> Result<Option<String>, ConfigError>
+) -> Result<DeploymentInputs, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    value
-        .map(|text| resolve_string(text, path, lookup))
-        .transpose()
+    let text = |value: Option<String>, field: &str| {
+        value
+            .map(|text| resolve_string(text, &format!("{prefix}.{field}"), lookup))
+            .transpose()
+    };
+    Ok(DeploymentInputs {
+        base: text(params.base, "api_base")?,
+        key: resolve_secret(params.key, &format!("{prefix}.api_key"), lookup)?,
+        version: text(params.version, "api_version")?,
+    })
 }
 
 const fn present(value: Option<&str>) -> Option<&str> {
@@ -176,7 +155,23 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let globals = self.litellm_settings.resolve(lookup)?;
+        let modules = self.litellm_settings;
+        let azure_key = resolve_secret(modules.azure_key, "litellm_settings.azure_key", lookup)?;
+        let common = resolve_common(
+            DeploymentParams {
+                base: modules.api_base,
+                key: modules.api_key,
+                version: modules.api_version,
+            },
+            "litellm_settings",
+            lookup,
+        )?;
+        let globals = ModuleInputs {
+            base: common.base,
+            key: common.key,
+            azure_key,
+            version: common.version,
+        };
         let environment = EnvironmentInputs {
             base: lookup.lookup("AZURE_API_BASE"),
             version: lookup.lookup("AZURE_API_VERSION"),
@@ -185,11 +180,25 @@ impl Section for Raw {
                 .map(SecretString::from),
             key: lookup.lookup("AZURE_API_KEY").map(SecretString::from),
         };
-        let mut deployments = Vec::with_capacity(self.model_list.len());
-        for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let params = deployment.litellm_params.resolve(index, lookup)?;
-            deployments.push(get_azure_credentials(&params, &globals, &environment));
-        }
+        let deployments = resolve_deployments(self.model_list, &globals, &environment, lookup)?;
         Ok(Settings { deployments })
     }
+}
+
+fn resolve_deployments<L>(
+    deployments: Vec<Deployment>,
+    globals: &ModuleInputs,
+    environment: &EnvironmentInputs,
+    lookup: &L,
+) -> Result<Vec<AzureCredentials>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let mut resolved = Vec::with_capacity(deployments.len());
+    for (index, deployment) in deployments.into_iter().enumerate() {
+        let prefix = format!("model_list.{index}.litellm_params");
+        let params = resolve_common(deployment.litellm_params, &prefix, lookup)?;
+        resolved.push(get_azure_credentials(&params, globals, environment));
+    }
+    Ok(resolved)
 }

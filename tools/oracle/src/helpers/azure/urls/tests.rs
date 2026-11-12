@@ -51,7 +51,7 @@ fn helper_seeds_select_azure_urls() {
             VARIANTS.contains(&variant.as_str()),
             "{name} names {variant}"
         );
-        assert!(validate_helper(Path::new("<helper>"), &case).is_ok());
+        validate_helper(Path::new("<helper>"), &case).unwrap();
         seen.insert(variant);
         true
     });

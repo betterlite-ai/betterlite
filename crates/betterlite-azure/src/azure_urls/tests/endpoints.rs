@@ -52,8 +52,7 @@ fn credential_precedence() {
     assert_eq!(empty.api_version, None);
     assert_eq!(secret(&empty), None);
     deployment_credentials_win();
-    module_credentials_win();
-    environment_credentials_win();
+    module_and_environment_credentials_win();
     blank_explicit_values_fall_through();
 }
 
@@ -73,7 +72,7 @@ fn deployment_credentials_win() {
     assert_eq!(secret(&deployment).as_deref(), Some("deployment-key"));
 }
 
-fn module_credentials_win() {
+fn module_and_environment_credentials_win() {
     let module = support::credentials(
         "litellm_settings:\n  api_base: https://module.example\n  api_version: module-version\n  api_key: module-key\n",
         &ENVIRONMENT,
@@ -86,9 +85,6 @@ fn module_credentials_win() {
         &[("AZURE_OPENAI_API_KEY", "environment-key")],
     );
     assert_eq!(secret(&azure_key).as_deref(), Some("azure-key"));
-}
-
-fn environment_credentials_win() {
     let environment = support::credentials("", &ENVIRONMENT);
     assert_eq!(
         environment.api_base.as_deref(),
@@ -509,58 +505,40 @@ fn image_dated_versions_are_unchanged() {
 }
 
 fn image_v1_versions_reset_the_resource() {
-    deployment_paths_reset();
-    other_paths_reset();
-}
-
-fn deployment_paths_reset() {
     let deployment =
         "https://example.openai.azure.com/openai/deployments/deployment/images/generations";
-    assert_eq!(
-        get_azure_v1_image_url(
-            &format!("{deployment}?api-version=2024-02-01"),
-            Some("v1"),
-            "/openai/v1/images/generations",
-        )
-        .unwrap()
-        .as_deref(),
-        Some("https://example.openai.azure.com/openai/v1/images/generations?api-version=v1")
+    assert_image_url(
+        &format!("{deployment}?api-version=2024-02-01"),
+        Some("v1"),
+        Some("https://example.openai.azure.com/openai/v1/images/generations?api-version=v1"),
     );
-    assert_eq!(
-        get_azure_v1_image_url(
-            &format!("{deployment}?keep=1&api-version=2024-02-01&api-version=2024-03-01&z=2"),
-            Some("preview"),
-            "/openai/v1/images/generations",
-        )
-        .unwrap()
-        .as_deref(),
+    assert_image_url(
+        &format!("{deployment}?keep=1&api-version=2024-02-01&api-version=2024-03-01&z=2"),
+        Some("preview"),
         Some(
-            "https://example.openai.azure.com/openai/v1/images/generations?keep=1&z=2&api-version=preview"
-        )
+            "https://example.openai.azure.com/openai/v1/images/generations?keep=1&z=2&api-version=preview",
+        ),
+    );
+    assert_image_url(
+        "https://example.openai.azure.com/prefix/openai/deployments?api-version=1&keep=1",
+        Some("latest"),
+        Some(
+            "https://example.openai.azure.com/prefix/openai/v1/images/generations?keep=1&api-version=latest",
+        ),
+    );
+    assert_image_url(
+        "https://example.openai.azure.com/images",
+        Some("v1"),
+        Some("https://example.openai.azure.com/images/openai/v1/images/generations?api-version=v1"),
     );
 }
 
-fn other_paths_reset() {
+fn assert_image_url(api_base: &str, api_version: Option<&str>, expected: Option<&str>) {
+    let image_route = "/openai/v1/images/generations";
     assert_eq!(
-        get_azure_v1_image_url(
-            "https://example.openai.azure.com/prefix/openai/deployments?api-version=1&keep=1",
-            Some("latest"),
-            "/openai/v1/images/generations",
-        )
-        .unwrap()
-        .as_deref(),
-        Some(
-            "https://example.openai.azure.com/prefix/openai/v1/images/generations?keep=1&api-version=latest"
-        )
-    );
-    assert_eq!(
-        get_azure_v1_image_url(
-            "https://example.openai.azure.com/images",
-            Some("v1"),
-            "/openai/v1/images/generations",
-        )
-        .unwrap()
-        .as_deref(),
-        Some("https://example.openai.azure.com/images/openai/v1/images/generations?api-version=v1")
+        get_azure_v1_image_url(api_base, api_version, image_route)
+            .unwrap()
+            .as_deref(),
+        expected
     );
 }
