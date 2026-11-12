@@ -10,6 +10,7 @@ use crate::decisions::Json;
 
 // Only a pydantic chat response, a pydantic Responses response, a raw mapping or another object is a distinct kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolBillingResponse {
     Chat(ChatView),
     Responses(ResponsesView),
@@ -55,6 +56,7 @@ pub struct ResponsesView {
 
 // A Responses output item is either a plain mapping or a parsed object; only a string "type" names either kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OutputItem {
     Mapping(IndexMap<String, Json>),
     Attribute(IndexMap<String, Json>),

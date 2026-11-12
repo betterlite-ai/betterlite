@@ -112,6 +112,22 @@ fn round_trip(view: &ToolBillingResponse) {
     assert_eq!(&decoded, view);
 }
 
+#[rstest]
+#[case::chat(r#"{"chat":{"choices":[],"usage":null}}"#)]
+#[case::responses(r#"{"responses":{"output":[],"tool_usage":null,"usage":null}}"#)]
+#[case::raw(r#"{"raw":{"body":null,"usage":null}}"#)]
+#[case::other(r#"{"other":{"usage":null}}"#)]
+fn the_case_input_decodes_every_response_tag(#[case] body: &str) {
+    serde_json::from_str::<ToolBillingResponse>(body).expect("a snake_case view tag decodes");
+}
+
+#[rstest]
+#[case::mapping(r#"{"mapping":{"type":"web_search_call"}}"#)]
+#[case::attribute(r#"{"attribute":{"type":"web_search_call"}}"#)]
+fn the_case_input_decodes_every_output_item_tag(#[case] body: &str) {
+    serde_json::from_str::<OutputItem>(body).expect("a snake_case item tag decodes");
+}
+
 #[test]
 fn every_response_view_round_trips() {
     round_trip(&chat(
