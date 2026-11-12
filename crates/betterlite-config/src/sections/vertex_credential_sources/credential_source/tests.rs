@@ -4,12 +4,13 @@ use std::fs;
 use std::path::PathBuf;
 
 use rstest::rstest;
+use secrecy::zeroize::Zeroize as _;
 
 use super::aws_params::ExternalCredentialSource;
 use super::external_account::ExternalAccountSource;
 use super::{
-    AuthorizedUserSource, ConfiguredCredentials, CredentialDecodeError, CredentialSource,
-    MAX_CREDENTIALS_BYTES, decode_vertex_credentials,
+    AuthorizedUserSource, ConfiguredCredentials, CredentialDecodeError, CredentialSource, KeyText,
+    decode_vertex_credentials,
 };
 
 const SERVICE_ACCOUNT: &[u8] = br#"{"type":"service_account","project_id":"key-project","private_key_id":"key-id","private_key":"KEYMATERIAL","client_email":"sa@example.iam.gserviceaccount.com","universe_domain":"example.com"}"#;
@@ -117,10 +118,13 @@ fn rejects_undecodable_credentials(#[case] bytes: &[u8], #[case] message: &str) 
 
 #[test]
 fn bounds_credentials_bytes() {
-    let oversized = vec![b' '; MAX_CREDENTIALS_BYTES.saturating_add(1)];
+    let oversized = vec![b' '; 1_048_577];
     let error = decode_vertex_credentials(&oversized).unwrap_err();
-    assert!(matches!(error, CredentialDecodeError::TooLarge { .. }));
-    let boundary = vec![b' '; MAX_CREDENTIALS_BYTES];
+    assert!(matches!(
+        error,
+        CredentialDecodeError::TooLarge { limit: 1_048_576 }
+    ));
+    let boundary = vec![b' '; 1_048_576];
     assert!(matches!(
         decode_vertex_credentials(&boundary).unwrap_err(),
         CredentialDecodeError::Json(_)
@@ -205,4 +209,11 @@ fn credential_text_that_is_not_a_document_stays_out_of_debug() {
     let configured = ConfiguredCredentials::from_text(malformed.to_owned()).unwrap();
     assert_eq!(configured.as_text(), Some(malformed));
     assert!(!format!("{configured:?}").contains("KEYMATERIAL"));
+}
+
+#[test]
+fn zeroizing_key_text_clears_the_key() {
+    let mut key = KeyText("KEYMATERIAL".to_owned());
+    key.zeroize();
+    assert!(key.0.is_empty());
 }

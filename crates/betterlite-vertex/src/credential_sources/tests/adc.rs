@@ -153,3 +153,17 @@ async fn adc_access_token_returns_the_refreshed_token() {
         fixture.builders.calls()[0]
     );
 }
+
+#[tokio::test]
+async fn an_absent_gcloud_credentials_file_falls_back_to_the_metadata_server() {
+    let mut fixture = Fixture::new();
+    fixture.environment.gcloud_credentials = Some(PathBuf::from(GCLOUD_CREDENTIALS));
+    fixture.environment.project = Some("env-project".to_owned());
+    let loaded = fixture.load(None, None).await.unwrap();
+    assert_eq!(loaded.project, "env-project");
+    assert!(
+        fixture.builders.calls()[0].starts_with("metadata "),
+        "{}",
+        fixture.builders.calls()[0]
+    );
+}
