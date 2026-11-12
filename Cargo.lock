@@ -1888,6 +1888,17 @@ dependencies = [
 [[package]]
 name = "betterlite-interactions"
 version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-lens"
