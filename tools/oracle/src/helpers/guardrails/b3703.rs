@@ -27,9 +27,9 @@ impl Helper for Op {
             Input::Keywords => Ok(serde_json::json!(generate_injection_keywords())),
             Input::Similarity {
                 user_input,
-                threshold,
+                threshold: threshold_text,
             } => {
-                let threshold = Decimal::from_str(threshold).or_value_error()?;
+                let threshold = Decimal::from_str(threshold_text).or_value_error()?;
                 let keywords = generate_injection_keywords();
                 Ok(serde_json::json!(check_user_input_similarity(
                     &keywords, user_input, threshold
