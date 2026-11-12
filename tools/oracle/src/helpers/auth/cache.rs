@@ -20,7 +20,7 @@ use serde_json::json;
 use crate::helpers::{HelperError, HelperResult};
 
 #[derive(Deserialize)]
-struct KeyIds {
+pub(crate) struct KeyIds {
     user_id: String,
     object_permission_id: String,
     tag: String,
