@@ -13,6 +13,9 @@ use crate::files::stream::flatten_headers;
 use crate::files::transport::StreamReply;
 use crate::speech::error::SpeechError;
 
+// An upstream error body is read to its end below this size, so a JSON error keeps its type, param and code.
+const ERROR_BODY_LIMIT: usize = 1024 * 1024;
+
 // The OpenAI SDK's httpx client follows redirects, so production sends through send_following; tests and the oracle helper answer from a recording.
 pub trait SpeechTransport: Sync {
     fn send(
@@ -72,4 +75,14 @@ impl SpeechResponse {
         }
         Ok(collected)
     }
+}
+
+pub async fn read_error_body(mut body: BoxStream<'static, Result<Vec<u8>, HttpError>>) -> Vec<u8> {
+    let mut collected = Vec::new();
+    while collected.len() < ERROR_BODY_LIMIT
+        && let Some(Ok(chunk)) = body.next().await
+    {
+        collected.extend(chunk);
+    }
+    collected
 }

@@ -7,12 +7,11 @@ use secrecy::ExposeSecret as _;
 use url::Url;
 
 use crate::files::error::StatusError;
-use crate::files::stream::read_error_body;
 use crate::speech::client::{ClientKind, SpeechClient, SpeechConnection, select_client};
 use crate::speech::error::SpeechError;
 use crate::speech::logging::{SpeechLogRecord, SpeechLogger};
 use crate::speech::request::{SpeechRequest, logged_body, wire_body};
-use crate::speech::result::{SpeechResponse, SpeechTransport};
+use crate::speech::result::{SpeechResponse, SpeechTransport, read_error_body};
 
 pub struct SpeechCall<'call> {
     pub request: SpeechRequest<'call>,

@@ -50,7 +50,7 @@ async fn speech_cases(#[case] case: Case) {
     }
 }
 
-async fn call(
+pub(super) async fn call(
     fixture: &Fixture,
     options: &SpeechOptions,
     connection: SpeechConnection,
@@ -79,7 +79,7 @@ async fn call(
     (outcome, recorder)
 }
 
-fn audio_ok(chunks: Vec<Vec<u8>>) -> Fixture {
+pub(super) fn audio_ok(chunks: Vec<Vec<u8>>) -> Fixture {
     Fixture::new(Reply::ok("audio/mpeg", chunks))
 }
 
