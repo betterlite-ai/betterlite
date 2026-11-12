@@ -17,11 +17,11 @@ pub struct RetrySettings {
 pub fn resolve(section: &config::Settings) -> RetrySettings {
     let mut model_group = BTreeMap::new();
     for (group, policy) in &section.model_group_retry_policy {
-        model_group.insert(group.clone(), policy_from_config(policy));
+        model_group.insert(group.clone(), RetryPolicy::from(policy));
     }
     RetrySettings {
         policies: RetryPolicies {
-            global: section.retry_policy.as_ref().map(policy_from_config),
+            global: section.retry_policy.as_ref().map(RetryPolicy::from),
             model_group,
         },
         num_retries: section.num_retries,
@@ -31,19 +31,5 @@ pub fn resolve(section: &config::Settings) -> RetrySettings {
             jitter: section.jitter,
             min_timeout: section.retry_after,
         },
-    }
-}
-
-const fn policy_from_config(policy: &config::RetryPolicySettings) -> RetryPolicy {
-    RetryPolicy {
-        bad_request: policy.bad_request,
-        authentication: policy.authentication,
-        timeout: policy.timeout,
-        rate_limit: policy.rate_limit,
-        content_policy: policy.content_policy,
-        internal_server: policy.internal_server,
-        service_unavailable: policy.service_unavailable,
-        not_found: policy.not_found,
-        fallback: policy.fallback,
     }
 }

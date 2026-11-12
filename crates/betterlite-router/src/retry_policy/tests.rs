@@ -6,12 +6,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::retry_policy::Settings;
 use rand::TryRng;
 use rstest::rstest;
 
-use crate::retry_policy::backoff::{
-    BackoffSettings, DEFAULT_INITIAL_RETRY_DELAY, DEFAULT_JITTER, DEFAULT_MAX_RETRY_DELAY,
-};
+use crate::retry_policy::backoff::BackoffSettings;
 use crate::retry_policy::eligibility::Availability;
 use crate::retry_policy::policy::RetryPolicy;
 use crate::retry_policy::retry_after::parse_retry_after;
@@ -58,11 +57,13 @@ impl TryRng for FixedSample {
     }
 }
 
+// the defaults live once in betterlite-config, the section the server resolves the backoff from
 pub(crate) fn settings(min_timeout: f64) -> BackoffSettings {
+    let defaults = Settings::default();
     BackoffSettings {
-        initial_retry_delay: DEFAULT_INITIAL_RETRY_DELAY,
-        max_retry_delay: DEFAULT_MAX_RETRY_DELAY,
-        jitter: DEFAULT_JITTER,
+        initial_retry_delay: defaults.initial_retry_delay,
+        max_retry_delay: defaults.max_retry_delay,
+        jitter: defaults.jitter,
         min_timeout,
     }
 }

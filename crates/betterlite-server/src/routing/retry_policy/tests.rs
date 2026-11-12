@@ -40,28 +40,57 @@ router_settings:
   retry_after: 2
   num_retries: 3
   retry_policy:
-    DefaultRetries: 4
+    BadRequestErrorRetries: 1
+    AuthenticationErrorRetries: 2
+    TimeoutErrorRetries: 3
+    RateLimitErrorRetries: 4
+    ContentPolicyViolationErrorRetries: 5
+    InternalServerErrorRetries: 6
+    ServiceUnavailableErrorRetries: 7
+    NotFoundErrorRetries: 8
+    DefaultRetries: 9
   model_group_retry_policy:
     gpt-4:
-      RateLimitErrorRetries: 5
+      BadRequestErrorRetries: 11
+      AuthenticationErrorRetries: 12
+      TimeoutErrorRetries: 13
+      RateLimitErrorRetries: 14
+      ContentPolicyViolationErrorRetries: 15
+      InternalServerErrorRetries: 16
+      ServiceUnavailableErrorRetries: 17
+      NotFoundErrorRetries: 18
+      DefaultRetries: 19
 ";
     let resolved = settings(source, &[("JITTER", "0.5")]);
     assert_eq!(
         resolved.policies.global,
         Some(RetryPolicy {
-            bad_request: None,
-            authentication: None,
-            timeout: None,
-            rate_limit: None,
-            content_policy: None,
-            internal_server: None,
-            service_unavailable: None,
-            not_found: None,
-            fallback: Some(4),
+            bad_request: Some(1),
+            authentication: Some(2),
+            timeout: Some(3),
+            rate_limit: Some(4),
+            content_policy: Some(5),
+            internal_server: Some(6),
+            service_unavailable: Some(7),
+            not_found: Some(8),
+            fallback: Some(9),
         })
     );
-    let group = resolved.policies.model_group.get("gpt-4");
-    assert_eq!(group.map(|policy| policy.rate_limit), Some(Some(5)));
+    let group = RetryPolicy {
+        bad_request: Some(11),
+        authentication: Some(12),
+        timeout: Some(13),
+        rate_limit: Some(14),
+        content_policy: Some(15),
+        internal_server: Some(16),
+        service_unavailable: Some(17),
+        not_found: Some(18),
+        fallback: Some(19),
+    };
+    assert_eq!(
+        resolved.policies.model_group,
+        BTreeMap::from([("gpt-4".to_owned(), group)])
+    );
     assert_eq!(resolved.num_retries, 3);
     assert_eq!(fixed(resolved.backoff.min_timeout), "2.000000");
     assert_eq!(fixed(resolved.backoff.jitter), "0.500000");

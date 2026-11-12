@@ -2,9 +2,6 @@ use rand::{Rng, RngExt as _};
 
 use crate::retry_policy::eligibility::Availability;
 
-pub const DEFAULT_INITIAL_RETRY_DELAY: f64 = 0.5;
-pub const DEFAULT_MAX_RETRY_DELAY: f64 = 8.0;
-pub const DEFAULT_JITTER: f64 = 0.75;
 const MAX_HEADER_RETRY_AFTER_SECONDS: i64 = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -13,17 +10,6 @@ pub struct BackoffSettings {
     pub max_retry_delay: f64,
     pub jitter: f64,
     pub min_timeout: f64,
-}
-
-impl Default for BackoffSettings {
-    fn default() -> Self {
-        Self {
-            initial_retry_delay: DEFAULT_INITIAL_RETRY_DELAY,
-            max_retry_delay: DEFAULT_MAX_RETRY_DELAY,
-            jitter: DEFAULT_JITTER,
-            min_timeout: 0.0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

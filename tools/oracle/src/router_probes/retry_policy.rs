@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::retry_policy::Settings;
 use betterlite_router::cooldown_decisions::failure::FailureClass;
-use betterlite_router::retry_policy::backoff::{
-    BackoffSettings, DEFAULT_INITIAL_RETRY_DELAY, DEFAULT_JITTER, DEFAULT_MAX_RETRY_DELAY,
-    RetryTiming, sleep_before_retry,
-};
+use betterlite_router::retry_policy::backoff::{BackoffSettings, RetryTiming, sleep_before_retry};
 use betterlite_router::retry_policy::eligibility::{Availability, RetryDecision, decide};
 use betterlite_router::retry_policy::policy::{RetryCounts, RetryPolicies, RetryPolicy, plan};
 use betterlite_router::retry_policy::retry_after::parse_retry_after;
+use betterlite_server::routing::retry_policy::resolve;
 use serde::{Deserialize, Serialize};
 
 use crate::router_probes::ProbeOutput;
@@ -208,10 +207,12 @@ fn sleep(
 }
 
 fn step_delay(step: &SleepStep, retry_after: Option<i64>, random: &mut InjectedRandom<'_>) -> f64 {
+    // the server resolves its backoff from this section, so the probe reads the same defaults
+    let resolved = resolve(&Settings::default()).backoff;
     let settings = BackoffSettings {
-        initial_retry_delay: DEFAULT_INITIAL_RETRY_DELAY,
-        max_retry_delay: DEFAULT_MAX_RETRY_DELAY,
-        jitter: DEFAULT_JITTER,
+        initial_retry_delay: resolved.initial_retry_delay,
+        max_retry_delay: resolved.max_retry_delay,
+        jitter: resolved.jitter,
         min_timeout: f64::from(step.min_timeout),
     };
     // a retry sleeps only on how many deployments answer, so the fallback lists stay absent here

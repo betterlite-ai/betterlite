@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::retry_policy::RetryPolicySettings;
 use serde::{Deserialize, Serialize};
 
 use crate::cooldown_decisions::failure::FailureClass;
@@ -26,6 +27,22 @@ pub struct RetryPolicy {
     pub not_found: Option<i64>,
     #[serde(rename = "DefaultRetries")]
     pub fallback: Option<i64>,
+}
+
+impl From<&RetryPolicySettings> for RetryPolicy {
+    fn from(policy: &RetryPolicySettings) -> Self {
+        Self {
+            bad_request: policy.bad_request,
+            authentication: policy.authentication,
+            timeout: policy.timeout,
+            rate_limit: policy.rate_limit,
+            content_policy: policy.content_policy,
+            internal_server: policy.internal_server,
+            service_unavailable: policy.service_unavailable,
+            not_found: policy.not_found,
+            fallback: policy.fallback,
+        }
+    }
 }
 
 impl RetryPolicy {
