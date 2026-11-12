@@ -1,18 +1,21 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_server::mcp::outbound_credentials::dual_cache::AsyncCache;
+use betterlite_server::mcp::outbound_credentials::v2_store::{CredentialPayload, CredentialReader};
 use betterlite_server::mcp::outbound_credentials::{
     OAuthToken, OAuthTokenStore, TokenRefresher, TokenStoreUnavailable, WallClock,
 };
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use thiserror::Error;
 
+use super::{StoreResult, outcomes, value_error};
 use crate::helpers::HelperError;
-
-type StoreResult = Result<Option<OAuthToken>, TokenStoreUnavailable>;
 
 #[derive(Debug)]
 pub(super) struct ManualClock(Mutex<DateTime<Utc>>);
@@ -38,167 +41,139 @@ impl WallClock for ManualClock {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TokenInput {
-    pub(super) access_token: String,
-    #[serde(default)]
-    pub(super) expires_at_ms: Option<i64>,
-    #[serde(default)]
-    pub(super) refresh_token: Option<String>,
-    #[serde(default)]
-    pub(super) scopes: Vec<String>,
-    #[serde(default)]
-    pub(super) identity_binding_proof: Option<String>,
-}
-
-impl TokenInput {
-    pub(super) fn to_token(&self) -> Result<OAuthToken, Box<HelperError>> {
-        let expires_at = match self.expires_at_ms {
-            Some(millis) => Some(
-                DateTime::from_timestamp_millis(millis)
-                    .ok_or_else(|| value_error(format!("invalid epoch millis: {millis}")))?,
-            ),
-            None => None,
-        };
-        Ok(OAuthToken {
-            access_token: self.access_token.clone(),
-            expires_at,
-            refresh_token: self.refresh_token.clone(),
-            scopes: self.scopes.clone(),
-            identity_binding_proof: self.identity_binding_proof.clone(),
-        })
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum TokenOutcome {
-    Token { token: TokenInput },
-    Absent,
-    Unavailable,
-}
-
-impl TokenOutcome {
-    pub(super) fn resolve(self) -> Result<StoreResult, Box<HelperError>> {
-        match self {
-            Self::Token { token } => Ok(Ok(Some(token.to_token()?))),
-            Self::Absent => Ok(Ok(None)),
-            Self::Unavailable => Ok(Err(TokenStoreUnavailable {
-                detail: "the scripted store is unavailable".to_owned(),
-            })),
-        }
-    }
-}
-
-fn resolve_outcomes(
-    outcomes: Vec<TokenOutcome>,
-) -> Result<VecDeque<StoreResult>, Box<HelperError>> {
-    outcomes
-        .into_iter()
-        .map(TokenOutcome::resolve)
-        .collect::<Result<VecDeque<_>, _>>()
-}
-
 pub(super) struct ScriptedStore {
-    pub(super) results: Mutex<VecDeque<StoreResult>>,
-    pub(super) reads: AtomicUsize,
+    results: Mutex<VecDeque<StoreResult>>,
+    pub(super) calls: AtomicUsize,
 }
 
 impl ScriptedStore {
-    pub(super) fn new(outcomes: Vec<TokenOutcome>) -> Result<Self, Box<HelperError>> {
+    pub(super) fn new(value: Option<&Value>) -> Result<Self, Box<HelperError>> {
         Ok(Self {
-            results: Mutex::new(resolve_outcomes(outcomes)?),
-            reads: AtomicUsize::new(0),
+            results: Mutex::new(outcomes(value)?),
+            calls: AtomicUsize::new(0),
         })
+    }
+
+    fn next(&self) -> StoreResult {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.results
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(TokenStoreUnavailable {
+                    detail: "out of results".to_owned(),
+                })
+            })
     }
 }
 
 #[async_trait]
 impl OAuthTokenStore for ScriptedStore {
     async fn fetch(&self, _user_id: &str, _server_id: &str) -> StoreResult {
-        self.reads.fetch_add(1, Ordering::SeqCst);
-        self.results
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or_else(|| TokenStoreUnavailable {
-                detail: "the scripted store ran out of results".to_owned(),
-            })?
-    }
-}
-
-pub(super) struct ScriptedRefresher {
-    pub(super) results: Mutex<VecDeque<StoreResult>>,
-    pub(super) calls: AtomicUsize,
-}
-
-impl ScriptedRefresher {
-    pub(super) fn new(outcomes: Vec<TokenOutcome>) -> Result<Self, Box<HelperError>> {
-        Ok(Self {
-            results: Mutex::new(resolve_outcomes(outcomes)?),
-            calls: AtomicUsize::new(0),
-        })
+        self.next()
     }
 }
 
 #[async_trait]
-impl TokenRefresher for ScriptedRefresher {
+impl TokenRefresher for ScriptedStore {
     async fn refresh(&self, _user_id: &str, _server_id: &str, _token: &OAuthToken) -> StoreResult {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        self.results
+        self.next()
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("the cache is unavailable")]
+pub(super) struct CacheUnavailable;
+
+pub(super) struct FakeCache {
+    pub(super) get: Option<String>,
+    pub(super) set_error: bool,
+    pub(super) delete_error: bool,
+    pub(super) stored: Mutex<BTreeMap<String, String>>,
+}
+
+#[async_trait]
+impl AsyncCache for FakeCache {
+    type Error = CacheUnavailable;
+
+    async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, CacheUnavailable> {
+        if self.get.as_deref() == Some("error") {
+            return Err(CacheUnavailable);
+        }
+        if self.get.as_deref() != Some("stored") {
+            return Ok(None);
+        }
+        let stored = self
+            .stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned();
+        Ok(stored.map(CacheValue::Text))
+    }
+
+    async fn async_set_cache(
+        &self,
+        key: &str,
+        value: &str,
+        _ttl: Option<Duration>,
+    ) -> Result<(), CacheUnavailable> {
+        if self.set_error {
+            return Err(CacheUnavailable);
+        }
+        self.stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value.to_owned());
+        Ok(())
+    }
+
+    async fn async_delete_cache(&self, key: &str) -> Result<(), CacheUnavailable> {
+        if self.delete_error {
+            return Err(CacheUnavailable);
+        }
+        self.stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(key);
+        Ok(())
+    }
+}
+
+pub(super) struct PayloadReader {
+    pub(super) payloads: Mutex<VecDeque<Option<CredentialPayload>>>,
+}
+
+impl PayloadReader {
+    pub(super) fn new(value: Option<&Value>) -> Self {
+        let payloads = value
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| serde_json::from_value(item.clone()).ok().flatten())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            payloads: Mutex::new(payloads),
+        }
+    }
+}
+
+#[async_trait]
+impl CredentialReader for PayloadReader {
+    async fn read_credential(
+        &self,
+        _user_id: &str,
+        _server_id: &str,
+    ) -> Result<Option<CredentialPayload>, TokenStoreUnavailable> {
+        Ok(self
+            .payloads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .ok_or_else(|| TokenStoreUnavailable {
-                detail: "the scripted refresher ran out of results".to_owned(),
-            })?
+            .flatten())
     }
-}
-
-#[derive(Serialize)]
-pub(super) struct TokenView {
-    access_token: String,
-    expires_at_ms: Option<i64>,
-    refresh_token: Option<String>,
-    scopes: Vec<String>,
-    identity_binding_proof: Option<String>,
-}
-
-pub(super) fn view(token: &OAuthToken) -> TokenView {
-    TokenView {
-        access_token: token.access_token.clone(),
-        expires_at_ms: token
-            .expires_at
-            .map(|expires_at| expires_at.timestamp_millis()),
-        refresh_token: token.refresh_token.clone(),
-        scopes: token.scopes.clone(),
-        identity_binding_proof: token.identity_binding_proof.clone(),
-    }
-}
-
-pub(super) fn result_view(result: StoreResult) -> serde_json::Value {
-    match result {
-        Ok(Some(token)) => serde_json::json!(view(&token)),
-        Ok(None) => serde_json::Value::Null,
-        Err(_) => serde_json::json!({"error": "unavailable"}),
-    }
-}
-
-pub(super) fn duration_from_millis(millis: i64) -> Duration {
-    if millis <= 0 {
-        return Duration::ZERO;
-    }
-    Duration::from_millis(u64::try_from(millis).unwrap_or(u64::MAX))
-}
-
-pub(super) fn value_error(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
 }
