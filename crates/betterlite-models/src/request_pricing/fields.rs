@@ -68,11 +68,11 @@ pub fn echoed_cost_map_pricing_fields(model_info: &JsonObject) -> Vec<String> {
     if !model_info.contains_key(COST_MAP_LOOKUP_KEY) {
         return Vec::new();
     }
-    let fields: BTreeSet<&String> = model_info
-        .keys()
-        .filter(|key| is_server_derived_pricing_key(key))
-        .collect();
-    fields.into_iter().cloned().collect()
+    sorted_names(
+        model_info
+            .keys()
+            .filter(|key| is_server_derived_pricing_key(key)),
+    )
 }
 
 #[must_use]
@@ -83,29 +83,34 @@ pub fn echoed_cost_map_fields(
     if !model_info.contains_key(COST_MAP_LOOKUP_KEY) {
         return Vec::new();
     }
-    let fields: BTreeSet<&String> = model_info
-        .iter()
-        .filter(|(key, value)| {
-            cost_map_entries.iter().any(|entry| {
-                entry
-                    .get(*key)
-                    .is_some_and(|found| same_value(found, value))
-            })
+    let echoed = model_info.iter().filter(|(key, value)| {
+        cost_map_entries.iter().any(|entry| {
+            entry
+                .get(*key)
+                .is_some_and(|found| same_value(found, value))
         })
-        .map(|(key, _value)| key)
-        .collect();
-    fields.into_iter().cloned().collect()
+    });
+    sorted_names(echoed.map(|(key, _value)| key))
 }
 
 #[must_use]
 pub fn pricing_override_fields(sources: &[&JsonObject]) -> Vec<String> {
-    let fields: BTreeSet<&String> = sources
-        .iter()
-        .flat_map(|source| source.iter())
-        .filter(|(key, value)| !matches!(value, Json::Null) && is_server_derived_pricing_key(key))
-        .map(|(key, _value)| key)
-        .collect();
-    fields.into_iter().cloned().collect()
+    let given = sources.iter().flat_map(|source| source.iter());
+    let overridden = given
+        .filter(|(key, value)| !matches!(value, Json::Null) && is_server_derived_pricing_key(key));
+    sorted_names(overridden.map(|(key, _value)| key))
+}
+
+fn sorted_names<Names>(names: Names) -> Vec<String>
+where
+    Names: Iterator,
+    Names::Item: AsRef<str>,
+{
+    names
+        .map(|name| name.as_ref().to_owned())
+        .collect::<BTreeSet<String>>()
+        .into_iter()
+        .collect()
 }
 
 // JSON numbers compare by value, as Python compares 1 and 1.0, so a rewritten price still reads as the cost map's.
