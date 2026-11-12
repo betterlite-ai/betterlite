@@ -42,6 +42,7 @@ fn responses_usage(input_tokens: i64, output_tokens: i64, total_tokens: i64) -> 
         input_tokens,
         output_tokens,
         total_tokens,
+        details: Object::new(),
     }
 }
 
@@ -177,6 +178,55 @@ fn a_response_object_reports_responses_usage(
     #[case] expected: ResponsesUsage,
 ) {
     assert_eq!(blocked_responses_api_usage(&response(source)), expected);
+}
+
+#[rstest]
+#[case::details_and_cost_pass_through(
+    r#"{"usage":{"input_tokens":5,"output_tokens":7,"total_tokens":12,"input_tokens_details":{"cached_tokens":2},"cost":0.5}}"#,
+    &["cost", "input_tokens_details"]
+)]
+#[case::null_fields_are_dropped(
+    r#"{"usage":{"input_tokens":5,"output_tokens":7,"total_tokens":12,"output_tokens_details":null,"cost":1}}"#,
+    &["cost"]
+)]
+#[case::huge_counts_still_pass_through(
+    r#"{"usage":{"input_tokens":18446744073709551615,"output_tokens":18446744073709551615,"total_tokens":18446744073709551615,"cost":1}}"#,
+    &["cost"]
+)]
+#[case::no_total_means_a_rebuilt_usage(
+    r#"{"usage":{"input_tokens":5,"output_tokens":7,"cost":0.5}}"#,
+    &[]
+)]
+#[case::no_output_means_a_rebuilt_usage(
+    r#"{"usage":{"input_tokens":5,"total_tokens":12,"cost":0.5}}"#,
+    &[]
+)]
+#[case::no_input_means_a_rebuilt_usage(
+    r#"{"usage":{"prompt_tokens":5,"output_tokens":7,"total_tokens":12,"cost":0.5}}"#,
+    &[]
+)]
+#[case::chat_usage_is_rebuilt(
+    r#"{"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"cost":0.5}}"#,
+    &[]
+)]
+#[case::a_text_count_is_not_a_typed_usage(
+    r#"{"usage":{"input_tokens":5,"output_tokens":7,"total_tokens":"12","cost":0.5}}"#,
+    &[]
+)]
+fn a_typed_responses_usage_keeps_its_other_fields(#[case] source: &str, #[case] kept: &[&str]) {
+    let usage = blocked_responses_api_usage(&response(source));
+    assert_eq!(usage.details.keys().collect::<Vec<_>>(), kept);
+}
+
+#[test]
+fn the_kept_fields_keep_their_values() {
+    let usage = blocked_responses_api_usage(&response(
+        r#"{"usage":{"input_tokens":5,"output_tokens":7,"total_tokens":12,"input_tokens_details":{"cached_tokens":2}}}"#,
+    ));
+    assert_eq!(
+        serde_json::to_string(&usage).unwrap(),
+        r#"{"input_tokens":5,"output_tokens":7,"total_tokens":12,"input_tokens_details":{"cached_tokens":2}}"#
+    );
 }
 
 #[rstest]

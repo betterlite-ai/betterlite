@@ -20,12 +20,16 @@ pub struct BlockedUsage {
     pub output_tokens: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ResponsesUsage {
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub total_tokens: i64,
+    #[serde(flatten)]
+    pub details: Object,
 }
+
+const RESPONSES_COUNT_KEYS: [&str; 3] = ["input_tokens", "output_tokens", "total_tokens"];
 
 fn token_count(value: Option<&GuardrailValue>) -> i64 {
     match value {
@@ -106,6 +110,29 @@ pub fn blocked_response_usage(original_response: &OriginalResponse) -> BlockedUs
     }
 }
 
+// A usage with all three integer counts is LiteLLM's typed ResponseAPIUsage passthrough: it keeps its other non-null fields.
+fn responses_usage_details(usage: Option<&Object>) -> Object {
+    let Some(fields) = usage else {
+        return Object::new();
+    };
+    let has_counts = RESPONSES_COUNT_KEYS.iter().all(|key| {
+        matches!(
+            fields.get(*key),
+            Some(GuardrailValue::SignedInteger(_) | GuardrailValue::UnsignedInteger(_))
+        )
+    });
+    if !has_counts {
+        return Object::new();
+    }
+    fields
+        .iter()
+        .filter(|(key, value)| {
+            !RESPONSES_COUNT_KEYS.contains(&key.as_str()) && !matches!(value, GuardrailValue::Null)
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
 #[must_use]
 pub fn blocked_responses_api_usage(original_response: &OriginalResponse) -> ResponsesUsage {
     let usage = usage_object(original_response);
@@ -120,6 +147,7 @@ pub fn blocked_responses_api_usage(original_response: &OriginalResponse) -> Resp
         } else {
             total_tokens
         },
+        details: responses_usage_details(usage),
     }
 }
 

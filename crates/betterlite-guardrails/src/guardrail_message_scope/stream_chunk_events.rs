@@ -15,6 +15,7 @@ pub fn anthropic_stream_chunk_events(item: &StreamItem) -> Vec<Object> {
     }
 }
 
+// Python's errors="replace": one U+FFFD per invalid sequence. String::from_utf8_lossy does the same but clippy.toml bans it.
 fn decode_replacing_invalid(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len());
     for chunk in bytes.utf8_chunks() {
@@ -26,7 +27,7 @@ fn decode_replacing_invalid(bytes: &[u8]) -> String {
     text
 }
 
-// The same line breaks and blanks Python's splitlines and strip use.
+// Python's splitlines and strip: U+001C to U+001E split lines before strip sees them, so a line never holds them.
 fn events_from_text(chunk: &str) -> Vec<Object> {
     let is_blank = |character: char| character.is_whitespace() || character == '\u{1f}';
     let is_line_break = |character: char| {

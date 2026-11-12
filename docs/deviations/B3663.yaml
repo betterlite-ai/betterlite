@@ -6,3 +6,6 @@ deviations:
   - what: A guardrail named in request metadata that has no configured callbacks returns a typed SelectionError::UnknownGuardrail, where LiteLLM raises a bare KeyError from guardrail_name_config_map.
     why: The caller maps a missing guardrail to a request error instead of an unhandled lookup failure, and the oracle case compares the guardrail name that both sides report.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_helpers.py#L46-L47
+  - what: A usage object with integer input_tokens, output_tokens and total_tokens keeps its other non-null fields (token details, cost) in the blocked Responses usage, including when the original response is a plain object.
+    why: betterlite sees only the serialized response, so it cannot tell a typed ResponseAPIUsage, which LiteLLM returns unchanged, from a dict, which LiteLLM rebuilds from the three counts. A typed usage is what a real upstream response carries, so its details reach the client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L116-L117
