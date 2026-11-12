@@ -49,6 +49,12 @@ pub(super) async fn local(input: &Local) -> HelperResult {
     let result = resolve_local_credentials(&settings, &sources)
         .await
         .map_err(failure)?;
+    let source = local_source(&settings);
+    let ttl = match source {
+        "static" => result.cache_ttl.map(|ttl| ttl.as_secs()),
+        "env" => Some(super::io::cache_default_ttl()?),
+        _ => None,
+    };
     let value = result.credentials;
     Ok(json!({
         "credentials": (
@@ -56,7 +62,8 @@ pub(super) async fn local(input: &Local) -> HelperResult {
             value.secret_access_key.expose_secret().to_owned(),
             value.session_token.map(|token| token.expose_secret().to_owned()),
         ),
-        "source": local_source(&settings),
+        "ttl": ttl,
+        "source": source,
     }))
 }
 

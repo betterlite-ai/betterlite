@@ -1,10 +1,10 @@
-import os
 import sys
 from collections.abc import Callable, MutableMapping
 from datetime import UTC, datetime
 from types import ModuleType
-from typing import Literal, NamedTuple, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
+from botocore.credentials import Credentials  # type: ignore[import-untyped]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/credentials.py#L340
 from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.llms.bedrock.base_aws_llm import (
@@ -72,12 +72,6 @@ class Input(TypedDict):
     params: Json
 
 
-class ReturnedCredentials(NamedTuple):
-    access_key: str | None
-    secret_key: str | None
-    token: str | None
-
-
 StsValue: TypeAlias = None | str | int | datetime | dict[str, "StsValue"]
 
 
@@ -106,11 +100,11 @@ class FakeBoto3(ModuleType):
             self.session_calls.append(dict(kwargs))
         return self
 
-    def get_credentials(self) -> ReturnedCredentials:
+    def get_credentials(self) -> Credentials:  # type: ignore[no-any-unimported]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/credentials.py#L340
         self.fetches += 1
         if self.fail:
             raise ValueError("fixture credential fetch failed")
-        return ReturnedCredentials(self.access, self.secret, self.token)
+        return Credentials(self.access, self.secret, self.token)  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/credentials.py#L340
 
     def get_caller_identity(self) -> dict[str, Json]:
         raise RuntimeError("fixture sts has no caller identity")
@@ -152,11 +146,6 @@ class FakeBoto3(ModuleType):
         raise ValueError("get_credentials never called sts assume_role")
 
 
-class MissingFiles:
-    def __call__(self, _path: str | bytes) -> bool:
-        return False
-
-
 class AuthRequest(Protocol):
     method: str
     url: str
@@ -182,8 +171,14 @@ def prepare(fixture: FakeBoto3, clock: Callable[[], float] | None = None) -> Bas
     return instance
 
 
-def credentials_call(instance: BaseAWSLLM, config: AwsConfig) -> ReturnedCredentials:
-    return cast(ReturnedCredentials, instance.get_credentials(**config))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L346
+def credentials_call(instance: BaseAWSLLM, config: AwsConfig) -> Credentials:  # type: ignore[no-any-unimported]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L346
+    return cast(Credentials, instance.get_credentials(**config))  # type: ignore[no-any-unimported, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L346
+
+
+def cached_ttl(instance: BaseAWSLLM, now: float) -> int | None:
+    entries = cast(dict[str, float], instance.iam_cache.in_memory_cache.ttl_dict)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L50
+    expiry = next(iter(entries.values()), None)
+    return None if expiry is None else int(expiry - now)
 
 
 def role_config(params: RoleParams) -> AwsConfig:
@@ -244,46 +239,51 @@ def auth_selector(raw: Json) -> Json:
 def local(raw: Json) -> Json:
     params = TypeAdapter(LocalParams).validate_python(raw)
     fixture = FakeBoto3(*params["fixture"])
-    credentials = credentials_call(prepare(fixture), params["settings"])
-    return {"credentials": [credentials.access_key, credentials.secret_key, credentials.token],
+    instance = prepare(fixture, fixture.clock)
+    credentials = credentials_call(instance, params["settings"])  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/credentials.py#L340
+    values: list[Json] = [credentials.access_key, credentials.secret_key, credentials.token]  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/credentials.py#L340
+    return {"credentials": values, "ttl": cached_ttl(instance, fixture.now),
             "source": fixture.source()}
+
+
+def cache_step(
+    instance: BaseAWSLLM, fixture: FakeBoto3, parameters: AwsConfig, step: CacheStep
+) -> Json:
+    fixture.now = step["now"]
+    fixture.access = step.get("access")
+    fixture.fail = step.get("fail") is True or step.get("access") is None
+    try:
+        credentials = credentials_call(instance, parameters)  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/credentials.py#L340
+    except ValueError:
+        return {"error": True, "ttl": cached_ttl(instance, fixture.now)}
+    access: str | None = credentials.access_key  # type: ignore[misc]  # https://github.com/boto/botocore/blob/444e17a456ee01d28fd0a521936edf2e8da535eb/botocore/credentials.py#L340
+    return {"access": access, "ttl": cached_ttl(instance, fixture.now)}
 
 
 def cache(raw: Json) -> Json:
     params = TypeAdapter(CacheParams).validate_python(raw)
     fixture = FakeBoto3(None, "fixture", None)
     instance = prepare(fixture, fixture.clock)
-    results: list[Json] = []
-    for step in params["steps"]:
-        fixture.now = step["now"]
-        fixture.access = step.get("access")
-        fixture.fail = step.get("fail") is True or step.get("access") is None
-        try:
-            results.append({"access": credentials_call(instance, params["parameters"]).access_key})
-        except ValueError:
-            results.append({"error": True})
+    steps = params["steps"]
+    results = [cache_step(instance, fixture, params["parameters"], step) for step in steps]
     return {"fetches": fixture.fetches, "results": results}
+
+
+def failure_body(failure: AuthFailure) -> Json:
+    request: Json = {"method": failure.request.method, "url": str(failure.request.url)}
+    return {
+        "status": failure.status_code,
+        "message": failure.message,
+        "request": request,
+        "response": {"status_code": failure.response.status_code, "request": request},
+    }
 
 
 def auth_error(raw: Json) -> Json:
     params = TypeAdapter(AuthErrorParams).validate_python(raw)
-    failure = cast(AuthFailure, AwsAuthError(params["status"], params["message"]))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L196
-    exists = os.path.exists
-    os.path.exists = MissingFiles()  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L353
-    try:
-        verification = get_ssl_verify(ssl_verify=params.get("ssl_verify"))
-    finally:
-        os.path.exists = exists
-    request: Json = {"method": failure.request.method, "url": str(failure.request.url)}
-    return {
-        "error": {
-            "status": failure.status_code,
-            "message": failure.message,
-            "request": request,
-            "response": {"status_code": failure.response.status_code, "request": request},
-        },
-        "ssl_verify": verification,
-    }
+    failure = cast(AuthFailure, AwsAuthError(params["status"], params["message"]))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L203
+    verification = get_ssl_verify(ssl_verify=params.get("ssl_verify"))
+    return {"error": failure_body(failure), "ssl_verify": verification}
 
 
 HANDLERS: dict[str, Callable[[Json], Json]] = {
