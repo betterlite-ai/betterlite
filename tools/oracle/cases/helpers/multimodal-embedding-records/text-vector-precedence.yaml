@@ -1,0 +1,35 @@
+kind: helper
+name: multimodal-embedding-records-text-vector-precedence
+call:
+  multimodal_embedding_records:
+    requests: []
+    replies:
+      - model: multimodalembedding@001
+        status: 200
+        input: ["a", "gs://bucket/i.png"]
+        optional: {}
+        response:
+          predictions:
+            - textEmbedding: [0.1, 0.2]
+              imageEmbedding: [0.3]
+              videoEmbeddings:
+                - {startOffsetSec: 0, endOffsetSec: 2, embedding: [0.4]}
+            - imageEmbedding: [0.5]
+      - model: multimodalembedding@001
+        status: 200
+        input: []
+        optional: {}
+        response:
+          predictions:
+            - {textEmbedding: [], imageEmbedding: [0.7]}
+      - model: multimodalembedding@001
+        status: 200
+        input: []
+        optional: {}
+        response:
+          predictions:
+            - imageEmbedding: [0.5]
+              videoEmbeddings:
+                - {startOffsetSec: 0, endOffsetSec: 2, embedding: [0.6]}
+compare: {ignore: []}
+env: {}
