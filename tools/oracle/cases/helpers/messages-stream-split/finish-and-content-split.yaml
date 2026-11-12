@@ -1,0 +1,119 @@
+kind: helper
+name: messages-stream-split-finish-and-content-split
+call:
+  messages_stream_split:
+    steps:
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-1
+            created: 7
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, content: Hello}
+                finish_reason: stop
+            usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+            hidden_params: {usage: {prompt_tokens: 5}, request_id: req-1}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-2
+            created: 8
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, content: Hello}
+                finish_reason: null
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 3
+        chunks:
+          - id: chunk-3
+            created: 9
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant}
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-4
+            created: 10
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, refusal: "no"}
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-5
+            created: 11
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, provider_specific_fields: {refusal: "no"}}
+                finish_reason: stop
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-6
+            created: 12
+            model: m
+            choices:
+              - index: 0
+                delta: {content: first}
+                finish_reason: stop
+              - index: 1
+                delta: {content: second}
+                finish_reason: length
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+      - function: split
+        mode: sync
+        splitters: 1
+        rounds: 4
+        chunks:
+          - id: chunk-7
+            created: 13
+            model: m
+            choices:
+              - index: 0
+                delta: {role: assistant, content: Hello}
+                finish_reason: stop
+            usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+            hidden_params: {request_id: req-2}
+        chunks_attr: null
+        messages_attr: null
+        failure: null
+env: {}
+compare: {ignore: []}
