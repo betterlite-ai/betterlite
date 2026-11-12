@@ -6,6 +6,9 @@ mod support;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
+use crate::converse_events::projection::UnusedCounter;
+use crate::converse_usage::transform::ReasoningTokenCounter as _;
+
 use self::scenarios::{
     content_stop_finish, content_text_delta, converse_projection_error,
     invoke_chunk_provider_dispatch, json_tool_stream, message_start_id, metadata_usage,
@@ -66,4 +69,12 @@ fn trace_is_omitted_when_empty(#[case] trace: &str) {
     assert!(chunk.provider_specific_fields.is_empty());
     assert_eq!(chunk.delta.content, None);
     assert_eq!(chunk.delta.role, None);
+}
+
+#[test]
+fn usage_branch_never_estimates_reasoning_tokens() {
+    assert_eq!(
+        UnusedCounter.count_reasoning_tokens("some text").unwrap(),
+        0
+    );
 }

@@ -18,7 +18,7 @@ use crate::converse_usage::transform::{ReasoningTokenCounter, transform_usage};
 use crate::converse_usage::wire::ConverseTokenUsage;
 
 // The usage branch passes no reasoning content, so LiteLLM never asks the counter for an estimate.
-struct UnusedCounter;
+pub(super) struct UnusedCounter;
 
 impl ReasoningTokenCounter for UnusedCounter {
     type Failure = Infallible;
