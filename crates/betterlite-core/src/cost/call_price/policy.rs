@@ -60,51 +60,39 @@ pub struct VectorStorePriceRequest<'request> {
 // Each default is the typed outcome for a provider nobody installed; an installed provider overrides only the operations it prices.
 pub trait ProviderPricePolicy {
     fn vertex_route(&self, _model: &str, _call_type: CallType) -> Result<VertexRoute, PolicyError> {
-        Err(PolicyError::UnavailableAdapter {
-            provider: "vertex_ai".to_owned(),
-        })
+        Err(PolicyError::UnavailableAdapter("vertex_ai".to_owned()))
     }
 
     fn lyria_cost(&self, provider: &str, _model: &str) -> Result<Option<Decimal>, PolicyError> {
-        Err(PolicyError::UnavailableAdapter {
-            provider: provider.to_owned(),
-        })
+        Err(PolicyError::UnavailableAdapter(provider.to_owned()))
     }
 
     fn token_cost(
         &self,
         request: &TokenPriceRequest<'_>,
     ) -> Result<GenericCostResult, PolicyError> {
-        Err(PolicyError::UnavailableAdapter {
-            provider: request.provider.to_owned(),
-        })
+        Err(PolicyError::UnavailableAdapter(request.provider.to_owned()))
     }
 
     fn character_cost(
         &self,
         request: &CharacterPriceRequest<'_>,
     ) -> Result<GenericCostResult, PolicyError> {
-        Err(PolicyError::UnavailableAdapter {
-            provider: request.provider.to_owned(),
-        })
+        Err(PolicyError::UnavailableAdapter(request.provider.to_owned()))
     }
 
     fn search_cost(
         &self,
         request: &SearchPriceRequest<'_>,
     ) -> Result<GenericCostResult, PolicyError> {
-        Err(PolicyError::UnavailableAdapter {
-            provider: request.provider.to_owned(),
-        })
+        Err(PolicyError::UnavailableAdapter(request.provider.to_owned()))
     }
 
     fn rerank_cost(
         &self,
         request: &RerankPriceRequest<'_>,
     ) -> Result<GenericCostResult, PolicyError> {
-        Err(PolicyError::UnavailableAdapter {
-            provider: request.provider.to_owned(),
-        })
+        Err(PolicyError::UnavailableAdapter(request.provider.to_owned()))
     }
 
     // None means the provider has no vector-store configuration, which prices at zero.
@@ -112,8 +100,6 @@ pub trait ProviderPricePolicy {
         &self,
         request: &VectorStorePriceRequest<'_>,
     ) -> Result<Option<GenericCostResult>, PolicyError> {
-        Err(PolicyError::UnavailableAdapter {
-            provider: request.provider.to_owned(),
-        })
+        Err(PolicyError::UnavailableAdapter(request.provider.to_owned()))
     }
 }

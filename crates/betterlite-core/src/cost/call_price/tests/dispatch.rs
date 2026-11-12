@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rstest::rstest;
 
-use super::super::calls::vector_store_search_cost;
+use super::super::calls::vector_store::vector_store_search_cost;
 use super::super::error::CallPriceError;
 use super::super::policy::error::PolicyError;
 use super::super::policy::{
@@ -316,13 +316,13 @@ fn an_uninstalled_provider_policy_is_a_typed_unavailable_adapter() {
     .unwrap_err();
     assert!(matches!(
         error,
-        CallPriceError::Policy(PolicyError::UnavailableAdapter { provider }) if provider == "deepseek"
+        CallPriceError::Policy(PolicyError::UnavailableAdapter(provider)) if provider == "deepseek"
     ));
 }
 
 fn unavailable(error: PolicyError) -> String {
     match error {
-        PolicyError::UnavailableAdapter { provider } => provider,
+        PolicyError::UnavailableAdapter(provider) => provider,
         PolicyError::Failed { .. } => "failed".to_owned(),
     }
 }

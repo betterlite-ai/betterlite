@@ -1,152 +1,51 @@
-use betterlite_foundry::pricing::response::{ResponseCostRequest, cost_per_token};
-use betterlite_models::anthropic_pricing::{
-    AnthropicPriceRequest, BedrockPriceRequest, TokenPriceRequest, token_cost,
-};
+mod anthropic;
+mod azure;
+mod characters;
+pub mod generic_price;
+mod tokens;
+
 use betterlite_models::duration_cost::error::DurationCostError;
 use betterlite_models::tiered_pricing::{Scalar, coerce_cost_per_token};
-use betterlite_models::token_cost::{
-    GenericCostRequest, GenericCostResult, generic_cost_per_token,
-};
+use betterlite_models::token_cost::GenericCostResult;
 use rust_decimal::Decimal;
 
 use super::Call;
 use super::error::CallPriceError;
-use super::policy::{CharacterPriceRequest, TokenPriceRequest as PolicyTokenRequest, VertexRoute};
-
-pub fn generic(
-    call: &Call<'_>,
-    model: &str,
-    provider: &str,
-    service_tier: Option<&str>,
-    data_residency: Option<&str>,
-) -> Result<GenericCostResult, CallPriceError> {
-    Ok(generic_cost_per_token(
-        &GenericCostRequest {
-            model,
-            custom_llm_provider: Some(provider),
-            usage: &call.view.cost,
-            prompt_extras: &call.view.extras,
-            supplied_pricing: None,
-            service_tier,
-            data_residency,
-            vertex_location: None,
-            moment: call.env.moment,
-        },
-        call.env.lookup,
-        call.env.database,
-    )?)
-}
+use super::policy::VertexRoute;
+use generic_price::generic;
+use tokens::policy_tokens;
 
 pub fn by_provider(call: &Call<'_>) -> Result<GenericCostResult, CallPriceError> {
-    let input = call.input;
-    let provider = call.names.provider.as_str();
     let model = call.names.model.as_str();
-    match provider {
+    match call.names.provider.as_str() {
         "vertex_ai" => vertex(call),
-        "anthropic" | "bedrock" => anthropic_family(call),
-        "openai" => generic(
-            call,
-            model,
-            provider,
-            input.service_tier,
-            input.data_residency,
-        ),
-        "azure" => generic(call, model, provider, input.service_tier, None),
-        "azure_ai" => Ok(cost_per_token(
-            &ResponseCostRequest {
-                model,
-                usage: &call.view.cost,
-                prompt_extras: &call.view.extras,
-                response_time_ms: input.response_time_ms,
-                request_model: input.request_model,
-                service_tier: input.service_tier,
-                moment: call.env.moment,
-            },
-            call.env.lookup,
-            call.env.database,
-        )?),
-        "databricks" | "gemini" => policy_tokens(call, input.service_tier),
+        "anthropic" | "bedrock" => anthropic::anthropic_family(call),
+        "azure_ai" => azure::azure_ai(call),
+        "openai" => generic(call, model, call.input.data_residency),
+        "azure" => generic(call, model, None),
+        "databricks" | "gemini" => policy_tokens(call, model, call.input.service_tier, None),
         "fireworks_ai" | "deepseek" | "tencent" | "perplexity" | "xai" | "lemonade"
-        | "dashscope" | "qwencloud" | "qwen_ai_platform" => policy_tokens(call, None),
+        | "dashscope" | "qwencloud" | "qwen_ai_platform" => policy_tokens(call, model, None, None),
         _ => other(call),
     }
 }
 
-fn anthropic_family(call: &Call<'_>) -> Result<GenericCostResult, CallPriceError> {
-    let input = call.input;
-    let model = call.names.model.as_str();
-    let projection = input.server_tool_projection.cloned().unwrap_or_default();
-    let request = if call.names.provider == "anthropic" {
-        TokenPriceRequest::Anthropic(AnthropicPriceRequest {
-            model,
-            usage: &call.view.cost,
-            prompt_extras: &call.view.extras,
-            supplied_model_info: None,
-            provider_specific_entry: None,
-            service_tier: input.service_tier,
-            projection: &projection,
-            moment: call.env.moment,
-        })
-    } else {
-        TokenPriceRequest::Bedrock(BedrockPriceRequest {
-            model,
-            usage: &call.view.cost,
-            prompt_extras: &call.view.extras,
-            service_tier: input.service_tier,
-            moment: call.env.moment,
-        })
-    };
-    Ok(token_cost(&request, call.env.lookup, call.env.database)?)
-}
-
-fn policy_tokens(
-    call: &Call<'_>,
-    service_tier: Option<&str>,
-) -> Result<GenericCostResult, CallPriceError> {
-    Ok(call.env.policy.token_cost(&PolicyTokenRequest {
-        provider: &call.names.provider,
-        model: &call.names.model,
-        usage: &call.view.cost,
-        prompt_extras: &call.view.extras,
-        service_tier,
-        vertex_location: None,
-    })?)
-}
-
 fn vertex(call: &Call<'_>) -> Result<GenericCostResult, CallPriceError> {
-    let input = call.input;
     let model = call.names.without_prefix.as_str();
-    let route = call.env.policy.vertex_route(model, input.call_type)?;
-    if route == VertexRoute::Character {
-        return Ok(call.env.policy.character_cost(&CharacterPriceRequest {
-            provider: &call.names.provider,
-            model,
-            prompt_characters: input.prompt_characters,
-            completion_characters: input.completion_characters,
-            usage: &call.view.cost,
-            prompt_extras: &call.view.extras,
-            service_tier: input.service_tier,
-            vertex_location: input.vertex_location,
-        })?);
+    let input = call.input;
+    match call.env.policy.vertex_route(model, input.call_type)? {
+        VertexRoute::Character => characters::vertex_characters(call, model),
+        VertexRoute::Token => policy_tokens(call, model, input.service_tier, input.vertex_location),
     }
-    Ok(call.env.policy.token_cost(&PolicyTokenRequest {
-        provider: &call.names.provider,
-        model,
-        usage: &call.view.cost,
-        prompt_extras: &call.view.extras,
-        service_tier: input.service_tier,
-        vertex_location: input.vertex_location,
-    })?)
 }
 
 // Providers without a native formula bill generic token prices only when the catalog declares token or tiered rates.
 fn other(call: &Call<'_>) -> Result<GenericCostResult, CallPriceError> {
     let model = call.names.model.as_str();
-    let provider = call.names.provider.as_str();
     let record = call
         .env
         .lookup
-        .effective_model_info(model, Some(provider))
+        .effective_model_info(model, Some(&call.names.provider))
         .ok_or_else(|| DurationCostError::UnknownModel {
             model: model.to_owned(),
         })?;
@@ -167,11 +66,5 @@ fn other(call: &Call<'_>) -> Result<GenericCostResult, CallPriceError> {
             completion_cost: Decimal::ZERO,
         });
     }
-    generic(
-        call,
-        model,
-        provider,
-        call.input.service_tier,
-        call.input.data_residency,
-    )
+    generic(call, model, call.input.data_residency)
 }

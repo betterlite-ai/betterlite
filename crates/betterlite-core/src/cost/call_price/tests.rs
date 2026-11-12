@@ -86,20 +86,24 @@ struct Catalog {
     seen: Mutex<Vec<String>>,
 }
 
+impl Catalog {
+    fn look(&self, kind: &str, model: &str, provider: Option<&str>) -> Option<&PriceRecord> {
+        let line = format!("{kind} {model} {}", provider.unwrap_or("-"));
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(line);
+        self.entries.get(model)
+    }
+}
+
 impl PriceLookup for Catalog {
     fn effective_model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!(
-                "info {model} {}",
-                custom_llm_provider.unwrap_or("-")
-            ));
-        self.entries.get(model).cloned()
+        self.look("info", model, custom_llm_provider).cloned()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -111,24 +115,20 @@ impl PriceLookup for Catalog {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!(
-                "priced {model} {}",
-                custom_llm_provider.unwrap_or("-")
-            ));
-        self.entries.get(model).map(|found| PricedModel {
-            record: found.clone(),
-            tiered_pricing: Vec::new(),
-            off_peak_pricing: None,
-            off_peak_cache_read_present: false,
-        })
+        self.look("priced", model, custom_llm_provider)
+            .map(|found| PricedModel {
+                record: found.clone(),
+                tiered_pricing: Vec::new(),
+                off_peak_pricing: None,
+                off_peak_cache_read_present: false,
+            })
     }
 }
 
 const FAKE_PROMPT: &str = "7";
 const FAKE_COMPLETION: &str = "9";
+
+type Priced = Result<GenericCostResult, PolicyError>;
 
 struct Fake {
     seen: Mutex<Vec<String>>,
@@ -152,35 +152,23 @@ impl Fake {
 
 impl ProviderPricePolicy for Fake {
     fn vertex_route(&self, model: &str, call_type: CallType) -> Result<VertexRoute, PolicyError> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!("route {model} {call_type:?}"));
+        self.log(format!("route {model} {call_type:?}"));
         Ok(self.route)
     }
 
     fn lyria_cost(&self, provider: &str, model: &str) -> Result<Option<Decimal>, PolicyError> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!("lyria {provider} {model}"));
+        self.log(format!("lyria {provider} {model}"));
         Ok(self.lyria)
     }
 
-    fn token_cost(
-        &self,
-        request: &TokenPriceRequest<'_>,
-    ) -> Result<GenericCostResult, PolicyError> {
+    fn token_cost(&self, request: &TokenPriceRequest<'_>) -> Priced {
         Ok(self.log(format!(
             "token {} {} {:?} {:?}",
             request.provider, request.model, request.service_tier, request.vertex_location
         )))
     }
 
-    fn character_cost(
-        &self,
-        request: &CharacterPriceRequest<'_>,
-    ) -> Result<GenericCostResult, PolicyError> {
+    fn character_cost(&self, request: &CharacterPriceRequest<'_>) -> Priced {
         Ok(self.log(format!(
             "character {} {} {:?} {:?} {:?} {:?}",
             request.provider,
@@ -192,29 +180,21 @@ impl ProviderPricePolicy for Fake {
         )))
     }
 
-    fn search_cost(
-        &self,
-        request: &SearchPriceRequest<'_>,
-    ) -> Result<GenericCostResult, PolicyError> {
+    fn search_cost(&self, request: &SearchPriceRequest<'_>) -> Priced {
+        let queries = request.number_of_queries;
+        let hidden = request.hidden_params.is_some();
         Ok(self.log(format!(
-            "search {} {} {} {}",
-            request.provider,
-            request.model,
-            request.number_of_queries,
-            request.hidden_params.is_some()
+            "search {} {} {queries} {hidden}",
+            request.provider, request.model
         )))
     }
 
-    fn rerank_cost(
-        &self,
-        request: &RerankPriceRequest<'_>,
-    ) -> Result<GenericCostResult, PolicyError> {
+    fn rerank_cost(&self, request: &RerankPriceRequest<'_>) -> Priced {
+        let units = request.billed_units.is_some();
+        let info = request.model_info.is_some();
         Ok(self.log(format!(
-            "rerank {} {} {} {}",
-            request.provider,
-            request.model,
-            request.billed_units.is_some(),
-            request.model_info.is_some()
+            "rerank {} {} {units} {info}",
+            request.provider, request.model
         )))
     }
 
@@ -222,13 +202,10 @@ impl ProviderPricePolicy for Fake {
         &self,
         request: &VectorStorePriceRequest<'_>,
     ) -> Result<Option<GenericCostResult>, PolicyError> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!(
-                "vector {} {:?}",
-                request.provider, request.api_type
-            ));
+        self.log(format!(
+            "vector {} {:?}",
+            request.provider, request.api_type
+        ));
         Ok(self.vector)
     }
 }
