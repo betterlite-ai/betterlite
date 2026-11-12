@@ -1,0 +1,25 @@
+kind: helper
+name: realtime-error-and-close-helpers
+call:
+  realtime_contracts:
+    function: close_helpers
+    error: {message: bad, status_code: 429, headers: {retry-after: "2"}}
+    reason_messages:
+      - {message: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fallback: fallback}
+      - {message: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fallback: fallback}
+      - {message: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fallback: fallback}
+      - {message: "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", fallback: fallback}
+      - {message: "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé", fallback: fallback}
+      - {message: "", fallback: fallback}
+      - {message: "", fallback: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
+    close_codes: [1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 3000, 4999, 1005, 1006, 1015, 2999, 5000]
+    handshake_statuses: [401, 403, 429, 500]
+    backend_closes:
+      - {code: 1006, reason: ""}
+      - {code: 1000, reason: gone}
+    backend_errors:
+      - {received: {code: 1000, reason: gone}, sent: null}
+      - {received: null, sent: {code: 1000, reason: bye}}
+      - {received: null, sent: null}
+env: {}
+compare: {ignore: []}

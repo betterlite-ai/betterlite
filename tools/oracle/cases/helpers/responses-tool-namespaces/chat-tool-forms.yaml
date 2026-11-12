@@ -1,0 +1,30 @@
+kind: helper
+name: responses-tool-namespaces-chat-tool-forms
+call:
+  responses_tool_namespaces:
+    operation: tools_to_responses
+    tools:
+      - type: function
+        function:
+          name: full
+          description: Everything set
+          parameters: {properties: {a: {type: string}}}
+          strict: true
+        cache_control: {type: ephemeral}
+        defer_loading: false
+        allowed_callers: [direct]
+        input_examples: []
+        eager_input_streaming: true
+      - type: function
+        function: {name: minimal}
+      - type: function
+        function: {name: typed, parameters: {type: string}, strict: false}
+      - type: function
+        function: {name: empty_parameters, parameters: {}}
+      - {type: function}
+      - {type: mcp, server_label: docs, server_url: "https://docs.example/mcp"}
+      - {type: web_search_preview}
+      - {type: custom, name: patch}
+env: {}
+compare:
+  ignore: []

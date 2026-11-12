@@ -1,0 +1,23 @@
+kind: helper
+name: openai-speech-voice-and-format
+call:
+  openai_speech:
+    client:
+      api_key: sk-speech
+      api_base: 'https://speech.test/v1'
+      timeout: 30
+      max_retries: 4
+      organization: org-ignored
+      project: project-ignored
+    request:
+      model: tts-1
+      input: Hello speech
+      voice: alloy
+      response_format: wav
+      extra_headers: {x-trace: trace-1}
+    reply:
+      status: 200
+      headers: [[content-type, audio/mpeg], [x-request-id, req-1]]
+      chunks: [[255, 251, 16]]
+env: {}
+compare: {ignore: []}

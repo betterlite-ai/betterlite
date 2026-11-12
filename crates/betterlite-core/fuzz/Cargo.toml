@@ -195,3 +195,10 @@ path = "fuzz_targets/listen_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "realtime_contract"
+path = "fuzz_targets/realtime_contract.rs"
+test = false
+doc = false
+bench = false

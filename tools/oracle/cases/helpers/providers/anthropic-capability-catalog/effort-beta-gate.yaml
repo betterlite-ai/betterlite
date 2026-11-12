@@ -1,0 +1,25 @@
+kind: helper
+name: effort-beta-gate
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+      packaged: {}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - {function: effort_beta_gate, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}}
+      - {function: effort_beta_gate, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {output_config: {effort: high}}}
+      - {function: effort_beta_gate, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {reasoning_effort: high}}
+      - {function: effort_beta_gate, model: claude-opus-4-5, custom_llm_provider: anthropic, params: {reasoning_effort: high}}
+      - {function: effort_beta_gate, model: claude-opus_4_5, custom_llm_provider: anthropic, params: {reasoning_effort: low}}
+      - {function: effort_beta_gate, model: claude-opus-4-5, custom_llm_provider: anthropic, params: {reasoning_effort: ""}}
+      - {function: effort_beta_gate, model: claude-opus-4-5, custom_llm_provider: anthropic, params: {reasoning_effort: 5}}
+      - {function: effort_beta_gate, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {reasoning_effort: high}}
+      - {function: effort_beta_gate, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {output_config: {effort: medium}}}
+      - {function: effort_beta_gate, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {output_config: {effort: ""}}}
+      - {function: effort_beta_gate, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {output_config: {effort: 5}}}
+      - {function: effort_beta_gate, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {output_config: plain}}
+      - {function: effort_beta_gate, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {output_config: {}}}
+env: {}
+compare: {ignore: []}
