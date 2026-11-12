@@ -13,13 +13,12 @@ use crate::sections::Section;
 
 mod tests;
 
-// serde rejects a unit struct from a non-empty mapping, so an empty braced struct ignores every YAML key
 #[derive(Debug, Default, Deserialize)]
-#[expect(
-    clippy::empty_structs_with_brackets,
-    reason = "serde rejects a unit struct from a non-empty mapping"
-)]
-pub struct Raw {}
+pub struct Raw {
+    // the two toggles and the pooled marker come only from the environment, so this section owns no YAML key
+    #[serde(skip)]
+    _no_yaml_keys: (),
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
