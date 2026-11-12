@@ -27,13 +27,13 @@ call:
       - function: content
         fixture:
           kind: fail_tell
-          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          data_base64: /9j/4AAQSkZJRg==
           position: 7
           name: null
       - function: content
         fixture:
           kind: fail_seek
-          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          data_base64: /9j/4AAQSkZJRg==
           position: 7
           name: null
       - function: content
@@ -45,7 +45,7 @@ call:
       - function: content
         fixture:
           kind: fail_restore
-          data_base64: iVBORw0KGgoAAAANSUhEUgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          data_base64: /9j/4AAQSkZJRgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
           position: 7
           name: null
       - function: content

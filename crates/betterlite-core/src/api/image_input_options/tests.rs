@@ -419,8 +419,8 @@ fn unknown_detected_name_parses_to_none() {
 
 #[test]
 fn seekable_reads_from_the_start_and_restores_the_position() {
-    let mut source = reader(PNG, 7, Failure::None);
-    assert_eq!(image_content_type_seekable(&mut source), "image/png");
+    let mut source = reader(JPEG, 7, Failure::None);
+    assert_eq!(image_content_type_seekable(&mut source), "image/jpeg");
     assert_eq!(source.cursor.position(), 7);
     assert_eq!(source.read_sizes, vec![SNIFF_BYTES]);
 }
@@ -437,7 +437,7 @@ fn seekable_inspects_no_more_than_the_sniff_limit() {
 
 #[test]
 fn seekable_tell_failure_returns_png_without_reading() {
-    let mut source = reader(PNG, 7, Failure::Tell);
+    let mut source = reader(JPEG, 7, Failure::Tell);
     assert_eq!(image_content_type_seekable(&mut source), DEFAULT_MIME);
     assert_eq!(source.cursor.position(), 7);
     assert!(source.read_sizes.is_empty());
@@ -445,7 +445,7 @@ fn seekable_tell_failure_returns_png_without_reading() {
 
 #[test]
 fn seekable_initial_seek_failure_returns_png_without_reading() {
-    let mut source = reader(PNG, 7, Failure::Seek);
+    let mut source = reader(JPEG, 7, Failure::Seek);
     assert_eq!(image_content_type_seekable(&mut source), DEFAULT_MIME);
     assert_eq!(source.cursor.position(), 7);
     assert!(source.read_sizes.is_empty());
@@ -461,11 +461,13 @@ fn seekable_read_failure_returns_png_and_leaves_position_at_zero() {
 
 #[test]
 fn seekable_restore_failure_returns_png_after_reading() {
-    let mut source = reader(PNG, 7, Failure::Restore);
+    let mut bytes = JPEG.to_vec();
+    bytes.resize(SNIFF_BYTES + 50, 0);
+    let mut source = reader(&bytes, 7, Failure::Restore);
     assert_eq!(image_content_type_seekable(&mut source), DEFAULT_MIME);
     assert_eq!(
         source.cursor.position(),
-        u64::try_from(PNG.len()).expect("length")
+        u64::try_from(SNIFF_BYTES).expect("limit")
     );
     assert_eq!(source.read_sizes, vec![SNIFF_BYTES]);
 }
