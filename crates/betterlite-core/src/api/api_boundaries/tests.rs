@@ -7,10 +7,10 @@ use super::{
     LimitErrorFields,
 };
 
-// the caps are literals here (0x0001_0000 is 65536), so a mutated bound constant cannot move the test with it
+// the caps are literals here, so a mutated bound constant cannot move the test with it
 const JSON_CAP: usize = 16 * 1024 * 1024;
 const EVENT_CAP: usize = 1024 * 1024;
-const ITEMS_CAP: usize = 0x0001_0000;
+const ITEMS_CAP: usize = 64 * 1024;
 
 const JSON_FIELDS: LimitErrorFields = LimitErrorFields {
     status: 413,

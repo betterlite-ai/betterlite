@@ -12,11 +12,10 @@ pub struct ApiLimits {
 
 impl Default for ApiLimits {
     fn default() -> Self {
-        // 16 MiB, 1 MiB and 64 Ki items; 0x0001_0000 is 65536
         Self {
             max_json_bytes: 16 * 1024 * 1024,
             max_event_bytes: 1024 * 1024,
-            max_items: 0x0001_0000,
+            max_items: 64 * 1024,
         }
     }
 }
