@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-params-seed-parameter-set
+call:
+  openai_response_params:
+    responses_parameter_set:
+      probes:
+      - {model: gpt-4o}
+env: {}
+compare: {ignore: []}

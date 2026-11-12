@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-params-seed-capabilities
+call:
+  openai_response_params:
+    provider_capabilities:
+      probes:
+      - {provider: openai, body: {id: resp_1, object: response, deleted: true}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: output-tool-fields
+call:
+  response_chat_history:
+    operation: output_tool_fields
+    items:
+      - {item: {type: function_call, id: fc_1, call_id: call_1, name: f, arguments: "{}"}, index: 3}
+      - {item: {type: custom_tool_call, id: ct_1, call_id: c2, name: "", input: raw}, index: 0}
+      - {item: {type: custom_tool_call, id: ct_2, call_id: c3}, index: 1}
+      - {item: {type: function_call, id: fc_2, call_id: call_7}, index: 2}
+      - {item: {type: function_call, call_id: c4}, index: 3, provider_specific_fields: {kind: dict, value: {region: us}}}
+      - {item: {type: function_call, call_id: c5}, index: 3, provider_specific_fields: {kind: dict, value: {}}}
+      - {item: {type: function_call, call_id: c6}, index: 3, provider_specific_fields: {kind: unsupported, value: [x]}}
+      - {item: {type: function_call, call_id: c7}, index: 4, provider_specific_fields: {kind: attributes, region: us}}
+env: {}
+compare: {ignore: []}

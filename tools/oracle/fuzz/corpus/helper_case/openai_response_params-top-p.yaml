@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-params-seed-top-p
+call:
+  openai_response_params:
+    top_p_with_reasoning:
+      probes:
+      - {model: gpt-5.2, params: {top_p: null, reasoning: {effort: high}}, model_cost: {gpt-5.2: {supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+env: {}
+compare: {ignore: []}

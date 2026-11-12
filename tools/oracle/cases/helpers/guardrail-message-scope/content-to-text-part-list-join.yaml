@@ -1,0 +1,6 @@
+kind: helper
+name: content-to-text-part-list-join
+call:
+  b3663: {"function": "content_text", "content": [{"type": "text", "text": "a"}, {"type": "image_url", "image_url": {"url": "u"}}, {"type": "text", "text": "b"}], "parts": [], "new_text": ""}
+env: {}
+compare: {ignore: []}

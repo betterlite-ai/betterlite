@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-tool-keys-function-text
+call:
+  b5650: {function: tool_keys, tools: [{type: function, function: "f", input_examples: [1]}]}
+env: {}
+compare: {ignore: []}

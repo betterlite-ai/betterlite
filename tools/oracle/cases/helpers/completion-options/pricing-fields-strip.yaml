@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-strip
+call:
+  b5650: {function: strip, model_info: {id: dep-1, input_cost_per_token: 0.000001, output_vector_size: 8, tiered_pricing: [], off_peak_pricing: {a: 1}, mode: chat, custom_note: x}}
+env: {}
+compare: {ignore: []}
