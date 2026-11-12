@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_models::decisions::Json;
 
 use crate::backend::memory::MemoryCacheOps;
 use crate::backend::{BackendError, CacheResult, Ttl};
@@ -14,6 +15,23 @@ pub struct DualCacheEnvelope<'cache, Memory: MemoryCacheOps> {
     pub cache: &'cache DualCache<Memory>,
 }
 
+// a write prepares the Json the dual cache stores and the options every dual-cache write shares
+fn prepare(
+    value: &CacheValue,
+    ttl: Ttl,
+    operation: &'static str,
+) -> CacheResult<(Json, CacheOptions)> {
+    let json = to_json(value).ok_or(BackendError::Unsupported(operation))?;
+    Ok((
+        json,
+        CacheOptions {
+            ttl,
+            local_only: false,
+            refresh_ttl: false,
+        },
+    ))
+}
+
 #[async_trait]
 impl<Memory: MemoryCacheOps> EnvelopeBackend for DualCacheEnvelope<'_, Memory> {
     fn get_cache(&self, key: &str, _lookup: &mut CacheLookup) -> CacheResult<Option<CacheValue>> {
@@ -24,16 +42,8 @@ impl<Memory: MemoryCacheOps> EnvelopeBackend for DualCacheEnvelope<'_, Memory> {
     }
 
     fn set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        let json = to_json(&value).ok_or(BackendError::Unsupported("set_cache"))?;
-        self.cache.set_cache(
-            key,
-            &json,
-            CacheOptions {
-                ttl,
-                local_only: false,
-                refresh_ttl: false,
-            },
-        );
+        let (json, options) = prepare(&value, ttl, "set_cache")?;
+        self.cache.set_cache(key, &json, options);
         Ok(())
     }
 
@@ -47,33 +57,15 @@ impl<Memory: MemoryCacheOps> EnvelopeBackend for DualCacheEnvelope<'_, Memory> {
     }
 
     async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        let json = to_json(&value).ok_or(BackendError::Unsupported("async_set_cache"))?;
-        self.cache
-            .async_set_cache(
-                key,
-                &json,
-                CacheOptions {
-                    ttl,
-                    local_only: false,
-                    refresh_ttl: false,
-                },
-            )
-            .await;
+        let (json, options) = prepare(&value, ttl, "async_set_cache")?;
+        self.cache.async_set_cache(key, &json, options).await;
         Ok(())
     }
 
     async fn batch_cache_write(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        let json = to_json(&value).ok_or(BackendError::Unsupported("batch_cache_write"))?;
-        let entries = [(key.to_owned(), json)];
+        let (json, options) = prepare(&value, ttl, "batch_cache_write")?;
         self.cache
-            .async_set_cache_pipeline(
-                &entries,
-                CacheOptions {
-                    ttl,
-                    local_only: false,
-                    refresh_ttl: false,
-                },
-            )
+            .async_set_cache_pipeline(&[(key.to_owned(), json)], options)
             .await;
         Ok(())
     }

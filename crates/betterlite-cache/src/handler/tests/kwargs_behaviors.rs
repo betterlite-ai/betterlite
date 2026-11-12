@@ -77,24 +77,22 @@ fn key_request_rejects_wrong_named_field_types(#[case] field: &str, #[case] valu
 #[rstest]
 #[case::preset_key_integer(
     object(&[("preset_cache_key", integer(1))]),
-    "litellm_params.preset_cache_key"
+    "the litellm_params.preset_cache_key value must be a string"
 )]
 #[case::params_metadata_text(
     object(&[("metadata", text("bad"))]),
-    "litellm_params.metadata"
+    "the litellm_params.metadata value must be an object"
 )]
 fn key_request_rejects_wrong_litellm_param_types(
     #[case] litellm_params: KeyValue,
-    #[case] expected_field: &str,
+    #[case] expected: &str,
 ) {
-    let request = key_request(&kwargs(&[
+    let error = key_request(&kwargs(&[
         ("model", text("gpt-4")),
         ("litellm_params", litellm_params),
-    ]));
-    assert!(matches!(
-        request,
-        Err(HandlerError::FieldType { field, .. }) if field == expected_field
-    ));
+    ]))
+    .expect_err("the wrong type is rejected");
+    assert_eq!(error.to_string(), expected);
 }
 
 #[test]

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 use betterlite_models::decisions::{Extra, Json};
@@ -72,12 +70,12 @@ pub fn current_format_embedding_entry(entry: &CacheValue) -> Option<CachedEmbedd
         return None;
     }
     Some(CachedEmbedding {
-        embedding: nullable_embedding(fields).ok()?,
-        index: nullable_integer(fields, "index").ok()?,
-        object: nullable_string(fields, "object").ok()?,
-        model: nullable_string(fields, "model").ok()?,
-        prompt_tokens: nullable_integer(fields, "prompt_tokens").ok()?,
-        prompt_tokens_details: nullable_details(fields).ok()?,
+        embedding: nullable(fields.get("embedding"), embedding_of).ok()?,
+        index: nullable(fields.get("index"), integer_of).ok()?,
+        object: nullable(fields.get("object"), text_of).ok()?,
+        model: nullable(fields.get("model"), text_of).ok()?,
+        prompt_tokens: nullable(fields.get("prompt_tokens"), integer_of).ok()?,
+        prompt_tokens_details: nullable(fields.get("prompt_tokens_details"), details_of).ok()?,
         format_version,
     })
 }
@@ -101,91 +99,71 @@ fn is_embedding_input(value: &KeyValue) -> bool {
 
 struct Rejected;
 
-fn nullable_embedding(
-    fields: &BTreeMap<String, CacheValue>,
-) -> Result<Option<EmbeddingPayload>, Rejected> {
-    match fields.get("embedding").ok_or(Rejected)? {
-        CacheValue::Null => Ok(None),
-        CacheValue::Text(text) => Ok(Some(EmbeddingPayload::Text(text.clone()))),
-        CacheValue::Array(items) => {
-            let mut numbers = Vec::with_capacity(items.len());
-            for item in items {
-                numbers.push(embedding_number(item)?);
-            }
-            Ok(Some(EmbeddingPayload::Vector(numbers)))
-        }
-        CacheValue::Boolean(_)
-        | CacheValue::Integer(_)
-        | CacheValue::Float(_)
-        | CacheValue::Bytes(_)
-        | CacheValue::Credential(_)
-        | CacheValue::Object(_) => Err(Rejected),
+fn nullable<Value, Extract>(
+    value: Option<&CacheValue>,
+    extract: Extract,
+) -> Result<Option<Value>, Rejected>
+where
+    Extract: FnOnce(&CacheValue) -> Option<Value>,
+{
+    let Some(present) = value else {
+        return Err(Rejected);
+    };
+    if matches!(present, CacheValue::Null) {
+        return Ok(None);
     }
+    extract(present).map(Some).ok_or(Rejected)
 }
 
-fn embedding_number(value: &CacheValue) -> Result<Number, Rejected> {
+fn embedding_of(value: &CacheValue) -> Option<EmbeddingPayload> {
+    if let CacheValue::Text(text) = value {
+        return Some(EmbeddingPayload::Text(text.clone()));
+    }
+    if let CacheValue::Array(items) = value {
+        return embedding_vector(items);
+    }
+    None
+}
+
+const fn integer_of(value: &CacheValue) -> Option<i64> {
+    if let CacheValue::Integer(number) = value {
+        return Some(*number);
+    }
+    None
+}
+
+fn text_of(value: &CacheValue) -> Option<String> {
+    if let CacheValue::Text(text) = value {
+        return Some(text.clone());
+    }
+    None
+}
+
+fn embedding_vector(items: &[CacheValue]) -> Option<EmbeddingPayload> {
+    let mut numbers = Vec::with_capacity(items.len());
+    for item in items {
+        numbers.push(embedding_number(item)?);
+    }
+    Some(EmbeddingPayload::Vector(numbers))
+}
+
+fn embedding_number(value: &CacheValue) -> Option<Number> {
     match value {
-        CacheValue::Integer(number) => Ok(Number::from(*number)),
-        CacheValue::Float(number) => Number::from_f64(*number).ok_or(Rejected),
+        CacheValue::Integer(number) => Some(Number::from(*number)),
+        CacheValue::Float(number) => Number::from_f64(*number),
         CacheValue::Null
         | CacheValue::Boolean(_)
         | CacheValue::Text(_)
         | CacheValue::Bytes(_)
         | CacheValue::Credential(_)
         | CacheValue::Array(_)
-        | CacheValue::Object(_) => Err(Rejected),
+        | CacheValue::Object(_) => None,
     }
 }
 
-fn nullable_integer(
-    fields: &BTreeMap<String, CacheValue>,
-    name: &str,
-) -> Result<Option<i64>, Rejected> {
-    match fields.get(name).ok_or(Rejected)? {
-        CacheValue::Null => Ok(None),
-        CacheValue::Integer(number) => Ok(Some(*number)),
-        CacheValue::Boolean(_)
-        | CacheValue::Float(_)
-        | CacheValue::Text(_)
-        | CacheValue::Bytes(_)
-        | CacheValue::Credential(_)
-        | CacheValue::Array(_)
-        | CacheValue::Object(_) => Err(Rejected),
-    }
-}
-
-fn nullable_string(
-    fields: &BTreeMap<String, CacheValue>,
-    name: &str,
-) -> Result<Option<String>, Rejected> {
-    match fields.get(name).ok_or(Rejected)? {
-        CacheValue::Null => Ok(None),
-        CacheValue::Text(text) => Ok(Some(text.clone())),
-        CacheValue::Boolean(_)
-        | CacheValue::Integer(_)
-        | CacheValue::Float(_)
-        | CacheValue::Bytes(_)
-        | CacheValue::Credential(_)
-        | CacheValue::Array(_)
-        | CacheValue::Object(_) => Err(Rejected),
-    }
-}
-
-fn nullable_details(fields: &BTreeMap<String, CacheValue>) -> Result<Option<Extra>, Rejected> {
-    match fields.get("prompt_tokens_details").ok_or(Rejected)? {
-        CacheValue::Null => Ok(None),
-        value @ CacheValue::Object(_) => match to_json(value).ok_or(Rejected)? {
-            Json::Object(entries) => Ok(Some(entries)),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                Err(Rejected)
-            }
-        },
-        CacheValue::Boolean(_)
-        | CacheValue::Integer(_)
-        | CacheValue::Float(_)
-        | CacheValue::Text(_)
-        | CacheValue::Bytes(_)
-        | CacheValue::Credential(_)
-        | CacheValue::Array(_) => Err(Rejected),
+fn details_of(value: &CacheValue) -> Option<Extra> {
+    match to_json(value)? {
+        Json::Object(entries) => Some(entries),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
