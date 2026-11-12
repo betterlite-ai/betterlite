@@ -1,0 +1,25 @@
+kind: helper
+name: gemini-candidates-later-candidate-safety
+call:
+  gemini_candidates:
+    streaming: false
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      candidates:
+        - content:
+            parts:
+              - text: first answer
+          finishReason: STOP
+        - content:
+            parts:
+              - text: second answer
+          finishReason: SAFETY
+      usageMetadata:
+        promptTokenCount: 2
+        candidatesTokenCount: 4
+        totalTokenCount: 6
+env: {}
+compare: {ignore: []}
