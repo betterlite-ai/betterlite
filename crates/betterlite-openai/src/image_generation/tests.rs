@@ -5,12 +5,14 @@ use std::fs;
 use std::future::{Future, ready};
 use std::io::Error as IoError;
 use std::path::PathBuf;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
 };
@@ -27,6 +29,8 @@ use http::header::{AUTHORIZATION, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 
 use super::call::{ImageGenerationCall, prepare_image_call};
 use super::decode::decode_image_reply;
@@ -37,7 +41,7 @@ use super::family::{
     map_openai_params, select_image_family,
 };
 use super::logging::PrePostLogger;
-use super::reply::ImageGenerationReply;
+use super::reply::{ImageGenerationReply, ImageReplyError};
 use super::request::{
     ImageGenerationOutcome, begin_image_generation, finish_image_generation, send_image_generation,
 };
@@ -747,4 +751,102 @@ fn image_generation_failure_is_mapped_only_for_the_sync_facade() {
     let raw = ImageGenerationFailure::Raw(ImageGenerationSource::MaxRetries);
     assert!(!raw.mapped());
     assert_eq!(raw.status(), Some(422));
+}
+
+#[rstest]
+#[case::message_defaults_to_422(r#"{"error":{"message":"boom"}}"#, Some((422, "boom")))]
+#[case::integer_code_is_the_status(r#"{"error":{"message":"slow","code":429}}"#, Some((429, "slow")))]
+#[case::code_alone_gets_the_default_text(r#"{"error":{"code":429}}"#, Some((429, "Error in response object")))]
+#[case::text_code_falls_back_to_422(r#"{"error":{"message":"x","code":"bad"}}"#, Some((422, "x")))]
+#[case::oversized_code_falls_back_to_422(r#"{"error":{"message":"x","code":70000}}"#, Some((422, "x")))]
+#[case::negative_code_falls_back_to_422(r#"{"error":{"message":"x","code":-1}}"#, Some((422, "x")))]
+#[case::empty_message_with_a_code(r#"{"error":{"message":"","code":429}}"#, Some((429, "")))]
+#[case::empty_object_is_no_error(r#"{"error":{}}"#, None)]
+#[case::empty_message_and_null_code(r#"{"error":{"message":"","code":null}}"#, None)]
+#[case::null_error(r#"{"error":null}"#, None)]
+#[case::empty_text_error(r#"{"error":""}"#, None)]
+#[case::text_error(r#"{"error":"boom"}"#, Some((422, "Error in response object")))]
+#[case::true_error(r#"{"error":true}"#, Some((422, "Error in response object")))]
+#[case::number_error(r#"{"error":5}"#, Some((422, "Error in response object")))]
+#[case::list_error(r#"{"error":[1]}"#, Some((422, "Error in response object")))]
+#[case::number_message(r#"{"error":{"message":5}}"#, Some((422, "5")))]
+#[case::fraction_message(r#"{"error":{"message":1.5}}"#, Some((422, "1.5")))]
+#[case::zero_message(r#"{"error":{"message":0}}"#, None)]
+#[case::true_message(r#"{"error":{"message":true}}"#, Some((422, "true")))]
+#[case::false_message(r#"{"error":{"message":false}}"#, None)]
+#[case::empty_list_message(r#"{"error":{"message":[]}}"#, None)]
+#[case::list_message(r#"{"error":{"message":[1]}}"#, Some((422, "[1]")))]
+#[case::empty_object_message(r#"{"error":{"message":{}}}"#, None)]
+#[case::object_message(r#"{"error":{"message":{"a":1}}}"#, Some((422, r#"{"a":1}"#)))]
+fn response_object_errors(#[case] body: &str, #[case] expected: Option<(u16, &str)>) {
+    match (decode_image_reply(body.as_bytes(), NOW), expected) {
+        (Ok(_), None) => {}
+        (Err(ImageReplyError::ResponseObject { status, message }), Some((code, text))) => {
+            assert_eq!(status, code, "{body}");
+            assert_eq!(message, text, "{body}");
+        }
+        (found, wanted) => panic!("{body}: {found:?} against {wanted:?}"),
+    }
+}
+
+#[rstest]
+#[case::error_message(r#"{"error":{"message":"slow down"}}"#, "slow down")]
+#[case::plain_text("service unavailable", "service unavailable")]
+#[case::numeric_message(r#"{"error":{"message":5}}"#, r#"{"error":{"message":5}}"#)]
+#[case::text_error(r#"{"error":"nope"}"#, r#"{"error":"nope"}"#)]
+#[case::list_body("[1]", "[1]")]
+#[tokio::test]
+async fn status_error_messages(#[case] body: &str, #[case] expected: &str) {
+    let transport = FakeTransport::answering(503, &[], body);
+    let failure = Runner::new()
+        .run(call("dall-e-2", options("{}")), &transport)
+        .await
+        .unwrap_err();
+    assert_eq!(failure.failure_source().to_string(), expected);
+    assert_eq!(failure.status(), Some(503));
+}
+
+async fn serve_image_reply(listener: TcpListener) -> String {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while !received.ends_with(b"}") {
+        let read = stream.read(&mut chunk).await.unwrap();
+        received.extend_from_slice(&chunk[..read]);
+    }
+    let body = r#"{"created":7,"data":[{"url":"https://example.test/a.png"}]}"#;
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-request-id: req-9\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(reply.as_bytes()).await.unwrap();
+    String::from_utf8(received).unwrap().to_lowercase()
+}
+
+#[tokio::test]
+async fn proxied_client_posts_to_the_images_endpoint() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut local = call("dall-e-2", options(r#"{"n":2}"#));
+    local.api_base = Some(format!("http://{address}/v1/"));
+    let prepared = prepare_image_call(local).unwrap();
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let (head, sent) = tokio::join!(
+        serve_image_reply(listener),
+        send_image_generation(&prepared, &client)
+    );
+    let outcome = sent.unwrap();
+    assert!(
+        head.starts_with("post /v1/images/generations http/1.1"),
+        "{head}"
+    );
+    assert!(head.contains("authorization: bearer sk-test"), "{head}");
+    assert!(head.contains("content-type: application/json"), "{head}");
+    assert!(head.contains(r#""model":"dall-e-2""#), "{head}");
+    assert_eq!(outcome.reply.created, 7);
+    assert_eq!(
+        outcome.provider_headers.headers.get("x-request-id"),
+        Some(&String::from("req-9"))
+    );
 }
