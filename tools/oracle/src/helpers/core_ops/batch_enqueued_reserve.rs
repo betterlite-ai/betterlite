@@ -80,6 +80,57 @@ impl ScriptedScripts {
             .unwrap_or_else(PoisonError::into_inner)
             .push(event);
     }
+
+    fn next_step(&self, queue: &Mutex<VecDeque<Step>>, event: Value) -> Option<Step> {
+        self.record(event);
+        queue
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+    }
+
+    fn refund_reply(&self, counter_key: &str, tokens: i64) -> Result<(), ScriptFailure> {
+        let step = self
+            .refund
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        self.record(json!({
+            "event": "refund",
+            "key": counter_key,
+            "args": [tokens],
+        }));
+        match step {
+            Some(Step::Integer(_) | Step::Reply(_)) => Ok(()),
+            Some(Step::Failure(message)) => Err(ScriptFailure { message }),
+            None => Err(ScriptFailure {
+                message: "the scripted refund queue is empty".to_owned(),
+            }),
+        }
+    }
+}
+
+fn reserve_reply(step: Option<Step>) -> Result<ReserveScriptReply, ScriptFailure> {
+    let Some(next) = step else {
+        return Err(ScriptFailure {
+            message: "the scripted reserve queue is empty".to_owned(),
+        });
+    };
+    match next {
+        Step::Reply(values) => match values.as_slice() {
+            [status, count] => Ok(ReserveScriptReply {
+                status: *status,
+                count: *count,
+            }),
+            _ => Err(ScriptFailure {
+                message: "the scripted reserve reply is not a status pair".to_owned(),
+            }),
+        },
+        Step::Integer(value) => Err(ScriptFailure {
+            message: format!("the scripted reserve reply {value} is not a status pair"),
+        }),
+        Step::Failure(message) => Err(ScriptFailure { message }),
+    }
 }
 
 impl ReservationScripts for ScriptedScripts {
@@ -92,34 +143,13 @@ impl ReservationScripts for ScriptedScripts {
         ttl_seconds: i64,
         limit: i64,
     ) -> impl Future<Output = Result<ReserveScriptReply, ScriptFailure>> + Send {
-        self.record(json!({
+        let event = json!({
             "event": "reserve",
             "key": counter_key,
             "args": [tokens, ttl_seconds, limit],
-        }));
-        let step = self
-            .reserve
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        ready(match step {
-            Some(Step::Reply(values)) => match values.as_slice() {
-                [status, count] => Ok(ReserveScriptReply {
-                    status: *status,
-                    count: *count,
-                }),
-                _ => Err(ScriptFailure {
-                    message: "the scripted reserve reply is not a status pair".to_owned(),
-                }),
-            },
-            Some(Step::Integer(value)) => Err(ScriptFailure {
-                message: format!("the scripted reserve reply {value} is not a status pair"),
-            }),
-            Some(Step::Failure(message)) => Err(ScriptFailure { message }),
-            None => Err(ScriptFailure {
-                message: "the scripted reserve queue is empty".to_owned(),
-            }),
-        })
+        });
+        let step = self.next_step(&self.reserve, event);
+        ready(reserve_reply(step))
     }
 
     fn refund(
@@ -127,20 +157,7 @@ impl ReservationScripts for ScriptedScripts {
         counter_key: &str,
         tokens: i64,
     ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
-        self.record(json!({
-            "event": "refund",
-            "key": counter_key,
-            "args": [tokens],
-        }));
-        let step = self
-            .refund
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        ready(match step {
-            Some(Step::Failure(message)) => Err(ScriptFailure { message }),
-            Some(Step::Integer(_) | Step::Reply(_)) | None => Ok(()),
-        })
+        ready(self.refund_reply(counter_key, tokens))
     }
 }
 

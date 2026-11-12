@@ -122,6 +122,11 @@ impl ReservationScripts for ScriptedScripts {
         counter_key: &str,
         tokens: i64,
     ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
+        let refunded = self
+            .refunds
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -129,15 +134,10 @@ impl ReservationScripts for ScriptedScripts {
                 key: counter_key.to_owned(),
                 tokens,
             });
-        let refunded = self
-            .refunds
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        ready(match refunded {
-            Some(false) => Err(ScriptFailure),
-            Some(true) | None => Ok(()),
-        })
+        if refunded != Some(true) {
+            return ready(Err(ScriptFailure));
+        }
+        ready(Ok(()))
     }
 }
 
