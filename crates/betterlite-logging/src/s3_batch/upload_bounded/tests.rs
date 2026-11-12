@@ -278,6 +278,14 @@ async fn adaptive_limiter_grows_and_halves() {
     limiter.record(false);
     limiter.record(false);
     assert_eq!(limiter.snapshot().limit, 3);
+    limiter.record(false);
+    limiter.record(false);
+    limiter.record(false);
+    assert_eq!(
+        limiter.snapshot().limit,
+        3,
+        "the limit stays at the ceiling"
+    );
     limiter.record(true);
     assert_eq!(limiter.snapshot().limit, 1);
 }
