@@ -1,0 +1,10 @@
+kind: helper
+name: provider-alias-resolution-second
+call:
+  anthropic_beta_config:
+    function: provider_name
+    matrix: {anthropic: {}, provider_aliases: {first: second, second: anthropic}}
+    provider: second
+env: {}
+compare:
+  ignore: []

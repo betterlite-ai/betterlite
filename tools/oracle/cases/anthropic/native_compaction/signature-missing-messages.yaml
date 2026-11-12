@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-signature-missing-messages
+call:
+  b3545: {"function": "summary", "protocol": "messages", "response": {"stop_reason": "compaction", "content": [{"type": "compaction", "content": "c"}]}}
+env: {}
+compare:
+  ignore: []

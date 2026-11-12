@@ -1,0 +1,15 @@
+kind: helper
+name: openai-reasoning-models-temperature-while-thinking
+call:
+  openai_reasoning_models:
+    temperature_while_thinking:
+      probes:
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {temperature: null}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {temperature: 1, reasoning_effort: high}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {temperature: 0.5}}
+      - {model: gpt-5.5, chat_models: [gpt-5.5], model_cost: {gpt-5.5: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, default_reasoning_effort: high}}, requested: {temperature: 0.5}}
+      - {model: gpt-5.5, chat_models: [gpt-5.5], model_cost: {gpt-5.5: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, default_reasoning_effort: high}}, requested: {temperature: 0.5}, drop_params: true}
+      - {model: gpt-5, chat_models: [gpt-5], model_cost: {gpt-5: {litellm_provider: openai, supports_tool_choice: false, supports_none_reasoning_effort: false}}, requested: {temperature: 0.5, reasoning_effort: none}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {}, existing: {temperature: 0.3}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: cached-shapes-bare-object
+call:
+  responses_tool_repair:
+    operation: normalize
+    definition: {__object__: {attrs: {unrelated: 1}, get: absent}}
+    tool_call_id: call_6
+env: {}
+compare:
+  ignore: []

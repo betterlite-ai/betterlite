@@ -1,0 +1,10 @@
+kind: helper
+name: responses-provider-base-error-fields
+call:
+  responses_provider_contract:
+    action: base_error_fields
+    message: bad
+    status_code: 429
+    headers: {retry-after: "3"}
+env: {}
+compare: {ignore: []}
