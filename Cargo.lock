@@ -2039,15 +2039,21 @@ dependencies = [
 name = "betterlite-mcp"
 version = "0.1.0"
 dependencies = [
+ "aws-credential-types",
  "aws-lc-rs",
+ "aws-smithy-async",
+ "axum",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
+ "bytes",
  "chrono",
  "derive_more",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "pem",

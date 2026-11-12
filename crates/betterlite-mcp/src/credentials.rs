@@ -1,7 +1,11 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use betterlite_http::mcp_sigv4::McpSigV4Auth;
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +50,10 @@ pub trait ResolvedAuth: Send + Sync {
     fn header_name(&self) -> Option<&str> {
         None
     }
+    // LiteLLM's ClientCredentialsBearerAuth refetches the token once after a 401; false leaves that answer standing
+    fn after_unauthorized(&self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+        Box::pin(async { false })
+    }
 }
 
 pub struct McpClient {
@@ -54,8 +62,10 @@ pub struct McpClient {
     pub auth_header_name: Option<String>,
     pub timeout: Duration,
     pub extra_headers: BTreeMap<String, String>,
-    pub resolved_auth: Option<Box<dyn ResolvedAuth>>,
-    pub aws_auth: Option<Box<dyn ResolvedAuth>>,
+    pub resolved_auth: Option<Arc<dyn ResolvedAuth>>,
+    pub aws_auth: Option<Arc<McpSigV4Auth>>,
+    // B4744's oracle helper still hands in a boxed aws auth; it applies like a resolved credential
+    pub boxed_aws_auth: Option<Arc<dyn ResolvedAuth>>,
     pub auth_value: Option<AuthValue>,
     pub credential_slot: Option<String>,
 }
@@ -76,25 +86,39 @@ impl McpClient {
         resolved_auth: Option<Box<dyn ResolvedAuth>>,
         aws_auth: Option<Box<dyn ResolvedAuth>>,
     ) -> Self {
-        let credential_slot = auth_header_name.clone().or_else(|| {
-            let auth = resolved_auth.as_ref()?;
-            auth.header_name().map(str::to_owned)
-        });
         let mut client = Self {
+            credential_slot: auth_header_name.clone(),
             server_url,
             auth_type,
             auth_header_name,
             timeout,
             extra_headers,
-            resolved_auth,
-            aws_auth,
-            credential_slot,
+            resolved_auth: None,
+            aws_auth: None,
+            boxed_aws_auth: aws_auth.map(Arc::from),
             auth_value: None,
         };
+        client = client.with_shared_auth(resolved_auth.map(Arc::from), None);
         if let Some(value) = auth_value {
             client.update_auth_value(value);
         }
         client
+    }
+
+    // B4744's oracle helper builds the client from boxed auth objects, so a shared credential replaces them here
+    #[must_use]
+    pub fn with_shared_auth(
+        mut self,
+        resolved_auth: Option<Arc<dyn ResolvedAuth>>,
+        aws_auth: Option<Arc<McpSigV4Auth>>,
+    ) -> Self {
+        self.credential_slot = self.auth_header_name.clone().or_else(|| {
+            let auth = resolved_auth.as_ref()?;
+            auth.header_name().map(str::to_owned)
+        });
+        self.resolved_auth = resolved_auth;
+        self.aws_auth = aws_auth;
+        self
     }
 
     pub fn update_auth_value(&mut self, auth_value: AuthValue) {
