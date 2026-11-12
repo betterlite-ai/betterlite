@@ -9,11 +9,14 @@ mod tests;
 
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use tokio_util::task::TaskTracker;
 
 use crate::credential_sources::sdk::CredentialClock;
+use crate::token_refresh::background::RefreshJob;
 use error::{CredentialCacheError, needs_reauthentication};
 use executor::CredentialExecutor;
 use key::CredentialKey;
@@ -25,10 +28,13 @@ use state::needs_refresh;
 // VertexBase's credential state: the cached records, their refresh bookkeeping and the injected clock and executor
 pub struct CredentialCache {
     // B1303's asynchronous algorithm extends this state inside the crate
-    pub(crate) records: Mutex<BTreeMap<CredentialKey, CacheRecord>>,
+    pub(crate) records: Arc<Mutex<BTreeMap<CredentialKey, CacheRecord>>>,
     pub(crate) leases: Arc<LeaseMap>,
     pub(crate) clock: Arc<dyn CredentialClock>,
     pub(crate) executor: Arc<dyn CredentialExecutor>,
+    pub(crate) refreshes: Arc<Mutex<BTreeMap<CredentialKey, RefreshJob>>>,
+    pub(crate) next_refresh: AtomicU64,
+    pub(crate) tasks: TaskTracker,
 }
 
 enum RefreshFailure {
@@ -40,11 +46,27 @@ impl CredentialCache {
     #[must_use]
     pub fn new(clock: Arc<dyn CredentialClock>, executor: Arc<dyn CredentialExecutor>) -> Self {
         Self {
-            records: Mutex::new(BTreeMap::new()),
+            records: Arc::new(Mutex::new(BTreeMap::new())),
             leases: Arc::new(LeaseMap::default()),
             clock,
             executor,
+            refreshes: Arc::new(Mutex::new(BTreeMap::new())),
+            next_refresh: AtomicU64::new(0),
+            tasks: TaskTracker::new(),
         }
+    }
+
+    // the server may bring its own tracker so its shutdown drains these refreshes with every other task
+    #[must_use]
+    pub fn with_tasks(mut self, tasks: TaskTracker) -> Self {
+        self.tasks = tasks;
+        self
+    }
+
+    // a closed tracker refuses new background work, and draining waits for the refreshes already running
+    pub async fn shutdown(&self) {
+        self.tasks.close();
+        self.tasks.wait().await;
     }
 
     // VertexBase.get_access_token: the synchronous lookup with its one-shot reauthentication branch
