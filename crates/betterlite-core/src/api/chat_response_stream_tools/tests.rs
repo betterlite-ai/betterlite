@@ -321,6 +321,14 @@ fn reasoning_end_ignores_a_chunk_without_choices(#[case] chunk: &str) {
     r#"{"choices":[{"delta":{"thinking_blocks":[{"signature":"s"}]}}]}"#,
     false
 )]
+#[case::reasoning_with_text(
+    r#"{"choices":[{"delta":{"reasoning_content":"r","content":"hi"}}]}"#,
+    false
+)]
+#[case::blocks_with_text(
+    r#"{"choices":[{"delta":{"thinking_blocks":[{"signature":"s"}],"content":"hi"}}]}"#,
+    false
+)]
 #[case::text_blocks(r#"{"choices":[{"delta":{"thinking_blocks":"x"}}]}"#, false)]
 #[case::text(r#"{"choices":[{"delta":{"content":"hi"}}]}"#, true)]
 #[case::empty_text(r#"{"choices":[{"delta":{"content":""}}]}"#, false)]
