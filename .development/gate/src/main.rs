@@ -94,6 +94,12 @@ enum Command {
             help = "Leave these check ids out (repeatable or comma-separated)"
         )]
         skip: Vec<String>,
+        #[arg(
+            long,
+            value_delimiter = ',',
+            help = "Start these check ids at once, one after another, while the other checks run (repeatable or comma-separated)"
+        )]
+        beside: Vec<String>,
     },
     #[command(
         about = "Write the JSON Schemas generated from the format types into .development/schema/"
@@ -230,6 +236,16 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
     run_command(command, &Development::open(&directory)?)
 }
 
+fn run_selection(
+    development: &Development,
+    id: &str,
+    selection: &Selection,
+) -> Result<(Vec<String>, bool), GateError> {
+    let task = development.task(id)?;
+    let verdict = checks::run(development, &task, selection)?;
+    Ok((verdict.lines, verdict.passed))
+}
+
 fn run_command(
     command: Command,
     development: &Development,
@@ -253,14 +269,12 @@ fn run_command(
             let verdict = checks::run(development, &task, &selection)?;
             Ok((verdict.lines, verdict.passed))
         }
-        Command::Run { task, only, skip } => {
-            let verdict = checks::run(
-                development,
-                &development.task(&task)?,
-                &Selection { only, skip },
-            )?;
-            Ok((verdict.lines, verdict.passed))
-        }
+        Command::Run {
+            task,
+            only,
+            skip,
+            beside,
+        } => run_selection(development, &task, &Selection { only, skip, beside }),
         Command::Schema => Ok((schema::write(&development.root)?, true)),
         Command::Dispatch { task, notes, grant } => {
             Ok((dispatch::dispatch(development, &task, notes, grant)?, true))

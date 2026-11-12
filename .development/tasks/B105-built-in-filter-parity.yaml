@@ -262,7 +262,7 @@ out_of_scope:
   - "examples/README.md documents B3697/B8773 behavior and needs no executable port; llamaguard_prompt.txt has no caller at the pin in the open-source checkout, so no loader is built."
   - "SensitiveDataRoutingHandler and its cache policy are B3704, its registration is B8399, and handling a SensitiveDataRoute exception is B8392. No open-source built-in emits that exception at the pin. The cache-control hook is B3705 and is likewise installed by B8399."
   - "Code execution class/detection are B3701/B3702. Prompt-injection logic is B3703 and binding is B8850. hide_secrets is the missing-enterprise-package outcome owned by B3681, not a native secret detector."
-  - "Route ownership remains B8610 for the root, B8667/B8668/B8669/B8790 for the guardrail area, B8626 for MCP REST, B8701 for toolsets/sessions and B8728 for MCP transport. No route or mount is added by this umbrella."
+  - "Route ownership remains B8610 for the root, B8667/B8668/B8669/B8790 for the guardrail area, B8626 for MCP REST, B8701 for toolsets, B9950 for sessions and B8728 for MCP transport. No route or mount is added by this umbrella."
 pitfalls:
   - "_check_blocked_words uses literal substring search, whereas _filter_single_text turns an asterisk into .? and evaluates every configured word."
   - "The four chat aliases include engines and deployments paths; /openai/v1/chat/completions is not a decorator on this handler."
