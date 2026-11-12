@@ -282,6 +282,37 @@ async fn adaptive_limiter_grows_and_halves() {
     assert_eq!(limiter.snapshot().limit, 1);
 }
 
+#[tokio::test(start_paused = true)]
+async fn halving_with_permits_held_shrinks_the_pool_when_they_return() {
+    let limiter = UploadLimiter::new(1, Some(4)).expect("the bounds hold");
+    limiter.record(false);
+    limiter.record(false);
+    limiter.record(false);
+    assert_eq!(limiter.snapshot().limit, 3);
+    let first_held = limiter
+        .acquire(deadline(5))
+        .await
+        .expect("a permit is free");
+    let second_held = limiter
+        .acquire(deadline(5))
+        .await
+        .expect("a permit is free");
+    let third_held = limiter
+        .acquire(deadline(5))
+        .await
+        .expect("a permit is free");
+    limiter.record(true);
+    assert_eq!(limiter.snapshot().limit, 1);
+    drop((first_held, second_held, third_held));
+    let first = limiter
+        .acquire(deadline(5))
+        .await
+        .expect("one permit remains");
+    let second = limiter.acquire(deadline(5)).await;
+    assert_eq!(second.err(), Some(AcquireError::DeadlineExceeded));
+    drop(first);
+}
+
 #[test]
 fn fixed_limiter_has_a_semaphore_limit() {
     let limiter = UploadLimiter::new(4, None).expect("the bounds hold");

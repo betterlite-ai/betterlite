@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, SemaphorePermit};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout_at};
 pub const MAX_WAITERS: usize = 1024;
 pub const UPLOAD_WAIT: Duration = Duration::from_secs(600);
@@ -22,15 +22,8 @@ pub enum BoundsError {
 }
 #[derive(Debug)]
 pub struct UploadLimiter {
-    kind: Kind,
-}
-#[derive(Debug)]
-enum Kind {
-    Fixed(Semaphore),
-    Adaptive {
-        permits: Arc<Semaphore>,
-        state: Mutex<GateState>,
-    },
+    permits: Arc<Semaphore>,
+    gate: Option<Mutex<GateState>>,
 }
 #[derive(Debug)]
 struct GateState {
@@ -40,15 +33,10 @@ struct GateState {
     clean_streak: usize,
     owed: usize,
     waiters: usize,
-    held: Vec<OwnedSemaphorePermit>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimiterSnapshot {
     pub limit: usize,
-}
-pub enum UploadPermit<'limiter> {
-    Fixed(SemaphorePermit<'limiter>),
-    Adaptive(OwnedSemaphorePermit),
 }
 struct Waiting<'state> {
     state: &'state Mutex<GateState>,
@@ -61,140 +49,93 @@ fn lock(state: &Mutex<GateState>) -> MutexGuard<'_, GateState> {
 }
 impl UploadLimiter {
     pub fn new(window: usize, adaptive_ceiling: Option<usize>) -> Result<Self, BoundsError> {
-        adaptive_ceiling.map_or_else(
-            || {
-                Ok(Self {
-                    kind: Kind::Fixed(Semaphore::new(window)),
-                })
-            },
-            |ceiling| adaptive_limiter(window, ceiling),
-        )
+        let permits = Arc::new(Semaphore::new(window));
+        let Some(ceiling) = adaptive_ceiling else {
+            return Ok(Self {
+                permits,
+                gate: None,
+            });
+        };
+        if window == 0 || window > ceiling {
+            return Err(BoundsError::Invalid { window, ceiling });
+        }
+        let gate = GateState {
+            limit: window,
+            floor: window,
+            ceiling,
+            clean_streak: 0,
+            owed: 0,
+            waiters: 0,
+        };
+        Ok(Self {
+            permits,
+            gate: Some(Mutex::new(gate)),
+        })
     }
-    pub async fn acquire(&self, deadline: Instant) -> Result<UploadPermit<'_>, AcquireError> {
-        match &self.kind {
-            Kind::Fixed(semaphore) => match timeout_at(deadline, semaphore.acquire()).await {
-                Ok(Ok(permit)) => Ok(UploadPermit::Fixed(permit)),
-                Ok(Err(_closed)) => Err(AcquireError::Closed),
-                Err(_elapsed) => Err(AcquireError::DeadlineExceeded),
-            },
-            Kind::Adaptive { permits, state } => {
-                let permit = adaptive_acquire(state, permits, deadline).await?;
-                Ok(UploadPermit::Adaptive(permit))
+    pub async fn acquire(&self, deadline: Instant) -> Result<OwnedSemaphorePermit, AcquireError> {
+        let _waiting = self.gate.as_ref().map(Waiting::register).transpose()?;
+        loop {
+            let permit = match timeout_at(deadline, Arc::clone(&self.permits).acquire_owned()).await
+            {
+                Ok(Ok(permit)) => permit,
+                Ok(Err(_closed)) => return Err(AcquireError::Closed),
+                Err(_elapsed) => return Err(AcquireError::DeadlineExceeded),
+            };
+            let Some(gate) = &self.gate else {
+                return Ok(permit);
+            };
+            let mut state = lock(gate);
+            if state.owed == 0 {
+                return Ok(permit);
             }
+            state.owed = state.owed.saturating_sub(1);
+            drop(state);
+            permit.forget();
         }
     }
     pub fn record(&self, throttled: bool) {
-        if let Kind::Adaptive { permits, state } = &self.kind {
-            sample(permits, state, throttled);
+        let Some(gate) = &self.gate else {
+            return;
+        };
+        let mut state = lock(gate);
+        let before = state.limit;
+        if throttled {
+            state.limit = state.floor.max(before.div_euclid(2));
+            state.clean_streak = 0;
+        } else {
+            state.clean_streak = state.clean_streak.saturating_add(1);
+            if state.clean_streak >= before && before < state.ceiling {
+                state.limit = before.saturating_add(1);
+                state.clean_streak = 0;
+            }
         }
+        let grown = state.limit.saturating_sub(before);
+        let absorbed = grown.min(state.owed);
+        self.permits.add_permits(grown.saturating_sub(absorbed));
+        let shrunk = before.saturating_sub(state.limit);
+        state.owed = state
+            .owed
+            .saturating_sub(absorbed)
+            .saturating_add(shrunk.saturating_sub(self.permits.forget_permits(shrunk)));
     }
     #[must_use]
     pub fn snapshot(&self) -> LimiterSnapshot {
-        match &self.kind {
-            Kind::Fixed(semaphore) => LimiterSnapshot {
-                limit: semaphore.available_permits(),
-            },
-            Kind::Adaptive { state, .. } => {
-                let gate = lock(state);
-                LimiterSnapshot { limit: gate.limit }
-            }
-        }
+        let limit = self
+            .gate
+            .as_ref()
+            .map_or_else(|| self.permits.available_permits(), |gate| lock(gate).limit);
+        LimiterSnapshot { limit }
     }
 }
-async fn adaptive_acquire(
-    state: &Mutex<GateState>,
-    permits: &Arc<Semaphore>,
-    deadline: Instant,
-) -> Result<OwnedSemaphorePermit, AcquireError> {
-    let waiting = Waiting::register(state)?;
-    loop {
-        let permit = match timeout_at(deadline, Arc::clone(permits).acquire_owned()).await {
-            Ok(Ok(permit)) => permit,
-            Ok(Err(_closed)) => return Err(AcquireError::Closed),
-            Err(_elapsed) => return Err(AcquireError::DeadlineExceeded),
-        };
-        let mut gate = lock(state);
-        if gate.owed > 0 {
-            gate.owed = gate.owed.saturating_sub(1);
-            gate.held.push(permit);
-            drop(gate);
-            continue;
-        }
-        drop(gate);
-        drop(waiting);
-        return Ok(permit);
-    }
-}
-fn adaptive_limiter(initial: usize, ceiling: usize) -> Result<UploadLimiter, BoundsError> {
-    if initial == 0 || initial > ceiling {
-        return Err(BoundsError::Invalid {
-            window: initial,
-            ceiling,
-        });
-    }
-    let limiter = UploadLimiter {
-        kind: Kind::Adaptive {
-            permits: Arc::new(Semaphore::new(ceiling)),
-            state: Mutex::new(GateState {
-                limit: initial,
-                floor: initial,
-                ceiling,
-                clean_streak: 0,
-                owed: 0,
-                waiters: 0,
-                held: Vec::new(),
-            }),
-        },
-    };
-    if let Kind::Adaptive { permits, state } = &limiter.kind {
-        rebalance(permits, state);
-    }
-    Ok(limiter)
-}
-fn sample(permits: &Arc<Semaphore>, state: &Mutex<GateState>, throttled: bool) {
-    let mut gate = lock(state);
-    if throttled {
-        gate.limit = gate.floor.max(gate.limit.div_euclid(2));
-        gate.clean_streak = 0;
-        drop(gate);
-        rebalance(permits, state);
-        return;
-    }
-    gate.clean_streak = gate.clean_streak.saturating_add(1);
-    if gate.clean_streak < gate.limit || gate.limit >= gate.ceiling {
-        return;
-    }
-    gate.limit = gate.limit.saturating_add(1);
-    gate.clean_streak = 0;
-    drop(gate);
-    rebalance(permits, state);
-}
-fn rebalance(permits: &Arc<Semaphore>, state: &Mutex<GateState>) {
-    let mut gate = lock(state);
-    let needed = gate.ceiling.saturating_sub(gate.limit);
-    while gate.held.len() > needed {
-        if let Some(permit) = gate.held.pop() {
-            drop(permit);
-        }
-    }
-    let missing = needed.saturating_sub(gate.held.len());
-    let take = missing.min(permits.available_permits());
-    if take > 0
-        && let Ok(permit) =
-            Arc::clone(permits).try_acquire_many_owned(u32::try_from(take).unwrap_or(u32::MAX))
-    {
-        gate.held.push(permit);
-    }
-    gate.owed = needed.saturating_sub(gate.held.len());
-}
-impl Waiting<'_> {
-    fn register(state: &Mutex<GateState>) -> Result<Waiting<'_>, AcquireError> {
+impl<'state> Waiting<'state> {
+    fn register(state: &'state Mutex<GateState>) -> Result<Self, AcquireError> {
         let mut gate = lock(state);
         if gate.waiters >= MAX_WAITERS {
             return Err(AcquireError::Overloaded);
         }
         gate.waiters = gate.waiters.saturating_add(1);
-        Ok(Waiting { state })
+        drop(gate);
+        Ok(Self { state })
     }
 }
 impl Drop for Waiting<'_> {

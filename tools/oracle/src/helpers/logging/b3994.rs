@@ -62,38 +62,16 @@ pub(crate) struct Reply {
     body: String,
 }
 
-#[derive(Debug)]
-struct ScriptedS3 {
-    rules: Mutex<Vec<ReplyRule>>,
-    served: Mutex<BTreeMap<String, usize>>,
-    requests: Mutex<Vec<(String, String)>>,
+#[derive(Debug, Default)]
+struct Script {
+    rules: Vec<ReplyRule>,
+    served: BTreeMap<String, usize>,
+    requests: Vec<(String, String)>,
 }
 
-impl ScriptedS3 {
-    fn reply(&self, url: &str) -> Reply {
-        let matched = self
-            .rules
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .find(|rule| url.contains(&rule.key_match))
-            .cloned();
-        let Some(rule) = matched else {
-            return Reply {
-                status: 200,
-                body: String::new(),
-            };
-        };
-        let mut served = self.served.lock().unwrap_or_else(PoisonError::into_inner);
-        let index = served.entry(rule.key_match).or_insert(0);
-        let reply = rule.responses.get(*index).cloned().unwrap_or(Reply {
-            status: 200,
-            body: String::new(),
-        });
-        *index = index.saturating_add(1);
-        drop(served);
-        reply
-    }
+#[derive(Debug, Default)]
+struct ScriptedS3 {
+    script: Mutex<Script>,
 }
 
 impl S3HttpClient for ScriptedS3 {
@@ -101,14 +79,28 @@ impl S3HttpClient for ScriptedS3 {
         &self,
         request: S3Request,
     ) -> Pin<Box<dyn Future<Output = Result<S3Response, S3TransportError>> + Send + '_>> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((
-                request.url.clone(),
-                String::from_utf8(request.body.clone()).unwrap_or_default(),
-            ));
-        let reply = self.reply(&request.url);
+        let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
+        script.requests.push((
+            request.url.clone(),
+            String::from_utf8(request.body.clone()).unwrap_or_default(),
+        ));
+        let matched = script
+            .rules
+            .iter()
+            .find(|rule| request.url.contains(&rule.key_match))
+            .cloned();
+        let mut reply = Reply {
+            status: 200,
+            body: String::new(),
+        };
+        if let Some(rule) = matched {
+            let index = script.served.entry(rule.key_match).or_insert(0);
+            if let Some(scripted) = rule.responses.get(*index) {
+                reply = scripted.clone();
+            }
+            *index = index.saturating_add(1);
+        }
+        drop(script);
         Box::pin(async move {
             tokio::task::yield_now().await;
             Ok(S3Response {
@@ -164,11 +156,7 @@ fn fail(class: &str, message: &str) -> Box<HelperError> {
 }
 
 async fn execute(input: &Input) -> HelperResult {
-    let client = Arc::new(ScriptedS3 {
-        rules: Mutex::new(Vec::new()),
-        served: Mutex::new(BTreeMap::new()),
-        requests: Mutex::new(Vec::new()),
-    });
+    let client = Arc::new(ScriptedS3::default());
     let logger = build_logger(input, &client)?;
     let steps = run_steps(&logger, client.as_ref(), input).await;
     drop(logger);
@@ -217,7 +205,11 @@ async fn run_steps(logger: &S3BatchLogger, client: &ScriptedS3, input: &Input) -
 }
 
 async fn run_step(logger: &S3BatchLogger, client: &ScriptedS3, step: &Step) -> Value {
-    reset_step(client, step);
+    *client.script.lock().unwrap_or_else(PoisonError::into_inner) = Script {
+        rules: step.replies.clone(),
+        served: BTreeMap::new(),
+        requests: Vec::new(),
+    };
     for element in &step.enqueue {
         logger.queue.enqueue(element_for(element));
     }
@@ -225,24 +217,6 @@ async fn run_step(logger: &S3BatchLogger, client: &ScriptedS3, step: &Step) -> V
         tracing::debug!(%error, "the oracle step kept records for the next flush");
     }
     step_value(logger, client)
-}
-
-fn reset_step(client: &ScriptedS3, step: &Step) {
-    client
-        .rules
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone_from(&step.replies);
-    client
-        .served
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clear();
-    client
-        .requests
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clear();
 }
 
 fn element_for(element: &ElementInput) -> Element {
@@ -259,9 +233,10 @@ fn element_for(element: &ElementInput) -> Element {
 fn step_value(logger: &S3BatchLogger, client: &ScriptedS3) -> Value {
     let pending = logger.queue.snapshot();
     let mut requests = client
-        .requests
+        .script
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .requests
         .clone();
     requests.sort();
     json!({
@@ -275,6 +250,7 @@ fn step_value(logger: &S3BatchLogger, client: &ScriptedS3) -> Value {
             .map(|element| json!({
                 "key": element.s3_object_key,
                 "retrying_since": element.retrying_since.is_some(),
+                "body": element.body,
             }))
             .collect::<Vec<Value>>(),
         "requeued_count": pending.requeued_count,

@@ -65,8 +65,7 @@ impl BatchQueue {
     fn trim_locked(&self, state: &mut QueueState) -> usize {
         let dropped = state.entries.len().saturating_sub(self.max_queue_size);
         state.entries.drain(..dropped);
-        let requeued_count = state.requeued_count.saturating_sub(dropped);
-        state.requeued_count = requeued_count;
+        state.requeued_count = state.requeued_count.saturating_sub(dropped);
         dropped
     }
 }
