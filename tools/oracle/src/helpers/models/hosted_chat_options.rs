@@ -142,10 +142,10 @@ where
     );
     let baseten_model = (call.host == "baseten").then_some(call.model.as_str());
     let snapshot = class_snapshot::<Settings>(&call.config)?;
-    Ok(mapped_value(snapshot, &options, supported, baseten_model))
+    Ok(mapped_value(&snapshot, &options, supported, baseten_model))
 }
 fn mapped_value(
-    snapshot: Value,
+    snapshot: &Value,
     options: &IndexMap<String, Value>,
     supported: &[&str],
     baseten_model: Option<&str>,
