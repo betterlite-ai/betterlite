@@ -99,14 +99,9 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn input_items_query() -> crate::helpers::HelperResult {
-    serde_json::to_value(InputItemsQuery::default())
-        .map_err(|error| helper_error(error.to_string()))
-}
-
 fn capabilities(fields: &BaseCapabilitiesInput) -> crate::helpers::HelperResult {
     let fixture = Fixture::default();
-    let query = input_items_query()?;
+    let query = serde_json::to_value(InputItemsQuery::default())?;
     Ok(json!({
         "provider": fixture.provider().name(),
         "native_file_search": fixture.supports_native_file_search(),
@@ -124,14 +119,13 @@ fn capabilities(fields: &BaseCapabilitiesInput) -> crate::helpers::HelperResult 
 
 fn signing(fields: &SigningInput) -> crate::helpers::HelperResult {
     let fixture = Fixture::default();
-    let api_key = fields.api_key.as_deref().map(SecretString::from);
     let (headers, signed_body) = fixture.sign_request(SignRequest {
-        headers: &fields.headers,
-        optional_params: &fields.optional_params,
-        request_data: &fields.request_data,
-        api_base: &fields.api_base,
-        api_key: api_key.as_ref(),
-        model: Some(fields.model.as_str()),
+        headers: fields.headers.clone(),
+        optional_params: fields.optional_params.clone(),
+        request_data: fields.request_data.clone(),
+        api_base: fields.api_base.clone(),
+        api_key: fields.api_key.clone().map(SecretString::from),
+        model: Some(fields.model.clone()),
         stream: fields.stream,
         fake_stream: fields.fake_stream,
     });
@@ -141,9 +135,7 @@ fn signing(fields: &SigningInput) -> crate::helpers::HelperResult {
         &fields.model,
         &Params::new(),
     );
-    let environment = fixture
-        .validate_environment(&fields.headers, &fields.model, None)
-        .map_err(|error| helper_error(error.to_string()))?;
+    let environment = fixture.validate_environment(&fields.headers, &fields.model, None)?;
     Ok(json!({
         "headers": headers,
         "signed_body": signed_body,
@@ -177,41 +169,35 @@ fn websocket(fields: &WebsocketInput) -> Value {
 fn normalization(fields: &NormalizationInput) -> crate::helpers::HelperResult {
     let mut steps = Vec::with_capacity(fields.steps.len());
     for step in &fields.steps {
-        let value = serde_json::to_value(normalize_responses_request(step))
-            .map_err(|error| helper_error(error.to_string()))?;
-        steps.push(value);
+        steps.push(serde_json::to_value(normalize_responses_request(step))?);
     }
     Ok(Value::Array(steps))
-}
-
-fn forwarding_request(fields: &ForwardingInput) -> CreateRequest<'_> {
-    CreateRequest {
-        model: &fields.model,
-        input: &fields.input,
-        optional_params: &fields.optional_params,
-        litellm_params: &fields.litellm_params,
-        headers: &fields.headers,
-    }
 }
 
 fn block_on_create(
     fixture: &Fixture,
     fields: &ForwardingInput,
 ) -> Result<Params, Box<crate::helpers::HelperError>> {
+    let request = CreateRequest {
+        model: fields.model.clone(),
+        input: fields.input.clone(),
+        optional_params: fields.optional_params.clone(),
+        litellm_params: fields.litellm_params.clone(),
+        headers: fields.headers.clone(),
+    };
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
-        .build()
-        .map_err(|error| helper_error(error.to_string()))?
-        .block_on(fixture.transform_create_request_async(&forwarding_request(fields)))
-        .map_err(|error| helper_error(error.to_string()))
+        .build()?
+        .block_on(fixture.transform_create_request_async(&request))
+        .map_err(Into::into)
 }
 
 fn forwarded_calls(fixture: &Fixture) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
-    fixture
-        .forwarded()
-        .iter()
-        .map(|call| serde_json::to_value(call).map_err(|error| helper_error(error.to_string())))
-        .collect()
+    let mut calls = Vec::with_capacity(fixture.forwarded().len());
+    for call in &fixture.forwarded() {
+        calls.push(serde_json::to_value(call)?);
+    }
+    Ok(calls)
 }
 
 fn forwarding(fields: &ForwardingInput) -> crate::helpers::HelperResult {
@@ -231,8 +217,9 @@ fn raise_class(fixture: &Fixture, fields: &ErrorInput) -> FixtureError {
 fn exception_of(error: FixtureError) -> Result<BaseLlmException, Box<crate::helpers::HelperError>> {
     match error {
         FixtureError::Contract(ResponsesContractError::BaseLlm(exception)) => Ok(exception),
-        FixtureError::Contract(other) => Err(helper_error(other.to_string())),
-        unused @ FixtureError::Unused => Err(helper_error(unused.to_string())),
+        other @ (FixtureError::Contract(_) | FixtureError::Unused) => {
+            Err(Box::<crate::helpers::HelperError>::from(other))
+        }
     }
 }
 
@@ -242,16 +229,5 @@ fn exception_fields(exception: &BaseLlmException) -> Value {
         "status_code": exception.status_code,
         "message": exception.message,
         "headers": exception.headers,
-    })
-}
-
-fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("ValueError"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
     })
 }

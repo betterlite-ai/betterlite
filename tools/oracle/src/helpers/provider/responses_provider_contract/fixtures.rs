@@ -24,6 +24,19 @@ pub(super) enum FixtureError {
     Unused,
 }
 
+impl From<FixtureError> for Box<crate::helpers::HelperError> {
+    fn from(error: FixtureError) -> Self {
+        Self::new(crate::helpers::HelperError {
+            class: String::from("ValueError"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Fixture {
     forwarded: Mutex<Vec<Params>>,
@@ -61,30 +74,26 @@ impl ResponsesProviderConfig for Fixture {
         if let Ok(mut calls) = self.complete_url_calls.lock() {
             *calls = calls.saturating_add(1);
         }
-        let base = api_base_or_required(api_base)?;
-        Ok(base.to_owned())
+        Ok(api_base_or_required(api_base)?.to_owned())
     }
 
-    fn transform_create_request(
-        &self,
-        request: &CreateRequest<'_>,
-    ) -> Result<Params, FixtureError> {
+    fn transform_create_request(&self, request: &CreateRequest) -> Result<Params, FixtureError> {
         let call = Params::from([
-            ("model".to_owned(), Json::Text(request.model.to_owned())),
+            ("model".to_owned(), Json::Text(request.model.clone())),
             ("input".to_owned(), request.input.clone()),
             (
                 "response_api_optional_request_params".to_owned(),
-                object(request.optional_params),
+                object(&request.optional_params),
             ),
-            ("litellm_params".to_owned(), object(request.litellm_params)),
-            ("headers".to_owned(), headers_object(request.headers)),
+            ("litellm_params".to_owned(), object(&request.litellm_params)),
+            ("headers".to_owned(), headers_object(&request.headers)),
         ]);
         if let Ok(mut forwarded) = self.forwarded.lock() {
             forwarded.push(call);
         }
         Ok(Params::from([(
             "transformed".to_owned(),
-            Json::Text(request.model.to_owned()),
+            Json::Text(request.model.clone()),
         )]))
     }
 
@@ -119,10 +128,7 @@ impl ResponsesProviderConfig for Fixture {
         Err(FixtureError::Unused)
     }
 
-    fn transform_get_request(
-        &self,
-        _request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
+    fn transform_get_request(&self, _request: &IdRequest) -> Result<PreparedRequest, FixtureError> {
         Err(FixtureError::Unused)
     }
 
@@ -136,7 +142,7 @@ impl ResponsesProviderConfig for Fixture {
 
     fn transform_delete_request(
         &self,
-        _request: &IdRequest<'_>,
+        _request: &IdRequest,
     ) -> Result<PreparedRequest, FixtureError> {
         Err(FixtureError::Unused)
     }
@@ -151,7 +157,7 @@ impl ResponsesProviderConfig for Fixture {
 
     fn transform_input_items_request(
         &self,
-        _request: &InputItemsRequest<'_>,
+        _request: &InputItemsRequest,
     ) -> Result<PreparedRequest, FixtureError> {
         Err(FixtureError::Unused)
     }
@@ -166,7 +172,7 @@ impl ResponsesProviderConfig for Fixture {
 
     fn transform_cancel_request(
         &self,
-        _request: &IdRequest<'_>,
+        _request: &IdRequest,
     ) -> Result<PreparedRequest, FixtureError> {
         Err(FixtureError::Unused)
     }
@@ -181,7 +187,7 @@ impl ResponsesProviderConfig for Fixture {
 
     fn transform_compact_request(
         &self,
-        _request: &CompactRequest<'_>,
+        _request: &CompactRequest,
     ) -> Result<PreparedRequest, FixtureError> {
         Err(FixtureError::Unused)
     }

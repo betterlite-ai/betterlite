@@ -16,7 +16,6 @@ use super::records::{
     ResponsesLogging, ResponsesUpstream, SignRequest, api_base_or_required,
 };
 
-// LiteLLM's BaseResponsesAPIConfig: providers fill the abstract transformations and inherit the rest
 #[async_trait]
 pub trait ResponsesProviderConfig: Send + Sync {
     type Error: Error + Send + Sync + 'static + From<ResponsesContractError>;
@@ -48,8 +47,8 @@ pub trait ResponsesProviderConfig: Send + Sync {
         false
     }
 
-    fn sign_request(&self, request: SignRequest<'_>) -> (Headers, Option<Vec<u8>>) {
-        (request.headers.clone(), None)
+    fn sign_request(&self, request: SignRequest) -> (Headers, Option<Vec<u8>>) {
+        (request.headers, None)
     }
 
     fn supported_params(&self, model: &str) -> Result<Vec<String>, Self::Error>;
@@ -78,11 +77,11 @@ pub trait ResponsesProviderConfig: Send + Sync {
         Ok(api_base_or_required(api_base)?.to_owned())
     }
 
-    fn transform_create_request(&self, request: &CreateRequest<'_>) -> Result<Params, Self::Error>;
+    fn transform_create_request(&self, request: &CreateRequest) -> Result<Params, Self::Error>;
 
     async fn transform_create_request_async(
         &self,
-        request: &CreateRequest<'_>,
+        request: &CreateRequest,
     ) -> Result<Params, Self::Error> {
         self.transform_create_request(request)
     }
@@ -101,10 +100,7 @@ pub trait ResponsesProviderConfig: Send + Sync {
         logging: &mut ResponsesLogging,
     ) -> Result<ResponsesAPIStreamingResponse, Self::Error>;
 
-    fn transform_get_request(
-        &self,
-        request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, Self::Error>;
+    fn transform_get_request(&self, request: &IdRequest) -> Result<PreparedRequest, Self::Error>;
 
     fn transform_get_response(
         &self,
@@ -112,10 +108,8 @@ pub trait ResponsesProviderConfig: Send + Sync {
         logging: &mut ResponsesLogging,
     ) -> Result<ResponsesApiResponse, Self::Error>;
 
-    fn transform_delete_request(
-        &self,
-        request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, Self::Error>;
+    fn transform_delete_request(&self, request: &IdRequest)
+    -> Result<PreparedRequest, Self::Error>;
 
     fn transform_delete_response(
         &self,
@@ -125,7 +119,7 @@ pub trait ResponsesProviderConfig: Send + Sync {
 
     fn transform_input_items_request(
         &self,
-        request: &InputItemsRequest<'_>,
+        request: &InputItemsRequest,
     ) -> Result<PreparedRequest, Self::Error>;
 
     fn transform_input_items_response(
@@ -134,10 +128,8 @@ pub trait ResponsesProviderConfig: Send + Sync {
         logging: &mut ResponsesLogging,
     ) -> Result<Params, Self::Error>;
 
-    fn transform_cancel_request(
-        &self,
-        request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, Self::Error>;
+    fn transform_cancel_request(&self, request: &IdRequest)
+    -> Result<PreparedRequest, Self::Error>;
 
     fn transform_cancel_response(
         &self,
@@ -147,7 +139,7 @@ pub trait ResponsesProviderConfig: Send + Sync {
 
     fn transform_compact_request(
         &self,
-        request: &CompactRequest<'_>,
+        request: &CompactRequest,
     ) -> Result<PreparedRequest, Self::Error>;
 
     fn transform_compact_response(

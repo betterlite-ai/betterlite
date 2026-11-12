@@ -1,10 +1,19 @@
 import asyncio
-from typing import Literal, Protocol, TypeAlias, TypedDict, TypeGuard, cast
+from typing import Literal, NoReturn, TypeAlias, TypedDict, cast
 
+import httpx
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
+from litellm.types.llms.openai import (  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L59
+    ResponseInputParam,
+)
+from litellm.types.llms.openai import (
+    ResponsesAPIOptionalRequestParams as OptionalParams,
+)
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
+from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -56,130 +65,108 @@ class ErrorInput(TypedDict):
     headers: dict[str, Json]
 
 
+Argument: TypeAlias = Json | GenericLiteLLMParams | httpx.Response | Logging
 Input: TypeAlias = (
-    CapabilitiesInput | SigningInput | WebsocketInput | NormalizationInput
-    | ForwardingInput | ErrorInput
+    CapabilitiesInput | SigningInput | WebsocketInput | NormalizationInput | ForwardingInput
+    | ErrorInput
 )
 
 
-class FixtureState(Protocol):
-    forwarded: list[Json]
-    complete_url_calls: int
+class Fixture(BaseResponsesAPIConfig):
+    def unsupported(self, *_args: Argument, **_kwargs: Argument) -> NoReturn:
+        raise NotImplementedError
 
+    def __init__(self) -> None:
+        self.forwarded: list[Json] = []
+        self.complete_url_calls = 0
 
-ABSTRACT_MEMBERS: tuple[str, ...] = (
-    "get_supported_openai_params", "map_openai_params", "validate_environment",
-    "transform_response_api_response", "transform_streaming_response",
-    "transform_delete_response_api_request", "transform_delete_response_api_response",
-    "transform_get_response_api_request", "transform_get_response_api_response",
-    "transform_list_input_items_response", "transform_cancel_response_api_request",
-    "transform_cancel_response_api_response", "transform_compact_response_api_request",
-    "transform_compact_response_api_response",
-)
+    @property
+    @override
+    def custom_llm_provider(self) -> LlmProviders:
+        return LlmProviders.OPENAI
 
+    @override
+    def get_complete_url(self, api_base: str | None, litellm_params: dict[str, Json]) -> str:
+        self.complete_url_calls += 1
+        return BaseResponsesAPIConfig.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L107
+            self, api_base=api_base, litellm_params=litellm_params
+        )
 
-def init(self: BaseResponsesAPIConfig) -> None:
-    state = cast("FixtureState", self)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L30
-    state.forwarded = []
-    state.complete_url_calls = 0
+    @override
+    def transform_responses_api_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        input: str | ResponseInputParam,
+        response_api_optional_request_params: dict[str, Json],  # ast-grep-ignore: no-long-names
+        litellm_params: GenericLiteLLMParams,
+        headers: dict[str, Json],
+    ) -> dict[str, Json]:
+        supplied: Json = litellm_params.model_dump(exclude_none=True, exclude_unset=True)
+        call: Json = {
+            # ast-grep-ignore: no-long-names
+            "response_api_optional_request_params": response_api_optional_request_params,
+            "model": model,
+            "input": cast("Json", input),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L127
+            "litellm_params": supplied,
+            "headers": headers,
+        }
+        self.forwarded.append(call)
+        return {"transformed": model}
 
+    @override
+    def transform_list_input_items_request(  # ast-grep-ignore: no-long-names
+        self,
+        response_id: str,
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: dict[str, Json],
+        after: str | None = None,
+        before: str | None = None,
+        include: list[str] | None = None,
+        limit: int = 20,
+        order: Literal["asc", "desc"] = "desc",
+    ) -> tuple[str, dict[str, Json]]:
+        query: dict[str, Json] = {"after": after, "before": before, "limit": limit, "order": order}
+        query["include"] = None if include is None else [*include]
+        return f"{api_base}/{response_id}/input_items", query
 
-def provider(self: BaseResponsesAPIConfig) -> LlmProviders:
-    del self
-    return LlmProviders.OPENAI
+    @override
+    def transform_compact_response_api_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        input: str | ResponseInputParam,
+        response_api_optional_request_params: dict[str, Json],  # ast-grep-ignore: no-long-names
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: dict[str, Json],
+    ) -> tuple[str, dict[str, Json]]:
+        raise NotImplementedError
 
+    @override
+    def map_openai_params(
+        self, response_api_optional_params: OptionalParams, model: str, drop_params: bool
+    ) -> dict[str, Json]:
+        raise NotImplementedError
 
-def unsupported(self: BaseResponsesAPIConfig, **kwargs: Json) -> Json:
-    del self, kwargs
-    raise NotImplementedError
-
-
-def complete_url(
-    self: BaseResponsesAPIConfig, api_base: str | None, litellm_params: dict[str, Json]
-) -> str:
-    state = cast("FixtureState", self)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L30
-    state.complete_url_calls += 1
-    return BaseResponsesAPIConfig.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L107
-        self, api_base=api_base, litellm_params=litellm_params
-    )
-
-
-def list_input_items(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L220
-    self: BaseResponsesAPIConfig,
-    response_id: str,
-    api_base: str,
-    litellm_params: GenericLiteLLMParams,
-    headers: dict[str, Json],
-    after: str | None = None, before: str | None = None,
-    include: list[str] | None = None, limit: int = 20,
-    order: Literal["asc", "desc"] = "desc",
-) -> tuple[str, dict[str, Json]]:
-    del self, litellm_params, headers
-    include_json: Json = None if include is None else [*include]
-    items: dict[str, Json] = {
-        "after": after, "before": before, "include": include_json, "limit": limit, "order": order,
-    }
-    return f"{api_base}/{response_id}/input_items", items
-
-
-def capture(
-    self: BaseResponsesAPIConfig, litellm_params: GenericLiteLLMParams, **kwargs: Json
-) -> Json:
-    supplied: Json = litellm_params.model_dump(exclude_none=True, exclude_unset=True)
-    call: Json = {**kwargs, "litellm_params": supplied}
-    cast("FixtureState", self).forwarded.append(call)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L30
-    return {"transformed": kwargs["model"]}
-
-
-FIXTURE_MEMBERS = {"__init__": init, "custom_llm_provider": property(provider),
-    "get_complete_url": complete_url,
-    "transform_list_input_items_request": list_input_items,
-    "transform_responses_api_request": capture,
-    **dict.fromkeys(ABSTRACT_MEMBERS, unsupported),
-}
-
-
-FIXTURE: type[BaseResponsesAPIConfig] = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L30
-    "type[BaseResponsesAPIConfig]",
-    type("Fixture", (BaseResponsesAPIConfig,), FIXTURE_MEMBERS),
-)
-
-
-def is_capabilities(fields: Input) -> TypeGuard[CapabilitiesInput]:
-    action = fields["action"]
-    return action == "base_capabilities"
-
-
-def is_signing(fields: Input) -> TypeGuard[SigningInput]:
-    action = fields["action"]
-    return action == "signing_passthrough"
-
-
-def is_websocket(fields: Input) -> TypeGuard[WebsocketInput]:
-    action = fields["action"]
-    return action == "websocket_url"
-
-
-def is_normalization(fields: Input) -> TypeGuard[NormalizationInput]:
-    action = fields["action"]
-    return action == "request_normalization"
-
-
-def is_forwarding(fields: Input) -> TypeGuard[ForwardingInput]:
-    action = fields["action"]
-    return action == "async_request_forwarding"
-
-
-def is_error_fields(fields: Input) -> TypeGuard[ErrorInput]:
-    action = fields["action"]
-    return action == "base_error_fields"
+    get_supported_openai_params = unsupported
+    validate_environment = unsupported
+    transform_response_api_response = unsupported  # ast-grep-ignore: no-long-names
+    transform_streaming_response = unsupported
+    transform_delete_response_api_request = unsupported  # ast-grep-ignore: no-long-names
+    transform_delete_response_api_response = unsupported  # ast-grep-ignore: no-long-names
+    transform_get_response_api_request = unsupported  # ast-grep-ignore: no-long-names
+    transform_get_response_api_response = unsupported  # ast-grep-ignore: no-long-names
+    transform_list_input_items_response = unsupported  # ast-grep-ignore: no-long-names
+    transform_cancel_response_api_request = unsupported  # ast-grep-ignore: no-long-names
+    transform_cancel_response_api_response = unsupported  # ast-grep-ignore: no-long-names
+    transform_compact_response_api_response = unsupported  # ast-grep-ignore: no-long-names
 
 
 def capabilities_report(fields: CapabilitiesInput) -> Json:
-    config = FIXTURE()
-    input_items = list_input_items(
-        config, "resp_a", "https://example.test", GenericLiteLLMParams(), {}
-    )
+    config = Fixture()
+    input_items = config.transform_list_input_items_request(
+        "resp_a", "https://example.test", GenericLiteLLMParams(), {}
+    )[1]
     return {
         "provider": config.custom_llm_provider.value,
         "native_file_search": config.supports_native_file_search(),
@@ -191,17 +178,21 @@ def capabilities_report(fields: CapabilitiesInput) -> Json:
             stream=fields["stream"],
             custom_llm_provider=fields["custom_llm_provider"],
         ),
-        "input_items": input_items[1],
+        "input_items": input_items,
     }
 
 
 def signing_report(fields: SigningInput) -> Json:
-    config = FIXTURE()
+    config = Fixture()
     signed: tuple[Json, bytes | None] = config.sign_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L69
-        headers=fields["headers"], optional_params=fields["optional_params"],
-        request_data=fields["request_data"], api_base=fields["api_base"],
-        api_key=fields["api_key"], model=fields["model"],
-        stream=fields["stream"], fake_stream=fields["fake_stream"],
+        headers=fields["headers"],
+        optional_params=fields["optional_params"],
+        request_data=fields["request_data"],
+        api_base=fields["api_base"],
+        api_key=fields["api_key"],
+        model=fields["model"],
+        stream=fields["stream"],
+        fake_stream=fields["fake_stream"],
     )
     headers, body = signed  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L69
     extra_body = config.transform_extra_body(
@@ -232,16 +223,20 @@ def url_outcome(config: BaseResponsesAPIConfig, api_base: str | None, *, websock
         return {"error": {"class": type(error).__name__, "message": str(error)}}
 
 
-def websocket_step(config: BaseResponsesAPIConfig, api_base: str | None) -> Json:
-    complete = url_outcome(config, api_base, websocket=False)
-    websocket = url_outcome(config, api_base, websocket=True)
-    calls = cast("FixtureState", config).complete_url_calls  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L30
-    return {"complete_url": complete, "websocket_url": websocket, "websocket_calls": calls}
-
-
 def websocket_report(fields: WebsocketInput) -> Json:
-    config = FIXTURE()
-    return [websocket_step(config, api_base) for api_base in fields["api_bases"]]
+    config = Fixture()
+    steps: list[Json] = []
+    for api_base in fields["api_bases"]:
+        complete = url_outcome(config, api_base, websocket=False)
+        websocket = url_outcome(config, api_base, websocket=True)
+        steps.append(
+            {
+                "complete_url": complete,
+                "websocket_url": websocket,
+                "websocket_calls": config.complete_url_calls,
+            }
+        )
+    return steps
 
 
 def normalization_report(fields: NormalizationInput) -> Json:
@@ -252,7 +247,7 @@ def normalization_report(fields: NormalizationInput) -> Json:
 
 
 def forwarding_report(fields: ForwardingInput) -> Json:
-    config = FIXTURE()
+    config = Fixture()
     result: Json = asyncio.run(  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L134
         config.async_transform_responses_api_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L134
             model=fields["model"],
@@ -262,12 +257,11 @@ def forwarding_report(fields: ForwardingInput) -> Json:
             headers=fields["headers"],
         )
     )
-    forwarded = cast("FixtureState", config).forwarded  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L30
-    return {"calls": forwarded, "result": result}
+    return {"calls": config.forwarded, "result": result}
 
 
 def error_report(fields: ErrorInput) -> Json:
-    config = FIXTURE()
+    config = Fixture()
     try:
         config.get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/responses/transformation.py#L246
             error_message=fields["message"],
@@ -277,23 +271,25 @@ def error_report(fields: ErrorInput) -> Json:
     except BaseLLMException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41
         headers: Json = cast("Json", raised.headers)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L46
         return {
-            "raised": True, "status_code": raised.status_code,
-            "message": raised.message, "headers": headers,
+            "raised": True,
+            "status_code": raised.status_code,
+            "message": raised.message,
+            "headers": headers,
         }
     raise ValueError("the base error class returned without raising")
 
 
 def run(input_value: Input) -> Json:
-    if is_capabilities(input_value):
-        return capabilities_report(input_value)
-    if is_signing(input_value):
-        return signing_report(input_value)
-    if is_websocket(input_value):
-        return websocket_report(input_value)
-    if is_normalization(input_value):
-        return normalization_report(input_value)
-    if is_forwarding(input_value):
-        return forwarding_report(input_value)
-    if is_error_fields(input_value):
-        return error_report(input_value)
-    raise ValueError("unsupported action")
+    match input_value["action"]:
+        case "base_capabilities":
+            return capabilities_report(input_value)
+        case "signing_passthrough":
+            return signing_report(input_value)
+        case "websocket_url":
+            return websocket_report(input_value)
+        case "request_normalization":
+            return normalization_report(input_value)
+        case "async_request_forwarding":
+            return forwarding_report(input_value)
+        case "base_error_fields":
+            return error_report(input_value)

@@ -12,15 +12,16 @@ use rstest::rstest;
 use secrecy::SecretString;
 use thiserror::Error;
 
+use super::ResponsesRequest;
 use super::config::ResponsesProviderConfig;
 use super::error::{BaseLlmException, ResponsesContractError};
 use super::records::{
     CompactRequest, CreateRequest, Headers, IdRequest, InputItemsOrder, InputItemsQuery,
-    InputItemsRequest, Params, PreparedRequest, ResponsesLogging, ResponsesOperation,
-    ResponsesUpstream, SignRequest, api_base_or_required, normalize_responses_request,
-    strip_custom_call_namespace,
+    InputItemsRequest, Params, PreparedRequest, ResponsesLogging, ResponsesUpstream, SignRequest,
+    api_base_or_required, normalize_responses_request, strip_custom_call_namespace,
 };
 use crate::openai_dispatch::OpenAi;
+use crate::operation::OperationRequest;
 use crate::provider::Provider;
 
 #[derive(Debug, Error)]
@@ -31,7 +32,7 @@ enum FixtureError {
     Unused,
 }
 
-macro_rules! unused_transformations {
+macro_rules! unused_responses {
     () => {
         fn provider(&self) -> Provider {
             Provider::OpenAi(OpenAi)
@@ -68,25 +69,11 @@ macro_rules! unused_transformations {
             Err(FixtureError::Unused)
         }
 
-        fn transform_get_request(
-            &self,
-            _request: &IdRequest<'_>,
-        ) -> Result<PreparedRequest, FixtureError> {
-            Err(FixtureError::Unused)
-        }
-
         fn transform_get_response(
             &self,
             _response: &ResponsesUpstream,
             _logging: &mut ResponsesLogging,
         ) -> Result<ResponsesApiResponse, FixtureError> {
-            Err(FixtureError::Unused)
-        }
-
-        fn transform_delete_request(
-            &self,
-            _request: &IdRequest<'_>,
-        ) -> Result<PreparedRequest, FixtureError> {
             Err(FixtureError::Unused)
         }
 
@@ -98,13 +85,6 @@ macro_rules! unused_transformations {
             Err(FixtureError::Unused)
         }
 
-        fn transform_input_items_request(
-            &self,
-            _request: &InputItemsRequest<'_>,
-        ) -> Result<PreparedRequest, FixtureError> {
-            Err(FixtureError::Unused)
-        }
-
         fn transform_input_items_response(
             &self,
             _response: &ResponsesUpstream,
@@ -113,25 +93,11 @@ macro_rules! unused_transformations {
             Err(FixtureError::Unused)
         }
 
-        fn transform_cancel_request(
-            &self,
-            _request: &IdRequest<'_>,
-        ) -> Result<PreparedRequest, FixtureError> {
-            Err(FixtureError::Unused)
-        }
-
         fn transform_cancel_response(
             &self,
             _response: &ResponsesUpstream,
             _logging: &mut ResponsesLogging,
         ) -> Result<ResponsesApiResponse, FixtureError> {
-            Err(FixtureError::Unused)
-        }
-
-        fn transform_compact_request(
-            &self,
-            _request: &CompactRequest<'_>,
-        ) -> Result<PreparedRequest, FixtureError> {
             Err(FixtureError::Unused)
         }
 
@@ -151,12 +117,41 @@ struct Defaults;
 impl ResponsesProviderConfig for Defaults {
     type Error = FixtureError;
 
-    unused_transformations!();
+    unused_responses!();
 
-    fn transform_create_request(
+    fn transform_create_request(&self, _request: &CreateRequest) -> Result<Params, FixtureError> {
+        Err(FixtureError::Unused)
+    }
+
+    fn transform_get_request(&self, _request: &IdRequest) -> Result<PreparedRequest, FixtureError> {
+        Err(FixtureError::Unused)
+    }
+
+    fn transform_delete_request(
         &self,
-        _request: &CreateRequest<'_>,
-    ) -> Result<Params, FixtureError> {
+        _request: &IdRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
+        Err(FixtureError::Unused)
+    }
+
+    fn transform_input_items_request(
+        &self,
+        _request: &InputItemsRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
+        Err(FixtureError::Unused)
+    }
+
+    fn transform_cancel_request(
+        &self,
+        _request: &IdRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
+        Err(FixtureError::Unused)
+    }
+
+    fn transform_compact_request(
+        &self,
+        _request: &CompactRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
         Err(FixtureError::Unused)
     }
 }
@@ -164,21 +159,34 @@ impl ResponsesProviderConfig for Defaults {
 #[derive(Default)]
 struct Fixture {
     forwarded: Mutex<Vec<Params>>,
+    routes: Mutex<Vec<&'static str>>,
     complete_url_calls: Mutex<usize>,
 }
 
 impl Fixture {
     fn forwarded(&self) -> Vec<Params> {
-        let forwarded = self.forwarded.lock().expect("the call log lock is free");
-        forwarded.clone()
+        self.forwarded
+            .lock()
+            .map_or_else(|_| Vec::new(), |calls| calls.clone())
+    }
+
+    fn routes(&self) -> Vec<&'static str> {
+        self.routes
+            .lock()
+            .map_or_else(|_| Vec::new(), |routes| routes.clone())
     }
 
     fn complete_url_calls(&self) -> usize {
-        let calls = self
-            .complete_url_calls
-            .lock()
-            .expect("the call count lock is free");
+        let Ok(calls) = self.complete_url_calls.lock() else {
+            return 0;
+        };
         *calls
+    }
+
+    fn record_route(&self, route: &'static str) {
+        if let Ok(mut routes) = self.routes.lock() {
+            routes.push(route);
+        }
     }
 }
 
@@ -186,7 +194,7 @@ impl Fixture {
 impl ResponsesProviderConfig for Fixture {
     type Error = FixtureError;
 
-    unused_transformations!();
+    unused_responses!();
 
     fn complete_url(
         &self,
@@ -200,27 +208,77 @@ impl ResponsesProviderConfig for Fixture {
         Ok(format!("{base}/responses"))
     }
 
-    fn transform_create_request(
-        &self,
-        request: &CreateRequest<'_>,
-    ) -> Result<Params, FixtureError> {
+    fn transform_create_request(&self, request: &CreateRequest) -> Result<Params, FixtureError> {
+        self.record_route("create");
         let call = Params::from([
-            ("model".to_owned(), Json::Text(request.model.to_owned())),
+            ("model".to_owned(), Json::Text(request.model.clone())),
             ("input".to_owned(), request.input.clone()),
             (
                 "optional_params".to_owned(),
-                object(request.optional_params),
+                object(&request.optional_params),
             ),
-            ("litellm_params".to_owned(), object(request.litellm_params)),
-            ("headers".to_owned(), headers_object(request.headers)),
+            ("litellm_params".to_owned(), object(&request.litellm_params)),
+            ("headers".to_owned(), headers_object(&request.headers)),
         ]);
         if let Ok(mut forwarded) = self.forwarded.lock() {
             forwarded.push(call);
         }
         Ok(Params::from([(
             "transformed".to_owned(),
-            Json::Text(request.model.to_owned()),
+            Json::Text(request.model.clone()),
         )]))
+    }
+
+    fn transform_get_request(&self, request: &IdRequest) -> Result<PreparedRequest, FixtureError> {
+        self.record_route("get");
+        Ok(PreparedRequest {
+            url: request.api_base.clone(),
+            params: Params::new(),
+        })
+    }
+
+    fn transform_delete_request(
+        &self,
+        request: &IdRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
+        self.record_route("delete");
+        Ok(PreparedRequest {
+            url: request.api_base.clone(),
+            params: Params::new(),
+        })
+    }
+
+    fn transform_input_items_request(
+        &self,
+        request: &InputItemsRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
+        self.record_route("input_items");
+        Ok(PreparedRequest {
+            url: request.api_base.clone(),
+            params: Params::new(),
+        })
+    }
+
+    fn transform_cancel_request(
+        &self,
+        request: &IdRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
+        self.record_route("cancel");
+        Ok(PreparedRequest {
+            url: request.api_base.clone(),
+            params: Params::new(),
+        })
+    }
+
+    fn transform_compact_request(
+        &self,
+        request: &CompactRequest,
+    ) -> Result<PreparedRequest, FixtureError> {
+        self.record_route("compact");
+        Ok(PreparedRequest {
+            url: request.api_base.clone(),
+            params: Params::new(),
+        })
     }
 }
 
@@ -265,18 +323,6 @@ fn base_capabilities() {
     assert_eq!(query.include, None);
     assert_eq!(query.limit, 20);
     assert_eq!(query.order, InputItemsOrder::Desc);
-    assert_eq!(
-        ResponsesOperation::ALL,
-        [
-            ResponsesOperation::Create,
-            ResponsesOperation::Stream,
-            ResponsesOperation::Get,
-            ResponsesOperation::Delete,
-            ResponsesOperation::InputItems,
-            ResponsesOperation::Cancel,
-            ResponsesOperation::Compact,
-        ]
-    );
 }
 
 #[test]
@@ -287,12 +333,12 @@ fn signing_passthrough() {
     let request_data = params(r#"{"input": "hi"}"#);
     let api_key = SecretString::from("key");
     let (signed, signed_body) = fixture.sign_request(SignRequest {
-        headers: &headers,
-        optional_params: &optional_params,
-        request_data: &request_data,
-        api_base: "https://example.test",
-        api_key: Some(&api_key),
-        model: Some("m"),
+        headers: headers.clone(),
+        optional_params,
+        request_data: request_data.clone(),
+        api_base: "https://example.test".to_owned(),
+        api_key: Some(api_key),
+        model: Some("m".to_owned()),
         stream: Some(true),
         fake_stream: Some(false),
     });
@@ -423,11 +469,11 @@ async fn async_request_forwarding() {
     let litellm_params = params(r#"{"api_key": "k"}"#);
     let headers = Headers::from([("x-test".to_owned(), "yes".to_owned())]);
     let request = CreateRequest {
-        model: "m",
-        input: &input,
-        optional_params: &optional_params,
-        litellm_params: &litellm_params,
-        headers: &headers,
+        model: "m".to_owned(),
+        input,
+        optional_params: optional_params.clone(),
+        litellm_params: litellm_params.clone(),
+        headers: headers.clone(),
     };
     let result = fixture
         .transform_create_request_async(&request)
@@ -467,4 +513,103 @@ fn base_error_fields() {
     assert_eq!(status_code, 429);
     assert_eq!(message, "bad");
     assert_eq!(raised_headers, headers);
+}
+
+fn create_record() -> CreateRequest {
+    CreateRequest {
+        model: "m".to_owned(),
+        input: text("hi"),
+        optional_params: Params::new(),
+        litellm_params: Params::new(),
+        headers: Headers::new(),
+    }
+}
+
+fn id_record() -> IdRequest {
+    IdRequest {
+        response_id: "resp_a".to_owned(),
+        api_base: "https://example.test".to_owned(),
+        litellm_params: Params::new(),
+        headers: Headers::new(),
+    }
+}
+
+fn items_record() -> InputItemsRequest {
+    InputItemsRequest {
+        response_id: "resp_a".to_owned(),
+        api_base: "https://example.test".to_owned(),
+        litellm_params: Params::new(),
+        headers: Headers::new(),
+        query: InputItemsQuery::default(),
+    }
+}
+
+fn compact_record() -> CompactRequest {
+    CompactRequest {
+        model: "m".to_owned(),
+        input: text("hi"),
+        optional_params: Params::new(),
+        api_base: "https://example.test".to_owned(),
+        litellm_params: Params::new(),
+        headers: Headers::new(),
+    }
+}
+
+fn route_responses(fixture: &Fixture, operation: &OperationRequest) {
+    let OperationRequest::Responses(operation_request) = operation else {
+        panic!("the operation should be a Responses request");
+    };
+    match operation_request {
+        ResponsesRequest::Create(request) => {
+            fixture
+                .transform_create_request(request)
+                .expect("create maps");
+        }
+        ResponsesRequest::Stream(request) => {
+            fixture
+                .transform_create_request(request)
+                .expect("stream maps to create");
+        }
+        ResponsesRequest::Get(request) => {
+            fixture.transform_get_request(request).expect("get maps");
+        }
+        ResponsesRequest::Delete(request) => {
+            fixture
+                .transform_delete_request(request)
+                .expect("delete maps");
+        }
+        ResponsesRequest::InputItems(request) => {
+            fixture
+                .transform_input_items_request(request)
+                .expect("input-items maps");
+        }
+        ResponsesRequest::Cancel(request) => {
+            fixture
+                .transform_cancel_request(request)
+                .expect("cancel maps");
+        }
+        ResponsesRequest::Compact(request) => {
+            fixture
+                .transform_compact_request(request)
+                .expect("compact maps");
+        }
+    }
+}
+
+#[rstest]
+#[case::create(ResponsesRequest::Create(create_record()), "create")]
+#[case::stream(ResponsesRequest::Stream(create_record()), "create")]
+#[case::get(ResponsesRequest::Get(id_record()), "get")]
+#[case::delete(ResponsesRequest::Delete(id_record()), "delete")]
+#[case::input_items(ResponsesRequest::InputItems(items_record()), "input_items")]
+#[case::cancel(ResponsesRequest::Cancel(id_record()), "cancel")]
+#[case::compact(ResponsesRequest::Compact(compact_record()), "compact")]
+fn responses_operations_map_to_their_transformations(
+    #[case] request: ResponsesRequest,
+    #[case] route: &'static str,
+) {
+    let fixture = Fixture::default();
+    let operation = OperationRequest::Responses(request);
+    route_responses(&fixture, &operation);
+    assert_eq!(fixture.routes(), vec![route]);
 }

@@ -8,32 +8,13 @@ use super::error::ResponsesContractError;
 
 pub type Params = BTreeMap<String, Json>;
 pub type Headers = BTreeMap<String, String>;
-pub type PreparedRequest = (String, Params);
 
 const DEFAULT_INPUT_ITEMS_LIMIT: i64 = 20;
 
-// The closed set of operations BaseResponsesAPIConfig declares; a new member changes the trait for every provider
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResponsesOperation {
-    Create,
-    Stream,
-    Get,
-    Delete,
-    InputItems,
-    Cancel,
-    Compact,
-}
-
-impl ResponsesOperation {
-    pub const ALL: [Self; 7] = [
-        Self::Create,
-        Self::Stream,
-        Self::Get,
-        Self::Delete,
-        Self::InputItems,
-        Self::Cancel,
-        Self::Compact,
-    ];
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedRequest {
+    pub url: String,
+    pub params: Params,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -43,16 +24,16 @@ pub enum InputItemsOrder {
     Desc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct InputItemsQuery<'request> {
-    pub after: Option<&'request str>,
-    pub before: Option<&'request str>,
-    pub include: Option<&'request [String]>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InputItemsQuery {
+    pub after: Option<String>,
+    pub before: Option<String>,
+    pub include: Option<Vec<String>>,
     pub limit: i64,
     pub order: InputItemsOrder,
 }
 
-impl Default for InputItemsQuery<'_> {
+impl Default for InputItemsQuery {
     fn default() -> Self {
         Self {
             after: None,
@@ -64,45 +45,50 @@ impl Default for InputItemsQuery<'_> {
     }
 }
 
-pub struct CreateRequest<'request> {
-    pub model: &'request str,
-    pub input: &'request Json,
-    pub optional_params: &'request Params,
-    pub litellm_params: &'request Params,
-    pub headers: &'request Headers,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateRequest {
+    pub model: String,
+    pub input: Json,
+    pub optional_params: Params,
+    pub litellm_params: Params,
+    pub headers: Headers,
 }
 
-pub struct IdRequest<'request> {
-    pub response_id: &'request str,
-    pub api_base: &'request str,
-    pub litellm_params: &'request Params,
-    pub headers: &'request Headers,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdRequest {
+    pub response_id: String,
+    pub api_base: String,
+    pub litellm_params: Params,
+    pub headers: Headers,
 }
 
-pub struct InputItemsRequest<'request> {
-    pub response_id: &'request str,
-    pub api_base: &'request str,
-    pub litellm_params: &'request Params,
-    pub headers: &'request Headers,
-    pub query: InputItemsQuery<'request>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputItemsRequest {
+    pub response_id: String,
+    pub api_base: String,
+    pub litellm_params: Params,
+    pub headers: Headers,
+    pub query: InputItemsQuery,
 }
 
-pub struct CompactRequest<'request> {
-    pub model: &'request str,
-    pub input: &'request Json,
-    pub optional_params: &'request Params,
-    pub api_base: &'request str,
-    pub litellm_params: &'request Params,
-    pub headers: &'request Headers,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactRequest {
+    pub model: String,
+    pub input: Json,
+    pub optional_params: Params,
+    pub api_base: String,
+    pub litellm_params: Params,
+    pub headers: Headers,
 }
 
-pub struct SignRequest<'request> {
-    pub headers: &'request Headers,
-    pub optional_params: &'request Params,
-    pub request_data: &'request Params,
-    pub api_base: &'request str,
-    pub api_key: Option<&'request SecretString>,
-    pub model: Option<&'request str>,
+#[derive(Debug, Clone)]
+pub struct SignRequest {
+    pub headers: Headers,
+    pub optional_params: Params,
+    pub request_data: Params,
+    pub api_base: String,
+    pub api_key: Option<SecretString>,
+    pub model: Option<String>,
     pub stream: Option<bool>,
     pub fake_stream: Option<bool>,
 }
