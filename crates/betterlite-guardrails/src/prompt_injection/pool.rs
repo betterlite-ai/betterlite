@@ -19,7 +19,7 @@ impl HeuristicsPool {
     #[must_use]
     pub fn new(max_threads: usize) -> Self {
         Self {
-            permits: Arc::new(Semaphore::new(max_threads)),
+            permits: Arc::new(Semaphore::new(max_threads.min(Semaphore::MAX_PERMITS))),
         }
     }
 

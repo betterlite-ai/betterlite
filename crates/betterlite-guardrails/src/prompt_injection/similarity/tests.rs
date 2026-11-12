@@ -47,12 +47,12 @@ fn a_ratio_equal_to_the_threshold_is_not_a_hit() {
     let keywords = keywords(&["abcdefghij"]);
     assert!(!check_user_input_similarity(
         &keywords,
-        "abcxxxxghij",
+        "abcdefgxyz",
         threshold("0.7")
     ));
     assert!(check_user_input_similarity(
         &keywords,
-        "abcxxxxghij",
+        "abcdefgxyz",
         threshold("0.69")
     ));
 }

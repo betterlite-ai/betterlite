@@ -15,6 +15,7 @@ pub(super) enum Scenario {
     AllFalse,
     Heuristics,
     HeuristicsRejectAsResponse,
+    HeuristicsRejectAsResponseNone,
     VectorDb,
     LlmApi,
     LlmApiWithoutName,
@@ -29,6 +30,10 @@ pub(super) fn params(scenario: Scenario) -> PromptInjectionParams {
         Scenario::HeuristicsRejectAsResponse => {
             params.heuristics_check = true;
             params.reject_as_response = Some(true);
+        }
+        Scenario::HeuristicsRejectAsResponseNone => {
+            params.heuristics_check = true;
+            params.reject_as_response = None;
         }
         Scenario::VectorDb => params.vector_db_check = true,
         Scenario::LlmApi => llm_api(&mut params),

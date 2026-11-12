@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rust_decimal::Decimal;
+use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
 use super::HeuristicsPool;
@@ -95,6 +96,12 @@ async fn a_check_reports_hits_and_clean_prompts() {
             .await
             .expect("the check completes")
     );
+}
+
+#[test]
+fn a_huge_thread_count_is_clamped_to_the_semaphore_limit() {
+    let pool = HeuristicsPool::new(usize::try_from(i64::MAX).unwrap());
+    assert_eq!(pool.permits.available_permits(), Semaphore::MAX_PERMITS);
 }
 
 #[tokio::test]

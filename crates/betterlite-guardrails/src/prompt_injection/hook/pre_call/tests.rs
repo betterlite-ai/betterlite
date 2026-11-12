@@ -137,6 +137,27 @@ async fn reject_as_response_returns_the_rejection_message() {
     );
 }
 
+#[rstest]
+#[case::reject_as_response_false(Scenario::Heuristics)]
+#[case::reject_as_response_none(Scenario::HeuristicsRejectAsResponseNone)]
+#[tokio::test]
+async fn a_heuristics_hit_rejects_when_reject_as_response_is_not_true(#[case] scenario: Scenario) {
+    let detection = detection(Some(params(scenario)));
+    let list = chat_messages();
+    let request = FormattedPromptData {
+        messages: Some(&list),
+        prompt: None,
+        input: None,
+    };
+    let error = detection
+        .pre_call(HookCallType::Completion, &request)
+        .await
+        .expect_err("an attack with heuristics enabled is rejected");
+    assert!(matches!(error, PromptInjectionError::Rejected));
+    let rejection = error.rejection().expect("a rejection carries a status");
+    assert_eq!(rejection.status, StatusCode::BAD_REQUEST);
+}
+
 #[tokio::test]
 async fn a_malformed_body_passes_the_request() {
     let detection = detection(None);
