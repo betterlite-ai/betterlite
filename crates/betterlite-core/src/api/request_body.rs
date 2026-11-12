@@ -8,6 +8,7 @@ mod tests;
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, JsonBoundary};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::str;
 use thiserror::Error;
 
 pub type JsonObject = BTreeMap<String, serde_json::Value>;
@@ -149,12 +150,10 @@ pub struct RequestBodyResult {
 }
 
 impl RequestBodyResult {
-    #[must_use]
     pub fn cached_body(&self) -> Option<JsonObject> {
         self.parsed_body.as_ref().map(ParsedBody::visible)
     }
 
-    #[must_use]
     pub fn raw_json_body<'body>(&self, input: &'body RequestBodyInput) -> Option<&'body [u8]> {
         if self.parsed_body.is_none()
             || classify_media_type(input.content_type()) == MediaTypeKind::Form
@@ -260,7 +259,7 @@ fn repair_json_body(
     if over_repair_cap(body.len(), max_repair_bytes) {
         return Err(RequestBodyError::InvalidJson);
     }
-    let Ok(text) = std::str::from_utf8(body) else {
+    let Ok(text) = str::from_utf8(body) else {
         return Ok(DecodedJson::Unreadable);
     };
     match parse_json_text(text) {
@@ -294,7 +293,6 @@ fn parse_json_text(text: &str) -> ParsedJson {
 }
 
 // the form decoder hands over its fields, so this only lifts them into JSON and resolves the metadata string
-#[must_use]
 pub fn form_body(fields: &BTreeMap<String, String>) -> Result<JsonObject, RequestBodyError> {
     let mut body: JsonObject = fields
         .iter()
@@ -308,6 +306,7 @@ pub fn form_body(fields: &BTreeMap<String, String>) -> Result<JsonObject, Reques
     Ok(body)
 }
 
+#[must_use]
 pub fn rewrite_request_model(
     request_data: &JsonObject,
     request: Option<&RequestBodyInput>,
@@ -318,24 +317,24 @@ pub fn rewrite_request_model(
         "model".to_owned(),
         serde_json::Value::String(model.to_owned()),
     );
-    let Some(request) = request else {
+    let Some(input) = request else {
         return RewrittenBody {
             request_data: rewritten,
             cached_body: None,
             raw_json_body: None,
         };
     };
-    let cached_body = match &request.cached_body {
-        Some(cached) => {
+    let cached_body = input.cached_body.as_ref().map_or_else(
+        || ParsedBody::from_client_body(rewritten.clone()),
+        |cached| {
             let mut body = cached.visible();
             body.insert(
                 "model".to_owned(),
                 serde_json::Value::String(model.to_owned()),
             );
             ParsedBody::from_client_body(body)
-        }
-        None => ParsedBody::from_client_body(rewritten.clone()),
-    };
+        },
+    );
     // a parsed JSON object always serializes back, so this loses nothing
     let raw_json_body = serde_json::to_vec(&cached_body.visible()).ok();
     RewrittenBody {
