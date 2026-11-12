@@ -1,0 +1,54 @@
+kind: helper
+name: embedding-optional-params-voyage
+call:
+  b5363:
+    calls:
+      - model: voyage-context-3
+        custom_llm_provider: voyage
+        encoding_format: float
+        dimensions: 8
+        kwargs: {custom_field: 1}
+        force_branch: true
+        supported: [encoding_format, dimensions]
+        mapper: {supported: [encoding_format, dimensions], mapped: {encoding_format: float, output_dimension: 8}}
+      - model: voyage-multimodal-3
+        custom_llm_provider: voyage
+        dimensions: 8
+        kwargs: {custom_field: 1}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {output_dimension: 8}}
+      - model: voyage-multimodal-3
+        custom_llm_provider: voyage
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {}}
+      - model: voyage-3
+        custom_llm_provider: voyage
+        encoding_format: float
+        dimensions: 8
+        kwargs: {extra_body: {a: 1}}
+        force_branch: true
+        supported: [encoding_format, dimensions]
+        mapper: {supported: [encoding_format, dimensions], mapped: {encoding_format: float, output_dimension: 8}}
+      - model: voyage-3
+        custom_llm_provider: voyage
+        user: u
+        kwargs: {}
+        force_branch: true
+        supported: [encoding_format, dimensions]
+        mapper: {supported: [encoding_format, dimensions], mapped: {}}
+      - model: voyage-3
+        custom_llm_provider: voyage
+        user: u
+        dimensions: 8
+        drop_params: true
+        kwargs: {}
+        force_branch: true
+        supported: [encoding_format, dimensions]
+        mapper: {supported: [encoding_format, dimensions], mapped: {output_dimension: 8}}
+env: {}
+compare: {ignore: []}

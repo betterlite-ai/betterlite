@@ -5,9 +5,12 @@ use axum::body::to_bytes;
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_provider::operation::OperationError;
+use betterlite_provider::transform_retry::TransformRetryError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
+use rstest::rstest;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,8 +19,9 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tower::ServiceExt as _;
 
-use super::{EmbeddingError, embedding_routes, failure};
+use super::{EmbeddingError, call_failure, embedding_routes, failure};
 use crate::server::chat_setup::chat_executor;
+use crate::server::chat_setup::provider_call::CallError;
 
 #[derive(serde::Deserialize)]
 struct ErrorEnvelope {
@@ -26,6 +30,7 @@ struct ErrorEnvelope {
 
 #[derive(serde::Deserialize)]
 struct ErrorFields {
+    message: String,
     #[serde(rename = "type")]
     error_type: String,
     param: Option<String>,
@@ -345,4 +350,66 @@ async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
     assert_eq!(response.status(), StatusCode::OK);
     assert!(!sent.contains("mock_response"), "{sent}");
     assert!(!sent.contains("mock_tool_calls"), "{sent}");
+}
+
+#[rstest]
+#[case::mismatched_operation(CallError::Mismatched, 500, "internal_server_error")]
+#[case::transform_retry(
+    CallError::Operation {
+        source: OperationError::TransformRetry(TransformRetryError::Attempts { max_attempts: 0 }),
+    },
+    500,
+    "internal_server_error"
+)]
+#[case::route_error_keeps_its_own_status(
+    CallError::Route(EmbeddingError::MissingApiKey),
+    401,
+    "authentication_error"
+)]
+#[tokio::test]
+async fn provider_framework_tests_behavior(
+    #[case] error: CallError<EmbeddingError>,
+    #[case] status: u16,
+    #[case] error_type: &str,
+) {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let response = call_failure(&error, "call-7", None, &redactor);
+    assert_eq!(response.status().as_u16(), status);
+    assert_eq!(
+        response.headers().get("x-litellm-call-id").unwrap(),
+        "call-7"
+    );
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
+    assert_eq!(reply.error.error_type, error_type);
+    assert_eq!(reply.error.code, status.to_string());
+    assert!(reply.error.message.contains(&error.to_string()));
+}
+
+#[tokio::test]
+async fn an_unmocked_embedding_goes_through_the_provider_framework() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    let body = to_bytes(response.into_body(), 4096).await.expect("body");
+    let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(
+        envelope.error.message,
+        "betterlite does not serve azure embeddings yet"
+    );
 }

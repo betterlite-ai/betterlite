@@ -1,0 +1,29 @@
+kind: helper
+name: count-timeout
+call:
+  bedrock_other_count_call:
+    count_timeout:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+              timeout: 1
+              request_timeout: 2
+          reply: {status: 200, body: '{"inputTokens": 1}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+              timeout: 1
+          reply: {failure: true}
+          now: 1767225600
+env: {}
+compare: {ignore: []}

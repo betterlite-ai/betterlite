@@ -3,13 +3,13 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
+use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ModelDeployment};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use reqwest::redirect::Policy;
 use reqwest::retry::never;
-use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
+use reqwest::{Client, ClientBuilder, Request, Response, Url};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
@@ -26,17 +26,14 @@ pub mod multipart;
 pub mod outbound;
 pub mod pool;
 mod redirect;
+mod routing;
 pub mod stream;
 pub mod transport_error;
 
+use routing::{Follow, forward_proxy};
+
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const POOL_MAX_IDLE_PER_HOST: usize = 32;
-
-#[derive(Clone, Copy)]
-enum Follow {
-    Redirects,
-    Never,
-}
 
 #[derive(Debug, Clone)]
 pub struct ProxiedClient {
@@ -57,25 +54,6 @@ pub fn base_builder() -> ClientBuilder {
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
 }
 
-fn forward_proxy(policy: &Arc<ProxyPolicy>, server: &Arc<ProxyServer>) -> Proxy {
-    let target = format!("http://{}:{}", server.host, server.port);
-    let routing = Arc::clone(policy);
-    let chosen = Arc::clone(server);
-    let proxy = Proxy::custom(move |url| match routing.route(url) {
-        Some(ProxyRoute::Forward(found)) if Arc::ptr_eq(found, &chosen) => Some(target.clone()),
-        Some(
-            ProxyRoute::Forward(_) | ProxyRoute::Unsupported { .. } | ProxyRoute::Invalid { .. },
-        )
-        | None => None,
-    });
-    match &server.credentials {
-        Some(credentials) => {
-            proxy.basic_auth(&credentials.username, credentials.password.expose_secret())
-        }
-        None => proxy,
-    }
-}
-
 impl ProxiedClient {
     pub fn outbound_for_deployment(
         proxy: &Arc<ProxyPolicy>,
@@ -91,6 +69,15 @@ impl ProxiedClient {
     pub fn outbound(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
         Self::build(
             base_builder().http1_only(),
+            policy,
+            TransportLimits::DEFAULT,
+        )
+    }
+
+    // A caller that must return a 3xx as the answer itself, such as the CLI's PKCE transport, asks for the client that never follows one.
+    pub fn outbound_without_redirects(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
+        Self::build(
+            base_builder().http1_only().redirect(Policy::none()),
             policy,
             TransportLimits::DEFAULT,
         )
@@ -156,6 +143,34 @@ impl ProxiedClient {
             .execute(request)
             .await
             .map_err(HttpError::Request)
+    }
+
+    // Buffers a request the caller built on this client, with the caller's own cap: a management answer is small and the caller knows how small.
+    pub async fn execute_buffered(
+        &self,
+        request: Request,
+        body_limit: usize,
+    ) -> Result<UpstreamResponse, HttpError> {
+        let _token = self.tracker.token();
+        let mut response = self.execute(request).await.map_err(timed_out)?;
+        check_headers(response.headers(), self.limits.header_bytes).map_err(|exceeded| {
+            HttpError::TooLarge {
+                limit: exceeded.limit,
+            }
+        })?;
+        let status = response.status().as_u16();
+        let body =
+            read_bounded(&mut response, body_limit)
+                .await
+                .map_err(|failure| match failure {
+                    ReadError::TooLarge { limit } => HttpError::TooLarge { limit },
+                    ReadError::Failed(source) => timed_out(HttpError::Request(source)),
+                })?;
+        Ok(UpstreamResponse {
+            status,
+            headers: mem::take(response.headers_mut()),
+            body,
+        })
     }
 
     pub async fn drain(&self, deadline: Duration) -> Result<(), TransportError> {
@@ -227,28 +242,9 @@ impl ProxiedClient {
     }
 
     pub async fn post_json(&self, post: JsonPost) -> Result<UpstreamResponse, HttpError> {
-        let _token = self.tracker.token();
         let body_limit = post.body_limit;
         let request = self.json_request(post, "application/json")?;
-        let mut response = self.execute(request).await.map_err(timed_out)?;
-        check_headers(response.headers(), self.limits.header_bytes).map_err(|exceeded| {
-            HttpError::TooLarge {
-                limit: exceeded.limit,
-            }
-        })?;
-        let status = response.status().as_u16();
-        let body =
-            read_bounded(&mut response, body_limit)
-                .await
-                .map_err(|failure| match failure {
-                    ReadError::TooLarge { limit } => HttpError::TooLarge { limit },
-                    ReadError::Failed(source) => timed_out(HttpError::Request(source)),
-                })?;
-        Ok(UpstreamResponse {
-            status,
-            headers: mem::take(response.headers_mut()),
-            body,
-        })
+        self.execute_buffered(request, body_limit).await
     }
 
     pub fn json_request(&self, post: JsonPost, accept: &'static str) -> Result<Request, HttpError> {
