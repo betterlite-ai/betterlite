@@ -227,7 +227,6 @@ pub(super) fn refresh_fallback() {
     oidc_runs_alongside_provider();
     oidc_replaces_token();
     refresh_skipped_with_provider();
-    refresh_skipped_after_oidc();
 }
 
 fn refresh_skipped_with_provider() {
@@ -237,17 +236,6 @@ fn refresh_skipped_with_provider() {
     let request = super::support::request(&settings, true, Some(caller), &sources);
     assert_eq!(run(&request).unwrap().as_deref(), Some("caller-token"));
     assert!(sources.calls().is_empty());
-}
-
-fn refresh_skipped_after_oidc() {
-    let sources = FixtureSources::new();
-    let mut settings = params();
-    settings.azure_ad_token = Some(SecretString::from("oidc/assertion"));
-    settings.client_id = Some("client".to_owned());
-    settings.tenant_id = Some("tenant".to_owned());
-    let request = super::support::request(&settings, true, None, &sources);
-    assert_eq!(run(&request).unwrap().as_deref(), Some("oidc-token"));
-    assert_eq!(sources.calls().len(), 1);
 }
 
 fn refresh_uses_resolved_scope() {
@@ -329,15 +317,18 @@ fn oidc_runs_alongside_provider() {
     );
 }
 
+// OIDC settles the token, so enabling the refresh does not add a second source call
 fn oidc_replaces_token() {
-    let sources = FixtureSources::new();
-    let mut settings = params();
-    settings.azure_ad_token = Some(SecretString::from("oidc/assertion"));
-    settings.client_id = Some("client".to_owned());
-    settings.tenant_id = Some("tenant".to_owned());
-    let request = super::support::request(&settings, false, None, &sources);
-    assert_eq!(run(&request).unwrap().as_deref(), Some("oidc-token"));
-    assert_eq!(sources.calls().len(), 1);
+    for refresh_enabled in [false, true] {
+        let sources = FixtureSources::new();
+        let mut settings = params();
+        settings.azure_ad_token = Some(SecretString::from("oidc/assertion"));
+        settings.client_id = Some("client".to_owned());
+        settings.tenant_id = Some("tenant".to_owned());
+        let request = super::support::request(&settings, refresh_enabled, None, &sources);
+        assert_eq!(run(&request).unwrap().as_deref(), Some("oidc-token"));
+        assert_eq!(sources.calls().len(), 1);
+    }
 }
 
 pub(super) fn refresh_provider_cache() {
