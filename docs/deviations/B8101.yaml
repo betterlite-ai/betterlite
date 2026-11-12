@@ -1,0 +1,23 @@
+task: B8101
+deviations:
+  - what: >-
+      Usage token counts come from betterlite's tokenizer (B196) with the requested model name, so
+      they match LiteLLM's token_counter only where B196 does.
+    why: LiteLLM calls its own token_counter, which B196 owns and betterlite replaces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L257-L269
+  - what: >-
+      A flow id of "." or ".." is refused before the run URL is built. LiteLLM quotes the id with an
+      empty safe set, which leaves the dots alone, so the request goes to /api/v1/run/.. and the
+      server normalizes it to a different path.
+    why: >-
+      The id comes from the model name and lands in a URL path, so a dot segment is a path traversal
+      no working setup relies on; B171's URL path encoder rejects it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L104
+  - what: >-
+      A reply body that is valid JSON but not an object (an array, a string or null) raises the 500
+      "Could not extract a message from the LangFlow response" error. LiteLLM calls .get on that
+      value and lets an AttributeError escape as an unhandled 500.
+    why: >-
+      Both reach the client as a 500, and the declared LangFlow response shape is an object; naming
+      the missing Chat Output is more useful than an attribute error from inside the transform.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L185-L190
