@@ -8,3 +8,4 @@ call:
       - model: langgraph/agent
         lines:
           - 'data: {"messages": [{"type": "human", "content": "question"}, {"type": "ai", "content": "answer"}]}'
+          - 'data: {"messages": [{"type": "AIMessageChunk", "content": "x"}]}'

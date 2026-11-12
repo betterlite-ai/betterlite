@@ -200,6 +200,9 @@ fn a_list_shorter_than_two_items_gives_nothing(#[case] value: &str) {
 
 #[rstest]
 #[case::unknown_type(r#"data: ["values", {"content": "ignored"}]"#)]
+#[case::unknown_type_ai_list(
+    r#"data: ["values", [[{"type": "ai", "content": "x"}], {"type": "ai", "content": "y"}]]"#
+)]
 #[case::numeric_type(r#"data: [3, {"content": "ignored"}]"#)]
 fn an_unknown_event_type_does_not_fall_into_the_dict_branch(#[case] line: &str) {
     assert!(matches!(parse(line).unwrap(), LineOutcome::Skipped));
@@ -218,6 +221,10 @@ fn an_unknown_event_type_does_not_fall_into_the_dict_branch(#[case] line: &str) 
 #[case::chunk_dict(
     r#"data: ["messages", [{"type": "AIMessageChunk", "content": "chunk"}]]"#,
     "chunk"
+)]
+#[case::first_match_wins(
+    r#"data: ["messages", [[{"type": "ai", "content": "first"}], {"type": "AIMessageChunk", "content": "second"}]]"#,
+    "first"
 )]
 fn a_messages_event_yields_the_first_ai_content(#[case] line: &str, #[case] text: &str) {
     let chunk = content_of(parse(line).unwrap());
@@ -315,6 +322,7 @@ fn a_dict_event_reads_the_last_ai_message(#[case] line: &str, #[case] text: Opti
 #[case::last_human(
     r#"data: {"messages": [{"type": "ai", "content": "a"}, {"type": "human", "content": "q"}]}"#
 )]
+#[case::last_chunk(r#"data: {"messages": [{"type": "AIMessageChunk", "content": "x"}]}"#)]
 #[case::empty_list(r#"data: {"messages": []}"#)]
 #[case::null_messages(r#"data: {"messages": null}"#)]
 #[case::null_last(r#"data: {"messages": [{"type": "ai", "content": "a"}, null]}"#)]

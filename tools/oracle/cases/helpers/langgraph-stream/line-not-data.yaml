@@ -8,5 +8,6 @@ call:
       - model: langgraph/agent
         lines:
           - 'event: {"content": "ignored"}'
+          - 'data: ["values", [[{"type": "ai", "content": "x"}], {"type": "ai", "content": "y"}]]'
           - ': keep-alive'
           - 'data: {"content": "kept"}'

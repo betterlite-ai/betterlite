@@ -8,3 +8,4 @@ call:
       - model: langgraph/agent
         lines:
           - 'data: ["messages", [[{"type": "ai", "content": "hello"}, {"langgraph_node": "agent"}], [{"type": "human", "content": "ignored"}]]]'
+          - 'data: ["messages", [[{"type": "ai", "content": "first"}], {"type": "AIMessageChunk", "content": "second"}]]'
