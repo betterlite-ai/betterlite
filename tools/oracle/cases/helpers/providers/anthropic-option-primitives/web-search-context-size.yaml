@@ -1,0 +1,21 @@
+kind: helper
+name: option-web-search-context-size
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: web_search_context_size
+        values:
+          - {}
+          - {user_location: null}
+          - {user_location: {}}
+          - {user_location: {approximate: {}}}
+          - {user_location: {approximate: {city: Paris, country: FR, region: IDF, timezone: Europe/Paris}}}
+          - {user_location: {approximate: {type: elsewhere, city: Berlin, unknown: 1, country: DE}}}
+          - {search_context_size: low}
+          - {search_context_size: medium}
+          - {search_context_size: high}
+          - {search_context_size: extreme}
+          - {search_context_size: null}
+          - {search_context_size: high, user_location: {approximate: {city: Rome}}}
+env: {}
+compare: {ignore: []}
