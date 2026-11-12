@@ -77,6 +77,15 @@ pub(super) fn request_value(call: &RequestCall) -> Result<Value, Box<HelperError
     }
 }
 
+// a server error is a recorded answer; any other reply error is bad input to the helper
+fn settle(result: Result<Value, ReplyError>) -> Result<Value, Box<HelperError>> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(ReplyError::Server(error)) => Ok(failure(&error)),
+        Err(other) => Err(invalid(other.to_string())),
+    }
+}
+
 pub(super) fn embedding_value(call: &EmbeddingCall) -> Result<Value, Box<HelperError>> {
     let url = match embeddings_url(&call.model, call.api_base.as_deref()) {
         Ok(url) => url,
@@ -85,33 +94,30 @@ pub(super) fn embedding_value(call: &EmbeddingCall) -> Result<Value, Box<HelperE
     let input = EmbeddingInput::Texts(call.input.clone());
     let body = embedding_body(&input, &call.optional_params)
         .map_err(|error| invalid(error.to_string()))?;
-    match transform_embedding_response(&call.model, &call.reply) {
-        Ok(reply) => Ok(json!({
-            "ok": true,
-            "request": wire(&url, call.api_key.as_deref(), &body),
-            "model": reply.model,
-            "data": [{"embedding": reply.embedding, "index": 0, "object": "embedding"}],
-            "prompt_tokens": reply.prompt_tokens,
-            "total_tokens": reply.total_tokens,
-        })),
-        Err(ReplyError::Server(error)) => Ok(failure(&error)),
-        Err(other) => Err(invalid(other.to_string())),
-    }
+    let request = wire(&url, call.api_key.as_deref(), &body);
+    settle(
+        transform_embedding_response(&call.model, &call.reply).map(|reply| {
+            json!({
+                "ok": true,
+                "request": request,
+                "model": reply.model,
+                "data": [{"embedding": reply.embedding, "index": 0, "object": "embedding"}],
+                "prompt_tokens": reply.prompt_tokens,
+                "total_tokens": reply.total_tokens,
+            })
+        }),
+    )
 }
 
 // the creation time is the wall clock, so the comparison leaves it out
 pub(super) fn reply_value(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
     let reply = transform_response(&call.model, call.status, &call.body, 0);
-    let value = reply.map(|chat| {
+    settle(reply.map(|chat| {
         json!({
             "ok": true,
             "model": chat.model,
             "content": chat.content,
             "usage": chat.usage,
         })
-    });
-    value.or_else(|error| match error {
-        ReplyError::Server(server) => Ok(failure(&server)),
-        other => Err(invalid(other.to_string())),
-    })
+    }))
 }
