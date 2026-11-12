@@ -2,6 +2,8 @@ pub(crate) mod background;
 mod reauth;
 mod tests;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
@@ -11,7 +13,9 @@ use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::token_cache::CredentialCache;
 use crate::token_cache::error::{CredentialCacheError, needs_reauthentication};
 use crate::token_cache::key::CredentialKey;
-use crate::token_cache::probe::{AccessToken, try_cached_token, try_usable_cached_token};
+use crate::token_cache::probe::{
+    AccessToken, UsableToken, try_cached_token, try_usable_cached_token,
+};
 use crate::token_cache::record::{CacheRecord, CredentialSnapshot, unpack_cached_credentials};
 use crate::token_cache::state::{TokenState, token_state};
 
@@ -25,13 +29,9 @@ pub async fn get_access_token_async(
     project: Option<&str>,
 ) -> Result<AccessToken, CredentialCacheError> {
     let key = CredentialKey::new(credentials, project);
-    let usable = {
-        let records = cache.records.lock().unwrap_or_else(PoisonError::into_inner);
-        try_usable_cached_token(&records, &key, project, cache.clock.now())
-    };
-    if let Some(entry) = usable {
+    if let Some(entry) = usable_cached(cache, &key, project) {
         if entry.state == TokenState::Stale {
-            schedule_background_refresh(cache, entry.credential, key, entry.cached_project);
+            schedule_background_refresh(cache, entry.credential, key.clone(), entry.cached_project);
         }
         return Ok(AccessToken {
             token: entry.token,
@@ -43,22 +43,33 @@ pub async fn get_access_token_async(
     locked_access_token(cache, credentials, project, &key).await
 }
 
-// LiteLLM's _ensure_access_token: gemini is Google AI Studio and reads no credentials at all
-pub async fn ensure_access_token(
+// the fast path reads the usable projection without taking the per-key lease
+fn usable_cached(
     cache: &CredentialCache,
-    credentials: Option<&ConfiguredCredentials>,
+    key: &CredentialKey,
     project: Option<&str>,
+) -> Option<UsableToken> {
+    try_usable_cached_token(
+        &cache.records.lock().unwrap_or_else(PoisonError::into_inner),
+        key,
+        project,
+        cache.clock.now(),
+    )
+}
+
+// LiteLLM's _ensure_access_token: gemini is Google AI Studio and reads no credentials at all
+pub fn ensure_access_token<'borrow>(
+    cache: &'borrow CredentialCache,
+    credentials: Option<&'borrow ConfiguredCredentials>,
+    project: Option<&'borrow str>,
     provider: VertexCapabilityProvider,
-) -> Result<AccessToken, CredentialCacheError> {
-    match provider {
-        VertexCapabilityProvider::Gemini => Ok(AccessToken {
-            token: SecretString::from(""),
-            project: String::new(),
-        }),
-        VertexCapabilityProvider::VertexAi | VertexCapabilityProvider::VertexAiBeta => {
-            cache.get_access_token(credentials, project).await
+) -> Pin<Box<dyn Future<Output = Result<AccessToken, CredentialCacheError>> + Send + 'borrow>> {
+    Box::pin(async move {
+        if provider == VertexCapabilityProvider::Gemini {
+            return Ok(gemini_access());
         }
-    }
+        cache.get_access_token(credentials, project).await
+    })
 }
 
 // LiteLLM's _ensure_access_token_async: the same mode selection over the coordinated lookup
@@ -69,13 +80,18 @@ pub async fn ensure_access_token_async(
     provider: VertexCapabilityProvider,
 ) -> Result<AccessToken, CredentialCacheError> {
     match provider {
-        VertexCapabilityProvider::Gemini => Ok(AccessToken {
-            token: SecretString::from(""),
-            project: String::new(),
-        }),
+        VertexCapabilityProvider::Gemini => Ok(gemini_access()),
         VertexCapabilityProvider::VertexAi | VertexCapabilityProvider::VertexAiBeta => {
             get_access_token_async(cache, credentials, project).await
         }
+    }
+}
+
+// LiteLLM returns an empty token and project for Google AI Studio without reading any credentials
+fn gemini_access() -> AccessToken {
+    AccessToken {
+        token: SecretString::from(""),
+        project: String::new(),
     }
 }
 
