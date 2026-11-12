@@ -201,6 +201,7 @@ fn transcription_records_keep_unknown_fields() {
     r#"{"type":"tokens","input_tokens":3,"output_tokens":4,"total_tokens":7,"input_token_details":{"text_tokens":2,"audio_tokens":1}}"#
 )]
 #[case::duration(r#"{"type":"duration","seconds":1.5}"#)]
+#[case::whole_duration(r#"{"type":"duration","seconds":2}"#)]
 fn usage_variants_round_trip(#[case] text: &str) {
     let usage: AudioTranscriptionUsage = serde_json::from_str(text).unwrap();
     assert_eq!(encode(&usage), parse(text));

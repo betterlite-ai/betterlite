@@ -38,5 +38,6 @@ call:
         usage:
           - {type: tokens, input_tokens: 3, output_tokens: 4, total_tokens: 7, text_tokens: 2, audio_tokens: 1, seconds: 0.0}
           - {type: duration, input_tokens: 0, output_tokens: 0, total_tokens: 0, text_tokens: 0, audio_tokens: 0, seconds: 1.5}
+          - {type: duration, input_tokens: 0, output_tokens: 0, total_tokens: 0, text_tokens: 0, audio_tokens: 0, seconds: 2}
 env: {}
 compare: {ignore: []}
