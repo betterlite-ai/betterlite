@@ -514,12 +514,9 @@ async fn redirect_guard_keeps_the_credential_on_the_configured_origin() {
 async fn redirect_guard_keeps_the_credential_on_an_http_to_https_upgrade() {
     let mut config = defaults();
     config.headers = BTreeMap::from([("x-api-key".to_owned(), "secret".to_owned())]);
-    config.redirect_guard = RedirectGuard::new("http://127.0.0.1:8080/mcp", Some("X-API-Key"));
+    config.redirect_guard = RedirectGuard::new("http://127.0.0.1/mcp", Some("X-API-Key"));
     let _transport = build(&config, Arc::new(RecordingCapture::default()));
-    let upgraded = request(
-        Method::GET,
-        Url::parse("https://127.0.0.1:8080/mcp").unwrap(),
-    );
+    let upgraded = request(Method::GET, Url::parse("https://127.0.0.1/mcp").unwrap());
     let prepared = super::request::prepare(&config, &upgraded).await.unwrap();
     assert_eq!(
         prepared.headers.get("x-api-key").unwrap().to_str().unwrap(),
