@@ -7,10 +7,8 @@ use serde::{Deserialize, Serialize};
 pub type NativeObject = IndexMap<String, Json>;
 
 // Known fields come from the typed parse and the rest from an open parse, since serde's flatten breaks numbers under arbitrary_precision.
-pub trait NativeRecord: DeserializeOwned {
-    const KNOWN_FIELDS: &'static [&'static str];
-
-    fn set_extension(&mut self, extension: NativeObject);
+pub trait NativeRecord: DeserializeOwned + Serialize {
+    fn extension_mut(&mut self) -> &mut NativeObject;
 }
 
 #[expect(
@@ -89,45 +87,19 @@ pub struct InteractionResponse {
 }
 
 impl NativeRecord for InteractionRecord {
-    const KNOWN_FIELDS: &'static [&'static str] = &[
-        "id", "object", "model", "agent", "status", "created", "updated", "outputs", "steps",
-        "usage",
-    ];
-
-    fn set_extension(&mut self, extension: NativeObject) {
-        self.extension = extension;
+    fn extension_mut(&mut self) -> &mut NativeObject {
+        &mut self.extension
     }
 }
 
 impl NativeRecord for StreamingRecord {
-    const KNOWN_FIELDS: &'static [&'static str] = &[
-        "event_type",
-        "id",
-        "object",
-        "model",
-        "agent",
-        "status",
-        "created",
-        "updated",
-        "outputs",
-        "steps",
-        "usage",
-        "delta",
-        "index",
-        "step",
-        "interaction_id",
-        "interaction",
-    ];
-
-    fn set_extension(&mut self, extension: NativeObject) {
-        self.extension = extension;
+    fn extension_mut(&mut self) -> &mut NativeObject {
+        &mut self.extension
     }
 }
 
 impl NativeRecord for CancelInteractionResult {
-    const KNOWN_FIELDS: &'static [&'static str] = &["id", "status"];
-
-    fn set_extension(&mut self, extension: NativeObject) {
-        self.extension = extension;
+    fn extension_mut(&mut self) -> &mut NativeObject {
+        &mut self.extension
     }
 }

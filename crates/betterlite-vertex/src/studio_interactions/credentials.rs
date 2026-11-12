@@ -35,10 +35,10 @@ pub fn validate_environment(
     params: Option<&StudioParams>,
     settings: &Settings,
 ) -> RequestHeaders {
-    let mut headers = RequestHeaders::new();
-    for (name, value) in caller {
-        headers.insert(name.clone(), SecretString::from(value.as_str()));
-    }
+    let mut headers: RequestHeaders = caller
+        .iter()
+        .map(|(name, value)| (name.clone(), SecretString::from(value.as_str())))
+        .collect();
     headers.insert(
         "Content-Type".to_owned(),
         SecretString::from("application/json"),

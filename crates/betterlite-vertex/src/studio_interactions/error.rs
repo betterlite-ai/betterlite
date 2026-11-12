@@ -13,10 +13,7 @@ pub enum StudioInteractionError {
     #[error("the generation_config image_config must be an object")]
     ImageConfigNotObject,
     #[error("the interaction_id cannot be used as a URL segment")]
-    InteractionId {
-        #[source]
-        source: HttpError,
-    },
+    InteractionId(#[source] HttpError),
     #[error("the interaction reply is {size} bytes, over the {limit} byte limit")]
     ResponseTooLarge { size: usize, limit: usize },
     #[error("Gemini answered with status {status}: {body}")]
@@ -26,8 +23,5 @@ pub enum StudioInteractionError {
         headers: IndexMap<String, String>,
     },
     #[error("the interaction record is not valid")]
-    Record {
-        #[source]
-        source: serde_json::Error,
-    },
+    Record(#[from] serde_json::Error),
 }

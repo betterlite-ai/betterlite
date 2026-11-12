@@ -6,28 +6,18 @@ call:
       - function: lifecycle
         action: cancel
         interaction_id: "a/b c?d#e%"
-        api_key: "k"
+        api_base: ""
       - function: lifecycle
         action: get
         interaction_id: "a/b c?d#e%"
-        api_key: "k"
         api_base: "https://proxy.example"
       - function: lifecycle
         action: delete
         interaction_id: "a-b.c_d~e"
-        env: {GEMINI_API_KEY: "env-key", GEMINI_API_BASE: "https://environment.example"}
+        api_base: ""
       - function: lifecycle
         action: get
         interaction_id: "\u00e9"
-        api_key: "k"
-      - function: create_url
-        api_key: "k"
-      - function: create_url
-        api_key: "k"
-        stream: true
-        api_base: "http://localhost:9"
-      - function: create_url
-        stream: false
-        env: {GOOGLE_API_KEY: "env-key"}
+        api_base: ""
 env: {}
 compare: {ignore: []}

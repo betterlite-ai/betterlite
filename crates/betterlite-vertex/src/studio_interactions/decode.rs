@@ -4,8 +4,8 @@ use indexmap::IndexMap;
 
 use super::error::StudioInteractionError;
 use super::records::{
-    DeleteInteractionResult, HiddenParams, InteractionRecord, InteractionResponse, NativeRecord,
-    StreamingRecord,
+    DeleteInteractionResult, HiddenParams, InteractionRecord, InteractionResponse, NativeObject,
+    NativeRecord, StreamingRecord,
 };
 
 pub const RESPONSE_BODY_LIMIT: usize = 0x0200_0000;
@@ -42,11 +42,12 @@ where
     let Ok(open) = serde_json::from_slice::<Json>(response.body) else {
         return Err(gemini_error(response));
     };
-    let mut record: R = serde_json::from_slice(response.body)
-        .map_err(|source| StudioInteractionError::Record { source })?;
+    let mut record: R = serde_json::from_slice(response.body)?;
     if let Json::Object(mut fields) = open {
-        fields.retain(|name, _value| !R::KNOWN_FIELDS.contains(&name.as_str()));
-        record.set_extension(fields);
+        // Every declared field serializes, as null when absent, so these are the known names.
+        let known: NativeObject = serde_json::from_slice(&serde_json::to_vec(&record)?)?;
+        fields.retain(|name, _value| !known.contains_key(name));
+        *record.extension_mut() = fields;
     }
     Ok(record)
 }
@@ -98,8 +99,7 @@ pub fn transform_delete_response(
 pub fn transform_streaming_response(
     chunk: &Json,
 ) -> Result<StreamingRecord, StudioInteractionError> {
-    let body =
-        serde_json::to_vec(chunk).map_err(|source| StudioInteractionError::Record { source })?;
+    let body = serde_json::to_vec(chunk)?;
     let headers = IndexMap::new();
     decode_studio_interaction(&RawResponse {
         status: 200,

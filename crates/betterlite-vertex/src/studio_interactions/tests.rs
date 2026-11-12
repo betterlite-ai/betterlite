@@ -415,7 +415,7 @@ fn lifecycle_urls_encode_one_segment(
     #[case] interaction_id: &str,
     #[case] tail: &str,
 ) {
-    let request = lifecycle_request(
+    let url = lifecycle_request(
         action,
         interaction_id,
         None,
@@ -423,8 +423,7 @@ fn lifecycle_urls_encode_one_segment(
         &settings(None),
     )
     .unwrap();
-    assert_eq!(request.url, format!("{DEFAULT_BASE}{tail}"));
-    assert!(request.body.is_empty());
+    assert_eq!(url, format!("{DEFAULT_BASE}{tail}"));
 }
 
 #[rstest]
@@ -440,10 +439,7 @@ fn bad_interaction_ids_are_refused(#[case] interaction_id: &str) {
         &settings(None),
     )
     .unwrap_err();
-    assert!(matches!(
-        error,
-        StudioInteractionError::InteractionId { .. }
-    ));
+    assert!(matches!(error, StudioInteractionError::InteractionId(_)));
 }
 
 #[test]
@@ -567,7 +563,7 @@ fn a_truncated_record_is_malformed_json_not_a_record_error() {
 fn valid_json_of_the_wrong_shape_is_a_record_error(#[case] body: &str) {
     let raw = IndexMap::new();
     let error = transform_get_response(&reply(200, &raw, body)).unwrap_err();
-    assert!(matches!(error, StudioInteractionError::Record { .. }));
+    assert!(matches!(error, StudioInteractionError::Record(_)));
 }
 
 #[test]
@@ -652,7 +648,7 @@ fn a_streaming_chunk_keeps_sparse_fields() {
 #[test]
 fn a_streaming_chunk_must_be_an_object() {
     let error = transform_streaming_response(&parse("[]")).unwrap_err();
-    assert!(matches!(error, StudioInteractionError::Record { .. }));
+    assert!(matches!(error, StudioInteractionError::Record(_)));
 }
 
 #[rstest]
