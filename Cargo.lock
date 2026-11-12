@@ -1510,6 +1510,7 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-paths",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-tokenizer",
