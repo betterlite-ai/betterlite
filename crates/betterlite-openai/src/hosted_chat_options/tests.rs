@@ -19,20 +19,15 @@ use super::map_renaming_token_limit;
 use crate::base_helpers::provider_config;
 use crate::openai_base_config::Headers;
 
-fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
-    entries
+fn loaded(entries: &[(&str, &str)]) -> Sections {
+    let lookup: BTreeMap<String, String> = entries
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
-}
-
-fn loaded(entries: &[(&str, &str)]) -> Sections {
-    ConfigLoader {
-        lookup: environment(entries),
-    }
-    .load("")
-    .expect("the config loads")
-    .sections
+        .collect();
+    ConfigLoader { lookup }
+        .load("")
+        .expect("the config loads")
+        .sections
 }
 
 fn params(text: &str) -> IndexMap<String, Value> {

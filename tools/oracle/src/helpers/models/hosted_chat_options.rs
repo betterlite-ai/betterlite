@@ -75,15 +75,10 @@ impl Helper for Op {
 }
 fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
     match call.host.as_str() {
-        "baseten" => token_limit_map::<BasetenSettings>(
-            call,
-            baseten::SUPPORTED_PARAMS,
-            Some(call.model.as_str()),
-        ),
+        "baseten" => token_limit_map::<BasetenSettings>(call, baseten::SUPPORTED_PARAMS),
         "cerebras" => token_limit_map::<CerebrasSettings>(
             call,
             &cerebras::supported_params(call.supports_reasoning),
-            None,
         ),
         "featherless" => {
             let mut options = IndexMap::new();
@@ -128,11 +123,7 @@ fn info(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
     let key = key.map(|secret| secret.expose_secret().to_owned());
     Ok(json!({"ok": true, "value": {"base": base, "key": key}}))
 }
-fn token_limit_map<Settings>(
-    call: &Call,
-    supported: &[&str],
-    baseten_model: Option<&str>,
-) -> Result<Value, Box<HelperError>>
+fn token_limit_map<Settings>(call: &Call, supported: &[&str]) -> Result<Value, Box<HelperError>>
 where
     Settings: serde::Serialize + serde::de::DeserializeOwned,
 {
@@ -142,12 +133,9 @@ where
         &mut options,
         supported,
     );
-    Ok(mapped_value(
-        class_snapshot::<Settings>(&call.config)?,
-        &options,
-        supported,
-        baseten_model,
-    ))
+    let baseten_model = (call.host == "baseten").then_some(call.model.as_str());
+    let snapshot = class_snapshot::<Settings>(&call.config)?;
+    Ok(mapped_value(snapshot, &options, supported, baseten_model))
 }
 fn mapped_value(
     snapshot: Value,
@@ -179,13 +167,9 @@ fn class_snapshot<Settings>(config: &BTreeMap<String, Value>) -> Result<Value, B
 where
     Settings: serde::Serialize + serde::de::DeserializeOwned,
 {
-    let settings: Settings = serde_json::from_value(Value::Object(
-        config
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
-    ))
-    .map_err(|error| failure(None, error.to_string()))?;
+    let object = Value::Object(config.clone().into_iter().collect());
+    let settings: Settings =
+        serde_json::from_value(object).map_err(|error| failure(None, error.to_string()))?;
     provider_config(&settings)
         .map(Value::Object)
         .map_err(|error| failure(None, error.to_string()))

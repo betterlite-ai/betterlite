@@ -22,8 +22,6 @@ impl HostedChatOptionsError {
         }
     }
 }
-pub const FEATHERLESS_DEFAULT_API_BASE: &str = "https://api.featherless.ai/v1";
-pub const AIML_DEFAULT_API_BASE: &str = "https://api.aimlapi.com/v1";
 pub const SUPPORTED_PARAMS: &[&str] = &[
     "stream",
     "frequency_penalty",
@@ -149,14 +147,14 @@ pub fn chat_identity(
                 .featherless_ai_api_key
                 .as_ref()
                 .or(settings.featherless_api_key.as_ref()),
-            FEATHERLESS_DEFAULT_API_BASE,
+            "https://api.featherless.ai/v1",
         ),
         ChatIdentity::Aiml => resolved_identity(
             api_base,
             api_key,
             settings.aiml_api_base.as_deref(),
             settings.aiml_api_key.as_ref(),
-            AIML_DEFAULT_API_BASE,
+            "https://api.aimlapi.com/v1",
         ),
     }
 }
