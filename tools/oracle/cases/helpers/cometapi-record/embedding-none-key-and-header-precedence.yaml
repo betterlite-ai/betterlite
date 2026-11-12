@@ -1,0 +1,16 @@
+kind: helper
+name: cometapi-record-embedding-none-key-and-header-precedence
+call:
+  cometapi_record:
+    function: embedding_headers
+    calls:
+      - {api_key: null, headers: {}, env: {}}
+      - {api_key: null, headers: {}, env: {COMETAPI_KEY: env-key}}
+      - {api_key: explicit, headers: {}, env: {COMETAPI_KEY: env-key}}
+      - {api_key: "", headers: {}, env: {COMETAPI_KEY: env-key}}
+      - {api_key: null, headers: {}, env: {COMETAPI_API_KEY: alt-key}}
+      - {api_key: null, headers: {Authorization: "Bearer caller"}, env: {COMETAPI_KEY: env-key}}
+      - {api_key: null, headers: {authorization: lower}, env: {COMETAPI_KEY: env-key}}
+      - {api_key: null, headers: {accept: text/plain, Content-Type: text/xml}, env: {COMETAPI_KEY: env-key}}
+env: {}
+compare: {ignore: []}

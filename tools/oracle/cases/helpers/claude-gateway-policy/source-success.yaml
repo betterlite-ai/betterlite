@@ -1,0 +1,19 @@
+kind: helper
+name: claude-gateway-policy-source-success
+call:
+  claude_gateway_policy:
+    mode: guard
+    general_settings:
+      enable_claude_code_gateway: true
+      managed_settings:
+        permissions:
+          deny: [Bash, Write]
+          allow: []
+        env:
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+          CLAUDE_CODE_MAX_OUTPUT_TOKENS: 4096
+        enabledPlugins:
+          review@local: true
+        hooks: null
+env: {}
+compare: {ignore: []}

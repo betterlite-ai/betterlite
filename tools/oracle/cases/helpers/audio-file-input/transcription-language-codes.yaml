@@ -1,0 +1,23 @@
+kind: helper
+name: transcription-language-codes
+call:
+  audio_file_input:
+    calls:
+      - {function: language, language: "en"}
+      - {function: language, language: "es"}
+      - {function: language, language: "de"}
+      - {function: language, language: "fr"}
+      - {function: language, language: "it"}
+      - {function: language, language: "pt"}
+      - {function: language, language: "ja"}
+      - {function: language, language: "ko"}
+      - {function: language, language: "zh"}
+      - {function: language, language: "ru"}
+      - {function: language, language: "hi"}
+      - {function: language, language: "ar"}
+      - {function: language, language: "EN"}
+      - {function: language, language: "en-gb"}
+      - {function: language, language: "zz"}
+      - {function: language, language: " en "}
+env: {}
+compare: {ignore: []}

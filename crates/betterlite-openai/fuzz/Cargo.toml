@@ -35,8 +35,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "audio_duration"
+path = "fuzz_targets/audio_duration.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "auth_record"
 path = "fuzz_targets/auth_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "batch_records"
+path = "fuzz_targets/batch_records.rs"
 test = false
 doc = false
 bench = false
@@ -107,6 +121,13 @@ bench = false
 [[bin]]
 name = "openai_files"
 path = "fuzz_targets/openai_files.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rerank_contracts"
+path = "fuzz_targets/rerank_contracts.rs"
 test = false
 doc = false
 bench = false
@@ -226,6 +247,13 @@ bench = false
 [[bin]]
 name = "xai_oauth"
 path = "fuzz_targets/xai_oauth.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_image_generation"
+path = "fuzz_targets/openai_image_generation.rs"
 test = false
 doc = false
 bench = false
@@ -383,3 +411,8 @@ path = "fuzz_targets/volcengine_embedding_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "comet_embedding_reply"
+path = "fuzz_targets/comet_embedding_reply.rs"
+test = false

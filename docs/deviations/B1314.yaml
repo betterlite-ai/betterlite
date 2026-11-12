@@ -1,0 +1,5 @@
+task: B1314
+deviations:
+  - what: A blocked response whose body has no usageMetadata answers a typed missing-usage error; LiteLLM raises a KeyError that escapes as an internal error.
+    why: usageMetadata is an optional key of LiteLLM's own response type and the blocked paths index it directly, so the crash is a bug no working setup relies on; the counters inside it still default to 0 as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1655

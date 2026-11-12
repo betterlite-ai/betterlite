@@ -1,0 +1,21 @@
+kind: helper
+name: cometapi-record-reasoning-copy-all-choices
+call:
+  cometapi_record:
+    function: chunks
+    chunks:
+      - id: a
+        created: 1
+        model: m
+        choices:
+          - {index: 0, delta: {reasoning: first, content: x}}
+          - {index: 1, delta: {reasoning: null, reasoning_content: old}}
+          - {index: 2, delta: {content: plain}}
+          - {index: 3, delta: {reasoning: kept, reasoning_content: old}}
+      - id: b
+        created: 2
+        model: null
+        choices: []
+        usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}

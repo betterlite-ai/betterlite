@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-credentials-explicit-location-only
+call:
+  vertex_credentials:
+    scenarios:
+      - params: {vertex_location: explicit-location}
+        settings: {vertex_location: module-location}
+        environment: {VERTEXAI_LOCATION: env-location}
+      - params: {vertex_ai_location: explicit-alias-location}
+        settings: {vertex_location: module-location}
+        environment: {VERTEXAI_LOCATION: env-location}
+      - params: {}
+        settings: {vertex_location: module-location}
+        environment: {VERTEXAI_LOCATION: env-location}
+      - params: {vertex_location: "", vertex_ai_location: explicit-alias-location}
+        settings: {vertex_location: module-location}
+        environment: {VERTEXAI_LOCATION: env-location}
+env: {}
+compare: {ignore: []}

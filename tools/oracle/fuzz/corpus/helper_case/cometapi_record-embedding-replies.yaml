@@ -1,0 +1,11 @@
+kind: helper
+name: cometapi-record-seed-embedding-replies
+call:
+  cometapi_record:
+    function: embedding_replies
+    replies:
+      - {body: '{"usage":{"prompt_tokens":3}}', status: 200, headers: {}}
+      - {body: '{"model":null,"data":null,"object":null}', status: 200, headers: {}}
+      - {body: 'not json', status: 502, headers: {}}
+env: {}
+compare: {ignore: []}

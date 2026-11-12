@@ -1,0 +1,32 @@
+kind: helper
+name: bedrock-converse-events-content-text-delta
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000011
+        steps:
+          - function: converse
+            chunk: {delta: {text: '', toolUse: {input: '{"a": 1}'}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {start: {}, delta: {text: ignored}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {delta: {text: wins}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {delta: {text: null}}
+          - function: converse
+            chunk: {delta: {citationsContent: {citations: []}}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {foo: 1}
+          - function: chunk
+            chunk: {metrics: {latencyMs: 5}}
+          - function: converse
+            chunk: {delta: {toolUse: {input: '{}'}}, contentBlockIndex: 1.9}
+          - function: converse
+            chunk: {delta: {toolUse: {input: x}}}
+          - function: state
+env: {}
+compare: {ignore: []}

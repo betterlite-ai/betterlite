@@ -1,0 +1,30 @@
+kind: helper
+name: environment-validation-retry-status
+call:
+  b5364:
+    operation: should_retry
+    cases:
+    - {status_code: 0}
+    - {status_code: 200}
+    - {status_code: 399}
+    - {status_code: 400}
+    - {status_code: 401}
+    - {status_code: 403}
+    - {status_code: 404}
+    - {status_code: 407}
+    - {status_code: 408}
+    - {status_code: 409}
+    - {status_code: 410}
+    - {status_code: 428}
+    - {status_code: 429}
+    - {status_code: 430}
+    - {status_code: 499}
+    - {status_code: 500}
+    - {status_code: 501}
+    - {status_code: 502}
+    - {status_code: 503}
+    - {status_code: 599}
+    - {status_code: 600}
+env: {}
+compare:
+  ignore: []

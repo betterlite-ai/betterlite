@@ -1,0 +1,39 @@
+kind: helper
+name: bedrock-converse-events-thinking-signature
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000031
+        steps:
+          - function: converse
+            chunk: {delta: {reasoningContent: {text: think}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {delta: {reasoningContent: {signature: sig}}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {delta: {reasoningContent: {redactedContent: abc}}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {delta: {reasoningContent: {other: 1}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {start: {reasoningContent: {redactedContent: xyz}}}
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: t1, name: both}, reasoningContent: {text: ignored}}}
+          - function: converse
+            chunk: {start: {toolUse: null, reasoningContent: {text: selected}}}
+          - function: converse
+            chunk: {start: {reasoningContent: null}}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000032
+        steps:
+          - function: converse
+            chunk: {delta: {reasoningContent: {other: 1}}, contentBlockIndex: 0}
+          - function: state
+env: {}
+compare: {ignore: []}
