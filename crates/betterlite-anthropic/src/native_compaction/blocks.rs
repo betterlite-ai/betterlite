@@ -11,11 +11,11 @@ fn objects<'response>(
         None | Some(Json::Null) => Ok(Vec::new()),
         Some(Json::List(items)) => items
             .iter()
-            .map(|item| match item {
-                Json::Object(object) => Ok(object),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    Err(NativeCompactionError::NotAnObjectList { field })
-                }
+            .map(|item| {
+                object(Some(item), field)
+                    .ok()
+                    .flatten()
+                    .ok_or(NativeCompactionError::NotAnObjectList { field })
             })
             .collect(),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
