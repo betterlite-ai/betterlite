@@ -43,6 +43,8 @@ description: >-
   Fuzz: `accepts_gzip` takes arbitrary bytes. Add the cargo-fuzz target `accept_encoding` to the existing crates/betterlite-server/fuzz crate (add a [[bin]] entry to its Cargo.toml like the others), seed its corpus with the Accept-Encoding values the gzip tests use plus one invalid-UTF-8 file, and replay every corpus file in a test named replays_the_accept_encoding_corpus, in the style of replays_the_route_path_corpus in auth/route_match/tests.rs.
 scope:
   paths:
+    - "tools/oracle/src/router_probes/admission_control/driver.rs"
+    - "tools/oracle/src/router_probes/admission_control/**"
     - Cargo.toml
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-config/src/sections/request_size_limit.rs

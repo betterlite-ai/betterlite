@@ -4,6 +4,7 @@ use crate::admission_control::in_flight::InFlightRequests;
 use crate::admission_control::{AdmissionControl, AdmissionStack};
 use crate::auth::auth_route_patterns::AuthSettings;
 use crate::middleware::request_root_paths::RootPaths;
+use crate::middleware::request_stack;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
@@ -118,14 +119,18 @@ pub(crate) fn application(
         )?,
         embedding_routes(executor),
     );
+    let stacked = request_stack::wrap(
+        routed,
+        &config.sections.request_size_limit,
+        &config.sections.security_headers,
+    );
     let stack = AdmissionStack {
         admission: Arc::new(AdmissionControl::from_settings(
             &config.sections.admission_control,
         )),
         in_flight: Arc::new(InFlightRequests::default()),
-        scalar_root: config.sections.request_root_paths.server_root_path.clone(),
     };
-    let application = stack.wrap(routed);
+    let application = stack.wrap(stacked);
     Ok(
         match RootPaths::from_settings(&config.sections.request_root_paths) {
             Some(paths) => paths.wrap(application),

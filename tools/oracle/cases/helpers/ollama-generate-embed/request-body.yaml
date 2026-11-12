@@ -1,0 +1,64 @@
+kind: helper
+name: ollama-generate-request-body
+env: {}
+compare: {ignore: []}
+call:
+  b8156:
+    op: request
+    custom_prompt_dict:
+      llama3:
+        roles:
+          user: {pre_message: "<u>", post_message: "</u>"}
+          assistant: {pre_message: "<a>", post_message: "</a>"}
+        initial_prompt_value: "<s>"
+        final_prompt_value: "</s>"
+    requests:
+      - model: mistral
+        messages: [{role: user, content: hi}]
+      - model: mistral
+        messages: [{role: system, content: s}, {role: user, content: u}]
+      - model: mistral
+        messages:
+          - role: user
+            content:
+              - {type: text, text: see}
+              - {type: image_url, image_url: {url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}}
+      - model: mistral
+        messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: {url: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="}}
+        options: {stream: true, temperature: 0.5, format: {type: object}, think: true}
+      - model: mistral
+        messages: [{role: user, content: hi}]
+        options: {format: null, think: null}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+      - model: llama3
+        messages: [{role: user, content: hi}, {role: assistant, content: yo}]
+        litellm_params:
+          custom_prompt_dict:
+            llama3:
+              roles:
+                user: {pre_message: "[", post_message: "]"}
+              initial_prompt_value: ""
+              final_prompt_value: ""
+      - model: other
+        messages: [{role: user, content: hi}, {role: assistant, content: yo}]
+        litellm_params: {text_completion: true}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        options:
+          images: ["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="]
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        options: {images: ["QUJD"]}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        options: {images: ["!!!"]}
+      - model: llama3
+        messages: [{role: user, content: hi}]
+        options:
+          images: ["data:application/octet-stream;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="]
+      - model: mistral
+        messages: []

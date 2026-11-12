@@ -1,0 +1,24 @@
+kind: helper
+name: reversed-token-option-order
+call:
+  mistral_options:
+    steps:
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [max_completion_tokens, 5]
+          - [max_tokens, 9]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [max_tokens, 9]
+          - [max_completion_tokens, 5]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [max_tokens, 9]
+env: {}
+compare: {ignore: []}

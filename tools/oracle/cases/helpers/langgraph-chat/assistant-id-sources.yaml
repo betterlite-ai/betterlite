@@ -1,0 +1,18 @@
+kind: helper
+name: langgraph-chat-assistant-id-sources
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: request
+    cases:
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {}, stream: false}
+      - {model: 'agent', messages: [{role: user, content: hi}], options: {}, stream: false}
+      - {model: 'langgraph/team/agent', messages: [{role: user, content: hi}], options: {}, stream: false}
+      - {model: 'langgraph/', messages: [{role: user, content: hi}], options: {}, stream: false}
+      - {model: '/agent', messages: [{role: user, content: hi}], options: {}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {assistant_id: 'custom'}, stream: false}
+      - {model: 'agent', messages: [{role: user, content: hi}], options: {assistant_id: 'custom'}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {assistant_id: ''}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {assistant_id: null}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {assistant_id: 'a/b'}, stream: false}
