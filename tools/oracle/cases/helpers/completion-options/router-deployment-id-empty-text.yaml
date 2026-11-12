@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-router-deployment-id-empty-text
+call:
+  b5650: {function: deployment_id, kwargs: {metadata: {model_info: {id: ""}}}}
+env: {}
+compare: {ignore: []}

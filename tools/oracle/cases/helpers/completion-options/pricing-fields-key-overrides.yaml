@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-key-overrides
+call:
+  b5650: {function: server_derived_key, key: pricing_overrides}
+env: {}
+compare: {ignore: []}

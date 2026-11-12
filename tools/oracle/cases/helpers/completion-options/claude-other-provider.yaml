@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-other-provider
+call:
+  b5650: {function: claude_target, custom_llm_provider: openai, model: claude-3}
+env: {}
+compare: {ignore: []}
