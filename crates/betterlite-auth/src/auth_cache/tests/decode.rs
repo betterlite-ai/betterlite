@@ -117,6 +117,14 @@ fn literal_brackets_inside_strings_do_not_count() {
 }
 
 #[test]
+fn literal_nesting_is_counted_after_a_closed_string() {
+    let payload = b"{'a': 'x', 'b': [[[[[[[[None]]]]]]]]}";
+    let (decoded, log) = capture(|| decode_cached_auth(payload, ReadOperation::Get));
+    assert!(decoded.unwrap().is_none());
+    assert!(log.contains("literal nesting limit"), "{log}");
+}
+
+#[test]
 fn malformed_bytes_become_typed_miss() {
     let (decoded, log) = capture(|| decode_cached_auth(b"{oops", ReadOperation::Get));
     assert!(decoded.unwrap().is_none());
