@@ -58,8 +58,8 @@ impl DrainTracker {
     pub fn begin_operation(self: &Arc<Self>) -> OperationGuard {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.active_operations = state.active_operations.saturating_add(1);
-        drop(state);
         self.drained.send_replace(false);
+        drop(state);
         OperationGuard {
             tracker: Arc::clone(self),
         }
@@ -71,8 +71,8 @@ impl DrainTracker {
         let id = TransactionId(state.next_transaction);
         state.next_transaction = state.next_transaction.wrapping_add(1);
         state.transactions.insert(id);
-        drop(state);
         self.drained.send_replace(false);
+        drop(state);
         TransactionHold {
             id,
             tracker: Arc::clone(self),
@@ -85,22 +85,14 @@ impl DrainTracker {
             return false;
         }
         state.active_operations = state.active_operations.saturating_sub(1);
-        let drained = state.active_operations == 0;
-        drop(state);
-        if drained {
-            self.drained.send_replace(true);
-        }
+        self.drained.send_replace(state.active_operations == 0);
         true
     }
 
     fn end_operation(&self) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.active_operations = state.active_operations.saturating_sub(1);
-        let drained = state.active_operations == 0;
-        drop(state);
-        if drained {
-            self.drained.send_replace(true);
-        }
+        self.drained.send_replace(state.active_operations == 0);
     }
 }
 

@@ -10,12 +10,12 @@ use crate::database_refresh::access;
 use crate::database_refresh::endpoint::DatabaseUrlSlot;
 use crate::database_refresh::handle::PoolHandle as _;
 use crate::database_refresh::handle::PoolTransport;
-use crate::database_refresh::replacement::{self, ReplacementError};
-use crate::database_refresh::retirement::{self, wait_for_pool_replacement};
+use crate::database_refresh::replacement::{self, ReplacementError, wait_for_pool_replacement};
+use crate::database_refresh::retirement;
 
 use super::support::{
-    ConnectStep, FakeScript, NEXT_URL, callback, capture_logs, create, failing_callback, options,
-    retirement_deadline, secret, set_url, stop, wait_for_event,
+    ConnectStep, FakeGeneration, FakeScript, NEXT_URL, QueryStep, callback, capture_logs, create,
+    failing_callback, lock, options, retirement_deadline, secret, set_url, stop, wait_for_event,
 };
 
 #[tokio::test]
@@ -315,9 +315,105 @@ async fn shutdown_releases_retirements() {
     drop(lock_guard);
     yield_now().await;
     assert_eq!(retirement::retirement_count(&built), 1);
-    retirement::shutdown(&built).await;
+    built.shutdown().await;
     assert_eq!(retirement::retirement_count(&built), 0);
     drop(held);
+}
+
+async fn replace_once(generation: &Arc<FakeGeneration>) {
+    let lock_guard = generation.replacement_lock.lock().await;
+    replacement::replace_locked(generation, &secret(NEXT_URL), None)
+        .await
+        .expect("the candidate replaces");
+    drop(lock_guard);
+    yield_now().await;
+}
+
+#[tokio::test]
+async fn finished_retirement_removed_before_next_spawn() {
+    let script = Arc::new(FakeScript::default());
+    let slot = DatabaseUrlSlot::default();
+    let built = create(&script, options(slot.clone()), None, None, true).await;
+    let handle = access::operation(&built).expect("a connected operation");
+    let tracker = handle.tracker.clone().expect("a tracker");
+    let held = tracker.begin_transaction();
+    set_url(&slot, NEXT_URL);
+    replace_once(&built).await;
+    replace_once(&built).await;
+    assert_eq!(lock(&built.retirements).len(), 2);
+    replace_once(&built).await;
+    assert_eq!(lock(&built.retirements).len(), 2);
+    drop(held);
+}
+
+#[tokio::test]
+async fn retirement_waits_for_inflight_query() {
+    let script = Arc::new(FakeScript::default());
+    let gate = Arc::new(Notify::new());
+    script.script_query("slow", QueryStep::Blocked);
+    script.gate_query("slow", Arc::clone(&gate));
+    let slot = DatabaseUrlSlot::default();
+    let built = create(&script, options(slot.clone()), None, None, true).await;
+    let mut tasks = JoinSet::new();
+    let querying = access::operation(&built).expect("a connected operation");
+    tasks.spawn(async move { querying.query("slow").await });
+    wait_for_event(&script, "query:slow").await;
+    set_url(&slot, NEXT_URL);
+    let lock_guard = built.replacement_lock.lock().await;
+    replacement::replace_locked(&built, &secret(NEXT_URL), None)
+        .await
+        .expect("the candidate replaces");
+    drop(lock_guard);
+    yield_now().await;
+    yield_now().await;
+    assert!(!script.has_event("close:0"));
+    gate.notify_one();
+    tasks
+        .join_next()
+        .await
+        .expect("the query task settles")
+        .expect("the query task stays healthy")
+        .expect("the query completes");
+    wait_for_event(&script, "close:0").await;
+}
+
+#[tokio::test]
+async fn wait_holds_until_lock_released() {
+    let script = Arc::new(FakeScript::default());
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
+    let gate = Arc::new(Notify::new());
+    let mut holders = JoinSet::new();
+    let holding = Arc::clone(&built);
+    let released = Arc::clone(&gate);
+    holders.spawn(async move {
+        let _lock = holding.replacement_lock.lock().await;
+        released.notified().await;
+    });
+    yield_now().await;
+    let mut waiters = JoinSet::new();
+    let waiting = Arc::clone(&built);
+    waiters.spawn(async move {
+        wait_for_pool_replacement(&waiting, Duration::from_secs(60)).await;
+    });
+    yield_now().await;
+    assert!(
+        waiters.try_join_next().is_none(),
+        "the waiter must not return while the lock is held"
+    );
+    gate.notify_one();
+    waiters
+        .join_next()
+        .await
+        .expect("the waiter settles")
+        .expect("the waiter task stays healthy");
+    stop(&mut holders).await;
 }
 
 #[tokio::test]

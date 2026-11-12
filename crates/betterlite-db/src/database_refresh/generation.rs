@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::error::Error;
+use std::mem;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -226,4 +227,28 @@ where
         }
         Some(Arc::new(DrainTracker::new()))
     }
+
+    pub async fn shutdown(&self) {
+        let mut retirements = mem::take(
+            &mut *self
+                .retirements
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        retirements.abort_all();
+        while retirements.join_next().await.is_some() {}
+        let mut refreshes = mem::take(
+            &mut *self
+                .refreshes
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        refreshes.abort_all();
+        while refreshes.join_next().await.is_some() {}
+    }
+}
+
+// A joined task leaves its set only when the set is polled, so every spawn site reaps first.
+pub(super) fn drop_finished(tasks: &mut JoinSet<()>) {
+    while tasks.try_join_next().is_some() {}
 }

@@ -8,7 +8,7 @@ use std::thread;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::{Builder, Handle};
 
-use super::generation::PoolGeneration;
+use super::generation::{PoolGeneration, drop_finished};
 use super::handle::{OperationHandle, PoolProvider};
 use super::replacement::ReplacementError;
 
@@ -167,11 +167,12 @@ where
             tracing::error!("{prefix}Background {label} refresh failed: {error}");
         }
     };
-    generation
+    let mut refreshes = generation
         .refreshes
         .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .spawn(task);
+        .unwrap_or_else(PoisonError::into_inner);
+    drop_finished(&mut refreshes);
+    refreshes.spawn(task);
 }
 
 fn recreate_on_thread<P, T, C>(

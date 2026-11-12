@@ -1,34 +1,14 @@
 use std::error::Error;
-use std::mem;
 use std::sync::PoisonError;
 use std::time::Duration;
 
 use tokio::time::timeout;
 
 use super::access::RefreshTrigger;
-use super::generation::{ActivePool, PoolGeneration};
+use super::generation::{ActivePool, PoolGeneration, drop_finished};
 use super::handle::{PoolHandle as _, PoolProvider};
 
 pub const RETIREMENT_DRAIN_TIMEOUT: Duration = Duration::from_secs(90);
-
-pub async fn wait_for_pool_replacement<P, T, C>(
-    generation: &PoolGeneration<P, T, C>,
-    wait: Duration,
-) where
-    P: PoolProvider,
-    T: RefreshTrigger,
-    C: Error + Send + Sync + 'static,
-{
-    if wait.is_zero() {
-        return;
-    }
-    if generation.replacement_lock.try_lock().is_ok() {
-        return;
-    }
-    let Ok(_settled) = timeout(wait, generation.replacement_lock.lock()).await else {
-        return;
-    };
-}
 
 #[must_use]
 pub fn retirement_count<P, T, C>(generation: &PoolGeneration<P, T, C>) -> usize
@@ -41,32 +21,8 @@ where
         .retirements
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    while retirements.try_join_next().is_some() {}
+    drop_finished(&mut retirements);
     retirements.len()
-}
-
-pub async fn shutdown<P, T, C>(generation: &PoolGeneration<P, T, C>)
-where
-    P: PoolProvider,
-    T: RefreshTrigger,
-    C: Error + Send + Sync + 'static,
-{
-    let mut retirements = mem::take(
-        &mut *generation
-            .retirements
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner),
-    );
-    retirements.abort_all();
-    while retirements.join_next().await.is_some() {}
-    let mut refreshes = mem::take(
-        &mut *generation
-            .refreshes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner),
-    );
-    refreshes.abort_all();
-    while refreshes.join_next().await.is_some() {}
 }
 
 pub(super) fn schedule_retirement<P, T, C>(
@@ -101,9 +57,10 @@ pub(super) fn schedule_retirement<P, T, C>(
         }
         handle.close();
     };
-    generation
+    let mut retirements = generation
         .retirements
         .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .spawn(task);
+        .unwrap_or_else(PoisonError::into_inner);
+    drop_finished(&mut retirements);
+    retirements.spawn(task);
 }

@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
+use tokio::runtime::Builder;
 use tokio::sync::Notify;
 use tokio::task::yield_now;
 use tracing::subscriber::set_default;
@@ -63,8 +64,12 @@ async fn async_expired_access_schedules_and_returns_stale() {
     yield_now().await;
 }
 
-#[tokio::test]
-async fn sync_expired_access_refetches_after_recovery() {
+#[test]
+fn sync_expired_access_refetches_after_recovery() {
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a test runtime");
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
     set_url(&slot, "postgres://initial");
@@ -73,14 +78,13 @@ async fn sync_expired_access_refetches_after_recovery() {
     fake.expired.store(true, Ordering::SeqCst);
     fake.minted = Mutex::new(Some(secret("postgres://minted")));
     let refresh = Arc::new(fake);
-    let built = create(
+    let built = runtime.block_on(create(
         &script,
         token_options(slot),
         Some(Arc::clone(&refresh)),
         None,
         true,
-    )
-    .await;
+    ));
     let (logs, subscriber) = capture_logs();
     let guard = set_default(subscriber);
     let handle = access::operation_blocking(&built).expect("the refreshed handle");
@@ -97,22 +101,25 @@ async fn sync_expired_access_refetches_after_recovery() {
     );
 }
 
-#[tokio::test]
-async fn sync_falsey_mint_exact_error() {
+#[test]
+fn sync_falsey_mint_exact_error() {
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a test runtime");
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
     let mut fake = refresh();
     fake.slot = slot.clone();
     fake.expired.store(true, Ordering::SeqCst);
     let refresh = Arc::new(fake);
-    let built = create(
+    let built = runtime.block_on(create(
         &script,
         token_options(slot),
         Some(Arc::clone(&refresh)),
         None,
         true,
-    )
-    .await;
+    ));
     let missing = access::operation_blocking(&built)
         .err()
         .expect("a missing token fails");
@@ -134,4 +141,27 @@ async fn sync_falsey_mint_exact_error() {
         .expect("a mint failure propagates");
     assert!(matches!(failed, BlockingAccessError::Mint { .. }));
     assert_eq!(built.observe().generation, 0);
+}
+
+#[tokio::test]
+async fn finished_refresh_removed_before_next_spawn() {
+    let script = Arc::new(FakeScript::default());
+    let fake = refresh();
+    fake.expired.store(true, Ordering::SeqCst);
+    let refresh = Arc::new(fake);
+    let built = create(
+        &script,
+        token_options(DatabaseUrlSlot::default()),
+        Some(Arc::clone(&refresh)),
+        None,
+        true,
+    )
+    .await;
+    drop(access::operation(&built).expect("a stale handle"));
+    yield_now().await;
+    assert_eq!(refresh.refreshes.load(Ordering::SeqCst), 1);
+    assert_eq!(lock(&built.refreshes).len(), 1);
+    drop(access::operation(&built).expect("a stale handle"));
+    assert_eq!(lock(&built.refreshes).len(), 1);
+    yield_now().await;
 }

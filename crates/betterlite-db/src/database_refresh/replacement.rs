@@ -2,8 +2,10 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use secrecy::SecretString;
+use tokio::time::timeout;
 
 use super::access::RefreshTrigger;
 use super::generation::{ActivePool, PoolGeneration};
@@ -88,6 +90,25 @@ where
     let tracker = connect_candidate(generation, &replacement).await?;
     let _committed = commit_replacement(generation, replacement, tracker)?;
     Ok(true)
+}
+
+pub async fn wait_for_pool_replacement<P, T, C>(
+    generation: &PoolGeneration<P, T, C>,
+    wait: Duration,
+) where
+    P: PoolProvider,
+    T: RefreshTrigger,
+    C: Error + Send + Sync + 'static,
+{
+    if wait.is_zero() {
+        return;
+    }
+    if generation.replacement_lock.try_lock().is_ok() {
+        return;
+    }
+    let Ok(_settled) = timeout(wait, generation.replacement_lock.lock()).await else {
+        return;
+    };
 }
 
 // Caller holds replacement_lock; the candidate connects while the published pool keeps serving.
