@@ -91,13 +91,13 @@ fn run_call(call: &Call, catalog: &ModelCatalog) -> Result<Value, Failure> {
 }
 
 fn decode(call: &Call) -> Result<ListenQuery, Failure> {
-    let query = required(&call.query, "query")?;
+    let query = required(call.query.as_ref(), "query")?;
     let decoded = decode_listen_query(query.as_bytes());
     Ok(decoded)
 }
 
 fn upstream(call: &Call) -> Result<ListenTarget, Failure> {
-    let url = required(&call.upstream_url, "upstream_url")?;
+    let url = required(call.upstream_url.as_ref(), "upstream_url")?;
     let parsed = parse_listen_target(url).map_err(failure)?;
     Ok(parsed)
 }
@@ -109,11 +109,11 @@ fn messages(call: &Call) -> Result<&[ListenFrame], Failure> {
     Ok(frames)
 }
 
-fn required<'call>(value: &'call Option<String>, name: &str) -> Result<&'call str, Failure> {
-    let Some(text) = value.as_deref() else {
+fn required<'call>(value: Option<&'call String>, name: &str) -> Result<&'call str, Failure> {
+    let Some(text) = value else {
         return Err(failure(format!("{name} is required")));
     };
-    Ok(text)
+    Ok(text.as_str())
 }
 
 fn failure<Error>(error: Error) -> Failure
