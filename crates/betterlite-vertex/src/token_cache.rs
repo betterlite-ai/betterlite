@@ -24,10 +24,11 @@ use state::{TokenState, token_state};
 
 // VertexBase's credential state: the cached records, their refresh bookkeeping and the injected clock and executor
 pub struct CredentialCache {
-    records: Mutex<BTreeMap<CredentialKey, CacheRecord>>,
-    leases: Arc<LeaseMap>,
-    clock: Arc<dyn CredentialClock>,
-    executor: Arc<dyn CredentialExecutor>,
+    // B1303's asynchronous algorithm extends this state inside the crate
+    pub(crate) records: Mutex<BTreeMap<CredentialKey, CacheRecord>>,
+    pub(crate) leases: Arc<LeaseMap>,
+    pub(crate) clock: Arc<dyn CredentialClock>,
+    pub(crate) executor: Arc<dyn CredentialExecutor>,
 }
 
 enum RefreshFailure {
