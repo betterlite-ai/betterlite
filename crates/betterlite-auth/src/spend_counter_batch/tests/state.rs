@@ -4,6 +4,7 @@ use betterlite_redis::request_batch::lock;
 use tokio::task::JoinSet;
 
 use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatch};
+use crate::spend_counter_batch::scope::SpendCounterScope;
 
 use super::support::{FakeRedis, Reply, allow_cache, decimal, keys};
 
@@ -14,8 +15,13 @@ async fn open_batch(server: &FakeRedis) -> Arc<SpendCounterBatch> {
 #[tokio::test]
 async fn record_binds_and_marks_fetched() {
     let server = FakeRedis::start().await;
-    let batch = open_batch(&server).await;
-    batch.record("spend:key:a", decimal("5"));
+    let cache = allow_cache(&server).await;
+    let scope = SpendCounterScope::default();
+    let _guard = scope.enter(Some(&cache), &keys(&[]));
+    scope.record_spend_counter_value("spend:key:a", decimal("5"));
+    let batch = scope
+        .active_spend_counter_batch()
+        .expect("the active batch");
     {
         let state = lock(&batch.state);
         assert!(state.keys.contains("spend:key:a"));
@@ -23,7 +29,7 @@ async fn record_binds_and_marks_fetched() {
         assert_eq!(state.loaded.get("spend:key:a"), Some(&Some(decimal("5"))));
     };
     assert_eq!(
-        batch.read("spend:key:a").await.unwrap(),
+        scope.read_spend_counter("spend:key:a").await.unwrap(),
         Some(CounterValue::Amount(decimal("5")))
     );
     assert!(server.commands_named("MGET").is_empty());
@@ -48,11 +54,15 @@ async fn closed_record_and_bind_noop() {
 #[tokio::test]
 async fn forget_clears_even_closed() {
     let server = FakeRedis::start().await;
-    let batch = open_batch(&server).await;
-    batch.bind(&keys(&["spend:key:a"]));
+    let cache = allow_cache(&server).await;
+    let scope = SpendCounterScope::default();
+    let _guard = scope.enter(Some(&cache), &keys(&["spend:key:a"]));
+    let batch = scope
+        .active_spend_counter_batch()
+        .expect("the active batch");
     batch.record("spend:key:a", decimal("5"));
     batch.close();
-    batch.forget("spend:key:a");
+    scope.forget_spend_counter("spend:key:a");
     {
         let state = lock(&batch.state);
         assert!(state.keys.is_empty());

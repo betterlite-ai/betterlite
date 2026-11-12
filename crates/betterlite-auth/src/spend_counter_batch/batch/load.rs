@@ -8,6 +8,7 @@ use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::batch::result::Settled;
 use betterlite_redis::request_batch::lock;
 use rust_decimal::Decimal;
+use tokio::pin;
 use tokio::sync::Notify;
 
 use super::super::value::decimal_map;
@@ -160,6 +161,8 @@ impl LoadShared {
     async fn wait(&self) {
         loop {
             let notified = self.done.notified();
+            pin!(notified);
+            notified.as_mut().enable();
             if self.complete.load(Ordering::SeqCst) {
                 return;
             }
