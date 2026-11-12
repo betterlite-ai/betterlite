@@ -6,7 +6,9 @@ mod tests;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
+use std::panic;
 use std::path::Path;
+use std::thread;
 use std::time::Instant;
 
 use crate::builtins::{Context, run_builtin};
@@ -28,6 +30,7 @@ pub(crate) struct Verdict {
 pub(crate) struct Selection {
     pub(crate) only: Vec<String>,
     pub(crate) skip: Vec<String>,
+    pub(crate) beside: Vec<String>,
 }
 
 pub(crate) enum Outcome {
@@ -116,6 +119,49 @@ pub(crate) fn run(
     verdict
 }
 
+struct Lane<'run> {
+    root: &'run Path,
+    log_dir: &'run Path,
+    environment: &'run [(&'run str, String)],
+    passed: &'run BTreeMap<String, String>,
+}
+
+impl Lane<'_> {
+    fn run(
+        &self,
+        group: &[&Command],
+        blocked: Option<&str>,
+    ) -> Result<Vec<(String, u64, Outcome)>, GateError> {
+        let mut outcomes = Vec::new();
+        for command in group {
+            let started = Instant::now();
+            let outcome = match (blocked, self.passed.get(&command.id)) {
+                (Some(message), _) => Outcome::Skip(message.to_owned()),
+                (None, Some(run)) => Outcome::Reused(run.clone()),
+                (None, None) => run_command(self.root, self.log_dir, command, self.environment)?,
+            };
+            outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
+        }
+        Ok(outcomes)
+    }
+
+    fn run_in_order(
+        &self,
+        prerequisites: &[&Command],
+        expensive: &[&Command],
+        builtin_failed: bool,
+    ) -> Result<Vec<(String, u64, Outcome)>, GateError> {
+        let mut outcomes = self.run(prerequisites, None)?;
+        let failed = builtin_failed
+            || outcomes
+                .iter()
+                .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
+        let blocked = failed.then_some("fix the failed prerequisites before expensive checks");
+        outcomes.extend(self.run(expensive, blocked)?);
+        Ok(outcomes)
+    }
+}
+
 fn run_checks(
     context: &Context<'_>,
     selection: &Selection,
@@ -135,28 +181,30 @@ fn run_checks(
         ("GATE_LOG_DIR", log_dir.display().to_string()),
         ("GATE_ORACLE_CASES", task.oracle_cases.join(" ")),
     ];
-    let scheduled = selection::schedule(development, task, selection)?;
-    let reasons = [
-        None,
-        Some("fix the failed prerequisites before expensive checks"),
-        Some("runs once every other check passes"),
-    ];
-    for (group, reason) in scheduled.into_iter().zip(reasons) {
-        let blocked = reason.filter(|_| {
-            outcomes
-                .iter()
-                .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }))
-        });
-        for command in group {
-            let started = Instant::now();
-            let outcome = match (blocked, passed.get(&command.id)) {
-                (Some(message), _) => Outcome::Skip(message.to_owned()),
-                (None, Some(run)) => Outcome::Reused(run.clone()),
-                (None, None) => run_command(root, log_dir, command, &environment)?,
-            };
-            outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
-        }
-    }
+    let lane = Lane {
+        root,
+        log_dir,
+        environment: &environment,
+        passed,
+    };
+    let [prerequisites, expensive, later, beside] =
+        selection::schedule(development, task, selection)?;
+    let builtin_failed = outcomes
+        .iter()
+        .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
+    // the beside checks start at once on their own thread, so a failed one never holds back the checks in order
+    let (in_order, joined) = thread::scope(|scope| {
+        let side = scope.spawn(|| lane.run(&beside, None));
+        let main = lane.run_in_order(&prerequisites, &expensive, builtin_failed);
+        (main, side.join())
+    });
+    outcomes.extend(joined.unwrap_or_else(|payload| panic::resume_unwind(payload))?);
+    outcomes.extend(in_order?);
+    let failed = outcomes
+        .iter()
+        .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
+    let blocked = failed.then_some("runs once every other check passes");
+    outcomes.extend(lane.run(&later, blocked)?);
     history::save(root, log_dir, facts, selection, &outcomes)?;
     Ok(render(task, &facts.base, log_dir, outcomes))
 }

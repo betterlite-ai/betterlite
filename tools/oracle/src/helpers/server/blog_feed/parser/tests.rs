@@ -90,7 +90,7 @@ fn replays_xml_fuzz_corpus() {
 }
 
 fn replay_xml_fuzz_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/blog_feed");
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fuzz/corpus/blog_feed");
     let entries = fs::read_dir(corpus).unwrap();
     for entry in entries {
         let xml = fs::read_to_string(entry.unwrap().path()).unwrap();

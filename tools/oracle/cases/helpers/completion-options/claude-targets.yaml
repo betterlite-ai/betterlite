@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-targets-bedrock-arn
+call:
+  b5650: {function: claude_target, custom_llm_provider: bedrock, model: "ARN:AWS:BEDROCK:us-east-1:123456789012:Provisioned-Model/abc"}
+env: {}
+compare: {ignore: []}

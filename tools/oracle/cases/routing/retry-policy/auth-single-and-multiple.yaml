@@ -1,0 +1,25 @@
+kind: probe
+name: retry-policy-auth-single-and-multiple
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: eligibility
+        eligibility:
+          steps:
+            - error: {class: authentication, status: 401}
+              healthy_deployments: 1
+              all_deployments: 1
+            - error: {class: authentication, status: 401}
+              healthy_deployments: 2
+              all_deployments: 2
+            - error: {class: permission_denied, status: 403}
+              healthy_deployments: 1
+              all_deployments: 1
+            - error: {class: permission_denied, status: 403}
+              healthy_deployments: 2
+              all_deployments: 2
+            - error: {class: authentication, status: 401}
+              healthy_deployments: 0
+              all_deployments: 2

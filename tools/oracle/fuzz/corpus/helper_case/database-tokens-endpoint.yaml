@@ -1,0 +1,15 @@
+kind: helper
+name: database-tokens-endpoint-seed
+call:
+  database_tokens:
+    function: batch
+    calls:
+      - function: build_url
+        endpoint: {host: db.example, port: "5432", user: "svc@corp", name: "my db", schema: "tenant/one"}
+        token: "abc%3Ddef"
+      - function: parse_endpoint
+        url: "postgresql://sv%40corp@DB.Example:6543/my%20db?schema=first&schema=second"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example:abc/db"
+env: {}
+compare: {ignore: []}
