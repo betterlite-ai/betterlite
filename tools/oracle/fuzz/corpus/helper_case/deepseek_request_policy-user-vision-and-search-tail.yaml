@@ -1,0 +1,43 @@
+kind: helper
+name: deepseek-request-policy-user-vision-and-search-tail
+call:
+  deepseek_request_policy:
+    op: request
+    cases:
+      - model: deepseek-vision-model
+        supports_vision: true
+        supports_reasoning: false
+        optional_params: {}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: look at this}
+              - {type: image_url, image_url: https://example.test/a.png}
+            search_results:
+              - title: T
+                content:
+                  - {type: text, text: B}
+      - model: deepseek-vision-model
+        supports_vision: true
+        supports_reasoning: false
+        optional_params: {}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: no tail}
+              - {type: image_url, image_url: {url: https://example.test/b.png}}
+            search_results: []
+      - model: deepseek-plain-model
+        supports_vision: false
+        supports_reasoning: false
+        optional_params: {}
+        messages:
+          - role: user
+            content: a plain string
+          - role: assistant
+            content:
+              - {type: text, text: assistant list}
+              - {type: image_url, image_url: https://example.test/c.png}
+env: {}
+compare:
+  ignore: []

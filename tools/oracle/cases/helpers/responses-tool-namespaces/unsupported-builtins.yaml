@@ -1,0 +1,19 @@
+kind: helper
+name: responses-tool-namespaces-unsupported-builtins
+call:
+  responses_tool_namespaces:
+    operation: tools_to_chat
+    tools:
+      - {type: computer_use}
+      - {type: function, name: kept}
+      - {type: shell}
+      - {type: image_generation}
+      - {type: local_shell}
+      - {type: tool_search}
+      - {type: shell}
+      - {type: mcp, server_label: docs}
+      - {type: computer_use_preview}
+      - {type: code_interpreter}
+env: {}
+compare:
+  ignore: []

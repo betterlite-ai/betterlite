@@ -1,0 +1,14 @@
+kind: helper
+name: openai-reasoning-models-o-series-temperature-limit
+call:
+  openai_reasoning_models:
+    o_series_temperature_limit:
+      probes:
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true, supports_system_messages: true}}, resolved: {model: o3, provider: openai}, requested: {max_tokens: 4, temperature: null}}
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true, supports_system_messages: true}}, resolved: {model: o3, provider: openai}, requested: {temperature: 1, max_tokens: 2}}
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true, supports_system_messages: true}}, resolved: {model: o3, provider: openai}, requested: {temperature: 0.2}}
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true, supports_system_messages: true}}, resolved: {model: o3, provider: openai}, requested: {temperature: 0.2}, existing: {temperature: 0.2}, drop_params: true}
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true, supports_system_messages: true}}, resolved: {model: o3, provider: openai}, requested: {temperature: 0.2}, global_drop_params: true}
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true, supports_system_messages: true}}, resolved: {model: o3, provider: openai}, requested: {reasoning_effort: high, logprobs: true, top_p: 0.5, presence_penalty: 0.1, frequency_penalty: 0.1, top_logprobs: 2}}
+env: {}
+compare: {ignore: []}

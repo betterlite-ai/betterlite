@@ -87,6 +87,8 @@ pub(crate) struct Progress {
     pub(crate) starts: Vec<u32>,
     #[serde(default)]
     pub(crate) red: Vec<Red>,
+    #[serde(default)]
+    pub(crate) reported_done: bool,
 }
 
 impl Progress {
@@ -125,6 +127,7 @@ impl Progress {
                 session: None,
                 starts: Vec::new(),
                 red: Vec::new(),
+                reported_done: false,
             }),
             Err(source) => Err(GateError::Read { path, source }),
         }

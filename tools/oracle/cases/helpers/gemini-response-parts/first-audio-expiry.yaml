@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-response-parts-first-audio-expiry
+call:
+  gemini_response_parts:
+    parts:
+      - text: intro
+      - text: data:audio/wav;base64,QUJD
+      - inlineData:
+          mimeType: audio/mp3
+          data: YXVk
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs: null
+env: {}
+compare: {ignore: []}

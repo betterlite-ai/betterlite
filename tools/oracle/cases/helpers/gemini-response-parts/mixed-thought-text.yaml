@@ -1,0 +1,26 @@
+kind: helper
+name: gemini-response-parts-mixed-thought-text
+call:
+  gemini_response_parts:
+    parts:
+      - text: plan the answer
+        thought: true
+        thoughtSignature: sig-thought
+      - text: visible answer
+      - text: ""
+        thought: true
+      - inlineData:
+          mimeType: image/png
+          data: aW1n
+      - inlineData:
+          mimeType: application/pdf
+          data: cGRm
+      - text: tail
+        thought: false
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs: null
+env: {}
+compare: {ignore: []}

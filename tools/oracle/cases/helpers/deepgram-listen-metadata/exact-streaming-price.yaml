@@ -1,0 +1,37 @@
+kind: helper
+name: deepgram-listen-metadata-exact-streaming-price
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: exact_streaming_price
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=nova-3
+      messages: []
+    - function: exact_streaming_price
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=nova-3&language=multi
+      messages: []
+    - function: exact_streaming_price
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=nova-3&language=%20MULTI%20
+      messages: []
+    - function: exact_streaming_price
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=&model=nova-3&language=
+      messages: []
+    - function: exact_streaming_price
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=nova-2
+      messages: []
+    - function: exact_streaming_price
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=nova-3&language=en
+      messages: []
+compare: {ignore: []}
+env: {}

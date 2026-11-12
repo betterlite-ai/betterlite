@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-option-primitives-defaults
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: defaults
+        defaults: {max_tokens: 0, stop_sequences: [], system: ''}
+        model: null
+        default_chat_max_tokens: 4096
+        configured_provider: ''
+env: {DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS: '4096'}
+compare: {ignore: []}

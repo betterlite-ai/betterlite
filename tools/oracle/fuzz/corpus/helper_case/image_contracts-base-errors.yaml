@@ -1,0 +1,10 @@
+kind: helper
+name: image-contracts-base-errors-seed
+call:
+  image_contracts:
+    operation: base_errors
+    message: slow
+    status_code: 429
+    headers: {retry-after: "2"}
+env: {}
+compare: {ignore: []}

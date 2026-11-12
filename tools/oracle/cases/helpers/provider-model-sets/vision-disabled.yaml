@@ -1,0 +1,23 @@
+kind: helper
+name: provider-model-sets-vision-disabled
+call:
+  b5361:
+    fixture:
+      model_cost:
+        declared-false: {litellm_provider: deepseek, supports_vision: false}
+        declared-true: {litellm_provider: deepseek, supports_vision: true}
+        silent-model: {litellm_provider: deepseek}
+        deepseek/bare-false: {litellm_provider: deepseek}
+        bare-false: {litellm_provider: deepseek, supports_vision: false}
+        deepseek/bare-true: {litellm_provider: deepseek}
+        bare-true: {litellm_provider: deepseek, supports_vision: true}
+    steps:
+      - {function: is_vision_explicitly_disabled, model: declared-false, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: declared-true, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: silent-model, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: deepseek/bare-false, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: deepseek/bare-true, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: nothing-here}
+env: {}
+compare: {ignore: []}
