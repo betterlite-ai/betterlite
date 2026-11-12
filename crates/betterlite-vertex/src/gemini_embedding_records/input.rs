@@ -39,7 +39,7 @@ pub enum Element<'element> {
     Text(&'element str),
     Inline(EmbeddingDataUrl<'element>),
     Gcs(&'static str, &'element str),
-    File(&'element ResolvedFile, &'element str),
+    File(&'element ResolvedFile),
 }
 #[derive(Clone, Copy, Debug)]
 pub struct InputShape {
@@ -86,7 +86,7 @@ pub fn classify<'element>(
                 reason: format!("the file reference {element} has no resolved MIME type and URI"),
             });
         };
-        return Ok(Element::File(file, element));
+        return Ok(Element::File(file));
     }
     Ok(Element::Text(element))
 }
@@ -104,9 +104,9 @@ pub fn build_part(
             mime_type: Some(mime_type.to_owned()),
             file_uri: uri.to_owned(),
         }),
-        Element::File(file, uri) => Part::FileData(FileData {
+        Element::File(file) => Part::FileData(FileData {
             mime_type: Some(file.mime_type.clone()),
-            file_uri: uri.to_owned(),
+            file_uri: file.uri.clone(),
         }),
     })
 }
@@ -135,7 +135,7 @@ pub fn is_image_only(input: &EmbeddingInput, resolved_files: &ResolvedFiles) -> 
             .all(|element| match classify(element, resolved_files) {
                 Ok(Element::Inline(data_url)) => IMAGE_MIME_TYPES.contains(&data_url.mime_type),
                 Ok(Element::Gcs(mime_type, _)) => IMAGE_MIME_TYPES.contains(&mime_type),
-                Ok(Element::File(file, _)) => IMAGE_MIME_TYPES.contains(&file.mime_type.as_str()),
+                Ok(Element::File(file)) => IMAGE_MIME_TYPES.contains(&file.mime_type.as_str()),
                 Ok(Element::Text(_)) | Err(_) => false,
             })
 }

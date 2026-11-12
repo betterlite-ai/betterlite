@@ -124,6 +124,10 @@ fn batch_parts_classify_media(
     r#"{"taskType":"RETRIEVAL_QUERY"}"#,
     r#"{"model":"models/gemini-embedding-001","content":{"parts":[{"text":"hello"}]},"taskType":"RETRIEVAL_QUERY"}"#
 )]
+#[case::passthrough_task_type(
+    r#"{"taskType":"CODE_RETRIEVAL_QUERY"}"#,
+    r#"{"model":"models/gemini-embedding-001","content":{"parts":[{"text":"hello"}]},"taskType":"CODE_RETRIEVAL_QUERY"}"#
+)]
 #[case::nulls_take_the_default(
     r#"{"dimensions":null,"taskType":"CLASSIFICATION","title":null}"#,
     r#"{"model":"models/gemini-embedding-001","content":{"parts":[{"text":"hello"}]},"taskType":"CLASSIFICATION"}"#
@@ -186,14 +190,6 @@ fn batch_rejects_unsupported_data_url_media(#[case] source: &str) {
 fn batch_rejects_non_integer_dimensions(#[case] optional: &str) {
     let error = batch(r#""hello""#, optional, "{}").unwrap_err();
     assert!(rejection(error).contains("outputDimensionality value must be a whole number"));
-}
-
-#[rstest]
-#[case::unknown_task_type(r#"{"task_type":"BOGUS"}"#)]
-#[case::unknown_native_task_type(r#"{"taskType":"retrieval_query"}"#)]
-fn batch_rejects_unknown_task_types(#[case] optional: &str) {
-    let error = batch(r#""hello""#, optional, "{}").unwrap_err();
-    assert!(rejection(error).contains("is not a Gemini embedding task type"));
 }
 
 #[rstest]

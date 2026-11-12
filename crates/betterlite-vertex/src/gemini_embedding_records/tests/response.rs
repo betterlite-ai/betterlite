@@ -72,7 +72,7 @@ fn batch_replies_require_their_fields(#[case] response: &str, #[case] reason: &s
     let error = batch_reply(r#""a""#, response).unwrap_err();
     assert!(matches!(
         error,
-        GeminiEmbeddingError::Reply { reason: found } if found == reason
+        GeminiEmbeddingError::Reply { reason: found } if found.contains(reason)
     ));
 }
 

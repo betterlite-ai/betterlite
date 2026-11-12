@@ -6,34 +6,6 @@ use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 use crate::gemini_embedding_records::input::{
     EmbeddingInput, InputEntry, Part, ResolvedFiles, build_part, shape,
 };
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TaskType {
-    TaskTypeUnspecified,
-    RetrievalQuery,
-    RetrievalDocument,
-    SemanticSimilarity,
-    Classification,
-    Clustering,
-    QuestionAnswering,
-    FactVerification,
-}
-impl TaskType {
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "TASK_TYPE_UNSPECIFIED" => Some(Self::TaskTypeUnspecified),
-            "RETRIEVAL_QUERY" => Some(Self::RetrievalQuery),
-            "RETRIEVAL_DOCUMENT" => Some(Self::RetrievalDocument),
-            "SEMANTIC_SIMILARITY" => Some(Self::SemanticSimilarity),
-            "CLASSIFICATION" => Some(Self::Classification),
-            "CLUSTERING" => Some(Self::Clustering),
-            "QUESTION_ANSWERING" => Some(Self::QuestionAnswering),
-            "FACT_VERIFICATION" => Some(Self::FactVerification),
-            _ => None,
-        }
-    }
-}
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct EmbedParameters {
     #[serde(
@@ -42,7 +14,7 @@ pub struct EmbedParameters {
     )]
     pub output_dimensionality: Option<Number>,
     #[serde(rename = "taskType", skip_serializing_if = "Option::is_none")]
-    pub task_type: Option<TaskType>,
+    pub task_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 }
@@ -92,17 +64,13 @@ pub fn filter_parameters(optional: &Extra) -> Result<EmbedParameters, GeminiEmbe
         title,
     })
 }
-fn task_parameter(optional: &Extra) -> Result<Option<TaskType>, GeminiEmbeddingError> {
+fn task_parameter(optional: &Extra) -> Result<Option<String>, GeminiEmbeddingError> {
     let task = optional
         .get("task_type")
         .or_else(|| optional.get("taskType"));
     match task {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(TaskType::parse(text).ok_or_else(|| {
-            GeminiEmbeddingError::Rejected {
-                reason: format!("{text} is not a Gemini embedding task type"),
-            }
-        })?)),
+        Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(GeminiEmbeddingError::Rejected {
                 reason: String::from("the taskType value must be text"),
