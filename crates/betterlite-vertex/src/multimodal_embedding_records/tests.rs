@@ -11,12 +11,13 @@ use betterlite_openai::embedding::EmbeddingVector;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
+use super::error::INTERNAL_SERVER_ERROR;
 use super::error::MultimodalEmbeddingError;
-use super::media::MEDIA_TEXT_LIMIT;
-use super::media::MediaKind;
-use super::media::classify_embedding_media;
-use super::media::process_element;
+use super::request::MEDIA_TEXT_LIMIT;
+use super::request::MediaKind;
 use super::request::SUPPORTED_OPENAI_PARAMS;
+use super::request::classify_embedding_media;
+use super::request::element;
 use super::request::map_openai_params;
 use super::request::transform_request;
 use super::request::validate_environment;
@@ -227,12 +228,14 @@ fn media_classification_follows_litellm(#[case] input: &str, #[case] expected: O
 
 #[test]
 fn base64_images_keep_only_the_second_comma_segment() {
+    let comma = "data:image/png;base64,YWJj,extra";
     assert_eq!(
-        process_element("data:image/png;base64,YWJj,extra"),
+        element(None, comma, classify_embedding_media(comma)),
         json(r#"{"image": {"bytesBase64Encoded": "YWJj"}}"#)
     );
+    let payload = "data:,ABCD";
     assert_eq!(
-        process_element("data:,ABCD"),
+        element(None, payload, classify_embedding_media(payload)),
         json(r#"{"image": {"bytesBase64Encoded": "ABCD"}}"#)
     );
 }
@@ -358,10 +361,7 @@ fn video_usage_rejects_a_segment_without_offsets() {
     .unwrap_err();
     assert!(matches!(
         error,
-        MultimodalEmbeddingError::NotNumber {
-            field: "startOffsetSec",
-            index: 0
-        }
+        MultimodalEmbeddingError::Field("startOffsetSec", "number", 0)
     ));
 }
 
@@ -373,7 +373,7 @@ fn a_reply_without_predictions_is_an_internal_server_error() {
         MultimodalEmbeddingError::MissingPredictions
     ));
     assert_eq!(error.status_code(), 500);
-    assert_eq!(error.error_type(), "internal_server_error");
+    assert_eq!(INTERNAL_SERVER_ERROR, "internal_server_error");
 }
 
 #[test]

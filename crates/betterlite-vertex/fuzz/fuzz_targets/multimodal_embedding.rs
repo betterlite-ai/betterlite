@@ -2,7 +2,7 @@
 
 use std::str::from_utf8;
 
-use betterlite_vertex::multimodal_embedding_records::media::classify_embedding_media;
+use betterlite_vertex::multimodal_embedding_records::request::classify_embedding_media;
 use betterlite_vertex::multimodal_embedding_records::response::decode_multimodal_embedding;
 use libfuzzer_sys::fuzz_target;
 

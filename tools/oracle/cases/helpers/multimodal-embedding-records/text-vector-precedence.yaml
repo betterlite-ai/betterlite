@@ -2,10 +2,6 @@ kind: helper
 name: multimodal-embedding-records-text-vector-precedence
 call:
   multimodal_embedding_records:
-    headers:
-      - caller: {Content-Type: text/plain, Authorization: "Bearer caller", X-Trace: one}
-        api_key: vertex-key
-    mappings: []
     requests: []
     replies:
       - model: multimodalembedding@001

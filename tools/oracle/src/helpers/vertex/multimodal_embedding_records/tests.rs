@@ -1,46 +1,34 @@
 #![cfg(test)]
 
+use crate::case::{HelperCase, helper::validate_helper};
 use std::fs;
 use std::path::Path;
-use std::path::PathBuf;
-
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-
-fn seed_sources() -> Vec<(PathBuf, String)> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
-    let mut sources = Vec::new();
-    for entry in fs::read_dir(corpus).unwrap() {
-        let path = entry.unwrap().path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if name.starts_with("multimodal_embedding_records") {
-            let source = fs::read_to_string(&path).unwrap();
-            sources.push((path, source));
-        }
-    }
-    sources
-}
-
-fn seed_operations(sources: &[(PathBuf, String)]) -> Vec<String> {
-    let mut operations = Vec::new();
-    for (path, source) in sources {
-        let case: HelperCase = serde_saphyr::from_str(source).unwrap();
-        validate_helper(path, &case).unwrap();
-        operations.push(case.call.operation);
-    }
-    operations
-}
 
 #[test]
 fn helper_seeds_select_multimodal_embedding_records() {
-    let sources = seed_sources();
-    assert!(!sources.is_empty());
-    let operations = seed_operations(&sources);
-    assert!(
-        operations
-            .iter()
-            .all(|operation| operation == "multimodal_embedding_records")
-    );
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let seeds: Vec<_> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("multimodal_embedding_records"))
+        })
+        .map(|path| fs::read_to_string(path).unwrap())
+        .collect();
+    assert!(!seeds.is_empty());
+    assert!(seeds.iter().all(|source| {
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
+            && serde_saphyr::from_str::<HelperCase>(source)
+                .unwrap()
+                .call
+                .operation
+                == "multimodal_embedding_records"
+    }));
 }

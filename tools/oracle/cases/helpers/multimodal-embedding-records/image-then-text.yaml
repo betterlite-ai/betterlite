@@ -2,8 +2,6 @@ kind: helper
 name: multimodal-embedding-records-image-then-text
 call:
   multimodal_embedding_records:
-    headers: []
-    mappings: []
     requests:
       - input: ["gs://bucket/bike.png", "a red bike", "plain trailing text"]
         optional: {}

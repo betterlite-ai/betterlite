@@ -1,8 +1,9 @@
-use betterlite_models::decisions::Extra;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
-use super::error::MultimodalEmbeddingError;
+use super::error::MultimodalEmbeddingError as Error;
+
+const DURATION: &str = "video duration";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MediaPromptTokensDetails {
@@ -14,136 +15,98 @@ pub struct MediaPromptTokensDetails {
 pub fn calculate_usage(
     request: &Json,
     predictions: &[Json],
-) -> Result<MediaPromptTokensDetails, MultimodalEmbeddingError> {
-    let instances = instances(request)?;
-    let mut prompt: Option<String> = None;
+) -> Result<MediaPromptTokensDetails, Error> {
+    let Json::Object(fields) = request else {
+        return Err(Error::Request("instances", "a list"));
+    };
+    let Some(Json::List(instances)) = fields.get("instances") else {
+        return Err(Error::Request("instances", "a list"));
+    };
+    let mut prompt = String::new();
+    let mut has_text = false;
     let mut image_count = 0_u64;
     for instance in instances {
-        let Json::Object(fields) = instance else {
-            return Err(MultimodalEmbeddingError::InstanceNotObject);
+        let Json::Object(instance_fields) = instance else {
+            return Err(Error::Request("instances", "a list of objects"));
         };
-        append_text(fields, &mut prompt)?;
-        if has_image(fields)? {
-            image_count = image_count.saturating_add(1);
+        match instance_fields.get("text") {
+            Some(Json::Text(text)) if !text.is_empty() => {
+                prompt.push_str(text);
+                has_text = true;
+            }
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                return Err(Error::Request("text", "text"));
+            }
+            None | Some(Json::Null | Json::Text(_)) => {}
+        }
+        match instance_fields.get("image") {
+            Some(Json::Object(image)) if !image.is_empty() => {
+                image_count = image_count.saturating_add(1);
+            }
+            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+                return Err(Error::Request("image", "an object"));
+            }
+            None | Some(Json::Null | Json::Object(_)) => {}
         }
     }
-    let character_count = match prompt {
-        Some(text) => Some(count_characters(&text)?),
-        None => None,
-    };
-    let video_length_seconds = video_length(predictions)?;
     Ok(MediaPromptTokensDetails {
-        character_count,
+        character_count: has_text.then(|| count_characters(&prompt)).transpose()?,
         image_count,
-        video_length_seconds,
+        video_length_seconds: video_length(predictions)?,
     })
 }
 
-fn instances(request: &Json) -> Result<&[Json], MultimodalEmbeddingError> {
-    let Json::Object(fields) = request else {
-        return Err(MultimodalEmbeddingError::InstancesNotList);
-    };
-    let Some(Json::List(instances)) = fields.get("instances") else {
-        return Err(MultimodalEmbeddingError::InstancesNotList);
-    };
-    Ok(instances)
-}
-
-fn append_text(
-    fields: &Extra,
-    prompt: &mut Option<String>,
-) -> Result<(), MultimodalEmbeddingError> {
-    match fields.get("text") {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::Text(text)) if text.is_empty() => Ok(()),
-        Some(Json::Text(text)) => {
-            match prompt {
-                Some(existing) => existing.push_str(text),
-                None => *prompt = Some(text.clone()),
-            }
-            Ok(())
-        }
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(MultimodalEmbeddingError::NotText { field: "text" })
-        }
-    }
-}
-
-fn has_image(fields: &Extra) -> Result<bool, MultimodalEmbeddingError> {
-    match fields.get("image") {
-        None | Some(Json::Null) => Ok(false),
-        Some(Json::Object(image)) => Ok(!image.is_empty()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(MultimodalEmbeddingError::NotObject { field: "image" })
-        }
-    }
-}
-
-fn count_characters(text: &str) -> Result<u64, MultimodalEmbeddingError> {
+fn count_characters(text: &str) -> Result<u64, Error> {
     // CPython's str.isspace also takes the four ASCII separators below the space character
-    u64::try_from(
-        text.chars()
-            .filter(|character| {
-                !matches!(*character, '\u{1c}'..='\u{1f}') && !character.is_whitespace()
-            })
-            .count(),
-    )
-    .map_err(|_source| MultimodalEmbeddingError::CountOverflow)
+    let count = text
+        .chars()
+        .filter(|character| {
+            !matches!(*character, '\u{1c}'..='\u{1f}') && !character.is_whitespace()
+        })
+        .count();
+    u64::try_from(count).map_err(|_source| Error::Overflow("character count"))
 }
 
-fn video_length(predictions: &[Json]) -> Result<Decimal, MultimodalEmbeddingError> {
+fn video_length(predictions: &[Json]) -> Result<Decimal, Error> {
     let mut total = Decimal::ZERO;
     for (index, prediction) in predictions.iter().enumerate() {
         let Json::Object(fields) = prediction else {
-            return Err(MultimodalEmbeddingError::PredictionNotObject { index });
+            return Err(Error::PredictionNotObject { index });
         };
         match fields.get("videoEmbeddings") {
-            None | Some(Json::Null) => {}
-            Some(Json::List(segments)) => {
-                total = accumulated(total, segments, index)?;
+            Some(Json::List(items)) => {
+                let length = segment_length(items, index)?;
+                total = total.checked_add(length).ok_or(Error::Overflow(DURATION))?;
             }
             Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-                return Err(MultimodalEmbeddingError::NotVector {
-                    field: "videoEmbeddings",
-                    index,
-                });
+                return Err(Error::Field("videoEmbeddings", "list", index));
             }
+            None | Some(Json::Null) => {}
         }
     }
     Ok(total)
 }
 
-fn accumulated(
-    mut total: Decimal,
-    segments: &[Json],
-    index: usize,
-) -> Result<Decimal, MultimodalEmbeddingError> {
+fn segment_length(segments: &[Json], index: usize) -> Result<Decimal, Error> {
+    let mut total = Decimal::ZERO;
     for segment in segments {
         let Json::Object(fields) = segment else {
-            return Err(MultimodalEmbeddingError::PredictionNotObject { index });
+            return Err(Error::PredictionNotObject { index });
         };
         let start = duration(fields.get("startOffsetSec"), "startOffsetSec", index)?;
         let end = duration(fields.get("endOffsetSec"), "endOffsetSec", index)?;
-        let length = end
-            .checked_sub(start)
-            .ok_or(MultimodalEmbeddingError::DurationOverflow)?;
-        total = total
-            .checked_add(length)
-            .ok_or(MultimodalEmbeddingError::DurationOverflow)?;
+        let length = end.checked_sub(start).ok_or(Error::Overflow(DURATION))?;
+        total = total.checked_add(length).ok_or(Error::Overflow(DURATION))?;
     }
     Ok(total)
 }
 
-fn duration(
-    value: Option<&Json>,
-    field: &'static str,
-    index: usize,
-) -> Result<Decimal, MultimodalEmbeddingError> {
+fn duration(value: Option<&Json>, field: &'static str, index: usize) -> Result<Decimal, Error> {
     let Some(Json::Number(number)) = value else {
-        return Err(MultimodalEmbeddingError::NotNumber { field, index });
+        return Err(Error::Field(field, "number", index));
     };
     number
         .to_string()
         .parse::<Decimal>()
-        .map_err(|_source| MultimodalEmbeddingError::NotNumber { field, index })
+        .map_err(|_source| Error::Field(field, "number", index))
 }

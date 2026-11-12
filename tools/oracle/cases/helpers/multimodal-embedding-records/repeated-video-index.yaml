@@ -2,8 +2,6 @@ kind: helper
 name: multimodal-embedding-records-repeated-video-index
 call:
   multimodal_embedding_records:
-    headers: []
-    mappings: []
     requests: []
     replies:
       - model: empty-model

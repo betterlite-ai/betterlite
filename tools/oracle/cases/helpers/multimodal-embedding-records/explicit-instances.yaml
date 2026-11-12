@@ -2,10 +2,6 @@ kind: helper
 name: multimodal-embedding-records-explicit-instances
 call:
   multimodal_embedding_records:
-    headers: []
-    mappings:
-      - options: {dimensions: 8, user: u}
-        optional: {dimensions: 9, task_type: RETRIEVAL_QUERY}
     requests:
       - input: ["ignored", "gs://bucket/ignored.png"]
         optional:
