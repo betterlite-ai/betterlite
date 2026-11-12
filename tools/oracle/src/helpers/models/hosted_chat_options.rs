@@ -219,7 +219,10 @@ where
     ))
     .map_err(|error| failure(None, error.to_string()))
 }
-fn snapshot<Settings: serde::Serialize>(settings: &Settings) -> Result<Value, Box<HelperError>> {
+fn snapshot<Settings>(settings: &Settings) -> Result<Value, Box<HelperError>>
+where
+    Settings: serde::Serialize,
+{
     provider_config(settings)
         .map(Value::Object)
         .map_err(|error| failure(None, error.to_string()))

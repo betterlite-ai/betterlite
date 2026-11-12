@@ -48,7 +48,10 @@ impl Section for Raw {
     }
 }
 // LiteLLM reads each alias with `or`, so an empty environment value falls through like an absent one
-fn value<L: EnvironmentLookup>(lookup: &L, name: &str) -> Option<String> {
+fn value<L>(lookup: &L, name: &str) -> Option<String>
+where
+    L: EnvironmentLookup,
+{
     match lookup.lookup(name) {
         Some(text) if !text.is_empty() => Some(text),
         _ => None,

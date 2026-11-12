@@ -54,7 +54,10 @@ fn value(text: &str) -> Value {
     serde_json::from_str(text).expect("a JSON value")
 }
 
-fn snapshot<Config: serde::Serialize>(config: &Config) -> Value {
+fn snapshot<Config>(config: &Config) -> Value
+where
+    Config: serde::Serialize,
+{
     Value::Object(provider_config(config).expect("the snapshot is an object"))
 }
 
