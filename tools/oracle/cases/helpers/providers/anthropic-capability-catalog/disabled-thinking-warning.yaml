@@ -1,0 +1,33 @@
+kind: helper
+name: disabled-thinking-warning
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        anthropic/claude-fable-5: {litellm_provider: anthropic, thinking_always_on: true}
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+      packaged: {}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - function: disabled_thinking_warning
+        model: claude-fable-5
+        custom_llm_provider: anthropic
+        params: {thinking: {type: disabled}}
+      - function: disabled_thinking_warning
+        model: claude-fable-5
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled}}
+      - function: disabled_thinking_warning
+        model: claude-fable-5
+        custom_llm_provider: anthropic
+        params: {thinking: disabled}
+      - function: disabled_thinking_warning
+        model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        params: {thinking: {type: disabled}}
+      - function: disabled_thinking_warning
+        model: claude-fable-5
+        custom_llm_provider: anthropic
+        params: {}
+env: {}
+compare: {ignore: []}
