@@ -8,12 +8,11 @@ use betterlite_vertex::vertex_gcs_access::parse::GcsObject;
 use serde_json::{Value, json};
 
 use super::input::{Input, Operation, WireValue};
-use crate::helpers::HelperResult;
 
 pub(super) const STORAGE_URL_PREFIX: &str = "https://storage.googleapis.com/storage/v1/b/";
 
-pub(super) fn run(input: &Input) -> HelperResult {
-    let value = match input.operation {
+pub(super) fn run(input: &Input) -> Value {
+    match input.operation {
         Operation::ConfiguredPrefix
         | Operation::EncodedTraversal
         | Operation::ForeignBucket
@@ -35,8 +34,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
                 .map(|model_path| cloud_storage::sanitize_path(model_path.as_deref(), "model"))
                 .collect::<Vec<String>>(),
         }),
-    };
-    Ok(value)
+    }
 }
 
 fn trusted_record(pairs: &[(String, WireValue)]) -> Option<TrustedModelCredentials> {
@@ -74,8 +72,8 @@ fn parse_values(input: &Input, trusted_pairs: &[(String, WireValue)]) -> Value {
         .file_ids
         .iter()
         .map(|file_id| match (&configured, &trusted) {
-            (Ok(bucket), trusted) => decoded_value(file_id, bucket, trusted.as_ref()),
-            (Err(_error), _trusted) => json!({"failed": true}),
+            (Ok(bucket), credentials) => decoded_value(file_id, bucket, credentials.as_ref()),
+            (Err(_error), _credentials) => json!({"failed": true}),
         })
         .collect();
     json!({"results": results})

@@ -10,6 +10,6 @@ impl Helper for Op {
     type Input = input::Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        operations::run(input)
+        Ok(operations::run(input))
     }
 }
