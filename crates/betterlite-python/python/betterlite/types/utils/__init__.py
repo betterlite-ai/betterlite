@@ -37,10 +37,6 @@ from betterlite.types.utils.text_completion import (
     Logprobs,
     TextChoices,
     TextCompletionResponse,
-    TranscriptionResponse,
-    TranscriptionUsageDurationObject,
-    TranscriptionUsageInputTokenDetailsObject,
-    TranscriptionUsageTokensObject,
 )
 from betterlite.types.utils.tool_calls import (
     ChatCompletionAudioResponse,
@@ -58,6 +54,12 @@ from betterlite.types.utils.tool_calls import (
     _CustomToolCallAccess,
     chat_completion_tool_call_from_dict,
     is_custom_tool_call_dict,
+)
+from betterlite.types.utils.transcription import (
+    TranscriptionResponse,
+    TranscriptionUsageDurationObject,
+    TranscriptionUsageInputTokenDetailsObject,
+    TranscriptionUsageTokensObject,
 )
 from betterlite.types.utils.usage import (
     CacheCreationTokenDetails,

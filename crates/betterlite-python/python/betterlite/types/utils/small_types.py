@@ -5,7 +5,7 @@ from typing import ClassVar, Literal, TypeAlias
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.text_completion import GraderContent, content_item
+from betterlite.types.utils.grader_content import GraderContent, content_item
 from betterlite.types.utils.usage import Usage
 from betterlite.types.utils.values import (
     JsonValue,
