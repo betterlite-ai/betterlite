@@ -200,10 +200,17 @@ fn decode_rejects_invalid_usage_shapes(#[case] source: &str) {
 }
 
 #[test]
-fn decode_names_the_field_that_malformed_candidate_content_breaks() {
-    let failure =
-        decode_generate_content(br#"{"candidates":[{"content":{"parts":"no"}}]}"#).unwrap_err();
-    assert!(failure.to_string().contains("candidates[0].content.parts"));
+fn decode_names_the_field_that_breaks_the_typed_parse() {
+    let failure = decode_generate_content(br#"{"responseId":7}"#).unwrap_err();
+    assert!(failure.to_string().contains("responseId"));
+}
+
+#[test]
+fn decode_rejects_malformed_candidate_content() {
+    assert!(matches!(
+        decode_generate_content(br#"{"candidates":[{"content":{"parts":"no"}}]}"#),
+        Err(GenerateContentError::Json { .. })
+    ));
 }
 
 #[test]
@@ -376,7 +383,11 @@ fn complete_metadata_carries_the_candidate_lists() {
 
 #[test]
 fn complete_response_retains_traffic_type_under_provider_fields() {
-    let response = complete(&text_reply(r#","trafficType":"ON_DEMAND""#));
+    let response = complete(
+        r#"{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],
+            "usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5,
+                "trafficType":"ON_DEMAND"}}"#,
+    );
     assert_eq!(
         response
             .provider_specific_fields
