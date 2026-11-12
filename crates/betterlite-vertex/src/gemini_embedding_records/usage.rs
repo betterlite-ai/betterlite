@@ -97,11 +97,7 @@ pub fn embed_content_usage(
     counter: &dyn TextTokenCounter,
 ) -> Result<EmbeddingUsage, GeminiEmbeddingError> {
     let Some(metadata) = parse_usage_metadata(raw_usage_metadata) else {
-        let prompt_tokens = if shape(input).media {
-            0
-        } else {
-            count_input(input, model, counter)?
-        };
+        let prompt_tokens = fallback_tokens(input, model, counter)?;
         return Ok(EmbeddingUsage {
             prompt_tokens,
             completion_tokens: 0,
@@ -130,7 +126,7 @@ pub fn embed_content_usage(
             }),
             video: None,
         },
-        Some(details) => modality_tokens(&details)?,
+        Some(counts) => modality_tokens(&counts)?,
     };
     Ok(EmbeddingUsage {
         prompt_tokens,
@@ -167,6 +163,16 @@ fn token_count(value: i64) -> Result<u32, GeminiEmbeddingError> {
         Ok(count) => Ok(count),
         Err(_error) => Err(GeminiEmbeddingError::TokenRange { value }),
     }
+}
+fn fallback_tokens(
+    input: &EmbeddingInput,
+    model: &str,
+    counter: &dyn TextTokenCounter,
+) -> Result<u32, GeminiEmbeddingError> {
+    if shape(input).media {
+        return Ok(0);
+    }
+    count_input(input, model, counter)
 }
 fn count_input(
     input: &EmbeddingInput,

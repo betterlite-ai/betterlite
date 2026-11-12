@@ -30,8 +30,9 @@ fn embed_content(
     optional: &str,
     resolved: &str,
 ) -> Result<Json, GeminiEmbeddingError> {
-    transform_embed_content(&input(source), &object(optional), &resolved_files(resolved))
-        .map(|request| serialized(&request))
+    let request =
+        transform_embed_content(&input(source), &object(optional), &resolved_files(resolved));
+    request.map(|request| serialized(&request))
 }
 
 #[rstest]

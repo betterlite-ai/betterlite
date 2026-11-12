@@ -75,6 +75,16 @@ pub fn filter_parameters(optional: &Extra) -> Result<EmbedParameters, GeminiEmbe
             });
         }
     };
+    let (task_type, title) = text_parameters(optional)?;
+    Ok(EmbedParameters {
+        output_dimensionality,
+        task_type,
+        title,
+    })
+}
+fn text_parameters(
+    optional: &Extra,
+) -> Result<(Option<TaskType>, Option<String>), GeminiEmbeddingError> {
     let task = optional
         .get("task_type")
         .or_else(|| optional.get("taskType"));
@@ -102,11 +112,7 @@ pub fn filter_parameters(optional: &Extra) -> Result<EmbedParameters, GeminiEmbe
             });
         }
     };
-    Ok(EmbedParameters {
-        output_dimensionality,
-        task_type,
-        title,
-    })
+    Ok((task_type, title))
 }
 pub fn transform_batch_request(
     input: &EmbeddingInput,
@@ -115,11 +121,11 @@ pub fn transform_batch_request(
     resolved_files: &ResolvedFiles,
 ) -> Result<BatchEmbeddingsRequest, GeminiEmbeddingError> {
     let parameters = filter_parameters(optional)?;
-    let model = format!("models/{model}");
+    let request_model = format!("models/{model}");
     let requests = contents(input, resolved_files)?
         .into_iter()
         .map(|content| EmbedContentRequest {
-            model: Some(model.clone()),
+            model: Some(request_model.clone()),
             content,
             parameters: parameters.clone(),
         })

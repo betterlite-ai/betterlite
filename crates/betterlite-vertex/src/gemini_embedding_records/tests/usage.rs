@@ -114,16 +114,32 @@ fn reported_counts_carry_the_total_fallback(
 }
 
 #[rstest]
-#[case::inline(r#""data:image/png;base64,AAAA""#, "{}")]
-#[case::gcs(r#""gs://bucket/x.JPG""#, "{}")]
+#[case::inline(r#""data:image/png;base64,AAAA""#, "{}", 7)]
+#[case::gcs(r#""gs://bucket/x.JPG""#, "{}", 7)]
 #[case::resolved(
     r#""files/img""#,
-    r#"{"files/img":{"mime_type":"image/png","uri":"https://example.com/files/img"}}"#
+    r#"{"files/img":{"mime_type":"image/png","uri":"https://example.com/files/img"}}"#,
+    7
 )]
-#[case::nested(r#"[["data:image/png;base64,AA","data:image/jpeg;base64,BB"]]"#, "{}")]
-fn image_only_inputs_report_the_prompt_as_image_tokens(
+#[case::nested(
+    r#"[["data:image/png;base64,AA","data:image/jpeg;base64,BB"]]"#,
+    "{}",
+    7
+)]
+#[case::text_beside_image(r#"["data:image/png;base64,AA","caption"]"#, "{}", 0)]
+#[case::unsupported_image_mime(r#""data:image/gif;base64,AA""#, "{}", 0)]
+#[case::other_media_kind(r#"["data:image/png;base64,AA","gs://bucket/x.pdf"]"#, "{}", 0)]
+#[case::http_url(r#""https://example.com/a.png""#, "{}", 0)]
+#[case::unresolved_file(r#""files/missing""#, "{}", 0)]
+#[case::resolved_non_image(
+    r#""files/doc""#,
+    r#"{"files/doc":{"mime_type":"application/pdf","uri":"https://example.com/files/doc"}}"#,
+    0
+)]
+fn no_details_report_image_tokens_only_for_image_only_inputs(
     #[case] source: &str,
     #[case] resolved: &str,
+    #[case] image_tokens: u32,
 ) {
     let usage = embed_usage(source, Some(r#"{"promptTokenCount":7}"#), resolved);
     assert_eq!(
@@ -131,30 +147,7 @@ fn image_only_inputs_report_the_prompt_as_image_tokens(
         Some(ModalityTokens {
             text: Some(0),
             audio: None,
-            image: Some(7),
-            video: None,
-        })
-    );
-}
-
-#[rstest]
-#[case::text_beside_image(r#"["data:image/png;base64,AA","caption"]"#, "{}")]
-#[case::unsupported_image_mime(r#""data:image/gif;base64,AA""#, "{}")]
-#[case::other_media_kind(r#"["data:image/png;base64,AA","gs://bucket/x.pdf"]"#, "{}")]
-#[case::http_url(r#""https://example.com/a.png""#, "{}")]
-#[case::unresolved_file(r#""files/missing""#, "{}")]
-#[case::resolved_non_image(
-    r#""files/doc""#,
-    r#"{"files/doc":{"mime_type":"application/pdf","uri":"https://example.com/files/doc"}}"#
-)]
-fn non_image_inputs_report_no_image_tokens(#[case] source: &str, #[case] resolved: &str) {
-    let usage = embed_usage(source, Some(r#"{"promptTokenCount":7}"#), resolved);
-    assert_eq!(
-        usage.prompt_tokens_details,
-        Some(ModalityTokens {
-            text: Some(0),
-            audio: None,
-            image: Some(0),
+            image: Some(image_tokens),
             video: None,
         })
     );
