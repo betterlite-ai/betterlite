@@ -123,16 +123,21 @@ fn capacity_answer(case: &CapacityCase) -> Value {
     json!({ "values": values })
 }
 
+fn answered<T, E>(result: Result<T, E>) -> Answer
+where
+    T: serde::Serialize,
+{
+    match result {
+        Ok(value) => Answer::Value { value: json!(value) },
+        Err(_) => Answer::Raised { raised: true },
+    }
+}
+
 fn stop_answers(case: &StopCase) -> Value {
     let answers: Vec<Answer> = case
         .stops
         .iter()
-        .map(|stop| match map_stop_sequences(stop, case.drop_params) {
-            Ok(value) => Answer::Value {
-                value: json!(value),
-            },
-            Err(_) => Answer::Raised { raised: true },
-        })
+        .map(|stop| answered(map_stop_sequences(stop, case.drop_params)))
         .collect();
     json!({ "values": answers })
 }
@@ -141,10 +146,7 @@ fn web_search_answers(case: &WebSearchCase) -> Value {
     let answers: Vec<Answer> = case
         .values
         .iter()
-        .map(|options| match map_web_search_tool(options) {
-            Ok(tool) => Answer::Value { value: json!(tool) },
-            Err(_) => Answer::Raised { raised: true },
-        })
+        .map(|options| answered(map_web_search_tool(options)))
         .collect();
     json!({ "values": answers })
 }
@@ -153,12 +155,7 @@ fn context_answers(case: &ContextCase) -> Value {
     let answers: Vec<Answer> = case
         .values
         .iter()
-        .map(|value| match map_context_management(value) {
-            Ok(mapped) => Answer::Value {
-                value: json!(mapped),
-            },
-            Err(_) => Answer::Raised { raised: true },
-        })
+        .map(|value| answered(map_context_management(value)))
         .collect();
     json!({ "values": answers })
 }

@@ -140,49 +140,47 @@ def capacity_answer(call: CapacityCall) -> Json:
 
 def stop_answers(call: StopCall) -> Json:
     litellm.drop_params = call["drop_params"]
-    answers: list[Json] = []
-    for stop in call["stops"]:
-        answer: Json = {"raised": True}
-        try:
-            mapped = CONFIG()._map_stop_sequences(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1230-L1248
-                cast("str | list[str] | None", stop)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1230-L1248
-            )
-        except AttributeError:
-            pass
-        else:
-            mapped_value: Json = None
-            if mapped is not None:
-                kept: list[Json] = []
-                kept.extend(mapped)
-                mapped_value = kept
-            answer = {"value": mapped_value}
-        answers.append(answer)
-    return {"values": answers}
+    return {"values": [stop_answer(stop) for stop in call["stops"]]}
+
+
+def stop_answer(stop: Json) -> Json:
+    answer: Json = {"raised": True}
+    try:
+        mapped = CONFIG()._map_stop_sequences(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1230-L1248
+            cast("str | list[str] | None", stop)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1230-L1248
+        )
+    except AttributeError:
+        pass
+    else:
+        answer = {"value": json_list(mapped)}
+    return answer
+
+
+def json_list(mapped: list[str] | None) -> Json:
+    if mapped is None:
+        return None
+    kept: list[Json] = []
+    kept.extend(mapped)
+    return kept
 
 
 def web_search_answers(call: WebSearchCall) -> Json:
     answers: list[Json] = []
     for options in call["values"]:
-        answer: Json = {"raised": True}
         try:
             tool = CONFIG().map_web_search_tool(options)
         except KeyError:
-            pass
-        else:
-            answer = {"value": tool}
-        answers.append(answer)
+            answers.append({"raised": True})
+            continue
+        answers.append({"value": tool})
     return {"values": answers}
 
 
-def context_answers(call: ContextCall) -> Json:
-    answers: list[Json] = []
-    for value in call["values"]:
-        parameter = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1416-L1471
-            "list[dict[str, Json]] | dict[str, Json]", value
-        )
-        mapped = CONTEXT_MAPPER(parameter)
-        answers.append({"value": mapped})
-    return {"values": answers}
+def context_answer(value: Json) -> Json:
+    parameter = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1416-L1471
+        "list[dict[str, Json]] | dict[str, Json]", value
+    )
+    return {"value": CONTEXT_MAPPER(parameter)}
 
 
 def user_id_answer(call: UserIdCall) -> Json:
@@ -204,7 +202,7 @@ def answer(call: Call) -> Json:
         case "web_search_context_size":
             return web_search_answers(call)
         case "context_compaction_edit":
-            return context_answers(call)
+            return {"values": [context_answer(value) for value in call["values"]]}
         case "user_identifier_filter":
             return user_id_answer(call)
 

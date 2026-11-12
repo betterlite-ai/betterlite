@@ -372,11 +372,6 @@ fn assert_context_compaction() {
 
 fn user_identifier_filter_case() {
     let policy = UserIdPolicy::compile().unwrap();
-    assert_user_ids_accepted(&policy);
-    assert_user_ids_rejected(&policy);
-}
-
-fn assert_user_ids_accepted(policy: &UserIdPolicy) {
     let accepted = [
         "user-123",
         "",
@@ -389,12 +384,6 @@ fn assert_user_ids_accepted(policy: &UserIdPolicy) {
         "abc def",
         "123 456",
     ];
-    for user_id in accepted {
-        assert!(policy.accepts(user_id), "{user_id:?} should be accepted");
-    }
-}
-
-fn assert_user_ids_rejected(policy: &UserIdPolicy) {
     let rejected = [
         "user@example.com",
         "USER@EXAMPLE.CO",
@@ -410,6 +399,9 @@ fn assert_user_ids_rejected(policy: &UserIdPolicy) {
         "1234567\n",
         "+1234567",
     ];
+    for user_id in accepted {
+        assert!(policy.accepts(user_id), "{user_id:?} should be accepted");
+    }
     for user_id in rejected {
         assert!(!policy.accepts(user_id), "{user_id:?} should be rejected");
     }

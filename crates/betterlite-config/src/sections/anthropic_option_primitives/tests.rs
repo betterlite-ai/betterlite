@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -34,102 +35,26 @@ fn metadata(value: &str) -> Option<IndexMap<String, Json>> {
     Some(serde_json::from_str(value).unwrap())
 }
 
-fn max_tokens(value: Option<i64>) -> OptionValues {
-    OptionValues {
-        max_tokens: value,
-        stop_sequences: None,
-        temperature: None,
-        top_p: None,
-        top_k: None,
-        metadata: None,
-        system: None,
-    }
-}
-
-fn stop_sequences(value: Option<Vec<String>>) -> OptionValues {
-    OptionValues {
-        max_tokens: None,
-        stop_sequences: value,
-        temperature: None,
-        top_p: None,
-        top_k: None,
-        metadata: None,
-        system: None,
-    }
-}
-
-fn temperature(value: Option<f64>) -> OptionValues {
-    OptionValues {
-        max_tokens: None,
-        stop_sequences: None,
-        temperature: value,
-        top_p: None,
-        top_k: None,
-        metadata: None,
-        system: None,
-    }
-}
-
-fn top_p(value: Option<f64>) -> OptionValues {
-    OptionValues {
-        max_tokens: None,
-        stop_sequences: None,
-        temperature: None,
-        top_p: value,
-        top_k: None,
-        metadata: None,
-        system: None,
-    }
-}
-
-fn top_k(value: Option<i64>) -> OptionValues {
-    OptionValues {
-        max_tokens: None,
-        stop_sequences: None,
-        temperature: None,
-        top_p: None,
-        top_k: value,
-        metadata: None,
-        system: None,
-    }
-}
-
-fn metadata_value(value: Option<IndexMap<String, Json>>) -> OptionValues {
-    OptionValues {
-        max_tokens: None,
-        stop_sequences: None,
-        temperature: None,
-        top_p: None,
-        top_k: None,
-        metadata: value,
-        system: None,
-    }
-}
-
-fn system(value: Option<String>) -> OptionValues {
-    OptionValues {
-        max_tokens: None,
-        stop_sequences: None,
-        temperature: None,
-        top_p: None,
-        top_k: None,
-        metadata: None,
-        system: value,
-    }
-}
-
-fn assert_value(key: &str, deployed: &str, global: &str, expects: &OptionValues) {
+fn assert_key<T: Debug + PartialEq>(
+    key: &str,
+    deployed: (&str, T),
+    global: (&str, T),
+    read: fn(&OptionValues) -> T,
+) {
     let defaults = load("", &[]).unwrap();
-    assert_eq!(defaults.litellm_settings, OptionValues::default(), "{key}");
+    assert_eq!(
+        read(&defaults.litellm_settings),
+        read(&OptionValues::default())
+    );
     assert!(defaults.deployments.is_empty(), "{key}");
-    let deployment_only = load(&deployment(key, deployed), &[]).unwrap();
-    assert_eq!(deployment_only.deployments, vec![expects.clone()], "{key}");
-    let global_only = load(&settings(key, global), &[]).unwrap();
-    assert_eq!(global_only.litellm_settings, expects.clone(), "{key}");
-    let both = format!("{}{}", deployment(key, deployed), settings(key, global));
+    let deployment_only = load(&deployment(key, deployed.0), &[]).unwrap();
+    assert_eq!(read(&deployment_only.deployments[0]), deployed.1, "{key}");
+    let global_only = load(&settings(key, global.0), &[]).unwrap();
+    assert_eq!(read(&global_only.litellm_settings), global.1, "{key}");
+    let both = format!("{}{}", deployment(key, deployed.0), settings(key, global.0));
     let both = load(&both, &[]).unwrap();
-    assert_eq!(both.deployments, vec![expects.clone()], "{key}");
-    assert_eq!(both.litellm_settings, expects.clone(), "{key}");
+    assert_eq!(read(&both.deployments[0]), deployed.1, "{key}");
+    assert_eq!(read(&both.litellm_settings), global.1, "{key}");
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -171,12 +96,12 @@ fn anthropic_defaults_config_cases(#[case] case: Case) {
 
 fn default_chat_max_tokens_case() {
     let variable = "DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS";
-    assert_eq!(load("", &[]).unwrap().default_chat_max_tokens, 4096);
     let set = |value: &str| {
         load("", &[(variable, value)])
             .unwrap()
             .default_chat_max_tokens
     };
+    assert_eq!(load("", &[]).unwrap().default_chat_max_tokens, 4096);
     assert_eq!(set("8192"), 8192);
     assert_eq!(set(" 2048 "), 2048);
     assert_eq!(set("-1"), -1);
@@ -185,71 +110,93 @@ fn default_chat_max_tokens_case() {
 }
 
 fn max_tokens_case() {
-    assert_value("max_tokens", "7", "9", &max_tokens(Some(7)));
-    let zero = load(&deployment("max_tokens", "0"), &[]).unwrap();
-    assert_eq!(zero.deployments, vec![max_tokens(Some(0))]);
-    let reference = load(
-        &deployment("max_tokens", "os.environ/ANTHROPIC_MAX_TOKENS"),
-        &[("ANTHROPIC_MAX_TOKENS", "321")],
-    )
-    .unwrap();
-    assert_eq!(reference.deployments, vec![max_tokens(Some(321))]);
+    assert_key("max_tokens", ("7", Some(7)), ("9", Some(9)), |values| {
+        values.max_tokens
+    });
+    for (raw, expected) in [("0", 0), ("os.environ/ANTHROPIC_MAX_TOKENS", 321)] {
+        let source = deployment("max_tokens", raw);
+        let loaded = load(&source, &[("ANTHROPIC_MAX_TOKENS", "321")]).unwrap();
+        assert_eq!(loaded.deployments[0].max_tokens, Some(expected));
+    }
 }
 
 fn stop_sequences_case() {
-    assert_value(
+    let deployed = Some(vec!["END".to_owned(), "STOP".to_owned()]);
+    let global = Some(vec!["GLOBAL".to_owned()]);
+    assert_key(
         "stop_sequences",
-        "[END, STOP]",
-        "[GLOBAL]",
-        &stop_sequences(Some(vec!["END".to_owned(), "STOP".to_owned()])),
+        ("[END, STOP]", deployed),
+        ("[GLOBAL]", global),
+        |values| values.stop_sequences.clone(),
     );
     let empty = load(&deployment("stop_sequences", "[]"), &[]).unwrap();
-    assert_eq!(empty.deployments, vec![stop_sequences(Some(Vec::new()))]);
+    assert_eq!(empty.deployments[0].stop_sequences, Some(Vec::new()));
 }
 
 fn temperature_case() {
-    assert_value("temperature", "0.5", "0.25", &temperature(Some(0.5)));
-    let zero = load(&deployment("temperature", "0"), &[]).unwrap();
-    assert_eq!(zero.deployments, vec![temperature(Some(0.0))]);
+    assert_key(
+        "temperature",
+        ("0.5", Some(0.5)),
+        ("0.25", Some(0.25)),
+        |values| values.temperature,
+    );
     let reference = load(
         &deployment("temperature", "os.environ/ANTHROPIC_TEMPERATURE"),
         &[("ANTHROPIC_TEMPERATURE", "0.75")],
     )
     .unwrap();
-    assert_eq!(reference.deployments, vec![temperature(Some(0.75))]);
+    assert_eq!(reference.deployments[0].temperature, Some(0.75));
+    let zero = load(&deployment("temperature", "0"), &[]).unwrap();
+    assert_eq!(zero.deployments[0].temperature, Some(0.0));
 }
 
 fn top_p_case() {
-    assert_value("top_p", "0.9", "0.1", &top_p(Some(0.9)));
+    assert_key("top_p", ("0.9", Some(0.9)), ("0.1", Some(0.1)), |values| {
+        values.top_p
+    });
 }
 
 fn top_k_case() {
-    assert_value("top_k", "40", "20", &top_k(Some(40)));
+    assert_key("top_k", ("40", Some(40)), ("20", Some(20)), |values| {
+        values.top_k
+    });
 }
 
 fn metadata_case() {
-    assert_value(
+    assert_key(
         "metadata",
-        "{user_id: deployed}",
-        "{user_id: global}",
-        &metadata_value(metadata(r#"{"user_id": "deployed"}"#)),
+        (
+            "{user_id: deployed}",
+            metadata(r#"{"user_id": "deployed"}"#),
+        ),
+        ("{user_id: global}", metadata(r#"{"user_id": "global"}"#)),
+        |values| values.metadata.clone(),
     );
-    let empty = load(&deployment("metadata", "{}"), &[]).unwrap();
     assert_eq!(
-        empty.deployments,
-        vec![metadata_value(Some(IndexMap::new()))]
+        load(&deployment("metadata", "{}"), &[])
+            .unwrap()
+            .deployments[0]
+            .metadata,
+        Some(IndexMap::new())
     );
 }
 
 fn system_case() {
-    assert_value(
+    let deployed = Some("be deployed".to_owned());
+    let global = Some("be global".to_owned());
+    assert_key(
         "system",
-        "\"be deployed\"",
-        "\"be global\"",
-        &system(Some("be deployed".to_owned())),
+        ("\"be deployed\"", deployed),
+        ("\"be global\"", global),
+        |values| values.system.clone(),
     );
-    let empty = load(&deployment("system", "\"\""), &[]).unwrap();
-    assert_eq!(empty.deployments, vec![system(Some(String::new()))]);
+    assert_eq!(
+        load(&deployment("system", "\"\""), &[])
+            .unwrap()
+            .deployments[0]
+            .system,
+        Some(String::new())
+    );
 }
 
 fn unrelated_key_case() {
