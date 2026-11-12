@@ -45,14 +45,14 @@ pub(super) async fn prepare(
     let mut url = request.url.clone();
     match config.credential.as_ref() {
         Some(RequestCredential::Resolved(auth)) => {
-            let authenticated = auth.authenticate(credentials::Request {
+            let outcome = auth.authenticate(credentials::Request {
                 method: method.as_str().to_owned(),
                 url: url.as_str().to_owned(),
                 headers: header_text(&headers)?,
             });
             // httpx closes the auth flow after the request it yielded, as prepare_request_auth already does
             auth.close();
-            let authenticated = authenticated?;
+            let authenticated = outcome?;
             method = Method::from_bytes(authenticated.method.as_bytes())
                 .map_err(McpHttpError::CredentialMethod)?;
             url = Url::parse(&authenticated.url).map_err(McpHttpError::CredentialUrl)?;
@@ -121,13 +121,14 @@ fn configured_headers(headers: &BTreeMap<String, String>) -> Result<HeaderMap, M
 }
 
 fn header_text(headers: &HeaderMap) -> Result<BTreeMap<String, String>, McpHttpError> {
-    let mut text = BTreeMap::new();
-    for (name, value) in headers {
-        let visible = value.to_str().map_err(|source| McpHttpError::HeaderText {
-            name: name.as_str().to_owned(),
-            source,
-        })?;
-        text.insert(name.as_str().to_owned(), visible.to_owned());
-    }
-    Ok(text)
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let visible = value.to_str().map_err(|source| McpHttpError::HeaderText {
+                name: name.as_str().to_owned(),
+                source,
+            })?;
+            Ok((name.as_str().to_owned(), visible.to_owned()))
+        })
+        .collect()
 }

@@ -280,13 +280,23 @@ impl ResolvedAuth for FailingAuth {
     fn close(&self) {}
 }
 
-#[derive(Default)]
-struct RefreshingAuth {
+struct ScriptedAuth {
+    refresh: bool,
     attempts: AtomicUsize,
     after: AtomicUsize,
 }
 
-impl ResolvedAuth for RefreshingAuth {
+impl ScriptedAuth {
+    fn new(refresh: bool) -> Self {
+        Self {
+            refresh,
+            attempts: AtomicUsize::new(0),
+            after: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl ResolvedAuth for ScriptedAuth {
     fn authenticate(
         &self,
         mut request: CredentialRequest,
@@ -303,28 +313,8 @@ impl ResolvedAuth for RefreshingAuth {
 
     fn after_unauthorized(&self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
         self.after.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { true })
-    }
-}
-
-#[derive(Default)]
-struct DecliningAuth {
-    after: AtomicUsize,
-}
-
-impl ResolvedAuth for DecliningAuth {
-    fn authenticate(
-        &self,
-        request: CredentialRequest,
-    ) -> Result<CredentialRequest, CredentialError> {
-        Ok(request)
-    }
-
-    fn close(&self) {}
-
-    fn after_unauthorized(&self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
-        self.after.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { false })
+        let refresh = self.refresh;
+        Box::pin(async move { refresh })
     }
 }
 
@@ -589,8 +579,8 @@ async fn a_401_is_sent_once_more_when_the_credential_refreshes() {
         )
     })
     .await;
-    let auth = Arc::new(RefreshingAuth::default());
-    let credential: Arc<dyn ResolvedAuth> = Arc::<RefreshingAuth>::clone(&auth);
+    let auth = Arc::new(ScriptedAuth::new(true));
+    let credential: Arc<dyn ResolvedAuth> = Arc::<ScriptedAuth>::clone(&auth);
     let mut config = defaults();
     config.credential = Some(RequestCredential::Resolved(credential));
     let capture = Arc::new(RecordingCapture::default());
@@ -631,8 +621,8 @@ fn authorization(headers: &HeaderMap) -> &str {
 #[tokio::test]
 async fn a_401_is_returned_at_once_when_the_credential_declines() {
     let server = TestServer::start(|_| answer(401, &[], "denied")).await;
-    let auth = Arc::new(DecliningAuth::default());
-    let credential: Arc<dyn ResolvedAuth> = Arc::<DecliningAuth>::clone(&auth);
+    let auth = Arc::new(ScriptedAuth::new(false));
+    let credential: Arc<dyn ResolvedAuth> = Arc::<ScriptedAuth>::clone(&auth);
     let mut config = defaults();
     config.credential = Some(RequestCredential::Resolved(credential));
     let capture = Arc::new(RecordingCapture::default());
