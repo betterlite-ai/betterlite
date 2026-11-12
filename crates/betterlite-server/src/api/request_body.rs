@@ -1,11 +1,11 @@
 use betterlite_config::sections::request_body::Settings;
-use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::request_body::decode::{DecodedJson, decode_json_body};
+use betterlite_core::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
 use betterlite_core::api::request_body::{
-    BodyKind, DEFAULT_MAX_REPAIR_BYTES, JsonObject, MediaTypeKind, ParsedBody, RequestBodyError,
+    BodyKind, DecodedJson, JsonObject, MediaTypeKind, ParsedBody, ParsedJson, RequestBodyError,
     RequestBodyInput, RequestBodyResult, classify_media_type, form_body, is_opaque_audio_request,
-    is_otlp_trace_request, parse_binary_body,
+    is_otlp_trace_request, parse_binary_body, parse_json_bytes, parse_json_text,
 };
+use std::str;
 
 mod tests;
 
@@ -13,8 +13,37 @@ pub fn decode_request_body(
     bytes: &[u8],
     limits: &ApiLimits,
 ) -> Result<DecodedJson, RequestBodyError> {
-    // the default repair policy; fuzz, replay and the default boundary all drive it
-    decode_json_body(bytes, limits, Some(DEFAULT_MAX_REPAIR_BYTES))
+    limits.check(ApiBoundariesInput::Json(JsonBoundary {
+        known_bytes: bytes.len(),
+    }))?;
+    if bytes.is_empty() {
+        return Ok(DecodedJson::Parsed {
+            body: JsonObject::new(),
+            repaired: false,
+        });
+    }
+    match parse_json_bytes(bytes) {
+        ParsedJson::Object(body) => Ok(DecodedJson::Parsed {
+            body,
+            repaired: false,
+        }),
+        ParsedJson::NotObject => Err(RequestBodyError::NotAnObject),
+        ParsedJson::Invalid => repair_json_body(bytes),
+    }
+}
+
+fn repair_json_body(bytes: &[u8]) -> Result<DecodedJson, RequestBodyError> {
+    let Ok(text) = str::from_utf8(bytes) else {
+        return Ok(DecodedJson::Unreadable);
+    };
+    match parse_json_text(text) {
+        ParsedJson::Object(body) => Ok(DecodedJson::Parsed {
+            body,
+            repaired: true,
+        }),
+        ParsedJson::NotObject => Err(RequestBodyError::NotAnObject),
+        ParsedJson::Invalid => Err(RequestBodyError::InvalidJson),
+    }
 }
 
 pub fn read_request_body(
@@ -47,17 +76,22 @@ pub fn read_request_body(
     }
 }
 
-// a configured cap takes the decoder's path with another bound, so both go through one parse
 fn decode_json_branch(
     input: &RequestBodyInput,
     max_repair_bytes: Option<u64>,
     limits: &ApiLimits,
 ) -> Result<RequestBodyResult, RequestBodyError> {
-    let decoded = if max_repair_bytes == Some(DEFAULT_MAX_REPAIR_BYTES) {
-        decode_request_body(&input.body, limits)?
-    } else {
-        decode_json_body(&input.body, limits, max_repair_bytes)?
-    };
+    let decoded = decode_request_body(&input.body, limits)?;
+    let repair_ran = matches!(
+        decoded,
+        DecodedJson::Unreadable | DecodedJson::Parsed { repaired: true, .. }
+    );
+    // the pinned proxy skips the repair above the configured size and answers 400 instead
+    let over_cap = max_repair_bytes
+        .is_some_and(|cap| usize::try_from(cap).is_ok_and(|limit| input.body.len() > limit));
+    if repair_ran && over_cap {
+        return Err(RequestBodyError::InvalidJson);
+    }
     match decoded {
         DecodedJson::Unreadable => Ok(RequestBodyResult {
             branch: BodyKind::Json,

@@ -3,20 +3,12 @@
 use rstest::rstest;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::decode::{DecodedJson, decode_json_body};
 use super::{
-    BodyKind, DEFAULT_MAX_REPAIR_BYTES, MediaTypeKind, ParsedBody, RequestBodyError,
-    RequestBodyInput, RequestBodyResult, RewrittenBody, classify_media_type,
-    is_opaque_audio_request, is_otlp_trace_request, normalize_media_type, parse_binary_body,
-    rewrite_request_model,
+    BodyKind, MediaTypeKind, ParsedBody, RequestBodyError, RequestBodyInput, RequestBodyResult,
+    RewrittenBody, classify_media_type, is_opaque_audio_request, is_otlp_trace_request,
+    normalize_media_type, parse_binary_body, rewrite_request_model,
 };
-use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
-
-const DEFAULT_CAP: Option<u64> = Some(DEFAULT_MAX_REPAIR_BYTES);
-
-fn limits() -> ApiLimits {
-    ApiLimits::default()
-}
+use crate::api::api_boundaries::ApiLimitError;
 
 fn object(source: &str) -> super::JsonObject {
     serde_json::from_str(source).unwrap()
@@ -105,100 +97,6 @@ fn opaque_audio_needs_the_azure_speech_route_and_audio_bytes(
     #[case] expected: bool,
 ) {
     assert_eq!(is_opaque_audio_request(route, content_type), expected);
-}
-
-#[test]
-fn decode_json_body_parses_an_object() {
-    let decoded = decode_json_body(br#"{"model":"gpt-4o"}"#, &limits(), DEFAULT_CAP).unwrap();
-    assert_eq!(
-        decoded,
-        DecodedJson::Parsed {
-            body: object(r#"{"model":"gpt-4o"}"#),
-            repaired: false,
-        }
-    );
-}
-
-#[test]
-fn decode_json_body_parses_an_empty_body_as_an_empty_object() {
-    let decoded = decode_json_body(b"", &limits(), DEFAULT_CAP).unwrap();
-    assert_eq!(
-        decoded,
-        DecodedJson::Parsed {
-            body: super::JsonObject::new(),
-            repaired: false,
-        }
-    );
-}
-
-#[rstest]
-#[case::array(b"[1,2]")]
-#[case::string(br#""hi""#)]
-#[case::number(b"12")]
-fn decode_json_body_refuses_a_non_object(#[case] body: &[u8]) {
-    assert_eq!(
-        decode_json_body(body, &limits(), DEFAULT_CAP),
-        Err(RequestBodyError::NotAnObject)
-    );
-}
-
-#[rstest]
-#[case::truncated(br#"{"model":"#)]
-#[case::trailing_comma(br#"{"model":"gpt-4o",}"#)]
-#[case::nan(br#"{"model":"gpt-4o","x":NaN}"#)]
-#[case::surrogate_escape(br#"{"x":"\ud800"}"#)]
-fn decode_json_body_refuses_unrepairable_json(#[case] body: &[u8]) {
-    assert_eq!(
-        decode_json_body(body, &limits(), DEFAULT_CAP),
-        Err(RequestBodyError::InvalidJson)
-    );
-}
-
-#[test]
-fn decode_json_body_reports_unreadable_bytes_under_the_cap() {
-    let body = b"{\"model\":\"\xff\"}";
-    assert_eq!(
-        decode_json_body(body, &limits(), DEFAULT_CAP),
-        Ok(DecodedJson::Unreadable)
-    );
-}
-
-#[test]
-fn decode_json_body_checks_the_repair_cap_before_decoding_text() {
-    let body = b"{\"model\":\"\xff\"}";
-    assert_eq!(
-        decode_json_body(body, &limits(), Some(4)),
-        Err(RequestBodyError::InvalidJson)
-    );
-}
-
-#[test]
-fn decode_json_body_repairs_when_the_cap_is_disabled() {
-    let body = b"{\"model\":\"\xff\"}";
-    assert_eq!(
-        decode_json_body(body, &limits(), None),
-        Ok(DecodedJson::Unreadable)
-    );
-}
-
-#[test]
-fn decode_json_body_checks_the_json_cap_first() {
-    let small = ApiLimits {
-        max_json_bytes: 8,
-        max_event_bytes: 1024,
-        max_items: 16,
-    };
-    assert_eq!(
-        decode_json_body(br#"{"model":"gpt-4o"}"#, &small, DEFAULT_CAP),
-        Err(RequestBodyError::Limit(ApiLimitError::JsonTooLarge {
-            observed: 18,
-            limit: 8,
-        }))
-    );
-    assert_eq!(
-        decode_json_body(b"[1,2]", &small, DEFAULT_CAP),
-        Err(RequestBodyError::NotAnObject)
-    );
 }
 
 #[test]

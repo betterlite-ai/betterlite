@@ -12,6 +12,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::{decode_request_body, read_request_body};
+use betterlite_core::api::api_boundaries::ApiLimitError;
+use betterlite_core::api::request_body::DecodedJson;
 
 fn object(source: &str) -> JsonObject {
     serde_json::from_str(source).unwrap()
@@ -263,6 +265,113 @@ fn an_empty_json_body_is_cached_as_an_empty_object() {
     let result = read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
     assert_eq!(result.branch, BodyKind::Json);
     assert_eq!(result.cached_body(), Some(JsonObject::new()));
+}
+
+#[test]
+fn decode_request_body_parses_an_object() {
+    let decoded = decode_request_body(br#"{"model":"gpt-4o"}"#, &ApiLimits::default()).unwrap();
+    assert_eq!(
+        decoded,
+        DecodedJson::Parsed {
+            body: object(r#"{"model":"gpt-4o"}"#),
+            repaired: false,
+        }
+    );
+}
+
+#[test]
+fn decode_request_body_parses_an_empty_body_as_an_empty_object() {
+    let decoded = decode_request_body(b"", &ApiLimits::default()).unwrap();
+    assert_eq!(
+        decoded,
+        DecodedJson::Parsed {
+            body: JsonObject::new(),
+            repaired: false,
+        }
+    );
+}
+
+#[rstest]
+#[case::array(b"[1,2]")]
+#[case::string(br#""hi""#)]
+#[case::number(b"12")]
+fn decode_request_body_refuses_a_non_object(#[case] body: &[u8]) {
+    assert_eq!(
+        decode_request_body(body, &ApiLimits::default()),
+        Err(RequestBodyError::NotAnObject)
+    );
+}
+
+#[rstest]
+#[case::truncated(br#"{"model":"#)]
+#[case::trailing_comma(br#"{"model":"gpt-4o",}"#)]
+#[case::nan(br#"{"model":"gpt-4o","x":NaN}"#)]
+#[case::surrogate_escape(br#"{"x":"\ud800"}"#)]
+fn decode_request_body_refuses_unrepairable_json(#[case] body: &[u8]) {
+    assert_eq!(
+        decode_request_body(body, &ApiLimits::default()),
+        Err(RequestBodyError::InvalidJson)
+    );
+}
+
+#[test]
+fn decode_request_body_reports_unreadable_bytes() {
+    assert_eq!(
+        decode_request_body(b"{\"model\":\"\xff\"}", &ApiLimits::default()),
+        Ok(DecodedJson::Unreadable)
+    );
+}
+
+#[test]
+fn decode_request_body_checks_the_json_cap_first() {
+    let small = ApiLimits {
+        max_json_bytes: 8,
+        max_event_bytes: 1024,
+        max_items: 16,
+    };
+    assert_eq!(
+        decode_request_body(br#"{"model":"gpt-4o"}"#, &small),
+        Err(RequestBodyError::Limit(ApiLimitError::JsonTooLarge {
+            observed: 18,
+            limit: 8,
+        }))
+    );
+    assert_eq!(
+        decode_request_body(b"[1,2]", &small),
+        Err(RequestBodyError::NotAnObject)
+    );
+}
+
+#[rstest]
+#[case::at_the_cap(Some(13), false)]
+#[case::over_the_cap(Some(12), true)]
+#[case::disabled(None, false)]
+fn the_repair_cap_applies_only_above_its_size(
+    #[case] max_repair_bytes: Option<u64>,
+    #[case] refused: bool,
+) {
+    let input = request(
+        "application/json",
+        "/v1/chat/completions",
+        b"{\"model\":\"\xff\"}".to_vec(),
+    );
+    let outcome = read_request_body(&input, &settings(max_repair_bytes), &ApiLimits::default());
+    if refused {
+        assert_eq!(outcome.unwrap_err(), RequestBodyError::InvalidJson);
+    } else {
+        assert!(outcome.unwrap().body_read);
+    }
+}
+
+#[test]
+fn a_valid_object_is_never_held_to_the_repair_cap() {
+    let input = request(
+        "application/json",
+        "/v1/chat/completions",
+        br#"{"model":"gpt-4o"}"#.to_vec(),
+    );
+    let result = read_request_body(&input, &settings(Some(1)), &ApiLimits::default()).unwrap();
+    assert_eq!(result.body, object(r#"{"model":"gpt-4o"}"#));
 }
 
 #[rstest]

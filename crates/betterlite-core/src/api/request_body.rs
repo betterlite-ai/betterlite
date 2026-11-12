@@ -3,7 +3,6 @@
     reason = "a proxy request body is arbitrary JSON the client sends; only its top-level type is known"
 )]
 
-pub mod decode;
 mod tests;
 
 use crate::api::api_boundaries::ApiLimitError;
@@ -12,8 +11,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 pub type JsonObject = BTreeMap<String, serde_json::Value>;
-
-pub const DEFAULT_MAX_REPAIR_BYTES: u64 = 1024 * 1024;
 
 const JSON_MEDIA_TYPE: &str = "application/json";
 const FORM_MEDIA_TYPES: [&str; 2] = ["application/x-www-form-urlencoded", "multipart/form-data"];
@@ -44,7 +41,14 @@ pub enum BodyKind {
     RepairedJson,
 }
 
-enum ParsedJson {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodedJson {
+    Parsed { body: JsonObject, repaired: bool },
+    // LiteLLM's lenient fallback decodes UTF-8 first, so unusable bytes leave auth with an empty body
+    Unreadable,
+}
+
+pub enum ParsedJson {
     Object(JsonObject),
     NotObject,
     Invalid,
@@ -224,7 +228,8 @@ impl RequestBodyError {
     }
 }
 
-fn parse_json_bytes(body: &[u8]) -> ParsedJson {
+#[must_use]
+pub fn parse_json_bytes(body: &[u8]) -> ParsedJson {
     match serde_json::from_slice::<serde_json::Value>(body) {
         Ok(serde_json::Value::Object(object)) => ParsedJson::Object(object.into_iter().collect()),
         Ok(_not_an_object) => ParsedJson::NotObject,
@@ -232,7 +237,8 @@ fn parse_json_bytes(body: &[u8]) -> ParsedJson {
     }
 }
 
-fn parse_json_text(text: &str) -> ParsedJson {
+#[must_use]
+pub fn parse_json_text(text: &str) -> ParsedJson {
     match serde_json::from_str::<serde_json::Value>(text) {
         Ok(serde_json::Value::Object(object)) => ParsedJson::Object(object.into_iter().collect()),
         Ok(_not_an_object) => ParsedJson::NotObject,
