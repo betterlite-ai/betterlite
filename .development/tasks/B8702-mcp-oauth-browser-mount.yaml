@@ -46,7 +46,7 @@ description: >-
   HTTP oracle cases. The cases B7971 and B4719 planned through the booted proxy move here, because their routes only
   answer once this task mounts them. Write each listed case from its route task's description, DoD and case names
   (.development/tasks/B7971-mcp-oauth-browser-routes.yaml and B4719-mcp-oauth-browser-routes.yaml), with the config,
-  key and ignore rules each describes.
+  key and ignore rules each describes. B4718's five session cases move here too, as tools/oracle/cases/http/mcp-oauth-session/, written from B4718-mcp-oauth-sessions.yaml's route steps and DoD with a master key, no database and no response cache: a supplied server_id kept, a generated id, credentials redacted with scopes kept, 401 without a key, and 400 for an invalid name.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp.rs
@@ -54,6 +54,7 @@ scope:
     - crates/betterlite-server/src/app/mcp/oauth_browser/**
     - tools/oracle/cases/http/mcp-oauth-routes/**
     - tools/oracle/cases/http/mcp-oauth-browser/**
+    - tools/oracle/cases/http/mcp-oauth-session/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L4656-L4962
@@ -67,7 +68,7 @@ dod:
     proof: [browser-route-tests]
   - text: SessionReader, RedirectTrust, CredentialRead, the shared reachability value and RouteAuth forward to their owning crates.
     proof: [browser-route-tests]
-  - text: The moved B7971 and B4719 cases match LiteLLM through the booted proxy.
+  - text: The moved B7971, B4719 and B4718 cases match LiteLLM through the booted proxy.
     proof: [browser-route-cases, oracle]
 checks:
   optional: []
@@ -77,7 +78,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::oauth_browser::/)'
     - id: browser-route-cases
       why: without the case files the oracle proof compares nothing for these routes
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-oauth-browser tools/oracle/cases/http/mcp-oauth-routes)"
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-oauth-browser tools/oracle/cases/http/mcp-oauth-routes tools/oracle/cases/http/mcp-oauth-session)"
 oracle_cases:
   - tools/oracle/cases/http/mcp-oauth-routes/authorize-requires-auth-401.yaml
   - tools/oracle/cases/http/mcp-oauth-routes/authorize-unknown-server-404.yaml
@@ -109,6 +110,11 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-oauth-browser/complete-bad-delivery-400.yaml
   - tools/oracle/cases/http/mcp-oauth-browser/complete-unknown-flow-400.yaml
   - tools/oracle/cases/http/mcp-oauth-browser/cli-auth-contract.yaml
+  - tools/oracle/cases/http/mcp-oauth-session/session-supplied-id-kept.yaml
+  - tools/oracle/cases/http/mcp-oauth-session/session-generated-id.yaml
+  - tools/oracle/cases/http/mcp-oauth-session/session-credentials-redacted.yaml
+  - tools/oracle/cases/http/mcp-oauth-session/session-requires-auth.yaml
+  - tools/oracle/cases/http/mcp-oauth-session/session-invalid-name-400.yaml
 deviations: []
 out_of_scope:
   - "Route behavior: B7971, B4719, B4675 and B7532."

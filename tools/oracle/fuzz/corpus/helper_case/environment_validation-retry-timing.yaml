@@ -1,0 +1,10 @@
+kind: helper
+name: environment_validation-retry-timing-seed
+call:
+  b5364:
+    operation: calculate_retry_after
+    cases:
+      - {remaining_retries: 2, max_retries: 3, now: 1445412460, random: 0.5}
+      - {remaining_retries: 2, max_retries: 3, headers: {retry-after: "20"}, now: 1445412460, random: 0.25}
+env: {}
+compare: {ignore: []}

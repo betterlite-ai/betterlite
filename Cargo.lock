@@ -1508,6 +1508,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "http 1.5.0",
+ "httpdate",
  "indexmap 2.14.2",
  "jiff",
  "jsonschema",
@@ -1522,6 +1523,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -3176,6 +3178,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
  "betterlite-vertex",
+ "indexmap 2.14.2",
  "jiff",
  "libfuzzer-sys",
 ]
