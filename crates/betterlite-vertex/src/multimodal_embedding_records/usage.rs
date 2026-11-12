@@ -106,10 +106,6 @@ fn duration(value: Option<&Json>, field: &'static str, index: usize) -> Result<D
         return Err(Error::Field(field, "number", index));
     };
     let text = number.to_string();
-    let parsed = if text.contains(['e', 'E']) {
-        Decimal::from_scientific(&text)
-    } else {
-        text.parse()
-    };
+    let parsed = Decimal::from_scientific(&text).or_else(|_| text.parse());
     parsed.map_err(|source| Error::Decimal(field, index, source))
 }

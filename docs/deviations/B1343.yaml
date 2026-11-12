@@ -9,3 +9,6 @@ deviations:
   - what: A base64 image string longer than 32 MiB is classified as text instead of being decoded.
     why: Classification runs on request data, and decoding an unbounded string allocates in proportion to what the caller sent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8104
+  - what: A reply body longer than 32 MiB is refused with a 500 instead of being parsed.
+    why: Parsing an unbounded provider reply allocates in proportion to what the provider sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/transformation.py#L211

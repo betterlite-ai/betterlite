@@ -41,7 +41,7 @@ pub fn element(caption: Option<&str>, media: &str, kind: Option<MediaKind>) -> J
     }
     let (name, payload) = match kind {
         Some(MediaKind::GcsVideo | MediaKind::GcsImage) => {
-            let name = if matches!(kind, Some(MediaKind::GcsVideo)) {
+            let name = if kind == Some(MediaKind::GcsVideo) {
                 "video"
             } else {
                 "image"
