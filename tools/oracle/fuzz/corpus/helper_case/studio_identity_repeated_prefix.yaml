@@ -1,0 +1,13 @@
+kind: helper
+name: studio-identity-repeated-prefix
+call:
+  studio_identity:
+    calls:
+      - model: gemini/gemini-2.0-flash
+        models: [models/gemini-2.0-flash, models/models/x]
+      - model: a/gemini/b
+        models: [gemini-2.0-flash]
+      - model: gemini/
+        models: []
+env: {}
+compare: {ignore: []}

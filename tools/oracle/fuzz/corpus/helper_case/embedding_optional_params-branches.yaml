@@ -1,0 +1,33 @@
+kind: helper
+name: embedding-optional-params-branches-seed
+call:
+  b5363:
+    calls:
+      - model: m
+        custom_llm_provider: nvidia_nim
+        user: u
+        dimensions: 8
+        kwargs: {input_type: query, extra_body: {inner: 2}}
+        force_branch: true
+        supported: [encoding_format, user, dimensions]
+        mapper: {supported: [encoding_format, user, dimensions], mapped: {dimensions: 8, user: u}}
+      - model: text-embedding-004
+        custom_llm_provider: vertex_ai
+        dimensions: 8
+        kwargs: {input_type: RETRIEVAL_DOCUMENT}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {outputDimensionality: 8, task_type: RETRIEVAL_DOCUMENT}}
+      - model: m
+        custom_llm_provider: ollama
+        user: u
+        dimensions: 2
+        drop_params: true
+        kwargs: {}
+        force_branch: true
+      - model: m
+        custom_llm_provider: own_provider
+        kwargs: {extra_body: {a: 1}}
+        force_branch: true
+env: {}
+compare: {ignore: []}

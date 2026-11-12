@@ -104,7 +104,7 @@ done
   exit 1
 }
 UV_CACHE_DIR="${HOME}/.cache/uv" GATE_POSTGRES_SOCKET="${socket}" POSTGRES_TEST_URL="postgresql://betterlite:betterlite@127.0.0.1:55432/betterlite?host=${socket_dir}" TMPDIR=${tmp} PATH=${P}/bin:${HOME}/.local/bin:${tools}/bin:${PATH} RUSTC_WRAPPER=${tools}/bin/sccache SCCACHE_IGNORE_SERVER_IO_ERROR=1 CARGO_INCREMENTAL=0 \
-  CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only CARGO_BUILD_JOBS=3 NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=5 GATE_SHARED_BUILDS=${gates} \
+  CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_TEST_DEBUG=line-tables-only CARGO_BUILD_JOBS=2 NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=8 GATE_SHARED_BUILDS=${gates} \
   systemd-run --user --scope --slice=betterlite-dispatch.slice -p MemoryMax=16G -p MemorySwapMax=4G -q -- nice -n 10 cargo gate dispatch "${id}" ${3:+--note "$3"} ${GRANT:+--grant "${GRANT}"} > "${log}" 2>&1 9>&- &
 child=$!
 while kill -0 "${child}" 2> /dev/null && ! pgrep -f "^([^ ]*/)?gate dispatch ${id}( |$)" > /dev/null; do

@@ -1,0 +1,44 @@
+task: B010
+deviations:
+  - what: >-
+      aiohttp_openai reads only its deployment's api_base and api_key, and its default base is https://api.openai.com
+      without a /v1 segment. LiteLLM's dispatch wrapper fills an absent base from litellm.api_base, the module
+      globals, OPENAI_BASE_URL/OPENAI_API_BASE and defaults to https://api.openai.com/v1, and fills an absent key
+      from litellm.api_key, litellm.openai_key and OPENAI_API_KEY.
+    why: >-
+      This task defines the variant by the aiohttp transformation it ports: get_complete_url defaults the bare host
+      and validate_environment answers Bearer {api_key}, with no environment fallback. The provider oracle cases pin
+      the deployment's own values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2413-L2426
+  - what: >-
+      A streaming request to aiohttp_openai is answered with an incremental SSE relay. LiteLLM's async aiohttp
+      handler calls the provider with stream=False and returns the buffered ModelResponse, so a proxy stream request
+      receives no SSE frames.
+    why: >-
+      A stream request that gets a buffered body is a bug no working setup can rely on; rule owned-behavior-is-built
+      fixes it, and betterlite answers streams through one incremental path for every provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_handler.py#L274-L295
+  - what: >-
+      An aiohttp_openai call that gets a 4xx or 5xx answer keeps the upstream status and error body, so a 429 reaches
+      the client as 429 and a 401 as 401. LiteLLM's aiohttp handler calls raise_for_status, and _handle_error reads
+      status_code from a ClientResponseError that only carries status, so every upstream failure becomes a 500.
+    why: >-
+      A rate limit or an authentication failure reported as a server error breaks the retry and cooldown decisions of
+      every client; no working setup can rely on that, so rule owned-behavior-is-built fixes it. A Rust test sends the
+      429 and 401 answers through the route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_handler.py#L670-L687
+  - what: >-
+      Every provider family that B010 registers as an executable stub (azure, azure_ai, anthropic, bedrock,
+      vertex_ai, gemini, xai_mistral, embedding_rerank, compatible, legacy, self_hosted, subscription, media and
+      speech providers) answers a 501 naming the provider instead of running a call.
+    why: >-
+      The catalog name proves no adapter exists; those endpoint bodies are owned by B024-B036, and until each one
+      fills its module the call must fail explicitly rather than reach a provider with an unfinished request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8451-L8625
+  - what: >-
+      A deployment built from a configured chat deployment (Deployment::from_chat) carries no max_retries,
+      drop_params or provider_affinity_header; only Deployment::from_params, which reads them from litellm_params, sets them.
+    why: >-
+      The chat deployment type lives in betterlite-openai and has no field for them, and nothing in the server reads
+      them yet, so a configured value has no effect on a provider call until the owner of that type adds them.
+    link: ""

@@ -1,0 +1,13 @@
+kind: helper
+name: openai-reasoning-models-low-minimal-opt-out
+call:
+  openai_reasoning_models:
+    low_minimal_opt_out:
+      probes:
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: low}}
+      - {model: gpt-5.5-pro, chat_models: [gpt-5.5-pro], model_cost: {gpt-5.5-pro: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_low_reasoning_effort: false, supports_minimal_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: low}}
+      - {model: gpt-5.5-pro, chat_models: [gpt-5.5-pro], model_cost: {gpt-5.5-pro: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_low_reasoning_effort: false, supports_minimal_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: minimal}, existing: {reasoning_effort: minimal}, drop_params: true}
+      - {model: gpt-5.5-pro, chat_models: [gpt-5.5-pro], model_cost: {gpt-5.5-pro: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_low_reasoning_effort: false, supports_minimal_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: low}, existing: {reasoning_effort: low}, global_drop_params: true}
+      - {model: gpt-5.5-pro, chat_models: [gpt-5.5-pro], model_cost: {gpt-5.5-pro: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_low_reasoning_effort: false, supports_minimal_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: minimal}}
+env: {}
+compare: {ignore: []}

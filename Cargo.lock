@@ -1096,6 +1096,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "num-traits",
+ "regex",
  "rstest",
  "secrecy",
  "serde",
@@ -1239,6 +1240,7 @@ dependencies = [
  "num-traits",
  "percent-encoding",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1339,10 +1341,12 @@ dependencies = [
  "betterlite-models",
  "betterlite-secrets",
  "clap",
+ "comfy-table",
  "console",
  "dbus-secret-service-keyring-store",
  "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
  "inquire",
@@ -1489,7 +1493,6 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
- "betterlite-provider",
  "betterlite-redact",
  "betterlite-tokenizer",
  "chrono",
@@ -1500,7 +1503,6 @@ dependencies = [
  "jsonschema",
  "lopdf",
  "num-traits",
- "rand 0.10.3",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1523,6 +1525,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-core",
+ "betterlite-models",
+ "betterlite-openai",
  "chrono",
  "jiff",
  "libfuzzer-sys",
@@ -1601,8 +1605,10 @@ dependencies = [
  "betterlite-config",
  "betterlite-db",
  "betterlite-postgres-fixture",
+ "chrono",
  "clap",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "tempfile",
  "thiserror",
@@ -2484,7 +2490,10 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-auth",
+ "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -2493,12 +2502,14 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "hex",
  "http 1.5.0",
+ "image",
  "indexmap 2.14.2",
  "jsonwebtoken",
  "mutants",
@@ -2880,6 +2891,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-postgres-fixture",
+ "betterlite-provider",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
@@ -2891,6 +2903,7 @@ dependencies = [
  "deadpool-postgres",
  "email_address",
  "encoding_rs",
+ "flate2",
  "form_urlencoded",
  "futures-channel",
  "futures-util",
@@ -3064,6 +3077,10 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-http",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-provider",
+ "betterlite-redact",
  "chrono",
  "claxon",
  "futures-util",
@@ -3073,6 +3090,7 @@ dependencies = [
  "mutants",
  "ogg",
  "percent-encoding",
+ "rand 0.10.3",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -3087,6 +3105,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -3101,14 +3120,18 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-tokenizer",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
  "regex",
@@ -3122,12 +3145,14 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]
 name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-bedrock",
  "betterlite-vertex",
  "jiff",
  "libfuzzer-sys",
@@ -3429,6 +3454,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
+name = "byteorder-lite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3660,6 +3691,16 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "comfy-table"
+version = "8.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b96a46ad395a5e00676eddaca4a45ed78b29c08be5a878d35e4b071c625637dd"
+dependencies = [
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
@@ -4589,6 +4630,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "fdeflate"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
+dependencies = [
+ "simd-adler32",
+]
+
+[[package]]
 name = "ferroid"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5439,6 +5489,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "image"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
+dependencies = [
+ "bytemuck",
+ "byteorder-lite",
+ "moxcms",
+ "num-traits",
+ "png",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6162,6 +6227,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -6212,6 +6278,16 @@ name = "more-asserts"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fafa6961cabd9c63bcd77a45d7e3b7f3b552b70417831fb0f56db717e72407e"
+
+[[package]]
+name = "moxcms"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
+dependencies = [
+ "num-traits",
+ "pxfm",
+]
 
 [[package]]
 name = "multipart-rs"
@@ -7086,6 +7162,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "png"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+dependencies = [
+ "bitflags 2.13.2",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide 0.8.9",
+]
+
+[[package]]
 name = "poly1305"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7307,6 +7396,12 @@ dependencies = [
  "idna",
  "psl-types",
 ]
+
+[[package]]
+name = "pxfm"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
 name = "py_literal"
@@ -10562,3 +10657,18 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zune-core"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d56377fd46368984a170bc5aac5567e52ca5da874caa60bea39fcbca78fb658b"
+
+[[package]]
+name = "zune-jpeg"
+version = "0.5.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
+dependencies = [
+ "zune-core",
+]

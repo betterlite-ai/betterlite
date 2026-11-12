@@ -1,0 +1,23 @@
+kind: helper
+name: multimodal-embedding-records-whitespace-character-usage
+call:
+  multimodal_embedding_records:
+    requests: []
+    replies:
+      - model: empty-model
+        status: 200
+        input: [" a\tb\nc\u001c ", "", "data:image/png;base64,YWJj"]
+        optional: {}
+        response: {predictions: []}
+      - model: empty-model
+        status: 200
+        input: ["   "]
+        optional: {}
+        response: {predictions: []}
+      - model: empty-model
+        status: 200
+        input: [""]
+        optional: {}
+        response: {predictions: []}
+compare: {ignore: []}
+env: {}

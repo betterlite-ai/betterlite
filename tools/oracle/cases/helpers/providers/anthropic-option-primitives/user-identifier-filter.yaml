@@ -1,0 +1,29 @@
+kind: helper
+name: option-user-identifier-filter
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: user_identifier_filter
+        ids:
+          - user-123
+          - ""
+          - user@example
+          - user@example.c
+          - user@example.com
+          - USER@EXAMPLE.CO
+          - user.name+tag@sub.example.co.uk
+          - "+1 555 010 0000"
+          - "1234567"
+          - "123456"
+          - "123-4567"
+          - "user@example.com\n"
+          - "user@example.com\n\n"
+          - "user@example.com\r\n"
+          - abc def
+          - " 1234567 "
+          - "+1234567"
+          - "١٢٣٤٥٦٧"
+          - "\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0"
+          - "\u001c1234567"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: langgraph-chat-provider-info
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: info
+    cases:
+      - {api_base: null, api_key: null, env_api_base: null, env_api_key: null}
+      - {api_base: 'https://agents.example.com', api_key: 'key-1', env_api_base: null, env_api_key: null}
+      - {api_base: null, api_key: null, env_api_base: 'https://env.example.com', env_api_key: 'env-key'}
+      - {api_base: 'https://agents.example.com', api_key: 'key-1', env_api_base: 'https://env.example.com', env_api_key: 'env-key'}
+      - {api_base: '', api_key: '', env_api_base: 'https://env.example.com', env_api_key: 'env-key'}
+      - {api_base: null, api_key: null, env_api_base: '', env_api_key: ''}
+      - {api_base: '', api_key: '', env_api_base: null, env_api_key: null}
+      - {api_base: null, api_key: 'key-1', env_api_base: null, env_api_key: 'env-key'}
+      - {api_base: 'https://agents.example.com/', api_key: null, env_api_base: null, env_api_key: 'env-key'}
