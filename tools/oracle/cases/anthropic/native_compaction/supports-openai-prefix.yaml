@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-supports-openai-prefix
+call:
+  b3545: {"function": "supports", "model": "openai/claude-opus-4-7", "custom_llm_provider": null}
+env: {}
+compare:
+  ignore: []

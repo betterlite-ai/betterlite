@@ -1,0 +1,7 @@
+kind: helper
+name: speech-class-configuration
+call:
+  speech_provider_contract:
+    function: class_configuration
+env: {}
+compare: {ignore: []}

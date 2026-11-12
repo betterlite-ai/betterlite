@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-dispatch-contract-seed-error
+call:
+  bedrock_dispatch_contract:
+    price_map: {openai.gpt-5.6-seed: not-an-object}
+    cases:
+      - {model: "anthropic.claude-3-haiku-20240307-v1:0", aws_region_name: "US_EAST_1"}
+      - {model: "openai.gpt-5.6-seed", aws_region_name: "us-east-1"}
+env: {}
+compare: {ignore: []}

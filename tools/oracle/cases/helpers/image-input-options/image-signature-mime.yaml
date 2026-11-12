@@ -1,0 +1,61 @@
+kind: helper
+name: image-input-options-image-signature-mime
+call:
+  image_input_options:
+    calls:
+      - function: content
+        fixture:
+          kind: bytes
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          position: 0
+          name: null
+      - function: content
+        fixture:
+          kind: bytes
+          data_base64: /9j/4AAQSkZJRg==
+          position: 0
+          name: null
+      - function: content
+        fixture:
+          kind: bytes
+          data_base64: R0lGODlhAQA=
+          position: 0
+          name: null
+      - function: content
+        fixture:
+          kind: bytes
+          data_base64: UklGRiQAAABXRUJQVlA4IA==
+          position: 0
+          name: null
+      - function: content
+        fixture:
+          kind: bytes
+          data_base64: AAAAGGZ0eXBoZWlj
+          position: 0
+          name: null
+      - function: content
+        fixture:
+          kind: bytes_io
+          data_base64: /9j/4AAQSkZJRg==
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: buffered_reader
+          data_base64: /9j/4AAQSkZJRg==
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: seekable
+          data_base64: /9j/4AAQSkZJRg==
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: seekable
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          position: 7
+          name: mask.jpeg
+env: {}
+compare: {ignore: []}
