@@ -3119,6 +3119,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-tokenizer",
  "http 1.5.0",
  "jiff",
  "percent-encoding",
