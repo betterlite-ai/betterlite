@@ -82,6 +82,7 @@ while [[ ! -f "${L}/watchdog.STOP" ]]; do
   check_pool
   check_stuck
   [[ $((tick % 5)) -eq 0 ]] && sample_machine
+  if [[ $((tick % 20)) -eq 0 ]]; then setsid nohup bash "${P}/clippy-seed.sh" >> "${L}/clippy-seed.log" 2>&1 < /dev/null & fi
   tick=$((tick + 1))
   sleep "${every}"
 done
