@@ -17,11 +17,23 @@ struct RawLiteLlmSettings {
     api_key: Option<SecretString>,
 }
 
-#[derive(Debug, Clone, Default)]
+pub const DEFAULT_API_BASE: &str = "https://generativelanguage.googleapis.com";
+
+#[derive(Debug, Clone)]
 pub struct Settings {
     pub environment_key: Option<SecretString>,
     pub generic_api_key: Option<SecretString>,
-    pub api_base: Option<String>,
+    pub api_base: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            environment_key: None,
+            generic_api_key: None,
+            api_base: DEFAULT_API_BASE.to_owned(),
+        }
+    }
 }
 
 impl Section for Raw {
@@ -48,7 +60,8 @@ impl Section for Raw {
             )?,
             api_base: lookup
                 .lookup("GEMINI_API_BASE")
-                .filter(|value| !value.is_empty()),
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
         })
     }
 }

@@ -6,7 +6,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::studio_identity::Settings;
+use crate::sections::studio_identity::{DEFAULT_API_BASE, Settings};
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup = environment
@@ -28,7 +28,7 @@ fn studio_identity_settings_default_to_nothing() {
     let settings = load("", &[]).expect("an empty config loads");
     assert!(settings.environment_key.is_none());
     assert!(settings.generic_api_key.is_none());
-    assert!(settings.api_base.is_none());
+    assert_eq!(settings.api_base, DEFAULT_API_BASE);
 }
 
 #[rstest]
@@ -77,15 +77,15 @@ fn studio_identity_settings_reject_a_missing_environment_reference() {
 }
 
 #[rstest]
-#[case::set(&[("GEMINI_API_BASE", "https://proxy.example")], Some("https://proxy.example"))]
-#[case::empty_is_unset(&[("GEMINI_API_BASE", "")], None)]
-#[case::missing(&[], None)]
+#[case::set(&[("GEMINI_API_BASE", "https://proxy.example")], "https://proxy.example")]
+#[case::empty_is_unset(&[("GEMINI_API_BASE", "")], "https://generativelanguage.googleapis.com")]
+#[case::missing(&[], "https://generativelanguage.googleapis.com")]
 fn studio_identity_settings_load_the_api_base(
     #[case] environment: &[(&str, &str)],
-    #[case] expected: Option<&str>,
+    #[case] expected: &str,
 ) {
     let settings = load("", environment).expect("the config loads");
-    assert_eq!(settings.api_base.as_deref(), expected);
+    assert_eq!(settings.api_base, expected);
 }
 
 #[test]

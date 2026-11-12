@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::studio_identity::Settings;
+use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
 use betterlite_vertex::studio_identity::{
-    AuthValue, NativeParams, get_api_base, get_api_key, native_headers, process_model_names,
+    AuthValue, NativeParams, native_headers, process_model_names,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -61,7 +61,8 @@ fn settings(call: &Call) -> Settings {
             .env
             .get("GEMINI_API_BASE")
             .filter(|value| !value.is_empty())
-            .cloned(),
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
     }
 }
 
@@ -94,20 +95,25 @@ fn native_params(call: &Call) -> NativeParams {
 fn resolve(call: &Call) -> Value {
     let settings = settings(call);
     let explicit = explicit_key(call);
-    let api_key = get_api_key(
-        call.api_key.as_deref().map(SecretString::from).as_ref(),
-        &settings,
-    );
+    let api_key = call
+        .api_key
+        .as_deref()
+        .map(SecretString::from)
+        .or_else(|| settings.environment_key.clone());
     let headers = native_headers(
         explicit.as_ref(),
         &native_params(call),
         &settings,
-        call.headers.clone(),
+        &call.headers,
     );
+    let headers = headers
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.expose_secret()))
+        .collect::<BTreeMap<_, _>>();
     json!({
         "api_key": api_key.as_ref().map(ExposeSecret::expose_secret),
         "env_key": settings.environment_key.as_ref().map(ExposeSecret::expose_secret),
-        "api_base": get_api_base(call.api_base.as_deref(), &settings),
+        "api_base": call.api_base.as_deref().unwrap_or(&settings.api_base),
         "headers": headers,
         "base_model": call.model.replace("gemini/", ""),
         "model_names": process_model_names(&call.models),

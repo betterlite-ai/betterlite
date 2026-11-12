@@ -10,9 +10,9 @@ use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
 
+use super::API_VERSION;
 use super::decode::decode_studio_models;
 use super::error::StudioIdentityError;
-use super::{API_VERSION, get_api_base, get_api_key};
 
 #[derive(Debug)]
 pub struct ModelsRequest {
@@ -63,8 +63,11 @@ pub fn models_request(
     api_base: Option<&str>,
     settings: &Settings,
 ) -> Result<ModelsRequest, StudioIdentityError> {
-    let key = get_api_key(api_key, settings).ok_or(StudioIdentityError::MissingCredentials)?;
-    let base = get_api_base(api_base, settings);
+    let key = api_key
+        .cloned()
+        .or_else(|| settings.environment_key.clone())
+        .ok_or(StudioIdentityError::MissingCredentials)?;
+    let base = api_base.unwrap_or(&settings.api_base);
     Ok(ModelsRequest {
         url: format!("{base}/{API_VERSION}/models"),
         api_key: key,

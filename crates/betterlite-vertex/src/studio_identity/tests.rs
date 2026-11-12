@@ -20,8 +20,7 @@ use super::decode::{MODEL_LIST_LIMIT, decode_studio_models};
 use super::error::StudioIdentityError;
 use super::models::{ModelsTransport, get_models, models_request};
 use super::{
-    AuthValue, Headers, NativeParams, get_api_base, get_api_key, native_api_key, native_headers,
-    process_model_names,
+    AuthValue, Headers, NativeParams, native_api_key, native_headers, process_model_names,
 };
 
 const DEADLINE: Duration = Duration::from_secs(5);
@@ -36,15 +35,26 @@ fn settings(environment: Option<&str>, generic: Option<&str>, base: Option<&str>
     Settings {
         environment_key: environment.map(secret),
         generic_api_key: generic.map(secret),
-        api_base: base.map(str::to_owned),
+        api_base: base.map_or_else(|| DEFAULT_BASE.to_owned(), str::to_owned),
     }
 }
 
-fn headers(pairs: &[(&str, &str)]) -> Headers {
+fn caller(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+fn exposed(headers: &Headers) -> BTreeMap<&str, &str> {
+    headers
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.expose_secret()))
+        .collect()
+}
+
+fn expected(pairs: &[(&'static str, &'static str)]) -> BTreeMap<&'static str, &'static str> {
+    pairs.iter().copied().collect()
 }
 
 fn secret_headers(pairs: &[(&str, &str)]) -> BTreeMap<String, SecretString> {
@@ -74,20 +84,30 @@ fn projection_api_key_prefers_explicit_then_environment(
     #[case] expected: Option<&str>,
 ) {
     let settings = settings(environment, Some("generic-key"), None);
-    let found = get_api_key(explicit.map(secret).as_ref(), &settings);
-    assert_eq!(found.as_ref().map(ExposeSecret::expose_secret), expected);
+    let found = models_request(explicit.map(secret).as_ref(), None, &settings);
+    match expected {
+        Some(key) => assert_eq!(found.expect("a key resolves").api_key.expose_secret(), key),
+        None => assert!(matches!(
+            found,
+            Err(StudioIdentityError::MissingCredentials)
+        )),
+    }
 }
 
 #[test]
 fn projection_api_key_uses_an_explicit_empty_key_as_given() {
-    let found = get_api_key(Some(&secret("")), &Settings::default());
-    assert_eq!(found.as_ref().map(ExposeSecret::expose_secret), Some(""));
+    let found = models_request(Some(&secret("")), None, &Settings::default())
+        .expect("an empty key is still a key");
+    assert_eq!(found.api_key.expose_secret(), "");
 }
 
 #[test]
 fn projection_api_key_skips_the_generic_litellm_key() {
-    let found = get_api_key(None, &settings(None, Some("generic-key"), None));
-    assert!(found.is_none());
+    let found = models_request(None, None, &settings(None, Some("generic-key"), None));
+    assert!(matches!(
+        found,
+        Err(StudioIdentityError::MissingCredentials)
+    ));
 }
 
 #[rstest]
@@ -105,16 +125,21 @@ fn projection_api_base_prefers_explicit_then_environment_then_default(
     #[case] expected: &str,
 ) {
     let (explicit, environment) = base;
-    assert_eq!(
-        get_api_base(explicit, &settings(None, None, environment)),
-        expected
-    );
+    let request = models_request(
+        Some(&secret("key")),
+        explicit,
+        &settings(None, None, environment),
+    )
+    .expect("a request is built");
+    assert_eq!(request.url, format!("{expected}/v1beta/models"));
 }
 
 #[test]
 fn projection_api_base_uses_an_explicit_empty_base_as_given() {
     let settings = settings(None, None, Some("https://environment.example"));
-    assert_eq!(get_api_base(Some(""), &settings), "");
+    let request =
+        models_request(Some(&secret("key")), Some(""), &settings).expect("a request is built");
+    assert_eq!(request.url, "/v1beta/models");
 }
 
 #[rstest]
@@ -185,18 +210,21 @@ fn projection_native_headers_start_with_a_json_content_type() {
         None,
         &NativeParams::default(),
         &Settings::default(),
-        Headers::new(),
+        &BTreeMap::new(),
     );
-    assert_eq!(result, headers(&[("Content-Type", "application/json")]));
+    assert_eq!(
+        exposed(&result),
+        expected(&[("Content-Type", "application/json")])
+    );
 }
 
 #[test]
 fn projection_native_headers_add_the_resolved_key() {
     let settings = settings(Some("environment-key"), None, None);
-    let result = native_headers(None, &NativeParams::default(), &settings, Headers::new());
+    let result = native_headers(None, &NativeParams::default(), &settings, &BTreeMap::new());
     assert_eq!(
-        result,
-        headers(&[
+        exposed(&result),
+        expected(&[
             ("Content-Type", "application/json"),
             ("x-goog-api-key", "environment-key")
         ])
@@ -213,11 +241,11 @@ fn projection_native_headers_merge_an_auth_map() {
         Some(&explicit),
         &NativeParams::default(),
         &Settings::default(),
-        Headers::new(),
+        &BTreeMap::new(),
     );
     assert_eq!(
-        result,
-        headers(&[
+        exposed(&result),
+        expected(&[
             ("Content-Type", "application/json"),
             ("Authorization", "Bearer mapped"),
             ("X-Goog-User-Project", "project")
@@ -228,15 +256,15 @@ fn projection_native_headers_merge_an_auth_map() {
 #[test]
 fn projection_native_headers_let_caller_headers_win() {
     let settings = settings(Some("environment-key"), None, None);
-    let caller = headers(&[
+    let caller = caller(&[
         ("Content-Type", "text/plain"),
         ("x-goog-api-key", "caller-key"),
         ("X-Caller", "kept"),
     ]);
-    let result = native_headers(None, &NativeParams::default(), &settings, caller);
+    let result = native_headers(None, &NativeParams::default(), &settings, &caller);
     assert_eq!(
-        result,
-        headers(&[
+        exposed(&result),
+        expected(&[
             ("Content-Type", "text/plain"),
             ("x-goog-api-key", "caller-key"),
             ("X-Caller", "kept")
@@ -245,12 +273,32 @@ fn projection_native_headers_let_caller_headers_win() {
 }
 
 #[test]
+fn projection_native_headers_hide_the_key_from_debug() {
+    let explicit = AuthValue::Headers(secret_headers(&[("Authorization", "Bearer mapped-secret")]));
+    let settings = settings(Some("environment-secret"), None, None);
+    let keyed = native_headers(None, &NativeParams::default(), &settings, &BTreeMap::new());
+    let mapped = native_headers(
+        Some(&explicit),
+        &NativeParams::default(),
+        &Settings::default(),
+        &BTreeMap::new(),
+    );
+    assert!(!format!("{keyed:?}").contains("environment-secret"));
+    assert!(!format!("{mapped:?}").contains("mapped-secret"));
+}
+
+#[test]
 fn projection_native_headers_keep_other_casings_side_by_side() {
-    let caller = headers(&[("CONTENT-TYPE", "text/plain")]);
-    let result = native_headers(None, &NativeParams::default(), &Settings::default(), caller);
+    let caller = caller(&[("CONTENT-TYPE", "text/plain")]);
+    let result = native_headers(
+        None,
+        &NativeParams::default(),
+        &Settings::default(),
+        &caller,
+    );
     assert_eq!(
-        result,
-        headers(&[
+        exposed(&result),
+        expected(&[
             ("CONTENT-TYPE", "text/plain"),
             ("Content-Type", "application/json")
         ])

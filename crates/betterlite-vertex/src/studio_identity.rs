@@ -6,13 +6,11 @@ mod tests;
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::studio_identity::Settings;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 pub const API_VERSION: &str = "v1beta";
 
-const DEFAULT_API_BASE: &str = "https://generativelanguage.googleapis.com";
-
-pub type Headers = BTreeMap<String, String>;
+pub type Headers = BTreeMap<String, SecretString>;
 
 #[derive(Debug, Clone)]
 pub enum AuthValue {
@@ -24,22 +22,6 @@ pub enum AuthValue {
 pub struct NativeParams {
     pub api_key: Option<AuthValue>,
     pub gemini_api_key: Option<AuthValue>,
-}
-
-#[must_use]
-pub fn get_api_key(explicit: Option<&SecretString>, settings: &Settings) -> Option<SecretString> {
-    if let Some(key) = explicit {
-        return Some(key.clone());
-    }
-    settings.environment_key.clone()
-}
-
-#[must_use]
-pub fn get_api_base(explicit: Option<&str>, settings: &Settings) -> String {
-    if let Some(base) = explicit.or(settings.api_base.as_deref()) {
-        return base.to_owned();
-    }
-    DEFAULT_API_BASE.to_owned()
 }
 
 #[must_use]
@@ -77,21 +59,21 @@ pub fn native_headers(
     explicit: Option<&AuthValue>,
     params: &NativeParams,
     settings: &Settings,
-    caller: Headers,
+    caller: &BTreeMap<String, String>,
 ) -> Headers {
-    let mut headers = Headers::from([("Content-Type".to_owned(), "application/json".to_owned())]);
+    let mut headers = Headers::from([(
+        "Content-Type".to_owned(),
+        SecretString::from("application/json"),
+    )]);
     match native_api_key(explicit, params, settings) {
         Some(AuthValue::Key(key)) => {
-            headers.insert("x-goog-api-key".to_owned(), key.expose_secret().to_owned());
+            headers.insert("x-goog-api-key".to_owned(), key);
         }
-        Some(AuthValue::Headers(auth)) => {
-            let mapped = auth
-                .into_iter()
-                .map(|(name, value)| (name, value.expose_secret().to_owned()));
-            headers.extend(mapped);
-        }
+        Some(AuthValue::Headers(auth)) => headers.extend(auth),
         None => {}
     }
-    headers.extend(caller);
+    for (name, value) in caller {
+        headers.insert(name.clone(), SecretString::from(value.clone()));
+    }
     headers
 }
