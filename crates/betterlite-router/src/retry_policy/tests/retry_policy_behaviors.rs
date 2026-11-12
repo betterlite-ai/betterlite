@@ -251,6 +251,18 @@ fn eligibility_follows_class_status_and_candidates(
     with_fallbacks(2, 2, None, Some(0), None),
     Some(StopReason::ContentPolicyFallbacks)
 )]
+#[case::content_policy_without_fallbacks(
+    FailureClass::ContentPolicyViolation,
+    Some(500),
+    with_fallbacks(2, 2, None, None, None),
+    None
+)]
+#[case::rate_limit_with_content_policy_fallbacks(
+    FailureClass::RateLimit,
+    Some(429),
+    with_fallbacks(2, 2, None, Some(0), None),
+    None
+)]
 #[case::rate_limit_without_healthy_but_with_fallbacks(
     FailureClass::RateLimit,
     Some(429),

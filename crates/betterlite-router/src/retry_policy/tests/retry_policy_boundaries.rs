@@ -84,6 +84,12 @@ fn only_timeouts_rate_limits_and_server_errors_are_retryable(
     availability(2, 2),
     RetryDecision::Retry
 )]
+#[case::content_policy_without_fallbacks_retries(
+    FailureClass::ContentPolicyViolation,
+    Some(500),
+    availability(2, 2),
+    RetryDecision::Retry
+)]
 #[case::auth_without_any_deployment(
     FailureClass::Authentication,
     Some(401),
