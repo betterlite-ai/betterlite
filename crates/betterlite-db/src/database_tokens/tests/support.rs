@@ -215,7 +215,10 @@ pub(super) fn azure_enabled() -> TokenToggles {
     }
 }
 
-fn prefixed(prefix: &[(&str, &str)], environment: &[(&str, &str)]) -> Vec<(&str, &str)> {
+fn prefixed<'text>(
+    prefix: &[(&'text str, &'text str)],
+    environment: &[(&'text str, &'text str)],
+) -> Vec<(&'text str, &'text str)> {
     let mut pairs = prefix.to_vec();
     pairs.extend_from_slice(environment);
     pairs

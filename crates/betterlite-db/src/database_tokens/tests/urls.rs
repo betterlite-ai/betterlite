@@ -6,7 +6,7 @@ use secrecy::ExposeSecret as _;
 use crate::database_tokens::settings::TokenToggles;
 use crate::database_tokens::strategy::DatabaseTokenError;
 use crate::database_tokens::tests::support::{
-    AZURE_RAW_TOKEN, FakeAzureFactory, FakeAzureProvider, RecordingRds, azure_providers, providers,
+    AZURE_RAW_TOKEN, FakeAzureFactory, FakeAzureProvider, RecordingRds, providers,
     reader_missing_message, settings, writer_missing_message,
 };
 use crate::database_tokens::urls::{
