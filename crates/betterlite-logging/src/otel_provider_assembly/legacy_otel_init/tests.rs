@@ -1,8 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use opentelemetry::InstrumentationScope;
+use opentelemetry::logs::{Logger as _, LoggerProvider as _};
 use opentelemetry::trace::{Span as _, Tracer as _};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
@@ -37,8 +39,25 @@ impl HttpClient for NoServer {
     }
 }
 
-fn clients() -> HttpClients {
-    let shared: Arc<dyn HttpClient> = Arc::new(NoServer);
+#[derive(Debug, Default)]
+struct PostedUris(Mutex<Vec<String>>);
+
+#[async_trait::async_trait]
+impl HttpClient for PostedUris {
+    async fn send_bytes(&self, request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
+        self.0
+            .lock()
+            .expect("uri lock")
+            .push(request.uri().to_string());
+        Ok(Response::new(Bytes::new()))
+    }
+}
+
+fn shared_clients<C>(client: &Arc<C>) -> HttpClients
+where
+    C: HttpClient + 'static,
+{
+    let shared: Arc<dyn HttpClient> = Arc::<C>::clone(client);
     HttpClients {
         traces: Arc::clone(&shared),
         metrics: Arc::clone(&shared),
@@ -97,11 +116,19 @@ impl Rig {
     }
 
     fn init(&self, init: LegacyOtelInit<'_>) -> Result<LegacyOtel, LegacyExporterError> {
+        self.init_on(init, shared_clients(&Arc::new(NoServer)))
+    }
+
+    fn init_on(
+        &self,
+        init: LegacyOtelInit<'_>,
+        clients: HttpClients,
+    ) -> Result<LegacyOtel, LegacyExporterError> {
         init_legacy_otel(
             init,
             &LegacyOtelEnvironment {
                 env: &self.env,
-                clients: clients(),
+                clients,
                 shared_exporter: self.exporter.clone(),
                 globals: &self.globals,
                 proxy: Some(&self.proxy),
@@ -240,7 +267,7 @@ fn a_new_tracer_provider_is_published_and_the_next_logger_reuses_it() {
         plain_init(Some(in_memory_config())),
         &LegacyOtelEnvironment {
             env: &rig.env,
-            clients: clients(),
+            clients: shared_clients(&Arc::new(NoServer)),
             shared_exporter: other_exporter.clone(),
             globals: &rig.globals,
             proxy: Some(&rig.proxy),
@@ -343,6 +370,50 @@ fn enabled_metrics_without_an_injected_provider_build_and_publish_one() {
     assert!(otel.metrics.is_some());
     assert!(rig.globals.meter.existing().expect("lookup").is_some());
     assert!(rig.globals.logger.existing().expect("lookup").is_none());
+}
+
+fn otlp_config() -> OpenTelemetryConfig {
+    let mut config = in_memory_config();
+    config.exporter = Exporter::Named("otlp_http".to_owned());
+    config.endpoint = Some("http://collector:4318".to_owned());
+    config
+}
+
+#[test]
+fn a_created_meter_provider_exports_to_the_metrics_endpoint() {
+    let rig = Rig::new();
+    let posted = Arc::new(PostedUris::default());
+    let mut config = otlp_config();
+    config.signals.enable_metrics = true;
+    let otel = rig
+        .init_on(plain_init(Some(config)), shared_clients(&posted))
+        .expect("legacy init");
+    let metrics = otel.metrics.expect("metrics signal");
+    metrics.instruments.token_usage.record(3.0_f64, &[]);
+    metrics.meter_provider.force_flush().expect("flush");
+    assert_eq!(
+        posted.0.lock().expect("uri lock").clone(),
+        vec!["http://collector:4318/v1/metrics"]
+    );
+}
+
+#[test]
+fn a_created_logger_provider_exports_to_the_logs_endpoint() {
+    let rig = Rig::new();
+    let posted = Arc::new(PostedUris::default());
+    let mut config = otlp_config();
+    config.signals.enable_events = true;
+    let otel = rig
+        .init_on(plain_init(Some(config)), shared_clients(&posted))
+        .expect("legacy init");
+    let provider = otel.logger_provider.expect("logger provider");
+    let logger = provider.logger_with_scope(InstrumentationScope::builder("init-test").build());
+    logger.emit(logger.create_log_record());
+    provider.force_flush().expect("flush");
+    assert_eq!(
+        posted.0.lock().expect("uri lock").clone(),
+        vec!["http://collector:4318/v1/logs"]
+    );
 }
 
 #[test]
@@ -472,7 +543,7 @@ fn init_without_a_proxy_registry_still_succeeds() {
         plain_init(Some(in_memory_config())),
         &LegacyOtelEnvironment {
             env: &rig.env,
-            clients: clients(),
+            clients: shared_clients(&Arc::new(NoServer)),
             shared_exporter: rig.exporter.clone(),
             globals: &rig.globals,
             proxy: None,
