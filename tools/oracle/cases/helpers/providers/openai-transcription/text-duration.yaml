@@ -1,0 +1,37 @@
+kind: helper
+name: openai-transcription-text-duration
+call:
+  openai_transcription:
+    function: exchange
+    probes:
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        optional_params: {response_format: srt}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: text/plain}
+          body: "1\n00:00:02,500 --> 00:00:04,000\nhi\n"
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        optional_params: {response_format: text}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: text/plain}
+          body: "just words"
+      - model: whisper-1
+        provider: whisper
+        optional_params: {response_format: srt}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: text/plain}
+          body: "1\n00:00:02,500 --> 00:00:04,000\nhi\n"
+env: {}
+compare: {ignore: []}
