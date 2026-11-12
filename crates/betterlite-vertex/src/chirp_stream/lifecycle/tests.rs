@@ -36,16 +36,26 @@ struct Recorder {
     closed: AtomicUsize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fault {
+    None,
+    Send,
+    Open,
+}
+
 struct TestClient {
     recorder: Arc<Recorder>,
     half_closed: Arc<Notify>,
     responses: Mutex<Option<Box<dyn ResponseSource>>>,
-    fail_sends: bool,
+    fault: Fault,
 }
 
 impl SpeechStreamingClient for TestClient {
     fn streaming_recognize(&self) -> Result<RecognizedStream, ChirpStreamError> {
         self.recorder.started.fetch_add(1, Ordering::SeqCst);
+        if self.fault == Fault::Open {
+            return Err(ChirpStreamError::ClientClosed);
+        }
         let responses = self
             .responses
             .lock()
@@ -56,7 +66,7 @@ impl SpeechStreamingClient for TestClient {
             requests: Box::new(TestSink {
                 recorder: Arc::clone(&self.recorder),
                 half_closed: Arc::clone(&self.half_closed),
-                fail: self.fail_sends,
+                fail: self.fault == Fault::Send,
             }),
             responses,
         })
@@ -146,13 +156,13 @@ fn client(
     recorder: &Arc<Recorder>,
     half_closed: &Arc<Notify>,
     responses: Box<dyn ResponseSource>,
-    fail_sends: bool,
+    fault: Fault,
 ) -> Arc<dyn SpeechStreamingClient> {
     Arc::new(TestClient {
         recorder: Arc::clone(recorder),
         half_closed: Arc::clone(half_closed),
         responses: Mutex::new(Some(responses)),
-        fail_sends,
+        fault,
     })
 }
 
@@ -166,14 +176,14 @@ fn scripting_stream(
     recorder: &Arc<Recorder>,
     half_closed: &Arc<Notify>,
     capacity: usize,
-    fail_sends: bool,
+    fault: Fault,
 ) -> (Arc<RecognizeStream>, Scripted) {
     let (responses_tx, responses_rx) = mpsc::channel(capacity);
     let responses = Box::new(ChannelResponses {
         responses: responses_rx,
     });
     (
-        stream(client(recorder, half_closed, responses, fail_sends)),
+        stream(client(recorder, half_closed, responses, fault)),
         responses_tx,
     )
 }
@@ -186,9 +196,9 @@ async fn relayed(
     let relayed = Arc::clone(stream);
     let mut tasks = JoinSet::new();
     tasks.spawn(async move { relayed.relay(outbox_tx, billed_before).await });
-    let billed = tasks
-        .join_next()
+    let billed = timeout(Duration::from_secs(5), tasks.join_next())
         .await
+        .expect("the relay finishes")
         .expect("the relay task finishes")
         .expect("the relay does not panic");
     (billed, outbox_rx)
@@ -204,7 +214,7 @@ async fn fill_queue(stream: &Arc<RecognizeStream>) {
 async fn queue_backpressure_holds_the_sixty_fourth_audio_chunk() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
-    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, false);
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
     fill_queue(&stream).await;
     let mut blocked = Box::pin(stream.send_audio(vec![0]));
     assert!(
@@ -245,13 +255,15 @@ async fn half_close_waits_behind_the_queued_audio() {
             half_closed: Arc::clone(&half_closed),
             emitted: false,
         }),
-        false,
+        Fault::None,
     ));
     stream.send_audio(vec![1, 2]).await.expect("queue space");
     stream.send_audio(vec![3]).await.expect("queue space");
     stream.half_close().await.expect("the terminator is queued");
     let (outbox_tx, _outbox_rx) = mpsc::channel(OUTBOX_SIZE);
-    let billed = stream.relay(outbox_tx, 0.0).await;
+    let billed = timeout(Duration::from_secs(5), stream.relay(outbox_tx, 0.0))
+        .await
+        .expect("the relay finishes");
     assert_eq!(billed, SignedDuration::ZERO);
     assert_eq!(
         *recorder.sent.lock().unwrap_or_else(PoisonError::into_inner),
@@ -266,6 +278,88 @@ async fn half_close_waits_behind_the_queued_audio() {
 }
 
 #[tokio::test]
+async fn cancelling_a_running_relay_stops_it() {
+    let recorder = Arc::new(Recorder::default());
+    let half_closed = Arc::new(Notify::new());
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
+    let (outbox_tx, mut outbox_rx) = mpsc::channel(OUTBOX_SIZE);
+    let relayed = Arc::clone(&stream);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move { relayed.relay(outbox_tx, 0.0).await });
+    responses_tx
+        .send(Some(Ok(billing_response(
+            SpeechEventType::Unspecified,
+            0,
+            250_000_000,
+        ))))
+        .await
+        .expect("the response is scripted");
+    let first = outbox_rx.recv().await.expect("the first result");
+    let (_, event) = turn_result(first);
+    assert_eq!(event.billed_seconds.to_bits(), 0.25_f64.to_bits());
+    stream.halt.cancel();
+    let billed = timeout(Duration::from_secs(5), tasks.join_next())
+        .await
+        .expect("the relay stops after the cancel")
+        .expect("the relay task finishes")
+        .expect("the relay does not panic");
+    assert_eq!(billed, SignedDuration::new(0, 250_000_000));
+    assert_eq!(
+        outbox_rx
+            .try_recv()
+            .expect_err("no result follows the cancel"),
+        mpsc::error::TryRecvError::Disconnected
+    );
+    assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        stream.send_audio(vec![0]).await,
+        Err(ChirpStreamError::QueueClosed)
+    ));
+    drop(responses_tx);
+}
+
+#[tokio::test]
+async fn the_client_closes_only_after_the_response_stream_ends() {
+    let recorder = Arc::new(Recorder::default());
+    let half_closed = Arc::new(Notify::new());
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
+    stream.half_close().await.expect("the terminator is queued");
+    let (outbox_tx, mut outbox_rx) = mpsc::channel(OUTBOX_SIZE);
+    let relayed = Arc::clone(&stream);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move { relayed.relay(outbox_tx, 0.0).await });
+    timeout(Duration::from_secs(5), half_closed.notified())
+        .await
+        .expect("the request side half-closes");
+    assert_eq!(
+        recorder.closed.load(Ordering::SeqCst),
+        0,
+        "half-close must not close a stream that still has responses"
+    );
+    responses_tx
+        .send(Some(Ok(billing_response(
+            SpeechEventType::Unspecified,
+            0,
+            250_000_000,
+        ))))
+        .await
+        .expect("the response arrives after the half-close");
+    assert!(matches!(
+        outbox_rx.recv().await,
+        Some(OutboxItem::TurnResult { .. })
+    ));
+    assert_eq!(recorder.closed.load(Ordering::SeqCst), 0);
+    drop(responses_tx);
+    let billed = timeout(Duration::from_secs(5), tasks.join_next())
+        .await
+        .expect("the relay finishes")
+        .expect("the relay task finishes")
+        .expect("the relay does not panic");
+    assert_eq!(billed, SignedDuration::new(0, 250_000_000));
+    assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn a_cancelled_stream_closes_without_starting() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
@@ -276,9 +370,9 @@ async fn a_cancelled_stream_closes_without_starting() {
         Box::new(ChannelResponses {
             responses: responses_rx,
         }),
-        false,
+        Fault::None,
     ));
-    stream.cancel();
+    stream.halt.cancel();
     let (outbox_tx, _outbox_rx) = mpsc::channel(OUTBOX_SIZE);
     let billed = stream.relay(outbox_tx, 0.0).await;
     assert_eq!(billed, SignedDuration::ZERO);
@@ -290,7 +384,7 @@ async fn a_cancelled_stream_closes_without_starting() {
 async fn a_response_failure_enqueues_the_reason_and_closes() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
-    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, false);
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
     responses_tx
         .send(Some(Err(ChirpStreamError::ClientClosed)))
         .await
@@ -323,7 +417,7 @@ async fn a_send_failure_enqueues_the_reason_and_closes() {
             half_closed: Arc::clone(&half_closed),
             emitted: false,
         }),
-        true,
+        Fault::Send,
     ));
     let (billed, mut outbox_rx) = relayed(&stream, 0.0).await;
     assert_eq!(billed, SignedDuration::ZERO);
@@ -335,10 +429,39 @@ async fn a_send_failure_enqueues_the_reason_and_closes() {
 }
 
 #[tokio::test]
+async fn a_stream_that_cannot_open_enqueues_the_reason_and_closes() {
+    let recorder = Arc::new(Recorder::default());
+    let half_closed = Arc::new(Notify::new());
+    let (_responses_tx, responses_rx) = mpsc::channel(1);
+    let stream = stream(client(
+        &recorder,
+        &half_closed,
+        Box::new(ChannelResponses {
+            responses: responses_rx,
+        }),
+        Fault::Open,
+    ));
+    let (billed, mut outbox_rx) = relayed(&stream, 0.0).await;
+    assert_eq!(billed, SignedDuration::ZERO);
+    match outbox_rx.recv().await.expect("a failure item") {
+        OutboxItem::StreamFailure { reason } => assert_eq!(
+            reason,
+            "Google Speech-to-Text streaming failed: the Speech-to-Text client is closed"
+        ),
+        OutboxItem::Text(_)
+        | OutboxItem::TurnResult { .. }
+        | OutboxItem::TurnDiscardedEvent { .. }
+        | OutboxItem::Closed => panic!("expected a stream failure"),
+    }
+    assert_eq!(recorder.started.load(Ordering::SeqCst), 1);
+    assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn activity_events_track_the_final_state() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
-    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 4, false);
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 4, Fault::None);
     stream.half_close().await.expect("the terminator is queued");
     responses_tx
         .send(Some(Ok(billing_response(
@@ -367,7 +490,7 @@ async fn activity_events_track_the_final_state() {
 async fn results_carry_the_cumulative_billed_maximum() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
-    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 4, false);
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 4, Fault::None);
     responses_tx
         .send(Some(Ok(billing_response(
             SpeechEventType::SpeechActivityBegin,

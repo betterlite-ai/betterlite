@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use google_cloud_auth::credentials::CacheableResource;
 use google_cloud_gax::Result as GaxResult;
@@ -20,9 +20,10 @@ use tokio::sync::mpsc;
 
 use super::{
     RequestSink as _, ResponseSource as _, SdkRequestSink, SdkResponseSource, SdkSpeechClient,
-    SpeechStreamingClient as _, bearer_headers, speech_endpoint,
+    SpeechStreamingClient as _, bearer_headers, open_speech_client, speech_endpoint,
 };
 use crate::chirp_stream::error::ChirpStreamError;
+use crate::chirp_stream::target::{AccessTokenFuture, AccessTokenResolver, SpeechStreamingTarget};
 
 #[test]
 fn bearer_headers_sends_a_sensitive_authorization_header() {
@@ -46,6 +47,26 @@ fn bearer_headers_sends_a_sensitive_authorization_header() {
 )]
 fn a_host_only_endpoint_dials_https(#[case] given: &str, #[case] expected: &str) {
     assert_eq!(speech_endpoint(given), expected);
+}
+
+#[tokio::test]
+async fn a_host_only_target_opens_a_tls_client() {
+    let target = SpeechStreamingTarget {
+        api_endpoint: "us-central1-speech.googleapis.com".to_owned(),
+        recognizer: "projects/p/locations/us-central1/recognizers/_".to_owned(),
+        token: Arc::new(UnusedResolver),
+    };
+    let _client = open_speech_client(&target, SecretString::from("token-value".to_owned()))
+        .await
+        .expect("a host-only target opens over TLS");
+}
+
+struct UnusedResolver;
+
+impl AccessTokenResolver for UnusedResolver {
+    fn resolve_access_token(&self) -> AccessTokenFuture<'_> {
+        Box::pin(async { Ok(SecretString::from("unused".to_owned())) })
+    }
 }
 
 #[tokio::test]

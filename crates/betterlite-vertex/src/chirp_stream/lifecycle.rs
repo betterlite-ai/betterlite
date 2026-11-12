@@ -6,21 +6,19 @@ use google_cloud_speech_v2::model::{StreamingRecognizeRequest, StreamingRecogniz
 use jiff::SignedDuration;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 
-use super::client::{RequestSink, ResponseSource, SpeechStreamingClient};
+use super::client::{RecognizedStream, RequestSink, ResponseSource, SpeechStreamingClient};
 use super::error::ChirpStreamError;
 use super::limits::REQUEST_QUEUE_SIZE;
 use super::outbox::OutboxItem;
-use super::records::{
-    SpeechActivity, billed_duration, cumulative_billed, response_event, speech_activity,
-};
+use super::records::{SpeechActivity, billed_duration, response_event, speech_activity};
 
 mod tests;
 
-#[derive(Clone)]
 pub struct Connection {
     client: Arc<dyn SpeechStreamingClient>,
-    closed: Arc<AtomicBool>,
+    closed: AtomicBool,
 }
 
 impl Connection {
@@ -31,25 +29,19 @@ impl Connection {
     }
 }
 
-impl Drop for Connection {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
 #[expect(
     clippy::partial_pub_fields,
-    reason = "the consumer rotates on the open time, turn and activity, while the queue, billing and cancellation state stay internal"
+    reason = "the consumer rotates on the open time, turn and activity and stops the stream, while the request queue and billing stay internal"
 )]
 pub struct RecognizeStream {
     pub connection: Connection,
     pub opened_at: Instant,
     pub turn: usize,
     pub speech_active: Arc<AtomicBool>,
+    pub halt: CancellationToken,
     requests: mpsc::Sender<Option<StreamingRecognizeRequest>>,
     receiver: Mutex<Option<mpsc::Receiver<Option<StreamingRecognizeRequest>>>>,
     billed: Arc<Mutex<SignedDuration>>,
-    cancelled: Arc<AtomicBool>,
 }
 
 impl RecognizeStream {
@@ -66,15 +58,15 @@ impl RecognizeStream {
         Ok(Self {
             connection: Connection {
                 client,
-                closed: Arc::new(AtomicBool::new(false)),
+                closed: AtomicBool::new(false),
             },
             opened_at,
             turn,
             speech_active: Arc::new(AtomicBool::new(false)),
+            halt: CancellationToken::new(),
             requests,
             receiver: Mutex::new(Some(receiver)),
             billed: Arc::new(Mutex::new(SignedDuration::ZERO)),
-            cancelled: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -92,54 +84,59 @@ impl RecognizeStream {
             .map_err(|_source| ChirpStreamError::QueueClosed)
     }
 
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::SeqCst);
-        self.connection.close();
-    }
-
     pub async fn relay(
         &self,
         outbox: mpsc::Sender<OutboxItem>,
         billed_before: f64,
     ) -> SignedDuration {
-        if self.cancelled.load(Ordering::SeqCst) {
+        if self.halt.is_cancelled() {
             self.connection.close();
             return SignedDuration::ZERO;
         }
-        let _closer = self.connection.clone();
+        self.forward(outbox, billed_before).await;
+        self.connection.close();
+        *self.billed.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    async fn forward(&self, outbox: mpsc::Sender<OutboxItem>, billed_before: f64) {
         let Some(queue) = self
             .receiver
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
         else {
-            return *self.billed.lock().unwrap_or_else(PoisonError::into_inner);
+            return;
         };
-        let failed = Arc::new(AtomicBool::new(false));
-        let mut tasks = ForwardTasks(JoinSet::new());
-        let stream = match self.connection.client.streaming_recognize() {
-            Ok(stream) => stream,
-            Err(error) => {
-                if !self.cancelled.load(Ordering::SeqCst) {
-                    warn_and_enqueue(&outbox, error).await;
-                }
-                return *self.billed.lock().unwrap_or_else(PoisonError::into_inner);
-            }
+        let failure = Arc::new(Mutex::new(None));
+        let Some(stream) = self.open_stream(&failure) else {
+            report_failure(&outbox, &failure).await;
+            return;
         };
-        tasks.0.spawn(
+        let mut tasks = JoinSet::new();
+        tasks.spawn(
             Drain {
                 queue,
                 sink: stream.requests,
-                outbox: outbox.clone(),
-                failed: Arc::clone(&failed),
-                cancelled: Arc::clone(&self.cancelled),
-                connection: self.connection.clone(),
+                failure: Arc::clone(&failure),
+                halt: self.halt.clone(),
             }
             .run(),
         );
-        self.forward_responses(stream.responses, &outbox, billed_before, &failed)
+        self.forward_responses(stream.responses, &outbox, billed_before, &failure)
             .await;
-        *self.billed.lock().unwrap_or_else(PoisonError::into_inner)
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
+        report_failure(&outbox, &failure).await;
+    }
+
+    fn open_stream(&self, failure: &Mutex<Option<String>>) -> Option<RecognizedStream> {
+        match self.connection.client.streaming_recognize() {
+            Ok(stream) => Some(stream),
+            Err(error) => {
+                record_failure(failure, &error);
+                None
+            }
+        }
     }
 
     async fn forward_responses(
@@ -147,19 +144,23 @@ impl RecognizeStream {
         mut responses: Box<dyn ResponseSource>,
         outbox: &mpsc::Sender<OutboxItem>,
         billed_before: f64,
-        failed: &AtomicBool,
+        failure: &Mutex<Option<String>>,
     ) {
-        while let Some(incoming) = responses.next_response().await {
+        loop {
+            let Some(incoming) = self
+                .halt
+                .run_until_cancelled(responses.next_response())
+                .await
+            else {
+                return;
+            };
             match incoming {
-                Ok(response) => self.emit(outbox, response, billed_before).await,
-                Err(error)
-                    if !self.cancelled.load(Ordering::SeqCst)
-                        && !failed.swap(true, Ordering::SeqCst) =>
-                {
-                    warn_and_enqueue(outbox, error).await;
-                    break;
+                Some(Ok(response)) => self.emit(outbox, response, billed_before).await,
+                Some(Err(error)) => {
+                    record_failure(failure, &error);
+                    return;
                 }
-                Err(_) => break,
+                None => return,
             }
         }
     }
@@ -179,7 +180,7 @@ impl RecognizeStream {
         let cumulative = {
             let mut current = self.billed.lock().unwrap_or_else(PoisonError::into_inner);
             *current = (*current).max(billed);
-            cumulative_billed(billed_before, *current)
+            billed_before.mul_add(1.0, current.as_secs_f64())
         };
         let event = response_event(&response, cumulative);
         let _sent = outbox
@@ -191,21 +192,11 @@ impl RecognizeStream {
     }
 }
 
-struct ForwardTasks(JoinSet<()>);
-
-impl Drop for ForwardTasks {
-    fn drop(&mut self) {
-        self.0.abort_all();
-    }
-}
-
 struct Drain {
     queue: mpsc::Receiver<Option<StreamingRecognizeRequest>>,
     sink: Box<dyn RequestSink>,
-    outbox: mpsc::Sender<OutboxItem>,
-    failed: Arc<AtomicBool>,
-    cancelled: Arc<AtomicBool>,
-    connection: Connection,
+    failure: Arc<Mutex<Option<String>>>,
+    halt: CancellationToken,
 }
 
 impl Drain {
@@ -216,23 +207,30 @@ impl Drain {
             };
             let sent = self.sink.send(request).await;
             if let Err(error) = sent {
-                self.fail(error).await;
+                self.fail(&error);
                 return;
             }
         }
     }
 
-    async fn fail(&self, error: ChirpStreamError) {
-        if self.cancelled.load(Ordering::SeqCst) || self.failed.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        warn_and_enqueue(&self.outbox, error).await;
-        self.connection.close();
+    fn fail(&self, error: &ChirpStreamError) {
+        record_failure(&self.failure, error);
+        self.halt.cancel();
     }
 }
 
-async fn warn_and_enqueue(outbox: &mpsc::Sender<OutboxItem>, error: ChirpStreamError) {
-    let reason = format!("Google Speech-to-Text streaming failed: {error}");
-    tracing::warn!("{reason}");
-    let _sent = outbox.send(OutboxItem::StreamFailure { reason }).await;
+fn record_failure(slot: &Mutex<Option<String>>, error: &ChirpStreamError) {
+    *slot.lock().unwrap_or_else(PoisonError::into_inner) =
+        Some(format!("Google Speech-to-Text streaming failed: {error}"));
+}
+
+async fn report_failure(outbox: &mpsc::Sender<OutboxItem>, failure: &Mutex<Option<String>>) {
+    let pending = failure
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    if let Some(reason) = pending {
+        tracing::warn!("{reason}");
+        let _sent = outbox.send(OutboxItem::StreamFailure { reason }).await;
+    }
 }

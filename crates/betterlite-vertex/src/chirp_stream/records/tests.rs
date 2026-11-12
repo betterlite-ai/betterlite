@@ -10,8 +10,8 @@ use jiff::SignedDuration;
 use rstest::rstest;
 
 use super::{
-    SpeechActivity, StreamingConfigure, billed_duration, cumulative_billed, first_request,
-    response_event, speech_activity, streaming_config,
+    SpeechActivity, StreamingConfigure, billed_duration, first_request, response_event,
+    speech_activity, streaming_config,
 };
 
 fn configure() -> StreamingConfigure {
@@ -154,14 +154,6 @@ fn a_missing_billed_duration_is_zero() {
     assert_eq!(
         billed_duration(&metadata_without_duration),
         SignedDuration::ZERO
-    );
-}
-
-#[test]
-fn cumulative_billing_adds_the_stream_maximum() {
-    assert_eq!(
-        cumulative_billed(0.5, SignedDuration::new(1, 250_000_000)).to_bits(),
-        1.75_f64.to_bits()
     );
 }
 

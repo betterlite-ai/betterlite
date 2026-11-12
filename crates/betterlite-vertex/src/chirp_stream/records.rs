@@ -103,12 +103,6 @@ pub fn billed_duration(response: &StreamingRecognizeResponse) -> SignedDuration 
 }
 
 #[must_use]
-pub fn cumulative_billed(billed_before: f64, stream_billed: SignedDuration) -> f64 {
-    // float_arithmetic is denied; a fused multiply-add by one is the same sum with the same rounding
-    billed_before.mul_add(1.0, stream_billed.as_secs_f64())
-}
-
-#[must_use]
 pub fn response_event(
     response: &StreamingRecognizeResponse,
     billed_seconds: f64,

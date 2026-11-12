@@ -1,6 +1,6 @@
 use betterlite_vertex::chirp_stream::records::{
-    ChirpStreamEvent, SpeechActivity, StreamingConfigure, billed_duration, cumulative_billed,
-    first_request, response_event, speech_activity, streaming_config,
+    ChirpStreamEvent, SpeechActivity, StreamingConfigure, billed_duration, first_request,
+    response_event, speech_activity, streaming_config,
 };
 use google_cloud_speech_v2::model::{
     RecognitionResponseMetadata, SpeechRecognitionAlternative, StreamingRecognitionResult,
@@ -112,14 +112,14 @@ impl Helper for Op {
             billed = billed.max(billed_duration(&response));
             events.push(response_event(
                 &response,
-                cumulative_billed(input.billed_before, billed),
+                input.billed_before.mul_add(1.0, billed.as_secs_f64()),
             ));
         }
         let output = Output {
             first_request: first,
             events,
             speech_active,
-            billed_seconds: cumulative_billed(input.billed_before, billed),
+            billed_seconds: input.billed_before.mul_add(1.0, billed.as_secs_f64()),
         };
         serde_json::to_value(output).map_err(|error| failure(&error.to_string()))
     }
