@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::files::records::{
@@ -53,10 +53,9 @@ impl BaseConfig for Config {
                     optional_params: request.optional_params.clone(),
                     litellm_params: request.litellm_params.clone(),
                 };
-                let Ok(mut recorded) = calls.lock() else {
-                    return Err(FileContractError::Body(String::from("poisoned recording")));
-                };
+                let mut recorded = calls.lock().unwrap_or_else(PoisonError::into_inner);
                 recorded.push(call);
+                drop(recorded);
                 Ok(String::from("https://mock.invalid/v1/files"))
             }
         }

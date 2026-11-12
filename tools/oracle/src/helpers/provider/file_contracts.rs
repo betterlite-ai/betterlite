@@ -68,7 +68,7 @@ pub(crate) enum Input {
     BatchMetadataPredicate { cases: Vec<Case> },
     BaseDefaults(BaseDefaultsInput),
     FileUrlForwarding(FileUrlInput),
-    StreamPassthrough(StreamPassthroughInput),
+    StreamPassthroughAndReplay(StreamPassthroughInput),
 }
 
 struct Upload {
@@ -222,7 +222,7 @@ fn run_functions(input: &Input) -> Result<Value, String> {
         Input::BatchMetadataPredicate { cases } => Ok(predicate_results(cases, Predicate::File)),
         Input::BaseDefaults(fields) => Ok(base_defaults(fields)),
         Input::FileUrlForwarding(fields) => file_url_forwarding(fields),
-        Input::StreamPassthrough(fields) => stream_passthrough(fields),
+        Input::StreamPassthroughAndReplay(fields) => stream_passthrough(fields),
     }
 }
 

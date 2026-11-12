@@ -11,10 +11,10 @@ pub const BATCH_JSONL_CONTENT_TYPES: [&str; 6] = [
 
 #[must_use]
 pub fn valid_content_type(content_type: Option<&str>) -> bool {
-    let Some(candidate) = content_type else {
-        return false;
-    };
-    BATCH_JSONL_CONTENT_TYPES.contains(&candidate)
+    content_type.is_some_and(|candidate| {
+        // LiteLLM compares the declared string verbatim, without lowercasing or dropping parameters
+        BATCH_JSONL_CONTENT_TYPES.contains(&candidate)
+    })
 }
 
 #[must_use]
@@ -23,10 +23,9 @@ pub fn is_batch_jsonl_file(
     content_type: Option<&str>,
     content: Option<&[u8]>,
 ) -> bool {
-    match content {
-        Some(_) => purpose == Some("batch") && valid_content_type(content_type),
-        None => false,
-    }
+    purpose.is_some_and(|value| value == "batch")
+        && valid_content_type(content_type)
+        && content.is_some()
 }
 
 #[must_use]
@@ -35,8 +34,7 @@ pub fn is_batch_jsonl_request<File>(
     content_type: Option<&str>,
     file: Option<&File>,
 ) -> bool {
-    if purpose != Some("batch") {
-        return false;
-    }
-    valid_content_type(content_type) && file.is_some()
+    purpose.is_some_and(|value| value == "batch")
+        && valid_content_type(content_type)
+        && file.is_some()
 }

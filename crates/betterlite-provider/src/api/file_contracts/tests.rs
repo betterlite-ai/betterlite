@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 use std::iter::empty;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::vec::IntoIter;
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_models::identity::provider_id::ProviderId;
@@ -64,10 +66,9 @@ impl BaseConfig for Config {
                     optional_params: request.optional_params.clone(),
                     litellm_params: request.litellm_params.clone(),
                 };
-                let Ok(mut recorded) = calls.lock() else {
-                    return Err(FileContractError::Body(String::from("poisoned recording")));
-                };
+                let mut recorded = calls.lock().unwrap_or_else(PoisonError::into_inner);
                 recorded.push(call);
+                drop(recorded);
                 Ok(String::from("https://mock.invalid/v1/files"))
             }
         }
@@ -145,6 +146,23 @@ impl BaseFilesConfig for Config {
     #[rustfmt::skip]
     fn transform_file_content_response(&self, _: &FileResponse, _: &mut FileLogging, _: &FileParams) -> Reply<BinaryContent> {
         Ok(binary_content())
+    }
+}
+
+struct Counted {
+    chunks: IntoIter<Vec<u8>>,
+    consumed: Arc<AtomicUsize>,
+}
+
+impl Iterator for Counted {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let chunk = self.chunks.next();
+        if chunk.is_some() {
+            self.consumed.fetch_add(1, Ordering::SeqCst);
+        }
+        chunk
     }
 }
 
@@ -344,8 +362,13 @@ fn stream_passthrough_and_replay() {
     ]);
     let mut logging = FileLogging::default();
     let chunks = vec![b"a".to_vec(), b"\x00\xff".to_vec()];
+    let consumed = Arc::new(AtomicUsize::new(0));
+    let stream = Counted {
+        chunks: chunks.clone().into_iter(),
+        consumed: Arc::clone(&consumed),
+    };
     let result = config.transform_file_content_stream(
-        Box::new(chunks.clone().into_iter()),
+        Box::new(stream),
         headers.clone(),
         StreamContext {
             request_url: "u",
@@ -353,8 +376,10 @@ fn stream_passthrough_and_replay() {
             litellm_params: &params(r#"{"k": "v"}"#),
         },
     );
+    assert_eq!(consumed.load(Ordering::SeqCst), 0);
     assert_eq!(result.headers, headers);
     assert_eq!(result.stream_iterator.collect::<Vec<_>>(), chunks);
+    assert_eq!(consumed.load(Ordering::SeqCst), 2);
     let upload = Upload {
         chunks: vec![b"abc".to_vec()],
     };

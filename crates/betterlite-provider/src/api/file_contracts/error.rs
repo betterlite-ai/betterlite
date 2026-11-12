@@ -14,8 +14,6 @@ pub struct BaseLlmException {
 pub enum FileContractError {
     #[error("api_base is required")]
     ApiBaseRequired,
-    #[error("the file response body is invalid: {0}")]
-    Body(String),
     #[error(transparent)]
     Upstream(#[from] BaseLlmException),
 }
