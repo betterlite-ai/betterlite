@@ -1,0 +1,20 @@
+kind: helper
+name: rerank-query-cost
+call:
+  rerank_contracts:
+    operation: query_cost
+    params:
+      model: rerank-model
+      cases:
+        - {model_info: {input_cost_per_query: 0.125}, billed_units: {search_units: 3, total_tokens: 99}}
+        - {model_info: {input_cost_per_query: 0.125, input_cost_per_token: 0.5}, billed_units: {search_units: 3}}
+        - {model_info: {}, billed_units: {search_units: 3}}
+        - {model_info: {input_cost_per_query: null}, billed_units: {search_units: 3}}
+        - {model_info: {input_cost_per_query: 0.125}}
+        - {model_info: {input_cost_per_query: 0.125}, billed_units: {}}
+        - {model_info: {input_cost_per_query: 0.125}, billed_units: {total_tokens: 99}}
+        - {model_info: {input_cost_per_query: 0.125}, billed_units: {search_units: 0}}
+        - {model_info: {input_cost_per_query: 0.125}, billed_units: {search_units: -1}}
+        - {billed_units: {search_units: 3}}
+env: {}
+compare: {ignore: []}
