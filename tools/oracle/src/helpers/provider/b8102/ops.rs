@@ -48,52 +48,46 @@ fn prompt() -> Vec<Message> {
     }]
 }
 
+fn provider_json(case: &InfoCase) -> Value {
+    let resolved = provider_info(
+        case.api_base.as_deref(),
+        case.api_key.as_ref(),
+        case.env_api_base.as_deref(),
+        case.env_api_key.as_ref(),
+    );
+    json!({
+        "base": resolved.api_base,
+        "key": resolved.api_key.as_ref().map(ExposeSecret::expose_secret),
+    })
+}
+
 pub(super) fn info(cases: &[InfoCase]) -> Value {
-    let found: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let resolved = provider_info(
-                case.api_base.as_deref(),
-                case.api_key.as_ref(),
-                case.env_api_base.as_deref(),
-                case.env_api_key.as_ref(),
-            );
-            json!({
-                "base": resolved.api_base,
-                "key": resolved.api_key.as_ref().map(ExposeSecret::expose_secret),
-            })
-        })
-        .collect();
     json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "body_stream": STREAM_PARAM_IN_BODY,
         "fake_stream": SHOULD_FAKE_STREAM,
-        "cases": found,
+        "cases": cases.iter().map(provider_json).collect::<Vec<_>>(),
     })
 }
 
 pub(super) fn urls(cases: &[UrlCase]) -> Value {
-    let found: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            get_complete_url(case.api_base.as_deref(), case.stream).map_or_else(
-                |_failure| json!({"ok": false}),
-                |url| json!({"ok": true, "url": url}),
-            )
-        })
-        .collect();
+    let mut found = Vec::with_capacity(cases.len());
+    for case in cases {
+        match get_complete_url(case.api_base.as_deref(), case.stream) {
+            Ok(url) => found.push(json!({"ok": true, "url": url})),
+            Err(_failure) => found.push(json!({"ok": false})),
+        }
+    }
     json!({"urls": found})
 }
 
 pub(super) fn headers(cases: &[HeadersCase]) -> Value {
-    let found: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let mut merged = case.headers.clone();
-            validate_environment(&mut merged, case.api_key.as_ref());
-            json!(merged)
-        })
-        .collect();
+    let mut found = Vec::with_capacity(cases.len());
+    for case in cases {
+        let mut merged = case.headers.clone();
+        validate_environment(&mut merged, case.api_key.as_ref());
+        found.push(merged);
+    }
     json!({"headers": found})
 }
 

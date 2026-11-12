@@ -8,16 +8,19 @@ const DEFAULT_STREAM_MODE: &str = "messages-tuple";
 
 // an empty assistant_id counts as unset, like LiteLLM's truthiness test
 pub fn assistant_id(model: &str, options: &Object) -> Result<String, LangGraphFailure> {
-    match options.get("assistant_id") {
-        Some(Json::Text(id)) if !id.is_empty() => return Ok(id.clone()),
-        Some(Json::Text(_) | Json::Null) | None => {}
+    let chosen = match options.get("assistant_id") {
+        None | Some(Json::Null) => "",
+        Some(Json::Text(id)) => id.as_str(),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             return Err(LangGraphFailure::OptionType {
                 field: "assistant_id",
             });
         }
+    };
+    if chosen.is_empty() {
+        return Ok(model.split_once('/').map_or(model, |(_, id)| id).to_owned());
     }
-    Ok(model.split_once('/').map_or(model, |(_, id)| id).to_owned())
+    Ok(chosen.to_owned())
 }
 
 #[must_use]
