@@ -12,7 +12,6 @@ use super::support::{
 use crate::cache_key::derive::get_cache_key;
 use crate::cache_key::value::{KeyObject, KeyValue};
 use crate::handler::HandlerError;
-use crate::handler::kwargs::{clear_preset_key, key_request, set_input_param};
 use crate::handler::retrieve::{AsyncSupport, Retrieval, retrieve_from_cache};
 use crate::types::cache_type::CacheMode;
 use crate::types::call_type::CachingSupportedCallType;
@@ -32,11 +31,16 @@ fn stored_value() -> CacheValue {
 }
 
 fn expected_embedding_key(request_kwargs: &KeyObject, input: &KeyValue) -> String {
-    let cache = build_cache(Arc::new(RecordingBackend::new(ReadSupport::Both)));
-    let mut request = key_request(request_kwargs).expect("the key request builds");
-    clear_preset_key(&mut request);
-    set_input_param(&mut request, input);
-    get_cache_key(&mut request, &cache.key_settings, &cache.hooks).expect("the key derives")
+    let mut entries: Vec<(&str, KeyValue)> = Vec::with_capacity(request_kwargs.len());
+    for (name, value) in request_kwargs {
+        let entry = if name.as_str() == "input" {
+            input.clone()
+        } else {
+            value.clone()
+        };
+        entries.push((name.as_str(), entry));
+    }
+    expected_key(&entries)
 }
 
 fn seed_embedding_input(
