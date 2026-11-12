@@ -179,7 +179,7 @@ def test_model_sets_match_litellm(litellm_sets: dict[str, list[str]]) -> None:
 def test_families_are_listed() -> None:
     lib = (CRATE / "src/lib.rs").read_text()
     declared: list[str] = re.findall(r"^pub mod (\w+);$", lib, re.MULTILINE)
-    registered: list[str] = re.findall(r"^    (\w+)::register\(module\)\?;$", lib, re.MULTILINE)
+    registered: list[str] = re.findall(r"^    (\w+)::register,$", lib, re.MULTILINE)
     stubs = (PACKAGE / "_native.pyi").read_text()
     starred: list[str] = re.findall(
         r"^from betterlite\._native_(\w+) import \*$", stubs, re.MULTILINE

@@ -47,58 +47,56 @@ pub mod vector_search;
 pub mod video_calls;
 pub mod video_edits;
 
-fn register_first_families(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    a2a::register(module)?;
-    assistant_calls::register(module)?;
-    assistant_runs::register(module)?;
-    audio::register(module)?;
-    batch_calls::register(module)?;
-    batch_listing::register(module)?;
-    cache::register(module)?;
-    cache_backends::register(module)?;
-    completion::register(module)?;
-    container_calls::register(module)?;
-    container_files::register(module)?;
-    cost::register(module)?;
-    cost_extra::register(module)?;
-    decision_calls::register(module)?;
-    embeddings::register(module)?;
-    eval_calls::register(module)?;
-    eval_runs::register(module)?;
-    file_calls::register(module)?;
-    file_content::register(module)?;
-    genai::register(module)?;
-    guardrail_call::register(module)?;
-    images::register(module)?;
-    interactions::register(module)?;
-    mcp::register(module)?;
-    messages::register(module)?;
-    model_info::register(module)?;
-    moderation::register(module)?;
-    passthrough_calls::register(module)?;
-    provider::register(module)?;
-    proxy_client::register(module)?;
-    rag_calls::register(module)?;
-    realtime_calls::register(module)?;
-    rerank::register(module)?;
-    response_lifecycle::register(module)?;
-    responses::register(module)?;
-    router_call::register(module)?;
-    Ok(())
-}
+type FamilyRegister = fn(&Bound<'_, PyModule>) -> PyResult<()>;
 
-fn register_last_families(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    search_ocr::register(module)?;
-    skill_calls::register(module)?;
-    tokens::register(module)?;
-    tuning_calls::register(module)?;
-    vector_files::register(module)?;
-    vector_manage::register(module)?;
-    vector_search::register(module)?;
-    video_calls::register(module)?;
-    video_edits::register(module)?;
-    Ok(())
-}
+// The one explicit family list: a family task fills its stub and never edits these lines.
+const FAMILY_REGISTERS: [FamilyRegister; 45] = [
+    a2a::register,
+    assistant_calls::register,
+    assistant_runs::register,
+    audio::register,
+    batch_calls::register,
+    batch_listing::register,
+    cache::register,
+    cache_backends::register,
+    completion::register,
+    container_calls::register,
+    container_files::register,
+    cost::register,
+    cost_extra::register,
+    decision_calls::register,
+    embeddings::register,
+    eval_calls::register,
+    eval_runs::register,
+    file_calls::register,
+    file_content::register,
+    genai::register,
+    guardrail_call::register,
+    images::register,
+    interactions::register,
+    mcp::register,
+    messages::register,
+    model_info::register,
+    moderation::register,
+    passthrough_calls::register,
+    provider::register,
+    proxy_client::register,
+    rag_calls::register,
+    realtime_calls::register,
+    rerank::register,
+    response_lifecycle::register,
+    responses::register,
+    router_call::register,
+    search_ocr::register,
+    skill_calls::register,
+    tokens::register,
+    tuning_calls::register,
+    vector_files::register,
+    vector_manage::register,
+    vector_search::register,
+    video_calls::register,
+    video_edits::register,
+];
 
 #[pymodule]
 mod _native {
@@ -107,7 +105,7 @@ mod _native {
     use pyo3::exceptions::PyRuntimeError;
     use pyo3::prelude::*;
 
-    use super::{native_api, register_first_families, register_last_families};
+    use super::{FAMILY_REGISTERS, native_api};
 
     #[pyfunction]
     pub(super) const fn core_version() -> &'static str {
@@ -129,7 +127,9 @@ mod _native {
 
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {
-        register_first_families(module)?;
-        register_last_families(module)
+        for register in FAMILY_REGISTERS {
+            register(module)?;
+        }
+        Ok(())
     }
 }

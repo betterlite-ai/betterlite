@@ -15,6 +15,9 @@ deviations:
   - what: The 45 family stubs are `pub const fn register` in `pub mod` files, where the task text names them `pub(crate) fn register` in private modules.
     why: The workspace lints reject the private form, because clippy's unnecessary_wraps fires on a pub(crate) function that always returns Ok and missing_const_for_fn then wants the const.
     link: ""
+  - what: The family registration is one `const FAMILY_REGISTERS` array of `a2a::register` style entries in `src/lib.rs`, where the task text names one `<family>::register(module)?;` line per family.
+    why: Clippy's 40-line function limit cannot hold 45 calls plus the signature, and the review asked for one explicit list rather than a split at an arbitrary alphabetical point; `init` loops the array, so every family still registers with its error passed up.
+    link: ""
   - what: bundled_model_cost_json returns the pinned backup text as it is, including the fallback_generalizations key, where litellm.model_cost drops that key.
     why: Stripping needs a JSON round trip that reorders numbers and keys. The Python package removes the key when it loads the map, and test_model_cost_is_litellms compares the rest.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
