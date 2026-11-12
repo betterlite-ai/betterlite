@@ -9,4 +9,4 @@ deviations:
       an outside value, and 8192 bytes is far past any real Retry-After header. A rejected value only changes the sleep
       from the header's seconds to the exponential delay, which is why the reference and betterlite differ at exactly
       that input in the parser-byte-bound case.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L19-L70
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7212-L7221
