@@ -61,11 +61,8 @@ fn whole_count(value: &Json) -> Option<Json> {
     if number.as_i128().is_some() {
         return Some(value.clone());
     }
-    let float = number.as_f64()?;
-    if !float.is_finite() || float.trunc().to_bits() != float.to_bits() {
-        return None;
-    }
-    let whole = float.to_string().parse::<i128>().ok()?;
+    // Display prints a whole float without a fraction, so a fractional or infinite one fails to parse
+    let whole = number.as_f64()?.to_string().parse::<i128>().ok()?;
     Number::from_i128(whole).map(Json::Number)
 }
 
