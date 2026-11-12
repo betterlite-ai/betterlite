@@ -91,7 +91,7 @@ fn request_accepts_declared_values(#[case] input: &[u8]) {
 #[case::document_number(br#"{"model":"m","query":"q","documents":[7]}"#)]
 #[case::model_number(br#"{"model":7,"query":"q","documents":[]}"#)]
 fn request_rejects_missing_or_mistyped_fields(#[case] input: &[u8]) {
-    assert!(matches!(decode(input, RerankRecordKind::Request), Err(_)));
+    let _error = decode(input, RerankRecordKind::Request).unwrap_err();
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn response_retains_result_order_index_score_and_document() {
 #[case::id_number(br#"{"id":7}"#)]
 #[case::results_object(br#"{"results":{}}"#)]
 fn response_rejects_missing_or_mistyped_fields(#[case] input: &[u8]) {
-    assert!(matches!(decode(input, RerankRecordKind::Response), Err(_)));
+    let _error = decode(input, RerankRecordKind::Response).unwrap_err();
 }
 
 #[rstest]
@@ -246,10 +246,10 @@ fn compatibility_deviations() {
     assert_eq!(details.code, Some("decimal_out_of_range"));
     assert_eq!(details.location, None);
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e100_f64] {
-        assert!(Score::try_from(value).is_err());
+        let _error = Score::try_from(value).unwrap_err();
     }
-    assert_eq!(Score::try_from(0.125).unwrap().0.to_string(), "0.125");
-    assert_eq!(Score::try_from(-0.5).unwrap().0.to_string(), "-0.5");
+    assert_eq!(Score::try_from(0.125_f64).unwrap().0.to_string(), "0.125");
+    assert_eq!(Score::try_from(-0.5_f64).unwrap().0.to_string(), "-0.5");
 }
 
 #[test]

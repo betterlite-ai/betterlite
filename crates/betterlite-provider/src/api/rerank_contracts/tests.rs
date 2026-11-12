@@ -1,14 +1,14 @@
 #![cfg(test)]
 
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{
     RerankBilledUnits, RerankDocument, RerankResponse,
 };
+use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::{Value, json};
 use thiserror::Error;
 
 use super::{
@@ -25,75 +25,123 @@ enum FixtureError {
 
 #[derive(Default)]
 struct Fixture {
-    calls: Mutex<Vec<Value>>,
+    calls: Mutex<Vec<Json>>,
     refuse: bool,
 }
 
-fn text(value: &str) -> Json {
-    Json::Text(value.to_owned())
+fn parsed(source: &str) -> Json {
+    serde_json::from_str(source).unwrap()
 }
 
-fn optional_text(value: Option<&str>) -> Value {
+fn document(source: &str) -> RerankDocument {
+    serde_json::from_str(source).unwrap()
+}
+
+fn params(source: &str) -> Params {
+    serde_json::from_str(source).unwrap()
+}
+
+fn model_info(source: &str) -> RerankModelInfo {
+    serde_json::from_str(source).unwrap()
+}
+
+fn billed_units(source: &str) -> RerankBilledUnits {
+    serde_json::from_str(source).unwrap()
+}
+
+fn decimal(source: &str) -> Decimal {
+    source.parse().unwrap()
+}
+
+fn field<'json>(value: &'json Json, name: &str) -> Option<&'json Json> {
     match value {
-        Some(value) => json!(value),
-        None => json!(null),
+        Json::Object(fields) => fields.get(name),
+        _ => None,
     }
 }
 
-fn optional_number(value: Option<i64>) -> Value {
-    match value {
-        Some(value) => json!(value),
-        None => json!(null),
-    }
-}
-
-fn optional_bool(value: Option<bool>) -> Value {
-    match value {
-        Some(value) => json!(value),
-        None => json!(null),
-    }
-}
-
-fn rank_fields(values: Option<&[String]>) -> Value {
-    match values {
-        Some(values) => json!(values),
-        None => json!(null),
-    }
-}
-
-fn object_of(params: &Params) -> Value {
-    serde_json::to_value(Json::Object(
+fn object_of(params: &Params) -> Json {
+    Json::Object(
         params
             .iter()
             .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
-    ))
-    .unwrap()
+            .collect::<IndexMap<_, _>>(),
+    )
 }
 
-fn document(value: Value) -> RerankDocument {
-    serde_json::from_value(value).unwrap()
+fn record(request: &MapCohereRerankParams<'_>) -> Json {
+    let mut fields = IndexMap::new();
+    fields.insert(
+        "non_default_params".to_owned(),
+        object_of(request.non_default_params),
+    );
+    fields.insert("model".to_owned(), Json::Text(request.model.to_owned()));
+    fields.insert("drop_params".to_owned(), Json::Bool(request.drop_params));
+    fields.insert("query".to_owned(), Json::Text(request.query.to_owned()));
+    fields.insert(
+        "documents".to_owned(),
+        Json::List(
+            request
+                .documents
+                .iter()
+                .map(RerankDocument::as_json)
+                .collect(),
+        ),
+    );
+    insert_optionals(&mut fields, request);
+    Json::Object(fields)
 }
 
-fn params(value: Value) -> Params {
-    serde_json::from_value(value).unwrap()
+fn insert_optionals(fields: &mut IndexMap<String, Json>, request: &MapCohereRerankParams<'_>) {
+    fields.insert(
+        "custom_llm_provider".to_owned(),
+        request
+            .custom_llm_provider
+            .map_or(Json::Null, |provider| Json::Text(provider.to_owned())),
+    );
+    fields.insert(
+        "top_n".to_owned(),
+        request.top_n.map_or(Json::Null, |top_n| {
+            Json::Number(serde_json::Number::from(top_n))
+        }),
+    );
+    fields.insert(
+        "rank_fields".to_owned(),
+        request.rank_fields.as_deref().map_or(Json::Null, |names| {
+            Json::List(names.iter().map(|name| Json::Text(name.clone())).collect())
+        }),
+    );
+    fields.insert(
+        "return_documents".to_owned(),
+        request.return_documents.map_or(Json::Null, Json::Bool),
+    );
+    fields.insert(
+        "max_chunks_per_doc".to_owned(),
+        request.max_chunks_per_doc.map_or(Json::Null, |limit| {
+            Json::Number(serde_json::Number::from(limit))
+        }),
+    );
+    fields.insert(
+        "max_tokens_per_doc".to_owned(),
+        request.max_tokens_per_doc.map_or(Json::Null, |limit| {
+            Json::Number(serde_json::Number::from(limit))
+        }),
+    );
+    fields.insert(
+        "instruction".to_owned(),
+        request
+            .instruction
+            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
+    );
 }
 
-fn record(request: &MapCohereRerankParams<'_>) -> Value {
-    json!({
-        "non_default_params": object_of(request.non_default_params),
-        "model": request.model,
-        "drop_params": request.drop_params,
-        "query": request.query,
-        "documents": request.documents.iter().map(RerankDocument::as_json).collect::<Vec<_>>(),
-        "custom_llm_provider": optional_text(request.custom_llm_provider),
-        "top_n": optional_number(request.top_n),
-        "rank_fields": rank_fields(request.rank_fields),
-        "return_documents": optional_bool(request.return_documents),
-        "max_chunks_per_doc": optional_number(request.max_chunks_per_doc),
-        "max_tokens_per_doc": optional_number(request.max_tokens_per_doc),
-        "instruction": optional_text(request.instruction),
-    })
+impl Fixture {
+    fn recorded(&self) -> Vec<Json> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl BaseRerankConfig for Fixture {
@@ -117,156 +165,176 @@ impl BaseRerankConfig for Fixture {
         if self.refuse {
             return Err(FixtureError::Refused);
         }
-        self.calls.lock().unwrap().push(record(&request));
+        let recorded = record(&request);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(recorded);
         Ok(Params::from([("mapped".to_owned(), Json::Bool(true))]))
     }
+}
+
+fn projection_request<'request>(
+    non_default_params: Option<&'request mut Params>,
+    documents: &'request [RerankDocument],
+    rank_fields: Option<&'request [String]>,
+    return_documents: ReturnDocuments,
+) -> OptionalRerankParams<'request> {
+    OptionalRerankParams {
+        non_default_params,
+        model: "rerank-model",
+        drop_params: false,
+        query: "q",
+        documents,
+        custom_llm_provider: Some("cohere"),
+        top_n: Some(0_i64),
+        rank_fields,
+        return_documents,
+        max_chunks_per_doc: Some(0_i64),
+        max_tokens_per_doc: Some(3_i64),
+        instruction: Some(""),
+    }
+}
+
+fn project_fixture(fixture: &Fixture, documents: &[RerankDocument]) -> Params {
+    let mut original = params(r#"{"query":"old","top_n":9,"extension":"yes"}"#);
+    get_optional_rerank_params(
+        fixture,
+        projection_request(
+            Some(&mut original),
+            documents,
+            Some(&[String::from("body")]),
+            ReturnDocuments::Value(false),
+        ),
+    )
+    .unwrap();
+    original
 }
 
 #[test]
 fn rerank_option_projection() {
     let fixture = Fixture::default();
-    let documents = [document(json!("a")), document(json!({"body": "b"}))];
-    let mut original = params(json!({"query": "old", "top_n": 9, "extension": "yes"}));
+    let documents = [document(r#""a""#), document(r#"{"body":"b"}"#)];
+    let mut original = params(r#"{"query":"old","top_n":9,"extension":"yes"}"#);
     let returned = get_optional_rerank_params(
         &fixture,
-        OptionalRerankParams {
-            non_default_params: Some(&mut original),
-            model: "rerank-model",
-            drop_params: false,
-            query: "q",
-            documents: &documents,
-            custom_llm_provider: Some("cohere"),
-            top_n: Some(0),
-            rank_fields: Some(&[String::from("body")]),
-            return_documents: ReturnDocuments::Value(false),
-            max_chunks_per_doc: Some(0),
-            max_tokens_per_doc: Some(3),
-            instruction: Some(""),
-        },
+        projection_request(
+            Some(&mut original),
+            &documents,
+            Some(&[String::from("body")]),
+            ReturnDocuments::Value(false),
+        ),
     )
     .unwrap();
     assert_eq!(
         returned,
         Params::from([("mapped".to_owned(), Json::Bool(true))])
     );
-    let expected_map = json!({
-        "query": "q",
-        "top_n": 0,
-        "extension": "yes",
-        "documents": ["a", {"body": "b"}],
-        "return_documents": false,
-        "max_chunks_per_doc": 0,
-        "max_tokens_per_doc": 3,
-        "instruction": "",
-    });
-    assert_eq!(serde_json::to_value(&original).unwrap(), expected_map);
-    let calls = fixture.calls.lock().unwrap();
     assert_eq!(
-        calls[0],
-        json!({
-            "non_default_params": expected_map,
-            "model": "rerank-model",
-            "drop_params": false,
-            "query": "q",
-            "documents": ["a", {"body": "b"}],
-            "custom_llm_provider": "cohere",
-            "top_n": 0,
-            "rank_fields": ["body"],
-            "return_documents": false,
-            "max_chunks_per_doc": 0,
-            "max_tokens_per_doc": 3,
-            "instruction": "",
-        })
+        original,
+        params(
+            r#"{"query":"q","top_n":0,"extension":"yes","documents":["a",{"body":"b"}],"return_documents":false,"max_chunks_per_doc":0,"max_tokens_per_doc":3,"instruction":""}"#
+        )
     );
 }
 
 #[test]
-fn an_empty_or_absent_map_gets_a_new_one() {
+fn the_mapper_sees_the_overwritten_values() {
+    let fixture = Fixture::default();
+    let documents = [document(r#""a""#), document(r#"{"body":"b"}"#)];
+    let _original = project_fixture(&fixture, &documents);
+    let calls = fixture.recorded();
+    assert_eq!(calls.len(), 1_usize);
+    assert_eq!(
+        field(&calls[0], "non_default_params"),
+        Some(&parsed(
+            r#"{"query":"q","top_n":0,"extension":"yes","documents":["a",{"body":"b"}],"return_documents":false,"max_chunks_per_doc":0,"max_tokens_per_doc":3,"instruction":""}"#
+        ))
+    );
+    assert_eq!(
+        field(&calls[0], "rank_fields"),
+        Some(&parsed(r#"["body"]"#))
+    );
+    assert_eq!(
+        field(&calls[0], "return_documents"),
+        Some(&Json::Bool(false))
+    );
+    assert_eq!(
+        field(&calls[0], "custom_llm_provider"),
+        Some(&Json::Text(String::from("cohere")))
+    );
+}
+
+#[test]
+fn an_empty_map_is_not_mutated() {
     let fixture = Fixture::default();
     let mut empty = Params::new();
     let documents: [RerankDocument; 0] = [];
     get_optional_rerank_params(
         &fixture,
-        OptionalRerankParams {
-            non_default_params: Some(&mut empty),
-            model: "m",
-            drop_params: true,
-            query: "q",
-            documents: &documents,
-            custom_llm_provider: None,
-            top_n: None,
-            rank_fields: None,
-            return_documents: ReturnDocuments::Null,
-            max_chunks_per_doc: None,
-            max_tokens_per_doc: None,
-            instruction: None,
-        },
-    )
-    .unwrap();
-    get_optional_rerank_params(
-        &fixture,
-        OptionalRerankParams {
-            non_default_params: None,
-            model: "m",
-            drop_params: false,
-            query: "q",
-            documents: &documents,
-            custom_llm_provider: None,
-            top_n: None,
-            rank_fields: None,
-            return_documents: ReturnDocuments::Default,
-            max_chunks_per_doc: None,
-            max_tokens_per_doc: None,
-            instruction: None,
-        },
+        projection_request(Some(&mut empty), &documents, None, ReturnDocuments::Null),
     )
     .unwrap();
     assert!(empty.is_empty());
-    let calls = fixture.calls.lock().unwrap();
+    let calls = fixture.recorded();
     assert_eq!(
-        calls[0]["non_default_params"],
-        json!({"query": "q", "documents": []})
+        field(&calls[0], "non_default_params"),
+        Some(&parsed(r#"{"query":"q","documents":[]}"#))
     );
-    assert_eq!(calls[0]["return_documents"], json!(null));
+    assert_eq!(field(&calls[0], "return_documents"), Some(&Json::Null));
+}
+
+#[test]
+fn an_absent_map_gets_a_new_one_and_the_default_documents_value() {
+    let fixture = Fixture::default();
+    let documents: [RerankDocument; 0] = [];
+    get_optional_rerank_params(
+        &fixture,
+        projection_request(None, &documents, None, ReturnDocuments::Default),
+    )
+    .unwrap();
+    let calls = fixture.recorded();
     assert_eq!(
-        calls[1]["non_default_params"],
-        json!({"query": "q", "documents": [], "return_documents": true})
+        field(&calls[0], "non_default_params"),
+        Some(&parsed(
+            r#"{"query":"q","documents":[],"return_documents":true}"#
+        ))
     );
-    assert_eq!(calls[1]["return_documents"], json!(true));
+    assert_eq!(
+        field(&calls[0], "return_documents"),
+        Some(&Json::Bool(true))
+    );
 }
 
 #[test]
 fn an_existing_rank_fields_entry_is_not_overwritten() {
     let fixture = Fixture::default();
-    let documents = [document(json!("a"))];
-    let mut original = params(json!({"rank_fields": ["old"]}));
+    let documents = [document(r#""a""#)];
+    let mut original = params(r#"{"rank_fields":["old"]}"#);
     get_optional_rerank_params(
         &fixture,
-        OptionalRerankParams {
-            non_default_params: Some(&mut original),
-            model: "m",
-            drop_params: false,
-            query: "q",
-            documents: &documents,
-            custom_llm_provider: None,
-            top_n: None,
-            rank_fields: Some(&[String::from("body")]),
-            return_documents: ReturnDocuments::Null,
-            max_chunks_per_doc: None,
-            max_tokens_per_doc: None,
-            instruction: None,
-        },
+        projection_request(
+            Some(&mut original),
+            &documents,
+            Some(&[String::from("body")]),
+            ReturnDocuments::Null,
+        ),
     )
     .unwrap();
     assert_eq!(
         original.get("rank_fields"),
         Some(&Json::List(vec![Json::Text(String::from("old"))]))
     );
-    let calls = fixture.calls.lock().unwrap();
-    assert_eq!(calls[0]["rank_fields"], json!(["body"]));
+    let calls = fixture.recorded();
     assert_eq!(
-        calls[0]["non_default_params"]["rank_fields"],
-        json!(["old"])
+        field(&calls[0], "rank_fields"),
+        Some(&parsed(r#"["body"]"#))
+    );
+    assert_eq!(
+        field(&calls[0], "non_default_params"),
+        Some(&parsed(
+            r#"{"rank_fields":["old"],"query":"q","documents":["a"]}"#
+        ))
     );
 }
 
@@ -279,20 +347,7 @@ fn mapper_errors_travel_to_the_caller() {
     let documents: [RerankDocument; 0] = [];
     let outcome = get_optional_rerank_params(
         &fixture,
-        OptionalRerankParams {
-            non_default_params: None,
-            model: "m",
-            drop_params: false,
-            query: "q",
-            documents: &documents,
-            custom_llm_provider: None,
-            top_n: None,
-            rank_fields: None,
-            return_documents: ReturnDocuments::Null,
-            max_chunks_per_doc: None,
-            max_tokens_per_doc: None,
-            instruction: None,
-        },
+        projection_request(None, &documents, None, ReturnDocuments::Null),
     );
     assert!(matches!(outcome, Err(FixtureError::Refused)));
 }
@@ -312,32 +367,6 @@ fn rerank_base_defaults() {
             .unwrap(),
         Params::new()
     );
-    let supplied: RerankResponse = serde_json::from_value(json!({
-        "id": "r",
-        "results": [{"index": 2, "relevance_score": 0.125, "document": {"text": "t"}}],
-    }))
-    .unwrap();
-    let mut logging = RerankLogging::default();
-    let raw_response = RerankProviderResponse {
-        status_code: 200,
-        headers: Headers::new(),
-        body: Vec::new(),
-    };
-    let transformed = fixture
-        .transform_rerank_response(
-            supplied.clone(),
-            ResponseTransform {
-                model: "m",
-                raw_response: &raw_response,
-                logging: &mut logging,
-                api_key: None,
-                request_data: &Params::new(),
-                optional_params: &Params::new(),
-                litellm_params: &Params::new(),
-            },
-        )
-        .unwrap();
-    assert_eq!(transformed, supplied);
     let headers = HeaderMap::from([(
         String::from("retry-after"),
         Json::Number(serde_json::Number::from(2_u8)),
@@ -352,6 +381,39 @@ fn rerank_base_defaults() {
         }
     );
     assert_eq!(raised.to_string(), "slow");
+}
+
+#[test]
+fn the_base_response_transform_returns_the_supplied_response() {
+    let fixture = Fixture::default();
+    let supplied: RerankResponse = serde_json::from_str(
+        r#"{"id":"r","results":[{"index":2,"relevance_score":0.125,"document":{"text":"t"}}]}"#,
+    )
+    .unwrap();
+    let mut logging = RerankLogging::default();
+    let raw_response = RerankProviderResponse {
+        status_code: 200,
+        headers: Headers::new(),
+        body: Vec::new(),
+    };
+    let request_data = Params::new();
+    let optional_params = Params::new();
+    let litellm_params = Params::new();
+    let transformed = fixture
+        .transform_rerank_response(
+            supplied.clone(),
+            ResponseTransform {
+                model: "m",
+                raw_response: &raw_response,
+                logging: &mut logging,
+                api_key: None,
+                request_data: &request_data,
+                optional_params: &optional_params,
+                litellm_params: &litellm_params,
+            },
+        )
+        .unwrap();
+    assert_eq!(transformed, supplied);
 }
 
 #[test]
@@ -370,85 +432,81 @@ fn validate_environment_returns_the_supplied_headers() {
     assert_eq!(validated, headers);
 }
 
-fn model_info(value: Value) -> RerankModelInfo {
-    serde_json::from_value(value).unwrap()
-}
-
-fn billed_units(value: Value) -> RerankBilledUnits {
-    serde_json::from_value(value).unwrap()
-}
-
-fn decimal(text_value: &str) -> Decimal {
-    text_value.parse().unwrap()
-}
-
 #[rstest]
 #[case::priced(
-    json!({"input_cost_per_query": 0.125}),
-    json!({"search_units": 3, "total_tokens": 99}),
-    decimal("0.375")
+    Some(r#"{"input_cost_per_query":0.125}"#),
+    Some(r#"{"search_units":3,"total_tokens":99}"#),
+    "0.375"
 )]
 #[case::zero_units(
-    json!({"input_cost_per_query": 0.125}),
-    json!({"search_units": 0}),
-    Decimal::ZERO
+    Some(r#"{"input_cost_per_query":0.125}"#),
+    Some(r#"{"search_units":0}"#),
+    "0"
 )]
 #[case::negative_units(
-    json!({"input_cost_per_query": 0.125}),
-    json!({"search_units": -1}),
-    decimal("-0.125")
+    Some(r#"{"input_cost_per_query":0.125}"#),
+    Some(r#"{"search_units":-1}"#),
+    "-0.125"
 )]
 #[case::exact_small(
-    json!({"input_cost_per_query": 0.000000000000000001}),
-    json!({"search_units": 3}),
-    decimal("0.000000000000000003")
+    Some(r#"{"input_cost_per_query":0.000000000000000001}"#),
+    Some(r#"{"search_units":3}"#),
+    "0.000000000000000003"
 )]
-#[case::missing_info(Value::Null, json!({"search_units": 3}), Decimal::ZERO)]
-#[case::empty_info(json!({}), json!({"search_units": 3}), Decimal::ZERO)]
-#[case::null_price(json!({"input_cost_per_query": null}), json!({"search_units": 3}), Decimal::ZERO)]
-#[case::other_price_only(json!({"input_cost_per_token": 9.0}), json!({"search_units": 3}), Decimal::ZERO)]
-#[case::missing_units(json!({"input_cost_per_query": 0.125}), Value::Null, Decimal::ZERO)]
-#[case::empty_units(json!({"input_cost_per_query": 0.125}), json!({}), Decimal::ZERO)]
+#[case::missing_info(None, Some(r#"{"search_units":3}"#), "0")]
+#[case::empty_info(Some("{}"), Some(r#"{"search_units":3}"#), "0")]
+#[case::null_price(
+    Some(r#"{"input_cost_per_query":null}"#),
+    Some(r#"{"search_units":3}"#),
+    "0"
+)]
+#[case::other_price_only(
+    Some(r#"{"input_cost_per_token":9.0}"#),
+    Some(r#"{"search_units":3}"#),
+    "0"
+)]
+#[case::missing_units(Some(r#"{"input_cost_per_query":0.125}"#), None, "0")]
+#[case::empty_units(Some(r#"{"input_cost_per_query":0.125}"#), Some("{}"), "0")]
 #[case::total_tokens_only(
-    json!({"input_cost_per_query": 0.125}),
-    json!({"total_tokens": 99}),
-    Decimal::ZERO
+    Some(r#"{"input_cost_per_query":0.125}"#),
+    Some(r#"{"total_tokens":99}"#),
+    "0"
 )]
-#[case::null_units(json!({"input_cost_per_query": 0.125}), json!({"search_units": null}), Decimal::ZERO)]
-fn rerank_query_cost(#[case] info: Value, #[case] units: Value, #[case] expected: Decimal) {
+#[case::null_units(
+    Some(r#"{"input_cost_per_query":0.125}"#),
+    Some(r#"{"search_units":null}"#),
+    "0"
+)]
+fn rerank_query_cost(
+    #[case] info: Option<&str>,
+    #[case] counted: Option<&str>,
+    #[case] expected: &str,
+) {
     let fixture = Fixture::default();
-    let units = if units.is_null() {
-        None
-    } else {
-        Some(billed_units(units))
-    };
-    let info = if info.is_null() {
-        None
-    } else {
-        Some(model_info(info))
-    };
+    let info = info.map(model_info);
+    let counted = counted.map(billed_units);
     let (prompt, completion) =
-        fixture.calculate_rerank_cost("rerank-model", None, units.as_ref(), info.as_ref());
-    assert_eq!(prompt, expected);
+        fixture.calculate_rerank_cost("rerank-model", None, counted.as_ref(), info.as_ref());
+    assert_eq!(prompt, decimal(expected));
     assert_eq!(completion, Decimal::ZERO);
 }
 
 #[test]
 fn an_unrepresentable_cost_saturates() {
     let fixture = Fixture::default();
-    let info = RerankModelInfo {
+    let counted = billed_units(r#"{"search_units":2}"#);
+    let maximum = RerankModelInfo {
         input_cost_per_query: Some(Decimal::MAX),
     };
-    let units = billed_units(json!({"search_units": 2}));
     assert_eq!(
-        fixture.calculate_rerank_cost("m", None, Some(&units), Some(&info)),
+        fixture.calculate_rerank_cost("m", None, Some(&counted), Some(&maximum)),
         (Decimal::MAX, Decimal::ZERO)
     );
-    let negative = RerankModelInfo {
+    let minimum = RerankModelInfo {
         input_cost_per_query: Some(Decimal::MIN),
     };
     assert_eq!(
-        fixture.calculate_rerank_cost("m", None, Some(&units), Some(&negative)),
+        fixture.calculate_rerank_cost("m", None, Some(&counted), Some(&minimum)),
         (Decimal::MIN, Decimal::ZERO)
     );
 }
