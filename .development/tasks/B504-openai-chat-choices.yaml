@@ -333,5 +333,5 @@ pitfalls:
 - get_complete_url does substring detection and literal concatenation, not URL query-aware joining.
 budget:
   max_changed_lines: 2250
-  max_new_expects: 0
+  max_new_expects: 1
 review_level: security
