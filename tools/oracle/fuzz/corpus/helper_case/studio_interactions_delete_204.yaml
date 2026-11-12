@@ -1,0 +1,19 @@
+kind: helper
+name: studio-interactions-delete-204
+call:
+  studio_interactions:
+    calls:
+      - function: delete
+        status: 204
+        body: ""
+        interaction_id: "v1_a"
+      - function: delete
+        status: 200
+        body: "not json"
+        interaction_id: "v1_b"
+      - function: delete
+        status: 299
+        body: "<html>"
+        interaction_id: "v1_c"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,48 @@
+kind: helper
+name: studio-interactions-create-get-header-difference
+call:
+  studio_interactions:
+    calls:
+      - function: response
+        action: create
+        status: 200
+        headers:
+          Content-Length: "62"
+          X-RateLimit-Remaining-Requests: "9"
+          x-litellm-spoofed: "yes"
+          X-Request-Id: "r1"
+        body: '{"id": "v1_a", "status": "completed", "steps": [{"type": "text"}], "extra": {"k": 1}}'
+      - function: response
+        action: get
+        status: 200
+        headers:
+          Content-Length: "62"
+          X-RateLimit-Remaining-Requests: "9"
+          x-litellm-spoofed: "yes"
+          X-Request-Id: "r1"
+        body: '{"id": "v1_a", "status": "completed", "steps": [{"type": "text"}], "extra": {"k": 1}}'
+      - function: response
+        action: create
+        status: 200
+        headers: {Content-Length: "2"}
+        body: "{}"
+      - function: response
+        action: cancel
+        status: 200
+        body: '{"id": "v1_a", "status": "cancelled", "extra": 1}'
+      - function: stream_chunk
+        chunk: {event_type: "step.delta", index: 3, delta: {text: "a"}}
+      - function: stream_chunk
+        chunk: {}
+      - function: validate_environment
+        headers: {Content-Type: "text/plain", Api-Revision: "2026-05-07", X-Caller: "kept"}
+        api_key: "param-key"
+        with_params: true
+      - function: validate_environment
+        with_params: true
+        env: {GOOGLE_API_KEY: "env-key"}
+      - function: validate_environment
+        with_params: false
+        env: {GOOGLE_API_KEY: "env-key"}
+env: {}
+compare: {ignore: []}
