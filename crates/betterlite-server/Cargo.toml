@@ -37,6 +37,7 @@ caseless = "0.2.2"
 chrono = { workspace = true }
 email_address = "0.2.9"
 encoding_rs = "0.8.42"
+flate2 = "1.1.5"
 form_urlencoded = "1.2.2"
 futures-channel = { version = "0.3.34", features = ["sink"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await", "sink"] }

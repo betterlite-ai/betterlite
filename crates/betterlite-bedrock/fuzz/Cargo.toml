@@ -92,3 +92,10 @@ path = "fuzz_targets/bedrock_services_vector_stores.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_other_count_call"
+path = "fuzz_targets/bedrock_other_count_call.rs"
+test = false
+doc = false
+bench = false

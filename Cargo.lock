@@ -2899,6 +2899,7 @@ dependencies = [
  "deadpool-postgres",
  "email_address",
  "encoding_rs",
+ "flate2",
  "form_urlencoded",
  "futures-channel",
  "futures-util",
