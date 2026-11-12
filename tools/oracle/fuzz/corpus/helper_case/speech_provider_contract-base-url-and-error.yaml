@@ -1,0 +1,12 @@
+kind: helper
+name: speech-provider-contract-base-url-and-error-seed
+call:
+  speech_provider_contract:
+    function: base_url_and_error
+    headers: {}
+    api_bases: ["", https://mock/speech]
+    error_message: ""
+    status_code: 500
+    error_headers: {}
+env: {}
+compare: {ignore: []}
