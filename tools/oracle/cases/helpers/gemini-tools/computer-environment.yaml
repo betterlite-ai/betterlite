@@ -1,0 +1,57 @@
+kind: helper
+name: computer-environment
+call:
+  gemini_tools:
+    calls:
+      - tools:
+          - type: computer_use
+            environment: browser
+            excluded_predefined_functions:
+              - x
+        functions: []
+        web_search_options: null
+        tool_choice: none
+        service_tier: null
+        server_side_invocations: false
+        tool_config: null
+      - tools:
+          - computerUse:
+              environment: ENVIRONMENT_UNSPECIFIED
+              excludedPredefinedFunctions:
+                - y
+              junk: 1
+        functions: []
+        web_search_options: null
+        tool_choice: null
+        service_tier: null
+        server_side_invocations: false
+        tool_config: null
+      - tools:
+          - computer_use:
+              environment: bogus
+              excluded_predefined_functions: []
+        functions: []
+        web_search_options: null
+        tool_choice: null
+        service_tier: null
+        server_side_invocations: false
+        tool_config: null
+      - tools:
+          - type: computer_use
+        functions: []
+        web_search_options: null
+        tool_choice: null
+        service_tier: null
+        server_side_invocations: false
+        tool_config: null
+      - tools:
+          - computerUse: null
+        functions: []
+        web_search_options: null
+        tool_choice: null
+        service_tier: null
+        server_side_invocations: false
+        tool_config: null
+    settings: {}
+env: {}
+compare: {ignore: []}
