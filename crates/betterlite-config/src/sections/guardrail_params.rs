@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde::de::{Deserializer, IgnoredAny, MapAccess, Visitor};
 
-use self::environment::{PARAMS_DEPTH, resolve_map, resolve_params};
+use self::environment::{PARAMS_DEPTH, resolve_map, resolve_params, resolve_text};
+use self::error::GuardrailParamsError;
 use self::keys::{BASE_KEYS, PARAM_KEYS};
 use self::opaque::{ExactValue, OpaqueParams};
 use self::params::LitellmParams;
@@ -40,8 +41,8 @@ struct RawEntry {
     guardrail_id: Option<String>,
     guardrail_info: Option<OpaqueParams>,
     policy_template: Option<String>,
-    created_at: Option<DateTime<Utc>>,
-    updated_at: Option<DateTime<Utc>>,
+    created_at: Option<String>,
+    updated_at: Option<String>,
     #[serde(default)]
     litellm_params: KnownParams,
 }
@@ -108,28 +109,62 @@ impl Section for Raw {
     {
         let mut settings = Settings::default();
         for entry in self.guardrails {
-            let guardrail_info = entry
-                .guardrail_info
-                .map(|info| OpaqueParams(resolve_map(info.0, PARAMS_DEPTH, lookup)));
-            let built = resolve_params(entry.litellm_params.0, lookup)
-                .and_then(|params| LitellmParams::try_from(OpaqueParams(params)));
-            match built {
-                Ok(litellm_params) => settings.guardrails.push(Guardrail {
-                    guardrail_id: entry.guardrail_id,
-                    guardrail_name: entry.guardrail_name,
-                    litellm_params,
-                    guardrail_info,
-                    policy_template: entry.policy_template,
-                    created_at: entry.created_at,
-                    updated_at: entry.updated_at,
-                    team_id: None,
-                }),
+            let shown = resolve_text(entry.guardrail_name.clone(), lookup)
+                .unwrap_or_else(|| entry.guardrail_name.clone());
+            match entry.build(lookup) {
+                Ok(guardrail) => settings.guardrails.push(guardrail),
                 Err(error) => settings.rejected.push(RejectedGuardrail {
-                    guardrail_name: entry.guardrail_name,
+                    guardrail_name: shown,
                     reason: error.to_string(),
                 }),
             }
         }
         Ok(settings)
     }
+}
+
+impl RawEntry {
+    fn build<L>(self, lookup: &L) -> Result<Guardrail, GuardrailParamsError>
+    where
+        L: EnvironmentLookup,
+    {
+        let guardrail_name = resolve_text(self.guardrail_name, lookup).ok_or_else(|| {
+            GuardrailParamsError::MissingField {
+                field: "guardrail_name".to_owned(),
+            }
+        })?;
+        let params = resolve_params(self.litellm_params.0, lookup)?;
+        Ok(Guardrail {
+            guardrail_id: self.guardrail_id.and_then(|id| resolve_text(id, lookup)),
+            guardrail_name,
+            litellm_params: LitellmParams::try_from(OpaqueParams(params))?,
+            guardrail_info: self
+                .guardrail_info
+                .map(|info| OpaqueParams(resolve_map(info.0, PARAMS_DEPTH, lookup))),
+            policy_template: self
+                .policy_template
+                .and_then(|template| resolve_text(template, lookup)),
+            created_at: resolve_time("created_at", self.created_at, lookup)?,
+            updated_at: resolve_time("updated_at", self.updated_at, lookup)?,
+            team_id: None,
+        })
+    }
+}
+
+fn resolve_time<L>(
+    field: &str,
+    value: Option<String>,
+    lookup: &L,
+) -> Result<Option<DateTime<Utc>>, GuardrailParamsError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(text) = value.and_then(|text| resolve_text(text, lookup)) else {
+        return Ok(None);
+    };
+    text.parse()
+        .map(Some)
+        .map_err(|_unparsed| GuardrailParamsError::InvalidField {
+            field: field.to_owned(),
+        })
 }

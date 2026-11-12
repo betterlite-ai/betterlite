@@ -66,6 +66,16 @@ where
         .map_or(GuardrailValue::Null, GuardrailValue::SignedInteger))
 }
 
+pub(super) fn resolve_text<L>(text: String, lookup: &L) -> Option<String>
+where
+    L: EnvironmentLookup,
+{
+    let Some(name) = text.strip_prefix(ENV_PREFIX) else {
+        return Some(text);
+    };
+    lookup.lookup(name).filter(|variable| !variable.is_empty())
+}
+
 pub(super) fn resolve_map<L>(
     map: BTreeMap<String, GuardrailValue>,
     depth: usize,
@@ -107,13 +117,7 @@ where
                 .collect(),
         ),
         GuardrailValue::Text(text) => {
-            if let Some(name) = text.strip_prefix(ENV_PREFIX) {
-                return lookup
-                    .lookup(name)
-                    .filter(|variable| !variable.is_empty())
-                    .map_or(GuardrailValue::Null, GuardrailValue::Text);
-            }
-            GuardrailValue::Text(text)
+            resolve_text(text, lookup).map_or(GuardrailValue::Null, GuardrailValue::Text)
         }
         GuardrailValue::Null
         | GuardrailValue::Boolean(_)

@@ -26,6 +26,61 @@ fn env_references_resolve_in_text_keys() {
     assert_eq!(fields.api_base.as_deref(), Some("https://env.test"));
 }
 
+const ENTRY_REFERENCES: &str = "guardrails:\n  - guardrail_name: os.environ/ENTRY_NAME\n    guardrail_id: os.environ/ENTRY_ID\n    policy_template: os.environ/ENTRY_TEMPLATE\n    created_at: os.environ/ENTRY_CREATED\n    updated_at: os.environ/ENTRY_UPDATED\n    litellm_params: {guardrail: custom, mode: pre_call}\n";
+
+#[test]
+fn env_entry_text_fields_resolve() {
+    let settings = load(
+        ENTRY_REFERENCES,
+        &[
+            ("ENTRY_NAME", "from-env"),
+            ("ENTRY_ID", "id-9"),
+            ("ENTRY_TEMPLATE", "tpl-9"),
+            ("ENTRY_CREATED", "2025-01-01T00:00:00Z"),
+            ("ENTRY_UPDATED", "2025-02-03T04:05:06Z"),
+        ],
+    );
+    let held = &settings.guardrails[0];
+    assert_eq!(held.guardrail_name, "from-env");
+    assert_eq!(held.guardrail_id.as_deref(), Some("id-9"));
+    assert_eq!(held.policy_template.as_deref(), Some("tpl-9"));
+    assert_eq!(
+        held.created_at.unwrap().to_rfc3339(),
+        "2025-01-01T00:00:00+00:00"
+    );
+    assert_eq!(
+        held.updated_at.unwrap().to_rfc3339(),
+        "2025-02-03T04:05:06+00:00"
+    );
+}
+
+#[rstest]
+#[case::missing(&[("ENTRY_NAME", "n")])]
+#[case::empty(&[("ENTRY_NAME", "n"), ("ENTRY_ID", ""), ("ENTRY_TEMPLATE", ""), ("ENTRY_CREATED", ""), ("ENTRY_UPDATED", "")])]
+fn env_entry_missing_or_empty_variable_is_unset(#[case] environment: &[(&str, &str)]) {
+    let settings = load(ENTRY_REFERENCES, environment);
+    let held = &settings.guardrails[0];
+    assert_eq!(held.guardrail_id, None);
+    assert_eq!(held.policy_template, None);
+    assert_eq!(held.created_at, None);
+    assert_eq!(held.updated_at, None);
+}
+
+#[rstest]
+#[case::name_missing(&[], "os.environ/ENTRY_NAME", "missing field guardrail_name")]
+#[case::created_bad(&[("ENTRY_NAME", "n"), ("ENTRY_CREATED", "yesterday")], "n", "invalid field created_at")]
+#[case::updated_bad(&[("ENTRY_NAME", "n"), ("ENTRY_UPDATED", "soon")], "n", "invalid field updated_at")]
+fn env_entry_bad_value_rejects_only_that_entry(
+    #[case] environment: &[(&str, &str)],
+    #[case] name: &str,
+    #[case] reason: &str,
+) {
+    let settings = load(ENTRY_REFERENCES, environment);
+    assert!(settings.guardrails.is_empty());
+    assert_eq!(settings.rejected[0].guardrail_name, name);
+    assert_eq!(settings.rejected[0].reason, reason);
+}
+
 #[rstest]
 #[case::missing(&[])]
 #[case::empty(&[("GUARD_BASE", "")])]
