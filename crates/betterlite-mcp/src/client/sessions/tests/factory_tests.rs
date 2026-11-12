@@ -7,14 +7,17 @@ use rstest::rstest;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use crate::client::sessions::client::SessionClient;
 use crate::client::sessions::factory::{
     AuthSource, RedirectGuard, RequestCredential, TlsSettings, TlsVerification,
 };
 use crate::client::sessions::transport::TransportType;
-use crate::credentials::{AuthValue, McpAuthType, ResolvedAuth};
+use crate::credentials::{AuthValue, McpAuthType, McpClient as CredentialClient, ResolvedAuth};
 use secrecy::SecretString;
 
-use super::fixture::{FakeRuntime, Plan, PresenceAuth, aws_signer, build_client, make_config};
+use super::fixture::{
+    FakeRuntime, Plan, PresenceAuth, aws_signer, build_client, make_config, settings,
+};
 
 #[rstest]
 #[case::explicit(true, true, true, AuthSource::Explicit)]
@@ -145,6 +148,35 @@ fn factory_debug_output_names_the_headers_without_printing_their_values() {
     let rendered = format!("{config:?}");
     assert!(rendered.contains("X-API-Key"));
     assert!(!rendered.contains("sk-secret"));
+}
+
+#[tokio::test]
+async fn factory_applies_a_boxed_aws_auth_from_the_legacy_constructor() {
+    let config = make_config(|_value| {});
+    let credentials = CredentialClient::new(
+        config.server_url.clone(),
+        McpAuthType::None,
+        None,
+        None,
+        BTreeMap::new(),
+        Duration::from_secs(60),
+        None,
+        Some(Box::new(PresenceAuth { header_name: None })),
+    );
+    let client = SessionClient {
+        runtime: Arc::new(FakeRuntime::new(Plan::default())),
+        auth: credentials,
+        settings: settings(&config),
+        tracker: TaskTracker::new(),
+        caller_cancelled: CancellationToken::new(),
+        last_initialize_instructions: None,
+    };
+    let http = client.create_http_client_config(&BTreeMap::new(), Duration::from_secs(60), false);
+    assert_eq!(http.auth, AuthSource::Aws);
+    assert!(matches!(
+        http.credential,
+        Some(RequestCredential::Resolved(_))
+    ));
 }
 
 #[test]

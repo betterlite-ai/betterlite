@@ -729,9 +729,10 @@ pub(crate) fn build_client(
         config.auth_header_name,
         config.extra_headers,
         config.timeout,
-        config.resolved_auth,
-        config.aws_auth,
-    );
+        None,
+        None,
+    )
+    .with_shared_auth(config.resolved_auth, config.aws_auth);
     SessionClient {
         runtime: Arc::new(runtime),
         auth: credentials,

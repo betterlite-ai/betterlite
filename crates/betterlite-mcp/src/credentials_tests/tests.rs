@@ -108,7 +108,7 @@ fn assert_resolved_auth_behavior() {
         None,
         BTreeMap::new(),
         Duration::from_secs(12),
-        Some(Arc::new(auth)),
+        Some(Box::new(auth)),
         None,
     );
     assert_eq!(resolved_client.timeout, Duration::from_secs(12));
@@ -137,7 +137,7 @@ fn assert_slot_and_empty_behavior() {
             injected_headers
         },
         Duration::from_secs(60),
-        Some(Arc::new(SlotAuth)),
+        Some(Box::new(SlotAuth)),
         None,
     );
     assert_eq!(

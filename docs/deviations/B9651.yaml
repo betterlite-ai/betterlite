@@ -12,3 +12,6 @@ deviations:
   - what: A buffered (non-streamed) response body larger than 16 MiB fails with a body-too-large error instead of being buffered without a limit.
     why: The gateway's HTTP limits set 16 MiB for a buffered body, and MCP JSON-RPC answers stay far below it; an unbounded read would let an upstream grow the gateway's memory.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L461-L495
+  - what: A buffered (non-streamed) response read ends at its first empty body chunk instead of continuing to read.
+    why: A data-less chunk carries no bytes, and a source that only emits them would otherwise never end the read; reqwest's byte stream does not split a body into empty chunks on its own, so a real response reads the same bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L461-L495

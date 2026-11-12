@@ -18,10 +18,13 @@ use axum::response::Response;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
+use betterlite_http::error::HttpError;
 use betterlite_http::mcp_sigv4::McpSigV4Auth;
 use betterlite_http::mcp_sigv4::cache::CredentialCache;
 use betterlite_http::proxy::limits::TransportLimits;
 use bytes::Bytes;
+use futures_util::StreamExt as _;
+use futures_util::stream;
 use http::header::{HeaderMap, HeaderName, HeaderValue, LOCATION, WWW_AUTHENTICATE};
 use http::{Method, StatusCode};
 use rstest::rstest;
@@ -53,6 +56,7 @@ const CA_FILE: &str = concat!(
 const SERVER_BODY: &str = "server body";
 const RETAINED: &[u8] = b"retained prefix";
 const BODY_LIMIT: usize = 0x0010_0000;
+const CAPTURE_PROBE_LIMIT: usize = 0x1000;
 
 fn defaults() -> HttpClientConfig {
     HttpClientConfig {
@@ -229,6 +233,22 @@ impl RecordingCapture {
     }
 }
 
+// the fixture's bodies are a few bytes, so a stream that passes this limit is not the one under test
+async fn read_until_probe_limit(body: &mut BodyChunks<'_>) -> usize {
+    let mut read = 0_usize;
+    while read <= CAPTURE_PROBE_LIMIT {
+        let Some(chunk) = body.next_chunk().await else {
+            break;
+        };
+        match chunk {
+            Ok(bytes) if bytes.is_empty() => break,
+            Ok(bytes) => read = read.saturating_add(bytes.len()),
+            Err(_) => break,
+        }
+    }
+    read
+}
+
 impl ErrorCapture for RecordingCapture {
     fn capture<'body>(
         &'body self,
@@ -236,13 +256,7 @@ impl ErrorCapture for RecordingCapture {
         mut body: BodyChunks<'body>,
     ) -> Pin<Box<dyn Future<Output = CapturedBody> + Send + 'body>> {
         Box::pin(async move {
-            let mut read = 0_usize;
-            while let Some(chunk) = body.next_chunk().await {
-                match chunk {
-                    Ok(bytes) => read = read.saturating_add(bytes.len()),
-                    Err(_) => break,
-                }
-            }
+            let read = read_until_probe_limit(&mut body).await;
             self.calls
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -825,6 +839,17 @@ async fn the_capture_stream_enforces_its_byte_limit(#[case] limit: usize) {
             McpHttpError::BodyTooLarge { limit: error_limit } if error_limit == limit
         ));
     }
+}
+
+#[tokio::test]
+async fn a_buffered_read_ends_at_an_empty_chunk() {
+    let chunks: Vec<Result<Vec<u8>, HttpError>> = vec![Ok(Vec::new()), Ok(b"later".to_vec())];
+    let mut body = HttpBody {
+        state: BodyState::Live(stream::iter(chunks).boxed()),
+        read_timeout: Duration::from_secs(1),
+        body_limit: BODY_LIMIT,
+    };
+    assert_eq!(body.read_all().await.unwrap(), Vec::<u8>::new());
 }
 
 #[rstest]

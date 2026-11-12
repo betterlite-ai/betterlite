@@ -258,6 +258,10 @@ impl ResponseBody for HttpBody {
         let mut content = Vec::new();
         while let Some(chunk) = self.next_chunk().await {
             let bytes = chunk?;
+            // a data-less chunk carries no body bytes, so ending here keeps a stream of them from never ending
+            if bytes.is_empty() {
+                break;
+            }
             let total =
                 content
                     .len()

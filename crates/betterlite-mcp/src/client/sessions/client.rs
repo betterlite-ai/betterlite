@@ -111,19 +111,25 @@ impl<Runtime: McpRuntime> SessionClient<Runtime> {
         timeout: Duration,
         explicit_auth: bool,
     ) -> HttpClientConfig {
+        let has_aws = self.auth.aws_auth.is_some() || self.auth.boxed_aws_auth.is_some();
         let auth = if explicit_auth {
             AuthSource::Explicit
         } else if self.auth.resolved_auth.is_some() {
             AuthSource::Resolved
-        } else if self.auth.aws_auth.is_some() {
+        } else if has_aws {
             AuthSource::Aws
         } else {
             AuthSource::None
         };
-        let credential = match (&self.auth.resolved_auth, &self.auth.aws_auth) {
-            (Some(resolved), _) => Some(RequestCredential::Resolved(Arc::clone(resolved))),
-            (None, Some(aws)) => Some(RequestCredential::AwsSigV4(Arc::clone(aws))),
-            (None, None) => None,
+        let credential = match (
+            self.auth.resolved_auth.as_ref(),
+            self.auth.aws_auth.as_ref(),
+            self.auth.boxed_aws_auth.as_ref(),
+        ) {
+            (Some(resolved), _, _) => Some(RequestCredential::Resolved(Arc::clone(resolved))),
+            (None, Some(signer), _) => Some(RequestCredential::AwsSigV4(Arc::clone(signer))),
+            (None, None, Some(boxed)) => Some(RequestCredential::Resolved(Arc::clone(boxed))),
+            (None, None, None) => None,
         };
         HttpClientConfig {
             headers: headers.clone(),
