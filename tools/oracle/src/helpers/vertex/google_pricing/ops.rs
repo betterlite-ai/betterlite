@@ -13,7 +13,6 @@ use betterlite_vertex::google_pricing::grounding::{
 };
 use betterlite_vertex::google_pricing::routing::{CostMetric, cost_router};
 use betterlite_vertex::google_pricing::token::{TokenRequest, cost_per_token};
-use betterlite_vertex::google_pricing::usage::GoogleUsage;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -135,7 +134,7 @@ fn cost_value(
 
 fn priced(input: &Input) -> Result<Value, Box<HelperError>> {
     let record = required_record(input)?;
-    let usage: GoogleUsage = input.usage.google_usage();
+    let usage = input.usage.google_usage();
     let pricing = FixturePricing {
         calls: RefCell::new(Vec::new()),
     };

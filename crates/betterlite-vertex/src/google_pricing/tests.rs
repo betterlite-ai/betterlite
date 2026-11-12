@@ -69,7 +69,7 @@ fn google_usage(
         tokens: Usage {
             prompt_tokens: prompt,
             completion_tokens: completion,
-            total_tokens: prompt + completion,
+            total_tokens: prompt.checked_add(completion).unwrap(),
             prompt_tokens_details: details,
             completion_tokens_details: None,
             numeric_extras: BTreeMap::new(),
@@ -125,13 +125,8 @@ impl FixturePricing {
     fn uplift_locations(&self) -> Vec<Option<String>> {
         self.uplift_locations.lock().unwrap().clone()
     }
-}
 
-impl GenericTokenPricing for FixturePricing {
-    fn generic_cost_per_token(
-        &self,
-        request: &GenericTokenRequest<'_>,
-    ) -> Result<GenericCostResult, TokenCostError> {
+    fn record(&self, request: &GenericTokenRequest<'_>) {
         self.calls.lock().unwrap().push(RecordedCall {
             model: request.model.to_owned(),
             custom_llm_provider: request.custom_llm_provider.to_owned(),
@@ -140,6 +135,15 @@ impl GenericTokenPricing for FixturePricing {
             prompt_tokens: request.usage.prompt_tokens,
             completion_tokens: request.usage.completion_tokens,
         });
+    }
+}
+
+impl GenericTokenPricing for FixturePricing {
+    fn generic_cost_per_token(
+        &self,
+        request: &GenericTokenRequest<'_>,
+    ) -> Result<GenericCostResult, TokenCostError> {
+        self.record(request);
         if self.fail {
             return Err(TokenCostError::UnknownModel);
         }
@@ -162,11 +166,11 @@ impl GenericTokenPricing for FixturePricing {
     }
 }
 
-fn character_request<'request>(
+fn character_request(
     prompt_characters: Option<Decimal>,
     completion_characters: Option<Decimal>,
-    vertex_location: Option<&'request str>,
-) -> CharacterRequest<'request> {
+    vertex_location: Option<&str>,
+) -> CharacterRequest<'_> {
     CharacterRequest {
         model: "gemini-1.5-pro-002",
         custom_llm_provider: "vertex_ai",
@@ -614,12 +618,14 @@ fn maps_grounding_bills_one_prompt_or_every_query(
     #[case] unit: Option<&str>,
     #[case] expected: &str,
 ) {
-    let source = match unit {
-        Some(value) => format!(
-            r#"{{"google_maps_grounding_cost_per_query": 0.014, "web_search_billing_unit": "{value}"}}"#
-        ),
-        None => r#"{"google_maps_grounding_cost_per_query": 0.014}"#.to_owned(),
-    };
+    let source = unit.map_or_else(
+        || r#"{"google_maps_grounding_cost_per_query": 0.014}"#.to_owned(),
+        |value| {
+            format!(
+                r#"{{"google_maps_grounding_cost_per_query": 0.014, "web_search_billing_unit": "{value}"}}"#
+            )
+        },
+    );
     let entry = model_record(&source);
     let cost = maps_grounding_cost(&maps_usage(Some(3)), &entry).unwrap();
     assert_eq!(cost.normalize().to_string(), expected);

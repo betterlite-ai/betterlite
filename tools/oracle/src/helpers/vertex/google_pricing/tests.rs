@@ -7,6 +7,10 @@ use serde_json::json;
 
 use crate::case::HelperCase;
 
+fn decode(source: &str) -> super::input::Input {
+    serde_json::from_str(source).unwrap()
+}
+
 #[test]
 fn helper_seeds_select_google_pricing() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
@@ -33,20 +37,21 @@ fn helper_seeds_select_google_pricing() {
 
 #[test]
 fn the_operation_reaches_the_production_character_pricing() {
-    let input: super::input::Input = serde_json::from_value(json!({
-        "operation": "cost_per_character",
-        "model": "gemini-1.5-pro-002",
-        "custom_llm_provider": "vertex_ai",
-        "record": {
-            "input_cost_per_character": 0.000000625,
-            "input_cost_per_character_above_128k_tokens": 0.00000125,
-            "output_cost_per_character": 0.0000025,
-        },
-        "usage": {"prompt_tokens": 100, "completion_tokens": 20},
-        "prompt_characters": 32001,
-        "completion_characters": 40,
-    }))
-    .unwrap();
+    let input = decode(
+        r#"{
+            "operation": "cost_per_character",
+            "model": "gemini-1.5-pro-002",
+            "custom_llm_provider": "vertex_ai",
+            "record": {
+                "input_cost_per_character": 0.000000625,
+                "input_cost_per_character_above_128k_tokens": 0.00000125,
+                "output_cost_per_character": 0.0000025
+            },
+            "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+            "prompt_characters": 32001,
+            "completion_characters": 40
+        }"#,
+    );
     let value = super::ops::run(&input).unwrap();
     assert_eq!(
         value,
@@ -60,17 +65,18 @@ fn the_operation_reaches_the_production_character_pricing() {
 
 #[test]
 fn the_operation_records_a_token_fallback_and_its_missing_location() {
-    let input: super::input::Input = serde_json::from_value(json!({
-        "operation": "cost_per_character",
-        "model": "gemini-1.5-pro-002",
-        "custom_llm_provider": "vertex_ai",
-        "record": {"output_cost_per_character": 0.5, "regional_endpoint_uplift_multiplier": 1.25},
-        "usage": {"prompt_tokens": 5, "completion_tokens": 10},
-        "completion_characters": 10,
-        "service_tier": "priority",
-        "vertex_location": "us-east5",
-    }))
-    .unwrap();
+    let input = decode(
+        r#"{
+            "operation": "cost_per_character",
+            "model": "gemini-1.5-pro-002",
+            "custom_llm_provider": "vertex_ai",
+            "record": {"output_cost_per_character": 0.5, "regional_endpoint_uplift_multiplier": 1.25},
+            "usage": {"prompt_tokens": 5, "completion_tokens": 10},
+            "completion_characters": 10,
+            "service_tier": "priority",
+            "vertex_location": "us-east5"
+        }"#,
+    );
     let value = super::ops::run(&input).unwrap();
     assert_eq!(
         value,
@@ -82,8 +88,8 @@ fn the_operation_records_a_token_fallback_and_its_missing_location() {
                 "provider": "vertex_ai",
                 "service_tier": "priority",
                 "vertex_location": null,
-                "prompt_tokens": 5,
-                "completion_tokens": 10,
+                "prompt_tokens": 5_i64,
+                "completion_tokens": 10_i64,
             }],
         })
     );
@@ -91,19 +97,20 @@ fn the_operation_records_a_token_fallback_and_its_missing_location() {
 
 #[test]
 fn an_unknown_input_field_is_rejected() {
-    let unknown = serde_json::from_value::<super::input::Input>(
-        json!({"operation": "cost_router", "unexpected": 1}),
+    let unknown = serde_json::from_str::<super::input::Input>(
+        r#"{"operation": "cost_router", "unexpected": true}"#,
     );
     assert!(unknown.unwrap_err().to_string().contains("unexpected"));
 }
 
 #[test]
 fn a_missing_record_reports_the_failure() {
-    let input: super::input::Input = serde_json::from_value(json!({
-        "operation": "web_search_cost",
-        "usage": {"prompt_tokens": 1, "completion_tokens": 0},
-    }))
-    .unwrap();
+    let input = decode(
+        r#"{
+            "operation": "web_search_cost",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 0}
+        }"#,
+    );
     let failure = super::ops::run(&input).unwrap_err();
     assert!(failure.message.contains("record"));
 }

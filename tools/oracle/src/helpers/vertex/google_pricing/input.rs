@@ -8,7 +8,7 @@ use serde_json::value::RawValue;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Operation {
+pub(crate) enum Operation {
     CostRouter,
     CostPerCharacter,
     CostPerToken,
@@ -18,36 +18,36 @@ pub(super) enum Operation {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum SearchEntry {
+pub(crate) enum SearchEntry {
     Gemini,
     VertexGemini,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
-    pub(super) operation: Operation,
+pub(crate) struct Input {
+    pub(crate) operation: Operation,
     #[serde(default)]
-    pub(super) model: String,
+    pub(crate) model: String,
     #[serde(default)]
-    pub(super) custom_llm_provider: String,
+    pub(crate) custom_llm_provider: String,
     #[serde(default)]
-    pub(super) call_type: String,
-    pub(super) record: Option<Box<RawValue>>,
+    pub(crate) call_type: String,
+    pub(crate) record: Option<Box<RawValue>>,
     #[serde(default)]
-    pub(super) usage: UsageInput,
-    pub(super) prompt_characters: Option<Decimal>,
-    pub(super) completion_characters: Option<Decimal>,
-    pub(super) service_tier: Option<String>,
-    pub(super) vertex_location: Option<String>,
+    pub(crate) usage: UsageInput,
+    pub(crate) prompt_characters: Option<Decimal>,
+    pub(crate) completion_characters: Option<Decimal>,
+    pub(crate) service_tier: Option<String>,
+    pub(crate) vertex_location: Option<String>,
     // both LiteLLM entry points run the same shared search calculation, so only Python needs to pick one
     #[serde(rename = "entry")]
-    pub(super) _entry: Option<SearchEntry>,
+    pub(crate) _entry: Option<SearchEntry>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct UsageInput {
+pub(crate) struct UsageInput {
     prompt_tokens: i64,
     completion_tokens: i64,
     prompt_tokens_details: Option<DetailsInput>,
@@ -68,10 +68,11 @@ struct ServerToolUseInput {
 }
 
 impl UsageInput {
-    pub(super) fn google_usage(&self) -> GoogleUsage {
-        let mut details: Option<PromptTokensDetails> = None;
-        if let Some(source) = self.prompt_tokens_details.as_ref() {
-            details = Some(PromptTokensDetails {
+    pub(crate) fn google_usage(&self) -> GoogleUsage {
+        let details = self
+            .prompt_tokens_details
+            .as_ref()
+            .map(|source| PromptTokensDetails {
                 text_tokens: None,
                 audio_tokens: None,
                 image_tokens: None,
@@ -89,12 +90,11 @@ impl UsageInput {
                 cached_tokens: None,
                 cached_tokens_details: None,
             });
-        }
         GoogleUsage {
             tokens: Usage {
                 prompt_tokens: self.prompt_tokens,
                 completion_tokens: self.completion_tokens,
-                total_tokens: self.prompt_tokens + self.completion_tokens,
+                total_tokens: self.prompt_tokens.saturating_add(self.completion_tokens),
                 prompt_tokens_details: details,
                 completion_tokens_details: None,
                 numeric_extras: BTreeMap::new(),
