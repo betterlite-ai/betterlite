@@ -2631,6 +2631,14 @@ dependencies = [
 [[package]]
 name = "betterlite-pyhost"
 version = "0.1.0"
+dependencies = [
+ "pyo3",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-python"
