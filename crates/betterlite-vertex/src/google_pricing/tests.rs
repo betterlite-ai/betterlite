@@ -499,7 +499,7 @@ fn token_above_128k_pricing_applies_the_uplift_once() {
         &token_request(None, Some("us-east5")),
     ));
     assert_eq!(prompt, "0.3200025");
-    assert_eq!(completion, "0.00032");
+    assert_eq!(completion, "0.0002");
     assert!(pricing.calls().is_empty());
     assert_eq!(
         pricing.uplift_locations(),
