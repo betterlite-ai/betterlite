@@ -5246,9 +5246,9 @@ dependencies = [
 
 [[package]]
 name = "google-cloud-wkt"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75baa147c141fa2b11047827e7ff4eea3a84ab00c3d2cf44fccd132b2ed326cf"
+checksum = "75d00ec306dbc2cf7adf222409ec22515c39308124e3d357ecb163ffa61172ba"
 dependencies = [
  "base64 0.23.1",
  "bytes",
