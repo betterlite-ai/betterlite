@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-signature
+call:
+  b3545: {"function": "summary", "protocol": "messages", "response": {"stop_reason": "compaction", "content": [{"type": "compaction", "signature": " ", "content": "the summary"}]}}
+env: {}
+compare:
+  ignore: []
