@@ -121,22 +121,7 @@ pub(crate) fn run(
     let payload = &input.0;
     let mut fields = Fields::default();
     match payload.function {
-        Function::Count => {
-            let count = require(payload.count.as_ref(), "count")?;
-            let outcome = plan(
-                RetryCounts {
-                    request: count.request_num_retries,
-                    router: count.router_num_retries,
-                    deployment: count.deployment_num_retries,
-                },
-                &policies(count),
-                count.error.class,
-                count.error.status,
-                count.model_group.as_deref(),
-            );
-            fields.num_retries = Some(outcome.num_retries);
-            fields.policy_applies = Some(outcome.policy_applies);
-        }
+        Function::Count => count(require(payload.count.as_ref(), "count")?, &mut fields),
         Function::Reset => fields.policy = Some(RetryPolicy::default()),
         Function::Eligibility => {
             let eligibility = require(payload.eligibility.as_ref(), "eligibility")?;
@@ -162,11 +147,23 @@ pub(crate) fn run(
     Ok(ProbeOutput::RetryPolicy(Output(Box::new(fields))))
 }
 
-fn policies(count: &CountInput) -> RetryPolicies {
-    RetryPolicies {
-        global: count.retry_policy.clone(),
-        model_group: count.model_group_retry_policy.clone().unwrap_or_default(),
-    }
+fn count(count: &CountInput, fields: &mut Fields) {
+    let outcome = plan(
+        RetryCounts {
+            request: count.request_num_retries,
+            router: count.router_num_retries,
+            deployment: count.deployment_num_retries,
+        },
+        &RetryPolicies {
+            global: count.retry_policy.clone(),
+            model_group: count.model_group_retry_policy.clone().unwrap_or_default(),
+        },
+        count.error.class,
+        count.error.status,
+        count.model_group.as_deref(),
+    );
+    fields.num_retries = Some(outcome.num_retries);
+    fields.policy_applies = Some(outcome.policy_applies);
 }
 
 fn availability(step: &EligibilityStep) -> Availability {
