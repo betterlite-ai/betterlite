@@ -19,6 +19,7 @@ use super::{
     VertexMediaRequest, VertexPartnerRequest, VertexServiceRequest, XaiMistralRequest,
 };
 use crate::aiohttp_openai_dispatch::AiohttpOpenAi;
+use crate::api::responses_provider_contract::records::{Headers, IdRequest, Params};
 use crate::openai_dispatch::OpenAi;
 use crate::prepared::deployment::Deployment;
 
@@ -65,7 +66,12 @@ fn catalog() -> CatalogCapabilities {
 #[case::rerank(OperationRequest::Rerank(RerankRequest))]
 #[case::file(OperationRequest::File(FileRequest))]
 #[case::batch(OperationRequest::Batch(BatchRequest))]
-#[case::responses(OperationRequest::Responses(ResponsesRequest))]
+#[case::responses(OperationRequest::Responses(ResponsesRequest::Cancel(IdRequest {
+    response_id: String::new(),
+    api_base: String::new(),
+    litellm_params: Params::new(),
+    headers: Headers::new(),
+})))]
 #[case::transcription(OperationRequest::Transcription(TranscriptionRequest))]
 #[case::speech(OperationRequest::Speech(SpeechRequest))]
 #[case::messages(OperationRequest::Messages(MessagesRequest))]
