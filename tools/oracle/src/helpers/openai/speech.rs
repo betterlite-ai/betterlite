@@ -85,11 +85,10 @@ fn client_view(input: &Input) -> Result<Value, SpeechError> {
         ClientKind::Sync
     };
     let client = select_client(&connection, kind)?;
-    let key_is_given = client
-        .api_key
-        .as_ref()
-        .map(|key| key.expose_secret().as_str())
-        == input.client.api_key.as_deref();
+    let key_is_given = client.api_key.as_ref().map_or_else(
+        || input.client.api_key.is_none(),
+        |key| input.client.api_key.as_deref() == Some(key.expose_secret()),
+    );
     Ok(json!({
         "kind": client.kind.label(),
         "base_url": client.base_url.as_str(),

@@ -12,7 +12,7 @@ use futures_util::stream;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use indexmap::IndexMap;
-use serde_json::Value;
+use serde_json::{Value, json};
 use thiserror::Error;
 
 use super::input::Reply;
@@ -42,9 +42,9 @@ pub(super) struct Fixture {
 impl Fixture {
     pub(super) fn new(reply: Option<&Reply>) -> Result<Self, FixtureError> {
         let absent = Reply::default();
-        let reply = reply.unwrap_or(&absent);
+        let given = reply.unwrap_or(&absent);
         let mut headers = HeaderMap::new();
-        for (name, value) in &reply.headers {
+        for (name, value) in &given.headers {
             headers.append(
                 HeaderName::from_bytes(name.as_bytes())
                     .map_err(|source| FixtureError::HeaderName { source })?,
@@ -52,12 +52,12 @@ impl Fixture {
                     .map_err(|source| FixtureError::HeaderValue { source })?,
             );
         }
-        let mut chunks = reply.chunks.clone();
-        if let Some(text) = &reply.text {
+        let mut chunks = given.chunks.clone();
+        if let Some(text) = &given.text {
             chunks.push(text.as_bytes().to_vec());
         }
         Ok(Self {
-            status: reply.status,
+            status: given.status,
             headers,
             chunks,
             seen: OnceLock::new(),
@@ -74,7 +74,7 @@ impl SpeechTransport for Fixture {
         ready(Ok(SpeechReply {
             status: self.status,
             headers: self.headers.clone(),
-            body: stream::iter(self.chunks.iter().cloned().map(Ok)).boxed(),
+            body: stream::iter(self.chunks.clone().into_iter().map(Ok)).boxed(),
         }))
     }
 }

@@ -399,6 +399,22 @@ fn assert_logged_projection(record: &Recorded) {
 }
 
 async fn assert_wired_logging(record: &Recorded, options: &SpeechOptions) {
+    let (additional, input) = wired_logging(options).await;
+    let Json::Object(fields) = additional else {
+        panic!("the additional args are an object");
+    };
+    assert_eq!(
+        fields.get("complete_input_dict"),
+        Some(&Json::Object(record.body.clone()))
+    );
+    assert_eq!(
+        fields.get("api_base"),
+        Some(&Json::Text(String::from("https://speech.test/v1/")))
+    );
+    assert_eq!(input, Json::Text(String::from("Hello speech")));
+}
+
+async fn wired_logging(options: &SpeechOptions) -> (Json, Json) {
     let mut state = super::logging::state();
     let redactor = super::logging::redactor();
     let sink = super::logging::Sink::default();
@@ -428,20 +444,12 @@ async fn assert_wired_logging(record: &Recorded, options: &SpeechOptions) {
     let additional = state
         .model_call_details
         .get("additional_args")
-        .expect("pre_call stored the additional args");
-    let Json::Object(fields) = additional else {
-        panic!("the additional args are an object");
-    };
-    assert_eq!(
-        fields.get("complete_input_dict"),
-        Some(&Json::Object(record.body.clone()))
-    );
-    assert_eq!(
-        fields.get("api_base"),
-        Some(&Json::Text(String::from("https://speech.test/v1/")))
-    );
-    assert_eq!(
-        state.model_call_details.get("input"),
-        Some(&Json::Text(String::from("Hello speech")))
-    );
+        .expect("pre_call stored the additional args")
+        .clone();
+    let input = state
+        .model_call_details
+        .get("input")
+        .expect("pre_call stored the input")
+        .clone();
+    (additional, input)
 }

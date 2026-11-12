@@ -11,64 +11,64 @@ use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
-    pub(super) client: ClientSpec,
-    pub(super) request: Request,
+pub(crate) struct Input {
+    pub(crate) client: ClientSpec,
+    pub(crate) request: Request,
     #[serde(default)]
-    pub(super) reply: Option<Reply>,
+    pub(crate) reply: Option<Reply>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ClientSpec {
-    pub(super) timeout: u64,
-    pub(super) max_retries: u32,
+pub(crate) struct ClientSpec {
+    pub(crate) timeout: u64,
+    pub(crate) max_retries: u32,
     #[serde(default)]
-    pub(super) api_key: Option<String>,
+    pub(crate) api_key: Option<String>,
     #[serde(default)]
-    pub(super) api_base: Option<String>,
+    pub(crate) api_base: Option<String>,
     #[serde(default)]
-    pub(super) organization: Option<String>,
+    pub(crate) organization: Option<String>,
     #[serde(default)]
-    pub(super) project: Option<String>,
+    pub(crate) project: Option<String>,
     #[serde(default)]
-    pub(super) aspeech: Option<bool>,
+    pub(crate) aspeech: Option<bool>,
     #[serde(default)]
-    pub(super) supplied: Option<SuppliedKind>,
+    pub(crate) supplied: Option<SuppliedKind>,
     #[serde(default)]
-    pub(super) shared_session: bool,
+    pub(crate) shared_session: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum SuppliedKind {
+pub(crate) enum SuppliedKind {
     Sync,
     Async,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Request {
-    pub(super) model: String,
-    pub(super) input: String,
-    pub(super) voice: String,
+pub(crate) struct Request {
+    pub(crate) model: String,
+    pub(crate) input: String,
+    pub(crate) voice: String,
     #[serde(default)]
-    pub(super) response_format: Option<SpeechFormat>,
+    pub(crate) response_format: Option<SpeechFormat>,
     #[serde(default)]
-    pub(super) speed: Option<Decimal>,
+    pub(crate) speed: Option<Decimal>,
     #[serde(default)]
-    pub(super) instructions: Option<String>,
+    pub(crate) instructions: Option<String>,
     #[serde(default)]
-    pub(super) extra_headers: IndexMap<String, String>,
+    pub(crate) extra_headers: IndexMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct Reply {
-    pub(super) status: u16,
-    pub(super) headers: Vec<(String, String)>,
-    pub(super) chunks: Vec<Vec<u8>>,
-    pub(super) text: Option<String>,
+pub(crate) struct Reply {
+    pub(crate) status: u16,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) chunks: Vec<Vec<u8>>,
+    pub(crate) text: Option<String>,
 }
 
 pub(super) fn options(request: &Request) -> SpeechOptions {
