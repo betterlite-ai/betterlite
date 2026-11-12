@@ -1,0 +1,11 @@
+kind: helper
+name: mistral-options-absent-class-defaults
+call:
+  mistral_options:
+    steps:
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+      - kind: prompt
+env: {}
+compare: {ignore: []}

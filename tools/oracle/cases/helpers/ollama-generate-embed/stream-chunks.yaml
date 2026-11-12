@@ -1,0 +1,34 @@
+kind: helper
+name: ollama-generate-stream-chunks
+env: {}
+compare: {ignore: []}
+call:
+  b8156:
+    op: stream
+    lines:
+      - '{"response": "hello", "done": false}'
+      - '{"response": "<think>why", "done": false}'
+      - '{"response": "more", "done": false}'
+      - '{"response": "answer</think>", "done": false}'
+      - '{"response": "a<think>b</think>c", "done": false}'
+      - '{"response": "", "thinking": "held", "done": false}'
+      - '{"response": "", "done": false}'
+      - '{"response": null, "done": false}'
+      - '{"response": "  ", "done": false}'
+      - '{"done": false, "thinking": "only"}'
+      - '{"response": "tail", "done": true, "prompt_eval_count": 2, "eval_count": 3}'
+      - '{"response": "", "done": true}'
+      - '{"response": "", "done": true, "prompt_eval_count": 2}'
+      - '{"response": "", "done": true, "eval_count": 2}'
+      - '{"response": "", "done": true, "prompt_eval_count": 0, "eval_count": 0}'
+      - '{"response": 5, "done": true}'
+      - 'not json'
+      - ''
+      - '   '
+      - 'null'
+      - '0'
+      - 'false'
+      - '[]'
+      - '{}'
+      - '{"response": 5, "done": false}'
+      - '{"response": "x"}'

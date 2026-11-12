@@ -1,0 +1,35 @@
+kind: helper
+name: tool-choice-and-seed-replacement
+call:
+  mistral_options:
+    steps:
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [tool_choice, auto]
+          - [seed, 7]
+        optional_params:
+          extra_body: {keep: 1}
+          tool_choice: caller
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [tool_choice, required]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [tool_choice, {type: function}]
+          - [bogus, 1]
+        optional_params:
+          tool_choice: caller
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [tool_choice, none]
+          - [seed, 0]
+env: {}
+compare: {ignore: []}
