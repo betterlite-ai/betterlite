@@ -15,6 +15,7 @@ cargo-fuzz = true
 betterlite-openai = { path = "../../betterlite-openai" }
 betterlite-provider = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "gdc_auth_payload"

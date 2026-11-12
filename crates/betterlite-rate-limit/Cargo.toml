@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
 serde.workspace = true
+workspace-hack.workspace = true
 
 [lints]
 workspace = true

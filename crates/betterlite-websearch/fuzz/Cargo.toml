@@ -15,6 +15,7 @@ cargo-fuzz = true
 betterlite-websearch = { path = ".." }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.145"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "call_transformation"

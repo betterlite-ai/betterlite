@@ -9,6 +9,7 @@ publish.workspace = true
 async-trait = "0.1.92"
 indexmap = "2.14.2"
 thiserror.workspace = true
+workspace-hack.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

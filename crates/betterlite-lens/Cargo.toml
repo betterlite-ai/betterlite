@@ -22,6 +22,7 @@ sha2 = "0.11.1"
 tempfile = "3.27.0"
 thiserror.workspace = true
 tokio.workspace = true
+workspace-hack.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

@@ -14,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-auth = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "budget_window"

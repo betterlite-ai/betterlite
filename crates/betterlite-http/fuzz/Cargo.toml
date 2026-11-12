@@ -16,6 +16,7 @@ betterlite-config = { path = "../../betterlite-config" }
 betterlite-http = { path = ".." }
 libfuzzer-sys = "0.4.9"
 url = "2.5.8"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "openai_mock_transport"

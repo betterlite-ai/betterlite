@@ -14,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-azure = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "azure_arc_identity"

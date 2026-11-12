@@ -10,6 +10,7 @@ betterlite-config = { path = "../betterlite-config" }
 rust_decimal.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+workspace-hack.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

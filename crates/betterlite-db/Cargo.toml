@@ -45,6 +45,7 @@ tokio-postgres-rustls-improved.workspace = true
 tracing.workspace = true
 unicode-normalization = "0.1.26"
 uuid.workspace = true
+workspace-hack.workspace = true
 
 [dev-dependencies]
 aws-smithy-types = "=1.9.1"

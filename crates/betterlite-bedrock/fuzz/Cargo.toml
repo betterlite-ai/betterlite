@@ -15,6 +15,7 @@ cargo-fuzz = true
 betterlite-bedrock = { path = ".." }
 bytes = "1.12.1"
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "nova_data_url"

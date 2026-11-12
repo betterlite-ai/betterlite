@@ -14,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-cache = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "azure_blob_cache_body"

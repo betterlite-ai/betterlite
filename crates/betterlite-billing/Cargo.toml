@@ -13,6 +13,7 @@ opentelemetry-otlp = { version = "0.33.1", default-features = false, features = 
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["internal-logs", "metrics"] }
 thiserror.workspace = true
 tracing.workspace = true
+workspace-hack.workspace = true
 
 [dev-dependencies]
 opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["metrics", "testing"] }

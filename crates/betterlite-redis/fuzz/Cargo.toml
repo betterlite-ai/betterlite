@@ -13,6 +13,7 @@ workspace = true
 betterlite-redis = { path = ".." }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "redis_info"

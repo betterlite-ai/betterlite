@@ -14,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-error = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "provider_error"

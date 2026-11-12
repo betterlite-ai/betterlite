@@ -16,6 +16,7 @@ thiserror.workspace = true
 tokio.workspace = true
 typed-path = "0.13.0"
 uuid.workspace = true
+workspace-hack.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

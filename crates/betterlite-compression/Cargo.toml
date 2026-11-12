@@ -10,6 +10,7 @@ regex.workspace = true
 serde_json = "1.0.154"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+workspace-hack.workspace = true
 
 [lints]
 workspace = true

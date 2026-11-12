@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 betterlite-models = { path = "../betterlite-models" }
 pyo3 = { version = "0.30.1", features = ["abi3-py310"] }
 thiserror.workspace = true
+workspace-hack.workspace = true
 
 [lints]
 workspace = true

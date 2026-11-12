@@ -21,6 +21,7 @@ indexmap = "2.14.2"
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
 tokio = { workspace = true }
+workspace-hack.workspace = true
 
 [[bin]]
 name = "gitlab_templates"

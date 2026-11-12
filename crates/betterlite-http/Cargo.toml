@@ -42,6 +42,7 @@ unicode-normalization = "0.1.26"
 url = "2.5.8"
 uuid.workspace = true
 webpki-roots = "1.0.11"
+workspace-hack.workspace = true
 zip = { version = "9.1.0", default-features = false, features = ["bzip2", "deflate-flate2-zlib", "lzma"] }
 
 [dev-dependencies]

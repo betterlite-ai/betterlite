@@ -15,6 +15,7 @@ cargo-fuzz = true
 betterlite = { path = ".." }
 chrono.workspace = true
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "crontab_trigger"

@@ -15,6 +15,7 @@ cargo-fuzz = true
 betterlite-models = { path = ".." }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "hf_model_config"

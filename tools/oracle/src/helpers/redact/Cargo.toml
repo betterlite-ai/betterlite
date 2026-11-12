@@ -13,6 +13,7 @@ betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+workspace-hack.workspace = true
 
 [dev-dependencies]
 betterlite-oracle = { path = "../../.." }

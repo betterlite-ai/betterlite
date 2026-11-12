@@ -100,8 +100,9 @@ deny = [
   { crate = "sqlx", use-instead = "tokio-postgres" },
   # the tokenizer download is hf-hub's own client; xet-client and xet-runtime reach reqwest through it
   # betterlite-http depends on betterlite-secret-managers through betterlite-config, so the secret readers cannot use its client
+  # workspace-hack is cargo-hakari's generated crate: it names reqwest only to pin its features and has no code
   # Google's Rust SDK sends through its own client: google-cloud-auth for Vertex credentials (B1301), google-cloud-gax-internal for Speech (B1358)
-  { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle", "betterlite-guardrails", "betterlite-secret-managers", "google-cloud-auth", "google-cloud-gax-internal", "hf-hub", "reqwest-middleware", "xet-client", "xet-runtime"] },
+  { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle", "betterlite-guardrails", "betterlite-secret-managers", "google-cloud-auth", "google-cloud-gax-internal", "hf-hub", "reqwest-middleware", "workspace-hack", "xet-client", "xet-runtime"] },
   { crate = "betterlite-router", wrappers = ["betterlite-oracle", "betterlite-router-fuzz", "betterlite-server"] },
   { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-oracle", "betterlite-oracle-server", "betterlite-server-fuzz"] },
 ]

@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 betterlite-context = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 [[bin]]
 name = "cached_json"
 path = "fuzz_targets/cached_json.rs"

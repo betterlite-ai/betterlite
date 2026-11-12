@@ -35,6 +35,7 @@ tracing.workspace = true
 unicode-general-category = "1.1.0"
 unicode_titlecase = "2.5.0"
 url = "2.5.8"
+workspace-hack.workspace = true
 
 [dev-dependencies]
 betterlite-auth = { path = "../betterlite-auth" }

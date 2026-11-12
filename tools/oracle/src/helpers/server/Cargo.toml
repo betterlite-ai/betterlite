@@ -46,6 +46,7 @@ tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "ti
 tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+workspace-hack.workspace = true
 
 [dev-dependencies]
 betterlite-oracle = { path = "../../.." }

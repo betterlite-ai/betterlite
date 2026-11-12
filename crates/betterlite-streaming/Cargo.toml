@@ -19,6 +19,7 @@ serde_json = "1.0.154"
 thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+workspace-hack.workspace = true
 
 [dev-dependencies]
 betterlite-config = { path = "../betterlite-config" }

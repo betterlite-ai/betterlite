@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 betterlite-tracing = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "cursors"

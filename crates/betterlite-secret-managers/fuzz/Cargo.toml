@@ -16,6 +16,7 @@ base64 = "0.23.1"
 betterlite-secret-managers = { path = ".." }
 libfuzzer-sys = "0.4.9"
 secrecy.workspace = true
+workspace-hack.workspace = true
 
 [[bin]]
 name = "aws_primary_secret"

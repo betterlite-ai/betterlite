@@ -16,6 +16,7 @@ betterlite-mcp = { path = ".." }
 chrono = { version = "0.4.45", default-features = false }
 libfuzzer-sys = "0.4.9"
 secrecy = "0.10.3"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "session_token"

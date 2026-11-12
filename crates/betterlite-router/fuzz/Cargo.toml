@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 betterlite-router = { path = ".." }
 libfuzzer-sys = "0.4.9"
+workspace-hack.workspace = true
 
 [[bin]]
 name = "route_value"
