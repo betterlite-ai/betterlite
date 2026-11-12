@@ -127,6 +127,7 @@ fn parse_created_at(value: &str) -> Option<i64> {
     if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=61).contains(&second) {
         return None;
     }
+    // strptime rejects a day past the month's end and year 0, so LiteLLM falls back to now: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L255-L268
     let date = NaiveDate::from_ymd_opt(
         i32::try_from(year).ok()?,
         u32::try_from(month).ok()?,
