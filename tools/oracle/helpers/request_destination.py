@@ -138,9 +138,7 @@ def resolve_call(input_value: Json) -> Json:
     )
 
 
-def reject_call(input_value: Json) -> Json:
-    call = SINGLE_REJECT.validate_python(input_value)
-    litellm.provider_url_destination_allowed_hosts = call["allowed_hosts"]
+def single_outcome(call: SingleRejectCall) -> Json:
     try:
         reject_url_valued_destination(call["field"], call["value"])
     except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L423
@@ -148,17 +146,25 @@ def reject_call(input_value: Json) -> Json:
     return None
 
 
-def reject_data_call(input_value: Json) -> Json:
-    call = DATA_REJECT.validate_python(input_value)
-    litellm.provider_url_destination_allowed_hosts = call["allowed_hosts"]
+def data_outcome(call: DataRejectCall) -> Json:
     data = cast("dict[str, object]", call["data"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L394-L408
     try:
-        litellm_pre_call_utils._reject_url_valued_destinations(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L394
-            data
-        )
+        litellm_pre_call_utils._reject_url_valued_destinations(data)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L394
     except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L423
         return rejection_facts(error)
     return None
+
+
+def reject_call(input_value: Json) -> Json:
+    call = SINGLE_REJECT.validate_python(input_value)
+    litellm.provider_url_destination_allowed_hosts = call["allowed_hosts"]
+    return single_outcome(call)
+
+
+def reject_data_call(input_value: Json) -> Json:
+    call = DATA_REJECT.validate_python(input_value)
+    litellm.provider_url_destination_allowed_hosts = call["allowed_hosts"]
+    return data_outcome(call)
 
 
 def tags_call(input_value: Json) -> Json:
