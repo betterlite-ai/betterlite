@@ -321,6 +321,10 @@ fn content_unwraps_an_empty_or_repeated_metadata_segment() {
         (Some(String::new()), "cipher".to_owned())
     );
     assert_eq!(
+        unwrap_encrypted_content("litellm_enc:;"),
+        (Some(String::new()), String::new())
+    );
+    assert_eq!(
         unwrap_encrypted_content(&format!("litellm_enc:{CONTENT_DOUBLE_METADATA};c")),
         (Some("ab".to_owned()), "c".to_owned())
     );
@@ -331,7 +335,6 @@ fn content_unwraps_an_empty_or_repeated_metadata_segment() {
 #[case::absent_delimiter("litellm_enc:bW9kZWxfaWQ6ZGVwX2E=")]
 #[case::invalid_utf8("litellm_enc:/w==;cipher")]
 #[case::invalid_padding("litellm_enc:a;cipher")]
-#[case::junk_only("litellm_enc:;")]
 fn content_returns_the_input_when_it_cannot_unwrap(#[case] wrapped_content: &str) {
     assert_eq!(
         unwrap_encrypted_content(wrapped_content),

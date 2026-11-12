@@ -189,8 +189,7 @@ fn content_wrapper(contents: &[ContentBuild], ids: &[String]) -> Value {
     for encoded in ids {
         let ((model_id, content), diagnostic) = observed(|| unwrap_encrypted_content(encoded));
         id_results.push(json!({
-            "model_id": model_id,
-            "content": content,
+            "decoded": { "model_id": model_id, "content": content },
             "diagnostic": diagnostic,
         }));
     }

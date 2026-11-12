@@ -44,13 +44,14 @@ pub fn wrap_encrypted_content(encrypted_content: &str, model_id: &str) -> String
 
 #[must_use]
 pub fn unwrap_encrypted_content(wrapped_content: &str) -> (Option<String>, String) {
-    let Some(rest) = wrapped_content.strip_prefix("litellm_enc:") else {
+    if !wrapped_content.starts_with("litellm_enc:") {
+        return (None, wrapped_content.to_owned());
+    }
+    let Some((metadata, original_content)) = wrapped_content.split_once(';') else {
         return (None, wrapped_content.to_owned());
     };
-    let Some((metadata_b64, original_content)) = rest.split_once(';') else {
-        return (None, wrapped_content.to_owned());
-    };
-    let mut padded = metadata_b64.to_owned();
+    let metadata_b64 = metadata.replace("litellm_enc:", "");
+    let mut padded = metadata_b64;
     match padded.chars().count().checked_rem(4) {
         Some(0) => {}
         Some(remainder) => padded.push_str(&"=".repeat(4_usize.saturating_sub(remainder))),
@@ -66,15 +67,17 @@ pub fn unwrap_encrypted_content(wrapped_content: &str) -> (Option<String>, Strin
 }
 
 pub(super) fn decode_item_entry(bytes: &[u8]) -> CodecDecoding {
-    let decoded = from_utf8(bytes).ok().and_then(decode_encrypted_item_id);
-    let (model_id, restored_id) = match decoded {
-        Some(item) => (Some(item.model_id), Some(item.item_id)),
-        None => (None, None),
-    };
-    CodecDecoding {
-        custom_llm_provider: None,
-        model_id,
-        restored_id,
+    match from_utf8(bytes).ok().and_then(decode_encrypted_item_id) {
+        Some(item) => CodecDecoding {
+            custom_llm_provider: None,
+            model_id: Some(item.model_id),
+            restored_id: Some(item.item_id),
+        },
+        None => CodecDecoding {
+            custom_llm_provider: None,
+            model_id: None,
+            restored_id: None,
+        },
     }
 }
 

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from types import TracebackType
 from typing import Literal, NotRequired, Self, TypeAlias, TypedDict
 
@@ -97,10 +98,99 @@ def _decoded(decoded: DecodedResponseId) -> dict[str, Json]:
     }
 
 
-def _item(decoded: dict[str, str] | None) -> dict[str, Json] | None:
+def _item(decoded: dict[str, str] | None) -> Json:
     if decoded is None:
         return None
     return {"model_id": decoded["model_id"], "item_id": decoded["item_id"]}
+
+
+def _decode_item(encoded: str) -> Json:
+    decoded = ResponsesAPIRequestUtils._decode_encrypted_item_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L395
+        encoded
+    )
+    return _item(decoded)
+
+
+def _decode_content(encoded: str) -> Json:
+    model_id, content = ResponsesAPIRequestUtils._unwrap_encrypted_content_with_model_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L434
+        encoded
+    )
+    return {"model_id": model_id, "content": content}
+
+
+def _decode_container(encoded: str) -> Json:
+    decoded = ResponsesAPIRequestUtils._decode_container_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L730
+        encoded
+    )
+    return _decoded(decoded)
+
+
+def _item_build(item: ItemBuild) -> Json:
+    encoded = ResponsesAPIRequestUtils._build_encrypted_item_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L385
+        item["model_id"], item["item_id"]
+    )
+    return {"encoded": encoded, "decoded": _decode_item(encoded)}
+
+
+def _content_build(build: ContentBuild) -> Json:
+    wrapped = ResponsesAPIRequestUtils._wrap_encrypted_content_with_model_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L421
+        build["encrypted_content"], build["model_id"]
+    )
+    return {"wrapped": wrapped, "unwrapped": _decode_content(wrapped)}
+
+
+def _container_build(container: ContainerBuild) -> Json:
+    encoded = ResponsesAPIRequestUtils._build_container_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L713
+        container["custom_llm_provider"], container["model_id"], container["container_id"]
+    )
+    return {"encoded": encoded, "decoded": _decode_container(encoded)}
+
+
+def _decoded_results(ids: list[str], decode: Callable[[str], Json]) -> list[Json]:
+    results: list[Json] = []
+    for encoded in ids:
+        with Diagnostics() as diagnostics:
+            decoded = decode(encoded)
+            diagnostic = diagnostics.take()
+        results.append({"decoded": decoded, "diagnostic": diagnostic})
+    return results
+
+
+def _roundtrip(
+    key: str, builds: list[Json], ids: list[str], decode: Callable[[str], Json]
+) -> dict[str, Json]:
+    return {
+        key: builds,
+        "ids": _decoded_results(ids, decode),
+    }
+
+
+def _required_ids(input_value: Input) -> list[str]:
+    ids = input_value.get("ids")
+    if ids is None:
+        raise ValueError("the case needs ids")
+    return ids
+
+
+def _required_items(input_value: Input) -> list[ItemBuild]:
+    items = input_value.get("items")
+    if items is None:
+        raise ValueError("the case needs items")
+    return items
+
+
+def _required_contents(input_value: Input) -> list[ContentBuild]:
+    contents = input_value.get("contents")
+    if contents is None:
+        raise ValueError("the case needs contents")
+    return contents
+
+
+def _required_containers(input_value: Input) -> list[ContainerBuild]:
+    containers = input_value.get("containers")
+    if containers is None:
+        raise ValueError("the case needs containers")
+    return containers
 
 
 def _response_roundtrip(input_value: Input) -> dict[str, Json]:
@@ -139,9 +229,7 @@ def _response_roundtrip(input_value: Input) -> dict[str, Json]:
 
 
 def _response_fallback(input_value: Input) -> dict[str, Json]:
-    ids = input_value.get("ids")
-    if ids is None:
-        raise ValueError("response_fallback needs ids")
+    ids = _required_ids(input_value)
     results: list[Json] = []
     for encoded in ids:
         with Diagnostics() as diagnostics:
@@ -168,109 +256,24 @@ def _response_fallback(input_value: Input) -> dict[str, Json]:
 
 
 def _encrypted_item_roundtrip(input_value: Input) -> dict[str, Json]:
-    items = input_value.get("items")
-    ids = input_value.get("ids")
-    if items is None:
-        raise ValueError("encrypted_item_roundtrip needs items")
-    if ids is None:
-        raise ValueError("encrypted_item_roundtrip needs ids")
-    builds: list[Json] = []
-    for item in items:
-        encoded = ResponsesAPIRequestUtils._build_encrypted_item_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L385
-            item["model_id"], item["item_id"]
-        )
-        builds.append(
-            {
-                "encoded": encoded,
-                "decoded": _item(
-                    ResponsesAPIRequestUtils._decode_encrypted_item_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L395
-                        encoded
-                    )
-                ),
-            }
-        )
-    decodes: list[Json] = []
-    for encoded in ids:
-        with Diagnostics() as diagnostics:
-            item_decoded = ResponsesAPIRequestUtils._decode_encrypted_item_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L395
-                encoded
-            )
-            diagnostic = diagnostics.take()
-        decodes.append({"decoded": _item(item_decoded), "diagnostic": diagnostic})
-    return {"items": builds, "ids": decodes}
+    items = _required_items(input_value)
+    ids = _required_ids(input_value)
+    builds = [_item_build(item) for item in items]
+    return _roundtrip("items", builds, ids, _decode_item)
 
 
 def _content_wrapper(input_value: Input) -> dict[str, Json]:
-    contents = input_value.get("contents")
-    ids = input_value.get("ids")
-    if contents is None:
-        raise ValueError("content_wrapper needs contents")
-    if ids is None:
-        raise ValueError("content_wrapper needs ids")
-    builds: list[Json] = []
-    for build in contents:
-        wrapped = ResponsesAPIRequestUtils._wrap_encrypted_content_with_model_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L421
-            build["encrypted_content"], build["model_id"]
-        )
-        model_id, original = ResponsesAPIRequestUtils._unwrap_encrypted_content_with_model_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L434
-            wrapped
-        )
-        builds.append(
-            {"wrapped": wrapped, "unwrapped": {"model_id": model_id, "content": original}}
-        )
-    decodes: list[Json] = []
-    for encoded in ids:
-        with Diagnostics() as diagnostics:
-            model_id, content = ResponsesAPIRequestUtils._unwrap_encrypted_content_with_model_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L434
-                encoded
-            )
-            diagnostic = diagnostics.take()
-        decodes.append(
-            {
-                "model_id": model_id,
-                "content": content,
-                "diagnostic": diagnostic,
-            }
-        )
-    return {"contents": builds, "ids": decodes}
+    contents = _required_contents(input_value)
+    ids = _required_ids(input_value)
+    builds = [_content_build(build) for build in contents]
+    return _roundtrip("contents", builds, ids, _decode_content)
 
 
 def _container_delimiters(input_value: Input) -> dict[str, Json]:
-    containers = input_value.get("containers")
-    ids = input_value.get("ids")
-    if containers is None:
-        raise ValueError("container_delimiters needs containers")
-    if ids is None:
-        raise ValueError("container_delimiters needs ids")
-    builds: list[Json] = []
-    for container in containers:
-        encoded = ResponsesAPIRequestUtils._build_container_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L713
-            container["custom_llm_provider"], container["model_id"], container["container_id"]
-        )
-        builds.append(
-            {
-                "encoded": encoded,
-                "decoded": _decoded(
-                    ResponsesAPIRequestUtils._decode_container_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L730
-                        encoded
-                    )
-                ),
-            }
-        )
-    decodes: list[Json] = []
-    for encoded in ids:
-        with Diagnostics() as diagnostics:
-            container_decoded = ResponsesAPIRequestUtils._decode_container_id(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L730
-                encoded
-            )
-            diagnostic = diagnostics.take()
-        decodes.append(
-            {
-                "decoded": _decoded(container_decoded),
-                "diagnostic": diagnostic,
-            }
-        )
-    return {"containers": builds, "ids": decodes}
+    containers = _required_containers(input_value)
+    ids = _required_ids(input_value)
+    builds = [_container_build(container) for container in containers]
+    return _roundtrip("containers", builds, ids, _decode_container)
 
 
 def run(input_value: Input) -> Json:
