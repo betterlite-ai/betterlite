@@ -1,6 +1,3 @@
-use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
-use betterlite_anthropic::anthropic_capability_catalog::sampling::SamplingParam;
-use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::Value;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -11,56 +8,24 @@ use adapter::Adapter;
 use warnings::Warnings;
 
 mod adapter;
-mod adaptive;
-mod beta;
 mod budget;
-mod disabled;
+mod drop_params;
 mod fixture;
 mod provider;
 mod tests;
+mod thinking;
 mod warnings;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 enum Step {
-    ProviderQualifiedCatalog {
-        model: String,
-        custom_llm_provider: String,
-    },
-    AdaptiveThinking {
-        model: String,
-        custom_llm_provider: String,
-        params: OptionalParams,
-    },
-    ForcedToolDowngrade {
-        model: String,
-        tool_choice: Json,
-        drop_params: bool,
-        global_drop_params: bool,
-    },
-    SamplingCapability {
-        model: String,
-        param: SamplingParam,
-        value: Json,
-        output_key: String,
-        drop_params: bool,
-        global_drop_params: bool,
-    },
-    LegacyBudgetEffort {
-        model: String,
-        custom_llm_provider: String,
-        budget_tokens: i64,
-    },
-    DisabledThinkingWarning {
-        model: String,
-        custom_llm_provider: String,
-        params: OptionalParams,
-    },
-    EffortBetaGate {
-        model: String,
-        custom_llm_provider: String,
-        params: OptionalParams,
-    },
+    ProviderQualifiedCatalog(provider::CatalogStep),
+    AdaptiveThinking(thinking::ThinkingStep),
+    ForcedToolDowngrade(drop_params::ForcedToolStep),
+    SamplingCapability(drop_params::SamplingStep),
+    LegacyBudgetEffort(budget::BudgetStep),
+    DisabledThinkingWarning(thinking::ThinkingStep),
+    EffortBetaGate(thinking::ThinkingStep),
 }
 
 #[derive(Debug, Deserialize)]

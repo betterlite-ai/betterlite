@@ -1,25 +1,31 @@
 use betterlite_anthropic::anthropic_capability_catalog::thinking::{
     EffortRequest, legacy_budget_to_effort,
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::adapter::{Adapter, Environment};
 
-impl Adapter<'_> {
-    pub(super) async fn legacy_budget_effort(
+#[derive(Debug, Deserialize)]
+pub(super) struct BudgetStep {
+    model: String,
+    custom_llm_provider: String,
+    budget_tokens: i64,
+}
+
+impl BudgetStep {
+    pub(super) async fn answer(
         &self,
-        model: &str,
-        custom_llm_provider: &str,
-        budget_tokens: i64,
+        adapter: &Adapter<'_>,
         environment: &mut Environment<'_>,
     ) -> Value {
         let request = EffortRequest {
-            model,
-            budget_tokens,
-            custom_llm_provider,
-            thresholds: self.thresholds,
+            model: &self.model,
+            budget_tokens: self.budget_tokens,
+            custom_llm_provider: &self.custom_llm_provider,
+            thresholds: adapter.thresholds,
         };
-        let effort = legacy_budget_to_effort(&request, environment, &self.catalogs).await;
+        let effort = legacy_budget_to_effort(&request, environment, &adapter.catalogs).await;
         json!({"effort": effort})
     }
 }
