@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -19,7 +19,6 @@ const TIMEOUT_VARIABLE: &str = "PROMPT_INJECTION_HEURISTICS_TIMEOUT_SECONDS";
 const DEFAULT_MAX_THREADS: i64 = 1;
 const MINIMUM_MAX_THREADS: usize = 1;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-const DEFAULT_TIMEOUT_SECONDS: Decimal = Decimal::from_parts(30, 0, 0, false, 0);
 // 0.7 at scale 1, LiteLLM's DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD
 const DEFAULT_SIMILARITY_THRESHOLD: Decimal = Decimal::from_parts(7, 0, 0, false, 1);
 
@@ -47,9 +46,9 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             params: None,
-            heuristics_max_threads: 1,
-            heuristics_timeout: Duration::from_secs(30),
-            similarity_threshold: Decimal::from_parts(7, 0, 0, false, 1),
+            heuristics_max_threads: MINIMUM_MAX_THREADS,
+            heuristics_timeout: DEFAULT_TIMEOUT,
+            similarity_threshold: DEFAULT_SIMILARITY_THRESHOLD,
         }
     }
 }
@@ -194,8 +193,9 @@ where
     let Some(text) = lookup.lookup(TIMEOUT_VARIABLE) else {
         return Ok(DEFAULT_TIMEOUT);
     };
-    let seconds = betterlite_env::number::<Decimal>(TIMEOUT_VARIABLE, &text)?
-        .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
+    let Some(seconds) = betterlite_env::number::<Decimal>(TIMEOUT_VARIABLE, &text)? else {
+        return Ok(DEFAULT_TIMEOUT);
+    };
     if seconds <= Decimal::ZERO {
         return Err(invalid_timeout());
     }

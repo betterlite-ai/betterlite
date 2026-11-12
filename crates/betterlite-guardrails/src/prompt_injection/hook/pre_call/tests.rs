@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_config::sections::prompt_injection::PromptInjectionParams;
 use betterlite_models::billing_text::FormattedPromptData;
@@ -192,6 +193,27 @@ async fn a_failed_heuristics_check_passes_the_request() {
 }
 
 #[tokio::test]
+async fn a_timed_out_heuristics_check_passes_the_attack() {
+    let pool = HeuristicsPool::new(1, Duration::from_millis(20));
+    let held = Arc::clone(&pool.permits)
+        .try_acquire_owned()
+        .expect("the pool has one free permit");
+    let detection = PromptInjectionDetection::new(None, threshold(), pool);
+    let list = chat_messages();
+    let request = FormattedPromptData {
+        messages: Some(&list),
+        prompt: None,
+        input: None,
+    };
+    let outcome = detection
+        .pre_call(HookCallType::Acompletion, &request)
+        .await
+        .unwrap();
+    assert_eq!(outcome, PreCallOutcome::Pass);
+    drop(held);
+}
+
+#[tokio::test]
 async fn the_rejection_is_a_400_with_litellms_detail() {
     let detection = detection(None);
     let list = chat_messages();
@@ -223,4 +245,9 @@ fn other_failures_have_no_rejection_detail() {
     );
     assert!(PromptInjectionError::Judge.rejection().is_none());
     assert!(PromptInjectionError::HeuristicsClosed.rejection().is_none());
+    assert!(
+        PromptInjectionError::HeuristicsTimeout
+            .rejection()
+            .is_none()
+    );
 }

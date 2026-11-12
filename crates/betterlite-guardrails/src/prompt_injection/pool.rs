@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use super::error::PromptInjectionError;
 use super::similarity::check_user_input_similarity;
@@ -34,21 +35,18 @@ impl HeuristicsPool {
     ) -> Result<bool, PromptInjectionError> {
         let prompt_length = input.chars().count();
         let started = Instant::now();
-        let permit =
-            match tokio::time::timeout(self.timeout, Arc::clone(&self.permits).acquire_owned())
-                .await
-            {
-                Err(_elapsed) => {
-                    tracing::warn!(
-                        elapsed = ?started.elapsed(),
-                        prompt_length,
-                        "the prompt injection heuristics check timed out waiting for a permit"
-                    );
-                    return Err(PromptInjectionError::HeuristicsTimeout);
-                }
-                Ok(Err(_closed)) => return Err(PromptInjectionError::HeuristicsClosed),
-                Ok(Ok(permit)) => permit,
-            };
+        let permit = match timeout(self.timeout, Arc::clone(&self.permits).acquire_owned()).await {
+            Err(_elapsed) => {
+                tracing::warn!(
+                    elapsed = ?started.elapsed(),
+                    prompt_length,
+                    "the prompt injection heuristics check timed out waiting for a permit"
+                );
+                return Err(PromptInjectionError::HeuristicsTimeout);
+            }
+            Ok(Err(_closed)) => return Err(PromptInjectionError::HeuristicsClosed),
+            Ok(Ok(permit)) => permit,
+        };
         let deadline = started.checked_add(self.timeout);
         let mut tasks = JoinSet::new();
         tasks.spawn_blocking(move || {
