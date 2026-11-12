@@ -75,8 +75,8 @@ fn assert_defaults_filter() {
     let falsey = OptionDefaults {
         max_tokens: Some(0),
         stop_sequences: Some(Vec::new()),
-        temperature: Some(Number::from(0)),
-        top_p: Some(Number::from(0)),
+        temperature: Some(Number::from(0_i64)),
+        top_p: Some(Number::from(0_i64)),
         top_k: Some(0),
         metadata: Some(IndexMap::new()),
         system: Some(String::new()),
@@ -233,8 +233,8 @@ fn assert_stop_other_shapes() {
         map_stop_sequences(&json(r#"{"a": 1}"#), true).unwrap(),
         None
     );
-    assert!(map_stop_sequences(&json("[1]"), true).is_err());
-    assert!(map_stop_sequences(&json(r#"["END", null]"#), false).is_err());
+    map_stop_sequences(&json("[1]"), true).unwrap_err();
+    map_stop_sequences(&json(r#"["END", null]"#), false).unwrap_err();
 }
 
 fn web_search_context_size_case() {
@@ -297,7 +297,7 @@ fn assert_web_search_context() {
     );
     let options: WebSearchOptions =
         serde_json::from_str(r#"{"search_context_size": "extreme"}"#).unwrap();
-    assert!(map_web_search_tool(&options).is_err());
+    map_web_search_tool(&options).unwrap_err();
 }
 
 fn context_compaction_edit_case() {
@@ -326,30 +326,29 @@ fn assert_context_passthrough() {
 }
 
 fn assert_context_compaction() {
-    assert_eq!(
-        context(r#"[{"type": "compaction", "compact_threshold": 200000}]"#),
-        json(
-            r#"{"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 200000}}]}"#
-        )
-    );
-    assert_eq!(
-        context(r#"[{"type": "compaction", "compact_threshold": 200000.9}]"#),
-        json(
-            r#"{"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 200000}}]}"#
-        )
-    );
-    assert_eq!(
-        context(r#"[{"type": "compaction", "compact_threshold": true}]"#),
-        json(
-            r#"{"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 1}}]}"#
-        )
-    );
-    assert_eq!(
-        context(r#"[{"type": "compaction", "compact_threshold": false}]"#),
-        json(
-            r#"{"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 0}}]}"#
-        )
-    );
+    assert_context_thresholds();
+    assert_context_overrides();
+}
+
+fn assert_context_thresholds() {
+    for (threshold, expected) in [
+        ("200000", 200_000_i64),
+        ("200000.9", 200_000_i64),
+        ("true", 1_i64),
+        ("false", 0_i64),
+    ] {
+        assert_eq!(
+            context(&format!(
+                r#"[{{"type": "compaction", "compact_threshold": {threshold}}}]"#
+            )),
+            json(&format!(
+                r#"{{"edits": [{{"type": "compact_20260112", "trigger": {{"type": "input_tokens", "value": {expected}}}}}]}}"#
+            ))
+        );
+    }
+}
+
+fn assert_context_overrides() {
     assert_eq!(
         context(
             r#"[{"type": "compaction", "compact_threshold": 5, "trigger": {"type": "custom"}, "note": "kept"}]"#
@@ -377,7 +376,7 @@ fn user_identifier_filter_case() {
         "",
         "user@example",
         "user@example.c",
-        "ü@example.com",
+        "\u{fc}@example.com",
         "123456",
         "user@example.com\n\n",
         "user@example.com\r\n",
@@ -392,7 +391,7 @@ fn user_identifier_filter_case() {
         "1234567",
         "123-4567",
         "\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}",
-        "١٢٣٤٥٦٧",
+        "\u{661}\u{662}\u{663}\u{664}\u{665}\u{666}\u{667}",
         "\u{1c}1234567",
         " 1234567 ",
         "user@example.com\n",
