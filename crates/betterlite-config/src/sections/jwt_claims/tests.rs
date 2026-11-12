@@ -223,52 +223,46 @@ fn explicit_values_and_environment() {
 #[case::number_for_text(
     "general_settings:\n  litellm_jwtauth:\n    team_id_jwt_field: 5\n",
     &[],
-    "general_settings.litellm_jwtauth.team_id_jwt_field"
+    "general_settings.litellm_jwtauth.team_id_jwt_field",
+    true
 )]
 #[case::list_for_text(
     "general_settings:\n  litellm_jwtauth:\n    user_email_jwt_field: [email]\n",
     &[],
-    "general_settings.litellm_jwtauth.user_email_jwt_field"
+    "general_settings.litellm_jwtauth.user_email_jwt_field",
+    true
 )]
 #[case::text_for_flag(
     "general_settings:\n  litellm_jwtauth:\n    user_id_upsert: \"yes\"\n",
     &[],
-    "general_settings.litellm_jwtauth.user_id_upsert"
+    "general_settings.litellm_jwtauth.user_id_upsert",
+    true
 )]
 #[case::number_for_flag(
     "general_settings:\n  litellm_jwtauth:\n    user_id_upsert: 1\n",
     &[],
-    "general_settings.litellm_jwtauth.user_id_upsert"
+    "general_settings.litellm_jwtauth.user_id_upsert",
+    true
 )]
-fn invalid_value_fallback(
-    #[case] source: &str,
-    #[case] environment: &[(&str, &str)],
-    #[case] path: &str,
-) {
-    let error = load(source, environment).unwrap_err();
-    assert!(
-        matches!(error, ConfigError::InvalidScalar { .. }),
-        "{error}"
-    );
-    assert!(error.to_string().contains(path), "{error}");
-}
-
-#[rstest]
 #[case::missing_reference(
     "general_settings:\n  litellm_jwtauth:\n    team_id_jwt_field: os.environ/TEAM_FIELD\n",
     &[],
-    "TEAM_FIELD"
+    "TEAM_FIELD",
+    false
 )]
 #[case::invalid_flag_reference(
     "general_settings:\n  litellm_jwtauth:\n    user_id_upsert: os.environ/UPSERT\n",
     &[("UPSERT", "maybe")],
-    "UPSERT"
+    "UPSERT",
+    false
 )]
-fn invalid_environment_fails_startup(
+fn invalid_value_fallback(
     #[case] source: &str,
     #[case] environment: &[(&str, &str)],
-    #[case] variable: &str,
+    #[case] fragment: &str,
+    #[case] scalar: bool,
 ) {
     let error = load(source, environment).unwrap_err();
-    assert!(error.to_string().contains(variable), "{error}");
+    assert!(error.to_string().contains(fragment), "{error}");
+    assert_eq!(matches!(&error, ConfigError::InvalidScalar { .. }), scalar);
 }
