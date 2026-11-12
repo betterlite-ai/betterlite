@@ -1,0 +1,32 @@
+kind: helper
+name: deepseek-request-policy-textless-collapse-unchanged
+call:
+  deepseek_request_policy:
+    op: messages
+    cases:
+      - model: deepseek-vision-model
+        supports_vision: false
+        messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: https://example.test/a.png}
+          - {role: user, content: identical string}
+      - model: deepseek-vision-model
+        supports_vision: true
+        messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: https://example.test/b.png}
+      - model: deepseek-vision-model
+        supports_vision: true
+        messages:
+          - role: user
+            content:
+              - {type: text, text: only text}
+          - role: user
+            content:
+              - {type: text, text: also}
+              - {type: text, text: text}
+env: {}
+compare:
+  ignore: []

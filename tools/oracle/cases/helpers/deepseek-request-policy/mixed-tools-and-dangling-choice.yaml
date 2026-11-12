@@ -1,0 +1,33 @@
+kind: helper
+name: deepseek-request-policy-mixed-tools-and-dangling-choice
+call:
+  deepseek_request_policy:
+    op: tools
+    cases:
+      - optional_params:
+          tools:
+            - {type: function, function: {name: lookup}}
+            - {type: namespace, name: ns}
+          tool_choice: {type: function, function: {name: lookup}}
+          parallel_tool_calls: true
+          temperature: 0.2
+      - optional_params:
+          tools:
+            - {type: function, function: {name: lookup}}
+            - {type: namespace}
+          tool_choice: {type: function, function: {name: dropped}}
+      - optional_params:
+          tools:
+            - {type: namespace}
+            - {type: web_search, name: search}
+          tool_choice: auto
+          parallel_tool_calls: true
+          temperature: 0.2
+      - optional_params:
+          tools:
+            - {type: function, function: {name: lookup}}
+            - {type: namespace}
+          tool_choice: auto
+env: {}
+compare:
+  ignore: []

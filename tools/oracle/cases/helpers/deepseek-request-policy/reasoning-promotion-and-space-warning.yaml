@@ -1,0 +1,42 @@
+kind: helper
+name: deepseek-request-policy-reasoning-promotion-and-space-warning
+call:
+  deepseek_request_policy:
+    op: history
+    cases:
+      - messages:
+          - {role: user, content: what is up}
+          - role: assistant
+            content: an earlier answer
+            provider_specific_fields:
+              reasoning_content: the stored chain
+              trace: t1
+          - role: assistant
+            content: another answer
+      - messages:
+          - role: assistant
+            content: empty top level
+            reasoning_content: ''
+            provider_specific_fields:
+              reasoning_content: the nested chain
+      - messages:
+          - role: assistant
+            content: kept chain
+            reasoning_content: already here
+            provider_specific_fields:
+              reasoning_content: stale nested chain
+          - {role: user, content: no repair for this role}
+      - messages:
+          - role: assistant
+            content: falsy stored chain
+            provider_specific_fields:
+              reasoning_content: ''
+      - messages:
+          - role: assistant
+            content: null top level
+            reasoning_content: null
+            provider_specific_fields:
+              reasoning_content: promoted after null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,22 @@
+kind: helper
+name: deepseek-request-policy-all-functions-skip-choice-cleanup
+call:
+  deepseek_request_policy:
+    op: tools
+    cases:
+      - optional_params:
+          tools:
+            - {type: function, function: {name: lookup}}
+          tool_choice: {type: function, function: {name: missing}}
+          parallel_tool_calls: true
+      - optional_params:
+          tools: []
+          tool_choice: auto
+      - optional_params:
+          tools: not-a-list
+          tool_choice: auto
+      - optional_params:
+          tool_choice: auto
+env: {}
+compare:
+  ignore: []
