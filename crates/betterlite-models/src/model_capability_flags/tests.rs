@@ -27,7 +27,7 @@ const KEYS: [&str; 11] = [
 #[derive(Default)]
 struct Recorder {
     supported: Vec<String>,
-    disabled_for_vision: bool,
+    vision_disabled: bool,
 }
 
 impl CapabilityPredicates for Recorder {
@@ -53,8 +53,7 @@ impl CapabilityPredicates for Recorder {
         _request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        self.disabled_for_vision = key == "supports_vision";
-        ready(self.disabled_for_vision)
+        ready(self.vision_disabled && key == "supports_vision")
     }
 
     fn supports_native_streaming(
@@ -115,14 +114,22 @@ async fn supports_asks_the_factory_for_the_flags_key(
     assert_eq!(recorder.supported, [key.to_owned()]);
 }
 
+#[rstest]
+#[case::declared_disabled(true)]
+#[case::not_disabled(false)]
 #[tokio::test]
-async fn vision_disabled_asks_the_disabled_factory_for_vision() {
-    let mut recorder = Recorder::default();
+async fn vision_disabled_asks_the_disabled_factory_for_vision(#[case] vision_disabled: bool) {
+    let mut recorder = Recorder {
+        vision_disabled,
+        supported: Vec::new(),
+    };
     let request = CapabilityRequest {
         model: "model",
         custom_llm_provider: None,
     };
-    assert!(is_vision_explicitly_disabled(&mut recorder, &request).await);
+    assert_eq!(
+        is_vision_explicitly_disabled(&mut recorder, &request).await,
+        vision_disabled
+    );
     assert!(recorder.supported.is_empty());
-    assert!(recorder.disabled_for_vision);
 }
