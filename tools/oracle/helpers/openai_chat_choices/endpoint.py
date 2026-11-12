@@ -5,7 +5,7 @@ from typing import cast
 import litellm
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
 
-from . import AuthStep, Fields, Json, ModelStep, UrlStep
+from .support import AuthStep, Fields, Json, ModelStep, UrlStep
 
 
 class Reply:

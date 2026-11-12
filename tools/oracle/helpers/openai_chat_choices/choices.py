@@ -4,8 +4,7 @@ from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
 from litellm.types.llms.openai import OpenAIChatCompletionChoices
 from litellm.types.utils import Choices
 
-from . import Json, Object, Step
-from .support import as_object
+from .support import Json, Object, Step, as_object
 
 
 def run(steps: list[Step]) -> Json:

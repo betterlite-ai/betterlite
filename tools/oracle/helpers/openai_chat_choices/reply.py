@@ -9,8 +9,7 @@ from litellm.llms.openai.common_utils import OpenAIError
 from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import ModelResponse
 
-from . import Json, Object, ResponseStep
-from .support import as_object
+from .support import Json, Object, ResponseStep, as_object
 
 
 class Logger:

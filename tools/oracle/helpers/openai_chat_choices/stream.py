@@ -4,8 +4,7 @@ from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
 from litellm.llms.openai.common_utils import OpenAIError
 from litellm.types.utils import ModelResponseStream
 
-from . import ChunkStep, Json, Object
-from .support import as_object
+from .support import ChunkStep, Json, Object, as_object
 
 
 def run(steps: list[ChunkStep]) -> Json:
