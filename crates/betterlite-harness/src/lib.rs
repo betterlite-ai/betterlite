@@ -6,6 +6,7 @@ pub mod endpoint;
 pub mod errors;
 pub mod events;
 pub mod handlers;
+pub mod launcher;
 pub mod options;
 pub mod payloads;
 pub mod providers;
