@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-control-global-drop
+call:
+  b5650: {function: control, kwargs: {stream_chunk_size: "abc"}, model: gpt-4o, global_drop_params: true}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-tool-keys-seed
+call:
+  b5650: {function: tool_keys, tools: [{type: function, input_examples: [1], function: {name: f, eager_input_streaming: true}}]}
+env: {}
+compare: {ignore: []}
