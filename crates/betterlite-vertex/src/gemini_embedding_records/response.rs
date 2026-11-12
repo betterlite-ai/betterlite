@@ -1,4 +1,4 @@
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
 use serde::Serialize;
 
@@ -19,25 +19,34 @@ pub fn process_batch_reply(
     response: &Json,
     counter: &dyn TextTokenCounter,
 ) -> Result<EmbeddingReply, GeminiEmbeddingError> {
-    let Json::Object(fields) = response else {
-        return Err(GeminiEmbeddingError::Reply {
-            reason: "the embeddings reply must be an object",
-        });
-    };
+    let fields = fields_of(response)?;
+    Ok(EmbeddingReply {
+        model: model.to_owned(),
+        data: batch_records(fields)?,
+        usage: batch_usage(input, model, counter)?,
+    })
+}
+fn batch_records(fields: &Extra) -> Result<Vec<EmbeddingRecord>, GeminiEmbeddingError> {
     let Some(Json::List(embeddings)) = fields.get("embeddings") else {
         return Err(GeminiEmbeddingError::Reply {
             reason: "the embeddings reply must hold an embeddings list",
         });
     };
-    let mut data = Vec::with_capacity(embeddings.len());
-    for (position, embedding) in embeddings.iter().enumerate() {
-        data.push(embedding_record(embedding, position)?);
+    embeddings
+        .iter()
+        .enumerate()
+        .map(|(position, embedding)| embedding_record(embedding, position))
+        .collect()
+}
+fn fields_of(response: &Json) -> Result<&Extra, GeminiEmbeddingError> {
+    match response {
+        Json::Object(fields) => Ok(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Err(GeminiEmbeddingError::Reply {
+                reason: "the embeddings reply must be an object",
+            })
+        }
     }
-    Ok(EmbeddingReply {
-        model: model.to_owned(),
-        data,
-        usage: batch_usage(input, model, counter)?,
-    })
 }
 pub fn process_embed_content_reply(
     input: &EmbeddingInput,

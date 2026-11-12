@@ -80,7 +80,7 @@ pub fn batch_usage(
             count_formatted(&Json::List(texts), model, counter)?
         }
     } else {
-        count_input(input, model, counter)?
+        count_formatted(&input_value(input), model, counter)?
     };
     Ok(EmbeddingUsage {
         prompt_tokens,
@@ -172,27 +172,13 @@ fn fallback_tokens(
     if shape(input).media {
         return Ok(0);
     }
-    count_input(input, model, counter)
+    count_formatted(&input_value(input), model, counter)
 }
-fn count_input(
-    input: &EmbeddingInput,
-    model: &str,
-    counter: &dyn TextTokenCounter,
-) -> Result<u32, GeminiEmbeddingError> {
-    let value = match input {
+fn input_value(input: &EmbeddingInput) -> Json {
+    match input {
         EmbeddingInput::Text(text) => Json::Text(text.clone()),
         EmbeddingInput::Entries(entries) => Json::List(entries.iter().map(entry_value).collect()),
-    };
-    let data = FormattedPromptData {
-        messages: None,
-        prompt: None,
-        input: Some(&value),
-    };
-    let text = get_formatted_prompt(&data, PromptCallType::Embedding)
-        .map_err(|source| GeminiEmbeddingError::Formatting { source })?;
-    counter
-        .count_text(model, &text)
-        .map_err(|source| GeminiEmbeddingError::Counting { source })
+    }
 }
 fn entry_value(entry: &InputEntry) -> Json {
     match entry {

@@ -22,6 +22,8 @@ impl TextTokenCounter for FailingCount {
     }
 }
 
+pub(super) type Outcome = Result<Json, GeminiEmbeddingError>;
+
 pub(super) fn json(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
 }

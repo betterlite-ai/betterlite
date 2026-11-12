@@ -62,6 +62,7 @@ pub struct EmbedContentRequest {
 pub struct BatchEmbeddingsRequest {
     pub requests: Vec<EmbedContentRequest>,
 }
+type PartsResult = Result<Vec<Part>, GeminiEmbeddingError>;
 pub fn filter_parameters(optional: &Extra) -> Result<EmbedParameters, GeminiEmbeddingError> {
     let dimensionality = optional
         .get("dimensions")
@@ -75,34 +76,7 @@ pub fn filter_parameters(optional: &Extra) -> Result<EmbedParameters, GeminiEmbe
             });
         }
     };
-    let (task_type, title) = text_parameters(optional)?;
-    Ok(EmbedParameters {
-        output_dimensionality,
-        task_type,
-        title,
-    })
-}
-fn text_parameters(
-    optional: &Extra,
-) -> Result<(Option<TaskType>, Option<String>), GeminiEmbeddingError> {
-    let task = optional
-        .get("task_type")
-        .or_else(|| optional.get("taskType"));
-    let task_type = match task {
-        None | Some(Json::Null) => None,
-        Some(Json::Text(text)) => {
-            Some(
-                TaskType::parse(text).ok_or_else(|| GeminiEmbeddingError::Rejected {
-                    reason: format!("{text} is not a Gemini embedding task type"),
-                })?,
-            )
-        }
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(GeminiEmbeddingError::Rejected {
-                reason: String::from("the taskType value must be text"),
-            });
-        }
-    };
+    let task_type = task_parameter(optional)?;
     let title = match optional.get("title") {
         None | Some(Json::Null) => None,
         Some(Json::Text(text)) => Some(text.clone()),
@@ -112,7 +86,29 @@ fn text_parameters(
             });
         }
     };
-    Ok((task_type, title))
+    Ok(EmbedParameters {
+        output_dimensionality,
+        task_type,
+        title,
+    })
+}
+fn task_parameter(optional: &Extra) -> Result<Option<TaskType>, GeminiEmbeddingError> {
+    let task = optional
+        .get("task_type")
+        .or_else(|| optional.get("taskType"));
+    match task {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(TaskType::parse(text).ok_or_else(|| {
+            GeminiEmbeddingError::Rejected {
+                reason: format!("{text} is not a Gemini embedding task type"),
+            }
+        })?)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(GeminiEmbeddingError::Rejected {
+                reason: String::from("the taskType value must be text"),
+            })
+        }
+    }
 }
 pub fn transform_batch_request(
     input: &EmbeddingInput,
@@ -166,10 +162,7 @@ fn contents(
     }
     Ok(contents)
 }
-fn flat_parts(
-    input: &EmbeddingInput,
-    resolved_files: &ResolvedFiles,
-) -> Result<Vec<Part>, GeminiEmbeddingError> {
+fn flat_parts(input: &EmbeddingInput, resolved_files: &ResolvedFiles) -> PartsResult {
     if shape(input).nested {
         return Err(GeminiEmbeddingError::Rejected {
             reason: String::from("the embedContent path does not accept combined embedding groups"),

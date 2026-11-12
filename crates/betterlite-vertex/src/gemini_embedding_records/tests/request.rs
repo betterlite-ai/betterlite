@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
+use super::support::Outcome;
 use super::support::input;
 use super::support::json;
 use super::support::object;
@@ -15,7 +16,7 @@ use crate::gemini_embedding_records::request::transform_embed_content;
 
 const MODEL: &str = "gemini-embedding-001";
 
-fn batch(source: &str, optional: &str, resolved: &str) -> Result<Json, GeminiEmbeddingError> {
+fn batch(source: &str, optional: &str, resolved: &str) -> Outcome {
     transform_batch_request(
         &input(source),
         MODEL,
@@ -25,14 +26,10 @@ fn batch(source: &str, optional: &str, resolved: &str) -> Result<Json, GeminiEmb
     .map(|request| serialized(&request))
 }
 
-fn embed_content(
-    source: &str,
-    optional: &str,
-    resolved: &str,
-) -> Result<Json, GeminiEmbeddingError> {
-    let request =
+fn embed_content(source: &str, optional: &str, resolved: &str) -> Outcome {
+    let built =
         transform_embed_content(&input(source), &object(optional), &resolved_files(resolved));
-    request.map(|built| serialized(&built))
+    Ok(serialized(&built))
 }
 
 #[rstest]
