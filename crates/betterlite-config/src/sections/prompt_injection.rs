@@ -97,7 +97,7 @@ struct RawPromptInjectionParams {
     _unknown: BTreeMap<String, Option<IgnoredAny>>,
 }
 
-fn default_reject_as_response() -> Option<bool> {
+pub const fn default_reject_as_response() -> Option<bool> {
     Some(false)
 }
 
