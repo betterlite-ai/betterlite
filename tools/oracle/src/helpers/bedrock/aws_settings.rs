@@ -20,6 +20,7 @@ use serde_json::{Value, value::RawValue};
 use std::{collections::BTreeMap, fmt::Display};
 use tokio::runtime::Builder;
 
+mod fixtures;
 mod input;
 mod io;
 mod native;
