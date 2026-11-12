@@ -1,0 +1,21 @@
+kind: helper
+name: response-roundtrip
+call:
+  response_id_codecs:
+    operation: response_roundtrip
+    scenarios:
+      - custom_llm_provider: openai
+        model_id: dep_a
+        response_id: resp_native
+      - custom_llm_provider: null
+        model_id: null
+        response_id: resp_null
+      - custom_llm_provider: ""
+        model_id: ""
+        response_id: resp_empty
+      - custom_llm_provider: openai
+        model_id: dep_a
+        response_id: "a;b"
+env: {}
+compare:
+  ignore: []

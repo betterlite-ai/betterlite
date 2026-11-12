@@ -1,0 +1,30 @@
+kind: helper
+name: gemini-response-parts-orphan-server-response
+call:
+  gemini_response_parts:
+    parts:
+      - toolResponse:
+          toolType: google_search
+          id: orphan-1
+          response: {hits: 2}
+        thoughtSignature: sig-r
+      - toolCall:
+          toolType: maps
+          id: unmatched
+          args: {q: x}
+        thoughtSignature: sig-c
+      - toolCall:
+          toolType: search
+          id: paired
+          args: {}
+      - toolResponse:
+          toolType: search
+          id: paired
+          response: ok
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs: null
+env: {}
+compare: {ignore: []}

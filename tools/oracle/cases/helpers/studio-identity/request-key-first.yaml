@@ -1,0 +1,10 @@
+kind: helper
+name: studio-identity-request-key-first
+call:
+  studio_identity:
+    calls:
+      - model: gemini-2.0-flash
+        api_key: request-key
+        env: {GOOGLE_API_KEY: google-key, GEMINI_API_KEY: gemini-key}
+env: {}
+compare: {ignore: []}

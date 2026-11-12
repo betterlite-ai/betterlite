@@ -1,7 +1,7 @@
 id: B1343
 milestone: M3 providers
 title: Vertex multimodal embedding pairing and media usage
-status: todo
+status: done
 depends_on: [B1300, B006, B171]
 file: tasks/B1343-vertex-multimodal-embeddings.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B033
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1358
