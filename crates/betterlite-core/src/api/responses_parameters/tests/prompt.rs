@@ -158,6 +158,22 @@ fn a_changed_id_breaks_correspondence() {
 }
 
 #[test]
+fn a_changed_role_breaks_correspondence() {
+    let original =
+        json(r#"[{"type": "function_call", "name": "f"}, {"role": "user", "content": "hi"}]"#);
+    let merged = [returned(None, r#"{"role": "assistant", "content": "hi"}"#)];
+    let outcome = merge_prompt_management_input(&original, &merged).expect("merges");
+    assert_eq!(
+        outcome.input,
+        json(r#"[{"role": "assistant", "content": "hi"}]"#)
+    );
+    assert_eq!(
+        outcome.warning,
+        Some(PromptMergeWarning::NonMessageItemsDropped)
+    );
+}
+
+#[test]
 fn an_absent_original_id_skips_the_id_comparison() {
     let original =
         json(r#"[{"type": "function_call", "name": "f"}, {"role": "user", "content": "hi"}]"#);
