@@ -2825,6 +2825,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-redis",
  "betterlite-tokenizer",
  "chrono",
