@@ -49,7 +49,6 @@ pub enum ThinkingBlock {
         signature: Option<String>,
         thinking: String,
     },
-    Redacted {
-        data: String,
-    },
+    #[serde(rename = "redacted_thinking")]
+    Redacted { data: String },
 }
