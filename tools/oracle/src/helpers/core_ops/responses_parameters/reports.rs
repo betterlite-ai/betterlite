@@ -31,15 +31,14 @@ pub(super) struct RequestedStep {
 
 pub(super) fn requested_step(fields: &RequestedStep) -> Result<Value, Box<HelperError>> {
     let mut params = fields.params.clone();
-    let optional = requested_optional_params(&mut params).map_err(|error| helper_error(&error))?;
-    let (text, failed) = text_format_to_text(fields.text_format.as_ref(), fields.text.as_ref())
-        .map_or((None, true), |text| (text, false));
-    Ok(json!({
-        "optional": optional,
-        "remaining": params,
-        "text": text,
-        "text_failed": failed,
-    }))
+    let optional = match requested_optional_params(&mut params) {
+        Ok(optional) => optional,
+        Err(error) => return Err(helper_error(&error)),
+    };
+    let converted = text_format_to_text(fields.text_format.as_ref(), fields.text.as_ref());
+    let failed = converted.is_err();
+    let text = converted.ok().flatten();
+    Ok(json!({"optional": optional, "remaining": params, "text": text, "text_failed": failed}))
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,18 +112,21 @@ pub(super) fn mcp_step(fields: &McpStep) -> Result<Value, Box<HelperError>> {
         "x-mcp-auth",
     )
     .map_err(|error| helper_error(&error))?;
-    let servers = headers.server_auth_headers.as_ref().map(|servers| {
-        servers
-            .iter()
-            .map(|(alias, entries)| (alias.clone(), expose_secrets(entries)))
-            .collect::<BTreeMap<String, BTreeMap<String, String>>>()
-    });
     Ok(json!({
         "auth_header": headers.auth_header.as_ref().map(ExposeSecret::expose_secret),
-        "server_auth_headers": servers,
+        "server_auth_headers": headers.server_auth_headers.as_ref().map(expose_servers),
         "oauth2_headers": headers.oauth2_headers.as_ref().map(expose_secrets),
         "raw_headers": headers.raw_headers,
     }))
+}
+
+fn expose_servers(
+    servers: &BTreeMap<String, BTreeMap<String, SecretString>>,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    servers
+        .iter()
+        .map(|(alias, entries)| (alias.clone(), expose_secrets(entries)))
+        .collect()
 }
 
 fn expose_secrets(values: &BTreeMap<String, SecretString>) -> BTreeMap<String, String> {
@@ -145,11 +147,11 @@ pub(super) struct DropFlagsStep {
     environment: BTreeMap<String, String>,
 }
 
-pub(super) fn drop_flags_step(fields: &DropFlagsStep) -> Result<Value, Box<HelperError>> {
+pub(super) fn drop_flags_step(fields: &DropFlagsStep) -> Value {
     let environment = fields.environment.get("LITELLM_DROP_PARAMS");
     let enabled = match &fields.value {
         None | Some(DecisionJson::Null) => drop_params_env_flag(environment.map(String::as_str)),
         Some(value) => drop_params_flag(Some(value)),
     };
-    Ok(json!({"drop_params": enabled.enabled}))
+    json!({"drop_params": enabled.enabled})
 }

@@ -38,7 +38,9 @@ impl Helper for Op {
                 )))
             }),
             Input::McpHeaders(fields) => each(&fields.steps, reports::mcp_step),
-            Input::DropFlags(fields) => each(&fields.steps, reports::drop_flags_step),
+            Input::DropFlags(fields) => {
+                each(&fields.steps, |step| Ok(reports::drop_flags_step(step)))
+            }
         }
     }
 }
