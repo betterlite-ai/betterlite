@@ -2717,6 +2717,7 @@ dependencies = [
  "betterlite-tokenizer",
  "fancy-regex 0.19.2",
  "hex",
+ "httpdate",
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",

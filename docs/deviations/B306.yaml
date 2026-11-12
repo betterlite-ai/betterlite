@@ -1,0 +1,12 @@
+task: B306
+deviations:
+  - what: >-
+      The retry_after bytes parser rejects a value longer than 8192 bytes before decoding it and answers with its typed
+      invalid-input error; the retry decision then takes the same exponential backoff it takes for any value it cannot read.
+    why: >-
+      LiteLLM has no byte bound at this boundary: it hands the whole header text to int() and email.utils.parsedate_tz,
+      so a value padded past 8192 bytes still yields the number it contains. bounded-inputs requires a finite limit on
+      an outside value, and 8192 bytes is far past any real Retry-After header. A rejected value only changes the sleep
+      from the header's seconds to the exponential delay, which is why the reference and betterlite differ at exactly
+      that input in the parser-byte-bound case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L19-L70
