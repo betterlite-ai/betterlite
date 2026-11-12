@@ -1,0 +1,12 @@
+kind: helper
+name: guardrail-params-fallback-and-sensitive-lowercased
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+      mode: pre_call
+      unreachable_fallback: FAIL_OPEN
+      on_sensitive_data: Block
+env: {}
+compare: {ignore: []}

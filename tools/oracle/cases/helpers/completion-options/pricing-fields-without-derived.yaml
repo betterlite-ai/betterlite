@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-without-derived
+call:
+  b5650: {function: without_server_derived, model_info: {id: dep-1, pricing_overrides: {a: 1}, input_cost_per_token: 0.000001, rate_above_200k_tokens: 1, output_vector_size: 8, mode: chat, key: gpt-4o}}
+env: {}
+compare: {ignore: []}

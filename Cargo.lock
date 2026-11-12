@@ -1181,6 +1181,7 @@ dependencies = [
  "lru",
  "p12-keystore",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rstest",
  "secrecy",
@@ -1433,6 +1434,7 @@ dependencies = [
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "shellexpand",
  "strum",
@@ -1503,6 +1505,7 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-prompts",
  "betterlite-redact",
  "betterlite-tokenizer",
  "chrono",
@@ -1886,6 +1889,17 @@ dependencies = [
 [[package]]
 name = "betterlite-interactions"
 version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-lens"
@@ -2026,15 +2040,21 @@ dependencies = [
 name = "betterlite-mcp"
 version = "0.1.0"
 dependencies = [
+ "aws-credential-types",
  "aws-lc-rs",
+ "aws-smithy-async",
+ "axum",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
+ "bytes",
  "chrono",
  "derive_more",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "pem",
@@ -2633,7 +2653,10 @@ dependencies = [
 name = "betterlite-pyhost"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "pyo3",
+ "rstest",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3230,6 +3253,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "thiserror",
  "tokio",

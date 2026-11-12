@@ -1,0 +1,1 @@
+{"guardrail":"decision_model","mode":["PRE_CALL"],"checks":[{"name":"n","instructions":"i","threshold":1.0}]}
