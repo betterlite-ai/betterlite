@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-services-batch-status-output-uri
+call:
+  bedrock_services_batch_status:
+    operation: output_uri_prediction
+    arns:
+      - "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc"
+      - "job-abc"
+    predictions:
+      - output_prefix: "s3://bucket/out"
+        input_uri: "s3://bucket/in/file.jsonl"
+        job_id: job-abc
+      - output_prefix: ""
+        input_uri: "s3://bucket/in/file.jsonl"
+        job_id: job-abc
+env: {}
+compare: {ignore: []}
