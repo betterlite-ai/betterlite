@@ -17,6 +17,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::loader::ConfigLoader;
 use crate::types::Config;
 
+const SALT: &str = "salt-one";
+
 struct FixedNonces;
 
 impl NonceSource for FixedNonces {
@@ -30,10 +32,14 @@ impl NonceSource for FixedNonces {
 }
 
 fn load(source: &str, variables: &[(&str, &str)]) -> Config {
-    let lookup: BTreeMap<String, String> = variables
+    let mut lookup: BTreeMap<String, String> = variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
+    // without a key no test below reaches the builder; an explicit variable still overrides this
+    lookup
+        .entry("LITELLM_SALT_KEY".to_owned())
+        .or_insert_with(|| SALT.to_owned());
     ConfigLoader { lookup }.load(source).unwrap()
 }
 
@@ -215,18 +221,21 @@ fn ui_budget_nullable(#[case] source: &str, #[case] budget_present: bool) {
 
 #[test]
 fn salt_before_master() {
-    let config = load(
-        "general_settings: {master_key: other-key}",
-        &[("LITELLM_SALT_KEY", "salt-one")],
-    );
-    let token = codec(&config).ui_session_token(&user(), now()).unwrap();
+    let source = "general_settings: {master_key: other-key}";
+    let salted = load(source, &[("LITELLM_SALT_KEY", SALT)]);
+    // an empty lookup has no salt at all, so only the master key can encrypt here
+    let master_only = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .unwrap();
+    let token = codec(&salted).ui_session_token(&user(), now()).unwrap();
     assert!(
-        codec(&config)
+        codec(&salted)
             .session_from_token(token.expose_secret())
             .unwrap()
             .is_some()
     );
-    let master_only = load("general_settings: {master_key: other-key}", &[]);
     assert!(
         codec(&master_only)
             .session_from_token(token.expose_secret())
@@ -234,21 +243,16 @@ fn salt_before_master() {
             .is_none()
     );
 
-    let empty_config = load(
-        "general_settings: {master_key: other-key}",
-        &[("LITELLM_SALT_KEY", "")],
-    );
-    let empty_token = codec(&empty_config)
-        .ui_session_token(&user(), now())
-        .unwrap();
+    let empty = load(source, &[("LITELLM_SALT_KEY", "")]);
+    let empty_token = codec(&empty).ui_session_token(&user(), now()).unwrap();
     assert!(
-        codec(&empty_config)
+        codec(&empty)
             .session_from_token(empty_token.expose_secret())
             .unwrap()
             .is_some()
     );
     assert!(
-        codec(&config)
+        codec(&salted)
             .session_from_token(empty_token.expose_secret())
             .unwrap()
             .is_none()
