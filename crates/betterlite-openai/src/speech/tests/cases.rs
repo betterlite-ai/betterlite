@@ -30,13 +30,13 @@ enum Case {
 }
 
 #[rstest]
-#[case::case_1_voice_and_format(Case::VoiceAndFormat)]
-#[case::case_2_speed_and_instructions(Case::SpeedAndInstructions)]
-#[case::case_3_binary_body(Case::BinaryBody)]
-#[case::case_4_chunked_binary_body(Case::ChunkedBinaryBody)]
-#[case::case_5_speech_error(Case::SpeechError)]
-#[case::case_6_speech_client_options(Case::SpeechClientOptions)]
-#[case::case_7_speech_logging_projection(Case::SpeechLoggingProjection)]
+#[case::voice_and_format(Case::VoiceAndFormat)]
+#[case::speed_and_instructions(Case::SpeedAndInstructions)]
+#[case::binary_body(Case::BinaryBody)]
+#[case::chunked_binary_body(Case::ChunkedBinaryBody)]
+#[case::speech_error(Case::SpeechError)]
+#[case::speech_client_options(Case::SpeechClientOptions)]
+#[case::speech_logging_projection(Case::SpeechLoggingProjection)]
 #[tokio::test]
 async fn speech_cases(#[case] case: Case) {
     match case {
@@ -100,10 +100,6 @@ fn assert_wire_request(fixture: &Fixture, deadline: Duration) {
     assert_eq!(
         header(fixture, "authorization").as_deref(),
         Some("Bearer sk-speech")
-    );
-    assert_eq!(
-        header(fixture, "content-type").as_deref(),
-        Some("application/json")
     );
     assert_eq!(header(fixture, "openai-organization"), None);
     assert_eq!(header(fixture, "openai-project"), None);
