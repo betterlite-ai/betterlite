@@ -2,7 +2,7 @@ id: B8613
 milestone: M8 platform
 title: Lifespan start and stop halves, the shared values made at startup and the collector lifecycle
 status: todo
-depends_on: [B8374, B8590, B8614, B1709, B8611, B8612, B8399, B8254, B4776, B8377, B8381, B8378, B8587, B8380, B8501, B5220, B4304, B8651, B3602, B3683, B8665, B8666, B1606, B8293, B9320, B8990, B3008, B3067, B8872, B8873, B8911, B8384, B3616, B8379]
+depends_on: [B8374, B8590, B8614, B1709, B8611, B8612, B8399, B8254, B4776, B8377, B8381, B8378, B8587, B8380, B8501, B5220, B4304, B8651, B3602, B3683, B8665, B8666, B1606, B8293, B9320, B8990, B3008, B3067, B8872, B8873, B8911, B8384, B3616, B8379, B363]
 file: tasks/B8613-lifespan-handoff.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

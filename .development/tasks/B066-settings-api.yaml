@@ -8,7 +8,15 @@ description: >-
   and B1663 search settings. Compose B3125's prompt-cache prediction router at the
   inclusion point from cost_tracking_settings.py without duplicating its route registrations.
   Preserve each owner's public/authenticated distinction; construction tests must detect
-  duplicate or missing registrations. The Python-only types/ui_crud __init__ files supply
+  duplicate or missing registrations. settings_api hands out the keyed routes and the public
+  routes as two routers, since B8675 merges the first inside the auth layers and the second
+  through mount_public. The composition takes one `Arc<dyn ConfigOverlayPort>` (B8379's port in
+  betterlite-server's config_overlay_port) and passes that same Arc to every bundle that takes
+  it: B1657's router and the bundles that call B1656's shared update or reload_config (B1650,
+  B1658, B1660, B1661, B1662, B1663); a construction test gives a recording fake and checks
+  that GET /get/internal_user_settings reaches it. The HTTP oracle cases for these routes (management/settings-composition, management/callback-metadata and
+  management/user-banner) belong to B8675, since the routes answer only once it mounts settings_api; this task proves
+  its routes with the native tests below. The Python-only types/ui_crud __init__ files supply
   import barrels, not another native router or a second metadata catalog.
   Own callback_management_endpoints.py's GET /callbacks/list and GET /callbacks/configs in
   callback_metadata_routes. Both use B052 auth. List returns B189's current success, failure
@@ -46,10 +54,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/user_banner_input.rs
     - crates/betterlite-server/fuzz/corpus/user_banner_input/**
-    - tools/oracle/cases/management/settings-composition/**
-    - tools/oracle/cases/management/callback-metadata/**
-    - tools/oracle/cases/management/user-banner/**
-    - tools/oracle/fuzz/corpus/http_case/user-banner-*
     - tools/oracle/helpers/b066.py
     - tools/oracle/helpers/b066/**
     - tools/oracle/src/helpers/server/b066.rs
@@ -66,11 +70,13 @@ references:
     why: Import-only exports retain their individual metadata owners.
 dod:
   - text: Settings composition mounts every owned bundle once and retains public routes alongside authenticated management routes.
-    proof: [settings-composition-tests, oracle]
+    proof: [settings-composition-tests]
+  - text: settings_api returns its keyed and public routes as two routers and passes its one ConfigOverlayPort to B1657's router and every bundle that takes the port.
+    proof: [settings-composition-tests]
   - text: Callback listings and metadata reflect the existing registry and pinned catalog without exposing runtime credentials.
-    proof: [callback-metadata-tests, oracle]
+    proof: [callback-metadata-tests]
   - text: Banner publication retains full replacement, fresh revisions, safe stored-row defaults and administrator-only writes.
-    proof: [user-banner-tests, oracle, user-banner-corpus]
+    proof: [user-banner-tests, user-banner-corpus]
 checks:
   optional: []
   commands:
@@ -86,16 +92,7 @@ checks:
     - id: user-banner-corpus
       why: Banner request and stored-row decoders lack newly added validation and corruption examples.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/user_banner_input)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_user_banner_input_corpus)'
-oracle_cases:
-  - tools/oracle/cases/management/settings-composition/public-settings-and-authenticated-controls.yaml
-  - tools/oracle/cases/management/callback-metadata/phase-membership-and-catalog.yaml
-  - tools/oracle/cases/management/callback-metadata/authentication.yaml
-  - tools/oracle/cases/management/user-banner/no-database-read-defaults.yaml
-  - tools/oracle/cases/management/user-banner/corrupt-stored-banner-is-disabled.yaml
-  - tools/oracle/cases/management/user-banner/republish-changes-revision.yaml
-  - tools/oracle/cases/management/user-banner/partial-body-replaces-with-defaults.yaml
-  - tools/oracle/cases/management/user-banner/message-length-and-enabled-whitespace.yaml
-  - tools/oracle/cases/management/user-banner/admin-write-with-storage-switch-disabled.yaml
+oracle_cases: []
 deviations:
   - what: A saved banner can succeed without its audit row when audit admission is full; the omission is warned and counted.
     why: B065's bounded audit service replaces the source's detached task.
