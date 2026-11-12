@@ -36,7 +36,7 @@ description: >-
   its SsoAssertionStore, and keep the resolver in McpTokens.
 
   4. OAuth sessions (sessions.rs). B4718's SessionStore with its process-local table, a system clock, the cipher over
-  B1600, the database port over B4711 and B4712, and the Redis backend: the response cache backend from
+  B1600, the database port over B4711 and B4712, McpIdentity's ServerAccessCheck (B8621), and the Redis backend: the response cache backend from
   `shared.response_cache` when the configured cache is Redis (B4290 and B4299), otherwise None, as LiteLLM passes
   litellm.cache or nothing.
 

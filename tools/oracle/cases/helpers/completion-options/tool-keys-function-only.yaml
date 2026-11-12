@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-tool-keys-function-only
+call:
+  b5650: {function: tool_keys, tools: [{type: function, function: {name: f, eager_input_streaming: true, description: d}}]}
+env: {}
+compare: {ignore: []}

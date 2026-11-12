@@ -1,0 +1,11 @@
+kind: helper
+name: request-body-media-seed
+call:
+  request_body:
+    function: normalize_media_types
+    content_types:
+      - application/json
+      - multipart/form-data; boundary=x
+      - ""
+env: {}
+compare: {ignore: []}

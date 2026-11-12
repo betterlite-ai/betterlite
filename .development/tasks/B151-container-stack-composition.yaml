@@ -1,0 +1,148 @@
+id: B151
+title: Container images and Compose stacks checked against each other
+description: >-
+  The B151 parts write betterlite's container files under packaging/docker/. B5070 wrote the entrypoint scripts, B5071 writes Dockerfile and Dockerfile.database, B5072 docker-compose.yml, docker-compose.quickstart.yml, proxy_server_config.yaml, prometheus.yml and .env.example, B5073 Dockerfile.non_root and docker-compose.hardened.yml, B5074 wrote build_from_pip/, B5075 writes docker-compose.tracing.yml and tracing-config.yaml, and B8543 writes README.md, tests/nonroot.yaml and tests/guide.sh. Each part checks its own files as text, and nothing checks that they fit: that a Compose build names a context, a Dockerfile and a stage that exist, that the command an image or a stack hands betterlite parses, and that the config a stack mounts loads in the native server with the environment that stack gives it. This task adds those checks as Rust tests and changes no packaging file. Neither CI's gate container nor the worker sandbox has a docker daemon, so the tests read the files and run the real CLI parser and config loader in process.
+
+  Put the tests in a new integration test binary of the betterlite package, crates/betterlite/tests/shipped_stacks.rs, beside the existing crates/betterlite/tests/tests.rs, so no crate root changes. It opens with `#![cfg(test)]` like tests.rs and reaches the code it drives through public paths: the CLI type in betterlite::proxy_cli and the loader in betterlite_config. Its helpers live in modules it declares under crates/betterlite/tests/shipped_stacks/: serde structs for the Compose and Prometheus files, read with serde-saphyr (add `serde-saphyr.workspace = true` to the crate's dev-dependencies), and a Dockerfile reader that joins lines ending in a backslash, skips comment lines and splits each instruction into its words. The structs ignore keys they don't name, take `environment` as a map, and read a healthcheck `test` as either a list or a string. Find every file from the repository root, `Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")`, never through an absolute path, and fail a case with the file name when a file is missing or doesn't parse. The no-loops-in-tests rule applies, so walk lists with iterator adaptors.
+
+  Name the inputs once in the helpers. Images: source_image is packaging/docker/Dockerfile, database_image is Dockerfile.database, non_root_image is Dockerfile.non_root and published_package is build_from_pip/Dockerfile.build_from_pip, all built with the repository root as context. Stacks: root_stack is docker-compose.yml, hardened_stack is docker-compose.yml followed by docker-compose.hardened.yml, tracing_stack is docker-compose.tracing.yml and quickstart_stack is docker-compose.quickstart.yml. Merge the hardened pair the way `docker compose -f docker-compose.yml -f docker-compose.hardened.yml` does: environment, build.args and build.additional_contexts merge by key with the overlay winning, build.context, build.dockerfile, build.target, image and command come from the overlay when it sets them, and volumes merge by container path. Compose resolves build.context and every `./` volume source against the folder of the first file, packaging/docker/, in every stack. Each test below that takes inputs is an rstest function with one named case per input, and every test function sits at the top of shipped_stacks.rs, not in a helper module, so the check filters find it by name.
+
+  Image tests. rust_image_matches_toolchain (source_image, database_image, non_root_image): the file has at least one `FROM rust:<tag>` line, skipping flags such as `--platform`, and every such tag starts with the `channel` value of rust-toolchain.toml followed by "-". builder_copies_workspace (the same three): the sources of the COPY lines without `--from` include Cargo.toml, Cargo.lock, rust-toolchain.toml and .cargo/config.toml, and the top folder of every entry in the root Cargo.toml's `[workspace] members` list, read from that file so a new member folder breaks the case (crates and tools today). Compare sources with a leading `./` and a trailing `/` removed. copy_sources_exist (all four images): every source of a COPY or ADD line without `--from` exists in the repository. Sources are the words between the instruction with its `--chown`, `--chmod` and `--link` flags and the last word. URL sources of ADD are skipped, and a COPY written in JSON-array form fails the case with a message, so no line is skipped silently. entrypoint_script_is_copied (all four images): the ENTRYPOINT's JSON array starts with a path under /app/docker/, and some COPY line in the file has packaging/docker/<that file name>, or the folder packaging/docker, as a source.
+
+  Stack tests. compose_build_wiring (root_stack, hardened_stack, tracing_stack): for every service with a build block, build.context resolves to the repository root, build.dockerfile (default Dockerfile) resolved against the context exists, and the stage it builds is a stage named runtime in that file. That stage is build.target when set, otherwise the last FROM line, because docker-compose.yml passes target only as the build arg `target` the way LiteLLM's does. When that Dockerfile has a `COPY --from=dashboard` line, build.additional_contexts must have a dashboard entry that resolves to target/dashboard/dist in the repository. bind_mounts_exist (all four stacks): every volume whose source starts with `./` names a file that exists in packaging/docker/. command_parses_in_stack (source_image, database_image and non_root_image by their CMD array, hardened_stack and tracing_stack by the litellm service's command): "betterlite" followed by those arguments parses with try_parse_from on the clap type B8375 declares in betterlite::proxy_cli, the one main.rs parses with. When `--config` is among them, its value must be the container path of one of that service's bind mounts. The images pass no `--config`, so their cases prove an image starts without one, which B8375 allows as LiteLLM does.
+
+  config_loads_in_stack (hardened_stack, tracing_stack, published_package) is the proof that a stack can start. For a stack, follow the litellm service's `--config` value through its bind mount to the file in packaging/docker/. For published_package, load packaging/docker/build_from_pip/litellm_config.yaml, which its Readme.md mounts at /app/config.yaml. The environment for a stack is every entry of the litellm service's merged environment map, and a value containing `${NAME` stands for a host variable the operator supplies, so NAME gets a placeholder. For published_package it is LITELLM_MASTER_KEY and FAKE_OPENAI_API_BASE, the two variables Readme.md's docker run passes. Then every `os.environ/NAME` the config names that the environment doesn't set yet gets a placeholder too: REDIS_PORT gets 6379, REDIS_HOST gets 127.0.0.1, a name ending in _API_BASE or _BASE_URL gets http://127.0.0.1:9, and any other name gets sk-placeholder. Load the file the way the binary does: a ConfigLoader whose lookup is betterlite_config::sections::chatgpt_token_store::home::HomeEnvironment with those variables and home None, through betterlite_config::sections::includes::load_file. The case passes when the load returns Ok and Config.model_list has as many entries as the file's own model_list, counted by parsing that list as `Vec<serde::de::IgnoredAny>`. A load error fails the case with its Display text, which names the unsupported paths or the missing variable.
+
+  prometheus_scrapes_proxy: every target in packaging/docker/prometheus.yml's static_configs is `<service>:<port>`, where the service exists in docker-compose.yml and the port is the `--port` value that service starts with (its command, otherwise its Dockerfile's CMD). healthcheck_probes_liveliness (root_stack, hardened_stack, tracing_stack): when the service built from a betterlite Dockerfile has a healthcheck, its test text names /health/liveliness and the service's `--port` value and never python, since the runtime image has bash and the Wolfi base but no Python. image_repository_is_shared: across the four Compose files no `image` names berriai or a repository whose last path segment is litellm, and every image whose last segment is betterlite uses one repository, the part before the tag. Third-party images such as postgres, prom/prometheus, clickhouse/clickhouse-server and sameersbn/squid pass.
+
+  The parts own every packaging file. When a case fails because a part's file disagrees with another part, don't change the file and don't relax the case: report a blocker that names the part, the file and the line. The packaging-scripts check runs the parts' own scripts (entrypoints.sh, source_images.sh, non_root_image.sh and guide.sh) once more on the composed tree. Write docs/deviations/B151.yaml with the two deviations below.
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/tests/shipped_stacks.rs
+    - crates/betterlite/tests/shipped_stacks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker-compose.yml#L1-L73
+    why: The root stack. Lines 3-6 build from the context root with target passed as a build arg, lines 29-36 are the python3 healthcheck the native image can't run, and lines 56-67 the Prometheus service with its mounted prometheus.yml.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker-compose.hardened.yml#L1-L44
+    why: The overlay that is merged onto the root file; its build block, command, config mount and environment are what the hardened cases compose.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/docker-compose.tracing.yml#L1-L26
+    why: The tracing stack's build context (one folder up from docker/ in LiteLLM), its runtime target, its --config command, the config mount and the OPENAI_API_KEY passthrough.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/docker-compose.quickstart.yml#L12-L24
+    why: The quickstart's published image and its required LITELLM_MASTER_KEY and LITELLM_SALT_KEY interpolations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/prometheus.yml#L1-L7
+    why: The scrape target litellm:4000 that has to match a Compose service and its port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/proxy_server_config.yaml#L1-L254
+    why: The config the hardened stack mounts, with its 16 os.environ/ references (REDIS_PORT read as a number at line 222) and the duplicate model_name entries the count must keep.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L118-L169
+    why: runtime is the last stage, so a build with no target builds it; ENTRYPOINT and CMD at the end.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/README.md#L73-L98
+    why: What the hardened stack is for and the commands that start it; B8543 owns the guide itself.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5788
+    why: LiteLLM writes get_secret's answer back into the config, None for an unset variable, so its stacks start without the variables; the deviations below start from this.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L355-L360
+    why: Without a secret manager get_secret is os.environ.get, which returns None for an unset name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/install_auto_router.sh#L1-L4
+    why: A comment-only script that nothing at the pin calls; listed to show it was checked.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/tests/nonroot.yaml#L1-L18
+    why: The container-structure-test file B8543 ports; nothing at the pin runs it.
+  - url: https://docs.docker.com/reference/compose-file/merge/
+    why: How a second -f file merges into the first, key by key, which the hardened_stack cases reproduce.
+  - url: https://docs.docker.com/reference/compose-file/build/
+    why: build.context relative to the Compose file's folder, build.dockerfile relative to the context, build.target and additional_contexts.
+  - url: https://docs.docker.com/reference/dockerfile/
+    why: COPY and ADD source rules, flags, the JSON-array form, line continuations, and the default target being the last stage.
+dod:
+  - text: Every Rust image builds with the toolchain rust-toolchain.toml pins and copies the manifests, the lockfile, .cargo/config.toml and every workspace member folder into its builder.
+    proof: [toolchain-test, workspace-test]
+  - text: Every COPY source of the four images exists in the repository, and each image copies its ENTRYPOINT script from packaging/docker/.
+    proof: [copy-sources-test, entrypoint-test]
+  - text: Each Compose stack builds from the repository root with a Dockerfile, a runtime stage and a dashboard context that exist, and mounts only files that exist.
+    proof: [build-wiring-test, mounts-test]
+  - text: The command every image and stack hands betterlite parses with the proxy CLI, and a --config path is a bind mount of the same service.
+    proof: [command-test]
+  - text: The config each stack mounts, and the published-package image's config, loads through the native loader with that stack's environment and keeps every deployment.
+    proof: [config-load-test]
+  - text: Prometheus scrapes the proxy service on the port it starts with, and a proxy healthcheck probes /health/liveliness on that port without Python.
+    proof: [prometheus-test, healthcheck-test]
+  - text: No Compose file names a LiteLLM image, and every betterlite image reference uses one repository.
+    proof: [image-test]
+  - text: The parts' own packaging scripts still pass on the composed tree.
+    proof: [packaging-scripts]
+checks:
+  optional: []
+  commands:
+    - id: toolchain-test
+      why: An image compiles with a Rust image other than the toolchain the repository pins, or names no rust image.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^rust_image_matches_toolchain(::|$)/)'
+    - id: workspace-test
+      why: A builder stage leaves out a manifest, the lockfile, .cargo/config.toml or a workspace member folder, so the locked build fails or runs without the repository's cargo env.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^builder_copies_workspace(::|$)/)'
+    - id: copy-sources-test
+      why: A Dockerfile copies a path that doesn't exist in the build context, or a JSON-form COPY goes unchecked.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^copy_sources_exist(::|$)/)'
+    - id: entrypoint-test
+      why: An image's ENTRYPOINT names a script that no COPY line brings from packaging/docker/.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^entrypoint_script_is_copied(::|$)/)'
+    - id: build-wiring-test
+      why: A Compose build points at the wrong context, a missing Dockerfile, a stage other than runtime, or leaves out the dashboard context its Dockerfile copies from.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^compose_build_wiring(::|$)/)'
+    - id: mounts-test
+      why: A stack bind-mounts a file that doesn't exist in packaging/docker/.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^bind_mounts_exist(::|$)/)'
+    - id: command-test
+      why: An image CMD or a stack command fails to parse with the proxy CLI, or --config names a path no mount provides.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^command_parses_in_stack(::|$)/)'
+    - id: config-load-test
+      why: A shipped config stops the native loader with an unsupported key or a missing variable, or loses a deployment, so its stack would not start.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^config_loads_in_stack(::|$)/)'
+    - id: prometheus-test
+      why: prometheus.yml scrapes a service or port the root stack doesn't run.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^prometheus_scrapes_proxy(::|$)/)'
+    - id: healthcheck-test
+      why: The proxy healthcheck runs Python or probes another path or port, so the container never turns healthy.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^healthcheck_probes_liveliness(::|$)/)'
+    - id: image-test
+      why: A Compose file still pulls a LiteLLM image, or two files name different betterlite repositories.
+      run: cargo nextest run --locked -p betterlite --test shipped_stacks --no-tests=fail -E 'test(/^image_repository_is_shared(::|$)/)'
+    - id: packaging-scripts
+      why: The composition tests were not added, or a part's own script fails on the composed tree.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite/tests/shipped_stacks.rs)" &&
+        bash packaging/docker/tests/entrypoints.sh &&
+        bash packaging/docker/tests/source_images.sh &&
+        bash packaging/docker/tests/non_root_image.sh &&
+        bash packaging/docker/tests/guide.sh
+oracle_cases: []
+deviations:
+  - what: >-
+      The hardened stack (docker-compose.yml with docker-compose.hardened.yml) starts only when .env sets every variable proxy_server_config.yaml names through os.environ/: ANTHROPIC_API_KEY, AZURE_API_BASE, AZURE_API_KEY, FAKE_OPENAI_API_BASE, GOOGLE_API_KEY, GROQ_API_KEY, LANGFUSE_PROJECT1_PUBLIC, LANGFUSE_PROJECT1_SECRET, LANGFUSE_PROJECT2_PUBLIC, LANGFUSE_PROJECT2_SECRET, LITELLM_MASTER_KEY, OPENAI_API_KEY, RECORDER_OPENAI_BASE_URL, REDIS_HOST, REDIS_PASSWORD and REDIS_PORT. With one unset the server stops at load and names it; LiteLLM starts with it as None.
+    why: betterlite fails the load on an unset or empty os.environ/ reference so a mistyped variable can't leave a credential quietly empty, as B189's deviation and docs/compatibility.md record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5788
+  - what: >-
+      The tracing stack starts only when the host exports OPENAI_API_KEY. Unset, Compose passes an empty value through ${OPENAI_API_KEY:-}, and the load stops on model_list.0.litellm_params.api_key; LiteLLM starts and fails each call instead.
+    why: An empty variable counts as unset (docs/compatibility.md), and an unset reference fails the load for the same reason as above.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/docker-compose.tracing.yml#L17
+out_of_scope:
+  - "Every packaging file stays with its part: B5070 the entrypoints, B5071 Dockerfile and Dockerfile.database, B5072 docker-compose.yml, docker-compose.quickstart.yml, proxy_server_config.yaml, prometheus.yml and .env.example, B5073 Dockerfile.non_root and docker-compose.hardened.yml, B5074 build_from_pip/, B5075 docker-compose.tracing.yml and tracing-config.yaml. This task reads them and changes none."
+  - "docker/README.md and docker/tests/nonroot.yaml are B8543's packaging/docker/README.md and packaging/docker/tests/nonroot.yaml, checked by its guide.sh."
+  - "docker/install_auto_router.sh: its only line is a comment saying semantic-router comes from uv sync, and nothing at the pin calls it (a grep of the whole checkout, .github included, finds no reference). No caller at the pin, so it is not built; B8543 and B327 record the same."
+  - "Building the images, starting the stacks, running container-structure-test on nonroot.yaml and probing a live /health/liveliness need a docker daemon, which neither CI's rust:1.98.0-slim-trixie gate container nor the worker sandbox has."
+  - "The published-package image runs the betterlite script of the M12 Python package, so its CMD is not parsed against the native CLI; only its config is loaded."
+  - "B152 and its parts B8130 to B8135 own helm/**. B8375 owns the proxy CLI, B003 the /health/liveliness route and B3886 /metrics, and each config key of the shipped files belongs to the task that owns its section."
+pitfalls:
+  - Compose resolves build.context and every ./ source against the folder of the first -f file, packaging/docker/, so the overlay's context ../.. is the repository root and the overlay is never read on its own.
+  - docker-compose.yml passes target only as build.args.target, the way LiteLLM's does, so the image Compose builds is the last stage and Dockerfile's last FROM must be AS runtime.
+  - .cargo/config.toml sets PCRE2_SYS_STATIC=1 for the pcre2 crate betterlite-auth uses; a builder that skips it can link the bookworm builder's shared libpcre2, which the Wolfi runtime doesn't have.
+  - "An empty variable counts as unset, so taking ${OPENAI_API_KEY:-} as an empty string fails the tracing load; an interpolated name gets a placeholder."
+  - redis_port reads os.environ/REDIS_PORT as a number, so a text placeholder fails with invalid_integer and hides whether the keys load.
+  - proxy_server_config.yaml repeats model_name fake-openai-endpoint-3 and gpt-5-mini-end-user-test, so counting distinct names instead of entries hides a dropped deployment.
+  - B5071 and B5073 copy the scripts to /app/docker in the builder and then COPY --from=builder /app/docker, so the entrypoint check looks for the packaging/docker/ source on any COPY line, not only in the runtime stage.
+  - The --from=dashboard sources come from target/dashboard/dist, which CI never builds, so copy_sources_exist skips lines with --from instead of failing on a missing ui folder.
+  - LiteLLM's root healthcheck is python3 -c with urllib, and the native runtime has no Python, so a copied healthcheck keeps the container unhealthy forever.
+  - Reading docker-compose.hardened.yml without the base loses the dashboard context, the env_file and the base environment, so every hardened case works on the merged service.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

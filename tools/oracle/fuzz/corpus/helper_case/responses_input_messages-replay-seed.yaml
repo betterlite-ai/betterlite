@@ -1,0 +1,14 @@
+kind: helper
+name: responses-input-messages-replay-seed
+call:
+  responses_input_messages:
+    request:
+      input:
+        - type: reasoning
+          content: " x "
+          encrypted_content: '[{"type":"thinking","signature":"sig"}]'
+        - {role: user, content: hi}
+    replay_reasoning: true
+    cache: []
+env: {}
+compare: {ignore: []}

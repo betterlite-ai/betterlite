@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-overrides
+call:
+  b5650: {function: override_fields, sources: [{input_cost_per_token: 0, output_cost_per_token: null, rate_above_1k_tokens: 1, mode: chat}, {output_cost_per_token: 0.000002, id: x, output_vector_size: 3}]}
+env: {}
+compare: {ignore: []}

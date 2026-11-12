@@ -1,0 +1,10 @@
+kind: helper
+name: guardrail-params-mode-mixed-case-list
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+      mode: [Pre_Call, POST_CALL]
+env: {}
+compare: {ignore: []}

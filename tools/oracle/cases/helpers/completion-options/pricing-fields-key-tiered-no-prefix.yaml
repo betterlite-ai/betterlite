@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-key-tiered-no-prefix
+call:
+  b5650: {function: server_derived_key, key: above_5k_tokens}
+env: {}
+compare: {ignore: []}

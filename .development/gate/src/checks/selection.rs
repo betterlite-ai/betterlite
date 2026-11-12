@@ -48,6 +48,23 @@ pub(super) fn validate(
     }) {
         return Err(GateError::Selection("no checks selected".to_owned()));
     }
+    validate_beside(&selected, task, &selection.beside)
+}
+
+fn validate_beside(selected: &[&Command], task: &Task, beside: &[String]) -> Result<(), GateError> {
+    for id in beside {
+        let check = selected
+            .iter()
+            .find(|candidate| candidate.id == *id)
+            .ok_or_else(|| {
+                GateError::Selection(format!("{id} is not a command check of {}", task.id))
+            })?;
+        if check.after_green {
+            return Err(GateError::Selection(format!(
+                "{id} runs once every other check passed, so it cannot run beside them"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -96,6 +113,7 @@ pub(crate) fn builtins_and(
     Ok(Selection {
         only,
         skip: Vec::new(),
+        beside: Vec::new(),
     })
 }
 
@@ -103,7 +121,7 @@ pub(super) fn schedule<'spec>(
     development: &'spec Development,
     task: &'spec Task,
     selection: &Selection,
-) -> Result<[Vec<&'spec Command>; 3], GateError> {
+) -> Result<[Vec<&'spec Command>; 4], GateError> {
     let (later, first): (Vec<&Command>, Vec<&Command>) = commands(development, task)?
         .into_iter()
         .filter(|check| {
@@ -111,8 +129,11 @@ pub(super) fn schedule<'spec>(
                 && !selection.skip.contains(&check.id)
         })
         .partition(|check| check.after_green);
-    let (prerequisites, expensive) = first
+    let (beside, in_order): (Vec<&Command>, Vec<&Command>) = first
+        .into_iter()
+        .partition(|check| selection.beside.contains(&check.id));
+    let (prerequisites, expensive) = in_order
         .into_iter()
         .partition(|command| prerequisite(&command.id));
-    Ok([prerequisites, expensive, later])
+    Ok([prerequisites, expensive, later, beside])
 }

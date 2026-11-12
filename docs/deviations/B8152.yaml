@@ -1,0 +1,14 @@
+task: B8152
+deviations:
+  - what: An oobabooga chat reply that has no usage object, or whose fields have the wrong type, ends in a typed ReplyError (Missing or Shape) that names the field.
+    why: LiteLLM lets a bare KeyError or TypeError escape from transform_response. Rust has no exception to leak, and the typed error says which part of the reply is wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/transformation.py#L74-L78
+  - what: A non-string "error" value in an oobabooga chat or embedding reply (an object, a number, null) becomes its JSON text in the error message.
+    why: LiteLLM passes the Python value itself as the message, so the message is a dict or None. The message is a string in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/transformation.py#L58-L62
+  - what: An oobabooga embedding reply that is not JSON, has no data[0], or has no embedding in data[0] ends in a typed ReplyError (Shape or Missing).
+    why: LiteLLM lets JSONDecodeError, KeyError and IndexError escape from embedding(). A typed error replaces them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/oobabooga.py#L132-L150
+  - what: An oobabooga embedding error reply whose status_code is null uses status 500, and one whose status_code is not a number ends in a typed Shape error.
+    why: LiteLLM reads status_code with .get and keeps whatever value it finds, even a string or null. The error status is a number in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/oobabooga.py#L135-L139

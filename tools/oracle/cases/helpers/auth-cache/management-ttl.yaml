@@ -1,0 +1,23 @@
+kind: helper
+name: auth-cache-management-ttl
+call:
+  auth_cache:
+    scenario: management_ttl
+    payloads: []
+    ttls: [null, 0, -5, 45.5]
+    fallback: 30
+    keys: []
+    ids:
+      user_id: user-1
+      object_permission_id: op-1
+      tag: tag-1
+      access_group: group-1
+      project_id: project-1
+      end_user_id: end-user-1
+      team_id: team-1
+      member_user_id: member-1
+    auth: {}
+env:
+  DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL: "30"
+compare:
+  ignore: []
