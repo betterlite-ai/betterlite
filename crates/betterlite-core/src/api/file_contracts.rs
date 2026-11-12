@@ -34,11 +34,7 @@ pub fn is_batch_jsonl_request<File>(
     content_type: Option<&str>,
     file: Option<&File>,
 ) -> bool {
-    if purpose != Some("batch") {
-        return false;
-    }
-    if !valid_content_type(content_type) {
-        return false;
-    }
-    file.is_some()
+    purpose.is_some_and(|value| value == "batch")
+        && valid_content_type(content_type)
+        && file.is_some()
 }
