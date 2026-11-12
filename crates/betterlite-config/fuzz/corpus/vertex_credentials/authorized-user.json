@@ -1,0 +1,1 @@
+{"type":"authorized_user","client_id":"fuzz-client","client_secret":"fuzz-secret","refresh_token":"fuzz-refresh","token_uri":"https://oauth2.googleapis.com/token","quota_project_id":"fuzz-quota-project"}

@@ -25,19 +25,38 @@ description: >-
   After every endpoint registration attempt, track its route key in a visited set. Remove all
   registered routes whose keys are not in the visited set, cleaning up entries from the prior
   configuration snapshot without leaving orphaned routes in the registry. Do not call the route
-  factory or the HTTP client here; B3615 owns the route creation and attach of the handler.
+  factory or the HTTP client here. LiteLLM's add_exact_path_route and add_subpath_route build the
+  endpoint function with create_pass_through_route when they install a route, but an axum router
+  can't change once it serves, so B8643's configured dispatch calls B3615's create_pass_through_route
+  for each matched request from the entry this task writes. This task writes that entry and
+  installs the path and methods in B3614's RouteTable, nothing more.
 
-  Call the initialization function from the proxy startup and reload paths. Its signature takes
-  a list of endpoints from the database and/or config, plus an optional config file path to
-  thread through to B3615 for S3/GCS config handlers. Leave the config_file_path as None when
-  called from the database-overlay or runtime API path, so the gate in get_instance_fn fires
-  correctly and disallows remote S3/GCS handlers at runtime.
+  The proxy startup (B8374, on a config file load) and the database and runtime paths (B8384,
+  B8379, B8520) call initialize_pass_through_endpoints. It takes the shared route handle described
+  below, the list of endpoints and `config_file_path: Option<&str>`; add_exact_path_route and
+  add_subpath_route take the handle and config_file_path too, since B8520 calls them directly with
+  None. Store config_file_path as an owned `Option<String>` on every exact and subpath entry. That
+  is how the config file path reaches create_pass_through_route, where get_instance_fn uses it to
+  load s3:// and gcs:// custom handlers and modules that sit next to config.yaml; the database and
+  runtime callers pass None, so that gate refuses remote handlers at runtime.
 
-  The registry itself is a module-global dict keyed by route keys ({id}:{type}:{path}:{methods})
-  with values holding endpoint metadata and passthrough params (target, headers, methods, etc.).
-  This is the same registry that B3614 queries for collision detection and lookup. Preserve the
-  order of endpoints as they appear in the combined list, since LiteLLM's first-match logic
-  relies on it.
+  An entry carries the config_file_path its route was first installed with. The handle remembers
+  the value per route that B3614's add_route_if_not_exists installed (that table never drops a
+  route). When a later call gets false back because the path and methods are already installed,
+  look that route up with colliding_routes and store its remembered value instead of the call's
+  own; with no remembered value (a static app route holds the path) store the call's value.
+  LiteLLM behaves this way because SafeRouteAdder never replaces an endpoint function it already
+  added, and every database reload registers the config endpoints again with None.
+
+  The registry is not a module global: the caller passes in one shared handle per process (B8640
+  builds it, B8614's PassThroughState.routes carries it). Define its type here, for example an Arc
+  of a lock around B3614's RouteTable, B2302's PassThroughRegistry, the passthrough params by route
+  key and the remembered config_file_path per installed route; B8614, B8520 and B8643 read its
+  merged name. Entries are keyed by route key ({id}:{type}:{path}:{methods}) and hold the endpoint
+  metadata, the passthrough params (target, custom_headers, forward_headers, merge_query_params,
+  default_query_params, cost_per_request, guardrails, timeout) and config_file_path, so B8643 builds
+  a handler from one entry. Preserve the order of endpoints as they appear in the combined list,
+  since LiteLLM's first-match logic relies on it.
 
 scope:
   paths:
@@ -57,6 +76,10 @@ references:
     why: PassThroughGenericEndpoint with auth default set to True, the exact typed-config default this task must not apply to raw dicts
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2878-L2952
     why: SafeRouteAdder and route registry lookup (B3614's responsibility, not this task)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6815-L6821
+    why: load_config passes config_file_path on a config file load; the database reload at L7909-L7911 and initialize_pass_through_endpoints_in_db at pass_through_endpoints.py L3943-L3948 pass none
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L65
+    why: get_instance_fn, which refuses s3:// and gcs:// targets without config_file_path and resolves local modules next to it; B3615 calls it, this task only stores the value
 
 dod:
   - text: Environment variables in custom headers with os.environ/NAME syntax are resolved to their values at registration time through the config loader.
@@ -92,8 +115,8 @@ dod:
   - text: The missing auth default (false when absent) is preserved from the raw dict, not replaced by the typed config model's default.
     proof: [raw-dict-auth-default]
 
-  - text: The config_file_path parameter is threaded through to create_pass_through_route for S3/GCS handler support on file loads, and set to None on database/runtime paths.
-    proof: [config-file-path-threading]
+  - text: Every exact and subpath entry stores the config_file_path its route was first installed with, the config file path on a file load and None from the database and runtime callers, and a later call that registers the same path and methods with None keeps the remembered file path.
+    proof: [config-file-path-stored]
 
 checks:
   optional: []
@@ -142,8 +165,8 @@ checks:
       why: missing auth field is not preserved as false, or typed defaults are incorrectly applied
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::auth_default)'
 
-    - id: config-file-path-threading
-      why: config_file_path is not threaded through correctly or is set when it should be None
+    - id: config-file-path-stored
+      why: an entry lacks config_file_path, stores it on a database or runtime install, or loses the remembered value on a later call
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(passthrough_route_registration::config_file_path)'
 
 oracle_cases: []
@@ -155,11 +178,11 @@ deviations:
     why: Langfuse's integration requires a specific authorization header format distinct from other os.environ/ header substitutions.
 
 out_of_scope:
-  - Route factory creation and endpoint handler attachment (B3615).
+  - create_pass_through_route and the endpoint function it builds (B3615); calling it for a matched request with the stored entry, config_file_path included (B8643).
   - Lower route lookup, collision detection and registry queries (B3614).
   - Config and database persistence of pass-through endpoints; this task only reads them.
   - HTTP method normalization beyond passing configured methods to SafeRouteAdder.
-  - Guardrail processing beyond passing guardrails dict to the route factory.
+  - Guardrail processing; this task stores the endpoint's guardrails dict in the entry's passthrough params as given, and B8643 hands it to B3615's create_pass_through_route.
   - Cost per request validation; the endpoint dict value is passed through as-is.
 
 pitfalls:
@@ -186,8 +209,10 @@ pitfalls:
     The registry dict key must be stable across reloads for the same endpoint_id and path,
     so stale-route removal by key can find and drop entries from old loads.
   - >-
-    config_file_path must stay None when called from database/runtime APIs (not file load),
-    so the remote handler gate in the route factory does not accidentally allow S3/GCS handlers at runtime.
+    LiteLLM's load_config passes the same config list twice (as pass_through_endpoints and again as
+    config_passthrough_endpoints), and every database reload registers it once more with None; a test
+    that only checks the first call's entry misses the case where None overwrites the remembered
+    config file path.
   - >-
     Missing target field causes early return before any route is registered, but any auth gating
     and openai_routes path entries added before the target check are left behind. Callers must

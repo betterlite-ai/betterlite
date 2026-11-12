@@ -1,7 +1,7 @@
 id: B733
 milestone: M4 keys, spend and management
 title: Typed key and management-object caches
-status: todo
+status: done
 depends_on: [B002, B2226, B4291, B4293, B4295, B171, B856, B2314]
 file: tasks/B733-auth-cache.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/auth/auth_checks.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1412

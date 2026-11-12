@@ -1,0 +1,21 @@
+kind: helper
+name: audio-hash-and-position
+call:
+  audio_file_input:
+    calls:
+      - {function: hash, file: {kind: bytes, content: YWJj}}
+      - {function: hash, file: {kind: bytearray, content: YWJj}}
+      - {function: hash, file: {kind: tuple, filename: different, content: {kind: bytes, content: YWJj}}}
+      - {function: hash, file: {kind: stream, name: voice.wav, content: YWJj}}
+      - {function: hash, file: {kind: stream, name: voice.wav, content: YWJj, position: 2}}
+      - {function: hash, file: {kind: text, content: abc}}
+      - {function: hash, file: {kind: text, content: /no/such/audio.wav}}
+      - {function: hash, file: {kind: stream, name: voice.wav, content: YWJj, read: fail}}
+      - {function: hash, file: {kind: path, path: /missing/voice.wav}}
+      - {function: hash, file: {kind: path, path: /authorized/clip.wav}, files: {"/authorized/clip.wav": YWJj}}
+      - {function: hash, file: {kind: tuple, filename: other.mp3, content: {kind: text, content: abc}}}
+      - {function: hash, file: {kind: tuple, filename: other.mp3, content: {kind: path, path: /missing/voice.wav}}}
+      - {function: hash, file: {kind: stream, name: voice.wav, content: YWJj, position: 2, seek: unsupported}}
+      - {function: hash, file: {kind: tuple, filename: voice.wav, content: {kind: stream, name: inner.wav, content: YWJj, position: 1}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: repair_small_json
+call:
+  request_body:
+    function: read_request_body
+    request:
+      method: POST
+      route_path: /v1/chat/completions
+      headers: {content-type: application/json}
+      body: {encoding: base64, value: eyJtb2RlbCI6Iv8ifQ==}
+    max_repair_bytes: 1048576
+env: {}
+compare:
+  ignore: []
