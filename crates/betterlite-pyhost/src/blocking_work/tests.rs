@@ -276,6 +276,42 @@ async fn run_times_out_at_the_deadline_and_counts_the_job_abandoned() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_run_that_times_out_while_queued_is_not_abandoned() {
+    let host = start_host();
+    let tracker = Arc::new(WorkTracker::new(1));
+    let (mut first_runs, first_release, first_started) =
+        spawn_one_blocked_job(&tracker, &host, LONG_DEADLINE, 1_u8);
+    wait_until_started(&first_started).await;
+    let (mut second_runs, _second_release, _second_started) =
+        spawn_one_blocked_job(&tracker, &host, Duration::from_secs(5), 2_u8);
+    yield_times(10).await;
+    advance(Duration::from_secs(5)).await;
+    match join_one(&mut second_runs).await {
+        Err(WorkError::TimedOut { .. }) => {}
+        Ok(value) => panic!("the queued job must not run, got {value}"),
+        Err(other) => panic!("the queued job must time out, got {other:?}"),
+    }
+    assert_eq!(
+        tracker.stats(),
+        Stats {
+            running: 1,
+            abandoned: 0,
+            completed: 0
+        }
+    );
+    first_release.send(()).unwrap();
+    join_one(&mut first_runs).await.unwrap();
+    assert_eq!(
+        tracker.stats(),
+        Stats {
+            running: 0,
+            abandoned: 0,
+            completed: 1
+        }
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn the_pool_never_runs_more_than_max_threads_jobs() {
     let host = start_host();
     let tracker = Arc::new(WorkTracker::new(2));

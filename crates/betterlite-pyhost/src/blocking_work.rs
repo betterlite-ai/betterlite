@@ -127,7 +127,7 @@ impl WorkTracker {
                 continue;
             }
             let remaining_jobs = self.state.lock_counters().active;
-            if remaining_jobs > 0 {
+            if remaining_jobs != 0 {
                 warn!(
                     jobs = remaining_jobs,
                     "Python worker pool shutdown grace elapsed with jobs still running"
