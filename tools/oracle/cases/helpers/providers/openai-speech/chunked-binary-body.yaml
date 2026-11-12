@@ -1,0 +1,19 @@
+kind: helper
+name: openai-speech-chunked-binary-body
+call:
+  openai_speech:
+    client:
+      api_key: sk-speech
+      api_base: 'https://speech.test/v1'
+      timeout: 30
+      max_retries: 4
+    request:
+      model: tts-1
+      input: Chunk it
+      voice: shimmer
+    reply:
+      status: 200
+      headers: [[content-type, audio/wav]]
+      chunks: [[1, 2], [3], [4, 5, 6]]
+env: {}
+compare: {ignore: []}

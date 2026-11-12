@@ -1085,6 +1085,7 @@ name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
@@ -1231,6 +1232,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "bytes",
  "chrono",
@@ -1509,6 +1511,7 @@ dependencies = [
  "jiff",
  "jsonschema",
  "lopdf",
+ "lru",
  "num-traits",
  "regex",
  "rstest",

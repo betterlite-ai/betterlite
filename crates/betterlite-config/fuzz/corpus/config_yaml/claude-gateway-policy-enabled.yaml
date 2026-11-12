@@ -1,0 +1,8 @@
+general_settings:
+  enable_claude_code_gateway: true
+
+model_list:
+  - model_name: claude-gateway-model
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: sk-gateway
