@@ -30,11 +30,11 @@ pub(crate) struct Deployment {
 
 impl OrderedDeployment for Deployment {
     fn litellm_params_order(&self) -> Option<i64> {
-        self.litellm_params.as_ref().and_then(|found| found.order)
+        self.litellm_params.as_ref()?.order
     }
 
     fn model_info_order(&self) -> Option<i64> {
-        self.model_info.as_ref().and_then(|found| found.order)
+        self.model_info.as_ref()?.order
     }
 }
 
