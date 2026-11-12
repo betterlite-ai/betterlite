@@ -5,6 +5,10 @@ use async_trait::async_trait;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
+use betterlite_tokenizer::a2a_text::request_utils::{
+    count_tokens as count_text_tokens, extract_text_from_response,
+};
+use betterlite_tokenizer::a2a_text::{A2aResponse, A2aTextError};
 use betterlite_tokenizer::count::Counter;
 use chrono::{DateTime, FixedOffset};
 use futures_core::Stream;
@@ -13,10 +17,6 @@ use indexmap::IndexMap;
 use serde_json::Number;
 use thiserror::Error;
 
-use crate::a2a_text::request_utils::{
-    count_tokens as count_text_tokens, extract_text_from_response,
-};
-use crate::a2a_text::{A2aResponse, A2aTextError};
 use crate::client::records::compat::{Message, Part, SendMessageRequest};
 use crate::client::records::response::SendMessageResponse;
 use crate::cost_calculator::{CostCalculatorError, a2a_call_cost};

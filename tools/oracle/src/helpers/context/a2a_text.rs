@@ -1,4 +1,4 @@
-use betterlite_a2a::a2a_text::{
+use betterlite_tokenizer::a2a_text::{
     A2aResponse, A2aTextError, RecordValue, extract_text_from_a2a_message,
     extract_text_from_a2a_response,
 };
