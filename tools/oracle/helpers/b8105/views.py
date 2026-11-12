@@ -66,6 +66,7 @@ class CreateReplyInput(TypedDict):
 class RequestsInput(TypedDict):
     op: Literal["requests"]
     environment: dict[str, str]
+    now: int
     sdk: Sdk
     api_base: str | None
     file_ids: list[str]

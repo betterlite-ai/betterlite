@@ -74,6 +74,7 @@ pub(crate) struct CreateReply {
 #[derive(Deserialize)]
 pub(crate) struct Requests {
     pub(super) environment: BTreeMap<String, String>,
+    pub(super) now: i64,
     pub(super) sdk: Sdk,
     pub(super) api_base: Option<String>,
     pub(super) file_ids: Vec<String>,

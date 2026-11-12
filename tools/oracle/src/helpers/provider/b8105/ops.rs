@@ -146,7 +146,7 @@ fn file_view(file: &FileObject) -> Value {
 }
 
 pub(super) fn requests(call: &Requests) -> Value {
-    let config = fixture::config(&call.environment, &call.sdk, 0);
+    let config = fixture::config(&call.environment, &call.sdk, call.now);
     let litellm_params = fixture::params(call.api_base.as_deref(), None);
     let empty = FileParams::new();
     let mut retrieve = Vec::with_capacity(call.file_ids.len());

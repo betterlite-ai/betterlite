@@ -228,6 +228,7 @@ def file_requests(
 
 def requests(input_value: RequestsInput) -> Json:
     activate(input_value["environment"])
+    time.time = partial(float, input_value["now"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L387-L389
     activate_sdk(input_value["sdk"])
     client = config()
     litellm_params: Object = {"api_base": input_value["api_base"]}
