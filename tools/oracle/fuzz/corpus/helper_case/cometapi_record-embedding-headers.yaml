@@ -1,0 +1,11 @@
+kind: helper
+name: cometapi-record-seed-embedding-headers
+call:
+  cometapi_record:
+    function: embedding_headers
+    calls:
+      - {api_key: null, headers: {}, env: {}}
+      - {api_key: null, headers: {}, env: {COMETAPI_KEY: env-key}}
+      - {api_key: null, headers: {Authorization: "Bearer caller"}, env: {COMETAPI_KEY: env-key}}
+env: {}
+compare: {ignore: []}

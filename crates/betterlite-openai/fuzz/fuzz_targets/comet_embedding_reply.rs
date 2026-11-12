@@ -1,0 +1,7 @@
+#![no_main]
+use betterlite_openai::cometapi_wire::embed::decode_comet_embedding_reply;
+use betterlite_openai::openai_base_config::Headers;
+use libfuzzer_sys::fuzz_target;
+fuzz_target!(|bytes: &[u8]| {
+    let _reply = decode_comet_embedding_reply(bytes, 200, &Headers::new());
+});
