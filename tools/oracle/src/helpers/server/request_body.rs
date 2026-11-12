@@ -3,8 +3,8 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_config::sections::request_body::Settings;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::{
-    JsonObject, MediaTypeKind, ParsedBody, RequestBodyInput, classify_media_type,
-    is_opaque_audio_request, is_otlp_trace_request, normalize_media_type, parse_binary_body,
+    JsonObject, MediaTypeKind, OTLP_TRACE_METHOD, OTLP_TRACE_PATH, ParsedBody, RequestBodyInput,
+    classify_media_type, is_opaque_audio_request, normalize_media_type, parse_binary_body,
     rewrite_request_model,
 };
 use betterlite_server::api::request_body::read_request_body;
@@ -109,8 +109,9 @@ impl Helper for Op {
             Input::ParseBinaryBody { body } => {
                 Ok(serde_json::to_value(parse_binary_body(&body.decode()?))?)
             }
+            // OTLP trace spans arrive only on POST /v1/traces, so auth must not consume their body
             Input::IsOtlpTraceRequest { method, route_path } => Ok(serde_json::to_value(
-                is_otlp_trace_request(method, route_path),
+                method == OTLP_TRACE_METHOD && route_path == OTLP_TRACE_PATH,
             )?),
             Input::IsOpaqueAudioRequest {
                 route,
@@ -169,7 +170,7 @@ fn read_facts(request: &WireRequest, max_repair_bytes: Option<u64>) -> HelperRes
     let settings = Settings { max_repair_bytes };
     match read_request_body(&facts, &settings, &ApiLimits::default()) {
         Ok(result) => {
-            let cached = result.cached_body();
+            let cached = result.parsed_body.as_ref().map(ParsedBody::visible);
             let raw = result
                 .raw_json_body(&facts)
                 .map(|bytes| STANDARD.encode(bytes));

@@ -9,11 +9,43 @@ use betterlite_core::api::request_body::{
 use rstest::rstest;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
+use std::str;
+use std::sync::{Arc, Mutex};
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::{decode_request_body, read_request_body};
 use betterlite_core::api::api_boundaries::ApiLimitError;
 use betterlite_core::api::request_body::DecodedJson;
+
+#[derive(Clone)]
+struct CaptureWriter(Arc<Mutex<String>>);
+
+impl io::Write for CaptureWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text = str::from_utf8(buf)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
+        self.0
+            .lock()
+            .map_err(|source| io::Error::other(source.to_string()))?
+            .push_str(text);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CaptureWriter {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
 
 fn object(source: &str) -> JsonObject {
     serde_json::from_str(source).unwrap()
@@ -64,7 +96,7 @@ fn cached_body_single_read() {
     assert_eq!(first.body, object(r#"{"model":"cached","messages":[]}"#));
     assert!(!first.body_read);
     assert_eq!(
-        first.cached_body(),
+        first.parsed_body.as_ref().map(ParsedBody::visible),
         Some(object(r#"{"model":"cached","messages":[]}"#))
     );
     let second = read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
@@ -78,12 +110,24 @@ fn repair_small_json() {
         "/v1/chat/completions",
         b"{\"model\":\"\xff\"}".to_vec(),
     );
-    let result = read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
+    let records = Arc::new(Mutex::new(String::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(CaptureWriter(Arc::clone(&records)))
+        .finish();
+    let result = with_default(subscriber, || {
+        read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap()
+    });
     assert_eq!(result.branch, BodyKind::Json);
     assert_eq!(result.body, JsonObject::new());
     assert!(result.body_read);
     assert!(result.parsed_body.is_none());
     assert!(result.raw_json_body(&input).is_none());
+    let captured = records.lock().unwrap();
+    assert!(captured.contains("ERROR"));
+    assert!(captured.contains("/v1/chat/completions"));
+    assert!(captured.contains("invalid utf-8 sequence"));
+    drop(captured);
 }
 
 #[test]
@@ -108,15 +152,15 @@ fn repair_over_threshold() {
 #[test]
 fn opaque_audio_body() {
     let input = request("audio/wav", "/azure_speech/audio/speech", b"RIFF".to_vec());
-    assert!(is_opaque_audio_request(
-        &input.route_path,
-        input.content_type()
-    ));
+    assert!(is_opaque_audio_request(&input.route_path, "audio/wav"));
     let prepared = read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
     assert_eq!(prepared.branch, BodyKind::OpaqueAudio);
     assert!(!prepared.body_read);
     assert_eq!(prepared.body, JsonObject::new());
-    assert_eq!(prepared.cached_body(), Some(JsonObject::new()));
+    assert_eq!(
+        prepared.parsed_body.as_ref().map(ParsedBody::visible),
+        Some(JsonObject::new())
+    );
     assert_eq!(prepared.raw_json_body(&input), Some(&b"RIFF"[..]));
     let json = request(
         "application/json",
@@ -147,6 +191,25 @@ fn otlp_body_preserved() {
     let read = read_request_body(&get, &Settings::default(), &ApiLimits::default()).unwrap();
     assert_eq!(read.branch, BodyKind::Json);
     assert!(read.body_read);
+}
+
+#[rstest]
+#[case::post_traces("POST", "/v1/traces", BodyKind::Otlp)]
+#[case::get_traces("GET", "/v1/traces", BodyKind::Binary)]
+#[case::other_method("PUT", "/v1/traces", BodyKind::Binary)]
+#[case::trailing_slash("POST", "/v1/traces/", BodyKind::Binary)]
+#[case::other_path("POST", "/v1/chat/completions", BodyKind::Binary)]
+fn otlp_trace_requests_are_posted_to_the_traces_path(
+    #[case] method: &str,
+    #[case] route_path: &str,
+    #[case] branch: BodyKind,
+) {
+    let input = RequestBodyInput {
+        method: method.to_owned(),
+        ..request("application/x-protobuf", route_path, vec![0x0a, 0xff])
+    };
+    let result = read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
+    assert_eq!(result.branch, branch);
 }
 
 #[test]
@@ -225,7 +288,29 @@ fn a_binary_media_type_keeps_json_bodies() {
     let real_binary = request("application/x-protobuf", "/v1/embeddings", vec![0x0a, 0xff]);
     let binary =
         read_request_body(&real_binary, &Settings::default(), &ApiLimits::default()).unwrap();
-    assert_eq!(binary.cached_body(), Some(JsonObject::new()));
+    assert_eq!(
+        binary.parsed_body.as_ref().map(ParsedBody::visible),
+        Some(JsonObject::new())
+    );
+}
+
+#[test]
+fn a_binary_media_type_json_body_over_the_api_limit_is_refused() {
+    let limits = ApiLimits {
+        max_json_bytes: 8,
+        max_event_bytes: 1024,
+        max_items: 16,
+    };
+    let input = request(
+        "application/x-protobuf",
+        "/v1/embeddings",
+        br#"{"input":"value"}"#.to_vec(),
+    );
+    let error = read_request_body(&input, &Settings::default(), &limits).unwrap_err();
+    assert_eq!(error.facts().status, 413);
+    let within = request("application/x-protobuf", "/v1/embeddings", b"{}".to_vec());
+    let read = read_request_body(&within, &Settings::default(), &limits).unwrap();
+    assert_eq!(read.branch, BodyKind::Binary);
 }
 
 #[test]
@@ -264,7 +349,10 @@ fn an_empty_json_body_is_cached_as_an_empty_object() {
     let input = request("application/json", "/v1/chat/completions", Vec::new());
     let result = read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
     assert_eq!(result.branch, BodyKind::Json);
-    assert_eq!(result.cached_body(), Some(JsonObject::new()));
+    assert_eq!(
+        result.parsed_body.as_ref().map(ParsedBody::visible),
+        Some(JsonObject::new())
+    );
 }
 
 #[test]
@@ -316,9 +404,10 @@ fn decode_request_body_refuses_unrepairable_json(#[case] body: &[u8]) {
 
 #[test]
 fn decode_request_body_reports_unreadable_bytes() {
+    let bytes = b"{\"model\":\"\xff\"}".to_vec();
     assert_eq!(
-        decode_request_body(b"{\"model\":\"\xff\"}", &ApiLimits::default()),
-        Ok(DecodedJson::Unreadable)
+        decode_request_body(&bytes, &ApiLimits::default()),
+        Ok(DecodedJson::Unreadable(str::from_utf8(&bytes).unwrap_err()))
     );
 }
 

@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     BodyKind, MediaTypeKind, ParsedBody, RequestBodyError, RequestBodyInput, RequestBodyResult,
-    RewrittenBody, classify_media_type, is_opaque_audio_request, is_otlp_trace_request,
-    normalize_media_type, parse_binary_body, rewrite_request_model,
+    RewrittenBody, classify_media_type, is_opaque_audio_request, normalize_media_type,
+    parse_binary_body, rewrite_request_model,
 };
 use crate::api::api_boundaries::ApiLimitError;
 
@@ -64,20 +64,6 @@ fn classify_media_type_names_the_branch(
 fn parse_binary_body_keeps_only_objects(#[case] body: &str, #[case] is_object: bool) {
     let parsed = parse_binary_body(body.as_bytes());
     assert_eq!(parsed.contains_key("model"), is_object);
-}
-
-#[rstest]
-#[case::post_traces("POST", "/v1/traces", true)]
-#[case::get_traces("GET", "/v1/traces", false)]
-#[case::other_method("PUT", "/v1/traces", false)]
-#[case::trailing_slash("POST", "/v1/traces/", false)]
-#[case::other_path("POST", "/v1/chat/completions", false)]
-fn otlp_trace_requests_are_posted_to_the_traces_path(
-    #[case] method: &str,
-    #[case] route_path: &str,
-    #[case] expected: bool,
-) {
-    assert_eq!(is_otlp_trace_request(method, route_path), expected);
 }
 
 #[rstest]
@@ -190,6 +176,5 @@ fn an_unread_request_has_no_body_to_expose() {
         body_read: true,
         parsed_body: None,
     };
-    assert!(result.cached_body().is_none());
     assert!(result.raw_json_body(&input).is_none());
 }

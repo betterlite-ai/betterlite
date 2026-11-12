@@ -8,6 +8,7 @@ mod tests;
 use crate::api::api_boundaries::ApiLimitError;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::str::Utf8Error;
 use thiserror::Error;
 
 pub type JsonObject = BTreeMap<String, serde_json::Value>;
@@ -18,8 +19,8 @@ const BINARY_MEDIA_TYPES: [&str; 2] = ["application/x-protobuf", "application/pr
 const MULTIPART_MEDIA_TYPE: &str = "multipart/form-data";
 const AUDIO_MEDIA_PREFIX: &str = "audio/";
 const AZURE_SPEECH_ROUTE_PREFIX: &str = "/azure_speech/";
-const OTLP_TRACE_METHOD: &str = "POST";
-const OTLP_TRACE_PATH: &str = "/v1/traces";
+pub const OTLP_TRACE_METHOD: &str = "POST";
+pub const OTLP_TRACE_PATH: &str = "/v1/traces";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaTypeKind {
@@ -45,7 +46,7 @@ pub enum BodyKind {
 pub enum DecodedJson {
     Parsed { body: JsonObject, repaired: bool },
     // LiteLLM's lenient fallback decodes UTF-8 first, so unusable bytes leave auth with an empty body
-    Unreadable,
+    Unreadable(Utf8Error),
 }
 
 pub enum ParsedJson {
@@ -84,12 +85,6 @@ pub fn parse_binary_body(body: &[u8]) -> JsonObject {
         ParsedJson::Object(object) => object,
         ParsedJson::NotObject | ParsedJson::Invalid => JsonObject::new(),
     }
-}
-
-#[must_use]
-pub fn is_otlp_trace_request(method: &str, route_path: &str) -> bool {
-    // OTLP trace spans arrive only on POST /v1/traces, so auth must not consume their body
-    method == OTLP_TRACE_METHOD && route_path == OTLP_TRACE_PATH
 }
 
 // Azure Speech forwards raw audio and multipart uploads byte for byte, so auth must not consume them
@@ -139,14 +134,6 @@ pub struct RequestBodyInput {
     pub form_fields: Option<BTreeMap<String, String>>,
 }
 
-impl RequestBodyInput {
-    #[must_use]
-    pub fn content_type(&self) -> &str {
-        // a request without a content-type header has no media type to classify
-        self.headers.get("content-type").map_or("", String::as_str)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestBodyResult {
     pub branch: BodyKind,
@@ -156,16 +143,11 @@ pub struct RequestBodyResult {
 }
 
 impl RequestBodyResult {
-    pub fn cached_body(&self) -> Option<JsonObject> {
-        // only the keys accepted when the body was cached are visible to auth
-        self.parsed_body.as_ref().map(ParsedBody::visible)
-    }
-
     #[must_use]
     pub fn raw_json_body<'body>(&self, input: &'body RequestBodyInput) -> Option<&'body [u8]> {
-        if self.parsed_body.is_none()
-            || classify_media_type(input.content_type()) == MediaTypeKind::Form
-        {
+        // a request without a content-type header has no media type to classify
+        let content_type = input.headers.get("content-type").map_or("", String::as_str);
+        if self.parsed_body.is_none() || classify_media_type(content_type) == MediaTypeKind::Form {
             return None;
         }
         Some(&input.body)
