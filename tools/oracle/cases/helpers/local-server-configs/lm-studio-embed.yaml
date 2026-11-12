@@ -1,0 +1,7 @@
+kind: helper
+name: lm-studio-embedding-declares-no-params
+call:
+  b8152:
+    function: "lm_studio_embed"
+env: {}
+compare: {ignore: []}

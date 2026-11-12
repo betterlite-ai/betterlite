@@ -1,0 +1,30 @@
+task: B306
+deviations:
+  - what: >-
+      The retry_after bytes parser rejects a value longer than 8192 bytes before decoding it and answers with its typed
+      invalid-input error; the retry decision then takes the same exponential backoff it takes for any value it cannot read.
+    why: >-
+      LiteLLM has no byte bound at this boundary: it hands the whole header text to int() and email.utils.parsedate_tz,
+      so a value padded past 8192 bytes still yields the number it contains. bounded-inputs requires a finite limit on
+      an outside value, and 8192 bytes is far past any real Retry-After header. A rejected value only changes the sleep
+      from the header's seconds to the exponential delay, which is why the reference and betterlite differ at exactly
+      that input in the parser-byte-bound case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7212-L7221
+  - what: >-
+      A key under router_settings.retry_policy or a model_group_retry_policy entry that is not one of the nine RetryPolicy
+      fields fails the config load with an error naming the key.
+    why: >-
+      LiteLLM builds RetryPolicy(**selected) on a pydantic model with the default extra="ignore", so a misspelled key such
+      as RateLimitErrorRetry is dropped and the policy quietly stops applying to that error. no-silent-drops rules that out,
+      and no working setup relies on a key LiteLLM never reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L47-L48
+  - what: >-
+      A negative router_settings.num_retries or litellm_settings.num_retries fails the config load with an error naming
+      the field, where LiteLLM keeps the number as given.
+    why: >-
+      LiteLLM stores whatever int the key holds (router.py L1075-L1076), passes it to the call (L4984, L7687) and treats
+      any request value other than 0 as present (L7740), so -1 admits a retry policy that then yields no retries.
+      betterlite's shared router and litellm settings hold the count as an unsigned integer, so the same file is refused
+      before this section reads it. A negative retry count is a config mistake rather than a working setup, and the
+      retry decisions this task owns never see it; the test asserts the rejection names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1075-L1080

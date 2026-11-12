@@ -1,0 +1,18 @@
+kind: helper
+name: openai-response-params-reasoning-unsupported-drop-or-error
+call:
+  openai_response_params:
+    reasoning_unsupported_drop_or_error:
+      probes:
+      - {model: gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}, drop_params: true}
+      - {model: gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}, global_drop_params: true}
+      - {model: gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}, provider: azure}
+      - {model: gpt-5.2, params: {reasoning: {summary: auto}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}}
+      - {model: gpt-5.2, params: {reasoning: {effort: null}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}}
+      - {model: gpt-5.2, params: {reasoning: high}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}}
+      - {model: gpt-5.2, params: {reasoning: null}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}}
+      - {model: gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true}}}
+      - {model: gpt-5.2-reasoning, params: {reasoning: {effort: low}}, model_cost: {gpt-5.2-reasoning: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true}}}
+env: {}
+compare: {ignore: []}

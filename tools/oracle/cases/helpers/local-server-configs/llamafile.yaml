@@ -1,0 +1,8 @@
+kind: helper
+name: llamafile-provider-api-base-and-key
+call:
+  b8152:
+    function: "provider_info"
+    calls: [{"provider": "llamafile", "api_base": null, "api_key": null, "env": {}}, {"provider": "llamafile", "api_base": null, "api_key": null, "env": {"LLAMAFILE_API_BASE": "http://env-host:1/v1", "LLAMAFILE_API_KEY": "env-key"}}, {"provider": "llamafile", "api_base": "http://arg-host:2/v1", "api_key": "arg-key", "env": {"LLAMAFILE_API_BASE": "http://env-host:1/v1", "LLAMAFILE_API_KEY": "env-key"}}, {"provider": "llamafile", "api_base": "", "api_key": "", "env": {"LLAMAFILE_API_BASE": "http://env-host:1/v1", "LLAMAFILE_API_KEY": "env-key"}}, {"provider": "llamafile", "api_base": null, "api_key": null, "env": {"LLAMAFILE_API_BASE": "http://env-host:1/v1", "LLAMAFILE_API_KEY": ""}}, {"provider": "llamafile", "api_base": "http://arg-host:2/v1", "api_key": null, "env": {"LLAMAFILE_API_KEY": "env-key"}}, {"provider": "llamafile", "api_base": null, "api_key": null, "env": {"LLAMAFILE_API_BASE": "", "LLAMAFILE_API_KEY": ""}}]
+env: {}
+compare: {ignore: []}
