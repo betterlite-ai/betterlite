@@ -1,0 +1,27 @@
+kind: helper
+name: file-routing-ids-batch-identifier-fields
+call:
+  file_routing_ids:
+    calls:
+      - {"function": "model_id", "value": "model_id:m"}
+      - {"function": "model_id", "value": "litellm_proxy;model_id:m;llm_batch_id:b"}
+      - {"function": "model_id", "value": "litellm_proxy;model_id:;llm_batch_id:b"}
+      - {"function": "model_id", "value": "no marker here"}
+      - {"function": "model_id", "value": 5}
+      - {"function": "model_id", "value": null}
+      - {"function": "batch_id", "value": "llm_batch_id:b;other"}
+      - {"function": "batch_id", "value": "llm_batch_id:b,other"}
+      - {"function": "batch_id", "value": "generic_response_id:g,other"}
+      - {"function": "batch_id", "value": "llm_batch_id:"}
+      - {"function": "batch_id", "value": "xllm_batch_id:one;llm_batch_id:two"}
+      - {"function": "batch_id", "value": 5}
+      - {"function": "batch_id", "value": null}
+      - {"function": "batch_id", "value": "neither"}
+      - {"function": "batch_id", "value": "llm_batch_idX;generic_response_id:g"}
+      - {"function": "executed", "value": "litellm_proxy;model_id:m;llm_batch_id:litellm_batch_1"}
+      - {"function": "executed", "value": "llm_batch_id:not_litellm_batch_1"}
+      - {"function": "executed", "value": "generic_response_id:litellm_batch_1"}
+      - {"function": "executed", "value": ""}
+      - {"function": "executed", "value": "xllm_batch_id:litellm_batch_1"}
+env: {}
+compare: {ignore: []}
