@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use super::decode::reply_from_json;
+use super::decode::decode_image_reply;
 use super::defaults::apply_family_defaults;
 use super::family::ImageFamily;
 use super::reply::{ImageGenerationReply, ImageReplyError};
@@ -43,7 +43,7 @@ pub fn transform_image_reply(
                 .get("prompt")
                 .cloned()
                 .unwrap_or_else(|| Json::Text(String::new())),
-            original_response: original.clone(),
+            original_response: original,
             additional_args: AdditionalArgs {
                 api_base: None,
                 headers: None,
@@ -55,7 +55,7 @@ pub fn transform_image_reply(
         },
         env,
     );
-    let mut reply = reply_from_json(&original, call.created_seconds)?;
+    let mut reply = decode_image_reply(call.raw, call.created_seconds)?;
     apply_family_defaults(call.family, &mut reply, call.optional_params)?;
     Ok(reply)
 }

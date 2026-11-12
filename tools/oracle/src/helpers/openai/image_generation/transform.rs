@@ -2,18 +2,33 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::family::{
     ImageFamily, ImageParamError, map_openai_params, select_image_family,
 };
+use betterlite_openai::image_generation::reply::ImageGenerationReply;
 use betterlite_openai::image_generation::transform::{ImageTransformCall, transform_image_reply};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 use super::input::Probe;
 use super::support::{NOW, Recorder, invalid, observe};
-use crate::helpers::HelperResult;
+use crate::helpers::{HelperError, HelperResult};
 
 pub(crate) fn value(probe: &Probe) -> HelperResult {
     let family = select_image_family(&probe.model);
-    let request_data = request_data(probe);
     let recorder = Recorder::default();
+    let reply = transform(probe, family, &recorder)?;
+    Ok(json!({
+        "family": family_name(family),
+        "supported": family.supported_params(),
+        "transform": serde_json::to_value(&reply).map_err(|error| invalid(error.to_string()))?,
+        "post_call": recorder.last("post_api_call"),
+    }))
+}
+
+fn transform(
+    probe: &Probe,
+    family: ImageFamily,
+    recorder: &Recorder,
+) -> Result<ImageGenerationReply, Box<HelperError>> {
+    let request_data = request_data(probe);
     let call = ImageTransformCall {
         family,
         raw: probe.reply.body.as_bytes(),
@@ -21,16 +36,10 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
         request_data: &request_data,
         created_seconds: NOW,
     };
-    let reply = observe(&recorder, |state, env| {
+    observe(recorder, |state, env| {
         transform_image_reply(call, state, env)
     })?
-    .map_err(|error| invalid(error.to_string()))?;
-    Ok(json!({
-        "family": family_name(family),
-        "supported": family.supported_params(),
-        "transform": serde_json::to_value(&reply).map_err(|error| invalid(error.to_string()))?,
-        "post_call": recorder.last("post_api_call"),
-    }))
+    .map_err(|error| invalid(error.to_string()))
 }
 
 pub(crate) fn mapped_value(probe: &Probe) -> Value {

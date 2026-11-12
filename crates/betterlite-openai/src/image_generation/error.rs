@@ -110,15 +110,13 @@ pub enum ImageGenerationFailure {
 impl ImageGenerationFailure {
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
-        match self {
-            Self::Wrapped(error) => match error.status {
-                ErrorStatus::Code(status) => Some(status),
-                ErrorStatus::Missing => None,
-            },
-            Self::Raw(source) => match source.status() {
-                ErrorStatus::Code(status) => Some(status),
-                ErrorStatus::Missing => None,
-            },
+        let status = match self {
+            Self::Wrapped(error) => error.status,
+            Self::Raw(source) => source.status(),
+        };
+        match status {
+            ErrorStatus::Code(code) => Some(code),
+            ErrorStatus::Missing => None,
         }
     }
 

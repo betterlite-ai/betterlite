@@ -7,47 +7,29 @@ use super::reply::{
     DEFAULT_SIZE, ImageGenerationReply, ImageReplyError,
 };
 
+// the GPT family keeps a value the provider sent, then a width x height pair, then the option, then its default
 pub fn apply_family_defaults(
     family: ImageFamily,
     reply: &mut ImageGenerationReply,
     optional_params: &IndexMap<String, Json>,
 ) -> Result<(), ImageReplyError> {
-    match family {
-        ImageFamily::DallE2 => {
-            apply_dall_e_defaults(reply, optional_params, DEFAULT_DALL_E_2_QUALITY)?;
-        }
-        ImageFamily::DallE3 => {
-            apply_dall_e_defaults(reply, optional_params, DEFAULT_DALL_E_3_QUALITY)?;
-        }
-        ImageFamily::GptImage => apply_gpt_defaults(reply, optional_params)?,
+    let gpt = family == ImageFamily::GptImage;
+    let quality = match family {
+        ImageFamily::DallE2 => DEFAULT_DALL_E_2_QUALITY,
+        ImageFamily::DallE3 => DEFAULT_DALL_E_3_QUALITY,
+        ImageFamily::GptImage => DEFAULT_GPT_QUALITY,
+    };
+    if !gpt || reply.size.as_deref().is_none_or(str::is_empty) {
+        reply.size = if gpt {
+            requested_size(optional_params)?
+        } else {
+            optional_default(optional_params, "size", DEFAULT_SIZE)?
+        };
     }
-    Ok(())
-}
-
-fn apply_dall_e_defaults(
-    reply: &mut ImageGenerationReply,
-    optional_params: &IndexMap<String, Json>,
-    quality: &str,
-) -> Result<(), ImageReplyError> {
-    reply.size = optional_default(optional_params, "size", DEFAULT_SIZE)?;
-    reply.quality = optional_default(optional_params, "quality", quality)?;
-    reply.output_format =
-        optional_default(optional_params, "output_format", DEFAULT_OUTPUT_FORMAT)?;
-    Ok(())
-}
-
-// the GPT family keeps a value the provider sent, then a width x height pair, then the option, then its default
-fn apply_gpt_defaults(
-    reply: &mut ImageGenerationReply,
-    optional_params: &IndexMap<String, Json>,
-) -> Result<(), ImageReplyError> {
-    if reply.size.as_deref().is_none_or(str::is_empty) {
-        reply.size = requested_size(optional_params)?;
+    if !gpt || reply.quality.as_deref().is_none_or(str::is_empty) {
+        reply.quality = optional_default(optional_params, "quality", quality)?;
     }
-    if reply.quality.as_deref().is_none_or(str::is_empty) {
-        reply.quality = optional_default(optional_params, "quality", DEFAULT_GPT_QUALITY)?;
-    }
-    if reply.output_format.as_deref().is_none_or(str::is_empty) {
+    if !gpt || reply.output_format.as_deref().is_none_or(str::is_empty) {
         reply.output_format =
             optional_default(optional_params, "output_format", DEFAULT_OUTPUT_FORMAT)?;
     }
