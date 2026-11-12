@@ -4,6 +4,7 @@ use axum::body::Body;
 use axum::body::to_bytes;
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_core::dispatch::error::DispatchError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_provider::operation::OperationError;
 use betterlite_provider::transform_retry::TransformRetryError;
@@ -19,7 +20,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tower::ServiceExt as _;
 
-use super::{EmbeddingError, embedding_port_failure, embedding_routes, render};
+use super::{EmbeddingError, dispatch_failure, embedding_port_failure, embedding_routes, render};
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
 use betterlite_core::operation::embedding::route_error;
@@ -305,6 +306,36 @@ async fn a_mock_embedding_answers_with_the_body_model() {
     let body = to_bytes(response.into_body(), 8192).await.expect("body");
     let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
     assert_eq!(reply.model, "alias");
+}
+
+#[rstest]
+#[case::not_built(
+    DispatchError::NotBuilt { entry: "embedding" },
+    "the embedding call could not be dispatched"
+)]
+#[case::rejected(
+    DispatchError::Rejected {
+        status: 429,
+        error_type: String::from("rate_limit_error"),
+        param: None,
+        code: String::from("429"),
+        message: String::from("rule said no"),
+    },
+    "rule said no"
+)]
+#[tokio::test]
+async fn an_undispatchable_embedding_answers_internal_server_error(
+    #[case] error: DispatchError,
+    #[case] message: &str,
+) {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let response = dispatch_failure(error, "call-8", None, &redactor);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
+    assert_eq!(reply.error.error_type, "internal_server_error");
+    assert_eq!(reply.error.code, "500");
+    assert_eq!(reply.error.message, message);
 }
 
 #[tokio::test]
