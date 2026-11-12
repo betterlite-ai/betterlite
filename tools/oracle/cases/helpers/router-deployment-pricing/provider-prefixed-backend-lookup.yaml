@@ -1,0 +1,8 @@
+kind: helper
+name: router-deployment-pricing-provider-prefixed-backend-lookup
+call:
+  b9710:
+    deployment: {"model_name": "alias", "litellm_params": {"model": "gpt-4.1", "custom_llm_provider": "openai", "input_cost_per_token": 0.000003}, "model_info": {"id": "dep-3"}}
+    shared_before: null
+compare: {ignore: []}
+env: {}
