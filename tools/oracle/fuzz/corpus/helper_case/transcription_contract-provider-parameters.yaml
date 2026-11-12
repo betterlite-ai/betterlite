@@ -1,0 +1,14 @@
+kind: helper
+name: transcription-contract-provider-parameters-seed
+call:
+  transcription_contract:
+    function: provider_parameters
+    model: m
+    supported: [language, response_format]
+    supported_with_extra: [language, response_format, extra]
+    optional_params: {model: m, OPENAI_TRANSCRIPTION_PARAMS: internal, language: en, unset: null}
+    reserved_params: {Model: m}
+    openai_params: [extra]
+    other_openai_params: []
+env: {}
+compare: {ignore: []}

@@ -1,3 +1,4 @@
+use betterlite_http::error::HttpError;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::io::Error as IoError;
@@ -59,6 +60,11 @@ pub enum PkceFailure {
     TokenResponse {
         #[source]
         source: serde_json::Error,
+    },
+    #[error("the request failed: {source}")]
+    Transport {
+        #[source]
+        source: HttpError,
     },
     #[error("callback timeout overflow")]
     CallbackTimeoutOverflow,

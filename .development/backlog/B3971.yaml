@@ -1,7 +1,7 @@
 id: B3971
 milestone: M7 observability
 title: PostHog analytics and credential grouped batches
-status: todo
+status: done
 depends_on: [B002, B173, B192, B256, B8741]
 file: tasks/B3971-posthog-logging.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/integrations/posthog.py"
 parent: B114
 split_from: B114
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1326

@@ -1,0 +1,40 @@
+kind: helper
+name: ollama-generate-reply-text
+env: {}
+compare: {ignore: []}
+call:
+  b8156:
+    op: reply
+    replies:
+      - {model: llama3, body: '{"response": "hello"}'}
+      - {model: llama3, body: '{"response": "hello", "prompt_eval_count": 3, "eval_count": 4}'}
+      - {model: llama3, body: '{"response": "hello", "prompt_eval_count": 3}'}
+      - {model: llama3, body: '{"response": "hello", "eval_count": 4}'}
+      - {model: llama3, body: '{"response": "hello", "prompt_eval_count": 0, "eval_count": 0}'}
+      - {model: llama3, body: '{"response": "hello", "prompt_eval_count": null, "eval_count": null}'}
+      - {model: llama3, body: '{"response": "hello", "message": {"content": "abcd"}}'}
+      - {model: llama3, body: '{"response": "hello", "message": null}'}
+      - {model: llama3, body: '{"response": "hello", "eval_count": 4, "message": {"content": null}}'}
+      - {model: llama3, body: '{"response": "hello", "eval_count": 4, "prompt_eval_count": 1, "message": null}'}
+      - {model: llama3, body: '{"response": "hello", "message": []}'}
+      - {model: llama3, body: '{"response": "hello", "message": ["abcd"]}'}
+      - {model: llama3, body: '{"response": "hello", "eval_count": 4, "message": []}'}
+      - {model: llama3, body: '{"response": "hello"}', request_data: {prompt: "a b c"}}
+      - {model: llama3, body: '{"response": "hello"}', request_data: {prompt: ""}}
+      - {model: llama3, body: '{"response": "hello"}', request_data: {format: text}}
+      - {model: llama3, body: '{"response": "5"}'}
+      - {model: llama3, body: '{"response": "true"}'}
+      - {model: llama3, body: 'not json'}
+      - {model: llama3, body: '[]'}
+      - {model: llama3, body: '{"response": "{\"a\": 1}"}', request_data: {format: json, prompt: "x y"}}
+      - {model: llama3, body: '{"response": "[1, 2]"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "\"text\""}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "5"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "   "}', request_data: {format: json}}
+      - {model: llama3, body: '{}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": null}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "{\"name\": \"f\", \"arguments\": {\"x\": 1}}"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "{\"name\": null, \"arguments\": 1}"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "{\"arguments\": 1}"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "{\"name\": \"f\"}"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "not json"}', request_data: {format: json}}

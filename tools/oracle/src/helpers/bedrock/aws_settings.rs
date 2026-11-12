@@ -8,7 +8,6 @@ use betterlite_bedrock::aws_settings::{
     credential_cache::cache_key,
     error::{AWS_CONSOLE_URL, AwsAuthError},
     policy::web_identity_policy,
-    sources::auth_selector_presence,
 };
 use betterlite_config::sections::{
     bedrock_aws_settings::AwsS3Settings, bedrock_settings::AwsSettings,
@@ -21,9 +20,11 @@ use serde_json::{Value, value::RawValue};
 use std::{collections::BTreeMap, fmt::Display};
 use tokio::runtime::Builder;
 
+mod fixtures;
 mod input;
 mod io;
 mod native;
+mod resolver;
 mod tests;
 
 pub(crate) struct Op;
@@ -38,9 +39,9 @@ impl Helper for Op {
             .map_err(failure)?;
         match input {
             Input::StaticKeyPair(value) => Ok(pair(value)),
-            Input::CanonicalTags(tags) => {
-                Ok(json!({"value": canonicalize_tags(tags.tags.clone()).map_err(failure)?}))
-            }
+            Input::CanonicalTags(role) => Ok(
+                json!({"value": canonicalize_tags(role.tags.clone()).map_err(failure)?.filter(|tags| !tags.is_empty())}),
+            ),
             Input::AssumeRole(role) => Ok(
                 json!({"value": assume_role_parameters(role.role_arn.clone(), role.session_name.clone(), role.external_id.clone(), canonicalize_tags(role.tags.clone()).map_err(failure)?)}),
             ),
@@ -49,7 +50,7 @@ impl Helper for Op {
                 json!({"value": bedrock_bearer_token(token.api_key.as_ref(), token.configured_token.as_ref()).map(|value| value.expose_secret().to_owned())}),
             ),
             Input::PopAuth(params) => Ok(pop(params)),
-            Input::AuthSelector(config) => Ok(selector(config)),
+            Input::AuthSelector(config) => selector(config),
             Input::AuthError(error) => auth_error(error),
             Input::CacheKey(keys) => {
                 let left = cache_key(&keys.left).map_err(failure)?;
@@ -58,7 +59,7 @@ impl Helper for Op {
                 )
             }
             Input::Cache(cache) => runtime.block_on(io::cache(cache)),
-            Input::Local(local) => runtime.block_on(native::local(local)),
+            Input::Local(local) => native::local(local),
         }
     }
 }
@@ -121,8 +122,8 @@ fn pair(input: &input::Pair) -> Value {
     json!({"value": s3_static_key_pair(&settings).map(|(access, secret)| [access.expose_secret().to_owned(), secret.expose_secret().to_owned()])})
 }
 
-fn selector(input: &input::Config) -> Value {
-    let [web_identity, role, profile, session_token, static_pair] =
-        auth_selector_presence(&AwsSettings::from(input));
-    json!({"web_identity": web_identity, "role": role, "profile": profile, "session_token": session_token, "static": static_pair})
+fn selector(input: &input::Config) -> HelperResult {
+    let settings = AwsSettings::from(input);
+    let observed = resolver::credentials(&settings, &input.environment, &input.files, 0)?;
+    Ok(json!({"source": resolver::source(&observed, &settings)}))
 }

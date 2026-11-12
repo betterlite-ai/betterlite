@@ -1,0 +1,34 @@
+name: provider-framework-aiohttp-alias
+config: |
+  model_list:
+    - model_name: alias-model
+      litellm_params:
+        model: aiohttp_openai/gpt-upstream
+        api_base: "{{upstream}}"
+        api_key: configured-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-aiohttp-alias}
+  body:
+    model: alias-model
+    messages: [{role: user, content: Say hello.}]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-aiohttp-alias
+      object: chat.completion
+      created: 1700000010
+      model: gpt-upstream-reported
+      system_fingerprint: fp_aiohttp
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!}
+          finish_reason: stop
+compare:
+  headers: [content-type, x-litellm-call-id, x-litellm-model-group]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

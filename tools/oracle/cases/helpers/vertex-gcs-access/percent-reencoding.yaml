@@ -1,0 +1,19 @@
+kind: helper
+name: percent-reencoding
+call:
+  vertex_gcs_access:
+    operation: percent_reencoding
+    params: {gcs_bucket_name: bucket}
+    environment: {}
+    trusted: []
+    plain: []
+    file_ids:
+      - "gs://bucket/litellm-vertex-files/a%20b"
+      - "gs://bucket/litellm-vertex-files/a%252Fb"
+      - "gs://bucket/litellm-vertex-files/%2541"
+      - "gs://bucket/litellm-vertex-files/%2F"
+      - "gs://bucket/litellm-vertex-files/%C3%A9"
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}

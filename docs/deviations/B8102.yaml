@@ -1,0 +1,5 @@
+task: B8102
+deviations:
+  - what: Reply usage is counted by an injected token counter, which betterlite backs with its own tokenizer (B196), so token counts match LiteLLM only where B196 does.
+    why: LiteLLM calls its own token_counter, which B196 owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L447-L450
