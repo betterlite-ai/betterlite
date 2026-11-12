@@ -15,6 +15,7 @@ from pydantic import TypeAdapter
 
 import betterlite
 from betterlite import _native
+from betterlite._version import installed_version
 
 CRATE = Path(__file__).resolve().parents[1]
 ROOT = CRATE.parents[1]
@@ -117,6 +118,11 @@ def test_version_is_crate_version() -> None:
     assert _native.core_version() == expected
     assert betterlite.__version__ == expected
     assert metadata.version("betterlite") == expected
+
+
+def test_version_falls_back() -> None:
+    assert installed_version("betterlite") == betterlite.__version__
+    assert installed_version("betterlite-not-installed") == "unknown"
 
 
 def test_wheel_is_abi3_cp310() -> None:

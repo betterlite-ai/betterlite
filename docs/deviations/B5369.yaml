@@ -3,11 +3,17 @@ deviations:
   - what: The wheel and the import package are named betterlite, where LiteLLM ships litellm.
     why: betterlite is a drop-in rewrite with its own name, and the task fixes the distribution and module-name in pyproject.toml.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml
+  - what: The wheel requires Python 3.10 and up with no upper bound, where LiteLLM's requires-python stops below 3.15.
+    why: The abi3 wheel keeps working on later interpreters, and the task fixes requires-python to ">=3.10".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L6
+  - what: The only runtime dependencies are python-dotenv and typing-extensions, where LiteLLM declares fastuuid, filelock, httpx, openai, pyyaml, packaging, importlib-metadata, tiktoken, tokenizers, huggingface-hub, click, jinja2, aiohttp, pydantic, pydantic-settings, jsonschema and boto3.
+    why: The task's out-of-scope note leaves the SDK dependencies to later tasks and keeps the wheel at the two imports its own code needs; the gateway binary comes from crates/betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L12-L37
   - what: The version is read with importlib.metadata and falls back to "unknown" only when the distribution is not installed, where LiteLLM catches every Exception.
     why: A broad except hides real faults, and the rules ask for errors to surface. A missing distribution is the one case the fallback is for.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_version.py
-  - what: The 45 family stubs are `pub const fn register` in `pub mod` files, where the plan names them as private functions in private modules.
-    why: The workspace lints (unnecessary_wraps, missing_const_for_fn, unreachable_pub) reject the private form, and the lint expect budget is 0.
+  - what: The 45 family stubs are `pub const fn register` in `pub mod` files, where the task text names them `pub(crate) fn register` in private modules.
+    why: The workspace lints reject the private form, because clippy's unnecessary_wraps fires on a pub(crate) function that always returns Ok and missing_const_for_fn then wants the const.
     link: ""
   - what: bundled_model_cost_json returns the pinned backup text as it is, including the fallback_generalizations key, where litellm.model_cost drops that key.
     why: Stripping needs a JSON round trip that reorders numbers and keys. The Python package removes the key when it loads the map, and test_model_cost_is_litellms compares the rest.
