@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-constants
+call:
+  b5650: {function: constants}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: oobabooga-request-url-headers-and-body
+call:
+  b8152:
+    function: "oobabooga_request"
+    calls: [{"model": "m", "api_base": "http://o:5000/api", "api_key": null, "messages": [{"role": "user", "content": "hi"}], "optional_params": {}}, {"model": "m", "api_base": "http://o:5000/api", "api_key": "k", "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}], "optional_params": {"max_tokens": 3, "temperature": 0.1}}, {"model": "m", "api_base": null, "api_key": null, "messages": [{"role": "user", "content": "hi"}], "optional_params": {}}, {"model": "m", "api_base": "", "api_key": "k", "messages": [{"role": "user", "content": "hi"}], "optional_params": {}}, {"model": "http://direct:1/x", "api_base": null, "api_key": null, "messages": [{"role": "user", "content": "hi"}], "optional_params": {}}, {"model": "m", "api_base": "http://o:5000/api", "api_key": null, "messages": [{"role": "user", "content": [{"type": "text", "text": "a"}]}], "optional_params": {}}]
+env: {}
+compare: {ignore: []}

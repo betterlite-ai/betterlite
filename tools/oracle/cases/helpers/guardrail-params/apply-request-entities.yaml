@@ -1,0 +1,17 @@
+kind: helper
+name: guardrail-params-apply-request-entities
+call:
+  b3662:
+    function: apply_request
+    body:
+      guardrail_name: g
+      text: hello
+      language: en
+      entities: [EMAIL_ADDRESS, CREDIT_CARD]
+      input_type: response
+      messages:
+        - {role: user, content: hi}
+      metadata:
+        trace: {id: 1}
+env: {}
+compare: {ignore: []}

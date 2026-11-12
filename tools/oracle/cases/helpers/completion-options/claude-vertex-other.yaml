@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-vertex-other
+call:
+  b5650: {function: claude_target, custom_llm_provider: vertex_ai, model: gemini-1.5-pro}
+env: {}
+compare: {ignore: []}

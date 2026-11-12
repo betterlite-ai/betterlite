@@ -1,0 +1,23 @@
+task: B3662
+deviations:
+  - what: A guardrail entry that fails validation is listed in the section's rejected records with a reason and the load goes on. An unknown key inside litellm_params still fails the load as unsupported.
+    why: LiteLLM raises a ValidationError per entry. betterlite reports the entry and keeps the rest of the config usable, and keys no section reads stay visible as unsupported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192-L1288
+  - what: Provider specific keys inside litellm_params are kept as untyped extras and the provider mixin validators do not run here.
+    why: Each provider crate owns the typed form of its own keys, so this section only checks the base fields and the mode rules.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192-L1288
+  - what: A timeout given as text must be a plain decimal number. "nan", "inf" and "1_000" are refused with "timeout must be numeric".
+    why: Python float() accepts those spellings and betterlite reads numbers the way docs/compatibility.md describes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192-L1288
+  - what: Rejected reasons and decoder errors name the field path and never quote the rejected value.
+    why: Guardrail params can carry API keys and a quoted value would reach logs and the config API.
+    link: ""
+  - what: The error for a checks list on a guardrail other than decision_model names the guardrail.
+    why: The extra detail tells the operator which entry to fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192-L1288
+  - what: Guardrail has a required team_id field.
+    why: The task asks for it. The TypedDict at the pinned commit does not declare it.
+    link: ""
+  - what: A guardrails entry fails the whole config load when it sets categories or extra_headers as lists, or sets fail_on_error or default_on to os.environ/ text, because other sections type those keys more narrowly (grayswan.rs:59 and ibm_guardrails.rs:57 read categories and extra_headers as mappings, generic_guardrail_api.rs:35 and guardrail_judge.rs:35 read fail_on_error and default_on as bools). The guardrail_params section itself accepts the list types and the env text, and its tests cover them through the decoders.
+    why: ConfigLoader runs every section on the same YAML, and those sections are owned by other tasks. A working LiteLLM config can use the list types that the declared types allow, so this is a gap to close in those sections, not a choice made here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1088
