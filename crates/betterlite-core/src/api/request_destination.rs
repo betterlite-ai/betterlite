@@ -31,7 +31,7 @@ pub struct DestinationSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestDestinationInput {
     pub data: RequestData,
-    pub path_params: Option<RequestData>,
+    pub path_params: RequestData,
     pub query_params: IndexMap<String, String>,
     pub route_path: String,
     pub kind: InferenceModelKind,
@@ -42,7 +42,7 @@ pub struct RequestDestinationInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestDestinationResult {
     pub data: RequestData,
-    pub model: String,
+    pub model: Option<String>,
     pub tags: Vec<String>,
 }
 
@@ -52,7 +52,7 @@ pub fn resolve_request_destination(
 ) -> Result<RequestDestinationResult, RequestDestinationError> {
     let mut data = populate_request_parameters(
         &input.data,
-        input.path_params.as_ref(),
+        &input.path_params,
         &input.query_params,
         &input.route_path,
     );
@@ -75,9 +75,11 @@ pub fn resolve_request_destination(
         input.cli_model.as_deref(),
         input.endpoint_model.as_deref(),
         input.kind,
-    )
-    .ok_or(RequestDestinationError::MissingModel)?;
-    data.insert("model".to_owned(), Json::Text(model.clone()));
+    );
+    let stored_model = model
+        .as_ref()
+        .map_or_else(|| Json::Null, |text| Json::Text(text.clone()));
+    data.insert("model".to_owned(), stored_model);
     let tags = tags_from_request_body(&data);
     Ok(RequestDestinationResult { data, model, tags })
 }

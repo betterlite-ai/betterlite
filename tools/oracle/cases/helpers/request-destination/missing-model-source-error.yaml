@@ -21,5 +21,6 @@ call:
       - {function: populate_request_parameters, request_data: {}, route_path: "/v1/vector_stores/vs_123"}
       - {function: populate_request_parameters, request_data: {vector_store_ids: not-a-list}, path_params: {vector_store_id: vs_1}, route_path: "/x"}
       - {function: populate_request_parameters, request_data: {model: body}, query_params: {model: query}, route_path: "/v1/chat/completions"}
+      - {function: populate_request_parameters, request_data: {}, query_params: {q: "a&b=c", space: "x y%"}, route_path: "/v1/chat/completions"}
 env: {}
 compare: {ignore: []}

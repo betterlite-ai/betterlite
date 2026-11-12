@@ -397,7 +397,7 @@ fn the_route_endpoint_model_is_rejected() {
 fn body_input() -> RequestDestinationInput {
     RequestDestinationInput {
         data: data(r#"{"messages":[]}"#),
-        path_params: None,
+        path_params: RequestData::new(),
         query_params: IndexMap::new(),
         route_path: "/v1/chat/completions".to_owned(),
         kind: InferenceModelKind::Body,
@@ -419,19 +419,11 @@ fn missing_model_source_error(#[case] kind: InferenceModelKind) {
         kind,
         ..body_input()
     };
-    let error = resolve_request_destination(&request, &DestinationSettings::default())
-        .expect_err("a request without any model source is rejected");
-    assert_eq!(error, RequestDestinationError::MissingModel);
-    assert_eq!(
-        error.facts(),
-        ErrorFacts {
-            status: 400,
-            error_type: "invalid_request_error",
-            param: None,
-            code: "400",
-            detail: None,
-        }
-    );
+    let result = resolve_request_destination(&request, &DestinationSettings::default())
+        .expect("a request without a model source still resolves a destination");
+    assert_eq!(result.model, None);
+    assert_eq!(result.data.get("model"), Some(&Json::Null));
+    assert_eq!(result.tags, Vec::<String>::new());
 }
 
 #[test]
@@ -445,7 +437,7 @@ fn a_configured_default_fills_the_missing_model() {
         result,
         RequestDestinationResult {
             data: data(r#"{"messages":[],"model":"default"}"#),
-            model: "default".to_owned(),
+            model: Some("default".to_owned()),
             tags: Vec::new(),
         }
     );
@@ -499,7 +491,7 @@ fn query_and_path_parameters_fill_missing_keys() {
     let path_params = data(r#"{"vector_store_id":"vs_from_path","other":"path"}"#);
     let populated = populate_request_parameters(
         &body,
-        Some(&path_params),
+        &path_params,
         &query_params(&[("model", "query"), ("limit", "2")]),
         "/v1/chat/completions",
     );
@@ -518,7 +510,7 @@ fn body_values_win_over_query_and_path_values() {
     let path_params = data(r#"{"vector_store_id":"path_id"}"#);
     let populated = populate_request_parameters(
         &body,
-        Some(&path_params),
+        &path_params,
         &query_params(&[("model", "query")]),
         "/v1/chat/completions",
     );
@@ -535,7 +527,7 @@ fn vector_store_ids_grow_from_the_route_path() {
     let body = data(r#"{"vector_store_ids":["already"]}"#);
     let populated = populate_request_parameters(
         &body,
-        None,
+        &RequestData::new(),
         &IndexMap::new(),
         "/v1/vector_stores/vs_123/files",
     );
@@ -546,7 +538,7 @@ fn vector_store_ids_grow_from_the_route_path() {
     let present = data(r#"{"vector_store_ids":["vs_123"]}"#);
     let without_duplicates = populate_request_parameters(
         &present,
-        None,
+        &RequestData::new(),
         &IndexMap::new(),
         "/v1/vector_stores/vs_123/files",
     );
@@ -557,7 +549,7 @@ fn vector_store_ids_grow_from_the_route_path() {
     let empty_params = RequestData::new();
     let from_the_route = populate_request_parameters(
         &empty_params,
-        Some(&RequestData::new()),
+        &RequestData::new(),
         &IndexMap::new(),
         "/v1/vector_stores/vs_123/files",
     );
@@ -574,8 +566,12 @@ fn vector_store_ids_grow_from_the_route_path() {
 #[case::first_match_wins("/v1/vector_stores/a/b/vector_stores/c/d", Some("a"))]
 #[case::no_vector_store_route("/v1/chat/completions", None)]
 fn vector_store_id_from_the_route(#[case] route_path: &str, #[case] expected_id: Option<&str>) {
-    let populated =
-        populate_request_parameters(&RequestData::new(), None, &IndexMap::new(), route_path);
+    let populated = populate_request_parameters(
+        &RequestData::new(),
+        &RequestData::new(),
+        &IndexMap::new(),
+        route_path,
+    );
     let expected = expected_id.map(|id| Json::Text(id.to_owned()));
     assert_eq!(populated.get("vector_store_id"), expected.as_ref());
 }
@@ -586,7 +582,7 @@ fn a_non_list_vector_store_ids_value_is_replaced() {
     let path_params = data(r#"{"vector_store_id":"vs_1"}"#);
     let populated = populate_request_parameters(
         &body,
-        Some(&path_params),
+        &path_params,
         &IndexMap::new(),
         "/v1/chat/completions",
     );
@@ -636,19 +632,19 @@ fn populate_keeps_its_debug_diagnostics() {
     let path_params = data(r#"{"vector_store_id":"vs_1"}"#);
     drop(populate_request_parameters(
         &RequestData::new(),
-        Some(&path_params),
+        &path_params,
         &IndexMap::new(),
         "/v1/chat/completions",
     ));
     drop(populate_request_parameters(
         &RequestData::new(),
-        None,
+        &RequestData::new(),
         &IndexMap::new(),
         "/v1/vector_stores/vs_2/files",
     ));
     drop(populate_request_parameters(
         &RequestData::new(),
-        None,
+        &RequestData::new(),
         &IndexMap::new(),
         "/v1/chat/completions",
     ));

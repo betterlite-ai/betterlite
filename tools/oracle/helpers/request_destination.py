@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
+from urllib.parse import urlencode
 
 import litellm
 from fastapi import HTTPException
@@ -57,7 +58,7 @@ class TagsCall(TypedDict):
 class PopulateCall(TypedDict):
     function: Literal["populate_request_parameters"]
     request_data: dict[str, Json]
-    path_params: NotRequired[dict[str, Json] | None]
+    path_params: NotRequired[dict[str, Json]]
     query_params: NotRequired[dict[str, str]]
     route_path: str
 
@@ -91,8 +92,8 @@ class EmptyReceiver:
 def query_string(query_params: dict[str, str] | None) -> bytes:
     if query_params is None:
         return b""
-    joined = "&".join(f"{name}={value}" for name, value in query_params.items())
-    return joined.encode()
+    pairs: list[tuple[str, str]] = list(query_params.items())
+    return urlencode(pairs).encode()
 
 
 def build_request(call: PopulateCall) -> Request:

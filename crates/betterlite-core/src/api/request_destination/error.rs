@@ -27,8 +27,6 @@ pub enum RequestDestinationError {
         "URL-valued '{field}' is not allowed; configure a custom endpoint with api_base or allowlist the destination host"
     )]
     UrlValuedDestination { field: DestinationField },
-    #[error("the request names no model and no default model is configured")]
-    MissingModel,
     #[error("'model' must be a string")]
     ModelNotText,
 }
@@ -46,13 +44,6 @@ impl RequestDestinationError {
                     error: "invalid_request",
                     param: *field,
                 }),
-            },
-            Self::MissingModel => ErrorFacts {
-                status: 400,
-                error_type: "invalid_request_error",
-                param: None,
-                code: "400",
-                detail: None,
             },
             Self::ModelNotText => ErrorFacts {
                 status: 400,

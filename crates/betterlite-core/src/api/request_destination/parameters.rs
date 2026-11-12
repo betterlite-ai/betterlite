@@ -13,7 +13,7 @@ const TAGS: &str = "tags";
 // body values win over query and path values, as with LiteLLM's setdefault, and the caller's dict is left untouched
 pub fn populate_request_parameters(
     request_data: &RequestData,
-    path_params: Option<&RequestData>,
+    path_params: &RequestData,
     query_params: &IndexMap<String, String>,
     route_path: &str,
 ) -> RequestData {
@@ -23,11 +23,11 @@ pub fn populate_request_parameters(
             .entry(key.clone())
             .or_insert_with(|| Json::Text(value.clone()));
     }
-    let Some(named_params) = path_params.filter(|params| !params.is_empty()) else {
+    if path_params.is_empty() {
         add_vector_store_id_from_path(&mut populated, route_path);
         return populated;
-    };
-    for (key, value) in named_params {
+    }
+    for (key, value) in path_params {
         populated
             .entry(key.clone())
             .or_insert_with(|| value.clone());

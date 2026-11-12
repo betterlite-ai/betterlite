@@ -10,12 +10,11 @@ use betterlite_core::api::request_destination::model::{
 use betterlite_core::api::request_destination::parameters::{
     populate_request_parameters, tags_from_request_body,
 };
-use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,20 +52,21 @@ struct SingleRejectCall {
 
 #[derive(Debug, Deserialize)]
 struct DataRejectCall {
-    data: Json,
+    data: RequestData,
     #[serde(default)]
     allowed_hosts: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TagsCall {
-    request_body: Json,
+    request_body: RequestData,
 }
 
 #[derive(Debug, Deserialize)]
 struct PopulateCall {
-    request_data: Json,
-    path_params: Option<Json>,
+    request_data: RequestData,
+    #[serde(default)]
+    path_params: RequestData,
     #[serde(default)]
     query_params: IndexMap<String, String>,
     route_path: String,
@@ -90,8 +90,10 @@ fn run_call(entry: &Call) -> HelperResult {
     match entry {
         Call::ResolveInferenceModel(call) => Ok(resolve_value(call)),
         Call::RejectUrlValuedDestination(call) => Ok(single_rejection(call)),
-        Call::RejectUrlValuedDestinations(call) => data_rejection(call),
-        Call::TagsFromRequestBody(call) => tags_result(call),
+        Call::RejectUrlValuedDestinations(call) => Ok(data_rejection(call)),
+        Call::TagsFromRequestBody(call) => Ok(serde_json::to_value(tags_from_request_body(
+            &call.request_body,
+        ))?),
         Call::PopulateRequestParameters(call) => populate_result(call),
     }
 }
@@ -115,26 +117,17 @@ fn single_rejection(call: &SingleRejectCall) -> Value {
     ))
 }
 
-fn data_rejection(call: &DataRejectCall) -> HelperResult {
-    let body = object(&call.data)?;
-    Ok(rejection(reject_url_valued_destinations(
-        &body,
+fn data_rejection(call: &DataRejectCall) -> Value {
+    rejection(reject_url_valued_destinations(
+        &call.data,
         &parsed_hosts(&call.allowed_hosts),
-    )))
-}
-
-fn tags_result(call: &TagsCall) -> HelperResult {
-    Ok(serde_json::to_value(tags_from_request_body(&object(
-        &call.request_body,
-    )?))?)
+    ))
 }
 
 fn populate_result(call: &PopulateCall) -> HelperResult {
-    let body = object(&call.request_data)?;
-    let path_params = call.path_params.as_ref().and_then(as_object);
     Ok(serde_json::to_value(populate_request_parameters(
-        &body,
-        path_params,
+        &call.request_data,
+        &call.path_params,
         &call.query_params,
         &call.route_path,
     ))?)
@@ -161,28 +154,5 @@ fn rejection(result: Result<(), RequestDestinationError>) -> Value {
                 "detail": facts.detail,
             })
         }
-    }
-}
-
-fn object(value: &Json) -> Result<RequestData, Box<HelperError>> {
-    match value {
-        Json::Object(map) => Ok(map.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(Box::new(HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: "the request body must be a JSON object".to_owned(),
-            }))
-        }
-    }
-}
-
-const fn as_object(value: &Json) -> Option<&RequestData> {
-    match value {
-        Json::Object(map) => Some(map),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
