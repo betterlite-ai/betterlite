@@ -71,10 +71,6 @@ fn register_first_families(module: &Bound<'_, PyModule>) -> PyResult<()> {
     guardrail_call::register(module)?;
     images::register(module)?;
     interactions::register(module)?;
-    Ok(())
-}
-
-fn register_last_families(module: &Bound<'_, PyModule>) -> PyResult<()> {
     mcp::register(module)?;
     messages::register(module)?;
     model_info::register(module)?;
@@ -88,6 +84,10 @@ fn register_last_families(module: &Bound<'_, PyModule>) -> PyResult<()> {
     response_lifecycle::register(module)?;
     responses::register(module)?;
     router_call::register(module)?;
+    Ok(())
+}
+
+fn register_last_families(module: &Bound<'_, PyModule>) -> PyResult<()> {
     search_ocr::register(module)?;
     skill_calls::register(module)?;
     tokens::register(module)?;
