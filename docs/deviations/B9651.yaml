@@ -9,3 +9,6 @@ deviations:
   - what: A request that repeats a header name while a resolved credential is attached fails with a repeated-header error instead of being sent.
     why: The credential request type carries one value per name, and dropping the other values silently would change the request; the error names the repeated header. httpx hands the auth flow a request whose headers may hold several values.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L440-L445
+  - what: A buffered (non-streamed) response body larger than 16 MiB fails with a body-too-large error instead of being buffered without a limit.
+    why: The gateway's HTTP limits set 16 MiB for a buffered body, and MCP JSON-RPC answers stay far below it; an unbounded read would let an upstream grow the gateway's memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L461-L495
