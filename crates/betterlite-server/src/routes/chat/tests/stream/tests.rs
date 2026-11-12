@@ -5,6 +5,8 @@ use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -25,7 +27,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use std::fs::read_to_string;
 use tempfile::NamedTempFile;
-use tracing::subscriber::with_default;
+use tower::ServiceExt as _;
+use tracing::subscriber::{set_default, with_default};
 
 const FIRST: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n";
 const SECOND: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"second\"}}]}\n\n";
@@ -167,4 +170,36 @@ fn error_normalization_tests_behavior(
     let output = read_to_string(log.path()).unwrap();
     assert!(output.contains(&format!("normalized_error=\"{code}\"")));
     assert!(!output.contains("private-message"));
+}
+
+#[tokio::test]
+async fn an_unrouted_chat_failure_is_logged_before_dispatch() {
+    let environment = BTreeMap::new();
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load("model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n")
+    .unwrap();
+    let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+    let router = chat_routes_with_call_id(Arc::new(executor), false).unwrap();
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let guard = set_default(subscriber);
+    let request = Request::post("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"missing","messages":[]}"#))
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    drop(guard);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let output = read_to_string(log.path()).unwrap();
+    assert!(
+        output.contains("chat request failed before dispatch"),
+        "{output}"
+    );
+    assert!(output.contains("missing"), "{output}");
 }

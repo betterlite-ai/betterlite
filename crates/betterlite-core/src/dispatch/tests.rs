@@ -4,13 +4,17 @@ pub(crate) mod support;
 
 mod batch;
 
+use std::fs::read_to_string;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use betterlite_context::call_context::BillingPolicy;
 use rstest::rstest;
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 
 use crate::dispatch::error::DispatchError;
-use crate::dispatch::log::TracingCallLog;
+use crate::dispatch::log::{CallLog as _, CallOutcome, CallRecord, TracingCallLog};
 use crate::dispatch::{Dispatch, Entry, NoRules};
 use crate::operation::call_types;
 use crate::operation::{Operation, video_list::VideoListRequest};
@@ -63,6 +67,41 @@ async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
         )
     );
     assert!(matched, "unexpected dispatch error: {error}");
+}
+
+#[rstest]
+#[case::success(CallOutcome::Succeeded, None, "call finished")]
+#[case::cancelled(CallOutcome::Cancelled, None, "client disconnected, call cancelled")]
+#[case::failed_with_message(CallOutcome::Failed, Some("stream broke"), "stream broke")]
+#[case::failed_with_error(CallOutcome::Failed, None, "does not dispatch the chat call yet")]
+fn the_tracing_log_writes_each_outcome(
+    #[case] outcome: CallOutcome,
+    #[case] message: Option<&str>,
+    #[case] expected: &str,
+) {
+    let file = NamedTempFile::new().expect("log file");
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(Arc::new(file.reopen().expect("log writer")))
+        .finish();
+    let error = DispatchError::NotBuilt { entry: "chat" };
+    with_default(subscriber, || {
+        TracingCallLog.record(CallRecord {
+            entry: Entry::Chat,
+            call_id: "call-9",
+            billing: BillingPolicy::Include,
+            privacy: false,
+            outcome,
+            error: Some(&error),
+            message,
+        });
+    });
+    let output = read_to_string(file.path()).expect("log text");
+    assert!(output.contains(expected), "{output}");
+    assert!(output.contains("entry=\"chat\""), "{output}");
+    assert!(output.contains("call_id=\"call-9\""), "{output}");
 }
 
 #[test]

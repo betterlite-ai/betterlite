@@ -307,6 +307,33 @@ async fn a_mock_embedding_answers_with_the_body_model() {
     assert_eq!(reply.model, "alias");
 }
 
+#[tokio::test]
+async fn an_embedding_answer_echoes_the_callers_call_id() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:1', mock_response: [0.1]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/embeddings")
+        .header("content-type", "application/json")
+        .header("x-litellm-call-id", "caller-call-1")
+        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("x-litellm-call-id").unwrap(),
+        "caller-call-1"
+    );
+}
+
 const EMBEDDING_ANSWER: &str = r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1],"index":0}],"model":"embed","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
 
 async fn provider(listener: TcpListener) -> String {
