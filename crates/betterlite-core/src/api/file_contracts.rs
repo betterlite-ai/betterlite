@@ -1,1 +1,32 @@
+mod tests;
 
+pub const BATCH_JSONL_CONTENT_TYPES: [&str; 6] = [
+    "application/jsonl",
+    "application/json",
+    "application/octet-stream",
+    "application/x-ndjson",
+    "application/x-jsonlines",
+    "text/plain",
+];
+
+#[must_use]
+pub fn valid_content_type(content_type: Option<&str>) -> bool {
+    content_type.is_some_and(|candidate| {
+        // LiteLLM compares the declared string verbatim, without lowercasing or dropping parameters
+        BATCH_JSONL_CONTENT_TYPES.contains(&candidate)
+    })
+}
+
+#[must_use]
+pub fn is_batch_jsonl_file<Body>(
+    purpose: Option<&str>,
+    content_type: Option<&str>,
+    body: Option<&Body>,
+) -> bool
+where
+    Body: ?Sized,
+{
+    purpose.is_some_and(|value| value == "batch")
+        && valid_content_type(content_type)
+        && body.is_some()
+}

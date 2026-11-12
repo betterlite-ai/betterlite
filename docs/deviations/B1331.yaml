@@ -1,0 +1,8 @@
+task: B1331
+deviations:
+  - what: A Gemini model-list response larger than 4 MiB is refused with a typed error before it is parsed, where LiteLLM reads and parses whatever size the provider sends.
+    why: the model list is untrusted provider input, and a real Studio list stays far below 4 MiB, so the cap bounds memory for a hostile or broken upstream without refusing a working reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L402-L406
+  - what: A non-200 model-list response whose body is not JSON fails with the typed status error carrying the body text, where LiteLLM builds its ValueError by calling response.json() and an unreadable body raises json.JSONDecodeError instead.
+    why: the status is what a caller handles, and a provider error page that is HTML or empty is common; naming the status and the body is the error LiteLLM meant to raise, and no working setup relies on the decoder exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L408-L412
