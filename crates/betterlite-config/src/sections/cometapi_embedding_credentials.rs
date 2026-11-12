@@ -2,7 +2,10 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 use secrecy::SecretString;
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub api_key: Option<SecretString>,
