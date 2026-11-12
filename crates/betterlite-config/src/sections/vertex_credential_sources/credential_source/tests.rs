@@ -118,13 +118,13 @@ fn rejects_undecodable_credentials(#[case] bytes: &[u8], #[case] message: &str) 
 
 #[test]
 fn bounds_credentials_bytes() {
-    let oversized = vec![b' '; 1_048_577];
+    let oversized = vec![b' '; 0x10_0001];
     let error = decode_vertex_credentials(&oversized).unwrap_err();
     assert!(matches!(
         error,
-        CredentialDecodeError::TooLarge { limit: 1_048_576 }
+        CredentialDecodeError::TooLarge { limit: 0x10_0000 }
     ));
-    let boundary = vec![b' '; 1_048_576];
+    let boundary = vec![b' '; 0x10_0000];
     assert!(matches!(
         decode_vertex_credentials(&boundary).unwrap_err(),
         CredentialDecodeError::Json(_)
