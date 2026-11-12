@@ -1,0 +1,27 @@
+kind: helper
+name: model-registration-replay
+call:
+  b5365:
+    function: register_model
+    model_cost:
+      known: {litellm_provider: openai, max_tokens: 10, input_cost_per_token: 1.0e-06}
+    registrations:
+      - entries:
+          persisted: {litellm_provider: cohere, input_cost_per_token: "4e-07"}
+          gone: {litellm_provider: cohere, output_cost_per_token: 3.0e-06}
+        persist_across_reloads: true
+        warning_display_name: shown-name
+      - entries:
+          once: {litellm_provider: ai21, max_tokens: 5}
+        persist_across_reloads: false
+        warning_display_name: null
+    live:
+      - entries:
+          live-dep: {litellm_provider: anthropic, mode: chat}
+        persist_across_reloads: false
+        warning_display_name: null
+    refresh:
+      known: {litellm_provider: openai, max_tokens: 99}
+    show: [litellm_provider, max_tokens, input_cost_per_token, output_cost_per_token, mode]
+env: {}
+compare: {ignore: []}

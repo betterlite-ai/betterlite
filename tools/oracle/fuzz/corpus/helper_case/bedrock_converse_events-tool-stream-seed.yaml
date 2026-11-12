@@ -1,0 +1,28 @@
+kind: helper
+name: bedrock_converse_events-tool-stream-seed
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        mappings: {bedrock_tool_1: original}
+        ids:
+          - 00000000-0000-4000-8000-000000000011
+        steps:
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: t1, name: bedrock_tool_1}}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {delta: {toolUse: {input: '{"city": "SF"}'}}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {contentBlockIndex: 0}
+          - function: converse
+            chunk: {contentBlockIndex: 0}
+          - function: state
+          - function: check_empty
+            content_blocks: [{toolUse: {input: ''}}]
+          - function: check_empty
+            content_blocks: [{text: x}, {toolUse: {input: ''}}]
+          - function: converse
+            chunk: {delta: {toolUse: {}}}
+env: {}
+compare: {ignore: []}

@@ -1085,6 +1085,7 @@ name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
@@ -1226,6 +1227,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "bytes",
  "chrono",
@@ -1299,12 +1301,14 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "betterlite-redis",
+ "chrono",
  "futures-util",
  "hex",
  "indexmap 2.14.2",
  "num-traits",
  "rstest",
  "rusqlite",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1424,6 +1428,7 @@ dependencies = [
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "serde_with",
  "shellexpand",
  "strum",
  "tempfile",
@@ -1498,11 +1503,14 @@ dependencies = [
  "chrono",
  "futures-util",
  "http 1.5.0",
+ "httpdate",
  "indexmap 2.14.2",
  "jiff",
  "jsonschema",
  "lopdf",
+ "lru",
  "num-traits",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1510,6 +1518,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1561,6 +1570,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
+ "base64 0.23.1",
  "betterlite-env",
  "betterlite-postgres-fixture",
  "betterlite-roi",
@@ -1728,6 +1738,7 @@ dependencies = [
  "jsonwebtoken",
  "lru",
  "mime_guess",
+ "mutants",
  "pem",
  "pkcs8",
  "rcgen",
@@ -2152,6 +2163,7 @@ dependencies = [
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
+ "hound",
  "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
@@ -2242,6 +2254,7 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-redact",
+ "betterlite-oracle-server",
  "betterlite-paths",
  "betterlite-policy",
  "betterlite-postgres-fixture",
@@ -2344,6 +2357,52 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+]
+
+[[package]]
+name = "betterlite-oracle-server"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "betterlite",
+ "betterlite-auth",
+ "betterlite-config",
+ "betterlite-core",
+ "betterlite-db",
+ "betterlite-guardrails",
+ "betterlite-http",
+ "betterlite-mcp",
+ "betterlite-ocr",
+ "betterlite-oracle",
+ "betterlite-oracle-helper-api",
+ "betterlite-roi",
+ "betterlite-semantic",
+ "betterlite-server",
+ "betterlite-transcribe",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "hex",
+ "jiff",
+ "quick-xml",
+ "rand 0.10.3",
+ "rmcp",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2 0.11.1",
+ "soft-canonicalize",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2568,6 +2627,15 @@ dependencies = [
 [[package]]
 name = "betterlite-pyhost"
 version = "0.1.0"
+
+[[package]]
+name = "betterlite-python"
+version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "pyo3",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-rag"
@@ -3161,6 +3229,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
  "betterlite-vertex",
+ "indexmap 2.14.2",
  "jiff",
  "libfuzzer-sys",
 ]
@@ -7639,6 +7708,63 @@ dependencies = [
 ]
 
 [[package]]
+name = "pyo3"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
+dependencies = [
+ "libc",
+ "once_cell",
+ "portable-atomic",
+ "pyo3-build-config",
+ "pyo3-ffi",
+ "pyo3-macros",
+]
+
+[[package]]
+name = "pyo3-build-config"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70130e2b6dd1ee589a8788026a429561ca5c40fa7a2fa7914c2282eddae24700"
+dependencies = [
+ "target-lexicon",
+]
+
+[[package]]
+name = "pyo3-ffi"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e7ff73c555c286d212d4ce7e5fbda845a973c4f61bd5f160f5f2c3c2a04d1c4"
+dependencies = [
+ "libc",
+ "pyo3-build-config",
+]
+
+[[package]]
+name = "pyo3-macros"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c46d2e5862c7bb8207e3b639f713dda3c499933444784154c11d013c5a691b60"
+dependencies = [
+ "proc-macro2",
+ "pyo3-macros-backend",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "pyo3-macros-backend"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38b89f066f2ae72a2aef52d1537ca2fcd104440ebfadee06e97aa90738a25b9b"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9148,6 +9274,12 @@ name = "target-features"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1bbb9f3c5c463a01705937a24fdabc5047929ac764b2d5b9cf681c1f5041ed5"
+
+[[package]]
+name = "target-lexicon"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "temp-env"

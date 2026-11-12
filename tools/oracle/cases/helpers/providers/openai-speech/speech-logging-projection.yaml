@@ -1,0 +1,23 @@
+kind: helper
+name: openai-speech-logging-projection
+call:
+  openai_speech:
+    client:
+      api_key: sk-speech
+      api_base: 'https://speech.test/v1'
+      timeout: 30
+      max_retries: 4
+    request:
+      model: tts-1
+      input: Log me
+      voice: onyx
+      response_format: mp3
+      speed: 0.5
+      instructions: whisper
+      extra_headers: {x-trace: trace-log}
+    reply:
+      status: 200
+      headers: [[content-type, audio/mpeg]]
+      chunks: [[7]]
+env: {}
+compare: {ignore: []}

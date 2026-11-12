@@ -1,0 +1,40 @@
+kind: helper
+name: reported-tool-count-before-output-floor
+call:
+  tool_signals:
+    responses:
+      - responses:
+          output:
+            - mapping: {type: web_search_call}
+            - attribute: {type: web_search_call}
+            - mapping: {type: web_search_call}
+          tool_usage: {web_search: {num_requests: 0}}
+          usage: null
+      - responses:
+          output: []
+          tool_usage: null
+          usage: null
+      - responses:
+          output:
+            - mapping: {type: web_search_call}
+            - mapping: {type: web_search_call}
+          tool_usage: null
+          usage: null
+      - responses:
+          output:
+            - mapping: {type: web_search_call}
+            - attribute: {type: web_search_call}
+          tool_usage: {web_search: {num_requests: 7}}
+          usage: null
+      - responses:
+          output:
+            - mapping: {type: Web_Search_Call}
+            - mapping: {type: 5}
+          tool_usage: {web_search: {num_requests: -1}}
+          usage: null
+    file_search_params: []
+    token_counts: []
+    values: []
+    kwargs: []
+compare: {ignore: []}
+env: {}

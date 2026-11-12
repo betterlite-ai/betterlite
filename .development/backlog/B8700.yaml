@@ -2,7 +2,7 @@ id: B8700
 milestone: M9 agents and mcp
 title: Mount the /v1/mcp per-user credential and env var routes
 status: todo
-depends_on: [B8620, B8622, B8610, B4711, B4713, B4714, B4715, B4723, B4724]
+depends_on: [B8620, B8622, B8610, B4711, B4713, B4714, B4715, B4723, B4724, B5076, B9654]
 file: tasks/B8700-mcp-user-routes-mount.yaml
 covers: []
 parent: B139

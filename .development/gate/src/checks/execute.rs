@@ -136,28 +136,36 @@ pub(crate) fn execute(
     })
 }
 
-fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError> {
-    let configured = env::var("GATE_BUILD_SLOTS")
+fn slot_setting(name: &str) -> Result<Option<u32>, GateError> {
+    let value = env::var(name)
         .ok()
         .map(|value| value.parse::<u32>())
         .transpose()
         .map_err(|error| {
-            GateError::Selection(format!(
-                "GATE_BUILD_SLOTS must be a positive integer: {error}"
-            ))
+            GateError::Selection(format!("{name} must be a positive integer: {error}"))
         })?;
-    if configured == Some(0) {
-        return Err(GateError::Selection(
-            "GATE_BUILD_SLOTS must be positive".to_owned(),
-        ));
+    if value == Some(0) {
+        return Err(GateError::Selection(format!("{name} must be positive")));
     }
+    Ok(value)
+}
+
+fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError> {
+    let configured = slot_setting("GATE_BUILD_SLOTS")?;
     let build = if let Some(count) = configured
         && command.turn == Turn::Build
         && command.run.contains("cargo ")
         && env::var("GATE_BUILD_HELD").as_deref() != Ok("1")
     {
+        let lowest = slot_setting("GATE_LOWEST_BUILD_SLOT")?.unwrap_or(1);
+        if lowest > count {
+            return Err(GateError::Selection(format!(
+                "GATE_LOWEST_BUILD_SLOT must be at most GATE_BUILD_SLOTS ({count})"
+            )));
+        }
         Some(slots::acquire(
             &coordinator(root)?.join("betterlite/builds"),
+            lowest,
             count,
             &mut io::stderr(),
         )?)

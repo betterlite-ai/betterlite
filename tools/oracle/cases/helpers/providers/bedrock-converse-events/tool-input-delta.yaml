@@ -1,0 +1,45 @@
+kind: helper
+name: bedrock-converse-events-tool-input-delta
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000021
+        steps:
+          - function: converse
+            chunk: {delta: {toolUse: {input: buffered}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: t1, name: first}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: t2, name: second}}, contentBlockIndex: 1}
+          - function: converse
+            chunk: {delta: {toolUse: {input: '{"a"'}}, contentBlockIndex: 9}
+          - function: state
+          - function: converse
+            chunk: {start: {toolUse: {name: broken}}}
+          - function: state
+          - function: converse
+            chunk: {delta: {toolUse: {}}}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        mappings:
+          bedrock_tool_1: original
+        ids:
+          - 00000000-0000-4000-8000-000000000022
+        steps:
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: t1, name: bedrock_tool_1}}, contentBlockIndex: 0}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000023
+        steps:
+          - function: state
+env: {}
+compare: {ignore: []}

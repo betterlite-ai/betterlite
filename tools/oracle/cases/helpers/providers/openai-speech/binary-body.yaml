@@ -1,0 +1,19 @@
+kind: helper
+name: openai-speech-binary-body
+call:
+  openai_speech:
+    client:
+      api_key: sk-speech
+      api_base: 'https://speech.test/v1'
+      timeout: 30
+      max_retries: 4
+    request:
+      model: tts-1
+      input: Keep the bytes
+      voice: echo
+    reply:
+      status: 200
+      headers: [[content-type, audio/ogg], [x-request-id, req-bin]]
+      chunks: [[255, 0, 123, 34, 125]]
+env: {}
+compare: {ignore: []}
