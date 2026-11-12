@@ -26,9 +26,9 @@ use rand::rngs::StdRng;
 use rstest::rstest;
 use uuid::Uuid;
 
-use crate::api::vector_store_contracts::executor::DirectEmbeddingExecutor;
-use crate::api::vector_store_contracts::router::VectorStoreRouter;
-use crate::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
+use crate::vector_store_contracts::executor::DirectEmbeddingExecutor;
+use crate::vector_store_contracts::router::VectorStoreRouter;
+use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
 
 use super::query::{SelectedExecutor, embed_query, query_embedding_executor};
 

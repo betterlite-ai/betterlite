@@ -1,17 +1,17 @@
 use std::collections::BTreeMap;
 
-use betterlite_core::api::vector_store_contracts::filters::{
-    requested_create_params, requested_search_params,
-};
-use betterlite_core::api::vector_store_contracts::metadata::{
-    metadata_map, vector_store_request_metadata,
-};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResponse;
 use betterlite_provider::api::vector_store_contracts::config::{
     Params, SearchQuery, SearchRequest, SignRequest, VectorStoreConfig as _, VectorStoreLogging,
 };
 use betterlite_provider::api::vector_store_contracts::error::BaseLlmException;
+use betterlite_transcribe::vector_store_contracts::filters::{
+    requested_create_params, requested_search_params,
+};
+use betterlite_transcribe::vector_store_contracts::metadata::{
+    metadata_map, vector_store_request_metadata,
+};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Number, Value, json};
