@@ -41,7 +41,7 @@ pub enum ThinkingBlock {
         signature: Option<String>,
         thinking: String,
     },
-    Redacted {
+    RedactedThinking {
         data: String,
     },
 }
@@ -93,7 +93,7 @@ pub fn redacted_thinking_content(
         .data
         .clone()
         .ok_or(StreamStateError::FieldType { field: "data" })?;
-    let thinking_blocks = vec![ThinkingBlock::Redacted { data }];
+    let thinking_blocks = vec![ThinkingBlock::RedactedThinking { data }];
     set_thinking_field(provider_specific_fields, &thinking_blocks);
     Ok(thinking_blocks)
 }

@@ -21,9 +21,8 @@ def delta_answer(decoder: Decoder, chunk: dict[str, Json]) -> Json:
 
 def redacted_answer(decoder: Decoder, chunk: dict[str, Json]) -> Json:
     start = decoder.get_content_block_start(chunk=chunk)
-    providers: dict[str, Json] = {}
-    blocks, providers = decoder._handle_redacted_thinking(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L734
-        content_block_start=start, provider_specific_fields=providers
+    blocks, providers = decoder._handle_redacted_thinking_content(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L734
+        content_block_start=start, provider_specific_fields={}
     )
     return {"thinking_blocks": blocks, "provider_specific_fields": providers}
 

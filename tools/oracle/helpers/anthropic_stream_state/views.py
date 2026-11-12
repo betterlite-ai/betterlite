@@ -1,5 +1,6 @@
 from typing import cast
 
+from litellm.llms.anthropic.chat.handler import ModelResponseIterator
 from litellm.types.responses.main import OutputCodeInterpreterCall
 from openai.types.responses.response_function_web_search import ResponseFunctionWebSearch
 
@@ -39,7 +40,11 @@ def calls_view(decoder: Decoder) -> dict[str, Json]:
 
 
 def results_view(decoder: Decoder) -> list[Json]:
-    calls: list[OutputCodeInterpreterCall] = decoder._build_interpreter_results()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L778
+    iterator = cast(ModelResponseIterator, decoder)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L546
+    calls = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L778
+        list[OutputCodeInterpreterCall],
+        iterator._build_code_interpreter_results(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L778
+    )
     return [cast(Json, call.model_dump()) for call in calls]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L90
 
 

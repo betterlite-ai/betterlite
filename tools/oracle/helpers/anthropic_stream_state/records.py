@@ -1,6 +1,5 @@
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
-from litellm.types.responses.main import OutputCodeInterpreterCall
 from litellm.types.utils import Usage
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -41,21 +40,19 @@ class Decoder(Protocol):
         self, chunk: dict[str, Json]
     ) -> tuple[str, Json, Json, Json, str | None]: ...
 
+    def _handle_redacted_thinking_content(  # ast-grep-ignore: no-long-names
+        self, content_block_start: Json, provider_specific_fields: dict[str, Json]
+    ) -> tuple[Json, dict[str, Json]]: ...
+
     def _handle_usage(self, anthropic_usage_chunk: dict[str, Json]) -> Usage: ...
 
     def _handle_message_delta(
         self, chunk: dict[str, Json]
     ) -> tuple[str, Usage | None, Json | None]: ...
 
-    def _handle_redacted_thinking(
-        self, content_block_start: Json, provider_specific_fields: dict[str, Json]
-    ) -> tuple[Json, dict[str, Json]]: ...
-
     def _web_search_call_snapshot(self) -> dict[str, Dumpable]: ...
 
     def _complete_web_search_call(self, result: dict[str, Json]) -> None: ...
-
-    def _build_interpreter_results(self) -> list[OutputCodeInterpreterCall]: ...
 
 
 class StateFields(TypedDict, total=False):
