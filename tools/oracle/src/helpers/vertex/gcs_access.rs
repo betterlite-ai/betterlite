@@ -1,9 +1,15 @@
+mod input;
+mod operations;
+mod tests;
+
+use crate::helpers::{Helper, HelperResult};
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("vertex_gcs_access")
+    fn run(input: &Self::Input) -> HelperResult {
+        operations::run(input)
     }
 }
