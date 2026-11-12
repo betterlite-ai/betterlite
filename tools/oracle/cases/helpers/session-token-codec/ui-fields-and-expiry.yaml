@@ -1,0 +1,19 @@
+kind: helper
+name: session-token-codec-ui-fields-and-expiry
+call:
+  session_token_codec:
+    salt_key: salt-one
+    master_key: null
+    max_ui_session_budget: 1.0
+    env: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f"
+    now: "2026-11-12T17:50:00.999999+00:00"
+    steps:
+      - op: ui_token
+        user: {user_id: user-1, user_role: internal_user, models: [gpt-4o], teams: []}
+      - op: ui_token
+        user: {user_id: user-2, user_role: proxy_admin, models: [gpt-4o, claude], teams: [team-a]}
+      - op: ui_token
+        user: {user_id: user-3, user_role: customer, models: [], teams: []}
+env: {}
+compare: {ignore: []}

@@ -1130,7 +1130,9 @@ dependencies = [
  "betterlite-db",
  "betterlite-error",
  "betterlite-models",
+ "betterlite-paths",
  "betterlite-redis",
+ "betterlite-secrets",
  "chrono",
  "hex",
  "lru",
@@ -1159,7 +1161,9 @@ name = "betterlite-auth-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
