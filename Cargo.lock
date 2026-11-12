@@ -2953,6 +2953,7 @@ name = "betterlite-server-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-core",
  "betterlite-server",
  "libfuzzer-sys",
  "serde_json",
