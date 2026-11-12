@@ -1,0 +1,24 @@
+kind: helper
+name: openai-response-params-minimum-output-tokens
+call:
+  openai_response_params:
+    minimum_output_tokens:
+      probes:
+      - {model: gpt-4o, params: {max_output_tokens: 1}, model_cost: {gpt-4o: {litellm_provider: openai}}}
+      - {model: gpt-4o, params: {max_output_tokens: 15}}
+      - {model: gpt-4o, params: {max_output_tokens: 16}}
+      - {model: gpt-4o, params: {max_output_tokens: 0}}
+      - {model: gpt-4o, params: {max_output_tokens: -3}}
+      - {model: gpt-4o, params: {max_output_tokens: 17}}
+      - {model: gpt-4o, params: {max_output_tokens: 18446744073709551615}}
+      - {model: gpt-4o, params: {max_output_tokens: 15.5}}
+      - {model: gpt-4o, params: {max_output_tokens: 15.0}}
+      - {model: gpt-4o, params: {max_output_tokens: 1e1}}
+      - {model: gpt-4o, params: {max_output_tokens: -3.5}}
+      - {model: gpt-4o, params: {some_future_param: {a: 1}}}
+      - {model: gpt-4o, params: {max_output_tokens: "8"}}
+      - {model: gpt-4o, params: {max_output_tokens: null}}
+      - {model: gpt-5.2, params: {max_output_tokens: 1}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true}}}
+      - {model: gemini-pro, params: {max_output_tokens: 2}, model_cost: {gemini-pro: {litellm_provider: gemini}}}
+env: {}
+compare: {ignore: []}

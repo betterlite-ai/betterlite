@@ -1,0 +1,5 @@
+kind: helper
+name: guardrail-params-litellm-seed
+call: {b3662: {function: litellm_params, body: {guardrail: decision_model, mode: [pre_call, Post_Call], decision_model: judge, checks: [{name: pii, instructions: Flag personal data, threshold: 0.5}], timeout: "30"}}}
+env: {}
+compare: {ignore: []}

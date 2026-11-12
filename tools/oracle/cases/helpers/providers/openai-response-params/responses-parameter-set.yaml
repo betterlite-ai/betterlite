@@ -1,0 +1,10 @@
+kind: helper
+name: openai-response-params-responses-parameter-set
+call:
+  openai_response_params:
+    responses_parameter_set:
+      probes:
+      - {model: gpt-5.2}
+      - {model: gpt-4o}
+env: {}
+compare: {ignore: []}

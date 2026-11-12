@@ -1,3 +1,4 @@
+use betterlite_config::sections::guardrail_params::records::LakeraCategoryThresholds;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
@@ -9,12 +10,6 @@ pub const DEFAULT_MODERATION_CHECK: ModerationCheck = ModerationCheck::InParalle
 pub enum ModerationCheck {
     PreCall,
     InParallel,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize, Serialize)]
-pub struct LakeraCategoryThresholds {
-    pub prompt_injection: Option<f64>,
-    pub jailbreak: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
