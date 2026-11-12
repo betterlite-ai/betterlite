@@ -4,20 +4,24 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::Sections;
+use betterlite_config::sections::hosted_chat_settings::Settings as HostedSettings;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 
 use super::CompatibleChatAlias;
+use super::aiml;
 use super::baseten::{self, BasetenSettings};
 use super::cerebras::{self, CerebrasSettings};
-use super::featherless::{
-    self, ChatIdentity, DropParams, FeatherlessSettings, HostedChatOptionsError,
-};
+use super::error::HostedChatOptionsError;
+use super::featherless::{self, DropParams, FeatherlessSettings};
 use super::map_renaming_token_limit;
 use crate::base_helpers::provider_config;
 use crate::openai_base_config::Headers;
+
+type ChatIdentity =
+    fn(&HostedSettings, Option<&str>, Option<&SecretString>) -> (String, Option<SecretString>);
 
 fn loaded(entries: &[(&str, &str)]) -> Sections {
     let lookup: BTreeMap<String, String> = entries
@@ -425,14 +429,14 @@ fn featherless_validation_creates_headers_when_none_are_given() {
 
 #[rstest]
 #[case::featherless_defaults(
-    ChatIdentity::Featherless,
+    featherless::chat_identity,
     &[],
     None,
     None,
     (None, "https://api.featherless.ai/v1")
 )]
 #[case::featherless_primary_environment(
-    ChatIdentity::Featherless,
+    featherless::chat_identity,
     &[
         ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
         ("FEATHERLESS_AI_API_KEY", "sk-primary"),
@@ -442,7 +446,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     (Some("sk-primary"), "https://primary.example")
 )]
 #[case::featherless_secondary_environment(
-    ChatIdentity::Featherless,
+    featherless::chat_identity,
     &[
         ("FEATHERLESS_API_BASE", "https://secondary.example"),
         ("FEATHERLESS_API_KEY", "sk-secondary"),
@@ -452,7 +456,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     (Some("sk-secondary"), "https://secondary.example")
 )]
 #[case::featherless_primary_environment_wins(
-    ChatIdentity::Featherless,
+    featherless::chat_identity,
     &[
         ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
         ("FEATHERLESS_AI_API_KEY", "sk-primary"),
@@ -464,7 +468,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     (Some("sk-primary"), "https://primary.example")
 )]
 #[case::featherless_explicit_wins(
-    ChatIdentity::Featherless,
+    featherless::chat_identity,
     &[
         ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
         ("FEATHERLESS_AI_API_KEY", "sk-primary"),
@@ -474,7 +478,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     (Some("sk-explicit"), "https://explicit.example")
 )]
 #[case::featherless_empty_explicit_falls_through(
-    ChatIdentity::Featherless,
+    featherless::chat_identity,
     &[
         ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
         ("FEATHERLESS_AI_API_KEY", "sk-primary"),
@@ -484,14 +488,14 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     (Some("sk-primary"), "https://primary.example")
 )]
 #[case::aiml_defaults(
-    ChatIdentity::Aiml,
+    aiml::chat_identity,
     &[],
     None,
     None,
     (None, "https://api.aimlapi.com/v1")
 )]
 #[case::aiml_environment(
-    ChatIdentity::Aiml,
+    aiml::chat_identity,
     &[
         ("AIML_API_BASE", "https://aiml.example/v1"),
         ("AIML_API_KEY", "sk-aiml"),
@@ -501,7 +505,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     (Some("sk-aiml"), "https://aiml.example/v1")
 )]
 #[case::aiml_explicit(
-    ChatIdentity::Aiml,
+    aiml::chat_identity,
     &[
         ("AIML_API_BASE", "https://aiml.example/v1"),
         ("AIML_API_KEY", "sk-aiml"),
@@ -511,14 +515,14 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     (Some("sk-explicit"), "https://explicit.example/v1")
 )]
 #[case::aiml_image_alias_is_not_read(
-    ChatIdentity::Aiml,
+    aiml::chat_identity,
     &[("AIMLAPI_KEY", "sk-image-only")],
     None,
     None,
     (None, "https://api.aimlapi.com/v1")
 )]
 fn chat_identity_resolves_its_chain(
-    #[case] host: ChatIdentity,
+    #[case] chat_identity: ChatIdentity,
     #[case] entries: &[(&str, &str)],
     #[case] explicit_base: Option<&str>,
     #[case] explicit_key: Option<&str>,
@@ -527,8 +531,7 @@ fn chat_identity_resolves_its_chain(
     let (expected_key, expected_base) = expected;
     let settings = loaded(entries).hosted_chat_settings;
     let key_override = explicit_key.map(secret);
-    let (base, key) =
-        featherless::chat_identity(host, &settings, explicit_base, key_override.as_ref());
+    let (base, key) = chat_identity(&settings, explicit_base, key_override.as_ref());
     assert_eq!(base, expected_base);
     assert_eq!(
         key.as_ref().map(|secret| secret.expose_secret().to_owned()),
@@ -565,8 +568,12 @@ fn compatible_aliases_share_the_b1425_identity(
         ("OPENAI_LIKE_API_KEY", "sk-like"),
     ])
     .openai_like_settings;
-    let (base, key) = settings.resolve(None, None);
+    let (base, key) = alias.identity(&settings, None, None);
     assert_eq!(alias.provider(), provider);
     assert_eq!(base.as_deref(), Some("https://like.example/v1"));
     assert_eq!(key.expose_secret(), "sk-like");
+    let (given_base, given_key) =
+        alias.identity(&settings, Some("https://x.example"), Some(&secret("sk-x")));
+    assert_eq!(given_base.as_deref(), Some("https://x.example"));
+    assert_eq!(given_key.expose_secret(), "sk-x");
 }

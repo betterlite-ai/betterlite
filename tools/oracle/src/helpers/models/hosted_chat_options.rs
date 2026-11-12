@@ -5,10 +5,8 @@ use betterlite_models::baseten_endpoint;
 use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::hosted_chat_options::baseten::{self, BasetenSettings};
 use betterlite_openai::hosted_chat_options::cerebras::{self, CerebrasSettings};
-use betterlite_openai::hosted_chat_options::featherless::{
-    self, ChatIdentity, DropParams, FeatherlessSettings,
-};
-use betterlite_openai::hosted_chat_options::map_renaming_token_limit;
+use betterlite_openai::hosted_chat_options::featherless::{self, DropParams, FeatherlessSettings};
+use betterlite_openai::hosted_chat_options::{CompatibleChatAlias, aiml, map_renaming_token_limit};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -28,25 +26,49 @@ struct Scenario {
     #[serde(default)]
     calls: Vec<Call>,
 }
-#[derive(Deserialize, Default)]
-#[serde(default, deny_unknown_fields)]
-struct Call {
-    op: Kind,
-    host: String,
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum Call {
+    Map(MapCall),
+    Info(InfoCall),
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MapCall {
+    host: MapHost,
     model: String,
     config: BTreeMap<String, Value>,
     params: Vec<(String, Value)>,
+    #[serde(default)]
     drop_params: bool,
+    #[serde(default)]
     supports_reasoning: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InfoCall {
+    host: InfoHost,
     api_base: Option<String>,
     api_key: Option<String>,
 }
-#[derive(Deserialize, Clone, Copy, Default)]
+#[derive(Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-enum Kind {
-    #[default]
-    Map,
-    Info,
+enum MapHost {
+    Baseten,
+    Cerebras,
+    Featherless,
+}
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum InfoHost {
+    Own(OwnIdentity),
+    Compatible(CompatibleChatAlias),
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum OwnIdentity {
+    Featherless,
+    Aiml,
 }
 pub(crate) struct Op;
 impl Helper for Op {
@@ -63,9 +85,9 @@ impl Helper for Op {
             let steps = scenario
                 .calls
                 .iter()
-                .map(|call| match call.op {
-                    Kind::Map => map(call, &sections),
-                    Kind::Info => info(call, &sections),
+                .map(|step| match step {
+                    Call::Map(call) => map(call, &sections),
+                    Call::Info(call) => Ok(info(call, &sections)),
                 })
                 .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
             scenarios.push(json!({"steps": steps}));
@@ -73,14 +95,14 @@ impl Helper for Op {
         Ok(json!(scenarios))
     }
 }
-fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
-    match call.host.as_str() {
-        "baseten" => token_limit_map::<BasetenSettings>(call, baseten::SUPPORTED_PARAMS),
-        "cerebras" => token_limit_map::<CerebrasSettings>(
+fn map(call: &MapCall, sections: &Sections) -> Result<Value, Box<HelperError>> {
+    match call.host {
+        MapHost::Baseten => token_limit_map::<BasetenSettings>(call, baseten::SUPPORTED_PARAMS),
+        MapHost::Cerebras => token_limit_map::<CerebrasSettings>(
             call,
             &cerebras::supported_params(call.supports_reasoning),
         ),
-        "featherless" => {
+        MapHost::Featherless => {
             let mut options = IndexMap::new();
             let drop = DropParams {
                 argument: call.drop_params,
@@ -94,39 +116,31 @@ fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
             let supported = featherless::SUPPORTED_PARAMS;
             Ok(mapped_value(&snapshot, &options, supported, None))
         }
-        _ => Err(failure(None, String::from("the host has no option map"))),
     }
 }
-fn info(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
+fn info(call: &InfoCall, sections: &Sections) -> Value {
     let explicit = call.api_key.clone().map(SecretString::from);
-    let (base, secret) = match call.host.as_str() {
-        "featherless" | "aiml" => {
-            let host = if call.host == "aiml" {
-                ChatIdentity::Aiml
-            } else {
-                ChatIdentity::Featherless
-            };
-            let hosted = &sections.hosted_chat_settings;
-            let (base, key) = featherless::chat_identity(
-                host,
-                hosted,
-                call.api_base.as_deref(),
-                explicit.as_ref(),
-            );
+    let api_base = call.api_base.as_deref();
+    let hosted = &sections.hosted_chat_settings;
+    let (base, secret) = match &call.host {
+        InfoHost::Own(OwnIdentity::Featherless) => {
+            let (base, key) = featherless::chat_identity(hosted, api_base, explicit.as_ref());
             (Some(base), key)
         }
-        "empower" | "friendliai" | "galadriel" | "github" => {
-            let (base, key) = sections
-                .openai_like_settings
-                .resolve(call.api_base.as_deref(), explicit.as_ref());
+        InfoHost::Own(OwnIdentity::Aiml) => {
+            let (base, key) = aiml::chat_identity(hosted, api_base, explicit.as_ref());
+            (Some(base), key)
+        }
+        InfoHost::Compatible(alias) => {
+            let like = &sections.openai_like_settings;
+            let (base, key) = alias.identity(like, api_base, explicit.as_ref());
             (base, Some(key))
         }
-        _ => return Err(failure(None, String::from("the host has no identity"))),
     };
     let key = secret.map(|key| key.expose_secret().to_owned());
-    Ok(json!({"ok": true, "value": {"base": base, "key": key}}))
+    json!({"ok": true, "value": {"base": base, "key": key}})
 }
-fn token_limit_map<Settings>(call: &Call, supported: &[&str]) -> Result<Value, Box<HelperError>>
+fn token_limit_map<Settings>(call: &MapCall, supported: &[&str]) -> Result<Value, Box<HelperError>>
 where
     Settings: serde::Serialize + serde::de::DeserializeOwned,
 {
@@ -136,7 +150,7 @@ where
         &mut options,
         supported,
     );
-    let baseten_model = (call.host == "baseten").then_some(call.model.as_str());
+    let baseten_model = (call.host == MapHost::Baseten).then_some(call.model.as_str());
     let snapshot = class_snapshot::<Settings>(&call.config)?;
     Ok(mapped_value(&snapshot, &options, supported, baseten_model))
 }

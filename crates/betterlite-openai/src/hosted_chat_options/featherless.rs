@@ -1,27 +1,11 @@
+use super::error::HostedChatOptionsError;
+use super::resolved_identity;
 use crate::openai_base_config::Headers;
 use betterlite_config::sections::hosted_chat_settings::Settings as HostedSettings;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use thiserror::Error;
-#[derive(Debug, PartialEq, Eq, Error)]
-pub enum HostedChatOptionsError {
-    #[error("Featherless AI does not support the {name} parameter")]
-    UnsupportedParam { name: String },
-    #[error("Missing Featherless AI API Key")]
-    MissingApiKey,
-}
-impl HostedChatOptionsError {
-    // UnsupportedParamsError carries 400; the pinned missing-key check raises a bare ValueError with no status
-    #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
-        match self {
-            Self::UnsupportedParam { .. } => Some(400),
-            Self::MissingApiKey => None,
-        }
-    }
-}
 pub const SUPPORTED_PARAMS: &[&str] = &[
     "stream",
     "frequency_penalty",
@@ -100,58 +84,23 @@ pub fn validate_environment(
     validated.insert("Content-Type".to_owned(), "application/json".to_owned());
     Ok(validated)
 }
-// LiteLLM chains the explicit value, each environment alias, then the default, skipping an empty one at every step
-fn resolved_identity(
-    api_base: Option<&str>,
-    api_key: Option<&SecretString>,
-    environment_base: Option<&str>,
-    environment_key: Option<&SecretString>,
-    default_base: &str,
-) -> (String, Option<SecretString>) {
-    let base = api_base
-        .filter(|value| !value.is_empty())
-        .or(environment_base)
-        .unwrap_or(default_base)
-        .to_owned();
-    let key = api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .or(environment_key)
-        .cloned();
-    (base, key)
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChatIdentity {
-    Featherless,
-    // AIML's chat identity reads only the primary key alias, never the image-side AIMLAPI_KEY
-    Aiml,
-}
 #[must_use]
 pub fn chat_identity(
-    host: ChatIdentity,
     settings: &HostedSettings,
     api_base: Option<&str>,
     api_key: Option<&SecretString>,
 ) -> (String, Option<SecretString>) {
-    match host {
-        ChatIdentity::Featherless => resolved_identity(
-            api_base,
-            api_key,
-            settings
-                .featherless_ai_api_base
-                .as_deref()
-                .or(settings.featherless_api_base.as_deref()),
-            settings
-                .featherless_ai_api_key
-                .as_ref()
-                .or(settings.featherless_api_key.as_ref()),
-            "https://api.featherless.ai/v1",
-        ),
-        ChatIdentity::Aiml => resolved_identity(
-            api_base,
-            api_key,
-            settings.aiml_api_base.as_deref(),
-            settings.aiml_api_key.as_ref(),
-            "https://api.aimlapi.com/v1",
-        ),
-    }
+    resolved_identity(
+        api_base,
+        api_key,
+        settings
+            .featherless_ai_api_base
+            .as_deref()
+            .or(settings.featherless_api_base.as_deref()),
+        settings
+            .featherless_ai_api_key
+            .as_ref()
+            .or(settings.featherless_api_key.as_ref()),
+        "https://api.featherless.ai/v1",
+    )
 }

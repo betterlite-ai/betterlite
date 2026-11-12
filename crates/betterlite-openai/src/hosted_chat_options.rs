@@ -1,8 +1,12 @@
+pub mod aiml;
 pub mod baseten;
 pub mod cerebras;
+pub mod error;
 pub mod featherless;
 mod tests;
+use betterlite_config::sections::openai_like_settings::Settings as OpenAiLikeSettings;
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 // each class is an empty OpenAILikeChatConfig subclass, so B1425's compatible chat policy is all of its behavior
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -14,6 +18,19 @@ pub enum CompatibleChatAlias {
     Github,
 }
 impl CompatibleChatAlias {
+    #[must_use]
+    pub fn identity(
+        self,
+        settings: &OpenAiLikeSettings,
+        api_base: Option<&str>,
+        api_key: Option<&SecretString>,
+    ) -> (Option<String>, SecretString) {
+        match self {
+            Self::Empower | Self::Friendliai | Self::Galadriel | Self::Github => {
+                settings.resolve(api_base, api_key)
+            }
+        }
+    }
     #[must_use]
     pub const fn provider(self) -> &'static str {
         match self {
@@ -41,4 +58,23 @@ pub fn map_renaming_token_limit(
             _ => {}
         }
     }
+}
+// LiteLLM chains the explicit value, each environment alias, then the default, skipping an empty one at every step
+fn resolved_identity(
+    api_base: Option<&str>,
+    api_key: Option<&SecretString>,
+    environment_base: Option<&str>,
+    environment_key: Option<&SecretString>,
+    default_base: &str,
+) -> (String, Option<SecretString>) {
+    let base = api_base
+        .filter(|value| !value.is_empty())
+        .or(environment_base)
+        .unwrap_or(default_base)
+        .to_owned();
+    let key = api_key
+        .filter(|key| !key.expose_secret().is_empty())
+        .or(environment_key)
+        .cloned();
+    (base, key)
 }

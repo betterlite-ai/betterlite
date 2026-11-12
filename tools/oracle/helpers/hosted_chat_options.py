@@ -3,6 +3,7 @@ import os
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import litellm
+from litellm.exceptions import UnsupportedParamsError
 from litellm.litellm_core_utils.core_helpers import drop_params_env_flag
 from litellm.llms.aiml.chat.transformation import AIMLChatConfig
 from litellm.llms.baseten.chat import BasetenConfig
@@ -122,8 +123,8 @@ def map_value(step: MapStep) -> Json:
             "list[Json]",
             config.get_supported_openai_params(step["model"]),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L60
         )
-    except Exception:  # noqa: BLE001  # the Featherless mapper's only rejection is UnsupportedParamsError with status 400  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L85-L95
-        return {"ok": False, "error": {"status": 400}}
+    except UnsupportedParamsError as failure:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L945
+        return {"ok": False, "error": {"status": failure.status_code}}
     pairs: list[Json] = [list(pair) for pair in mapped.items()]
     baseten: Json = None
     if step["host"] == "baseten":

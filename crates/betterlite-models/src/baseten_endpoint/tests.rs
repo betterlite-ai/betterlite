@@ -19,6 +19,7 @@ use super::{INFERENCE_API_BASE, get_api_base_for_model, is_dedicated_deployment}
 #[case::trailing_slash("baseten/abcd1234/", false)]
 #[case::non_ascii("baseten/\u{430}\u{431}\u{432}\u{433}1234", false)]
 #[case::seven_digits("1234567", false)]
+#[case::trailing_newline("baseten/abcd1234\n", false)]
 fn dedicated_deployment_is_eight_ascii_alphanumerics(#[case] model: &str, #[case] dedicated: bool) {
     assert_eq!(is_dedicated_deployment(model), dedicated);
 }
@@ -41,6 +42,7 @@ fn dedicated_deployment_gets_the_model_host(#[case] model: &str) {
 #[case::longer_id("baseten/abcd12345")]
 #[case::hyphenated("baseten/abcd-123")]
 #[case::empty("")]
+#[case::trailing_newline("baseten/abcd1234\n")]
 fn other_models_use_the_inference_host(#[case] model: &str) {
     assert_eq!(get_api_base_for_model(model), INFERENCE_API_BASE);
 }
