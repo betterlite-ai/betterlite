@@ -1,0 +1,9 @@
+kind: helper
+name: realtime-cached-body-and-frame-values
+call:
+  realtime_contracts:
+    function: cached_body_and_frames
+    models: [null, "", m, 'a"b', "a\nb"]
+    payloads: ["{}", "[]", "null", "0", "true", '"text"', "123456789012345678901234567890"]
+env: {}
+compare: {ignore: []}
