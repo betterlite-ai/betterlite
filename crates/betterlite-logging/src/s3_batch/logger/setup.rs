@@ -64,17 +64,19 @@ fn configured_credentials(
     source: &ConnectionCredentials,
     environment: &dyn EnvironmentLookup,
 ) -> Result<Arc<StaticCredentials>, InitError> {
-    let access_key_id = secret(
-        source.aws_access_key_id.as_ref(),
-        environment,
-        "AWS_ACCESS_KEY_ID",
+    let pair = (
+        secret(
+            source.aws_access_key_id.as_ref(),
+            environment,
+            "AWS_ACCESS_KEY_ID",
+        ),
+        secret(
+            source.aws_secret_access_key.as_ref(),
+            environment,
+            "AWS_SECRET_ACCESS_KEY",
+        ),
     );
-    let secret_access_key = secret(
-        source.aws_secret_access_key.as_ref(),
-        environment,
-        "AWS_SECRET_ACCESS_KEY",
-    );
-    let (Some(access_key_id), Some(secret_access_key)) = (access_key_id, secret_access_key) else {
+    let (Some(access_key_id), Some(secret_access_key)) = pair else {
         return Err(InitError::MissingCredentials);
     };
     Ok(Arc::new(StaticCredentials {
