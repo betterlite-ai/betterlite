@@ -34,12 +34,14 @@ pub fn provider_info(
 ) -> Result<ProviderInfo, LangFlowError> {
     let base = match api_base.filter(|base| !base.is_empty()) {
         Some(base) => String::from(base),
-        None => secret_text(secrets, environment, API_BASE_ENV)?
-            .unwrap_or_else(|| String::from(DEFAULT_API_BASE)),
+        None => secret_text(secrets, environment, API_BASE_ENV)?.map_or_else(
+            || String::from(DEFAULT_API_BASE),
+            |text| text.expose_secret().to_owned(),
+        ),
     };
     let key = match api_key.filter(|key| !key.expose_secret().is_empty()) {
         Some(key) => Some(key.clone()),
-        None => secret_text(secrets, environment, API_KEY_ENV)?.map(SecretString::from),
+        None => secret_text(secrets, environment, API_KEY_ENV)?,
     };
     Ok(ProviderInfo {
         api_base: base,
@@ -47,17 +49,16 @@ pub fn provider_info(
     })
 }
 
+// the read value keeps its secret wrapper, and an empty one counts as unset
 fn secret_text(
     secrets: &SecretLookup,
     environment: &BTreeMap<String, String>,
     name: &'static str,
-) -> Result<Option<String>, LangFlowError> {
+) -> Result<Option<SecretString>, LangFlowError> {
     let value = secrets
         .get_secret_str(environment, name, None)
         .map_err(|source| LangFlowError::Environment { name, source })?;
-    Ok(value
-        .filter(|text| !text.expose_secret().is_empty())
-        .map(|text| text.expose_secret().to_owned()))
+    Ok(value.filter(|text| !text.expose_secret().is_empty()))
 }
 
 #[must_use]

@@ -39,6 +39,14 @@ fn prepare_run_assembles_the_langflow_call() {
     assert!(prepared.fake_stream);
 }
 
+#[test]
+fn a_prepared_run_debug_shows_header_names_without_values() {
+    let prepared = run(Some("http://host:7860"), "{}", Some(true));
+    let printed = format!("{prepared:?}");
+    assert!(printed.contains("x-api-key"));
+    assert!(!printed.contains("secret"));
+}
+
 #[rstest]
 #[case::explicit_stream(Some(true), true)]
 #[case::explicit_no_stream(Some(false), false)]

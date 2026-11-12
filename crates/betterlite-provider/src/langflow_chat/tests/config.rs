@@ -70,6 +70,19 @@ fn provider_info_treats_empty_values_as_unset() {
 }
 
 #[test]
+fn provider_info_keeps_the_key_out_of_debug_output() {
+    let info = provider_info(
+        Some("http://host:7860"),
+        Some(&key("top-secret")),
+        &secrets(),
+        &BTreeMap::new(),
+    )
+    .expect("the fixture environment resolves");
+    let printed = format!("{info:?}");
+    assert!(!printed.contains("top-secret"));
+}
+
+#[test]
 fn provider_info_drops_a_boolean_environment_value() {
     let environment = environment(&[(API_KEY_ENV, "true")]);
     let (_, api_key) = resolved(None, None, &secrets(), &environment);

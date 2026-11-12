@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
@@ -17,12 +18,24 @@ pub struct RunInput<'request> {
     pub stream: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PreparedRun {
     pub url: String,
     pub headers: BTreeMap<String, String>,
     pub body: RequestBody,
     pub fake_stream: bool,
+}
+
+// the headers carry the api key, so a derived Debug would print it; only the names are shown
+impl fmt::Debug for PreparedRun {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedRun")
+            .field("url", &self.url)
+            .field("headers", &self.headers.keys().collect::<Vec<&String>>())
+            .field("body", &self.body)
+            .field("fake_stream", &self.fake_stream)
+            .finish()
+    }
 }
 
 // LiteLLM's handler order: validate_environment, then get_complete_url, then transform_request
