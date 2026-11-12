@@ -249,6 +249,7 @@ fn the_saturation_of_an_unbounded_seconds_value_never_changes_a_decision() {
 #[case::sixty(b"60", 60)]
 #[case::sixty_one(b"61", 61)]
 #[case::negative_one(b"-1", -1)]
+#[case::negative_at_the_signed_limit(b"-9223372036854775807", i64::MIN + 1)]
 fn seconds_are_read_exactly(#[case] bytes: &[u8], #[case] expected: i64) {
     assert_eq!(
         parse_retry_after(bytes).unwrap(),

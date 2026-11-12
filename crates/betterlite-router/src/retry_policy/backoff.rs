@@ -56,14 +56,8 @@ where
         return f64::from(header_seconds).mul_add(1.0_f64, jitter);
     }
     let exponent = timing.max_retries.saturating_sub(timing.remaining_retries);
-    let delay = if exponent > i64::from(i32::MAX) {
-        f64::INFINITY
-    } else {
-        settings.initial_retry_delay.mul_add(
-            2.0_f64.powi(i32::try_from(exponent).unwrap_or(i32::MAX)),
-            0.0,
-        )
-    };
+    let step = 2.0_f64.powi(i32::try_from(exponent).unwrap_or(i32::MAX));
+    let delay = settings.initial_retry_delay.mul_add(step, 0.0);
     delay
         .max(settings.min_timeout)
         .min(settings.max_retry_delay)

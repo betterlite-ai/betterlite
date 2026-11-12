@@ -257,6 +257,12 @@ fn eligibility_follows_class_status_and_candidates(
     with_fallbacks(2, 2, None, None, Some(1)),
     None
 )]
+#[case::rate_limit_with_empty_fallbacks_and_no_healthy(
+    FailureClass::RateLimit,
+    Some(429),
+    with_fallbacks(0, 2, None, None, Some(0)),
+    Some(StopReason::NoHealthyDeployments)
+)]
 #[case::rate_limit_with_empty_fallback_list(
     FailureClass::RateLimit,
     Some(429),
