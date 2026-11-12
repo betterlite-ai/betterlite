@@ -21,6 +21,20 @@ class BytesEntry(TypedDict):
     text: str
 
 
+class TypedCompletedEntry(TypedDict):
+    kind: Literal["typed_completed"]
+    usage: dict[str, Json]
+
+
+class CompletedResponse(TypedDict):
+    usage: ResponseAPIUsage
+
+
+class CompletedEvent(TypedDict):
+    type: Literal["response.completed"]
+    response: CompletedResponse
+
+
 class AbsentOriginal(TypedDict):
     kind: Literal["absent"]
 
@@ -32,7 +46,7 @@ class ResponseOriginal(TypedDict):
 
 class StreamOriginal(TypedDict):
     kind: Literal["stream"]
-    items: list[JsonEntry | BytesEntry]
+    items: list[JsonEntry | BytesEntry | TypedCompletedEntry]
 
 
 Original: TypeAlias = AbsentOriginal | ResponseOriginal | StreamOriginal
@@ -44,17 +58,22 @@ class BlockedUsageInput(TypedDict):
     original: Original
 
 
-def stream_item(entry: JsonEntry | BytesEntry) -> Json | bytes:
+def stream_item(
+    entry: JsonEntry | BytesEntry | TypedCompletedEntry,
+) -> Json | bytes | CompletedEvent:
     match entry["kind"]:
         case "json":
             return entry["value"]
         case "bytes":
             return entry["text"].encode()
+        case "typed_completed":
+            usage = ResponseAPIUsage.model_validate(entry["usage"])
+            return {"type": "response.completed", "response": {"usage": usage}}
 
 
 def original_response(
     original: Original,
-) -> dict[str, Json] | list[Json | bytes] | None:
+) -> dict[str, Json] | list[Json | bytes | CompletedEvent] | None:
     match original["kind"]:
         case "absent":
             return None
@@ -65,11 +84,18 @@ def original_response(
 
 
 def responses_usage(usage: ResponseAPIUsage) -> Json:
-    return {
+    result: dict[str, Json] = {
         "input_tokens": usage.input_tokens,
         "output_tokens": usage.output_tokens,
         "total_tokens": usage.total_tokens,
     }
+    if usage.input_tokens_details is not None:
+        result["input_tokens_details"] = {"cached_tokens": usage.input_tokens_details.cached_tokens}
+    if usage.output_tokens_details is not None:
+        result["output_tokens_details"] = {
+            "reasoning_tokens": usage.output_tokens_details.reasoning_tokens
+        }
+    return result
 
 
 def run(input_value: BlockedUsageInput) -> Json:

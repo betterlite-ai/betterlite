@@ -21,6 +21,7 @@ enum Shape {
 enum Entry {
     Json { value: GuardrailValue },
     Bytes { text: String },
+    TypedCompleted { usage: Object },
 }
 
 #[derive(Deserialize)]
@@ -42,6 +43,17 @@ fn stream_item(entry: &Entry) -> StreamItem {
     match entry {
         Entry::Json { value } => StreamItem::Json(value.clone()),
         Entry::Bytes { text } => StreamItem::Bytes(text.clone().into_bytes()),
+        Entry::TypedCompleted { usage } => {
+            let response =
+                Object::from([("usage".to_owned(), GuardrailValue::Object(usage.clone()))]);
+            StreamItem::Json(GuardrailValue::Object(Object::from([
+                (
+                    "type".to_owned(),
+                    GuardrailValue::Text("response.completed".to_owned()),
+                ),
+                ("response".to_owned(), GuardrailValue::Object(response)),
+            ])))
+        }
     }
 }
 
@@ -75,9 +87,5 @@ pub(super) fn blocked_usage(request: &Request) -> Value {
         Shape::ResponsesApi => blocked_responses_api_usage(&original),
         Shape::ResponsesStream => blocked_responses_stream_usage(&original),
     };
-    json!({
-        "input_tokens": responses.input_tokens,
-        "output_tokens": responses.output_tokens,
-        "total_tokens": responses.total_tokens,
-    })
+    json!(responses)
 }
