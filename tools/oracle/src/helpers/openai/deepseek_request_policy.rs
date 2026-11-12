@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_openai::chat::ChatMessage;
-use betterlite_openai::chat_content::{ChatContentError, Mode};
+use betterlite_openai::chat_content::Mode;
 use betterlite_openai::deepseek_chat::history::fill_reasoning_content;
 use betterlite_openai::deepseek_chat::options::map_openai_params;
 use betterlite_openai::deepseek_chat::request::{RequestInput, transform_request};
@@ -21,7 +21,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod tests;
 
@@ -85,17 +85,6 @@ const fn empty_catalog() -> CatalogCapabilities {
     }
 }
 
-fn content_error(error: &ChatContentError) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("BadRequestError"),
-        status: Some(error.status_code()),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
 fn map_value(case: &MapCase) -> Value {
     let mut optional = case.optional_params.clone();
     map_openai_params(
@@ -117,25 +106,25 @@ fn messages_value(case: &MessagesCase) -> Result<Value, Box<HelperError>> {
         supports_vision: case.supports_vision,
         supports_reasoning: false,
     };
-    let body = transform_request(&input, Mode::Sync).map_err(|source| content_error(&source))?;
+    let body = transform_request(&input, Mode::Sync).or_config_error()?;
     Ok(json!(body.get("messages")))
 }
 
-fn captured<Case, Render>(
-    logs: &Logs,
-    cases: &[Case],
-    render: Render,
-) -> Result<Vec<Value>, Box<HelperError>>
+fn captured<Case, Render>(logs: &Logs, key: &str, cases: &[Case], render: Render) -> HelperResult
 where
     Render: Fn(&Case) -> Result<Value, Box<HelperError>>,
 {
     let mut outcomes = Vec::with_capacity(cases.len());
     for case in cases {
-        drop(logs.take());
+        logs.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         let value = render(case)?;
-        outcomes.push(json!({"value": value, "warnings": logs.take()}));
+        let warnings = std::mem::take(&mut *logs.0.lock().unwrap_or_else(PoisonError::into_inner));
+        outcomes.push(json!({"value": value, "warnings": warnings}));
     }
-    Ok(outcomes)
+    Ok(json!({ key: outcomes }))
 }
 
 pub(crate) struct Op;
@@ -147,40 +136,20 @@ impl Helper for Op {
         let logs = Logs::default();
         let subscriber = tracing_subscriber::registry().with(logs.clone());
         with_default(subscriber, || match input {
-            Input::Map { cases } => {
-                let values = captured(&logs, cases, |case| Ok(map_value(case)))?;
-                Ok(json!({"map": values}))
-            }
-            Input::History { cases } => {
-                let values = captured(&logs, cases, |case| {
-                    Ok(json!(fill_reasoning_content(&case.messages)))
-                })?;
-                Ok(json!({"history": values}))
-            }
-            Input::Tools { cases } => {
-                let values = captured(&logs, cases, |case| {
-                    Ok(json!(drop_unsupported_tools(&case.optional_params).params))
-                })?;
-                Ok(json!({"tools": values}))
-            }
-            Input::Messages { cases } => {
-                let values = captured(&logs, cases, messages_value)?;
-                Ok(json!({"messages": values}))
-            }
+            Input::Map { cases } => captured(&logs, "map", cases, |case| Ok(map_value(case))),
+            Input::History { cases } => captured(&logs, "history", cases, |case| {
+                Ok(json!(fill_reasoning_content(&case.messages)))
+            }),
+            Input::Tools { cases } => captured(&logs, "tools", cases, |case| {
+                Ok(json!(drop_unsupported_tools(&case.optional_params).params))
+            }),
+            Input::Messages { cases } => captured(&logs, "messages", cases, messages_value),
         })
     }
 }
 
 #[derive(Clone, Default)]
 struct Logs(Arc<Mutex<Vec<Value>>>);
-
-impl Logs {
-    fn take(&self) -> Vec<Value> {
-        let mut taken = std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner));
-        taken.retain(|entry| entry["event"] != "unrecognized");
-        taken
-    }
-}
 
 #[derive(Default)]
 struct Fields(String);
@@ -200,10 +169,12 @@ impl<Inner: Subscriber> Layer<Inner> for Logs {
         }
         let mut message = Fields::default();
         event.record(&mut message);
-        let name = EVENTS
+        let Some((_, name)) = EVENTS
             .iter()
             .find(|(fragment, _)| message.0.contains(fragment))
-            .map_or("unrecognized", |(_, name)| name);
+        else {
+            return;
+        };
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

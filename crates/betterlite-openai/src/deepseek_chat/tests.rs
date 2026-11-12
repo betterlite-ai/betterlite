@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::token_cost::GenericCostResult;
@@ -902,11 +902,11 @@ impl GenericPricing for FakePricing {
         usage: &CostUsage,
         provider: Option<&str>,
     ) -> Result<GenericCostResult, TokenCostError> {
-        let mut seen = self.seen.lock().expect("the fake lock");
-        *seen = Some((model.to_owned(), usage.clone(), provider.map(str::to_owned)));
+        *self.seen.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some((model.to_owned(), usage.clone(), provider.map(str::to_owned)));
         Ok(GenericCostResult {
             prompt_cost: Decimal::ONE,
-            completion_cost: Decimal::from(2),
+            completion_cost: Decimal::TWO,
         })
     }
 }
@@ -923,13 +923,13 @@ fn the_cost_wrapper_forwards_the_model_usage_and_provider_tag() {
         prompt_details: None,
         completion_details: None,
         cache_read_tokens: Some(1),
-        numeric_extras: std::collections::BTreeMap::new(),
+        numeric_extras: BTreeMap::new(),
     };
     let cost = pricing
         .cost_per_token("deepseek-reasoner", &usage)
         .expect("the forwarded cost");
     assert_eq!(cost.prompt_cost, Decimal::ONE);
-    assert_eq!(cost.completion_cost, Decimal::from(2));
+    assert_eq!(cost.completion_cost, Decimal::TWO);
     let seen = pricing
         .seen
         .lock()

@@ -26,52 +26,29 @@ pub fn fill_reasoning_content(messages: &[Message]) -> Vec<Message> {
 }
 
 fn repaired_message(message: &Message) -> Message {
-    let reasoning = message.provider_specific_fields.get(REASONING_CONTENT);
-    if message.role != ASSISTANT || reasoning.is_some_and(Json::is_truthy) {
+    let current = message.provider_specific_fields.get(REASONING_CONTENT);
+    if message.role != ASSISTANT || current.is_some_and(Json::is_truthy) {
         return message.clone();
     }
-    let stored = stored_reasoning(message);
     let mut patched = message.clone();
-    if let Some(value) = stored {
-        patched
-            .provider_specific_fields
-            .insert(REASONING_CONTENT.to_owned(), value);
-        remove_stored_reasoning(message, &mut patched);
-    } else {
+    // Only the nested copy goes away; the rest of provider_specific_fields stays, even when empty
+    let stored = match patched.provider_specific_fields.get_mut(PROVIDER_FIELDS) {
+        Some(Json::Object(nested))
+            if nested.get(REASONING_CONTENT).is_some_and(Json::is_truthy) =>
+        {
+            nested.shift_remove(REASONING_CONTENT)
+        }
+        _ => None,
+    };
+    let value = stored.unwrap_or_else(|| {
         tracing::warn!(
             provider = "deepseek",
             "DeepSeek thinking mode: assistant message is missing reasoning_content; a single-space placeholder is injected"
         );
-        patched.provider_specific_fields.insert(
-            REASONING_CONTENT.to_owned(),
-            Json::Text(PLACEHOLDER.to_owned()),
-        );
-    }
-    patched
-}
-
-fn stored_reasoning(message: &Message) -> Option<Json> {
-    let fields = message
-        .provider_specific_fields
-        .get(PROVIDER_FIELDS)?
-        .as_object()?;
-    fields
-        .get(REASONING_CONTENT)
-        .filter(|value| value.is_truthy())
-        .cloned()
-}
-
-// Only the nested copy goes away; the rest of provider_specific_fields stays on the message, even when empty
-fn remove_stored_reasoning(message: &Message, patched: &mut Message) {
-    let Some(Json::Object(mut fields)) = message
-        .provider_specific_fields
-        .get(PROVIDER_FIELDS)
-        .cloned()
-    else {
-        return;
-    };
-    fields.shift_remove(REASONING_CONTENT);
+        Json::Text(PLACEHOLDER.to_owned())
+    });
     patched
         .provider_specific_fields
-        .insert(PROVIDER_FIELDS.to_owned(), Json::Object(fields));
+        .insert(REASONING_CONTENT.to_owned(), value);
+    patched
 }

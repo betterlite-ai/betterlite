@@ -55,27 +55,14 @@ fn forwardable_parts(message: &Message) -> Option<&[ContentPart]> {
 }
 
 fn is_forwardable_block(part: &ContentPart) -> bool {
-    match part.kind.as_str() {
-        IMAGE_URL => part
-            .fields
-            .get(IMAGE_URL)
-            .is_some_and(image_url_is_forwardable),
-        TEXT => part
-            .fields
-            .get(TEXT)
-            .is_some_and(|value| value.as_str().is_some()),
-        _ => false,
-    }
-}
-
-fn image_url_is_forwardable(value: &Json) -> bool {
-    match value {
-        Json::Text(url) => !url.is_empty(),
-        Json::Object(fields) => fields
+    match (part.kind.as_str(), part.fields.get(part.kind.as_str())) {
+        (IMAGE_URL, Some(Json::Text(url))) => !url.is_empty(),
+        (IMAGE_URL, Some(Json::Object(fields))) => fields
             .get(URL)
             .and_then(Json::as_str)
             .is_some_and(|url| !url.is_empty()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => false,
+        (TEXT, Some(Json::Text(_))) => true,
+        _ => false,
     }
 }
 

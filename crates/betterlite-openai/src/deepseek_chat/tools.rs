@@ -3,10 +3,8 @@ use std::collections::BTreeSet;
 use betterlite_prompts::arguments::json::{Json, Object};
 
 const FUNCTION: &str = "function";
-const NAME: &str = "name";
 const TOOLS: &str = "tools";
 const TOOL_CHOICE: &str = "tool_choice";
-const PARALLEL_TOOL_CALLS: &str = "parallel_tool_calls";
 
 pub struct DroppedTools {
     pub params: Object,
@@ -14,109 +12,68 @@ pub struct DroppedTools {
 }
 
 pub fn drop_unsupported_tools(optional_params: &Object) -> DroppedTools {
-    let Some(Json::List(tools)) = optional_params.get(TOOLS) else {
-        return unchanged(optional_params);
-    };
-    if tools.iter().all(is_function_tool) {
-        return unchanged(optional_params);
-    }
-    let dropped_types = dropped_types(tools);
-    tracing::warn!(
-        provider = "deepseek",
-        dropped = ?dropped_types,
-        "DeepSeek chat completions only supports function tools; dropping unsupported tool types"
-    );
-    let function_tools: Vec<Json> = tools
-        .iter()
-        .filter(|tool| is_function_tool(tool))
-        .cloned()
-        .collect();
-    DroppedTools {
-        params: cleaned_params(optional_params, function_tools),
-        dropped_types,
-    }
-}
-
-fn unchanged(optional_params: &Object) -> DroppedTools {
-    DroppedTools {
+    let mut result = DroppedTools {
         params: optional_params.clone(),
         dropped_types: Vec::new(),
-    }
-}
-
-fn cleaned_params(optional_params: &Object, function_tools: Vec<Json>) -> Object {
-    let mut cleaned = optional_params.clone();
-    cleaned.shift_remove(TOOLS);
-    if function_tools.is_empty() {
-        cleaned.shift_remove(TOOL_CHOICE);
-        cleaned.shift_remove(PARALLEL_TOOL_CALLS);
-        return cleaned;
-    }
-    let names = function_tool_names(&function_tools);
-    if !tool_choice_matches(cleaned.get(TOOL_CHOICE), &names) {
-        cleaned.shift_remove(TOOL_CHOICE);
-    }
-    cleaned.insert(TOOLS.to_owned(), Json::List(function_tools));
-    cleaned
-}
-
-fn is_function_tool(tool: &Json) -> bool {
-    match tool {
-        Json::Object(fields) => fields.get("type").and_then(Json::as_str) == Some(FUNCTION),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => false,
-    }
-}
-
-fn function_tool_names(tools: &[Json]) -> BTreeSet<String> {
-    tools
-        .iter()
-        .filter_map(|tool| match tool {
-            Json::Object(fields) => fields
-                .get(FUNCTION)
-                .and_then(Json::as_object)
-                .and_then(|function| function.get(NAME))
-                .and_then(Json::as_str)
-                .map(str::to_owned),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-        })
-        .collect()
-}
-
-// A string choice, or none at all, survives; a dict must name a function that survived
-fn tool_choice_matches(choice: Option<&Json>, names: &BTreeSet<String>) -> bool {
-    let Some(Json::Object(fields)) = choice else {
-        return true;
     };
-    if fields.get("type").and_then(Json::as_str) != Some(FUNCTION) {
-        return false;
+    let Some(Json::List(tools)) = optional_params.get(TOOLS) else {
+        return result;
+    };
+    let (functions, others): (Vec<&Json>, Vec<&Json>) =
+        tools.iter().partition(|tool| function_entry(tool).is_ok());
+    if others.is_empty() {
+        return result;
     }
-    let chosen = fields
-        .get(FUNCTION)
-        .and_then(Json::as_object)
-        .and_then(|function| function.get(NAME))
-        .and_then(Json::as_str);
-    chosen.is_some_and(|name| names.contains(name))
+    let names: BTreeSet<String> = others.into_iter().map(dropped_type_name).collect();
+    result.dropped_types = names.into_iter().collect();
+    tracing::warn!(
+        provider = "deepseek",
+        dropped = ?result.dropped_types,
+        "DeepSeek chat completions only supports function tools; dropping unsupported tool types"
+    );
+    result.params.shift_remove(TOOLS);
+    if functions.is_empty() {
+        result.params.shift_remove(TOOL_CHOICE);
+        result.params.shift_remove("parallel_tool_calls");
+        return result;
+    }
+    let survivors: BTreeSet<&str> = functions
+        .iter()
+        .filter_map(|tool| function_entry(tool).ok().flatten())
+        .collect();
+    // A string choice, or none at all, survives; a dict must name a function that survived
+    if let Some(choice @ Json::Object(_)) = result.params.get(TOOL_CHOICE)
+        && !function_entry(choice)
+            .ok()
+            .flatten()
+            .is_some_and(|name| survivors.contains(name))
+    {
+        result.params.shift_remove(TOOL_CHOICE);
+    }
+    let kept = functions.into_iter().cloned().collect();
+    result.params.insert(TOOLS.to_owned(), Json::List(kept));
+    result
 }
 
-fn dropped_types(tools: &[Json]) -> Vec<String> {
-    let mut names = BTreeSet::new();
-    for tool in tools {
-        if !is_function_tool(tool) {
-            names.insert(dropped_type_name(tool));
-        }
+// Err for a non-function entry; Ok(name) for a function entry, whose name may be missing
+fn function_entry(tool: &Json) -> Result<Option<&str>, ()> {
+    let fields = tool.as_object().ok_or(())?;
+    if fields.get("type").and_then(Json::as_str) != Some(FUNCTION) {
+        return Err(());
     }
-    names.into_iter().collect()
+    let function = fields.get(FUNCTION).and_then(Json::as_object);
+    Ok(function
+        .and_then(|body| body.get("name"))
+        .and_then(Json::as_str))
 }
 
 fn dropped_type_name(tool: &Json) -> String {
-    if let Json::Object(fields) = tool {
-        return match fields.get("type") {
-            Some(Json::Text(text)) => text.clone(),
-            Some(other) => json_type_name(other).to_owned(),
-            None => "none".to_owned(),
-        };
+    match tool.as_object().map(|fields| fields.get("type")) {
+        Some(Some(Json::Text(text))) => text.clone(),
+        Some(Some(other)) => json_type_name(other).to_owned(),
+        Some(None) => "none".to_owned(),
+        None => json_type_name(tool).to_owned(),
     }
-    json_type_name(tool).to_owned()
 }
 
 const fn json_type_name(value: &Json) -> &'static str {

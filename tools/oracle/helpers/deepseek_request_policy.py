@@ -62,13 +62,9 @@ class Capture(logging.Handler):
     @override
     def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
-        event = next((name for fragment, name in EVENTS if fragment in message), "unrecognized")
-        self.events.append({"level": record.levelname.lower(), "event": event})
-
-    def take(self) -> list[Json]:
-        taken = self.events
-        self.events = []
-        return [entry for entry in taken if entry != "unrecognized"]
+        event = next((name for fragment, name in EVENTS if fragment in message), None)
+        if event is not None:
+            self.events.append({"level": record.levelname.lower(), "event": event})
 
 
 def install_capabilities(model: str, *, supports_vision: bool) -> None:
@@ -112,5 +108,5 @@ def run(input_value: Input) -> Json:
     for case in input_value["cases"]:
         with Capture() as capture:
             value = render(config, input_value["op"], case)
-        results.append({"value": value, "warnings": capture.take()})
+        results.append({"value": value, "warnings": capture.events})
     return {input_value["op"]: results}
