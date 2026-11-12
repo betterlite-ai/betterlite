@@ -1433,6 +1433,7 @@ dependencies = [
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "shellexpand",
  "strum",
@@ -1503,6 +1504,7 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-prompts",
  "betterlite-redact",
  "betterlite-tokenizer",
  "chrono",
@@ -1886,6 +1888,17 @@ dependencies = [
 [[package]]
 name = "betterlite-interactions"
 version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-lens"
@@ -2026,15 +2039,21 @@ dependencies = [
 name = "betterlite-mcp"
 version = "0.1.0"
 dependencies = [
+ "aws-credential-types",
  "aws-lc-rs",
+ "aws-smithy-async",
+ "axum",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
+ "bytes",
  "chrono",
  "derive_more",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "pem",
@@ -2288,6 +2307,8 @@ dependencies = [
  "cookie_store",
  "flate2",
  "futures-util",
+ "google-cloud-speech-v2",
+ "google-cloud-wkt",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -2630,6 +2651,14 @@ dependencies = [
 [[package]]
 name = "betterlite-pyhost"
 version = "0.1.0"
+dependencies = [
+ "pyo3",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-python"
@@ -2792,6 +2821,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redis",
  "betterlite-tokenizer",
+ "chrono",
  "fancy-regex 0.19.2",
  "hex",
  "indexmap 2.14.2",
@@ -2989,6 +3019,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "multipart-rs",
+ "mutants",
  "opentelemetry",
  "opentelemetry_sdk",
  "percent-encoding",
@@ -3031,6 +3062,7 @@ name = "betterlite-server-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-core",
  "betterlite-server",
  "libfuzzer-sys",
  "serde_json",
@@ -3205,6 +3237,8 @@ dependencies = [
  "betterlite-tokenizer",
  "google-cloud-auth",
  "google-cloud-gax",
+ "google-cloud-speech-v2",
+ "google-cloud-wkt",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -3218,6 +3252,7 @@ dependencies = [
  "serde_with",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "url",
  "uuid",
@@ -5057,6 +5092,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "google-cloud-api"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4212525a72252d4d5359dfc0b19dd8039cb898f54458fb6357f56162c5b35a33"
+dependencies = [
+ "bytes",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
 name = "google-cloud-auth"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5104,6 +5152,97 @@ dependencies = [
 ]
 
 [[package]]
+name = "google-cloud-gax-internal"
+version = "0.7.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ad2379de0de5562c27eb79acd9c36143719a9271191df5d0ac6eb162a1b9d7e"
+dependencies = [
+ "bytes",
+ "futures",
+ "google-cloud-api",
+ "google-cloud-auth",
+ "google-cloud-gax",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "h2",
+ "http 1.5.0",
+ "http-body 1.1.0",
+ "http-body-util",
+ "hyper",
+ "lazy_static",
+ "opentelemetry",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
+ "percent-encoding",
+ "pin-project",
+ "prost",
+ "prost-types",
+ "reqwest",
+ "rustc_version",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tower",
+ "tracing",
+ "tracing-opentelemetry",
+]
+
+[[package]]
+name = "google-cloud-location"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c01fde700ea72005d09d5c37e6837fa9460f2ec6b20a147db46c248b63b4519"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tracing",
+]
+
+[[package]]
+name = "google-cloud-longrunning"
+version = "1.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8ea252eee22a4e2187025ea6789c682a0d791a9748ea99de2abec3026a32cb4"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tracing",
+]
+
+[[package]]
+name = "google-cloud-lro"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfb938b40ede9ef70c24f49c2687d84f289c9e9104ddfece739985e4b4844b8f"
+dependencies = [
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-longrunning",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "google-cloud-rpc"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5114,6 +5253,30 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+]
+
+[[package]]
+name = "google-cloud-speech-v2"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c391725087465ec32c174051a1533e36cb21a973a27f2200ffac017da2bb972"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "google-cloud-gax",
+ "google-cloud-gax-internal",
+ "google-cloud-location",
+ "google-cloud-longrunning",
+ "google-cloud-lro",
+ "google-cloud-rpc",
+ "google-cloud-wkt",
+ "http 1.5.0",
+ "prost",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tracing",
 ]
 
 [[package]]
@@ -6890,6 +7053,12 @@ dependencies = [
  "tonic",
  "tonic-prost",
 ]
+
+[[package]]
+name = "opentelemetry-semantic-conventions"
+version = "0.33.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a3cf639fefd3e852869114f9925b578da6dd8e99281a2089bb0e773ead46962"
 
 [[package]]
 name = "opentelemetry-stdout"
@@ -9543,9 +9712,11 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
+ "rustls-native-certs",
  "socket2",
  "sync_wrapper",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tokio-util",
  "tower",
@@ -9684,6 +9855,20 @@ dependencies = [
  "log",
  "once_cell",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-opentelemetry"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a904802a1b902f43638b677ff2a650847e3b4404101b6c586d648e8c1e3e8fe"
+dependencies = [
+ "js-sys",
+ "opentelemetry",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
+ "web-time",
 ]
 
 [[package]]

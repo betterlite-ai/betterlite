@@ -1,0 +1,25 @@
+kind: helper
+name: signed-thinking
+call:
+  responses_input_messages:
+    request:
+      input:
+        - type: reasoning
+          encrypted_content: '[{"type":"thinking","signature":"sig","thinking":"x","extra":{"k":1}},{"type":"redacted_thinking","data":"opaque"},{"type":"thinking","signature":""},{"type":"other","signature":"s"}]'
+        - type: reasoning
+          encrypted_content: '[{"type":"thinking","signature":1},{"type":"redacted_thinking","data":2}]'
+        - {type: reasoning, encrypted_content: not json}
+        - {type: reasoning, encrypted_content: '{"type":"thinking","signature":"s"}'}
+        - {type: reasoning, encrypted_content: "[]"}
+        - type: reasoning
+          encrypted_content: '[{"type":"thinking","signature":0},{"type":"redacted_thinking","data":[]}]'
+        - {type: reasoning, encrypted_content: 5}
+        - {type: reasoning, encrypted_content: ""}
+        - type: reasoning
+          content: " x "
+          encrypted_content: '[{"type":"redacted_thinking","data":"d"}]'
+    replay_reasoning: true
+    cache: []
+env: {}
+compare:
+  ignore: []

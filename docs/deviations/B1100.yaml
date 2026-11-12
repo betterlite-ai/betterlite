@@ -1,0 +1,14 @@
+task: B1100
+deviations:
+  - what: A body the pinned proxy salvages through Python's lenient json module is rejected with 400 invalid_request_error/request_body here. That covers non-finite numbers (NaN, Infinity, -Infinity and literals that overflow to infinity) and JSON nested deeper than 128 levels, which the strict parser refuses and the lenient fallback cannot represent as standard JSON.
+    why: The parsed body is a typed JSON object forwarded to providers as standard JSON, so a non-finite number or a 200-level nest has no representation to carry forward. Accepting it would move the failure to a provider call that receives invalid JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L246-L266
+  - what: A request body that is valid JSON but not an object (an array, string, number or literal) is rejected with 400 invalid_request_error/request_body. The pinned proxy returns it from _read_request_body, and every caller then reads it as a dict.
+    why: _read_request_body declares dict, so a non-object body raises AttributeError in the auth path and answers 500; input the proxy already fails on belongs to a 4xx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L219-L233
+  - what: A form body whose metadata field is not valid JSON is rejected with 400 invalid_request_error/request_body. The pinned proxy lets the json.JSONDecodeError escape the form branch and answers 500.
+    why: The metadata value is client input, so the same 4xx that covers every other unparsable request body covers it, and the caller learns which field is wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L214-L216
+  - what: A JSON body larger than ApiLimits.max_json_bytes (16 MiB) is rejected with 413 invalid_request_error/body/request_too_large before it is parsed. The pinned proxy reads and parses it without a cap.
+    why: B1087 caps every API JSON input so a public gateway never allocates in proportion to an untrusted body; this boundary is where that cap applies to a request body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L211-L233

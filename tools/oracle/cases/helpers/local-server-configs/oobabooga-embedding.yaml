@@ -1,0 +1,8 @@
+kind: helper
+name: oobabooga-embedding-url-body-and-reply
+call:
+  b8152:
+    function: "oobabooga_embedding"
+    calls: [{"model": "m", "api_base": "http://o:5000/api", "api_key": "k", "input": ["a", "b"], "optional_params": {}, "reply": "{\"data\": [{\"embedding\": [0.5, 0.25]}], \"usage\": {\"prompt_tokens\": 9, \"total_tokens\": 9}}"}, {"model": "m", "api_base": "http://o:5000/api", "api_key": null, "input": ["a"], "optional_params": {"user": "u"}, "reply": "{\"data\": [{\"embedding\": [1, 2, 3, 4]}, {\"embedding\": [9]}]}"}, {"model": "m", "api_base": "http://o:5000/api", "api_key": null, "input": ["a"], "optional_params": {"input": ["override"]}, "reply": "{\"data\": [{\"embedding\": []}]}"}, {"model": "m", "api_base": "http://o:5000/api", "api_key": null, "input": ["a"], "optional_params": {}, "reply": "{\"error\": \"boom\"}"}, {"model": "m", "api_base": "http://o:5000/api", "api_key": null, "input": ["a"], "optional_params": {}, "reply": "{\"error\": \"boom\", \"status_code\": 429}"}, {"model": "m", "api_base": null, "api_key": null, "input": ["a"], "optional_params": {}, "reply": "{}"}, {"model": "http://direct:1/emb", "api_base": null, "api_key": null, "input": ["a"], "optional_params": {}, "reply": "{\"data\": [{\"embedding\": [1]}]}"}]
+env: {}
+compare: {ignore: []}

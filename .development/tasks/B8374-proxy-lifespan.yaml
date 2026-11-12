@@ -36,7 +36,10 @@ description: >-
   (awaiting a coroutine), logging "Worker startup hook '{spec}' executed successfully"; a spec without ":" is "Invalid hook spec '{spec}':
   expected format is 'module.path:function_name'", and any failure logs "Worker startup hook '{spec}' failed: {error}"
   and stops startup. When no port is given (no Python host) and the variable names a hook, startup fails with
-  LifespanError::StartupHooksNeedPython, which names LITELLM_WORKER_STARTUP_HOOKS.
+  LifespanError::StartupHooksNeedPython, and its message names LITELLM_WORKER_STARTUP_HOOKS. LifespanInputs also carries
+  `python_hooks: Arc<PythonHooks>`, B165's one service for the process: B8375 builds it and sets startup_hooks to
+  PyStartupHooks over the same Arc. The lifespan never calls PythonHooks::new, and every later step that loads a Python
+  hook takes a clone of this Arc.
 
   Guardrails, pass-through endpoints and plugins at startup. Build B3682's GuardrailFactories once, extended with B8521's
   `GuardrailFactories::with_hooks(self, ports: HookPorts)`, and hand them to B3682's InMemoryGuardrailHandler::new for B3683's
@@ -63,7 +66,9 @@ description: >-
   database, drain B4331's post-call Redis batches, fire B4304's cache write token and await CacheWriteTracker::wait_idle, disconnect the response cache, close the JWT handler and the writer
   client, run B3078's billing metrics shutdown hook, flush B3903's Langfuse channels (with LiteLLM's two log lines), close B8911's agent-tracing session
   when one was started (it unregisters its spend logger first, then awaits the bounded flush; LiteLLM's manage_tracing
-  exits after the serving and shutdown steps above), and finally B3887's mark_worker_exit when PROMETHEUS_MULTIPROC_DIR was set.
+  exits after the serving and shutdown steps above), then B165's PythonHooks::shutdown on `python_hooks`, so the
+  interpreter pool stops after the last step that can call a hook, and finally B3887's mark_worker_exit when
+  PROMETHEUS_MULTIPROC_DIR was set.
 
   Tests drive run_proxy with recording fakes for every step behind small traits and assert the order of calls, the
   config source choice and that a failing flush or drain is logged and shutdown continues. The startup order and boot
@@ -127,7 +132,7 @@ out_of_scope:
   - "cleanup_router_config_variables and showwarning: they reset or patch Python module globals; betterlite has no globals to reset, so not built."
   - "_init_dd_tracer and _init_pyroscope: Python profilers; not built."
   - "The steps themselves: B8373 (checks), B8372 (jobs), B8370 (scheduler stop) and the owners named in the description."
-  - "The CLI flags and run_server order before the lifespan: B8375."
+  - "The CLI flags and run_server order before the lifespan, and building the one PythonHooks and its PyStartupHooks: B8375."
 pitfalls:
   - A WORKER_CONFIG string that names no file is parsed as JSON only when LITELLM_CONFIG_BUCKET_NAME is unset; with the bucket name set, any string is treated as a config path.
   - CONFIG_FILE_PATH that is set but names no YAML file loads nothing and does not fall back to WORKER_CONFIG.
