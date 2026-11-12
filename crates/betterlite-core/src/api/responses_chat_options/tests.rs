@@ -363,10 +363,12 @@ fn tools_without_a_chat_tool_drop_the_choice_and_parallel_flag(#[case] tools: Op
     assert_eq!(value.get("parallel_tool_calls"), None);
 }
 
-#[test]
-fn mapped_tools_keep_the_choice_and_parallel_flag() {
+#[rstest]
+#[case::false_kept(false)]
+#[case::true_kept(true)]
+fn mapped_tools_keep_the_choice_and_parallel_flag(#[case] parallel: bool) {
     let request = request(&format!(
-        r#"{{"model":"m","input":"hi","tools":[{FUNCTION_TOOL}],"tool_choice":"required","parallel_tool_calls":false}}"#
+        r#"{{"model":"m","input":"hi","tools":[{FUNCTION_TOOL}],"tool_choice":"required","parallel_tool_calls":{parallel}}}"#
     ));
     let mut harness = Harness::new(None, false);
     let completion = harness.run(&context(&request)).unwrap();
@@ -378,7 +380,7 @@ fn mapped_tools_keep_the_choice_and_parallel_flag() {
                 "model": "m",
                 "tool_choice": "required",
                 "tools": [{}],
-                "parallel_tool_calls": false
+                "parallel_tool_calls": {parallel}
             }}"#,
             mapped_function_tool()
         ))
