@@ -65,7 +65,10 @@ description: >-
   that Arc and the database store and implements B8611's `DeploymentSyncPort`: add_deployment calls DeploymentSync's
   add_deployment with the store, and does nothing without a database. Started carries it as `deployment_sync: Arc<dyn
   DeploymentSyncPort>` and the same DeploymentSync as `auto_router_catalog: Arc<dyn AutoRouterCatalog>` (B8381
-  implements B379's trait).
+  implements B379's trait). lifespan/pass_through_port.rs holds `RouteInstaller` over the one
+  PassThroughState and implements B8379's PassThroughInstaller: install calls B3616's initialize_pass_through_endpoints with
+  that state's routes handle, the database list and no config file path, logs B3616's error with its cause and returns B8379's
+  EndpointInstallError. DeploymentSync gets it as Arc<dyn PassThroughInstaller> wherever it is built.
   12. Gateway requests. One B3102 `GatewayRequestAccumulator` as an Arc, before the background jobs. Every flush B8374
   and B8372 run takes this one, and Started carries it for B8680's billable sink. Also make one B3067 `VantageLoggers`
   Arc here, pass it to B8372, and carry it in Started so B8610 exposes it as shared.vantage_loggers.
