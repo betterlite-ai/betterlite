@@ -185,15 +185,14 @@ fn retries<L>(
 where
     L: EnvironmentLookup,
 {
-    match value {
-        Some(number) => resolve_number(
+    value.map_or(Ok(None), |number| {
+        resolve_number(
             Some(number),
             &format!("{path}.{name}"),
             lookup,
             parse_retries,
-        ),
-        None => Ok(None),
-    }
+        )
+    })
 }
 
 fn group_policies<L>(
