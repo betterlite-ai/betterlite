@@ -1,0 +1,24 @@
+kind: helper
+name: deepgram-listen-metadata-final-transcript
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: hello}, {transcript: ignored}]}}
+      - {type: Results, is_final: false, channel: {alternatives: [{transcript: skipped}]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: ""}, {transcript: ignored}]}}
+      - {type: Results, is_final: true, channel: {alternatives: []}}
+      - {type: Results, is_final: true}
+      - {type: Metadata, transcript: meta}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: world}]}}
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages: []
+compare: {ignore: []}
+env: {}

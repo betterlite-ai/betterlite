@@ -1,0 +1,22 @@
+kind: helper
+name: deepgram-listen-metadata-query-identity
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: query_identity
+      query: model=nova-3&model=nova-2&language=en&language=multi&redact=true&redact=false&callback=hook
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: query_identity
+      query: language=en&model=nova-2%20general&model=nova-3&channels=2&channels=4
+      api_base: https://api.deepgram.com/v1
+      upstream_url: ""
+      messages: []
+    - function: query_identity
+      query: redact=true&redact=false&callback=a&callback=b&callback_method=POST&callback_method=GET
+      api_base: null
+      upstream_url: ""
+      messages: []
+compare: {ignore: []}
+env: {}

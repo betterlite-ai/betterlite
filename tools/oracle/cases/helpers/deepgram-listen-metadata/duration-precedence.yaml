@@ -1,0 +1,39 @@
+kind: helper
+name: deepgram-listen-metadata-duration-precedence
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: duration_precedence
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Metadata, duration: 1.5}
+      - {type: Metadata, duration: 0}
+      - {type: Metadata, duration: -2.0}
+      - {type: Metadata, duration: 2.5}
+      - {type: Results, start: 8.0, duration: 1.0}
+    - function: duration_precedence
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Metadata, duration: 0}
+      - {type: Results, start: 1.5, duration: 2.25}
+      - {type: Results, start: 3.0, duration: 0.5}
+      - {type: Results, start: 5.0, duration: -1.0}
+      - {type: Results, start: -1.0, duration: 1.0}
+    - function: duration_precedence
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: duration_precedence
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Metadata, duration: true}
+      - {type: Results, start: 0.5, duration: 0.25}
+compare: {ignore: []}
+env: {}
