@@ -361,6 +361,10 @@ fn request_tool_choices(#[case] choice: &str, #[case] expected: &str) {
     r#"{"type":"custom","name":"edit"}"#,
     r#"{"type":"custom","name":"edit"}"#
 )]
+#[case::empty_function_name_is_a_valid_choice(
+    r#"{"type":"function","name":""}"#,
+    r#"{"type":"function","name":""}"#
+)]
 #[case::chat_function(
     r#"{"type":"function","function":{"name":"f"}}"#,
     r#"{"type":"function","name":"f"}"#
