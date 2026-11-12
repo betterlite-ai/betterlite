@@ -1,0 +1,10 @@
+task: B514
+deviations:
+  - what: >-
+      A failed speech call reads at most 64 KiB of the provider's error body before the SDK status error is
+      built, where the OpenAI SDK reads the body to the end.
+    why: >-
+      Rule bounded-inputs caps every read; the status, type, param and code of an error come from the start of
+      the body, so a larger error body only changes a message no client should branch on. The cap is the one
+      files.rs already applies to the same SDK status errors.
+    link: ""

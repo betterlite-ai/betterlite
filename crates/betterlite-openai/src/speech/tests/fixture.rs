@@ -1,5 +1,6 @@
 use std::future::{Future, ready};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -42,7 +43,7 @@ pub(super) struct Fixture {
     reply: Reply,
     headers: HeaderMap,
     seen: OnceLock<OutboundRequest>,
-    sends: OnceLock<()>,
+    sends: AtomicUsize,
     broken: bool,
 }
 
@@ -59,7 +60,7 @@ impl Fixture {
             reply,
             headers,
             seen: OnceLock::new(),
-            sends: OnceLock::new(),
+            sends: AtomicUsize::new(0),
             broken: false,
         }
     }
@@ -75,11 +76,7 @@ impl Fixture {
     }
 
     pub(super) fn sends(&self) -> usize {
-        usize::from(self.sends.get().is_some())
-    }
-
-    pub(super) fn reply_body(&self) -> Vec<u8> {
-        self.reply.chunks.concat()
+        self.sends.load(Ordering::Relaxed)
     }
 
     fn result(&self) -> Result<SpeechReply, TransportError> {
@@ -89,7 +86,7 @@ impl Fixture {
         Ok(SpeechReply {
             status: self.reply.status,
             headers: self.headers.clone(),
-            body: stream::iter(self.reply.chunks.iter().cloned().map(Ok)).boxed(),
+            body: stream::iter(self.reply.chunks.clone().into_iter().map(Ok)).boxed(),
         })
     }
 }
@@ -100,7 +97,7 @@ impl SpeechTransport for Fixture {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<SpeechReply, TransportError>> + Send {
         drop(self.seen.set(request));
-        drop(self.sends.set(()));
+        let _previous = self.sends.fetch_add(1, Ordering::Relaxed);
         ready(self.result())
     }
 }

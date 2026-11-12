@@ -40,7 +40,7 @@ pub(super) fn state() -> LoggingState {
         },
         &redactor,
         || String::from("generated"),
-        || Duration::default(),
+        Duration::default,
     )
     .expect("the logging fixture builds")
 }

@@ -2,12 +2,13 @@ use std::str::FromStr as _;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde_json::Number;
 
-use super::fixture::{Fixture, Recorder, Reply, connection, header, sent_body};
+use super::fixture::{Fixture, Recorded, Recorder, Reply, connection, header, sent_body};
 use crate::speech::call::{SpeechCall, audio_speech};
 use crate::speech::client::{
     ClientKind, SharedSession, SpeechConnection, SuppliedClient, normalize_base, select_client,
@@ -57,15 +58,14 @@ async fn call(
     input: &str,
 ) -> (Result<SpeechResponse, SpeechError>, Recorder) {
     let mut recorder = Recorder::default();
-    let request = SpeechRequest {
-        model: "tts-1",
-        input,
-        voice: "alloy",
-        options,
-    };
     let prepared = audio_speech(
         SpeechCall {
-            request,
+            request: SpeechRequest {
+                model: "tts-1",
+                input,
+                voice: "alloy",
+                options,
+            },
             connection,
             aspeech,
         },
@@ -83,47 +83,51 @@ fn audio_ok(chunks: Vec<Vec<u8>>) -> Fixture {
     Fixture::new(Reply::ok("audio/mpeg", chunks))
 }
 
-async fn voice_and_format() {
-    let fixture = audio_ok(vec![vec![0xFF, 0xFB, 0x10]]);
-    let mut options = SpeechOptions::default();
-    options.response_format = Some(SpeechFormat::Wav);
-    options
-        .extra_headers
-        .insert(String::from("x-trace"), String::from("trace-1"));
-    let (outcome, recorder) = call(&fixture, &options, connection(), None, "Hello speech").await;
-    let response = outcome.expect("the 200 reply is a success");
-    assert_eq!(response.content_type.as_deref(), Some("audio/mpeg"));
-    assert_eq!(
-        response.content(1024).await.expect("the body reads"),
-        vec![0xFF, 0xFB, 0x10]
-    );
+fn json(text: &str) -> serde_json::Value {
+    serde_json::from_slice(text.as_bytes()).expect("the expected body is JSON")
+}
+
+fn assert_wire_request(fixture: &Fixture, deadline: Duration) {
     assert_eq!(fixture.request().method, http::Method::POST);
     assert_eq!(
         fixture.request().url.as_str(),
         "https://speech.test/v1/audio/speech"
     );
     assert_eq!(
-        header(&fixture, "accept").as_deref(),
+        header(fixture, "accept").as_deref(),
         Some("application/octet-stream")
     );
     assert_eq!(
-        header(&fixture, "authorization").as_deref(),
+        header(fixture, "authorization").as_deref(),
         Some("Bearer sk-speech")
     );
     assert_eq!(
-        header(&fixture, "content-type").as_deref(),
+        header(fixture, "content-type").as_deref(),
         Some("application/json")
     );
+    assert_eq!(fixture.request().deadline, deadline);
+}
+
+async fn voice_and_format() {
+    let fixture = audio_ok(vec![vec![0xFF, 0xFB, 0x10]]);
+    let options = SpeechOptions {
+        response_format: Some(SpeechFormat::Wav),
+        speed: None,
+        instructions: None,
+        extra_headers: IndexMap::from([(String::from("x-trace"), String::from("trace-1"))]),
+    };
+    let (first, recorder) = call(&fixture, &options, connection(), None, "Hello speech").await;
+    let response = first.expect("the 200 reply is a success");
+    assert_eq!(response.content_type.as_deref(), Some("audio/mpeg"));
+    assert_eq!(
+        response.content(1024).await.expect("the body reads"),
+        vec![0xFF, 0xFB, 0x10]
+    );
+    assert_wire_request(&fixture, Duration::from_secs(30));
     assert_eq!(header(&fixture, "x-trace").as_deref(), Some("trace-1"));
-    assert_eq!(fixture.request().deadline, Duration::from_secs(30));
     assert_eq!(
         sent_body(&fixture),
-        serde_json::json!({
-            "input": "Hello speech",
-            "model": "tts-1",
-            "voice": "alloy",
-            "response_format": "wav",
-        })
+        json(r#"{"input":"Hello speech","model":"tts-1","voice":"alloy","response_format":"wav"}"#)
     );
     assert_eq!(
         recorder.records[0].body.get("response_format"),
@@ -132,7 +136,7 @@ async fn voice_and_format() {
 
     // an omitted response_format stays omitted: the SDK default is not written by this wrapper
     let plain = audio_ok(vec![vec![1]]);
-    let (outcome, _) = call(
+    let (second, _) = call(
         &plain,
         &SpeechOptions::default(),
         connection(),
@@ -140,29 +144,34 @@ async fn voice_and_format() {
         "Hi",
     )
     .await;
-    outcome.expect("the 200 reply is a success");
+    second.expect("the 200 reply is a success");
     assert_eq!(
         sent_body(&plain),
-        serde_json::json!({"input": "Hi", "model": "tts-1", "voice": "alloy"})
+        json(r#"{"input":"Hi","model":"tts-1","voice":"alloy"}"#)
     );
 }
 
 async fn speed_and_instructions() {
     let fixture = audio_ok(vec![vec![1]]);
-    let mut options = SpeechOptions::default();
-    let speed = Decimal::from_str("1.234567890123456789").expect("the speed is a decimal");
-    options.speed = Some(speed);
-    options.instructions = Some(String::from("calm and clear"));
-    let (outcome, recorder) = call(&fixture, &options, connection(), None, "Hi").await;
-    outcome.expect("the 200 reply is a success");
+    let options = SpeechOptions {
+        response_format: None,
+        speed: Some(Decimal::from_str("1.234567890123456789").expect("the speed is a decimal")),
+        instructions: Some(String::from("calm and clear")),
+        extra_headers: IndexMap::new(),
+    };
+    let (first, recorder) = call(&fixture, &options, connection(), None, "Hi").await;
+    first.expect("the 200 reply is a success");
     let body = sent_body(&fixture);
     assert_eq!(body["speed"].to_string(), "1.234567890123456789");
-    assert_eq!(body["instructions"], serde_json::json!("calm and clear"));
-    let logged_speed =
-        Number::from_str("1.234567890123456789").expect("the speed is a JSON number");
+    assert_eq!(
+        body["instructions"],
+        serde_json::Value::String(String::from("calm and clear"))
+    );
     assert_eq!(
         recorder.records[0].body.get("speed"),
-        Some(&Json::Number(logged_speed))
+        Some(&Json::Number(
+            Number::from_str("1.234567890123456789").expect("the speed is a JSON number")
+        ))
     );
     assert_eq!(
         recorder.records[0].body.get("instructions"),
@@ -173,7 +182,7 @@ async fn speed_and_instructions() {
 async fn binary_body() {
     let payload = b"{\"not\":\"json\"}\n\x00\xff".to_vec();
     let fixture = Fixture::new(Reply::ok("audio/ogg", vec![payload.clone()]));
-    let (outcome, _) = call(
+    let (first, _) = call(
         &fixture,
         &SpeechOptions::default(),
         connection(),
@@ -181,7 +190,7 @@ async fn binary_body() {
         "Hi",
     )
     .await;
-    let response = outcome.expect("the 200 reply is a success");
+    let response = first.expect("the 200 reply is a success");
     assert_eq!(response.status, 200);
     assert_eq!(response.content_type.as_deref(), Some("audio/ogg"));
     assert_eq!(
@@ -206,7 +215,7 @@ async fn binary_body() {
 async fn chunked_binary_body() {
     let chunks = vec![vec![1, 2], vec![3], vec![4, 5, 6]];
     let fixture = Fixture::new(Reply::ok("audio/wav", chunks.clone()));
-    let (outcome, _) = call(
+    let (first, _) = call(
         &fixture,
         &SpeechOptions::default(),
         connection(),
@@ -214,17 +223,17 @@ async fn chunked_binary_body() {
         "Hi",
     )
     .await;
-    let response = outcome.expect("the 200 reply is a success");
+    let whole = first.expect("the 200 reply is a success");
     assert_eq!(
-        response.content(6).await.expect("the body reads"),
+        whole.content(6).await.expect("the body reads"),
         vec![1, 2, 3, 4, 5, 6]
     );
 
     let over = Fixture::new(Reply::ok("audio/wav", chunks));
-    let (outcome, _) = call(&over, &SpeechOptions::default(), connection(), None, "Hi").await;
-    let response = outcome.expect("the 200 reply is a success");
+    let (second, _) = call(&over, &SpeechOptions::default(), connection(), None, "Hi").await;
+    let limited = second.expect("the 200 reply is a success");
     assert!(matches!(
-        response.content(5).await,
+        limited.content(5).await,
         Err(SpeechError::TooLarge)
     ));
 }
@@ -239,7 +248,7 @@ async fn speech_error() {
         )],
         chunks: vec![error_body.to_vec()],
     });
-    let (outcome, recorder) = call(
+    let (first, recorder) = call(
         &fixture,
         &SpeechOptions::default(),
         connection(),
@@ -247,7 +256,7 @@ async fn speech_error() {
         "Hi",
     )
     .await;
-    let Err(SpeechError::Status(status)) = outcome else {
+    let Err(SpeechError::Status(status)) = first else {
         panic!("the 404 is the SDK's status error");
     };
     assert_eq!(status.status, 404);
@@ -259,11 +268,19 @@ async fn speech_error() {
 
     // a transport failure reaches the caller untouched
     let broken = Fixture::broken();
-    let (outcome, _) = call(&broken, &SpeechOptions::default(), connection(), None, "Hi").await;
-    assert!(matches!(outcome, Err(SpeechError::Transport { .. })));
+    let (second, _) = call(&broken, &SpeechOptions::default(), connection(), None, "Hi").await;
+    assert!(matches!(second, Err(SpeechError::Transport { .. })));
 }
 
 async fn speech_client_options() {
+    assert_eq!(ClientKind::Sync.label(), "sync");
+    assert_eq!(ClientKind::Async.label(), "async");
+    assert_built_client_options();
+    assert_supplied_client_options().await;
+    assert_async_supplied_client().await;
+}
+
+fn assert_built_client_options() {
     let settings = connection();
     let sync = select_client(&settings, ClientKind::Sync).expect("the sync client resolves");
     assert_eq!(sync.kind, ClientKind::Sync);
@@ -285,38 +302,36 @@ async fn speech_client_options() {
     assert!(async_shared.shared_session.is_some());
     let sync_shared = select_client(&shared, ClientKind::Sync).expect("the sync client resolves");
     assert!(sync_shared.shared_session.is_none());
+}
 
-    // a supplied client keeps its identity and settings; only max_retries is overwritten
-    let mut supplied_settings = connection();
-    supplied_settings.client = Some(SuppliedClient {
-        kind: ClientKind::Sync,
+fn supplied_settings(kind: ClientKind) -> SpeechConnection {
+    let mut settings = connection();
+    settings.client = Some(SuppliedClient {
+        kind,
         api_key: Some(SecretString::from("sk-supplied")),
         base_url: normalize_base("https://supplied.test/v1").expect("the supplied base is a URL"),
         timeout: Duration::from_secs(45),
         max_retries: 1,
         organization: Some(String::from("org-supplied")),
     });
-    let kept =
-        select_client(&supplied_settings, ClientKind::Sync).expect("the supplied client wins");
+    settings
+}
+
+async fn assert_supplied_client_options() {
+    let settings = supplied_settings(ClientKind::Sync);
+    let kept = select_client(&settings, ClientKind::Sync).expect("the supplied client wins");
     assert_eq!(kept.base_url.as_str(), "https://supplied.test/v1/");
     assert_eq!(kept.timeout, Duration::from_secs(45));
     assert_eq!(kept.max_retries, 4);
     assert_eq!(kept.organization.as_deref(), Some("org-supplied"));
     assert!(matches!(
-        select_client(&supplied_settings, ClientKind::Async),
+        select_client(&settings, ClientKind::Async),
         Err(SpeechError::ClientKind { .. })
     ));
 
     let fixture = audio_ok(vec![vec![1]]);
-    let (outcome, _) = call(
-        &fixture,
-        &SpeechOptions::default(),
-        supplied_settings,
-        None,
-        "Hi",
-    )
-    .await;
-    outcome.expect("the supplied client serves the call");
+    let (first, _) = call(&fixture, &SpeechOptions::default(), settings, None, "Hi").await;
+    first.expect("the supplied client serves the call");
     assert_eq!(
         fixture.request().url.as_str(),
         "https://supplied.test/v1/audio/speech"
@@ -326,38 +341,37 @@ async fn speech_client_options() {
         header(&fixture, "authorization").as_deref(),
         Some("Bearer sk-supplied")
     );
+}
 
-    let mut async_settings = connection();
-    async_settings.client = Some(SuppliedClient {
-        kind: ClientKind::Async,
-        api_key: Some(SecretString::from("sk-supplied")),
-        base_url: normalize_base("https://supplied.test/v1").expect("the supplied base is a URL"),
-        timeout: Duration::from_secs(45),
-        max_retries: 1,
-        organization: Some(String::from("org-supplied")),
-    });
-    let async_fixture = audio_ok(vec![vec![1]]);
-    let (outcome, _) = call(
-        &async_fixture,
+async fn assert_async_supplied_client() {
+    let fixture = audio_ok(vec![vec![1]]);
+    let (first, _) = call(
+        &fixture,
         &SpeechOptions::default(),
-        async_settings,
+        supplied_settings(ClientKind::Async),
         Some(true),
         "Hi",
     )
     .await;
-    outcome.expect("aspeech true picks the async client");
+    first.expect("aspeech true picks the async client");
 }
 
 async fn speech_logging_projection() {
     let fixture = audio_ok(vec![vec![1]]);
-    let mut options = SpeechOptions::default();
-    options.speed = Some(Decimal::from_str("0.5").expect("the speed is a decimal"));
-    options
-        .extra_headers
-        .insert(String::from("x-trace"), String::from("trace-1"));
-    let (outcome, recorder) = call(&fixture, &options, connection(), None, "Hello speech").await;
-    outcome.expect("the 200 reply is a success");
-    let record = &recorder.records[0];
+    let options = SpeechOptions {
+        response_format: None,
+        speed: Some(Decimal::from_str("0.5").expect("the speed is a decimal")),
+        instructions: None,
+        extra_headers: IndexMap::from([(String::from("x-trace"), String::from("trace-1"))]),
+    };
+    let (first, mut recorder) = call(&fixture, &options, connection(), None, "Hello speech").await;
+    first.expect("the 200 reply is a success");
+    let record = recorder.records.remove(0);
+    assert_logged_projection(&record);
+    assert_wired_logging(&record, &options).await;
+}
+
+fn assert_logged_projection(record: &Recorded) {
     assert_eq!(record.input, "Hello speech");
     assert_eq!(record.api_base, "https://speech.test/v1/");
     assert_eq!(
@@ -382,38 +396,40 @@ async fn speech_logging_projection() {
             .keys()
             .any(|name| name.contains("key") || name.contains("authorization"))
     );
+}
 
-    // the call site hands B249 the same projection, and B249 keeps the source input beside it
+async fn assert_wired_logging(record: &Recorded, options: &SpeechOptions) {
     let mut state = super::logging::state();
     let redactor = super::logging::redactor();
     let sink = super::logging::Sink::default();
-    let env = super::logging::env(state.start_time, &redactor, &sink);
-    let wired_fixture = audio_ok(vec![vec![1]]);
-    let request = SpeechRequest {
-        model: "tts-1",
-        input: "Hello speech",
-        voice: "alloy",
-        options: &options,
+    let fixture = audio_ok(vec![vec![1]]);
+    let prepared = {
+        let env = super::logging::env(state.start_time, &redactor, &sink);
+        audio_speech(
+            SpeechCall {
+                request: SpeechRequest {
+                    model: "tts-1",
+                    input: "Hello speech",
+                    voice: "alloy",
+                    options,
+                },
+                connection: connection(),
+                aspeech: None,
+            },
+            &mut PrePostLogger {
+                state: &mut state,
+                env: &env,
+            },
+            &fixture,
+        )
     };
-    let prepared = audio_speech(
-        SpeechCall {
-            request,
-            connection: connection(),
-            aspeech: None,
-        },
-        &mut PrePostLogger {
-            state: &mut state,
-            env: &env,
-        },
-        &wired_fixture,
-    );
     let outcome = prepared.expect("the logging hook accepts the call").await;
     outcome.expect("the 200 reply is a success");
-    let recorded = state
+    let additional = state
         .model_call_details
         .get("additional_args")
         .expect("pre_call stored the additional args");
-    let Json::Object(fields) = recorded else {
+    let Json::Object(fields) = additional else {
         panic!("the additional args are an object");
     };
     assert_eq!(
