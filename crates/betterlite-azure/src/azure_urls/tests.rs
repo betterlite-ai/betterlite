@@ -63,7 +63,11 @@ fn azure_urls_secret_safe_failure() {
     let settings = load("      api_key: fixture-api-key\n", &[]);
     assert!(!format!("{settings:?}").contains("fixture-api-key"));
     assert!(!format!("{:?}", settings.deployments.first()).contains("fixture-api-key"));
-    let with_secret = token_settings("      client_secret: fixture-client-secret\n", &[]);
+    // a complete client-secret identity makes the source lookup fail, so the error carries the credential
+    let with_secret = token_settings(
+        "      tenant_id: fixture-tenant\n      client_id: fixture-client\n      client_secret: fixture-client-secret\n",
+        &[],
+    );
     assert!(
         !format!("{with_secret:?}").contains("fixture-client-secret"),
         "the deployment settings echoed their client secret"
