@@ -179,15 +179,10 @@ pub(super) fn stream_envelope_fields() {
     assert_eq!(chunk.model.as_deref(), Some("m"));
     assert!(chunk.choices.is_empty());
     let usage = chunk.usage.as_ref().unwrap();
-    assert_eq!(
-        (
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            usage.total_tokens
-        ),
-        (1, 2, 3)
-    );
-    assert!(usage.prompt_tokens_details.is_none());
+    assert_eq!(usage["prompt_tokens"], Value::from(1_i64));
+    assert_eq!(usage["completion_tokens"], Value::from(2_i64));
+    assert_eq!(usage["total_tokens"], Value::from(3_i64));
+    assert!(usage["prompt_tokens_details"].is_null());
     assert_eq!(chunk.service_tier.as_deref(), Some("scale"));
     generated_envelope();
     optional_envelope_fields();
@@ -231,14 +226,9 @@ fn optional_envelope_fields() {
     ]))
     .unwrap();
     let usage = zeroed.usage.as_ref().unwrap();
-    assert_eq!(
-        (
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            usage.total_tokens
-        ),
-        (0, 0, 0)
-    );
+    assert_eq!(usage["prompt_tokens"], Value::from(0_i64));
+    assert_eq!(usage["completion_tokens"], Value::from(0_i64));
+    assert_eq!(usage["total_tokens"], Value::from(0_i64));
     choice_finish_mapping();
 }
 
@@ -274,29 +264,62 @@ fn choice_finish_mapping() {
     usage_and_tool_calls();
 }
 
-fn usage_and_tool_calls() {
-    let with_cost = parse(&value(&[
+fn usage_chunk(usage: Value) -> Value {
+    value(&[
         ("id", text("c")),
         ("created", Value::from(1_i64)),
         ("model", text("m")),
-        (
-            "usage",
-            value(&[
-                ("prompt_tokens", Value::Null),
-                ("cost", Value::from(0.5_f64)),
-            ]),
-        ),
-    ]))
+        ("usage", usage),
+    ])
+}
+
+fn usage_and_tool_calls() {
+    let with_cost = parse(&usage_chunk(value(&[
+        ("prompt_tokens", Value::Null),
+        ("cost", Value::from(0.5_f64)),
+        ("server_tool_use", Value::Null),
+    ])))
     .unwrap();
     let usage = with_cost.usage.as_ref().unwrap();
-    assert_eq!(usage.prompt_tokens, 0);
-    assert_eq!(usage.extra.get("cost"), Some(&Value::from(0.5_f64)));
-    assert_eq!(
-        serde_json::to_value(usage).unwrap()["cost"],
-        Value::from(0.5_f64)
-    );
+    assert_eq!(usage["prompt_tokens"], Value::from(0_i64));
+    assert_eq!(usage["cost"], Value::from(0.5_f64));
+    assert!(usage.get("server_tool_use").is_none());
+    let null_cost = parse(&usage_chunk(value(&[("cost", Value::Null)]))).unwrap();
+    assert!(null_cost.usage.as_ref().unwrap().get("cost").is_none());
+    folded_usage();
     numbered_tool_calls();
+    dict_arguments();
     invalid_tool_calls();
+}
+
+fn folded_usage() {
+    let folded = parse(&usage_chunk(value(&[
+        ("prompt_tokens", Value::from(5_i64)),
+        ("completion_tokens", Value::from(8_i64)),
+        ("total_tokens", Value::from(13_i64)),
+        ("reasoning_tokens", Value::from(3_i64)),
+        ("prompt_cache_hit_tokens", Value::from(4_i64)),
+        ("cache_creation_input_tokens", Value::from(2_i64)),
+    ])))
+    .unwrap();
+    let usage = folded.usage.as_ref().unwrap();
+    assert!(usage.get("reasoning_tokens").is_none());
+    assert_eq!(
+        usage["completion_tokens_details"],
+        value(&[
+            ("reasoning_tokens", Value::from(3_i64)),
+            ("text_tokens", Value::from(5_i64)),
+        ])
+    );
+    assert_eq!(
+        usage["prompt_tokens_details"],
+        value(&[
+            ("cached_tokens", Value::from(4_i64)),
+            ("cache_write_tokens", Value::from(2_i64)),
+            ("cache_creation_tokens", Value::from(2_i64)),
+        ])
+    );
+    assert_eq!(usage["prompt_cache_hit_tokens"], Value::from(4_i64));
 }
 
 fn numbered_tool_calls() {
@@ -342,4 +365,56 @@ fn invalid_tool_calls() {
             Err(StreamError::ToolCallPayload)
         ));
     }
+}
+
+fn dict_arguments() {
+    let calls = Value::Array(vec![
+        value(&[(
+            "function",
+            value(&[
+                ("name", text("f")),
+                ("arguments", value(&[("x", Value::from(1_i64))])),
+            ]),
+        )]),
+        value(&[(
+            "function",
+            value(&[
+                ("arguments", Value::Null),
+                ("parameters", value(&[("y", Value::from(2_i64))])),
+            ]),
+        )]),
+        value(&[(
+            "function",
+            value(&[("parameters", value(&[("z", Value::from(3_i64))]))]),
+        )]),
+        value(&[(
+            "function",
+            value(&[("arguments", text("t")), ("parameters", text("ignored"))]),
+        )]),
+        value(&[(
+            "function",
+            value(&[("arguments", Value::Null), ("parameters", text("ignored"))]),
+        )]),
+    ]);
+    let read = parse(&envelope(delta_choices(value(&[("tool_calls", calls)])))).unwrap();
+    let sent = read.choices[0].delta.tool_calls.as_ref().unwrap();
+    let arguments = sent
+        .iter()
+        .map(|call| call.function.as_ref().unwrap().arguments.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        arguments,
+        [r#"{"x":1}"#, r#"{"y":2}"#, r#"{"z":3}"#, "t", ""]
+    );
+    assert_eq!(sent[0].kind.as_deref(), Some("function"));
+    non_text_arguments();
+}
+
+fn non_text_arguments() {
+    let wrong_type = value(&[("function", value(&[("arguments", Value::from(5_i64))]))]);
+    let delta = value(&[("tool_calls", Value::Array(vec![wrong_type]))]);
+    assert!(matches!(
+        parse(&envelope(delta_choices(delta))),
+        Err(StreamError::Chunk(_))
+    ));
 }

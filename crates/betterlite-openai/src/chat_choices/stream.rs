@@ -5,10 +5,9 @@ use serde_json::Value;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::chat_choices::wire::{
-    ProviderField, StreamChoice, StreamDelta, StreamReply, StreamUsage,
-};
+use crate::chat_choices::wire::{ProviderField, StreamChoice, StreamDelta, StreamReply};
 use crate::text_completion_policy::reply::mapped_finish_reason;
+use crate::text_completion_policy::reply::usage::resolve_usage;
 
 pub const CHUNK_OBJECT: &str = "chat.completion.chunk";
 
@@ -47,7 +46,7 @@ struct Chunk {
     #[serde(default)]
     choices: Vec<StreamChoice>,
     #[serde(default)]
-    usage: Option<StreamUsage>,
+    usage: Option<Value>,
     #[serde(default)]
     service_tier: Option<Value>,
 }
@@ -117,7 +116,7 @@ pub fn chunk_parser(
         created: parsed.created.unwrap_or_else(clock),
         model: parsed.model,
         choices,
-        usage: parsed.usage,
+        usage: parsed.usage.map(|raw| resolve_usage(Some(raw))),
         service_tier: match parsed.service_tier {
             Some(Value::String(tier)) if !tier.is_empty() => Some(tier),
             _ => None,

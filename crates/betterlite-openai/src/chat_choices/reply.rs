@@ -44,13 +44,11 @@ pub fn transform_response<Projection>(
 where
     Projection: FnOnce(Value, &Headers, &Headers) -> Result<Value, ForwardingFailure>,
 {
-    let mut text = String::with_capacity(reply.body.len());
-    for chunk in reply.body.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
-    }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "LiteLLM reads raw_response.text leniently, logs it, then fails in .json()"
+    )]
+    let text = String::from_utf8_lossy(reply.body).into_owned();
     let call = PostCall {
         original_response: Json::Text(text.clone()),
         input: input.messages,

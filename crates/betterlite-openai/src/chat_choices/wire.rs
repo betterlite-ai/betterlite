@@ -111,7 +111,6 @@ pub struct CustomPayload {
     pub input: String,
 }
 
-// ModelResponseStream's envelope
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StreamReply {
     pub id: String,
@@ -120,7 +119,7 @@ pub struct StreamReply {
     pub model: Option<String>,
     pub choices: Vec<StreamChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<StreamUsage>,
+    pub usage: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
 }
@@ -216,14 +215,46 @@ pub struct DeltaToolCall {
     pub extra: Map<String, Value>,
 }
 
-#[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "RawDeltaFunction")]
 pub struct DeltaFunction {
-    #[serde(default)]
     pub name: Option<String>,
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
     pub arguments: String,
+}
+
+// Function.__init__ accepts arguments as text, a dict or None, and falls back to a dict `parameters` for None
+#[derive(Deserialize)]
+struct RawDeltaFunction {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: DeltaArguments,
+    #[serde(default)]
+    parameters: Option<Value>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+enum DeltaArguments {
+    Text(String),
+    Object(Map<String, Value>),
+    #[default]
+    Null,
+}
+
+impl From<RawDeltaFunction> for DeltaFunction {
+    fn from(raw: RawDeltaFunction) -> Self {
+        let arguments = match (raw.arguments, raw.parameters) {
+            (DeltaArguments::Text(text), _) => text,
+            (DeltaArguments::Object(fields), _) => Value::Object(fields).to_string(),
+            (DeltaArguments::Null, Some(parameters @ Value::Object(_))) => parameters.to_string(),
+            (DeltaArguments::Null, _) => String::new(),
+        };
+        Self {
+            name: raw.name,
+            arguments,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -241,26 +272,6 @@ pub struct DeltaAudio {
     pub transcript: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-
-#[serde_as]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StreamUsage {
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub prompt_tokens: u64,
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub completion_tokens: u64,
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub total_tokens: u64,
-    #[serde(default)]
-    pub prompt_tokens_details: Option<Value>,
-    #[serde(default)]
-    pub completion_tokens_details: Option<Value>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
