@@ -61,12 +61,13 @@ fn lacks_cache_pricing(value: &JsonObject) -> bool {
         && (declared(value, "input_cost_per_token") || declared(value, "output_cost_per_token"))
 }
 
-fn inherit_cache_pricing(existing: &mut JsonObject, builtin: &JsonObject, value: &JsonObject) {
+// A price the caller declares overrides the inherited one in update_dictionary, so only a missing one shows.
+fn inherit_cache_pricing(existing: &mut JsonObject, builtin: &JsonObject) {
     for field in CACHE_PRICING_FIELDS {
-        let inherited = builtin
+        if let Some(price) = builtin
             .get(field)
-            .filter(|found| !matches!(found, Json::Null));
-        if let (false, Some(price)) = (declared(value, field), inherited) {
+            .filter(|found| !matches!(found, Json::Null))
+        {
             existing.insert(field.to_owned(), price.clone());
         }
     }
@@ -133,7 +134,7 @@ fn seed_from_rules<Lookup, Fetcher>(
             })
         },
         |entry| {
-            inherit_cache_pricing(&mut existing, &entry, incoming.value);
+            inherit_cache_pricing(&mut existing, &entry);
             None
         },
     );
