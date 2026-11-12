@@ -7,3 +7,5 @@ pub mod policy;
 pub mod polling;
 pub mod records;
 pub mod start_request;
+pub mod vector_query_embedding;
+pub mod vector_store_contracts;

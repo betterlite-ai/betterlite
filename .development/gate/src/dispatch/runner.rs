@@ -26,6 +26,7 @@ pub(crate) struct Invocation<'paths> {
     pub(crate) log: &'paths Path,
     pub(crate) prompt: &'paths str,
     pub(crate) session: Option<&'paths str>,
+    pub(crate) model: &'paths str,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -76,7 +77,7 @@ fn expand(
     schema_text: &str,
 ) -> Result<String, GateError> {
     let mut values = vec![
-        rung.model.as_str(),
+        invocation.model,
         rung.effort.as_str(),
         schema_text,
         invocation.writable_roots,

@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-supports-model-without-the-flag
+call:
+  b3545: {"function": "supports", "model": "claude-3-haiku-20240307", "custom_llm_provider": null}
+env: {}
+compare:
+  ignore: []

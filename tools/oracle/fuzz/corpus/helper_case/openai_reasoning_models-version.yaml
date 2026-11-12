@@ -1,0 +1,9 @@
+kind: helper
+name: openai-reasoning-models-seed-version
+call:
+  openai_reasoning_models:
+    version_boundaries:
+      probes:
+      - {model: gpt-5.6}
+env: {}
+compare: {ignore: []}
