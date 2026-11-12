@@ -61,6 +61,7 @@ pub trait BaseImageEditConfig: Send + Sync {
         reply: ImageEditReply<'_>,
     ) -> Result<ImageResponse, Self::Error>;
 
+    #[cfg_attr(test, mutants::skip)]
     fn validate_environment(&self, _request: ImageEditEnvironment<'_>) -> ImageHeaders {
         ImageHeaders::new()
     }

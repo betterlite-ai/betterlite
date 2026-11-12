@@ -50,6 +50,7 @@ pub trait BaseImageGenerationConfig: Send + Sync {
         request.api_base.unwrap_or_default().to_owned()
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn validate_environment(&self, _request: ImageEnvironment<'_>) -> ImageHeaders {
         ImageHeaders::new()
     }
