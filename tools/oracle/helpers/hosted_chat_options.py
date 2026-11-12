@@ -15,37 +15,30 @@ from litellm.llms.github.chat.transformation import GithubChatConfig
 from pydantic import TypeAdapter
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-Pair: TypeAlias = tuple[str, Json]
-Host: TypeAlias = Literal["baseten", "cerebras", "featherless"]
 
 
-class BasetenSnapshot(TypedDict, total=False):
+class TokenLimitSnapshot(TypedDict, total=False):
     max_tokens: int | None
     response_format: dict[str, Json] | None
     seed: int | None
-    stop: list[Json] | None
     stream: bool | None
-    temperature: float | None
     top_p: int | None
     tool_choice: str | None
     tools: list[Json] | None
     user: str | None
+
+
+class BasetenSnapshot(TokenLimitSnapshot, total=False):
+    stop: list[Json] | None
+    temperature: float | None
     presence_penalty: int | None
     frequency_penalty: int | None
     stream_options: dict[str, Json] | None
 
 
-class CerebrasSnapshot(TypedDict, total=False):
-    max_tokens: int | None
-    response_format: dict[str, Json] | None
-    seed: int | None
+class CerebrasSnapshot(TokenLimitSnapshot, total=False):
     stop: str | None
-    stream: bool | None
     temperature: float | None
-    top_p: int | None
-    tool_choice: str | None
-    tools: list[Json] | None
-    user: str | None
     reasoning_effort: str | None
 
 
@@ -67,10 +60,10 @@ class FeatherlessSnapshot(TypedDict, total=False):
 
 class MapStep(TypedDict):
     op: Literal["map"]
-    host: Host
+    host: Literal["baseten", "cerebras", "featherless"]
     model: str
     config: dict[str, Json]
-    params: list[Pair]
+    params: list[tuple[str, Json]]
     drop_params: NotRequired[bool]
     supports_reasoning: NotRequired[bool]
 
@@ -92,19 +85,16 @@ class Input(TypedDict):
 
 
 INPUT = TypeAdapter(Input)
-BASETEN_SNAPSHOT = TypeAdapter(BasetenSnapshot)
-CEREBRAS_SNAPSHOT = TypeAdapter(CerebrasSnapshot)
-FEATHERLESS_SNAPSHOT = TypeAdapter(FeatherlessSnapshot)
 
 
 def build(
-    host: Host, fields: dict[str, Json]
+    host: Literal["baseten", "cerebras", "featherless"], fields: dict[str, Json]
 ) -> BasetenConfig | CerebrasConfig | FeatherlessAIConfig:
     if host == "baseten":
-        return BasetenConfig(**BASETEN_SNAPSHOT.validate_python(fields))
+        return BasetenConfig(**TypeAdapter(BasetenSnapshot).validate_python(fields))
     if host == "cerebras":
-        return CerebrasConfig(**CEREBRAS_SNAPSHOT.validate_python(fields))
-    return FeatherlessAIConfig(**FEATHERLESS_SNAPSHOT.validate_python(fields))
+        return CerebrasConfig(**TypeAdapter(CerebrasSnapshot).validate_python(fields))
+    return FeatherlessAIConfig(**TypeAdapter(FeatherlessSnapshot).validate_python(fields))
 
 
 def map_value(step: MapStep) -> Json:
@@ -116,8 +106,8 @@ def map_value(step: MapStep) -> Json:
         "dict[str, Json]",
         config.get_config(),  # type: ignore[no-untyped-call]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L73
     )
-    options: dict[str, Json] = {}
     params: dict[str, Json] = dict(step["params"])
+    options: dict[str, Json] = {}
     try:
         mapped = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L219
             "dict[str, Json]",
@@ -137,11 +127,11 @@ def map_value(step: MapStep) -> Json:
     pairs: list[Json] = [list(pair) for pair in mapped.items()]
     baseten: Json = None
     if step["host"] == "baseten":
-        config = BasetenConfig()
+        classifier = BasetenConfig()
         baseten = {
             "model": step["model"],
-            "dedicated": config.is_dedicated_deployment(step["model"]),
-            "api_base": config.get_api_base_for_model(step["model"]),
+            "dedicated": classifier.is_dedicated_deployment(step["model"]),
+            "api_base": classifier.get_api_base_for_model(step["model"]),
         }
     return {
         "ok": True,
@@ -150,50 +140,48 @@ def map_value(step: MapStep) -> Json:
 
 
 def info_value(step: InfoStep) -> Json:
-    host = step["host"]
-    config: (
-        FeatherlessAIConfig
-        | AIMLChatConfig
-        | EmpowerChatConfig
-        | FriendliaiChatConfig
-        | GaladrielChatConfig
-        | GithubChatConfig
-    )
-    if host == "featherless":
-        config = FeatherlessAIConfig()
-    elif host == "aiml":
-        config = AIMLChatConfig()
-    elif host == "empower":
-        config = EmpowerChatConfig()
-    elif host == "friendliai":
-        config = FriendliaiChatConfig()
-    elif host == "galadriel":
-        config = GaladrielChatConfig()
+    base: str | None
+    key: str | None
+    if step["host"] == "featherless":
+        base, key = FeatherlessAIConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L100
+            step.get("api_base"), step.get("api_key")
+        )
+    elif step["host"] == "aiml":
+        base, key = AIMLChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiml/chat/transformation.py#L12
+            step.get("api_base"), step.get("api_key")
+        )
+    elif step["host"] == "empower":
+        base, key = EmpowerChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/empower/chat/transformation.py#L8
+            step.get("api_base"), step.get("api_key")
+        )
+    elif step["host"] == "friendliai":
+        base, key = FriendliaiChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/friendliai/chat/transformation.py#L8
+            step.get("api_base"), step.get("api_key")
+        )
+    elif step["host"] == "galadriel":
+        base, key = GaladrielChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/galadriel/chat/transformation.py#L8
+            step.get("api_base"), step.get("api_key")
+        )
     else:
-        config = GithubChatConfig()
-    base, key = config._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L103
-        step.get("api_base"), step.get("api_key")
-    )
+        base, key = GithubChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github/chat/transformation.py#L8
+            step.get("api_base"), step.get("api_key")
+        )
     return {"ok": True, "value": {"base": base, "key": key}}
-
-
-def step_value(step: MapStep | InfoStep) -> Json:
-    if step["op"] == "map":
-        return map_value(step)
-    return info_value(step)
-
-
-def scenario_value(scenario: Scenario) -> dict[str, Json]:
-    os.environ.clear()
-    environment = scenario.get("environment")
-    if environment is not None:
-        for name, value in environment.items():
-            os.environ[name] = value
-    litellm.drop_params = drop_params_env_flag(os.environ, logging.getLogger("LiteLLM"))
-    steps: list[Json] = [step_value(step) for step in scenario["calls"]]
-    return {"steps": steps}
 
 
 def run(input_value: dict[str, Json]) -> Json:
     parsed = INPUT.validate_python(input_value)
-    return [scenario_value(scenario) for scenario in parsed["scenarios"]]
+    scenarios: list[Json] = []
+    for scenario in parsed["scenarios"]:
+        os.environ.clear()
+        environment = scenario.get("environment")
+        if environment is not None:
+            for name, value in environment.items():
+                os.environ[name] = value
+        litellm.drop_params = drop_params_env_flag(os.environ, logging.getLogger("LiteLLM"))
+        steps: list[Json] = [
+            map_value(step) if step["op"] == "map" else info_value(step)
+            for step in scenario["calls"]
+        ]
+        scenarios.append({"steps": steps})
+    return scenarios

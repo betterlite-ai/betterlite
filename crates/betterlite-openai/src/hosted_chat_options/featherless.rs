@@ -1,4 +1,5 @@
 use crate::openai_base_config::Headers;
+use betterlite_config::sections::hosted_chat_settings::Settings as HostedSettings;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,8 @@ impl HostedChatOptionsError {
         }
     }
 }
+pub const FEATHERLESS_DEFAULT_API_BASE: &str = "https://api.featherless.ai/v1";
+pub const AIML_DEFAULT_API_BASE: &str = "https://api.aimlapi.com/v1";
 pub const SUPPORTED_PARAMS: &[&str] = &[
     "stream",
     "frequency_penalty",
@@ -96,12 +99,54 @@ pub fn validate_environment(
         .ok_or(HostedChatOptionsError::MissingApiKey)?;
     let mut validated = headers.unwrap_or_default();
     validated.insert(
-        String::from("Authorization"),
+        "Authorization".to_owned(),
         format!("Bearer {}", key.expose_secret()),
     );
-    validated.insert(
-        String::from("Content-Type"),
-        String::from("application/json"),
-    );
+    validated.insert("Content-Type".to_owned(), "application/json".to_owned());
     Ok(validated)
+}
+// LiteLLM chains the explicit value, each environment alias, then the default, skipping an empty one at every step
+#[must_use]
+pub fn featherless(
+    settings: &HostedSettings,
+    api_base: Option<&str>,
+    api_key: Option<&SecretString>,
+) -> (String, Option<SecretString>) {
+    let base = api_base
+        .filter(|value| !value.is_empty())
+        .or(settings
+            .featherless_ai_api_base
+            .as_deref()
+            .or(settings.featherless_api_base.as_deref()))
+        .unwrap_or(FEATHERLESS_DEFAULT_API_BASE)
+        .to_owned();
+    let key = api_key
+        .filter(|key| !key.expose_secret().is_empty())
+        .cloned()
+        .or_else(|| {
+            settings
+                .featherless_ai_api_key
+                .as_ref()
+                .or(settings.featherless_api_key.as_ref())
+                .cloned()
+        });
+    (base, key)
+}
+// AIML's chat identity reads only the primary key alias, never the image-side AIMLAPI_KEY
+#[must_use]
+pub fn aiml(
+    settings: &HostedSettings,
+    api_base: Option<&str>,
+    api_key: Option<&SecretString>,
+) -> (String, Option<SecretString>) {
+    let base = api_base
+        .filter(|value| !value.is_empty())
+        .or(settings.aiml_api_base.as_deref())
+        .unwrap_or(AIML_DEFAULT_API_BASE)
+        .to_owned();
+    let key = api_key
+        .filter(|key| !key.expose_secret().is_empty())
+        .cloned()
+        .or_else(|| settings.aiml_api_key.clone());
+    (base, key)
 }

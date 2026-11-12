@@ -17,7 +17,7 @@ use super::{INFERENCE_API_BASE, get_api_base_for_model, is_dedicated_deployment}
 #[case::empty_id("baseten/", false)]
 #[case::empty_model("", false)]
 #[case::trailing_slash("baseten/abcd1234/", false)]
-#[case::non_ascii("baseten/абвг1234", false)]
+#[case::non_ascii("baseten/\u{430}\u{431}\u{432}\u{433}1234", false)]
 #[case::seven_digits("1234567", false)]
 fn dedicated_deployment_is_eight_ascii_alphanumerics(#[case] model: &str, #[case] dedicated: bool) {
     assert_eq!(is_dedicated_deployment(model), dedicated);

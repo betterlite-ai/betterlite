@@ -6,7 +6,6 @@ use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::hosted_chat_options::baseten::{self, BasetenSettings};
 use betterlite_openai::hosted_chat_options::cerebras::{self, CerebrasSettings};
 use betterlite_openai::hosted_chat_options::featherless::{self, DropParams, FeatherlessSettings};
-use betterlite_openai::hosted_chat_options::identity;
 use betterlite_openai::hosted_chat_options::map_renaming_token_limit;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -17,7 +16,6 @@ mod tests;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    #[serde(default)]
     scenarios: Vec<Scenario>,
 }
 #[derive(Deserialize)]
@@ -28,44 +26,25 @@ struct Scenario {
     #[serde(default)]
     calls: Vec<Call>,
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 struct Call {
     op: Kind,
-    #[serde(default)]
-    host: Option<Host>,
-    #[serde(default)]
+    host: String,
     model: String,
-    #[serde(default)]
     config: BTreeMap<String, Value>,
-    #[serde(default)]
     params: Vec<(String, Value)>,
-    #[serde(default)]
     drop_params: bool,
-    #[serde(default)]
     supports_reasoning: bool,
-    #[serde(default)]
     api_base: Option<String>,
-    #[serde(default)]
     api_key: Option<String>,
 }
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 enum Kind {
+    #[default]
     Map,
     Info,
-}
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-enum Host {
-    Baseten,
-    Cerebras,
-    Featherless,
-    Aiml,
-    Empower,
-    Friendliai,
-    Galadriel,
-    Github,
 }
 pub(crate) struct Op;
 impl Helper for Op {
@@ -82,64 +61,53 @@ impl Helper for Op {
             let steps = scenario
                 .calls
                 .iter()
-                .map(|call| step(call, &sections))
+                .map(|call| match call.op {
+                    Kind::Map => map(call, &sections),
+                    Kind::Info => info(call, &sections),
+                })
                 .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
             scenarios.push(json!({"steps": steps}));
         }
         Ok(json!(scenarios))
     }
 }
-fn step(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
-    match call.op {
-        Kind::Map => map(call, sections),
-        Kind::Info => info(call, sections),
-    }
-}
 fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
-    match call.host {
-        Some(Host::Baseten) => token_limit_map::<BasetenSettings>(
+    match call.host.as_str() {
+        "baseten" => token_limit_map::<BasetenSettings>(
             call,
             baseten::SUPPORTED_PARAMS,
             Some(call.model.as_str()),
         ),
-        Some(Host::Cerebras) => token_limit_map::<CerebrasSettings>(
+        "cerebras" => token_limit_map::<CerebrasSettings>(
             call,
             &cerebras::supported_params(call.supports_reasoning),
             None,
         ),
-        Some(Host::Featherless) => featherless_map(call, sections),
-        Some(Host::Aiml | Host::Empower | Host::Friendliai | Host::Galadriel | Host::Github)
-        | None => Err(failure(None, String::from("the host has no option map"))),
+        "featherless" => featherless_map(call, sections),
+        _ => Err(failure(None, String::from("the host has no option map"))),
     }
 }
 fn info(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
     let explicit = call.api_key.as_ref().map(SecretString::from);
-    let (base, key) = match call.host {
-        Some(Host::Featherless) => {
-            let (base, key) = identity::featherless(
-                &sections.hosted_chat_settings,
-                call.api_base.as_deref(),
-                explicit.as_ref(),
-            );
+    let hosted = &sections.hosted_chat_settings;
+    let (base, key) = match call.host.as_str() {
+        "featherless" => {
+            let (base, key) =
+                featherless::featherless(hosted, call.api_base.as_deref(), explicit.as_ref());
             (Some(base), key)
         }
-        Some(Host::Aiml) => {
-            let (base, key) = identity::aiml(
-                &sections.hosted_chat_settings,
-                call.api_base.as_deref(),
-                explicit.as_ref(),
-            );
+        "aiml" => {
+            let (base, key) =
+                featherless::aiml(hosted, call.api_base.as_deref(), explicit.as_ref());
             (Some(base), key)
         }
-        Some(Host::Empower | Host::Friendliai | Host::Galadriel | Host::Github) => {
+        "empower" | "friendliai" | "galadriel" | "github" => {
             let (base, key) = sections
                 .openai_like_settings
                 .resolve(call.api_base.as_deref(), explicit.as_ref());
             (base, Some(key))
         }
-        Some(Host::Baseten | Host::Cerebras) | None => {
-            return Err(failure(None, String::from("the host has no identity")));
-        }
+        _ => return Err(failure(None, String::from("the host has no identity"))),
     };
     let key = key.map(|secret| secret.expose_secret().to_owned());
     Ok(json!({"ok": true, "value": {"base": base, "key": key}}))
@@ -152,17 +120,20 @@ fn token_limit_map<Settings>(
 where
     Settings: serde::Serialize + serde::de::DeserializeOwned,
 {
-    let settings: Settings = deserialize_settings(&call.config)?;
     let mut options = IndexMap::new();
     map_renaming_token_limit(
         &call.params.iter().cloned().collect(),
         &mut options,
         supported,
     );
-    mapped_value(snapshot(&settings)?, &options, supported, baseten_model)
+    Ok(mapped_value(
+        class_snapshot::<Settings>(&call.config)?,
+        &options,
+        supported,
+        baseten_model,
+    ))
 }
 fn featherless_map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
-    let settings: FeatherlessSettings = deserialize_settings(&call.config)?;
     let mut options = IndexMap::new();
     let drop = DropParams {
         argument: call.drop_params,
@@ -170,12 +141,12 @@ fn featherless_map(call: &Call, sections: &Sections) -> Result<Value, Box<Helper
     };
     match featherless::map_openai_params(&call.params.iter().cloned().collect(), &mut options, drop)
     {
-        Ok(()) => mapped_value(
-            snapshot(&settings)?,
+        Ok(()) => Ok(mapped_value(
+            class_snapshot::<FeatherlessSettings>(&call.config)?,
             &options,
             featherless::SUPPORTED_PARAMS,
             None,
-        ),
+        )),
         Err(error) => Ok(json!({"ok": false, "error": {"status": error.status_code()}})),
     }
 }
@@ -184,7 +155,7 @@ fn mapped_value(
     options: &IndexMap<String, Value>,
     supported: &[&str],
     baseten_model: Option<&str>,
-) -> Result<Value, Box<HelperError>> {
+) -> Value {
     let baseten = baseten_model.map(|model| {
         json!({
             "model": model,
@@ -192,7 +163,7 @@ fn mapped_value(
             "api_base": baseten_endpoint::get_api_base_for_model(model),
         })
     });
-    Ok(json!({
+    json!({
         "ok": true,
         "value": {
             "config": snapshot,
@@ -203,27 +174,20 @@ fn mapped_value(
                 .collect::<Vec<Value>>(),
             "baseten": baseten,
         },
-    }))
+    })
 }
-fn deserialize_settings<Settings>(
-    config: &BTreeMap<String, Value>,
-) -> Result<Settings, Box<HelperError>>
+fn class_snapshot<Settings>(config: &BTreeMap<String, Value>) -> Result<Value, Box<HelperError>>
 where
-    Settings: serde::de::DeserializeOwned,
+    Settings: serde::Serialize + serde::de::DeserializeOwned,
 {
-    serde_json::from_value(Value::Object(
+    let settings: Settings = serde_json::from_value(Value::Object(
         config
             .iter()
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect(),
     ))
-    .map_err(|error| failure(None, error.to_string()))
-}
-fn snapshot<Settings>(settings: &Settings) -> Result<Value, Box<HelperError>>
-where
-    Settings: serde::Serialize,
-{
-    provider_config(settings)
+    .map_err(|error| failure(None, error.to_string()))?;
+    provider_config(&settings)
         .map(Value::Object)
         .map_err(|error| failure(None, error.to_string()))
 }

@@ -10,11 +10,10 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use super::aliases::CompatibleChatAlias;
+use super::CompatibleChatAlias;
 use super::baseten::{self, BasetenSettings};
 use super::cerebras::{self, CerebrasSettings};
 use super::featherless::{self, DropParams, FeatherlessSettings, HostedChatOptionsError};
-use super::identity;
 use super::map_renaming_token_limit;
 use crate::base_helpers::provider_config;
 use crate::openai_base_config::Headers;
@@ -467,7 +466,7 @@ fn featherless_resolves_its_identity_chain(
 ) {
     let settings = hosted(entries);
     let key_override = explicit_key.map(secret);
-    let (base, key) = identity::featherless(&settings, explicit_base, key_override.as_ref());
+    let (base, key) = featherless::featherless(&settings, explicit_base, key_override.as_ref());
     assert_eq!(base, expected_base);
     assert_eq!(
         key.as_ref().map(|secret| secret.expose_secret().to_owned()),
@@ -558,7 +557,7 @@ fn aiml_resolves_its_chat_identity(
 ) {
     let settings = hosted(entries);
     let explicit_key = explicit_base.map(|_| secret("sk-explicit"));
-    let (base, key) = identity::aiml(&settings, explicit_base, explicit_key.as_ref());
+    let (base, key) = featherless::aiml(&settings, explicit_base, explicit_key.as_ref());
     assert_eq!(base, expected_base);
     assert_eq!(
         key.as_ref().map(|secret| secret.expose_secret().to_owned()),
