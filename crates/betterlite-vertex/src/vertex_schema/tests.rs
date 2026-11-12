@@ -142,6 +142,10 @@ fn a_null_branch_leaves_the_other_branches_nullable() {
     r#"{"anyOf": [{"type": "null"}, {"type": "string"}, {"type": "null"}]}"#,
     r#"{"anyOf": [{"type": "string", "nullable": true}]}"#
 )]
+#[case::a_skipped_null_is_removed_instead(
+    r#"{"anyOf": [{"type": "null"}, {"type": "null"}, {"type": "string"}, {"type": "null"}]}"#,
+    r#"{"anyOf": [{"type": "string", "nullable": true}, {"type": "null", "nullable": true}]}"#
+)]
 fn adjacent_null_branches_keep_litellms_removal_skip(#[case] text: &str, #[case] expected: &str) {
     assert_shaped(text, expected);
 }
@@ -476,4 +480,22 @@ fn the_pipeline_stops_at_the_configured_depth(#[case] max_depth: usize, #[case] 
     } else {
         result.expect("the schema is shallow enough");
     }
+}
+
+#[test]
+fn a_primitive_union_keeps_the_fields_the_items_pass_walks() {
+    let primitive_union = object(
+        r#"{"type": ["string", "null"], "properties": {"a": {"properties": {"b": {"type": "string"}}}}}"#,
+    );
+    let error = shape_parameters(
+        primitive_union,
+        SchemaFormat::ResponseSchema,
+        false,
+        &settings(3),
+    )
+    .expect_err("the kept properties push the items pass past the limit");
+    assert!(matches!(
+        error,
+        VertexSchemaError::DepthLimitExceeded { limit: 3 }
+    ));
 }

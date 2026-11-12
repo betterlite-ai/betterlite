@@ -21,19 +21,21 @@ pub(crate) fn convert_anyof_null_to_nullable(
     })
 }
 
-// LiteLLM walks the live list while removing the null branch it is on, so two adjacent null branches leave the second one in the anyOf
+// LiteLLM's for loop advances past the slot a removed branch left behind, and list.remove drops the first branch equal to the visited one, which can be a branch an earlier removal skipped
 fn strip_null_branches(branches: &mut Vec<Json>) -> Result<bool, VertexSchemaError> {
     let mut contains_null = false;
     let mut index = 0;
     while let Some(branch) = branches.get(index) {
         if is_null_branch(branch) {
-            branches.remove(index);
+            if let Some(position) = branches.iter().position(|candidate| candidate == branch) {
+                branches.remove(position);
+            }
             contains_null = true;
-            continue;
-        }
-        let empty_object = branch.as_object().is_some_and(Object::is_empty);
-        if empty_object && let Some(Json::Object(object)) = branches.get_mut(index) {
-            object.insert("type".to_owned(), Json::Text("object".to_owned()));
+        } else {
+            let empty_object = branch.as_object().is_some_and(Object::is_empty);
+            if empty_object && let Some(Json::Object(object)) = branches.get_mut(index) {
+                object.insert("type".to_owned(), Json::Text("object".to_owned()));
+            }
         }
         index = index.saturating_add(1);
     }

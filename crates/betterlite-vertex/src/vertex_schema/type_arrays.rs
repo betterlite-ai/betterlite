@@ -3,6 +3,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use super::error::VertexSchemaError;
 use super::recursion::Recursion;
 
+const OBJECT_OR_ARRAY: [&str; 2] = ["object", "array"];
+
 const TYPE_SPECIFIC_FIELDS: [&str; 8] = [
     "properties",
     "required",
@@ -44,9 +46,15 @@ fn convert_type_array(schema: &mut Object, types: &[Json]) {
         };
         branches.push(Json::Object(branch_for_type(schema, name)));
     }
-    // filter keeps nothing beside a branch list, so the parent's copies of these fields never reach the output
-    for field in TYPE_SPECIFIC_FIELDS {
-        schema.shift_remove(field);
+    // a primitive union keeps these fields; process_items still walks them and counts the properties mapping as a level
+    let moves_type_fields = types
+        .iter()
+        .filter_map(Json::as_str)
+        .any(|name| OBJECT_OR_ARRAY.contains(&name));
+    if moves_type_fields {
+        for field in TYPE_SPECIFIC_FIELDS {
+            schema.shift_remove(field);
+        }
     }
     schema.insert("anyOf".to_owned(), Json::List(branches));
     schema.shift_remove("type");
@@ -55,7 +63,7 @@ fn convert_type_array(schema: &mut Object, types: &[Json]) {
 fn branch_for_type(schema: &Object, name: &str) -> Object {
     let mut branch = Object::new();
     branch.insert("type".to_owned(), Json::Text(name.to_owned()));
-    if name == "object" || name == "array" {
+    if OBJECT_OR_ARRAY.contains(&name) {
         for field in TYPE_SPECIFIC_FIELDS {
             if let Some(value) = schema.get(field) {
                 branch.insert((*field).to_owned(), value.clone());
