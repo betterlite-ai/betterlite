@@ -76,9 +76,9 @@ impl CallbackLogger for S3BatchLogger {
 }
 fn naive_utc(seconds: Decimal) -> Option<NaiveDateTime> {
     seconds
-        .checked_mul(Decimal::from(1_000_i64))
-        .and_then(|milliseconds| milliseconds.round().to_i64())
-        .and_then(DateTime::<Utc>::from_timestamp_millis)
+        .checked_mul(Decimal::from(1_000_000_i64))
+        .and_then(|microseconds| microseconds.round().to_i64())
+        .and_then(DateTime::<Utc>::from_timestamp_micros)
         .map(|moment| moment.naive_utc())
 }
 fn delivery_error<Source>(source: &Source) -> LoggerError
