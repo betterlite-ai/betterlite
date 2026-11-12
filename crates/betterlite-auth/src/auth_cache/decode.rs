@@ -117,16 +117,31 @@ fn within_input_limits(bytes: &[u8], operation: ReadOperation) -> bool {
     true
 }
 
-// brackets inside quoted strings do not count, and a backslash escapes the next byte of a string
+// strings hide brackets as in py_literal, where \N{ takes everything up to the next }, and a string left open counts as maximum depth
 fn bracket_depth(bytes: &[u8]) -> usize {
+    let closes: Vec<usize> = bytes
+        .iter()
+        .enumerate()
+        .filter(|&(_, &byte)| byte == b'}')
+        .map(|(position, _)| position)
+        .collect();
     let mut quote = None;
-    let mut escaped = false;
     let mut level = 0_usize;
     let mut maximum = 0;
-    for &byte in bytes {
+    let mut index = 0_usize;
+    while let Some(&byte) = bytes.get(index) {
+        index = index.saturating_add(1);
         match quote {
-            Some(_) if escaped => escaped = false,
-            Some(_) if byte == b'\\' => escaped = true,
+            Some(_) if byte == b'\\' => {
+                let name_start = index.saturating_add(2);
+                let escaped_end = index.saturating_add(1);
+                index = match bytes.get(index..name_start) {
+                    Some(b"N{") => closes
+                        .get(closes.partition_point(|&close| close < name_start))
+                        .map_or(escaped_end, |&close| close.saturating_add(1)),
+                    _ => escaped_end,
+                };
+            }
             Some(open) if byte == open => quote = None,
             Some(_) => {}
             None => match byte {
@@ -140,7 +155,7 @@ fn bracket_depth(bytes: &[u8]) -> usize {
             },
         }
     }
-    maximum
+    if quote.is_some() { usize::MAX } else { maximum }
 }
 
 // iterative so a hostile payload bounded only by the byte limit cannot overflow the stack
