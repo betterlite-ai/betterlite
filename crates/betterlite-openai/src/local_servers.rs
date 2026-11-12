@@ -45,14 +45,10 @@ pub fn resolve_api_key(
     environment: &ProviderEnvironment,
     placeholder: &str,
 ) -> SecretString {
-    let key = explicit
-        .filter(|key| !key.expose_secret().is_empty())
-        .or_else(|| {
-            environment
-                .api_key
-                .as_ref()
-                .filter(|key| !key.expose_secret().is_empty())
-        })
+    let key = [explicit, environment.api_key.as_ref()]
+        .into_iter()
+        .flatten()
+        .find(|key| !key.expose_secret().is_empty())
         .map_or(placeholder, |key| key.expose_secret());
     SecretString::from(key.to_owned())
 }

@@ -53,13 +53,11 @@ pub fn completion_url(model: &str, api_base: Option<&str>) -> Result<String, Oob
 }
 
 pub fn embeddings_url(model: &str, api_base: Option<&str>) -> Result<String, OobaboogaError> {
-    if model.starts_with("http://") || model.starts_with("https://") {
-        return Ok(model.to_owned());
+    match api_base.filter(|base| !base.is_empty()) {
+        _ if model.starts_with("http://") || model.starts_with("https://") => Ok(model.to_owned()),
+        Some(base) => Ok(format!("{base}/v1/embeddings")),
+        None => Err(missing_api_base()),
     }
-    let base = api_base
-        .filter(|base| !base.is_empty())
-        .ok_or_else(missing_api_base)?;
-    Ok(format!("{base}/v1/embeddings"))
 }
 
 // the request body is OpenAIGPTConfig.transform_request with the provider name oobabooga

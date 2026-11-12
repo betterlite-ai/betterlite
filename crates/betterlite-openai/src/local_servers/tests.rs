@@ -394,40 +394,63 @@ fn oobabooga_headers_carry_token_only_with_a_key() {
     );
 }
 
+type UrlFn = fn(&str, Option<&str>) -> Result<String, OobaboogaError>;
+
 #[rstest]
-#[case("m", Some("http://h:5000"), Ok("http://h:5000/v1/chat/completions"))]
-#[case("http://m:1", Some("http://h"), Ok("http://m:1/v1/chat/completions"))]
-#[case("https://m", None, Ok("https://m/v1/chat/completions"))]
-#[case("httpx", Some("http://h"), Ok("http://h/v1/chat/completions"))]
-#[case("m", None, Err(()))]
-#[case("m", Some(""), Err(()))]
-fn oobabooga_completion_url(
+#[case(
+    oobabooga::completion_url,
+    "m",
+    Some("http://h:5000"),
+    Ok("http://h:5000/v1/chat/completions")
+)]
+#[case(
+    oobabooga::completion_url,
+    "http://m:1",
+    Some("http://h"),
+    Ok("http://m:1/v1/chat/completions")
+)]
+#[case(
+    oobabooga::completion_url,
+    "https://m",
+    None,
+    Ok("https://m/v1/chat/completions")
+)]
+#[case(
+    oobabooga::completion_url,
+    "httpx",
+    Some("http://h"),
+    Ok("http://h/v1/chat/completions")
+)]
+#[case(oobabooga::completion_url, "m", None, Err(()))]
+#[case(oobabooga::completion_url, "m", Some(""), Err(()))]
+#[case(
+    oobabooga::embeddings_url,
+    "m",
+    Some("http://h"),
+    Ok("http://h/v1/embeddings")
+)]
+#[case(
+    oobabooga::embeddings_url,
+    "http://m/e",
+    Some("http://h"),
+    Ok("http://m/e")
+)]
+#[case(oobabooga::embeddings_url, "https://m/e", None, Ok("https://m/e"))]
+#[case(oobabooga::embeddings_url, "m", None, Err(()))]
+#[case(oobabooga::embeddings_url, "m", Some(""), Err(()))]
+fn oobabooga_urls(
+    #[case] resolve: UrlFn,
     #[case] model: &str,
     #[case] api_base: Option<&str>,
     #[case] expected: Result<&str, ()>,
 ) {
-    let got = oobabooga::completion_url(model, api_base).map_err(|error| {
+    let got = resolve(model, api_base).map_err(|error| {
         assert_eq!(error.status_code, 404);
         assert_eq!(
             error.message,
             "API Base not set. Set one via completion(..,api_base='your-api-url')"
         );
     });
-    assert_eq!(got, expected.map(str::to_owned));
-}
-
-#[rstest]
-#[case("m", Some("http://h"), Ok("http://h/v1/embeddings"))]
-#[case("http://m/e", Some("http://h"), Ok("http://m/e"))]
-#[case("https://m/e", None, Ok("https://m/e"))]
-#[case("m", None, Err(404))]
-#[case("m", Some(""), Err(404))]
-fn oobabooga_embeddings_url(
-    #[case] model: &str,
-    #[case] api_base: Option<&str>,
-    #[case] expected: Result<&str, u16>,
-) {
-    let got = oobabooga::embeddings_url(model, api_base).map_err(|error| error.status_code);
     assert_eq!(got, expected.map(str::to_owned));
 }
 
