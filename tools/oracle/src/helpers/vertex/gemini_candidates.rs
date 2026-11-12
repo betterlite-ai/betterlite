@@ -1,9 +1,135 @@
+use betterlite_models::call_helpers::finish_reason::{FinishReason, map_finish_reason};
+use betterlite_vertex::gemini_candidates::blocked::{complete_block, stream_block};
+use betterlite_vertex::gemini_candidates::candidate::{Candidate, PromptFeedback};
+use betterlite_vertex::gemini_candidates::finish::FinishReasonMapper;
+use betterlite_vertex::gemini_candidates::process::{Mode, process_candidates};
+use betterlite_vertex::gemini_metadata::extension::MetadataExtension;
+use betterlite_vertex::gemini_response_parts::projection::{CallMode, PartContext};
+use betterlite_vertex::gemini_usage::metadata::UsageMetadata;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+
+mod tests;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Body {
+    candidates: Option<Vec<Candidate>>,
+    prompt_feedback: Option<PromptFeedback>,
+    usage_metadata: Option<UsageMetadata>,
+}
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("gemini_candidates")
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    streaming: bool,
+    legacy_function: bool,
+    cumulative_tool_call_idx: u32,
+    now: i64,
+    generated_id: String,
+    body: Body,
+}
+
+struct CoreMapper;
+
+impl FinishReasonMapper for CoreMapper {
+    fn map(&self, raw: &str) -> FinishReason {
+        map_finish_reason(raw).reason
     }
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        let uuid = Uuid::parse_str(&input.generated_id).or_value_error()?;
+        let context = PartContext {
+            cumulative_tool_call_index: input.cumulative_tool_call_idx,
+            call_mode: if input.legacy_function {
+                CallMode::LegacyFunction
+            } else {
+                CallMode::Tools
+            },
+            now: input.now,
+        };
+        if input.streaming {
+            streamed(&input.body, context, uuid)
+        } else {
+            complete(&input.body, context, uuid)
+        }
+    }
+}
+
+fn complete(body: &Body, context: PartContext, uuid: Uuid) -> HelperResult {
+    let candidates = body.candidates.as_deref().unwrap_or_default();
+    let outcome = complete_block(
+        body.prompt_feedback.as_ref(),
+        candidates,
+        body.usage_metadata.as_ref(),
+    )
+    .or_value_error()?;
+    if let Some(blocked) = outcome {
+        return Ok(json!({
+            "choices": [blocked.choice],
+            "usage": {
+                "prompt_tokens": blocked.usage.prompt_tokens,
+                "completion_tokens": blocked.usage.completion_tokens,
+                "total_tokens": blocked.usage.total_tokens,
+                "prompt_tokens_details": blocked.usage.prompt_tokens_details.map(|_| "present"),
+                "completion_tokens_details": blocked.usage.completion_tokens_details.map(|_| "present"),
+            },
+            "metadata": null,
+        }));
+    }
+    let processed = process_candidates(
+        candidates,
+        Mode::Complete,
+        context,
+        &CoreMapper,
+        &mut || uuid,
+    )
+    .or_value_error()?;
+    Ok(json!({
+        "choices": processed.choices,
+        "usage": null,
+        "metadata": metadata(&processed.metadata),
+    }))
+}
+
+fn streamed(body: &Body, context: PartContext, uuid: Uuid) -> HelperResult {
+    if let Some(choice) = stream_block(body.prompt_feedback.as_ref()) {
+        return Ok(json!({
+            "choices": [choice],
+            "metadata": null,
+            "next_tool_call_index": context.cumulative_tool_call_index,
+        }));
+    }
+    let candidates = body.candidates.as_deref().unwrap_or_default();
+    let processed = process_candidates(
+        candidates,
+        Mode::Streaming,
+        context,
+        &CoreMapper,
+        &mut || uuid,
+    )
+    .or_value_error()?;
+    Ok(json!({
+        "choices": processed.choices,
+        "metadata": metadata(&processed.metadata),
+        "next_tool_call_index": processed.next_tool_call_index,
+    }))
+}
+
+fn metadata(extension: &MetadataExtension) -> Value {
+    json!({
+        "grounding_metadata": extension.grounding_metadata,
+        "url_context_metadata": extension.url_context_metadata,
+        "safety_ratings": extension.safety_ratings,
+        "citation_metadata": extension.citation_metadata,
+    })
 }
