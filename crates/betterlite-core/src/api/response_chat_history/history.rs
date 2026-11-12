@@ -36,26 +36,24 @@ pub struct ConvertedHistory {
 
 struct HistoryConversion {
     custom_call_ids: BTreeSet<String>,
-    leading_system_count: usize,
     reasoning_ids: ReasoningIds,
     input: Vec<Value>,
     instructions: Option<String>,
 }
 
 pub fn convert_history(messages: &[HistoryMessage]) -> Result<ConvertedHistory, HistoryError> {
-    let leading_system_count = messages
-        .iter()
-        .position(|message| message.role != "system")
-        .unwrap_or(messages.len());
     let mut conversion = HistoryConversion {
         custom_call_ids: custom_call_ids(messages),
-        leading_system_count,
         reasoning_ids: ReasoningIds::default(),
         input: Vec::new(),
         instructions: None,
     };
-    for (index, message) in messages.iter().enumerate() {
-        conversion.append(index, message)?;
+    let mut leading = true;
+    for message in messages {
+        conversion.append(message, leading)?;
+        if message.role != "system" {
+            leading = false;
+        }
     }
     Ok(ConvertedHistory {
         input: conversion.input,
@@ -93,7 +91,7 @@ fn custom_call_ids(messages: &[HistoryMessage]) -> BTreeSet<String> {
 }
 
 impl HistoryConversion {
-    fn append(&mut self, index: usize, message: &HistoryMessage) -> Result<(), HistoryError> {
+    fn append(&mut self, message: &HistoryMessage, leading: bool) -> Result<(), HistoryError> {
         let empty_content = Value::String(String::new());
         let content = match &message.content {
             None => Some(&empty_content),
@@ -101,7 +99,7 @@ impl HistoryConversion {
             Some(Some(value)) => Some(value),
         };
         if message.role == "system" {
-            return self.append_system(index, content);
+            return self.append_system(leading, content);
         }
         if message.role == "tool" {
             return self.append_tool(message, content);
@@ -116,10 +114,12 @@ impl HistoryConversion {
         self.append_content_message(message, content)
     }
 
-    fn append_system(&mut self, index: usize, content: Option<&Value>) -> Result<(), HistoryError> {
-        if index < self.leading_system_count
-            && let Some(Value::String(text)) = content
-        {
+    fn append_system(
+        &mut self,
+        leading: bool,
+        content: Option<&Value>,
+    ) -> Result<(), HistoryError> {
+        if leading && let Some(Value::String(text)) = content {
             let joined = match &self.instructions {
                 Some(existing) if !existing.is_empty() => format!("{existing} {text}"),
                 Some(_) | None => text.clone(),

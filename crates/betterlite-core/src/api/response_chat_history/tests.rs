@@ -221,6 +221,59 @@ fn non_assistant_null_content_emits_nothing() {
 }
 
 #[test]
+fn empty_tool_calls_are_not_a_call_history() {
+    let converted = convert_history(&messages(json!([
+        {"role": "assistant", "content": "", "tool_calls": []}
+    ])))
+    .unwrap();
+    assert_eq!(
+        converted.input,
+        vec![message_item(
+            "assistant",
+            &json!([{"type": "output_text", "text": ""}])
+        )]
+    );
+}
+
+#[test]
+fn tool_calls_on_a_non_assistant_message_stay_a_plain_message() {
+    let converted = convert_history(&messages(json!([
+        {
+            "role": "user",
+            "content": "hi",
+            "tool_calls": [{"id": "c1", "custom": {"name": "g"}}]
+        }
+    ])))
+    .unwrap();
+    assert_eq!(
+        converted.input,
+        vec![message_item(
+            "user",
+            &json!([{"type": "input_text", "text": "hi"}])
+        )]
+    );
+}
+
+#[test]
+fn non_assistant_reasoning_items_are_ignored() {
+    let converted = convert_history(&messages(json!([
+        {
+            "role": "user",
+            "content": "hi",
+            "reasoning_items": [{"id": "rs_a", "type": "reasoning", "summary": []}]
+        }
+    ])))
+    .unwrap();
+    assert_eq!(
+        converted.input,
+        vec![message_item(
+            "user",
+            &json!([{"type": "input_text", "text": "hi"}])
+        )]
+    );
+}
+
+#[test]
 fn tool_outputs_are_classified_by_custom_call_ids() {
     let converted = convert_history(&messages(json!([
         {
@@ -365,6 +418,22 @@ fn missing_reasoning_ids_are_opaque_and_reused() {
     assert!(first.starts_with("rs_"));
     assert_eq!(first, second);
     assert_ne!(first, third);
+}
+
+#[test]
+fn an_empty_stored_reasoning_id_gets_an_rs_prefix() {
+    let mut ids = ReasoningIds::default();
+    let items = reasoning_input_items(
+        &message(json!({
+            "role": "assistant",
+            "content": null,
+            "reasoning_items": [{"id": "", "type": "reasoning", "summary": []}]
+        })),
+        &mut ids,
+    )
+    .unwrap();
+    let id = items[0]["id"].as_str().unwrap();
+    assert!(id.starts_with("rs_"));
 }
 
 #[test]
