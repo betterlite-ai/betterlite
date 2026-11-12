@@ -15,7 +15,6 @@ from litellm.types.integrations.s3_v2 import s3BatchLoggingElement
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 Json: TypeAlias = JsonValue
-
 JSON_LINE: TypeAdapter[Json] = TypeAdapter(Json)
 
 
