@@ -1,0 +1,5 @@
+task: B660
+deviations:
+  - what: A metadata source URI whose host Python's urlparse rejects under NFKC normalization is split as an ordinary URI, so its filename comes from the URL path; LiteLLM's urlparse raises there and the filename falls back to the whole source URI.
+    why: betterlite's URI split has no NFKC normalization, which would take a Unicode database dependency for a host no working Bedrock knowledge base returns; the fallback is not something a setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L299-L319
