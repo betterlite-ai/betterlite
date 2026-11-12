@@ -141,19 +141,12 @@ fn writer_endpoint(
     settings: &DatabaseUrlSettings,
     auth: &DatabaseTokenAuth,
 ) -> Result<IAMEndpoint, DatabaseTokenError> {
-    match (
-        non_empty(settings.database_host.as_deref()),
-        non_empty(settings.database_user.as_deref()),
-        non_empty(settings.database_name.as_deref()),
-    ) {
-        (Some(host), Some(user), Some(name)) => Ok(IAMEndpoint {
-            host: host.to_owned(),
-            port: settings.database_port.clone(),
-            user: user.to_owned(),
-            name: name.to_owned(),
-            schema: non_empty(settings.database_schema.as_deref()).map(str::to_owned),
-        }),
-        (host, user, name) => Err(DatabaseTokenError::MissingWriterFields {
+    let host = non_empty(settings.database_host.as_deref());
+    let user = non_empty(settings.database_user.as_deref());
+    let name = non_empty(settings.database_name.as_deref());
+    let schema = non_empty(settings.database_schema.as_deref());
+    iam_endpoint(host, &settings.database_port, user, name, schema).ok_or_else(|| {
+        DatabaseTokenError::MissingWriterFields {
             env_var: auth.env_var(),
             fields: missing_fields(&[
                 ("DATABASE_HOST", host.is_none()),
@@ -161,8 +154,24 @@ fn writer_endpoint(
                 ("DATABASE_NAME", name.is_none()),
             ]),
             label: auth.label(),
-        }),
-    }
+        }
+    })
+}
+
+fn iam_endpoint(
+    host: Option<&str>,
+    port: &str,
+    user: Option<&str>,
+    name: Option<&str>,
+    schema: Option<&str>,
+) -> Option<IAMEndpoint> {
+    Some(IAMEndpoint {
+        host: host?.to_owned(),
+        port: port.to_owned(),
+        user: user?.to_owned(),
+        name: name?.to_owned(),
+        schema: schema.map(str::to_owned),
+    })
 }
 
 fn missing_fields(candidates: &[(&'static str, bool)]) -> String {

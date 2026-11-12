@@ -15,12 +15,20 @@ use crate::database_tokens::provider::{
     AzureProviderCache, AzureProviderError, AzureProviderFactory, AzureTokenProvider,
     RdsTokenProvider,
 };
+use crate::database_tokens::settings::TokenToggles;
 use crate::database_tokens::strategy::TokenProviders;
+use crate::database_tokens::urls::{build_reader_url, build_writer_url};
 use crate::database_urls::settings::{DatabaseUrlSettings, from_env};
 use crate::rds_credentials::RdsEndpoint;
 use crate::rds_credentials::error::RdsCredentialsError;
 
 pub(super) const AZURE_RAW_TOKEN: &str = "header.claims+signature/value";
+
+fn token_queue(tokens: &[&str]) -> Arc<Mutex<VecDeque<String>>> {
+    Arc::new(Mutex::new(
+        tokens.iter().map(|token| (*token).to_owned()).collect(),
+    ))
+}
 
 pub(super) fn settings(pairs: &[(&str, &str)]) -> DatabaseUrlSettings {
     let environment: BTreeMap<String, String> = pairs
@@ -41,9 +49,7 @@ impl RecordingRds {
     pub(super) fn tokens(tokens: &[&str]) -> Self {
         Self {
             seen: Arc::default(),
-            tokens: Arc::new(Mutex::new(
-                tokens.iter().map(|token| (*token).to_owned()).collect(),
-            )),
+            tokens: token_queue(tokens),
         }
     }
 
@@ -92,9 +98,7 @@ impl FakeAzureProvider {
     pub(super) fn tokens(tokens: &[&str]) -> Self {
         Self {
             calls: Arc::default(),
-            tokens: Arc::new(Mutex::new(
-                tokens.iter().map(|token| (*token).to_owned()).collect(),
-            )),
+            tokens: token_queue(tokens),
             failing: Arc::default(),
         }
     }
@@ -188,6 +192,56 @@ impl AzureProviderFactory for FakeAzureFactory {
             Some(Build::Success) | None => Ok(Arc::new(self.provider.clone())),
         }
     }
+}
+
+pub(super) fn azure_providers(tokens: &[&str]) -> TokenProviders {
+    providers(
+        RecordingRds::tokens(&["encoded"]),
+        FakeAzureFactory::new(FakeAzureProvider::tokens(tokens)),
+    )
+}
+
+pub(super) fn iam_enabled() -> TokenToggles {
+    TokenToggles {
+        iam_token_db_auth: true,
+        azure_postgresql_auth: false,
+    }
+}
+
+pub(super) fn azure_enabled() -> TokenToggles {
+    TokenToggles {
+        iam_token_db_auth: false,
+        azure_postgresql_auth: true,
+    }
+}
+
+fn prefixed(prefix: &[(&str, &str)], environment: &[(&str, &str)]) -> Vec<(&str, &str)> {
+    let mut pairs = prefix.to_vec();
+    pairs.extend_from_slice(environment);
+    pairs
+}
+
+pub(super) fn writer_missing_message(environment: &[(&str, &str)]) -> String {
+    let pairs = prefixed(&[("IAM_TOKEN_DB_AUTH", "true")], environment);
+    let azure = azure_providers(&[AZURE_RAW_TOKEN]);
+    build_writer_url(&settings(&pairs), iam_enabled(), false, &azure)
+        .expect_err("missing writer fields must fail")
+        .to_string()
+}
+
+pub(super) fn reader_missing_message(environment: &[(&str, &str)]) -> String {
+    let prefix = [
+        ("AZURE_POSTGRESQL_AUTH", "true"),
+        ("DATABASE_HOST_READ_REPLICA", "reader.example"),
+    ];
+    let azure = azure_providers(&["azure-token"]);
+    build_reader_url(
+        &settings(&prefixed(&prefix, environment)),
+        azure_enabled(),
+        &azure,
+    )
+    .expect_err("unresolved reader fields must fail")
+    .to_string()
 }
 
 pub(super) fn providers(rds: RecordingRds, factory: FakeAzureFactory) -> TokenProviders {

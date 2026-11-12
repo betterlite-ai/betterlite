@@ -6,7 +6,8 @@ use secrecy::ExposeSecret as _;
 use crate::database_tokens::settings::TokenToggles;
 use crate::database_tokens::strategy::DatabaseTokenError;
 use crate::database_tokens::tests::support::{
-    AZURE_RAW_TOKEN, FakeAzureFactory, FakeAzureProvider, RecordingRds, providers, settings,
+    AZURE_RAW_TOKEN, FakeAzureFactory, FakeAzureProvider, RecordingRds, azure_providers, providers,
+    reader_missing_message, settings, writer_missing_message,
 };
 use crate::database_tokens::urls::{
     UrlAssemblyError, apply_writer_url_to_env, build_reader_url, build_writer_url,
@@ -124,22 +125,10 @@ fn writer_missing_fields_order_and_message(
     #[case] environment: &[(&str, &str)],
     #[case] fields: &str,
 ) {
-    let mut pairs = vec![("IAM_TOKEN_DB_AUTH", "true")];
-    pairs.extend_from_slice(environment);
-    let database = settings(&pairs);
-    let token_providers = providers(
-        RecordingRds::tokens(&["encoded"]),
-        FakeAzureFactory::new(FakeAzureProvider::tokens(&[AZURE_RAW_TOKEN])),
+    let expected = format!(
+        "IAM_TOKEN_DB_AUTH is enabled but required DB env var(s) are unset: {fields}. Set them so the writer DATABASE_URL can be assembled with a minted RDS IAM token."
     );
-    let Err(error) = build_writer_url(&database, iam(), false, &token_providers) else {
-        panic!("missing writer fields must fail");
-    };
-    assert_eq!(
-        error.to_string(),
-        format!(
-            "IAM_TOKEN_DB_AUTH is enabled but required DB env var(s) are unset: {fields}. Set them so the writer DATABASE_URL can be assembled with a minted RDS IAM token."
-        )
-    );
+    assert_eq!(writer_missing_message(environment), expected);
 }
 
 #[test]
@@ -305,25 +294,10 @@ fn reader_needs_assembly_before_conflict() {
     "DATABASE_USER[_READ_REPLICA]"
 )]
 fn reader_missing_fields_exact_message(#[case] environment: &[(&str, &str)], #[case] fields: &str) {
-    let mut pairs = vec![
-        ("AZURE_POSTGRESQL_AUTH", "true"),
-        ("DATABASE_HOST_READ_REPLICA", "reader.example"),
-    ];
-    pairs.extend_from_slice(environment);
-    let database = settings(&pairs);
-    let token_providers = providers(
-        RecordingRds::tokens(&["encoded"]),
-        FakeAzureFactory::new(FakeAzureProvider::tokens(&["azure-token"])),
+    let expected = format!(
+        "AZURE_POSTGRESQL_AUTH is enabled and DATABASE_HOST_READ_REPLICA is set, but the reader could not resolve: {fields} (no *_READ_REPLICA value and no writer fallback). Set the reader fields or the writer defaults."
     );
-    let Err(error) = build_reader_url(&database, azure(), &token_providers) else {
-        panic!("unresolved reader fields must fail");
-    };
-    assert_eq!(
-        error.to_string(),
-        format!(
-            "AZURE_POSTGRESQL_AUTH is enabled and DATABASE_HOST_READ_REPLICA is set, but the reader could not resolve: {fields} (no *_READ_REPLICA value and no writer fallback). Set the reader fields or the writer defaults."
-        )
-    );
+    assert_eq!(reader_missing_message(environment), expected);
 }
 
 #[test]
