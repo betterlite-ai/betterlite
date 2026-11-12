@@ -1,0 +1,14 @@
+kind: helper
+name: langgraph-chat-response-values-fallback
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: reply
+    cases:
+      - {model: langgraph/agent, status: 200, body: '{"values": {"messages": [{"type": "ai", "content": "inner"}]}}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "human", "content": "q"}], "values": {"messages": [{"type": "ai", "content": "old"}, {"type": "ai", "content": "inner reply"}]}}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [], "values": {"messages": [{"type": "human", "content": "q"}, {"type": "ai", "content": "from values"}]}}'}
+      - {model: langgraph/agent, status: 200, body: '{"values": {"messages": [{"type": "ai", "content": "older"}, {"type": "ai"}]}}'}
+      - {model: langgraph/agent, status: 200, body: '{"values": {"messages": [{"type": "ai", "content": ""}]}}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": "text", "values": {"messages": [{"type": "ai", "content": "inner"}]}}'}
