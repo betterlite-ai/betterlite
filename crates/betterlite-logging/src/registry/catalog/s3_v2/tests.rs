@@ -122,8 +122,7 @@ async fn callback_logger_applies_s3_verify_to_its_client() {
             .is_none()
     );
     let error = tls_policy(&inputs, Some(&OptionValue::Text("maybe".to_owned())))
-        .err()
-        .expect("s3_verify is not a bool");
+        .expect_err("s3_verify is not a bool");
     assert!(matches!(
         error,
         CatalogError::Init { message } if message.contains("s3_verify")
