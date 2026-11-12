@@ -84,46 +84,51 @@ pub(super) fn finish(result: Result<Value, Stop>) -> Result<Value, Box<HelperErr
     }
 }
 
-pub(super) fn request_value(call: &RequestCall) -> Result<Value, Stop> {
-    let url = completion_url(&call.model, call.api_base.as_deref())
-        .map_err(|error| Stop::Server(Box::new(error)))?;
-    let messages = &call.messages;
-    let body = completion_body(
-        &call.model,
-        messages,
-        &call.optional_params,
-        &RefuseDownloads,
-    )
-    .map_err(|error| Stop::Input(error.to_string()))?;
-    Ok(json!({"ok": true, "request": wire(&url, call.api_key.as_deref(), &body)}))
-}
-
-pub(super) fn embedding_value(call: &EmbeddingCall) -> Result<Value, Stop> {
-    let url = embeddings_url(&call.model, call.api_base.as_deref())
-        .map_err(|error| Stop::Server(Box::new(error)))?;
-    let input = EmbeddingInput::Texts(call.input.clone());
-    let body = embedding_body(&input, &call.optional_params)
-        .map_err(|error| Stop::Input(error.to_string()))?;
-    let reply = transform_embedding_response(&call.model, &call.reply)
-        .map_err(|error| Stop::Reply(Box::new(error)))?;
-    Ok(json!({
-        "ok": true,
-        "request": wire(&url, call.api_key.as_deref(), &body),
-        "model": reply.model,
-        "data": [{"embedding": reply.embedding, "index": 0, "object": "embedding"}],
-        "prompt_tokens": reply.prompt_tokens,
-        "total_tokens": reply.total_tokens,
-    }))
+// the call the helper was asked to run
+pub(super) enum Call<'call> {
+    Request(&'call RequestCall),
+    Embedding(&'call EmbeddingCall),
+    Reply(&'call ReplyCall),
 }
 
 // the creation time is the wall clock, so the comparison leaves it out
-pub(super) fn reply_value(call: &ReplyCall) -> Result<Value, Stop> {
-    let chat = transform_response(&call.model, call.status, &call.body, 0)
-        .map_err(|error| Stop::Reply(Box::new(error)))?;
-    Ok(json!({
-        "ok": true,
-        "model": chat.model,
-        "content": chat.content,
-        "usage": chat.usage,
-    }))
+pub(super) fn record(which: &Call<'_>) -> Result<Value, Stop> {
+    match which {
+        Call::Request(call) => {
+            let url = completion_url(&call.model, call.api_base.as_deref())
+                .map_err(|error| Stop::Server(Box::new(error)))?;
+            let messages = &call.messages;
+            let params = &call.optional_params;
+            let body = completion_body(&call.model, messages, params, &RefuseDownloads)
+                .map_err(|error| Stop::Input(error.to_string()))?;
+            Ok(json!({"ok": true, "request": wire(&url, call.api_key.as_deref(), &body)}))
+        }
+        Call::Embedding(call) => {
+            let url = embeddings_url(&call.model, call.api_base.as_deref())
+                .map_err(|error| Stop::Server(Box::new(error)))?;
+            let input = EmbeddingInput::Texts(call.input.clone());
+            let body = embedding_body(&input, &call.optional_params)
+                .map_err(|error| Stop::Input(error.to_string()))?;
+            let reply = transform_embedding_response(&call.model, &call.reply)
+                .map_err(|error| Stop::Reply(Box::new(error)))?;
+            Ok(json!({
+                "ok": true,
+                "request": wire(&url, call.api_key.as_deref(), &body),
+                "model": reply.model,
+                "data": [{"embedding": reply.embedding, "index": 0, "object": "embedding"}],
+                "prompt_tokens": reply.prompt_tokens,
+                "total_tokens": reply.total_tokens,
+            }))
+        }
+        Call::Reply(call) => {
+            let chat = transform_response(&call.model, call.status, &call.body, 0)
+                .map_err(|error| Stop::Reply(Box::new(error)))?;
+            Ok(json!({
+                "ok": true,
+                "model": chat.model,
+                "content": chat.content,
+                "usage": chat.usage,
+            }))
+        }
+    }
 }

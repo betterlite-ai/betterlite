@@ -66,19 +66,23 @@ impl Helper for Op {
             Input::OobaboogaRequest { calls } => Ok(Value::Array(
                 calls
                     .iter()
-                    .map(|call| oobabooga::finish(oobabooga::request_value(call)))
+                    .map(|call| {
+                        oobabooga::finish(oobabooga::record(&oobabooga::Call::Request(call)))
+                    })
                     .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
             )),
             Input::OobaboogaEmbedding { calls } => Ok(Value::Array(
                 calls
                     .iter()
-                    .map(|call| oobabooga::finish(oobabooga::embedding_value(call)))
+                    .map(|call| {
+                        oobabooga::finish(oobabooga::record(&oobabooga::Call::Embedding(call)))
+                    })
                     .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
             )),
             Input::OobaboogaReply { calls } => Ok(Value::Array(
                 calls
                     .iter()
-                    .map(|call| oobabooga::finish(oobabooga::reply_value(call)))
+                    .map(|call| oobabooga::finish(oobabooga::record(&oobabooga::Call::Reply(call))))
                     .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
             )),
         }
