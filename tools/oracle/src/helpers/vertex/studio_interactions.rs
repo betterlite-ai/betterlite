@@ -80,38 +80,38 @@ impl crate::helpers::Helper for Op {
 
 fn resolve(call: &Call) -> crate::helpers::HelperResult {
     match call {
-        Call::TransformRequest(request) => {
-            let text = request.input.as_ref().map(|text| Json::Text(text.clone()));
-            let body = transform_request(
-                request.model.as_deref(),
-                request.agent.as_deref(),
-                text.as_ref(),
-                &request.optional_params,
-            )
-            .or_value_error()?;
-            Ok(json!({ "body": body }))
-        }
-        Call::Lifecycle(given) => {
-            let settings = Settings {
-                environment_key: None,
-                generic_api_key: None,
-                api_base: DEFAULT_API_BASE.to_owned(),
-            };
-            let params = StudioParams {
-                api_key: Some(SecretString::from("key")),
-            };
-            let url = lifecycle_request(
-                given.action,
-                &given.interaction_id,
-                Some(&given.api_base),
-                &params,
-                &settings,
-            )
-            .or_value_error()?;
-            Ok(json!({ "url": url }))
-        }
+        Call::TransformRequest(given) => request_call(given),
+        Call::Lifecycle(given) => lifecycle_call(given),
         Call::Response(given) => response_call(given),
     }
+}
+
+fn request_call(call: &RequestCall) -> crate::helpers::HelperResult {
+    let text = call.input.clone().map(Json::Text);
+    let (model, agent) = (call.model.as_deref(), call.agent.as_deref());
+    transform_request(model, agent, text.as_ref(), &call.optional_params)
+        .map(|body| json!({ "body": body }))
+        .or_value_error()
+}
+
+fn fixed_inputs() -> (Settings, StudioParams) {
+    let settings = Settings {
+        environment_key: None,
+        generic_api_key: None,
+        api_base: DEFAULT_API_BASE.to_owned(),
+    };
+    let params = StudioParams {
+        api_key: Some(SecretString::from("key")),
+    };
+    (settings, params)
+}
+
+fn lifecycle_call(call: &LifecycleCall) -> crate::helpers::HelperResult {
+    let (settings, params) = fixed_inputs();
+    let base = Some(call.api_base.as_str());
+    lifecycle_request(call.action, &call.interaction_id, base, &params, &settings)
+        .map(|url| json!({ "url": url }))
+        .or_value_error()
 }
 
 fn response_call(call: &ResponseCall) -> crate::helpers::HelperResult {
