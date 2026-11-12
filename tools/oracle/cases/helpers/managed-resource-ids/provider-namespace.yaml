@@ -1,0 +1,24 @@
+kind: helper
+name: managed-resource-ids-provider-namespace
+call:
+  managed_resource_ids:
+    calls:
+      - {"function": "resolve_provider", "provider": null}
+      - {"function": "resolve_provider", "provider": ""}
+      - {"function": "resolve_provider", "provider": "OPENAI"}
+      - {"function": "resolve_provider", "provider": {"llm_provider": "openai"}}
+      - {"function": "resolve_provider", "provider": "AZURE_AI"}
+      - {"function": "resolve_provider", "provider": "x.azure"}
+      - {"function": "resolve_provider", "provider": "openai_compatible"}
+      - {"function": "resolve_provider", "provider": "azure"}
+      - {"function": "resolve_provider", "provider": "x.azure_ai"}
+      - {"function": "resolve_provider", "provider": "x.openai"}
+      - {"function": "resolve_provider", "provider": "Azure"}
+      - {"function": "resolve_provider", "provider": "azure.x"}
+      - {"function": "resolve_provider", "provider": "xopenai"}
+      - {"function": "resolve_provider", "provider": "x.OpenAI"}
+      - {"function": "resolve_provider", "provider": "x.Azure_AI"}
+      - {"function": "resolve_provider", "provider": "openai.x"}
+      - {"function": "resolve_provider", "provider": "azure_ai.x"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: claude_platform_inputs_explicit_region_required
+call:
+  claude_platform_inputs:
+    explicit_region_required:
+      cases:
+        - optional_params: {aws_region_name: eu-west-1}
+          environment: {}
+        - optional_params: {}
+          environment: {AWS_REGION: us-east-2}
+env: {}
+compare: {ignore: []}

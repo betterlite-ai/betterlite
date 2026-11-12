@@ -1,0 +1,14 @@
+task: B3971
+deviations:
+  - what: POSTHOG_MOCK answers a PostHog-hosted URL with a 200 response without a network call instead of patching LiteLLM's process-wide httpx clients.
+    why: betterlite injects its HTTP client per logger, so the posthog_mock_client factory has no global client to patch, and a custom host stays live exactly as LiteLLM's URL matcher leaves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog_mock_client.py#L18-L35
+  - what: The exit flush runs from the server's shutdown token and clears the events it read when every batch succeeds.
+    why: betterlite has no process atexit registry, and LiteLLM's whole-list clear would drop an event appended during the await.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L88
+  - what: A request posthog_api_url is used only when the same request also brings its own non-empty posthog_api_key, and only after it passes the user-URL SSRF check; a URL that fails drops that batch. LiteLLM takes the request URL unconditionally and falls back to the gateway key.
+    why: LiteLLM lets any request send the gateway's PostHog key, plus its prompt and response, to a request-named URL, internal addresses included; betterlite refuses that unless the request supplies both its own key and an unblocked URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L315-L339
+  - what: Only the requester's metadata becomes PostHog custom properties; the proxy-level metadata fields LiteLLM forwards from litellm_params.metadata (tags, user_agent, spend_logs_metadata and the rest) are not sent.
+    why: betterlite's LoggerEvent carries the standard logging payload directly, and its metadata.requester_metadata is the caller-supplied dict; the proxy plumbing fields LiteLLM copies out of litellm_params.metadata are not present on that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/posthog.py#L404-L407

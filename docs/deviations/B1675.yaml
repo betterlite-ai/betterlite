@@ -1,0 +1,8 @@
+task: B1675
+deviations:
+  - what: Anthropic and Bedrock prices use finite exact Decimal arithmetic; unrepresentable money yields typed errors except inside the source's best-effort Anthropic surcharge block.
+    why: Preserve the original fallback boundary while preventing nonfinite spend from escaping successful calculations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cost_calculation.py#L44-L71
+  - what: The raw Anthropic response probe holds web_search_requests as a signed 64-bit integer, so a count outside that range is reported as absent.
+    why: CostUsage counters are i64 throughout betterlite; Python's unbounded int cannot enter any billing product here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cost_calculation.py#L77-L99
