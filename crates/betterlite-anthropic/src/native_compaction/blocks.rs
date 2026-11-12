@@ -7,34 +7,34 @@ fn objects<'response>(
     value: Option<&'response Json>,
     field: &'static str,
 ) -> Result<Vec<&'response Mapping>, NativeCompactionError> {
-    match value {
-        None | Some(Json::Null) => Ok(Vec::new()),
-        Some(Json::List(items)) => items
-            .iter()
-            .map(|item| {
-                object(Some(item), field)
-                    .ok()
-                    .flatten()
-                    .ok_or(NativeCompactionError::NotAnObjectList { field })
-            })
-            .collect(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+    let Some(Json::List(items)) = value else {
+        return if matches!(value, None | Some(Json::Null)) {
+            Ok(Vec::new())
+        } else {
             Err(NativeCompactionError::NotAnObjectList { field })
-        }
-    }
+        };
+    };
+    items
+        .iter()
+        .map(|item| match item {
+            Json::Object(found) => Ok(found),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                Err(NativeCompactionError::NotAnObjectList { field })
+            }
+        })
+        .collect()
 }
 
 const fn object<'response>(
     value: Option<&'response Json>,
     field: &'static str,
 ) -> Result<Option<&'response Mapping>, NativeCompactionError> {
-    if let Some(Json::Object(found)) = value {
-        return Ok(Some(found));
-    }
-    if matches!(value, None | Some(Json::Null)) {
-        Ok(None)
-    } else {
-        Err(NativeCompactionError::NotAnObject { field })
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(found)) => Ok(Some(found)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(NativeCompactionError::NotAnObject { field })
+        }
     }
 }
 
