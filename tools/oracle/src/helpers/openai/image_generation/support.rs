@@ -39,94 +39,47 @@ impl LogSink for Silent {
 
 // the logger_fn hook runs on every pre/post call, so this keeps the record each phase saw
 #[derive(Default)]
-pub(crate) struct Recorder(Mutex<Vec<Json>>);
+pub(crate) struct Recorder(Mutex<Vec<Value>>);
 
 impl Recorder {
     fn record(&self, details: &Json) {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(details.clone());
+            .push(serde_json::to_value(details).unwrap_or_default());
     }
 
+    // the two callbacks see the same input and additional_args LiteLLM hands its logging object
     pub(crate) fn last(&self, phase: &str) -> Option<Value> {
-        let records = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        records
+        let details = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .iter()
             .rev()
-            .find(|details| event_type(details) == Some(phase))
-            .map(callback_value)
+            .find(|details| details.get("log_event_type") == Some(&json!(phase)))?
+            .clone();
+        let at = |path: &str| details.pointer(path).cloned().unwrap_or_default();
+        let mut header_names: Vec<&String> = details
+            .pointer("/additional_args/headers")
+            .and_then(Value::as_object)
+            .map(|headers| headers.keys().collect())
+            .unwrap_or_default();
+        header_names.sort();
+        let api_base = details
+            .pointer("/additional_args/api_base")
+            .and_then(Value::as_str)
+            .map(|base| base.trim_end_matches('/'));
+        Some(json!({
+            "input": at("/input"),
+            "additional_args": {
+                "api_base": api_base,
+                "complete_input_dict": at("/additional_args/complete_input_dict"),
+                "acompletion": at("/additional_args/acompletion"),
+                "header_names": header_names,
+            },
+        }))
     }
-}
-
-fn event_type(details: &Json) -> Option<&str> {
-    let Json::Object(fields) = details else {
-        return None;
-    };
-    match fields.get("log_event_type") {
-        Some(Json::Text(text)) => Some(text.as_str()),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            None
-        }
-    }
-}
-
-// the two callbacks see the same input and additional_args LiteLLM hands its logging object
-fn callback_value(details: &Json) -> Value {
-    let Json::Object(fields) = details else {
-        return Value::Null;
-    };
-    let input = fields.get("input").cloned().unwrap_or(Json::Null);
-    let additional = fields
-        .get("additional_args")
-        .cloned()
-        .unwrap_or_else(|| Json::Object(indexmap::IndexMap::new()));
-    json!({
-        "input": input,
-        "additional_args": arguments_value(&additional),
-    })
-}
-
-fn arguments_value(additional: &Json) -> Value {
-    let Json::Object(fields) = additional else {
-        return empty_arguments();
-    };
-    let api_base = match fields.get("api_base") {
-        Some(Json::Text(text)) => json!(text.trim_end_matches('/')),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Value::Null
-        }
-    };
-    let complete_input_dict = fields
-        .get("complete_input_dict")
-        .cloned()
-        .unwrap_or(Json::Null);
-    let acompletion = fields.get("acompletion").cloned().unwrap_or(Json::Null);
-    let mut header_names: Vec<String> = match fields.get("headers") {
-        Some(Json::Object(headers)) => headers.keys().cloned().collect(),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Vec::new()
-        }
-    };
-    header_names.sort();
-    json!({
-        "api_base": api_base,
-        "complete_input_dict": complete_input_dict,
-        "acompletion": acompletion,
-        "header_names": header_names,
-    })
-}
-
-fn empty_arguments() -> Value {
-    json!({
-        "api_base": Value::Null,
-        "complete_input_dict": Value::Null,
-        "acompletion": Value::Null,
-        "header_names": Vec::<String>::new(),
-    })
 }
 
 pub(crate) fn observe<T, A>(recorder: &Recorder, action: A) -> Result<T, Box<HelperError>>
