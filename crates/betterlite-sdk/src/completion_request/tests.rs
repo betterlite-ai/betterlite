@@ -6,13 +6,11 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::params::Stop;
 use betterlite_prompts::message_content::{Content, Message};
-use betterlite_router::routing_timeouts::completion::TimeoutValue;
-use betterlite_router::routing_timeouts::seconds::Seconds;
 use indexmap::IndexMap as JsonObject;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
 
-use super::call::PreparedCompletion;
+use super::call::{PreparedCompletion, PreparedTimeout};
 use super::error::CompletionRequestError;
 use super::ports::PromptOutcome;
 use super::{prepare_acompletion, prepare_completion};
@@ -679,12 +677,19 @@ async fn provider_environment_update_records_the_call() {
 }
 
 #[tokio::test]
-async fn provider_timeout_phases_collapse_for_a_provider_without_support() {
+async fn provider_timeout_hands_the_provider_and_stores_the_result() {
     let mut fixture = Fixture::new();
     fixture.metadata.resolved_provider = Some("anthropic");
     fixture.args.timeout = Some(json(r#"{"connect":1,"read":7}"#));
+    fixture.timeout.result = Some(PreparedTimeout::Seconds(7.0));
     let call = call_of(run(&fixture).await.unwrap());
-    assert_eq!(call.timeout, Some(TimeoutValue::Seconds(Seconds(7.0))));
+    assert_eq!(call.timeout, Some(PreparedTimeout::Seconds(7.0)));
+    let calls = fixture.timeout.calls.lock().unwrap().clone();
+    assert_eq!(calls[0].provider, "anthropic");
+    assert_eq!(
+        calls[0].model_timeout,
+        Some(json(r#"{"connect":1,"read":7}"#))
+    );
 }
 
 #[tokio::test]

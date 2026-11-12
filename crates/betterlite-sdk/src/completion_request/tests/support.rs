@@ -21,12 +21,13 @@ use secrecy::SecretString;
 use crate::completion_request::args::{
     CompletionArgs, CompletionFlags, CompletionSettings, JsonObject,
 };
-use crate::completion_request::call::{PreparedCall, PreparedCompletion};
-use crate::completion_request::error::PricingFailure;
+use crate::completion_request::call::{PreparedCall, PreparedCompletion, PreparedTimeout};
+use crate::completion_request::error::{CompletionRequestError, PricingFailure};
 use crate::completion_request::ports::{
-    CacheSeedRequest, ChatPolicy, CompletionLogging, CompletionPorts, EnvironmentUpdate,
-    ModelMetadata, ParameterMappingRequest, PricingRegistration, PromptManagement,
-    PromptManagementError, PromptOutcome, PromptRequest, ProviderLookup,
+    CacheSeedRequest, ChatPolicy, CompletionLogging, CompletionPorts, CompletionTimeout,
+    EnvironmentUpdate, ModelMetadata, ParameterMappingRequest, PricingRegistration,
+    PromptManagement, PromptManagementError, PromptOutcome, PromptRequest, ProviderLookup,
+    TimeoutRequest,
 };
 
 pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -277,6 +278,34 @@ pub(super) struct FakeLogging {
     pub events: Arc<Mutex<Vec<String>>>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct TimeoutCall {
+    pub model_timeout: Option<Json>,
+    pub provider: String,
+}
+
+#[derive(Default)]
+pub(super) struct FakeTimeout {
+    pub result: Option<PreparedTimeout>,
+    pub calls: Arc<Mutex<Vec<TimeoutCall>>>,
+}
+
+impl CompletionTimeout for FakeTimeout {
+    fn resolve(
+        &self,
+        request: &TimeoutRequest<'_>,
+    ) -> Result<PreparedTimeout, CompletionRequestError> {
+        lock(&self.calls).push(TimeoutCall {
+            model_timeout: request.model_timeout.cloned(),
+            provider: request.custom_llm_provider.to_owned(),
+        });
+        Ok(self
+            .result
+            .clone()
+            .unwrap_or(PreparedTimeout::Seconds(600.0)))
+    }
+}
+
 impl CompletionLogging for FakeLogging {
     fn update_environment(&self, update: &EnvironmentUpdate<'_>) {
         lock(&self.events).push(String::from("log"));
@@ -297,6 +326,7 @@ pub(super) struct Fixture {
     pub bridge: FakeBridge,
     pub pricing: FakePricing,
     pub logging: FakeLogging,
+    pub timeout: FakeTimeout,
     pub events: Arc<Mutex<Vec<String>>>,
 }
 
@@ -380,6 +410,10 @@ impl Fixture {
             },
             pricing: pricing_fake(Arc::clone(&events)),
             logging: logging_fake(Arc::clone(&events)),
+            timeout: FakeTimeout {
+                result: None,
+                calls: Arc::new(Mutex::new(Vec::new())),
+            },
             events,
         }
     }
@@ -391,6 +425,7 @@ impl Fixture {
             bridge: &self.bridge,
             pricing: &self.pricing,
             logging: &self.logging,
+            timeout: &self.timeout,
         }
     }
 

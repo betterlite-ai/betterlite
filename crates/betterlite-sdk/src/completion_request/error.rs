@@ -10,7 +10,6 @@ use betterlite_prompts::builtin::PromptError;
 use betterlite_prompts::error::FactoryError;
 use betterlite_prompts::file_ids::limits::FileIdsError;
 use betterlite_prompts::messages::MessageNormalizationError;
-use betterlite_router::routing_timeouts::error::TimeoutError;
 use std::convert::Infallible;
 use thiserror::Error;
 pub type PricingFailure = RequestPricingError<Infallible>;
@@ -57,8 +56,6 @@ pub enum CompletionRequestError {
     FunctionPrompt(#[from] FactoryError),
     #[error(transparent)]
     Affinity(#[from] AffinityError),
-    #[error(transparent)]
-    TimeoutArgument(#[from] TimeoutError),
     #[error(transparent)]
     Pricing(#[from] PricingFailure),
     #[error("the model list entry has no {field} field")]

@@ -1,5 +1,6 @@
 use super::args::JsonObject;
-use super::error::PricingFailure;
+use super::call::PreparedTimeout;
+use super::error::{CompletionRequestError, PricingFailure};
 use async_trait::async_trait;
 use betterlite_context::non_default_params::mapper::OptionalParamsMapper;
 use betterlite_core::responses_bridge::ResponsesBridgeCapabilities;
@@ -66,6 +67,19 @@ pub struct EnvironmentUpdate<'update> {
     pub litellm_params: &'update CallParams,
     pub custom_llm_provider: Option<&'update str>,
 }
+pub struct TimeoutRequest<'request> {
+    pub model_timeout: Option<&'request Json>,
+    pub timeout: Option<&'request Json>,
+    pub request_timeout: Option<&'request Json>,
+    pub configured_request_timeout: Option<f64>,
+    pub custom_llm_provider: &'request str,
+}
+pub trait CompletionTimeout: Sync {
+    fn resolve(
+        &self,
+        request: &TimeoutRequest<'_>,
+    ) -> Result<PreparedTimeout, CompletionRequestError>;
+}
 pub trait ModelMetadata: Sync {
     fn resolve_provider(
         &self,
@@ -120,4 +134,5 @@ pub struct CompletionPorts<'ports> {
     pub bridge: &'ports (dyn ResponsesBridgeCapabilities + Sync),
     pub pricing: &'ports dyn PricingRegistration,
     pub logging: &'ports dyn CompletionLogging,
+    pub timeout: &'ports dyn CompletionTimeout,
 }

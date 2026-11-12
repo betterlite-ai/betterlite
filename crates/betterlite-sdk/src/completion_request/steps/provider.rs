@@ -4,13 +4,9 @@ use crate::completion_request::Preparation;
 use crate::completion_request::args::{CompletionArgs, CompletionSettings, JsonObject};
 use crate::completion_request::call::{FallbackCall, ModelListCall, PreparedCompletion};
 use crate::completion_request::error::{CompletionRequestError, RequestResult};
-use crate::completion_request::ports::ProviderLookup;
+use crate::completion_request::ports::{ProviderLookup, TimeoutRequest};
 use betterlite_models::decisions::Json;
 use betterlite_models::request_pricing::register::CustomPricingRequest;
-use betterlite_router::routing_timeouts::completion::{
-    TimeoutKwargs, TimeoutPhases, TimeoutValue, resolve as resolve_timeout, supports_httpx_timeout,
-};
-use betterlite_router::routing_timeouts::seconds::Seconds;
 pub(crate) fn fallbacks_for(
     args: &CompletionArgs,
     settings: &CompletionSettings,
@@ -132,61 +128,16 @@ pub(crate) fn hidden_params(state: &mut Preparation<'_>) {
         .hidden_params
         .insert(String::from("region_name"), region);
 }
-fn seconds(value: &Json, field: &'static str) -> RequestResult<Seconds> {
-    let parsed = match value {
-        Json::Number(number) => number.as_f64(),
-        Json::Text(text) => text.parse::<f64>().ok(),
-        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
-    };
-    let count = parsed.ok_or(CompletionRequestError::FieldType {
-        field,
-        expected: "a number of seconds",
-    })?;
-    Ok(Seconds::new(field, count)?)
-}
-fn optional_seconds(value: Option<&Json>, field: &'static str) -> RequestResult<Option<Seconds>> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(given) => Ok(Some(seconds(given, field)?)),
-    }
-}
-fn timeout_phases(fields: &JsonObject) -> RequestResult<TimeoutPhases> {
-    Ok(TimeoutPhases {
-        connect: optional_seconds(fields.get("connect"), "timeout.connect")?,
-        read: optional_seconds(fields.get("read"), "timeout.read")?,
-        write: optional_seconds(fields.get("write"), "timeout.write")?,
-        pool: optional_seconds(fields.get("pool"), "timeout.pool")?,
-    })
-}
-fn model_timeout(value: &Json) -> RequestResult<Option<TimeoutValue>> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Object(fields) => Ok(Some(TimeoutValue::Phases(timeout_phases(fields)?))),
-        Json::Number(_) | Json::Text(_) => {
-            Ok(Some(TimeoutValue::Seconds(seconds(value, "timeout")?)))
-        }
-        Json::Bool(_) | Json::List(_) => Err(CompletionRequestError::FieldType {
-            field: "timeout",
-            expected: "a number of seconds or a timeout object",
-        }),
-    }
-}
 pub(crate) fn timeout(state: &mut Preparation<'_>) -> RequestResult<()> {
-    let given = match &state.args.timeout {
-        Some(value) => model_timeout(value)?,
-        None => None,
-    };
-    let kwargs = TimeoutKwargs {
-        timeout: optional_seconds(state.kwargs.get("timeout"), "timeout")?,
-        request_timeout: optional_seconds(state.kwargs.get("request_timeout"), "request_timeout")?,
-    };
     let provider = provider_name(state);
-    state.call.timeout = Some(resolve_timeout(
-        given,
-        &kwargs,
-        state.settings.request_timeout,
-        supports_httpx_timeout(&provider),
-    ));
+    let request = TimeoutRequest {
+        model_timeout: state.args.timeout.as_ref(),
+        timeout: state.kwargs.get("timeout"),
+        request_timeout: state.kwargs.get("request_timeout"),
+        configured_request_timeout: state.settings.request_timeout,
+        custom_llm_provider: &provider,
+    };
+    state.call.timeout = Some(state.ports.timeout.resolve(&request)?);
     Ok(())
 }
 fn pricing_gate(kwargs: &JsonObject) -> bool {

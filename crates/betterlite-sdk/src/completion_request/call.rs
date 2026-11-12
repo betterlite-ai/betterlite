@@ -4,8 +4,19 @@ use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
-use betterlite_router::routing_timeouts::completion::TimeoutValue;
 use secrecy::SecretString;
+#[derive(Clone, Debug, PartialEq)]
+pub enum PreparedTimeout {
+    Seconds(f64),
+    Phases(PreparedTimeoutPhases),
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedTimeoutPhases {
+    pub connect: Option<f64>,
+    pub read: Option<f64>,
+    pub write: Option<f64>,
+    pub pool: Option<f64>,
+}
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PreparedOptionalParams {
     pub params: Params,
@@ -24,7 +35,7 @@ pub struct PreparedCall {
     pub headers: AdditionalHeaders,
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
-    pub timeout: Option<TimeoutValue>,
+    pub timeout: Option<PreparedTimeout>,
     pub max_retries: Option<i64>,
     pub stream: bool,
     pub choice_count: Option<u64>,

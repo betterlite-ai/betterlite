@@ -12,7 +12,6 @@ use crate::completion_options::control::resolve_control_options;
 use betterlite_core::message_utilities::validators::StopSequences;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::decisions::Json;
-use betterlite_router::routing_timeouts::seconds::Seconds;
 use std::time::Duration;
 use tokio::time::sleep;
 pub(crate) struct Preparation<'request> {
@@ -149,8 +148,22 @@ fn timeout_duration(timeout: &Json) -> RequestResult<Duration> {
         field: "timeout",
         expected: "a number of seconds",
     })?;
-    let seconds = Seconds::new("timeout", count)?;
-    Ok(seconds.duration("timeout")?)
+    if !count.is_finite() {
+        return Err(CompletionRequestError::FieldType {
+            field: "timeout",
+            expected: "a finite number of seconds",
+        });
+    }
+    if count < 0.0_f64 {
+        return Err(CompletionRequestError::FieldType {
+            field: "timeout",
+            expected: "a non-negative number of seconds",
+        });
+    }
+    Duration::try_from_secs_f64(count).map_err(|_source| CompletionRequestError::FieldType {
+        field: "timeout",
+        expected: "a number of seconds within range",
+    })
 }
 fn working_args(head: &Preparation<'_>, args: &CompletionArgs) -> RequestResult<CompletionArgs> {
     let mut working = args.clone();

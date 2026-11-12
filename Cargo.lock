@@ -2873,7 +2873,6 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
- "betterlite-router",
  "chrono",
  "hex",
  "http 1.5.0",

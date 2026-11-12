@@ -1,7 +1,6 @@
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::controls::optional_params::OptionalParams;
 use betterlite_models::decisions::Json;
-use betterlite_router::routing_timeouts::seconds::Seconds;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -65,7 +64,7 @@ pub struct CompletionSettings {
     pub model_fallbacks: Option<Vec<Json>>,
     pub model_alias_map: BTreeMap<String, String>,
     pub num_retries: Option<i64>,
-    pub request_timeout: Option<Seconds>,
+    pub request_timeout: Option<f64>,
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub route_all_to_responses: bool,
