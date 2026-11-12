@@ -466,10 +466,7 @@ fn the_backoff_defaults_are_litellms_constants() {
 #[case::not_found_status_skips(404, &["dep-1"])]
 #[case::rate_limit_status_retries(429, &[])]
 #[case::server_status_retries(503, &[])]
-fn only_a_non_retryable_answer_skips_the_deployment(
-    #[case] status: u16,
-    #[case] expected: &[&str],
-) {
+fn only_a_non_retryable_answer_skips_the_deployment(#[case] status: u16, #[case] want: &[&str]) {
     let skipped = skipped_deployment_ids(
         status,
         FailedDeployment {
@@ -478,6 +475,7 @@ fn only_a_non_retryable_answer_skips_the_deployment(
         },
         &[],
     );
+    let expected: Vec<String> = want.iter().map(|name| (*name).to_owned()).collect();
     assert_eq!(skipped, expected);
 }
 
@@ -492,5 +490,6 @@ fn skipped_deployment_ids_are_sorted_and_unique() {
         },
         &already,
     );
-    assert_eq!(skipped, ["dep-1", "dep-5", "dep-9"]);
+    let expected = ["dep-1", "dep-5", "dep-9"].map(str::to_owned).to_vec();
+    assert_eq!(skipped, expected);
 }

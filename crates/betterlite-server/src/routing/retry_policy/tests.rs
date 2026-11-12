@@ -80,14 +80,14 @@ router_settings:
 ";
     let resolved = settings(source, &[]);
     let class = FailureClass::Authentication;
-    assert_eq!(
-        resolved
-            .policies
-            .retries_for(class, Some(401), Some("gpt-4")),
-        Some(7)
-    );
-    assert_eq!(
-        resolved.policies.retries_for(class, Some(401), None),
-        Some(2)
-    );
+    let group_retries = resolved
+        .policies
+        .selected(Some("gpt-4"))
+        .and_then(|policy| policy.retries_for(class, Some(401)));
+    assert_eq!(group_retries, Some(7));
+    let global_retries = resolved
+        .policies
+        .selected(None)
+        .and_then(|policy| policy.retries_for(class, Some(401)));
+    assert_eq!(global_retries, Some(2));
 }

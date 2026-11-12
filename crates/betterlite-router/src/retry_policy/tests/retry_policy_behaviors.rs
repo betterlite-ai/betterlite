@@ -379,12 +379,13 @@ fn a_non_retryable_answer_skips_its_deployment(
     #[case] retry_skip: Option<&str>,
     #[case] failed: Option<&str>,
     #[case] already_skipped: &[&str],
-    #[case] expected: &[&str],
+    #[case] want: &[&str],
 ) {
     let already: Vec<String> = already_skipped
         .iter()
         .map(|name| (*name).to_owned())
         .collect();
+    let expected: Vec<String> = want.iter().map(|name| (*name).to_owned()).collect();
     let skipped = skipped_deployment_ids(
         status,
         FailedDeployment {
