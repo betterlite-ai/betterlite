@@ -69,7 +69,7 @@ def case_result(case: Case) -> Result:
     if eligible:
         request_body = transform_openai_messages_to_gemini_context_caching(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
             model=case["model"],
-            messages=cached,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
+            messages=list(cached),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
             custom_llm_provider=case["provider"],
             cache_key=case["cache_key"],
             vertex_project=case["project"],
