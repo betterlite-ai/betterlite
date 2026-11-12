@@ -586,6 +586,9 @@ fn decode_embedding_reply_wraps_json_failure_with_the_response() {
 #[case::total_text(r#"{"usage":{"total_tokens":"x"}}"#)]
 #[case::total_fraction(r#"{"usage":{"total_tokens":1.5}}"#)]
 #[case::body_list("[]")]
+#[case::body_fields_by_position(r#"["m",[1],"list",[3,4]]"#)]
+#[case::body_short_list(r#"["m"]"#)]
+#[case::usage_list(r#"{"usage":[3,4]}"#)]
 fn decode_embedding_reply_names_a_wrong_typed_field(#[case] body: &str) {
     let error = reply(body, 200, &Headers::new()).unwrap_err();
     assert!(

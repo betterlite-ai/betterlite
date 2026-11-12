@@ -80,6 +80,9 @@ struct WireReply {
     object: Option<Json>,
     #[serde(default)]
     usage: Option<WireUsage>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -88,6 +91,9 @@ struct WireUsage {
     prompt_tokens: Option<i64>,
     #[serde(default)]
     total_tokens: Option<i64>,
+    // a flattened map keeps serde from accepting a JSON array in place of this object
+    #[serde(flatten)]
+    _extra: Object,
 }
 
 // model, data and object are copied with a nullable get; a missing usage contributes zero counters
