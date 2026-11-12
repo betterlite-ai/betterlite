@@ -1,0 +1,41 @@
+kind: helper
+name: bedrock-converse-events-message-start-id
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000001
+          - 00000000-0000-4000-8000-000000000002
+        steps:
+          - function: state
+          - function: converse
+            chunk: {messageStart: {conversationId: abc-123, role: assistant}}
+          - function: converse
+            chunk: {messageStart: {conversationId: later}}
+          - function: state
+          - function: converse
+            chunk: {delta: {text: x}, contentBlockIndex: 0}
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000003
+          - 00000000-0000-4000-8000-000000000004
+        steps:
+          - function: converse
+            chunk: {messageStart: {role: assistant}}
+          - function: state
+          - function: converse
+            chunk: {delta: {text: x}, contentBlockIndex: 0}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000005
+        steps:
+          - function: chunk
+            chunk: {messageStart: {conversationId: nova-id}}
+          - function: state
+env: {}
+compare: {ignore: []}

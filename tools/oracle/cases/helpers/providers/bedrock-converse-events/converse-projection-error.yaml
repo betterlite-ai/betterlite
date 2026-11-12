@@ -1,0 +1,51 @@
+kind: helper
+name: bedrock-converse-events-converse-projection-error
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000081
+        steps:
+          - function: converse
+            chunk: {delta: {toolUse: {}}}
+          - function: state
+          - function: converse
+            chunk: {start: {toolUse: {name: x}}}
+          - function: state
+          - function: converse
+            chunk: {usage: {}}
+          - function: converse
+            chunk: {usage: null}
+          - function: converse
+            chunk: {start: 5}
+          - function: converse
+            chunk: {delta: []}
+          - function: converse
+            chunk: {contentBlockIndex: []}
+          - function: chunk
+            chunk: {outputs: 5}
+          - function: chunk
+            chunk: {outputs: [5]}
+          - function: chunk
+            chunk: {metadata: 5}
+          - function: state
+      - model: ai21.j2
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000082
+        steps:
+          - function: chunk
+            chunk: {completions: 5}
+          - function: chunk
+            chunk: {completions: []}
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000083
+        steps:
+          - function: converse
+            chunk: {messageStart: 5}
+env: {}
+compare: {ignore: []}

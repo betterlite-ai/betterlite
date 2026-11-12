@@ -1,0 +1,63 @@
+kind: helper
+name: bedrock-converse-events-invoke-chunk-provider-dispatch
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000061
+        steps:
+          - function: chunk
+            chunk: {outputText: plain}
+          - function: chunk
+            chunk: {delta: {text: x}, contentBlockIndex: 0}
+          - function: chunk
+            chunk: {metrics: {latencyMs: 5}}
+          - function: chunk
+            chunk: {trace: null}
+          - function: chunk
+            chunk: {outputs: [{text: mistral}], stop_reason: stop}
+          - function: chunk
+            chunk: {outputs: [], stop_reason: null}
+          - function: chunk
+            chunk: {outputs: [{text: null}], stop_reason: length}
+          - function: chunk
+            chunk: {outputs: [{text: a}, {text: b}], stop_reason: ''}
+          - function: chunk
+            chunk: {generation: meta}
+          - function: chunk
+            chunk: {text: cohere}
+          - function: chunk
+            chunk: {finish_reason: complete}
+          - function: chunk
+            chunk: {completionReason: FINISH}
+          - function: chunk
+            chunk: {completionReason: ''}
+          - function: chunk
+            chunk: {usage: {inputTokens: 1, outputTokens: 2}}
+          - function: chunk
+            chunk: {unknown: value}
+          - function: state
+      - model: ai21.j2
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000062
+        steps:
+          - function: chunk
+            chunk: {completions: [{data: {text: a21}}]}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000063
+        steps:
+          - function: chunk
+            chunk: {messageStart: {conversationId: nova-id}}
+          - function: chunk
+            chunk: {contentBlockStart: {start: {}, contentBlockIndex: 0}, messageStart: {role: assistant}}
+          - function: chunk
+            chunk: {messageStop: {stopReason: end_turn}}
+          - function: state
+env: {}
+compare: {ignore: []}
