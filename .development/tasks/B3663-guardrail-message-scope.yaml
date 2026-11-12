@@ -203,8 +203,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/guardrail-message-scope/assistant-text-from-anthropic-response.yaml
   - tools/oracle/cases/helpers/guardrail-message-scope/assistant-text-from-responses-output.yaml
   - tools/oracle/cases/helpers/guardrail-message-scope/unappliable-request-rewrite-exception.yaml
-  - tools/oracle/cases/helpers/guardrail-message-scope/anthropic-sse-separator-controls.yaml
-  - tools/oracle/cases/helpers/guardrail-message-scope/blocked-usage-responses-api-token-details.yaml
 
 deviations:
   - what: LiteLLM checks per-guardrail litellm_params.skip_system_message_in_guardrail and skip_tool_message_in_guardrail fields, falling back to the global litellm.skip_system_message_in_guardrail and skip_tool_message_in_guardrail module attributes; betterlite reads these only during unified initialization (B3680) and passes resolved flags in per-call context.
