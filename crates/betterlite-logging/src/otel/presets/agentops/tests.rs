@@ -356,11 +356,17 @@ async fn factory_posts_the_key_once_and_carries_the_bearer_on_every_export() {
     let bearer = format!("Bearer {TOKEN}");
     let exports = fake.exports();
     assert_eq!(exports.len(), 2);
-    for export in &exports {
-        assert_eq!(export.method, Method::POST);
-        assert_eq!(export.uri, "https://collector.example/custom/traces");
-        assert_eq!(export.header("authorization"), Some(bearer.as_str()));
-    }
+    assert!(exports.iter().all(|export| export.method == Method::POST));
+    assert!(
+        exports
+            .iter()
+            .all(|export| export.uri == "https://collector.example/custom/traces")
+    );
+    assert!(
+        exports
+            .iter()
+            .all(|export| export.header("authorization") == Some(bearer.as_str()))
+    );
     assert_eq!(fake.auth_posts(), 1);
 }
 

@@ -32,10 +32,10 @@ use rstest::rstest;
 #[case::langfuse_dynamic_headers_missing_secret("langfuse-dynamic-headers-missing-secret.yaml")]
 #[case::registry_unknown_callback("registry-unknown-callback.yaml")]
 #[case::registry_dynamic_headers_empty_params("registry-dynamic-headers-empty-params.yaml")]
-#[case::registry_dynamic_headers_levo_unsupported(
-    "registry-dynamic-headers-levo-unsupported.yaml"
+#[case::registry_dynamic_headers_levo_unsupported("registry-dynamic-headers-levo-unsupported.yaml")]
+#[case::registry_dynamic_endpoint_newrelic_default(
+    "registry-dynamic-endpoint-newrelic-default.yaml"
 )]
-#[case::registry_dynamic_endpoint_newrelic_default("registry-dynamic-endpoint-newrelic-default.yaml")]
 #[case::registry_project_headers_phoenix_only("registry-project-headers-phoenix-only.yaml")]
 #[case::destination_capable_backends("destination-capable-backends.yaml")]
 #[case::destination_langfuse_us_default("destination-langfuse-us-default.yaml")]

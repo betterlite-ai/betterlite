@@ -7,9 +7,7 @@ use betterlite_logging::otel::presets::base::Preset;
 use betterlite_logging::otel::presets::destinations::{
     destination_capable_backends, destination_for,
 };
-use betterlite_logging::otel::presets::langfuse::{
-    LangfusePreset, langfuse_dynamic_headers,
-};
+use betterlite_logging::otel::presets::langfuse::{LangfusePreset, langfuse_dynamic_headers};
 use betterlite_logging::otel::presets::newrelic::{
     NewrelicPreset, newrelic_dynamic_endpoint, newrelic_dynamic_headers,
 };
@@ -121,16 +119,14 @@ impl crate::helpers::Helper for Op {
             | Function::NewrelicDynamicEndpoint
             | Function::SignozDynamicHeaders
             | Function::SignozDynamicEndpoint
-            | Function::LangfuseDynamicHeaders => {
-                builder_result(input.function, &values, &hosts)
-            }
+            | Function::LangfuseDynamicHeaders => builder_result(input.function, &values, &hosts),
             Function::PresetFor => Ok(json!(preset_for(input.callback_name()).is_some())),
-            Function::DynamicOtlpHeaders => Ok(dynamic_otlp_headers(
-                callback_name,
-                input.json_params(),
-                &hosts,
-            )
-            .map_or(Value::Null, |headers| headers_value(&headers))),
+            Function::DynamicOtlpHeaders => {
+                Ok(
+                    dynamic_otlp_headers(callback_name, input.json_params(), &hosts)
+                        .map_or(Value::Null, |headers| headers_value(&headers)),
+                )
+            }
             Function::DynamicOtlpEndpoint => {
                 let endpoint = dynamic_otlp_endpoint(callback_name, input.json_params(), &hosts);
                 Ok(json!(endpoint))
@@ -154,17 +150,11 @@ fn builder_result(
     hosts: &[AllowedDestination],
 ) -> crate::helpers::HelperResult {
     match function {
-        Function::NewrelicDynamicHeaders => {
-            Ok(headers_value(&newrelic_dynamic_headers(values)))
-        }
+        Function::NewrelicDynamicHeaders => Ok(headers_value(&newrelic_dynamic_headers(values))),
         Function::NewrelicDynamicEndpoint => Ok(json!(newrelic_dynamic_endpoint(values))),
-        Function::SignozDynamicHeaders => {
-            Ok(headers_value(&signoz_dynamic_headers(values, hosts)))
-        }
+        Function::SignozDynamicHeaders => Ok(headers_value(&signoz_dynamic_headers(values, hosts))),
         Function::SignozDynamicEndpoint => Ok(json!(signoz_dynamic_endpoint(values, hosts))),
-        Function::LangfuseDynamicHeaders => {
-            Ok(headers_value(&langfuse_dynamic_headers(values)))
-        }
+        Function::LangfuseDynamicHeaders => Ok(headers_value(&langfuse_dynamic_headers(values))),
         Function::AgentopsPreset
         | Function::DestinationCapableBackends
         | Function::DestinationFor
@@ -204,9 +194,7 @@ fn destination_result(input: &Input, hosts: &[AllowedDestination]) -> Value {
         input.json_params(),
         input.service_name.as_deref(),
     );
-    destination
-        .as_ref()
-        .map_or(Value::Null, destination_value)
+    destination.as_ref().map_or(Value::Null, destination_value)
 }
 
 fn invalid(message: &str) -> Box<crate::helpers::HelperError> {

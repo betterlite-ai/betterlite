@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_logging::otel::config::destination::SpanScope;
-use betterlite_logging::otel::config::{
-    CaptureMessageContent, ExporterSpec, Settings,
-};
+use betterlite_logging::otel::config::{CaptureMessageContent, ExporterSpec, Settings};
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
