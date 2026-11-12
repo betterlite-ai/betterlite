@@ -280,7 +280,7 @@ async fn context_var_set() {
     assert_eq!(logger.in_flight_flushes.load(Ordering::SeqCst), 0);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn adaptive_samples_record() {
     let observer = Arc::new(RecordingSink::default());
     let client = ScriptedClient::with_replies(&[(429, ""), (200, "")]);
