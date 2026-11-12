@@ -48,6 +48,8 @@ impl Default for HttpPolicy {
     }
 }
 
+pub type BuiltSource = Result<Arc<dyn TokenSource>, CredentialSourceError>;
+
 pub trait TokenSource: Send + Sync {
     fn access_token(
         &self,
@@ -56,37 +58,17 @@ pub trait TokenSource: Send + Sync {
 
 // the six constructors VertexBase.load_auth dispatches to, behind a seam so a test injects them
 pub trait CredentialBuilders: Send + Sync {
-    fn service_account(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
-    fn authorized_user(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
-    fn identity_pool(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
-    fn identity_pool_with_aws(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
-    fn metadata(
-        &self,
-        endpoint: Option<&str>,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
+    fn service_account(&self, document: &str, scopes: &[String]) -> BuiltSource;
+    fn authorized_user(&self, document: &str, scopes: &[String]) -> BuiltSource;
+    fn identity_pool(&self, document: &str, scopes: &[String]) -> BuiltSource;
+    fn identity_pool_with_aws(&self, document: &str, scopes: &[String]) -> BuiltSource;
+    fn metadata(&self, endpoint: Option<&str>, scopes: &[String]) -> BuiltSource;
     fn aws_federation(
         &self,
         input: FederationInput,
         resolver: Arc<dyn AwsCredentialsSource>,
         clock: Arc<dyn CredentialClock>,
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
+    ) -> BuiltSource;
     fn metadata_project(
         &self,
         endpoint: Option<&str>,
@@ -128,10 +110,7 @@ impl TokenSource for GoogleTokenSource {
     }
 }
 
-fn build(
-    kind: &'static str,
-    result: Result<AccessTokenCredentials, BuildError>,
-) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+fn build(kind: &'static str, result: Result<AccessTokenCredentials, BuildError>) -> BuiltSource {
     let credentials = result.map_err(|source| CredentialSourceError::Build { kind, source })?;
     let source: Arc<dyn TokenSource> = Arc::new(GoogleTokenSource(credentials));
     Ok(source)
@@ -149,51 +128,31 @@ macro_rules! with_http_policy {
 }
 
 impl CredentialBuilders for GoogleAuth {
-    fn service_account(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn service_account(&self, document: &str, scopes: &[String]) -> BuiltSource {
         let key = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
         let builder = ServiceAccountBuilder::new(key)
             .with_access_specifier(AccessSpecifier::from_scopes(scopes.iter().cloned()));
         build("service_account", builder.build_access_token_credentials())
     }
 
-    fn authorized_user(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn authorized_user(&self, document: &str, scopes: &[String]) -> BuiltSource {
         let key = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
         let builder = with_http_policy!(user_account::Builder::new(key), scopes, &self.policy);
         build("authorized_user", builder.build_access_token_credentials())
     }
 
-    fn identity_pool(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn identity_pool(&self, document: &str, scopes: &[String]) -> BuiltSource {
         let key = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
         let builder = with_http_policy!(external_account::Builder::new(key), scopes, &self.policy);
         build("external_account", builder.build_access_token_credentials())
     }
 
     // google-cloud-auth picks the AWS subject token from credential_source itself
-    fn identity_pool_with_aws(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn identity_pool_with_aws(&self, document: &str, scopes: &[String]) -> BuiltSource {
         self.identity_pool(document, scopes)
     }
 
-    fn metadata(
-        &self,
-        endpoint: Option<&str>,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn metadata(&self, endpoint: Option<&str>, scopes: &[String]) -> BuiltSource {
         let mut builder = with_http_policy!(mds::Builder::default(), scopes, &self.policy);
         if let Some(host) = endpoint {
             builder = builder.with_endpoint(format!("http://{host}"));
@@ -206,7 +165,7 @@ impl CredentialBuilders for GoogleAuth {
         input: FederationInput,
         resolver: Arc<dyn AwsCredentialsSource>,
         clock: Arc<dyn CredentialClock>,
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    ) -> BuiltSource {
         Ok(Arc::new(AwsWifTokenSource {
             input,
             resolver,

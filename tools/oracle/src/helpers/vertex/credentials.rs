@@ -3,10 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
-use betterlite_vertex::credential_sources::getters::{
-    VertexParams, explicit_vertex_ai_location, safe_get_vertex_ai_credentials,
-    safe_get_vertex_ai_location, safe_get_vertex_ai_project,
-};
+use betterlite_vertex::credential_sources::getters::VertexParams;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -88,10 +85,10 @@ fn projection(scenario: &Scenario) -> Value {
         ai_credentials: params_ai_credentials.as_ref(),
     };
     json!({
-        "project": safe_get_vertex_ai_project(&params, &settings),
-        "location": safe_get_vertex_ai_location(&params, &settings),
-        "credentials": safe_get_vertex_ai_credentials(&params, &settings).and_then(ConfiguredCredentials::as_text),
-        "explicit_location": explicit_vertex_ai_location(&params),
+        "project": params.safe_get_vertex_ai_project(&settings),
+        "location": params.safe_get_vertex_ai_location(&settings),
+        "credentials": params.safe_get_vertex_ai_credentials(&settings).and_then(ConfiguredCredentials::as_text),
+        "explicit_location": params.explicit_vertex_ai_location(),
     })
 }
 

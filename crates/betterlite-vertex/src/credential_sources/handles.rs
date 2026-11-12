@@ -12,7 +12,7 @@ use super::adc::{AdcDeps, credentials_from_default_auth};
 use super::aws::AwsCredentialsSource;
 use super::error::CredentialSourceError;
 use super::files::FileReader;
-use super::sdk::{CredentialBuilders, CredentialClock, TokenSource};
+use super::sdk::{BuiltSource, CredentialBuilders, CredentialClock, TokenSource};
 use crate::aws_federation::FederationInput;
 
 pub const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
@@ -92,10 +92,7 @@ pub(crate) fn decode_configured(
     }
 }
 
-fn build_configured(
-    source: &CredentialSource,
-    deps: &LoadDeps<'_>,
-) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+fn build_configured(source: &CredentialSource, deps: &LoadDeps<'_>) -> BuiltSource {
     let scopes = [CLOUD_PLATFORM_SCOPE.to_owned()];
     let document = source.document();
     match source {

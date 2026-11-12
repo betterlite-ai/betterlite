@@ -10,7 +10,7 @@ use betterlite_config::sections::vertex_credential_sources::vertex_settings::Adc
 
 use super::error::CredentialSourceError;
 use super::files::FileReader;
-use super::sdk::{CredentialBuilders, TokenSource};
+use super::sdk::{BuiltSource, CredentialBuilders, TokenSource};
 
 pub struct AdcDeps<'deps> {
     pub environment: &'deps AdcEnvironment,
@@ -81,7 +81,7 @@ fn build_adc_source(
     source: &CredentialSource,
     scopes: &[String],
     builders: &dyn CredentialBuilders,
-) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+) -> BuiltSource {
     let document = source.document();
     match source {
         CredentialSource::ServiceAccount(_) => builders.service_account(&document, scopes),

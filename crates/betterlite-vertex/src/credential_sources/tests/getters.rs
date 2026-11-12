@@ -5,10 +5,7 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::C
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use secrecy::SecretString;
 
-use crate::credential_sources::getters::{
-    VertexParams, explicit_vertex_ai_location, safe_get_vertex_ai_credentials,
-    safe_get_vertex_ai_location, safe_get_vertex_ai_project,
-};
+use crate::credential_sources::getters::VertexParams;
 
 fn text(value: &str) -> ConfiguredCredentials {
     ConfiguredCredentials::Text(SecretString::from(value))
@@ -47,22 +44,20 @@ fn empty() -> VertexParams<'static> {
 fn resolves_the_project_aliases_in_order() {
     let module = settings(Some("module-project"), None);
     assert_eq!(
-        safe_get_vertex_ai_project(
-            &params(Some("project"), Some("alias-project"), None, None),
-            &module
-        ),
+        params(Some("project"), Some("alias-project"), None, None)
+            .safe_get_vertex_ai_project(&module),
         Some("project")
     );
     assert_eq!(
-        safe_get_vertex_ai_project(&params(None, Some("alias-project"), None, None), &module),
+        params(None, Some("alias-project"), None, None).safe_get_vertex_ai_project(&module),
         Some("alias-project")
     );
     assert_eq!(
-        safe_get_vertex_ai_project(&empty(), &module),
+        empty().safe_get_vertex_ai_project(&module),
         Some("module-project")
     );
     assert_eq!(
-        safe_get_vertex_ai_project(&empty(), &settings(None, None)),
+        empty().safe_get_vertex_ai_project(&settings(None, None)),
         None
     );
 }
@@ -71,12 +66,12 @@ fn resolves_the_project_aliases_in_order() {
 fn keeps_an_explicit_empty_project() {
     let module = settings(Some("module-project"), None);
     assert_eq!(
-        safe_get_vertex_ai_project(&params(Some(""), None, None, None), &module),
+        params(Some(""), None, None, None).safe_get_vertex_ai_project(&module),
         Some(""),
         "an explicit empty project is used as given"
     );
     assert_eq!(
-        safe_get_vertex_ai_project(&empty(), &settings(Some(""), None)),
+        empty().safe_get_vertex_ai_project(&settings(Some(""), None)),
         Some("")
     );
 }
@@ -87,61 +82,56 @@ fn resolves_the_credential_aliases_in_order() {
     let alias_credentials = text("alias");
     let mut module = settings(Some("module-project"), None);
     module.credentials = Some(text("settings"));
-    let both = VertexParams {
-        project: None,
-        ai_project: None,
-        location: None,
-        ai_location: None,
-        credentials: Some(&params_credentials),
-        ai_credentials: Some(&alias_credentials),
-    };
+    let mut both = empty();
+    both.credentials = Some(&params_credentials);
+    both.ai_credentials = Some(&alias_credentials);
     assert_eq!(
-        safe_get_vertex_ai_credentials(&both, &module).and_then(ConfiguredCredentials::as_text),
+        both.safe_get_vertex_ai_credentials(&module)
+            .and_then(ConfiguredCredentials::as_text),
         Some("params")
     );
-    let alias = VertexParams {
-        project: None,
-        ai_project: None,
-        location: None,
-        ai_location: None,
-        credentials: None,
-        ai_credentials: Some(&alias_credentials),
-    };
+    let mut alias = empty();
+    alias.ai_credentials = Some(&alias_credentials);
     assert_eq!(
-        safe_get_vertex_ai_credentials(&alias, &module).and_then(ConfiguredCredentials::as_text),
+        alias
+            .safe_get_vertex_ai_credentials(&module)
+            .and_then(ConfiguredCredentials::as_text),
         Some("alias")
     );
     assert_eq!(
-        safe_get_vertex_ai_credentials(&empty(), &module).and_then(ConfiguredCredentials::as_text),
+        empty()
+            .safe_get_vertex_ai_credentials(&module)
+            .and_then(ConfiguredCredentials::as_text),
         Some("settings")
     );
-    assert!(safe_get_vertex_ai_credentials(&empty(), &settings(None, None)).is_none());
+    assert!(
+        empty()
+            .safe_get_vertex_ai_credentials(&settings(None, None))
+            .is_none()
+    );
 }
 
 #[test]
 fn resolves_the_location_aliases_in_order() {
     let module = settings(None, Some("module-location"));
     assert_eq!(
-        safe_get_vertex_ai_location(
-            &params(None, None, Some("location"), Some("alias")),
-            &module
-        ),
+        params(None, None, Some("location"), Some("alias")).safe_get_vertex_ai_location(&module),
         Some("location")
     );
     assert_eq!(
-        safe_get_vertex_ai_location(&params(None, None, None, Some("alias")), &module),
+        params(None, None, None, Some("alias")).safe_get_vertex_ai_location(&module),
         Some("alias")
     );
     assert_eq!(
-        safe_get_vertex_ai_location(&empty(), &module),
+        empty().safe_get_vertex_ai_location(&module),
         Some("module-location")
     );
     assert_eq!(
-        safe_get_vertex_ai_location(&empty(), &settings(None, None)),
+        empty().safe_get_vertex_ai_location(&settings(None, None)),
         None
     );
     assert_eq!(
-        safe_get_vertex_ai_location(&params(None, None, Some(""), Some("alias")), &module),
+        params(None, None, Some(""), Some("alias")).safe_get_vertex_ai_location(&module),
         Some("alias")
     );
 }
@@ -149,24 +139,24 @@ fn resolves_the_location_aliases_in_order() {
 #[test]
 fn explicit_location_has_no_fallback() {
     assert_eq!(
-        explicit_vertex_ai_location(&params(None, None, Some("location"), Some("alias"))),
+        params(None, None, Some("location"), Some("alias")).explicit_vertex_ai_location(),
         Some("location")
     );
     assert_eq!(
-        explicit_vertex_ai_location(&params(None, None, None, Some("alias"))),
+        params(None, None, None, Some("alias")).explicit_vertex_ai_location(),
         Some("alias")
     );
-    assert_eq!(explicit_vertex_ai_location(&empty()), None);
+    assert_eq!(empty().explicit_vertex_ai_location(), None);
     assert_eq!(
-        explicit_vertex_ai_location(&params(None, None, Some(""), Some("alias"))),
+        params(None, None, Some(""), Some("alias")).explicit_vertex_ai_location(),
         Some("alias")
     );
     assert_eq!(
-        safe_get_vertex_ai_location(&empty(), &settings(None, Some("module-location"))),
+        empty().safe_get_vertex_ai_location(&settings(None, Some("module-location"))),
         Some("module-location")
     );
     assert_eq!(
-        explicit_vertex_ai_location(&empty()),
+        empty().explicit_vertex_ai_location(),
         None,
         "the explicit lookup never reaches the module setting"
     );

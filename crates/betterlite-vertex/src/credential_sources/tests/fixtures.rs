@@ -22,7 +22,9 @@ use crate::credential_sources::aws::AwsCredentialsSource;
 use crate::credential_sources::error::CredentialSourceError;
 use crate::credential_sources::files::FileReader;
 use crate::credential_sources::handles::{LoadDeps, LoadedAuth, load_auth};
-use crate::credential_sources::sdk::{CredentialBuilders, CredentialClock, TokenSource};
+use crate::credential_sources::sdk::{
+    BuiltSource, CredentialBuilders, CredentialClock, TokenSource,
+};
 
 pub(crate) const TOKEN: &str = "ya29.fixture-token";
 
@@ -76,43 +78,23 @@ impl RecordingBuilders {
 }
 
 impl CredentialBuilders for RecordingBuilders {
-    fn service_account(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn service_account(&self, document: &str, scopes: &[String]) -> BuiltSource {
         Ok(self.recorded_source(format!("service_account {document} {scopes:?}")))
     }
 
-    fn authorized_user(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn authorized_user(&self, document: &str, scopes: &[String]) -> BuiltSource {
         Ok(self.recorded_source(format!("authorized_user {document} {scopes:?}")))
     }
 
-    fn identity_pool(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn identity_pool(&self, document: &str, scopes: &[String]) -> BuiltSource {
         Ok(self.recorded_source(format!("identity_pool {document} {scopes:?}")))
     }
 
-    fn identity_pool_with_aws(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn identity_pool_with_aws(&self, document: &str, scopes: &[String]) -> BuiltSource {
         Ok(self.recorded_source(format!("identity_pool_with_aws {document} {scopes:?}")))
     }
 
-    fn metadata(
-        &self,
-        endpoint: Option<&str>,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    fn metadata(&self, endpoint: Option<&str>, scopes: &[String]) -> BuiltSource {
         Ok(self.recorded_source(format!("metadata {endpoint:?} {scopes:?}")))
     }
 
@@ -121,7 +103,7 @@ impl CredentialBuilders for RecordingBuilders {
         input: FederationInput,
         _resolver: Arc<dyn AwsCredentialsSource>,
         _clock: Arc<dyn CredentialClock>,
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    ) -> BuiltSource {
         self.record(format!(
             "aws_federation {:?} {:?}",
             input.token_url, input.aws.region_name
