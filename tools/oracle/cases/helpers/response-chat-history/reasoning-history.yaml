@@ -5,7 +5,7 @@ call:
     operation: reasoning_history
     messages:
       - {role: assistant, content: null, reasoning_items: [{id: rs_a, type: reasoning, summary: null, encrypted_content: ""}, {type: reasoning, summary: [{type: summary_text, text: t}]}, {id: rs_b, type: reasoning, summary: [{type: custom, text: u}], encrypted_content: cipher}, {id: "", type: reasoning, summary: [], encrypted_content: null}]}
-      - {role: assistant, content: null, thinking_blocks: [{type: thinking, thinking: x, signature: ""}, {type: thinking, thinking: y, signature: "litellm_encrypted_reasoning:cipher"}, {type: redacted_thinking, data: "litellm_encrypted_reasoning:red"}, {type: thinking, thinking: z, signature: sig}]}
+      - {role: assistant, content: null, thinking_blocks: [{type: thinking, thinking: x, signature: ""}, {type: thinking, thinking: "y", signature: "litellm_encrypted_reasoning:cipher"}, {type: redacted_thinking, data: "litellm_encrypted_reasoning:red"}, {type: thinking, thinking: z, signature: sig}]}
       - {role: assistant, content: null, reasoning_items: [], thinking_blocks: [{type: thinking, thinking: w, signature: sig}]}
       - {role: assistant, content: null, reasoning_items: []}
     output_item_groups:

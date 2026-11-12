@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use betterlite_prompts::message_content::ContentPart;
 use betterlite_prompts::reasoning_fields::replay_groups::{
     ReasoningItemKind, reasoning_items_from_blocks,
@@ -37,8 +36,8 @@ pub struct ReasoningRecord {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReasoningOutputItem {
     Dict { value: Map<String, Value> },
-    Response { value: TypedReasoningItem },
-    ResponseOther,
+    Typed { value: TypedReasoningItem },
+    TypedOther,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -72,7 +71,7 @@ pub fn reasoning_input_items(
     let blocks = replay_blocks
         .iter()
         .map(thinking_block)
-        .collect::<Vec<ContentPart>>();
+        .collect::<Result<Vec<ContentPart>, HistoryError>>()?;
     let mut items = Vec::new();
     for item in reasoning_items_from_blocks(&blocks) {
         let value =
@@ -122,35 +121,14 @@ impl ReasoningIds {
     }
 }
 
-fn thinking_block(block: &Map<String, Value>) -> ContentPart {
-    let kind = block
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    let mut fields = Object::new();
-    for (key, value) in block {
-        if key != "type" {
-            fields.insert(key.clone(), prompt_json(value));
-        }
+fn thinking_block(block: &Map<String, Value>) -> Result<ContentPart, HistoryError> {
+    let mut value = Value::Object(block.clone());
+    if !matches!(block.get("type"), Some(Value::String(_)))
+        && let Value::Object(fields) = &mut value
+    {
+        fields.insert("type".to_owned(), Value::String(String::new()));
     }
-    ContentPart { kind, fields }
-}
-
-fn prompt_json(value: &Value) -> PromptJson {
-    match value {
-        Value::Null => PromptJson::Null,
-        Value::Bool(flag) => PromptJson::Bool(*flag),
-        Value::Number(number) => PromptJson::Number(number.clone()),
-        Value::String(text) => PromptJson::Text(text.clone()),
-        Value::Array(items) => PromptJson::List(items.iter().map(prompt_json).collect()),
-        Value::Object(fields) => PromptJson::Object(
-            fields
-                .iter()
-                .map(|(key, item)| (key.clone(), prompt_json(item)))
-                .collect(),
-        ),
-    }
+    serde_json::from_value(value).map_err(|source| HistoryError::ThinkingBlock { source })
 }
 
 pub fn reasoning_records(
@@ -159,13 +137,13 @@ pub fn reasoning_records(
     let mut records = Vec::new();
     for (index, item) in items.iter().enumerate() {
         match item {
-            ReasoningOutputItem::Response { value } => records.push(response_record(value)),
+            ReasoningOutputItem::Typed { value } => records.push(response_record(value)),
             ReasoningOutputItem::Dict { value }
                 if value.get("type").and_then(Value::as_str) == Some("reasoning") =>
             {
                 records.push(dict_record(value, index)?);
             }
-            ReasoningOutputItem::Dict { .. } | ReasoningOutputItem::ResponseOther => {}
+            ReasoningOutputItem::Dict { .. } | ReasoningOutputItem::TypedOther => {}
         }
     }
     Ok(records)

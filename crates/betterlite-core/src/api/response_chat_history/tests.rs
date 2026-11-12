@@ -471,10 +471,10 @@ fn thinking_blocks_replay_as_summary_items_without_ids() {
 #[test]
 fn reasoning_records_cover_dict_and_response_items() {
     let items = output_items(json!([
-        {"kind": "response", "value": {"id": "rs_t", "encrypted_content": "enc", "summary": [{"type": "summary_text", "text": "typed"}]}},
+        {"kind": "typed", "value": {"id": "rs_t", "encrypted_content": "enc", "summary": [{"type": "summary_text", "text": "typed"}]}},
         {"kind": "dict", "value": {"type": "reasoning", "id": "rs_d", "summary": [{"text": "dict"}], "encrypted_content": null}},
         {"kind": "dict", "value": {"type": "message", "role": "assistant"}},
-        {"kind": "response_other"}
+        {"kind": "typed_other"}
     ]));
     let records = reasoning_records(&items).unwrap();
     assert_eq!(
@@ -498,7 +498,7 @@ fn missing_dict_reasoning_id_becomes_empty_text() {
 fn non_reasoning_output_items_are_skipped() {
     let items = output_items(json!([
         {"kind": "dict", "value": {"type": "message"}},
-        {"kind": "response_other"}
+        {"kind": "typed_other"}
     ]));
     assert!(reasoning_records(&items).unwrap().is_empty());
 }

@@ -19,14 +19,13 @@ pub fn output_tool_fields(
     let arguments = match payload {
         None | Some(Value::Null) => String::new(),
         Some(Value::String(text)) => text.clone(),
-        Some(_) => {
-            return Err(HistoryError::ToolField { field: "arguments" });
-        }
+        Some(_) => return Err(HistoryError::ToolField { field: "arguments" }),
     };
     let default_name = if is_custom { "custom_tool" } else { "" };
     let name = match item.get("name") {
         Some(Value::String(text)) if !text.is_empty() => text.clone(),
-        Some(_) | None => default_name.to_owned(),
+        None | Some(Value::Null | Value::String(_)) => default_name.to_owned(),
+        Some(_) => return Err(HistoryError::ToolField { field: "name" }),
     };
     let provider_specific_fields = match item.get("provider_specific_fields") {
         Some(Value::Object(fields)) if !fields.is_empty() => Some(provider_fields(fields)?),

@@ -28,6 +28,11 @@ pub enum HistoryError {
         #[source]
         source: ToolResultsError,
     },
+    #[error("a thinking block is not a content block")]
+    ThinkingBlock {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("reasoning item {index} has an invalid '{field}' field")]
     ReasoningField { index: usize, field: &'static str },
     #[error("reasoning item {index} carries a summary that is not a list of blocks")]
