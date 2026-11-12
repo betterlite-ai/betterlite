@@ -119,6 +119,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "rerank_contracts"
+path = "fuzz_targets/rerank_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "responses_shapes"
 path = "fuzz_targets/responses_shapes.rs"
 test = false
