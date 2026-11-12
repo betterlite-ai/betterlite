@@ -1,0 +1,27 @@
+kind: helper
+name: anthropic-stream-state-stop-reason
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: null
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: end_turn}}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: max_tokens}}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {}}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: null}}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: ""}}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: tool_use}}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {}, usage: {output_tokens: 7}}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {container: {id: c1}}}}
+      - {function: state}
+      - {function: setup, fields: {converted_response_format_tool: true}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: max_tokens}}}
+      - {function: state}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: citations_delta, citation: {cited_text: cite}}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: compaction_delta, content: {summary: keep}, extra: keep}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: text_delta, content: {summary: ignored}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,35 @@
+kind: helper
+name: vertex-token-cache-legacy-quota-project
+call:
+  vertex_token_cache:
+    scenarios:
+      - credentials:
+          - name: quota-wins
+            token: token-quota
+            state: fresh
+            quota_project_id: quota-project
+            project_id: own-project
+          - name: project-fallback
+            token: token-project
+            state: fresh
+            project_id: fallback-project
+          - name: legacy-no-project
+            token: token-none
+            state: fresh
+        records:
+          - credential: quota-wins
+            credentials: credential-a
+            legacy: true
+          - credential: project-fallback
+            credentials: credential-b
+            legacy: true
+          - credential: legacy-no-project
+            credentials: credential-c
+            legacy: true
+        probes:
+          - credentials: credential-a
+          - credentials: credential-b
+          - credentials: credential-c
+          - credentials: credential-missing
+env: {}
+compare: {ignore: []}
