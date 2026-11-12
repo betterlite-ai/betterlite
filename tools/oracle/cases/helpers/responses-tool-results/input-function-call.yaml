@@ -1,0 +1,24 @@
+kind: helper
+name: input-function-call
+call:
+  responses_tool_results:
+    operation: input_function_call
+    items:
+      - {type: function_call, call_id: c, id: fc_i, name: f, namespace: ns, arguments: "{}"}
+      - {id: fc_i, name: f, arguments: a}
+      - {name: f}
+      - {call_id: "", id: fc_i, name: f}
+      - {call_id: call_0, id: fc_i, name: f}
+      - {name: f, arguments: redacted-by-litellm}
+      - {type: custom_tool_call, name: f, arguments: redacted-by-litellm, input: p}
+      - {name: f, arguments: {x: 1}}
+      - {type: custom_tool_call, call_id: c, name: apply, namespace: ns, input: patch}
+      - {type: custom_tool_call, name: a, input: ""}
+      - {type: custom_tool_call, name: a}
+      - {type: custom_tool_call, name: a, arguments: "", input: "é"}
+      - {type: custom_tool_call, name: a, arguments: '{"k":1}', input: p}
+      - {type: function_call, name: a, input: p}
+      - {name: a, namespace: ""}
+env: {}
+compare:
+  ignore: []

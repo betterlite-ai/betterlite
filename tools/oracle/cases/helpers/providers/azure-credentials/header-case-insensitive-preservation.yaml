@@ -1,0 +1,31 @@
+kind: helper
+name: header-case-insensitive-preservation
+call:
+  azure_credentials:
+    request_headers:
+      - headers: {Api-Key: existing, X-Other: value}
+        client: {azure_ad_token: token, api_key: key-1}
+        provider: {outcome: token, token: provider-token}
+      - headers: {AUTHORIZATION: "Bearer existing", X-Other: value}
+        client: {azure_ad_token: token, api_key: key-1}
+        provider: {outcome: token, token: provider-token}
+      - headers: {X-Other: value}
+        client: {azure_ad_token: token}
+      - headers: {X-Other: value}
+        client: {azure_ad_token: "", api_key: key-1}
+        provider: {outcome: token, token: provider-token}
+      - headers: {X-Other: value}
+        client: {api_key: key-1}
+        provider: {outcome: non_text, type_name: NoneType}
+      - headers: {X-Other: value}
+        client: {api_key: key-1}
+        provider: {outcome: token, token: ""}
+      - headers: {X-Other: value}
+        client: {api_key: key-1}
+      - headers: {X-Other: value}
+        client: {api_key: ""}
+      - headers: {X-Other: value}
+        client: {api_key: key-1}
+        provider: {outcome: raise, class_name: TypeError, message: provider-type}
+env: {}
+compare: {ignore: []}
