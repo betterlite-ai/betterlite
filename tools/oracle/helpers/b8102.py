@@ -14,10 +14,20 @@ BASE_ENV = "LANGGRAPH_API_BASE"
 KEY_ENV = "LANGGRAPH_API_KEY"
 
 
+class TextPart(TypedDict):
+    type: Literal["text"]
+    text: str
+
+
 class Message(TypedDict):
     role: str
-    content: str
+    content: str | list[TextPart]
     metadata: NotRequired[dict[str, JsonValue]]
+
+
+class PromptMessage(TypedDict):
+    role: str
+    content: str
 
 
 class InfoCase(TypedDict):
@@ -77,7 +87,7 @@ class ReplyInput(TypedDict):
 
 Input = InfoInput | UrlInput | HeadersInput | RequestInput | ReplyInput
 
-PROMPT: list[Message] = [{"role": "user", "content": "hello there"}]
+PROMPT: list[PromptMessage] = [{"role": "user", "content": "hello there"}]
 EMPTY: dict[str, JsonValue] = {}
 NO_MESSAGES: list[AllMessageValues] = []
 
@@ -85,7 +95,7 @@ NO_MESSAGES: list[AllMessageValues] = []
 def fake_token_counter(
     *,
     model: str,
-    messages: list[Message] | None = None,
+    messages: list[PromptMessage] | None = None,
     text: str | None = None,
     count_response_tokens: bool = False,
 ) -> int:
