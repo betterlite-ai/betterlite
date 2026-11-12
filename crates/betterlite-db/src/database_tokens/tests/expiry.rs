@@ -97,6 +97,7 @@ fn rds_missing_fields_silent(#[case] token: &str) {
 #[case::bad_integer("20240101T000000Z", "soon")]
 #[case::huge_expiry("20240101T000000Z", "999999999999999999999999")]
 #[case::past_year_9999("99991231T235959Z", "2")]
+#[case::wrong_literal("20240101X000000Z", "60")]
 fn rds_invalid_fields_debug(#[case] date: &str, #[case] expires: &str) {
     let token = rds_token(date, expires);
     let (result, logs) = capture(|| parse_token_expiration(TokenAuthKind::Rds, &token));
@@ -270,6 +271,60 @@ fn native_expiry_size_depth_limits() {
             .iter()
             .any(|log| log.contains("Failed to parse Azure Entra token expiration:")),
         "{rejected_logs:?}"
+    );
+}
+
+#[test]
+fn native_expiry_depth_strings_escapes_and_siblings() {
+    let mut brackets = "[".repeat(MAX_CLAIMS_DEPTH);
+    brackets.push_str(&"]".repeat(MAX_CLAIMS_DEPTH));
+
+    // brackets inside a string value are string content, not JSON nesting
+    let in_string = format!("{{\"exp\":1,\"pad\":\"{brackets}\"}}");
+    assert!(
+        parse_token_expiration(TokenAuthKind::Azure, &unpadded_claims_token(&in_string))
+            .unwrap()
+            .is_some()
+    );
+
+    // an escaped quote keeps its string open, so the brackets after it stay string content
+    let escaped = format!("{{\"exp\":1,\"pad\":\"\\\"{brackets}\"}}");
+    assert!(
+        parse_token_expiration(TokenAuthKind::Azure, &unpadded_claims_token(&escaped))
+            .unwrap()
+            .is_some()
+    );
+
+    // two backslashes escape only themselves, so the quote closes the string and the brackets count
+    let double_backslash = format!(r#"{{"exp":1,"pad":"\\\"{brackets}"}}"#);
+    assert!(
+        parse_token_expiration(
+            TokenAuthKind::Azure,
+            &unpadded_claims_token(&double_backslash)
+        )
+        .unwrap()
+        .is_none()
+    );
+
+    // a string that fails to close swallows the deep array that follows it
+    let string_before_array = format!("{{\"pad\":\"x\",\"exp\":{brackets}}}");
+    assert!(
+        parse_token_expiration(
+            TokenAuthKind::Azure,
+            &unpadded_claims_token(&string_before_array)
+        )
+        .unwrap()
+        .is_none()
+    );
+
+    // sibling branches peak at the outer object plus one branch, not the sum of both
+    let mut branch = "[".repeat(MAX_CLAIMS_DEPTH - 1);
+    branch.push_str(&"]".repeat(MAX_CLAIMS_DEPTH - 1));
+    let siblings = format!("{{\"exp\":1,\"a\":{branch},\"b\":{branch}}}");
+    assert!(
+        parse_token_expiration(TokenAuthKind::Azure, &unpadded_claims_token(&siblings))
+            .unwrap()
+            .is_some()
     );
 }
 
