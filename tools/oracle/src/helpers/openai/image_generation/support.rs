@@ -37,7 +37,6 @@ impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
 }
 
-// the logger_fn hook runs on every pre/post call, so this keeps the record each phase saw
 #[derive(Default)]
 pub(crate) struct Recorder(Mutex<Vec<Value>>);
 
@@ -49,7 +48,6 @@ impl Recorder {
             .push(serde_json::to_value(details).unwrap_or_default());
     }
 
-    // the two callbacks see the same input and additional_args LiteLLM hands its logging object
     pub(crate) fn last(&self, phase: &str) -> Option<Value> {
         let details = self
             .0

@@ -43,7 +43,6 @@ pub struct PrepareFailure {
     pub source: ImageGenerationSource,
 }
 
-// the data dict merges model and prompt under the optional params, then takes max_retries out of the body
 pub fn prepare_image_call(call: ImageGenerationCall) -> Result<PreparedImageCall, PrepareFailure> {
     let base = call
         .api_base
@@ -87,7 +86,6 @@ pub(super) fn authorization_headers(api_key: &SecretString) -> IndexMap<String, 
     )])
 }
 
-// a nonempty headers argument replaces the caller's extra_headers in the body alone
 fn wire_body(data: &IndexMap<String, Json>, headers: Option<Headers>) -> IndexMap<String, Json> {
     let mut body = data.clone();
     if let Some(explicit) = headers.filter(|explicit| !explicit.is_empty()) {

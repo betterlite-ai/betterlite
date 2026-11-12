@@ -14,7 +14,6 @@ pub enum ErrorStatus {
     Code(u16),
 }
 
-// the failures the source methods catch: an OpenAIError is re-raised, everything else is wrapped or rethrown
 #[derive(Debug, Error)]
 pub enum ImageGenerationSource {
     #[error(transparent)]
@@ -72,7 +71,6 @@ impl ErrorStatus {
 }
 
 impl ImageGenerationSource {
-    // the status_code attribute the caught exception carries, absent where it carries none
     #[must_use]
     pub const fn status(&self) -> ErrorStatus {
         match self {
@@ -94,7 +92,6 @@ impl ImageGenerationSource {
     }
 }
 
-// litellm's OpenAIError from common_utils: the status and diagnostic the sync method raises
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct OpenAiImageError {
@@ -119,7 +116,6 @@ impl OpenAiImageError {
     }
 }
 
-// the sync method wraps every failure, and the delegated async method rethrows the original
 #[derive(Debug, Error)]
 pub enum ImageGenerationFailure {
     #[error(transparent)]

@@ -33,7 +33,6 @@ impl ImageFamily {
     }
 }
 
-// the selector is case-sensitive, and every name that is not dall-e-2 or dall-e-3 is a GPT image
 #[must_use]
 pub fn select_image_family(model: &str) -> ImageFamily {
     if model.starts_with("dall-e-2") || model.is_empty() {
@@ -57,7 +56,6 @@ pub enum ImageParamError {
     },
 }
 
-// a key already in optional_params is never checked, and only a missing supported key is copied
 pub fn map_openai_params(
     family: ImageFamily,
     model: &str,

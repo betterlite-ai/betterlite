@@ -7,7 +7,6 @@ use super::reply::{
     DEFAULT_SIZE, ImageGenerationReply, ImageReplyError,
 };
 
-// the GPT family keeps a value the provider sent, then a width x height pair, then the option, then its default
 pub fn apply_family_defaults(
     family: ImageFamily,
     reply: &mut ImageGenerationReply,

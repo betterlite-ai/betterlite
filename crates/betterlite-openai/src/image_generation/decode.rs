@@ -146,7 +146,6 @@ fn message_meaningful(message: Option<&Json>) -> bool {
     }
 }
 
-// the converter keeps the usage keys it does not know, so they stay in the reply
 fn usage_extras(bytes: &[u8]) -> Result<IndexMap<String, Json>, ImageReplyError> {
     let found: UsageFields = serde_json::from_slice(bytes)?;
     let mut fields = found.usage.unwrap_or_default();

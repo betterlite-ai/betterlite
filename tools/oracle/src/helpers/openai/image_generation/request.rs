@@ -88,7 +88,6 @@ impl ImageGenerationTransport for FakeTransport<'_> {
     }
 }
 
-// the records the source methods hand their logging object, projected the way the Python recorder is
 #[derive(Default)]
 pub(crate) struct Recorder {
     pre_calls: Vec<Value>,

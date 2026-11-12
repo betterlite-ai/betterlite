@@ -4,7 +4,6 @@ use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 
-// tests and the oracle helper answer through this instead of opening a socket
 pub trait ImageGenerationTransport: Send + Sync {
     fn generate(
         &self,
