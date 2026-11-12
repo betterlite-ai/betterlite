@@ -222,25 +222,3 @@ fn team_alias_rejects_a_non_string_and_an_unset_field() {
     let unset = project(r#"{"team":{"name":"core"}}"#, &default_settings, &[]);
     assert_eq!(unset.team_alias(Some("fallback")).unwrap(), None);
 }
-
-#[rstest]
-#[case::both_fields(Some("team"), Some("alias"), true)]
-#[case::id_field(Some("team"), None, true)]
-#[case::alias_field(None, Some("alias"), true)]
-#[case::empty_values(Some(""), Some(""), true)]
-#[case::neither(None, None, false)]
-fn required_team_id(
-    #[case] team_id_jwt_field: Option<&str>,
-    #[case] team_alias_jwt_field: Option<&str>,
-    #[case] expected: bool,
-) {
-    let mut settings = empty_settings();
-    settings.team_id_jwt_field = team_id_jwt_field.map(str::to_owned);
-    settings.team_alias_jwt_field = team_alias_jwt_field.map(str::to_owned);
-    let projected = project("{}", &settings, &[]);
-    assert_eq!(
-        projected.settings.team_id_jwt_field.is_some()
-            || projected.settings.team_alias_jwt_field.is_some(),
-        expected
-    );
-}

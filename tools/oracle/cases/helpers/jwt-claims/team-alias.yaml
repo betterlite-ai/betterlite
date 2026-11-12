@@ -33,6 +33,18 @@ call:
         default_value: null
         valid_user_email: null
         leeway: 0
+      - settings: {team_id_jwt_field: team_id, team_alias_jwt_field: team_name}
+        trusted_issuers: []
+        claims: {team_id: team-1, team_name: core}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: '', team_alias_jwt_field: ''}
+        trusted_issuers: []
+        claims: {}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
     tokens: []
 env: {}
 compare: {ignore: []}
