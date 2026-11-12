@@ -1,0 +1,20 @@
+task: B5364
+deviations:
+  - what: validate_environment takes the set of environment variable names, the model name sets and the provider lookup as arguments instead of reading os.environ and the litellm module globals.
+    why: Rust code gets its inputs from the caller so a test and the oracle can pin them. Only names are read, and a name set to an empty string still counts as present, as with `in os.environ`.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6709-L6734
+  - what: The retry delay constants, the current time and the random number are arguments of calculate_retry_after and retry_after_from_header, not read from litellm.constants, time.time() and random.random().
+    why: A test and the oracle pin the jitter and the clock. The defaults are the LiteLLM values 0.5, 8.0 and 0.75.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7231-L7254
+  - what: With a retry count of 1024 or more, the wait is capped at the maximum delay. LiteLLM raises OverflowError from pow(2.0, num_retries).
+    why: No working setup depends on a crash from a huge exponent, and the cap is what the box around the delay is for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7246-L7252
+  - what: A Retry-After HTTP date is read with the RFC 2822 parser of jiff, which is stricter than email.utils.parsedate_tz. It rejects a date with no zone and a day number past the month where Python normalises it, and both give -1.
+    why: Python reads a date with no zone as local time, which would make the wait depend on the machine. A proxy gets these dates from provider responses with a zone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
+  - what: A Retry-After integer outside the i64 range gives -1, and Python-only integer spellings such as "1_0" are not read as numbers.
+    why: A wait of that size is outside the 1 to 60 second window either way, and the spelling is a Python parsing habit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
+  - what: read_config_args refuses a file past 10 MiB and a JSON value that is not an object, and it does not accept the NaN and Infinity literals that Python's json module reads.
+    why: A wrong path must not fill memory, and the function returns an object of arguments. Standard JSON is the output format of betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7477-L7488

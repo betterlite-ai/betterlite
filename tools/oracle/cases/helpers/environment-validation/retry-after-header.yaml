@@ -1,0 +1,42 @@
+kind: helper
+name: environment-validation-retry-after-header
+call:
+  b5364:
+    operation: retry_after_header
+    cases:
+    - {headers: null, now: 1445412460}
+    - headers: {}
+      now: 1445412460
+    - headers: {retry-after: '0'}
+      now: 1445412460
+    - headers: {retry-after: '1'}
+      now: 1445412460
+    - headers: {retry-after: '30'}
+      now: 1445412460
+    - headers: {retry-after: '60'}
+      now: 1445412460
+    - headers: {retry-after: '61'}
+      now: 1445412460
+    - headers: {retry-after: '-5'}
+      now: 1445412460
+    - headers: {retry-after: '+9'}
+      now: 1445412460
+    - headers: {retry-after: abc}
+      now: 1445412460
+    - headers: {retry-after: ''}
+      now: 1445412460
+    - headers: {retry-after: '1.5'}
+      now: 1445412460
+    - headers: {retry-after: 'Wed, 21 Oct 2015 07:28:00 GMT'}
+      now: 1445412460
+    - headers: {retry-after: 'Wed, 21 Oct 2015 07:27:00 GMT'}
+      now: 1445412460
+    - headers: {retry-after: 'Wed, 21 Oct 2015 07:30:00 +0000'}
+      now: 1445412460
+    - headers: {retry-after: 'Wed, 21 Oct 2015 09:28:20 +0200'}
+      now: 1445412460
+    - headers: {content-type: text/plain}
+      now: 1445412460
+env: {}
+compare:
+  ignore: []

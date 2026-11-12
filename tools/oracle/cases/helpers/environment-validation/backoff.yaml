@@ -1,0 +1,91 @@
+kind: helper
+name: environment-validation-backoff
+call:
+  b5364:
+    operation: calculate_retry_after
+    cases:
+    - {remaining_retries: 3, max_retries: 3, now: 1445412460, random: 0.5}
+    - {remaining_retries: 3, max_retries: 3, now: 1445412460, random: 0.0}
+    - {remaining_retries: 2, max_retries: 3, now: 1445412460, random: 0.5}
+    - {remaining_retries: 2, max_retries: 3, now: 1445412460, random: 0.0}
+    - {remaining_retries: 1, max_retries: 3, now: 1445412460, random: 0.5}
+    - {remaining_retries: 1, max_retries: 3, now: 1445412460, random: 0.0}
+    - {remaining_retries: 0, max_retries: 3, now: 1445412460, random: 0.5}
+    - {remaining_retries: 0, max_retries: 3, now: 1445412460, random: 0.0}
+    - {remaining_retries: 3, max_retries: 6, now: 1445412460, random: 0.5}
+    - {remaining_retries: 3, max_retries: 6, now: 1445412460, random: 0.0}
+    - {remaining_retries: 4, max_retries: 5, now: 1445412460, random: 0.5}
+    - {remaining_retries: 4, max_retries: 5, now: 1445412460, random: 0.0}
+    - {remaining_retries: 0, max_retries: 10, now: 1445412460, random: 0.5}
+    - {remaining_retries: 0, max_retries: 10, now: 1445412460, random: 0.0}
+    - {remaining_retries: 10, max_retries: 0, now: 1445412460, random: 0.5}
+    - {remaining_retries: 10, max_retries: 0, now: 1445412460, random: 0.0}
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: '0'}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: '1'}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: '20'}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: '60'}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: '61'}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: '-1'}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: junk}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {retry-after: 'Wed, 21 Oct 2015 07:28:00 GMT'}
+      now: 1445412460
+      random: 0.25
+    - remaining_retries: 2
+      max_retries: 3
+      headers: {}
+      now: 1445412460
+      random: 0.25
+    - {remaining_retries: 3, max_retries: 3, min_timeout: 0, now: 1445412460, random: 0.5}
+    - {remaining_retries: 0, max_retries: 3, min_timeout: 0, now: 1445412460, random: 0.5}
+    - {remaining_retries: 3, max_retries: 3, min_timeout: 1, now: 1445412460, random: 0.5}
+    - {remaining_retries: 0, max_retries: 3, min_timeout: 1, now: 1445412460, random: 0.5}
+    - {remaining_retries: 3, max_retries: 3, min_timeout: 3, now: 1445412460, random: 0.5}
+    - {remaining_retries: 0, max_retries: 3, min_timeout: 3, now: 1445412460, random: 0.5}
+    - {remaining_retries: 3, max_retries: 3, min_timeout: 8, now: 1445412460, random: 0.5}
+    - {remaining_retries: 0, max_retries: 3, min_timeout: 8, now: 1445412460, random: 0.5}
+    - {remaining_retries: 3, max_retries: 3, min_timeout: 20, now: 1445412460, random: 0.5}
+    - {remaining_retries: 0, max_retries: 3, min_timeout: 20, now: 1445412460, random: 0.5}
+    - {remaining_retries: 2, max_retries: 3, now: 1445412460, random: 0.5, initial_retry_delay: 0.25,
+      max_retry_delay: 4.0, jitter: 0.5}
+    - {remaining_retries: 0, max_retries: 5, now: 1445412460, random: 0.5, initial_retry_delay: 0.25,
+      max_retry_delay: 4.0, jitter: 0.5}
+    - remaining_retries: 1
+      max_retries: 3
+      headers: {retry-after: '5'}
+      now: 1445412460
+      random: 0.5
+      jitter: 2.0
+    - {remaining_retries: 3, max_retries: 3, now: 1445412460, random: 0.5, jitter: 0.0}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,141 @@
+kind: helper
+name: environment-validation-model-set-rows
+call:
+  b5364:
+    operation: validate_environment
+    cases:
+    - model_sets:
+        open_ai_chat_completion_models: [chat-model]
+      model: chat-model
+    - model_sets:
+        open_ai_chat_completion_models: [chat-model]
+      model: chat-model
+      environment: [OPENAI_API_KEY]
+    - model_sets:
+        open_ai_chat_completion_models: [chat-model]
+      model: other-chat-model
+    - model_sets:
+        open_ai_text_completion_models: [text-model]
+      model: text-model
+    - model_sets:
+        open_ai_text_completion_models: [text-model]
+      model: text-model
+      environment: [OPENAI_API_KEY]
+    - model_sets:
+        open_ai_text_completion_models: [text-model]
+      model: other-text-model
+    - model_sets:
+        vercel_ai_gateway_models: [vercel-model]
+      model: vercel-model
+    - model_sets:
+        vercel_ai_gateway_models: [vercel-model]
+      model: vercel-model
+      environment: [VERCEL_AI_GATEWAY_API_KEY]
+    - model_sets:
+        vercel_ai_gateway_models: [vercel-model]
+      model: other-vercel-model
+    - model_sets:
+        edenai_models: [eden-model]
+      model: eden-model
+    - model_sets:
+        edenai_models: [eden-model]
+      model: eden-model
+      environment: [EDENAI_API_KEY]
+    - model_sets:
+        edenai_models: [eden-model]
+      model: other-eden-model
+    - model_sets:
+        datarobot_models: [robot-model]
+      model: robot-model
+    - model_sets:
+        datarobot_models: [robot-model]
+      model: robot-model
+      environment: [DATAROBOT_API_TOKEN]
+    - model_sets:
+        datarobot_models: [robot-model]
+      model: other-robot-model
+    - model_sets:
+        huggingface_models: [hf-model]
+      model: hf-model
+    - model_sets:
+        huggingface_models: [hf-model]
+      model: hf-model
+      environment: [HUGGINGFACE_API_KEY]
+    - model_sets:
+        huggingface_models: [hf-model]
+      model: other-hf-model
+    - model_sets:
+        together_ai_models: [together-model]
+      model: together-model
+    - model_sets:
+        together_ai_models: [together-model]
+      model: together-model
+      environment: [TOGETHERAI_API_KEY]
+    - model_sets:
+        together_ai_models: [together-model]
+      model: other-together-model
+    - model_sets:
+        novita_models: [novita-model]
+      model: novita-model
+    - model_sets:
+        novita_models: [novita-model]
+      model: novita-model
+      environment: [NOVITA_API_KEY]
+    - model_sets:
+        novita_models: [novita-model]
+      model: other-novita-model
+    - model_sets:
+        nebius_models: [nebius-model]
+      model: nebius-model
+    - model_sets:
+        nebius_models: [nebius-model]
+      model: nebius-model
+      environment: [NEBIUS_API_KEY]
+    - model_sets:
+        nebius_models: [nebius-model]
+      model: other-nebius-model
+    - model_sets:
+        wandb_models: [wandb-model]
+      model: wandb-model
+    - model_sets:
+        wandb_models: [wandb-model]
+      model: wandb-model
+      environment: [WANDB_API_KEY]
+    - model_sets:
+        wandb_models: [wandb-model]
+      model: other-wandb-model
+    - model_sets:
+        vertex_ai: [gemini-pro-x]
+      model: gemini-pro-x
+    - model_sets:
+        vertex_ai: [gemini-pro-x]
+      model: gemini-pro-x
+      environment: [VERTEXAI_PROJECT, VERTEXAI_LOCATION]
+    - model_sets:
+        vertex_ai: [gemini-pro-x]
+      model: gemini-pro-x
+      environment: [VERTEXAI_PROJECT]
+    - {model: gpt-image-9}
+    - model: gpt-image-9
+      environment: [OPENAI_API_KEY]
+    - {model: my-gpt-image-9}
+    - {model: dall-e-3}
+    - model: dall-e-2
+      environment: [OPENAI_API_KEY]
+    - {model: text-embedding-ada-002}
+    - {model: nothing-matches-this}
+    - model: nothing-matches-this
+      environment: [OPENAI_API_KEY]
+    - model_sets: &id001
+        open_ai_chat_completion_models: [both-model]
+        wandb_models: [both-model]
+      model: both-model
+    - model_sets: *id001
+      model: both-model
+      environment: [WANDB_API_KEY]
+    - {model: null}
+    - model: null
+      environment: [OPENAI_API_KEY]
+env: {}
+compare:
+  ignore: []

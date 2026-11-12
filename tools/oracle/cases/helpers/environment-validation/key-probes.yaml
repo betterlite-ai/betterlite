@@ -1,0 +1,30 @@
+kind: helper
+name: environment-validation-key-probes
+call:
+  b5364:
+    operation: valid_model
+    cases:
+    - model: chat-model
+      model_sets: &id001
+        open_ai_chat_completion_models: [chat-model]
+      fails: false
+    - model: chat-model
+      model_sets: *id001
+      fails: true
+    - model: text-model
+      model_sets: &id002
+        open_ai_text_completion_models: [text-model]
+      fails: false
+    - model: text-model
+      model_sets: *id002
+      fails: true
+    - {model: plain-model, fails: false}
+    - {model: plain-model, fails: true}
+    - {model: openai/plain-model, fails: true}
+    - model: wandb-model
+      model_sets:
+        wandb_models: [wandb-model]
+      fails: false
+env: {}
+compare:
+  ignore: []
