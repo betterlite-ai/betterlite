@@ -8,6 +8,33 @@ use betterlite_router::retry_policy::policy::RetryPolicy;
 
 use super::{RetrySettings, resolve};
 
+const EVERY_FIELD: &str = "\
+router_settings:
+  retry_after: 2
+  num_retries: 3
+  retry_policy:
+    BadRequestErrorRetries: 1
+    AuthenticationErrorRetries: 2
+    TimeoutErrorRetries: 3
+    RateLimitErrorRetries: 4
+    ContentPolicyViolationErrorRetries: 5
+    InternalServerErrorRetries: 6
+    ServiceUnavailableErrorRetries: 7
+    NotFoundErrorRetries: 8
+    DefaultRetries: 9
+  model_group_retry_policy:
+    gpt-4:
+      BadRequestErrorRetries: 11
+      AuthenticationErrorRetries: 12
+      TimeoutErrorRetries: 13
+      RateLimitErrorRetries: 14
+      ContentPolicyViolationErrorRetries: 15
+      InternalServerErrorRetries: 16
+      ServiceUnavailableErrorRetries: 17
+      NotFoundErrorRetries: 18
+      DefaultRetries: 19
+";
+
 fn settings(source: &str, variables: &[(&str, &str)]) -> RetrySettings {
     let lookup: BTreeMap<String, String> = variables
         .iter()
@@ -35,33 +62,7 @@ fn an_empty_config_resolves_to_the_litellm_defaults() {
 
 #[test]
 fn the_configured_policies_and_backoff_reach_the_router_service() {
-    let source = "\
-router_settings:
-  retry_after: 2
-  num_retries: 3
-  retry_policy:
-    BadRequestErrorRetries: 1
-    AuthenticationErrorRetries: 2
-    TimeoutErrorRetries: 3
-    RateLimitErrorRetries: 4
-    ContentPolicyViolationErrorRetries: 5
-    InternalServerErrorRetries: 6
-    ServiceUnavailableErrorRetries: 7
-    NotFoundErrorRetries: 8
-    DefaultRetries: 9
-  model_group_retry_policy:
-    gpt-4:
-      BadRequestErrorRetries: 11
-      AuthenticationErrorRetries: 12
-      TimeoutErrorRetries: 13
-      RateLimitErrorRetries: 14
-      ContentPolicyViolationErrorRetries: 15
-      InternalServerErrorRetries: 16
-      ServiceUnavailableErrorRetries: 17
-      NotFoundErrorRetries: 18
-      DefaultRetries: 19
-";
-    let resolved = settings(source, &[("JITTER", "0.5")]);
+    let resolved = settings(EVERY_FIELD, &[("JITTER", "0.5")]);
     assert_eq!(
         resolved.policies.global,
         Some(RetryPolicy {
