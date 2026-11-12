@@ -70,10 +70,8 @@ impl Helper for Op {
                 deserialize_config::<BedrockGuardrailConfigModel>(&input.body)
             }
             Function::BedrockStreamingFromExtras => {
-                match BedrockGuardrailStreamParams::from_extras(input.extras.as_ref()) {
-                    Ok(value) => encode(value),
-                    Err(_) => Ok(json!({"accepted": false})),
-                }
+                BedrockGuardrailStreamParams::from_extras(input.extras.as_ref())
+                    .map_or_else(|_| Ok(json!({"accepted": false})), encode)
             }
             Function::ProviderConfig => match input.model {
                 Model::Bedrock => deserialize_config::<BedrockGuardrailConfigModel>(&input.body),
@@ -114,11 +112,12 @@ fn merge_metadata(input: &Input) -> HelperResult {
     encode(request_data)
 }
 
-fn deserialize_config<T: DeserializeOwned + Serialize>(body: &Value) -> HelperResult {
-    match serde_json::from_value::<T>(body.clone()) {
-        Ok(value) => encode(value),
-        Err(_) => Ok(json!({"accepted": false})),
-    }
+fn deserialize_config<T>(body: &Value) -> HelperResult
+where
+    T: DeserializeOwned + Serialize,
+{
+    serde_json::from_value::<T>(body.clone())
+        .map_or_else(|_| Ok(json!({"accepted": false})), encode)
 }
 
 fn encode<T>(value: T) -> HelperResult
