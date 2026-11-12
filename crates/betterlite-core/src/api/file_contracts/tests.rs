@@ -53,23 +53,23 @@ fn batch_extracted_predicate(
 }
 
 #[rstest]
-#[case::empty_bytes((Some("batch"), Some("text/plain"), Some("")), true)]
-#[case::file_name((Some("batch"), Some("text/plain"), Some("upload.bin")), true)]
+#[case::empty_bytes((Some("batch"), Some("text/plain"), Some(&"")), true)]
+#[case::file_name((Some("batch"), Some("text/plain"), Some(&"upload.bin")), true)]
 #[case::null_file((Some("batch"), Some("text/plain"), None), false)]
 #[case::absent_file((Some("batch"), Some("text/plain"), None), false)]
-#[case::assistants_purpose((Some("assistants"), Some("text/plain"), Some("upload.bin")), false)]
-#[case::capitalized_purpose((Some("Batch"), Some("text/plain"), Some("upload.bin")), false)]
-#[case::null_purpose((None, Some("text/plain"), Some("upload.bin")), false)]
-#[case::absent_purpose((None, Some("text/plain"), Some("upload.bin")), false)]
-#[case::null_content_type((Some("batch"), None, Some("upload.bin")), false)]
-#[case::csv_content_type((Some("batch"), Some("text/csv"), Some("upload.bin")), false)]
-#[case::capitalized_content_type((Some("batch"), Some("TEXT/PLAIN"), Some("upload.bin")), false)]
+#[case::assistants_purpose((Some("assistants"), Some("text/plain"), Some(&"upload.bin")), false)]
+#[case::capitalized_purpose((Some("Batch"), Some("text/plain"), Some(&"upload.bin")), false)]
+#[case::null_purpose((None, Some("text/plain"), Some(&"upload.bin")), false)]
+#[case::absent_purpose((None, Some("text/plain"), Some(&"upload.bin")), false)]
+#[case::null_content_type((Some("batch"), None, Some(&"upload.bin")), false)]
+#[case::csv_content_type((Some("batch"), Some("text/csv"), Some(&"upload.bin")), false)]
+#[case::capitalized_content_type((Some("batch"), Some("TEXT/PLAIN"), Some(&"upload.bin")), false)]
 #[case::parameterized_content_type(
-    (Some("batch"), Some("application/json;charset=utf-8"), Some("upload.bin")),
+    (Some("batch"), Some("application/json;charset=utf-8"), Some(&"upload.bin")),
     false
 )]
 fn batch_metadata_predicate(
-    #[case] scenario: (Option<&str>, Option<&str>, Option<&str>),
+    #[case] scenario: (Option<&str>, Option<&str>, Option<&&str>),
     #[case] expected: bool,
 ) {
     let (purpose, content_type, file) = scenario;
