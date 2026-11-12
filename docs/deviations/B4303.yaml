@@ -1,0 +1,14 @@
+task: B4303
+deviations:
+  - what: A cached list whose length differs from the request's input list is a typed error.
+    why: LiteLLM indexes the input by position, so a longer cached list raises IndexError and a shorter one silently leaves inputs unmatched.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L496-L523
+  - what: Adding a cached number onto an earlier prompt_tokens_details value that is not a number replaces that value.
+    why: LiteLLM evaluates aggregated_details.get(key, 0) + value, which raises TypeError for a string or object left by an earlier entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L554-L558
+  - what: Fresh embeddings that run out before every empty position is filled give a typed error.
+    why: LiteLLM calls next() on an exhausted iterator, which raises StopIteration inside a list comprehension.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L705-L709
+  - what: A token total that does not fit a 64-bit integer, and a detail total that does not fit a 128-bit integer or a float, is an overflow error.
+    why: Python integers have no limit, and Rust counts must not wrap or panic.
+    link: ""
