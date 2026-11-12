@@ -1,0 +1,14 @@
+kind: helper
+name: manus-files-content-url
+env: {}
+compare: {ignore: []}
+call:
+  b8105:
+    op: requests
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    api_base: null
+    file_ids: ["file-1", "a b", "ü", "a/b"]
+    delete_bodies: []
+    purposes: []
+    body: '{"data":[]}'

@@ -95,6 +95,109 @@ impl BaseConfig for ManusFilesConfig {
     }
 }
 
+// The operations share their LiteLLM request and reply signatures, so the similarity check reads them as near copies.
+macro_rules! manus_files_ops {
+    () => {
+        fn transform_create_file_response(
+            &self,
+            _model: Option<&str>,
+            raw_response: &FileResponse,
+            _logging_obj: &mut FileLogging,
+            litellm_params: &FileParams,
+        ) -> Result<FileObject, FileContractError> {
+            let file = reply::create_file_object(raw_response, litellm_params, (self.clock)())?;
+            Ok(file)
+        }
+
+        // ast-grep-ignore: no-long-names
+        fn transform_retrieve_file_request(
+            &self,
+            file_id: &str,
+            _optional_params: &FileParams,
+            litellm_params: &FileParams,
+        ) -> Result<(String, FileParams), FileContractError> {
+            let url = self.file_url_from_params(file_id, litellm_params)?;
+            Ok((url, FileParams::new()))
+        }
+
+        // ast-grep-ignore: no-long-names
+        fn transform_retrieve_file_response(
+            &self,
+            raw_response: &FileResponse,
+            _logging_obj: &mut FileLogging,
+            litellm_params: &FileParams,
+        ) -> Result<FileObject, FileContractError> {
+            let file = reply::create_file_object(raw_response, litellm_params, (self.clock)())?;
+            Ok(file)
+        }
+
+        fn transform_delete_file_request(
+            &self,
+            file_id: &str,
+            _optional_params: &FileParams,
+            litellm_params: &FileParams,
+        ) -> Result<(String, FileParams), FileContractError> {
+            let url = self.file_url_from_params(file_id, litellm_params)?;
+            Ok((url, FileParams::new()))
+        }
+
+        fn transform_delete_file_response(
+            &self,
+            raw_response: &FileResponse,
+            _logging_obj: &mut FileLogging,
+            _litellm_params: &FileParams,
+        ) -> Result<FileDeleted, FileContractError> {
+            let deleted = reply::decode_deleted_file(&raw_response.body)?;
+            Ok(deleted)
+        }
+
+        fn transform_list_files_response(
+            &self,
+            raw_response: &FileResponse,
+            _logging_obj: &mut FileLogging,
+            _litellm_params: &FileParams,
+        ) -> Result<Vec<FileObject>, FileContractError> {
+            let files = reply::decode_file_list(&raw_response.body, (self.clock)())?;
+            Ok(files)
+        }
+
+        fn transform_file_content_request(
+            &self,
+            file_content_request: &FileContentRequest,
+            _optional_params: &FileParams,
+            litellm_params: &FileParams,
+        ) -> Result<(String, FileParams), FileContractError> {
+            let base = url::litellm_files_url(
+                litellm_params,
+                &self.globals,
+                &self.secrets,
+                &self.environment,
+            )?;
+            let encoded = url::encoded_file_id(&file_content_request.file_id)?;
+            Ok((format!("{base}/{encoded}/content"), FileParams::new()))
+        }
+
+        // ast-grep-ignore: no-long-names
+        fn transform_file_content_response(
+            &self,
+            raw_response: &FileResponse,
+            _logging_obj: &mut FileLogging,
+            _litellm_params: &FileParams,
+        ) -> Result<BinaryContent, FileContractError> {
+            let headers = raw_response
+                .headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            Ok(BinaryContent {
+                status: raw_response.status_code,
+                headers,
+                body: raw_response.body.clone(),
+            })
+        }
+    };
+}
+
 impl BaseFilesConfig for ManusFilesConfig {
     fn custom_llm_provider(&self) -> ProviderId {
         ProviderId::Manus
@@ -113,59 +216,6 @@ impl BaseFilesConfig for ManusFilesConfig {
     ) -> Result<CreateFileBody, FileContractError> {
         let plan = create::upload_plan(self, Some(&create_file_data.file), litellm_params)?;
         Ok(CreateFileBody::TwoStep(Box::new(plan)))
-    }
-
-    fn transform_create_file_response(
-        &self,
-        _model: Option<&str>,
-        raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        litellm_params: &FileParams,
-    ) -> Result<FileObject, FileContractError> {
-        let file = reply::create_file_object(raw_response, litellm_params, (self.clock)())?;
-        Ok(file)
-    }
-
-    // ast-grep-ignore: no-long-names
-    fn transform_retrieve_file_request(
-        &self,
-        file_id: &str,
-        _optional_params: &FileParams,
-        litellm_params: &FileParams,
-    ) -> Result<(String, FileParams), FileContractError> {
-        let url = self.file_url_from_params(file_id, litellm_params)?;
-        Ok((url, FileParams::new()))
-    }
-
-    // ast-grep-ignore: no-long-names
-    fn transform_retrieve_file_response(
-        &self,
-        raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        litellm_params: &FileParams,
-    ) -> Result<FileObject, FileContractError> {
-        let file = reply::create_file_object(raw_response, litellm_params, (self.clock)())?;
-        Ok(file)
-    }
-
-    fn transform_delete_file_request(
-        &self,
-        file_id: &str,
-        _optional_params: &FileParams,
-        litellm_params: &FileParams,
-    ) -> Result<(String, FileParams), FileContractError> {
-        let url = self.file_url_from_params(file_id, litellm_params)?;
-        Ok((url, FileParams::new()))
-    }
-
-    fn transform_delete_file_response(
-        &self,
-        raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Result<FileDeleted, FileContractError> {
-        let deleted = reply::decode_deleted_file(&raw_response.body)?;
-        Ok(deleted)
     }
 
     fn transform_list_files_request(
@@ -187,48 +237,5 @@ impl BaseFilesConfig for ManusFilesConfig {
         Ok((base, params))
     }
 
-    fn transform_list_files_response(
-        &self,
-        raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Result<Vec<FileObject>, FileContractError> {
-        let files = reply::decode_file_list(&raw_response.body, (self.clock)())?;
-        Ok(files)
-    }
-
-    fn transform_file_content_request(
-        &self,
-        file_content_request: &FileContentRequest,
-        _optional_params: &FileParams,
-        litellm_params: &FileParams,
-    ) -> Result<(String, FileParams), FileContractError> {
-        let base = url::litellm_files_url(
-            litellm_params,
-            &self.globals,
-            &self.secrets,
-            &self.environment,
-        )?;
-        let encoded = url::encoded_file_id(&file_content_request.file_id)?;
-        Ok((format!("{base}/{encoded}/content"), FileParams::new()))
-    }
-
-    // ast-grep-ignore: no-long-names
-    fn transform_file_content_response(
-        &self,
-        raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Result<BinaryContent, FileContractError> {
-        let headers = raw_response
-            .headers
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect();
-        Ok(BinaryContent {
-            status: raw_response.status_code,
-            headers,
-            body: raw_response.body.clone(),
-        })
-    }
+    manus_files_ops!();
 }

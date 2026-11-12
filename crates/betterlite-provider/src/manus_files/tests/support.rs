@@ -124,15 +124,3 @@ pub(super) fn response(body: &str) -> FileResponse {
         url: None,
     }
 }
-
-pub(super) fn response_with_headers(body: &str) -> FileResponse {
-    FileResponse {
-        status_code: 201,
-        headers: BTreeMap::from([(
-            String::from("content-type"),
-            String::from("application/octet-stream"),
-        )]),
-        body: body.as_bytes().to_vec(),
-        url: Some(String::from("https://api.manus.im/v1/files/file_1/content")),
-    }
-}
