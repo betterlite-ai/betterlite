@@ -28,7 +28,7 @@ pub struct TracingCallLog;
 
 impl CallLog for TracingCallLog {
     fn record(&self, record: CallRecord<'_>) {
-        let entry = record.entry.name();
+        let entry = <&str>::from(record.entry);
         let call_id = record.call_id;
         match record.outcome {
             CallOutcome::Succeeded => tracing::debug!(entry, call_id, "call finished"),

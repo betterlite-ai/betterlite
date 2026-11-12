@@ -138,7 +138,7 @@ impl Dispatch {
         if entry != operation_entry {
             return Err(DispatchError::MismatchedOperation {
                 call_type,
-                entry: operation_entry.name(),
+                entry: <&str>::from(operation_entry),
             });
         }
         self.execute(operation, context).await

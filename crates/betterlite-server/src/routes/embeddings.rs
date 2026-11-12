@@ -142,49 +142,19 @@ async fn embeddings(
         .or_else(|| request.model.clone())
         .unwrap_or_else(|| String::from("None"));
     let Ok(deployment) = pick_deployment(&state.executor, &model) else {
-        return render(
-            route_error(
-                &EmbeddingError::UnknownModel { model },
-                &state.executor.redactor,
-            ),
-            &call_id,
-            None,
-        );
+        let missing = DispatchError::MissingDeployment { model_id: model };
+        return dispatch_failure(missing, &call_id, None, &state.executor.redactor);
     };
-    match run_embedding(&state, request, deployment, &call_id).await {
-        Ok(Some(result)) => render_embedding(result, deployment, &call_id, started),
-        Ok(None) => internal_message(
-            "the embedding call could not be dispatched",
-            &call_id,
-            Some(deployment),
-            &state.executor.redactor,
-        ),
-        Err(error) => dispatch_failure(error, &call_id, Some(deployment), &state.executor.redactor),
-    }
+    execute(&state, request, deployment, &call_id, started).await
 }
 
-fn render_embedding(
-    result: EmbeddingResult,
-    deployment: &ChatDeployment,
-    call_id: &str,
-    started: Instant,
-) -> Response {
-    let response_headers = success_headers(
-        &result.upstream_headers,
-        deployment,
-        call_id,
-        result.upstream_time,
-        started.elapsed(),
-    );
-    (response_headers, Json(result.response)).into_response()
-}
-
-async fn run_embedding(
+async fn execute(
     state: &EmbeddingState,
     request: EmbeddingRequest,
     deployment: &ChatDeployment,
     call_id: &str,
-) -> Result<Option<EmbeddingResult>, DispatchError> {
+    started: Instant,
+) -> Response {
     let operation = Operation::Embedding(DispatchEmbeddingRequest {
         call_id: call_id.to_owned(),
         model_id: deployment.model_id.clone(),
@@ -197,10 +167,23 @@ async fn run_embedding(
         deadline: None,
         privacy: false,
     });
+    let redactor = &state.executor.redactor;
     match state.dispatch.execute(operation, &context).await {
-        Ok(CallResult::Embedding(result)) => Ok(Some(result)),
-        Ok(_) => Ok(None),
-        Err(error) => Err(error),
+        Ok(CallResult::Embedding(result)) => {
+            let response_headers = success_headers(
+                &result.upstream_headers,
+                deployment,
+                call_id,
+                result.upstream_time,
+                started.elapsed(),
+            );
+            (response_headers, Json(result.response)).into_response()
+        }
+        Ok(_) => {
+            let unbuilt = DispatchError::NotBuilt { entry: "embedding" };
+            dispatch_failure(unbuilt, call_id, Some(deployment), redactor)
+        }
+        Err(error) => dispatch_failure(error, call_id, Some(deployment), redactor),
     }
 }
 

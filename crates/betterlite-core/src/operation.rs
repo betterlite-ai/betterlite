@@ -93,7 +93,8 @@ pub enum CallResult {
     ContainerCall(container_call::ContainerCallResult),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 pub enum Entry {
     Chat,
     Embedding,
@@ -138,29 +139,4 @@ impl Entry {
         Self::LlmPassthrough,
         Self::ContainerCall,
     ];
-
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Chat => "chat",
-            Self::Embedding => "embedding",
-            Self::TextCompletion => "text_completion",
-            Self::TextStream => "text_stream",
-            Self::Moderation => "moderation",
-            Self::Responses => "responses",
-            Self::ImageGeneration => "image_generation",
-            Self::ImageEdit => "image_edit",
-            Self::VideoGeneration => "video_generation",
-            Self::VideoList => "video_list",
-            Self::VideoStatus => "video_status",
-            Self::VideoContent => "video_content",
-            Self::VideoRemix => "video_remix",
-            Self::VideoCreateCharacter => "video_create_character",
-            Self::VideoGetCharacter => "video_get_character",
-            Self::VideoEdit => "video_edit",
-            Self::VideoExtension => "video_extension",
-            Self::LlmPassthrough => "llm_passthrough",
-            Self::ContainerCall => "container_call",
-        }
-    }
 }

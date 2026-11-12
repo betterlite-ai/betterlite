@@ -230,7 +230,7 @@ fn dispatch_failure(
     deployment: Option<&ChatDeployment>,
 ) -> Response {
     match error {
-        DispatchError::Chat { source } => chat_failure(source, call, deployment),
+        DispatchError::Chat { source } => chat_failure(&source, call, deployment),
         DispatchError::Rules { source } => internal_failure(&source.to_string(), call, deployment),
         DispatchError::DeadlineExpired { .. } => failure(&ChatError::Timeout, call, deployment),
         DispatchError::MissingDeployment { model_id } => failure(
@@ -261,26 +261,25 @@ fn dispatch_failure(
 }
 
 fn chat_failure(
-    chat_error: ChatFailure,
+    chat_error: &ChatFailure,
     call: &CallContext<'_>,
     deployment: Option<&ChatDeployment>,
 ) -> Response {
-    match chat_error {
-        ChatFailure::Route(route) => failure(&route, call, deployment),
-        ChatFailure::InvalidControl { source } => plain_failure(
+    if let ChatFailure::Route(route) = chat_error {
+        return failure(route, call, deployment);
+    }
+    if let ChatFailure::InvalidControl { source } = chat_error {
+        let param = Some(source.param().to_owned());
+        let kind = ("invalid_request_error", param);
+        return plain_failure(
             call,
             deployment,
             StatusCode::BAD_REQUEST,
-            ("invalid_request_error", Some(source.param().to_owned())),
+            kind,
             source.to_string(),
-        ),
-        ChatFailure::Internal { message } => internal_failure(&message, call, deployment),
-        ChatFailure::Mismatched => internal_failure(
-            "the provider answered a different operation",
-            call,
-            deployment,
-        ),
+        );
     }
+    internal_failure(&chat_error.to_string(), call, deployment)
 }
 
 fn internal_failure(

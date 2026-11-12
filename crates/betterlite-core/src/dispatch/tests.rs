@@ -67,7 +67,10 @@ async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
 
 #[test]
 fn every_entry_has_a_distinct_name() {
-    let mut names: Vec<&str> = Entry::ALL.iter().map(|entry| entry.name()).collect();
+    let mut names: Vec<&str> = Entry::ALL
+        .iter()
+        .map(|entry| <&str>::from(*entry))
+        .collect();
     names.sort_unstable();
     names.dedup();
     assert_eq!(names.len(), Entry::ALL.len());

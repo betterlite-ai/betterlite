@@ -35,8 +35,18 @@ async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
         Scenario::LifecycleOrder => lifecycle_order().await,
         Scenario::RulesSkipped => rules_skipped().await,
         Scenario::DeadlineCapsTimeout => deadline_caps_timeout().await,
-        Scenario::ExpiredDeadline => expired_deadline().await,
-        Scenario::MissingDeployment => missing_deployment().await,
+        Scenario::ExpiredDeadline => {
+            refused_before_transport(Some(SystemTime::UNIX_EPOCH), MODEL_ID, |error| {
+                matches!(error, DispatchError::DeadlineExpired { .. })
+            })
+            .await;
+        }
+        Scenario::MissingDeployment => {
+            refused_before_transport(None, "missing", |error| {
+                matches!(error, DispatchError::MissingDeployment { .. })
+            })
+            .await;
+        }
     }
 }
 
@@ -111,7 +121,11 @@ async fn deadline_caps_timeout() {
     assert_eq!(calls.seen(), [Duration::from_secs(3)]);
 }
 
-async fn expired_deadline() {
+async fn refused_before_transport(
+    deadline: Option<SystemTime>,
+    model_id: &str,
+    expected: fn(&DispatchError) -> bool,
+) {
     let trace = Trace::default();
     let calls = Arc::new(FakeEmbedding::new(trace.clone()));
     let log = Arc::new(RecordingLog::new(trace.clone()));
@@ -120,41 +134,17 @@ async fn expired_deadline() {
         Arc::new(NoRules),
         log,
     );
-    let context = context(Some(SystemTime::UNIX_EPOCH), SystemTime::UNIX_EPOCH);
+    let context = context(deadline, SystemTime::UNIX_EPOCH);
     let Err(error) = dispatch
         .execute(
-            Operation::Embedding(embedding_request("embed-4", MODEL_ID, Arc::clone(&calls))),
+            Operation::Embedding(embedding_request("embed-4", model_id, Arc::clone(&calls))),
             &context,
         )
         .await
     else {
-        panic!("an expired deadline must fail the call");
+        panic!("the call must fail before transport");
     };
-    assert!(matches!(error, DispatchError::DeadlineExpired { .. }));
-    assert_eq!(trace.steps(), ["failure"]);
-    assert!(calls.seen().is_empty());
-}
-
-async fn missing_deployment() {
-    let trace = Trace::default();
-    let calls = Arc::new(FakeEmbedding::new(trace.clone()));
-    let log = Arc::new(RecordingLog::new(trace.clone()));
-    let dispatch = Dispatch::new(
-        vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        Arc::new(NoRules),
-        log,
-    );
-    let context = context(None, SystemTime::UNIX_EPOCH);
-    let Err(error) = dispatch
-        .execute(
-            Operation::Embedding(embedding_request("embed-5", "missing", Arc::clone(&calls))),
-            &context,
-        )
-        .await
-    else {
-        panic!("a missing deployment must fail the call");
-    };
-    assert!(matches!(error, DispatchError::MissingDeployment { .. }));
+    assert!(expected(&error), "unexpected error: {error}");
     assert_eq!(trace.steps(), ["failure"]);
     assert!(calls.seen().is_empty());
 }

@@ -48,9 +48,19 @@ async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
         Scenario::LifecycleOrder => lifecycle_order().await,
         Scenario::RejectedRule => rejected_rule().await,
-        Scenario::ExpiredDeadline => expired_deadline().await,
+        Scenario::ExpiredDeadline => {
+            refused_before_transport(Some(SystemTime::UNIX_EPOCH), MODEL_ID, |error| {
+                matches!(error, DispatchError::DeadlineExpired { .. })
+            })
+            .await;
+        }
         Scenario::DeadlineCapsTimeout => deadline_caps_timeout().await,
-        Scenario::MissingDeployment => missing_deployment().await,
+        Scenario::MissingDeployment => {
+            refused_before_transport(None, "missing", |error| {
+                matches!(error, DispatchError::MissingDeployment { .. })
+            })
+            .await;
+        }
         Scenario::InvalidControl => invalid_control().await,
         Scenario::ChildContext => child_context().await,
         Scenario::Concurrent => concurrent().await,
@@ -121,29 +131,6 @@ async fn rejected_rule() {
     );
 }
 
-async fn expired_deadline() {
-    let (trace, log, rules) = fixtures(None);
-    let calls = Arc::new(FakeChat::new(trace.clone(), StreamEnd::Ends));
-    let dispatch = Dispatch::new(
-        vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        rules,
-        log,
-    );
-    let context = context(Some(SystemTime::UNIX_EPOCH), SystemTime::UNIX_EPOCH);
-    let Err(error) = dispatch
-        .execute(
-            Operation::Chat(chat_request("call-3", MODEL_ID, Arc::clone(&calls), false)),
-            &context,
-        )
-        .await
-    else {
-        panic!("an expired deadline must fail the call");
-    };
-    assert!(matches!(error, DispatchError::DeadlineExpired { .. }));
-    assert_eq!(trace.steps(), ["failure"]);
-    assert!(calls.seen().is_empty());
-}
-
 async fn deadline_caps_timeout() {
     let (trace, log, rules) = fixtures(None);
     let calls = Arc::new(FakeChat::new(trace.clone(), StreamEnd::Ends));
@@ -167,25 +154,29 @@ async fn deadline_caps_timeout() {
     assert!(!calls.seen()[0].stream);
 }
 
-async fn missing_deployment() {
+async fn refused_before_transport(
+    deadline: Option<SystemTime>,
+    model_id: &str,
+    expected: fn(&DispatchError) -> bool,
+) {
     let (trace, log, rules) = fixtures(None);
     let calls = Arc::new(FakeChat::new(trace.clone(), StreamEnd::Ends));
     let dispatch = Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
         rules,
-        Arc::clone(&log),
+        log,
     );
-    let context = context(None, SystemTime::UNIX_EPOCH);
+    let context = context(deadline, SystemTime::UNIX_EPOCH);
     let Err(error) = dispatch
         .execute(
-            Operation::Chat(chat_request("call-5", "missing", Arc::clone(&calls), false)),
+            Operation::Chat(chat_request("call-3", model_id, Arc::clone(&calls), false)),
             &context,
         )
         .await
     else {
-        panic!("a missing deployment must fail the call");
+        panic!("the call must fail before transport");
     };
-    assert!(matches!(error, DispatchError::MissingDeployment { .. }));
+    assert!(expected(&error), "unexpected error: {error}");
     assert_eq!(trace.steps(), ["failure"]);
     assert!(calls.seen().is_empty());
 }

@@ -29,6 +29,10 @@ use crate::operation::embedding::{
 use crate::rules::{RuleDecision, RuleEvaluator};
 
 pub(crate) const MODEL_ID: &str = "dep-1";
+const EMBEDDING: &[u8] = br#"{"model":"g","input":"hello"}"#;
+const CHAT: &[u8] = br#"{"model":"g","messages":[{"role":"user","content":"hello"}]}"#;
+const CHAT_STREAM: &[u8] =
+    br#"{"model":"g","messages":[{"role":"user","content":"hello"}],"stream":true}"#;
 const COMPLETION: &[u8] = br#"{"id":"chatcmpl-test","object":"chat.completion","created":1,"model":"up","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#;
 
 #[derive(Clone, Default)]
@@ -183,7 +187,8 @@ impl FakeChat {
             .clone()
     }
 
-    fn record(&self, call: &ChatCallInput<'_>) {
+    fn begin(&self, step: &str, call: &ChatCallInput<'_>) {
+        self.trace.push(step);
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -207,8 +212,7 @@ impl ChatCall for FakeChat {
         call: ChatCallInput<'_>,
         _control: ControlOptions,
     ) -> Result<ChatCompletionAnswer, ChatFailure> {
-        self.trace.push("complete");
-        self.record(&call);
+        self.begin("complete", &call);
         Ok(ChatCompletionAnswer {
             body: COMPLETION.to_vec(),
             upstream_headers: HeaderMap::new(),
@@ -221,12 +225,13 @@ impl ChatCall for FakeChat {
         call: ChatCallInput<'_>,
         _control: ControlOptions,
     ) -> Result<ChatStreamAnswer, ChatFailure> {
-        self.trace.push("stream");
-        self.record(&call);
+        self.begin("stream", &call);
+        let body = body_stream(self.stream_end);
+        let (upstream_headers, upstream_time) = (HeaderMap::new(), Duration::ZERO);
         Ok(ChatStreamAnswer {
-            body: body_stream(self.stream_end),
-            upstream_headers: HeaderMap::new(),
-            upstream_time: Duration::ZERO,
+            body,
+            upstream_headers,
+            upstream_time,
         })
     }
 }
@@ -314,34 +319,26 @@ pub(crate) fn chat_request<Calls>(
 where
     Calls: ChatCall + 'static,
 {
-    let body: &[u8] = if stream {
-        br#"{"model":"g","messages":[{"role":"user","content":"hello"}],"stream":true}"#
-    } else {
-        br#"{"model":"g","messages":[{"role":"user","content":"hello"}]}"#
-    };
+    let body = [CHAT, CHAT_STREAM][usize::from(stream)];
+    let request = Box::new(ClientChatRequest::parse(body).expect("chat request"));
     ChatRequest {
+        request,
+        calls,
         call_id: call_id.to_owned(),
         model_id: model_id.to_owned(),
-        request: Box::new(ClientChatRequest::parse(body).expect("chat request")),
-        calls,
     }
 }
 
-pub(crate) fn embedding_request<Calls>(
+pub(crate) fn embedding_request<Calls: EmbeddingCall + 'static>(
     call_id: &str,
     model_id: &str,
     calls: Arc<Calls>,
-) -> EmbeddingRequest
-where
-    Calls: EmbeddingCall + 'static,
-{
+) -> EmbeddingRequest {
+    let request = ClientEmbeddingRequest::parse(EMBEDDING).expect("embedding request");
     EmbeddingRequest {
         call_id: call_id.to_owned(),
         model_id: model_id.to_owned(),
-        request: Box::new(
-            ClientEmbeddingRequest::parse(br#"{"model":"g","input":"hello"}"#)
-                .expect("embedding request"),
-        ),
+        request: Box::new(request),
         calls,
     }
 }
