@@ -1,0 +1,10 @@
+kind: helper
+name: caching-call-type-eligibility
+call:
+  b4300:
+    function: eligibility
+    call_type: aresponses
+    supported_call_types: [acompletion, responses]
+    cache: {}
+env: {}
+compare: {ignore: []}
