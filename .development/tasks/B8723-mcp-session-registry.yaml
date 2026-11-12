@@ -89,7 +89,7 @@ deviations:
   - what: Sessions live in one SessionRegistry value passed to the transport handler, not in module level dicts.
     why: The Rust rules forbid module state; each worker process still reports only its own sessions, as LiteLLM does.
 out_of_scope:
-  - "The /v1/mcp/sessions routes and their 422, 400 and 403 checks: B4725, mounted by B8701. The stateful transport's live map and terminate: B8721."
+  - "The /v1/mcp/sessions routes and their 422, 400 and 403 checks: B4725, mounted by B9950. The stateful transport's live map and terminate: B8721."
   - "Owner fingerprints and the session id header reader: B8724. The 403 owner mismatch, the 429 cap answer and when each check runs: B8727."
 pitfalls:
   - "purge and the cap terminate the transport before removing tracking; the reverse order opens a window where a hijacker sees no owner and passes the binding check."
