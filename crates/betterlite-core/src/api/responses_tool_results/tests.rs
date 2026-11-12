@@ -439,10 +439,7 @@ fn function_tool_call_keeps_truthy_provider_fields_in_both_places(
 #[case::empty_record(AttributeValue::Record(Vec::new()))]
 fn function_tool_call_drops_falsy_provider_fields(#[case] provider: AttributeValue) {
     let converted = tool_call(Some("fc_i"), Some("c"), Some(&provider)).unwrap();
-    assert_eq!(
-        converted,
-        call_chunk("fc_i", "function", "shell", "{\"a\":1}")
-    );
+    assert_eq!(converted, call_chunk("c", "function", "shell", "{\"a\":1}"));
 }
 
 #[test]

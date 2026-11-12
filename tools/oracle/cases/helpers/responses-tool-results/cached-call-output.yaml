@@ -19,13 +19,13 @@ call:
           - {key: c, value: {id: "", type: "", function: {name: "", arguments: ""}}}
       - item: {call_id: c, output: o}
         cache:
-          - {key: c, value: {id: x, function: {name: n, arguments: null}}}
+          - {key: c, value: {id: x, function: {name: "n", arguments: null}}}
       - item: {call_id: c, output: o}
         cache:
-          - {key: c, value: {id: x, function: {name: n, arguments: {x: 1}}}}
+          - {key: c, value: {id: x, function: {name: "n", arguments: {x: 1}}}}
       - item: {call_id: c, output: o}
         cache:
-          - {key: c, value: {id: x, type: custom, function: {name: n}}}
+          - {key: c, value: {id: x, type: custom, function: {name: "n"}}}
       - item: {call_id: c, output: o}
         cache:
           - {key: c, value: {}}

@@ -105,7 +105,7 @@ impl crate::helpers::Helper for Op {
             Operation::InputFunctionCall { items } => {
                 let converted = items
                     .iter()
-                    .map(input_function_call)
+                    .map(|item| input_function_call(item).map(|message| [message]))
                     .collect::<Result<Vec<_>, _>>()
                     .or_value_error()?;
                 Ok(json!(converted))
