@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-bedrock = { path = "../betterlite-bedrock" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
@@ -25,6 +26,7 @@ serde_with = { version = "3.24.0", default-features = false, features = ["macros
 thiserror.workspace = true
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
