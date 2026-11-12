@@ -676,6 +676,16 @@ fn ok_transport() -> FakeTransport {
     )
 }
 
+fn assert_pre_call_headers(pre: &IndexMap<String, Json>) {
+    let Some(Json::Object(arguments)) = pre.get("additional_args") else {
+        panic!("the pre-call record carries additional_args");
+    };
+    let Some(Json::Object(sent)) = arguments.get("headers") else {
+        panic!("the pre-call record carries the request headers");
+    };
+    assert!(sent.contains_key("Authorization"));
+}
+
 fn assert_pre_and_post_call_records(snapshots: Mutex<Vec<Json>>) {
     let recorded = snapshots
         .into_inner()
@@ -699,6 +709,7 @@ fn assert_pre_and_post_call_records(snapshots: Mutex<Vec<Json>>) {
         panic!("the pre-call record is an object");
     };
     assert_eq!(pre.get("input"), Some(&Json::Text(String::from("a cat"))));
+    assert_pre_call_headers(pre);
     let Json::Object(post) = &recorded[1] else {
         panic!("the post-call record is an object");
     };
