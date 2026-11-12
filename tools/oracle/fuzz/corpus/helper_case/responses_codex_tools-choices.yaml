@@ -1,5 +1,8 @@
 kind: helper
 name: responses-codex-tools-choices-seed
-call: {responses_codex_tools: {operation: tool_choices, choices: [auto, {type: custom, name: edit}, {type: tool}]}}
+call:
+  responses_codex_tools:
+    operation: tool_choices
+    choices: [auto, {type: custom, name: edit}, {type: tool}]
 env: {}
 compare: {ignore: []}
