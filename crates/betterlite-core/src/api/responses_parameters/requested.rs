@@ -10,36 +10,11 @@ use super::error::ResponsesParametersError;
 use super::nested::apply_nested_drop_params;
 use crate::api::response_id_codecs::response::decode_previous_response_id;
 
-pub const RESPONSES_OPTIONAL_PARAMS: [&str; 28] = [
-    "include",
-    "instructions",
-    "max_output_tokens",
-    "metadata",
-    "parallel_tool_calls",
-    "previous_response_id",
-    "reasoning",
-    "store",
-    "background",
-    "stream",
-    "temperature",
-    "text",
-    "tool_choice",
-    "tools",
-    "top_p",
-    "truncation",
-    "user",
-    "service_tier",
-    "safety_identifier",
-    "prompt",
-    "max_tool_calls",
-    "prompt_cache_key",
-    "prompt_cache_retention",
-    "prompt_cache_options",
-    "stream_options",
-    "top_logprobs",
-    "partial_images",
-    "context_management",
-];
+pub const RESPONSES_OPTIONAL_PARAMS: &str = "include instructions max_output_tokens metadata \
+    parallel_tool_calls previous_response_id reasoning store background stream temperature text \
+    tool_choice tools top_p truncation user service_tier safety_identifier prompt max_tool_calls \
+    prompt_cache_key prompt_cache_retention prompt_cache_options stream_options top_logprobs \
+    partial_images context_management";
 
 pub fn requested_optional_params(params: &mut Params) -> Result<Params, ResponsesParametersError> {
     let provider = match params.remove("custom_llm_provider") {
@@ -63,7 +38,6 @@ pub fn requested_optional_params(params: &mut Params) -> Result<Params, Response
         }
     };
     let additional_drop_params = additional_drop_params(params.remove("additional_drop_params"))?;
-    let default_names = RESPONSES_OPTIONAL_PARAMS.join(" ");
     let processed = base_pre_process_params(
         &PreProcessRequest {
             passed_params: params,
@@ -72,7 +46,7 @@ pub fn requested_optional_params(params: &mut Params) -> Result<Params, Response
             additional_drop_params: &additional_drop_params,
             provider_config: None,
         },
-        &default_names,
+        RESPONSES_OPTIONAL_PARAMS,
         &["input"],
     );
     let mut non_default =
@@ -117,10 +91,7 @@ fn decode_previous_id(params: &mut Params) {
 }
 
 fn convert_metadata(params: &mut Params) -> Result<(), ResponsesParametersError> {
-    let Some(metadata) = params.get("metadata").cloned() else {
-        return Ok(());
-    };
-    let JsonValue::Object(fields) = metadata else {
+    let Some(JsonValue::Object(fields)) = params.get("metadata").cloned() else {
         params.remove("metadata");
         return Ok(());
     };
@@ -132,17 +103,14 @@ fn convert_metadata(params: &mut Params) -> Result<(), ResponsesParametersError>
                 .map_err(|source| ResponsesParametersError::Json { source })?,
         );
     }
-    match metadata_filter_limit(Some(&visible)) {
-        Some(converted) => {
-            let mut object = IndexMap::with_capacity(converted.len());
-            for (key, value) in converted {
-                object.insert(key, JsonValue::Text(value));
-            }
-            params.insert("metadata".to_owned(), JsonValue::Object(object));
-        }
-        None => {
-            params.remove("metadata");
-        }
+    let Some(converted) = metadata_filter_limit(Some(&visible)) else {
+        params.remove("metadata");
+        return Ok(());
+    };
+    let mut object = IndexMap::with_capacity(converted.len());
+    for (key, value) in converted {
+        object.insert(key, JsonValue::Text(value));
     }
+    params.insert("metadata".to_owned(), JsonValue::Object(object));
     Ok(())
 }

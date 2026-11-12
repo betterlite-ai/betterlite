@@ -48,23 +48,3 @@ pub enum ResponsesParametersError {
     #[error("text_format has no {field}")]
     MissingTextFormatField { field: &'static str },
 }
-
-impl ResponsesParametersError {
-    #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
-        match self {
-            Self::UnsupportedParams { .. } => Some(UNSUPPORTED_PARAMS_STATUS),
-            Self::NotAnObject { .. }
-            | Self::NotList { .. }
-            | Self::NotText { .. }
-            | Self::NotTextOrList { .. }
-            | Self::MessageSource { .. }
-            | Self::OriginalItems
-            | Self::DropPath { .. }
-            | Self::Json { .. }
-            | Self::DuplicateAuthorization { .. }
-            | Self::TextFormatNotObject
-            | Self::MissingTextFormatField { .. } => None,
-        }
-    }
-}

@@ -73,14 +73,13 @@ where
             normalized.insert(key, value);
         }
     }
-    if let Some(normalized_options) = stream_options
-        && let Some(Some(include_obfuscation)) = normalized_options.include_obfuscation
+    if let Some(Some(include_obfuscation)) =
+        stream_options.and_then(|options| options.include_obfuscation)
     {
-        let mut fields = IndexMap::with_capacity(1);
-        fields.insert(
+        let fields = IndexMap::from([(
             "include_obfuscation".to_owned(),
             JsonValue::Bool(include_obfuscation),
-        );
+        )]);
         normalized.insert("stream_options".to_owned(), JsonValue::Object(fields));
     }
     Ok(apply_openai_param_overrides(

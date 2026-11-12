@@ -186,14 +186,10 @@ fn corresponding_messages(client: &[ClientMessage], merged_input: &[ReturnedMess
 }
 
 fn field<'value>(message: &'value JsonValue, name: &str) -> &'value JsonValue {
-    match message {
-        JsonValue::Object(fields) => fields.get(name).unwrap_or(&ABSENT_FIELD),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Text(_)
-        | JsonValue::Array(_) => &ABSENT_FIELD,
-    }
+    let JsonValue::Object(fields) = message else {
+        return &ABSENT_FIELD;
+    };
+    fields.get(name).unwrap_or(&ABSENT_FIELD)
 }
 
 fn corresponding_input(

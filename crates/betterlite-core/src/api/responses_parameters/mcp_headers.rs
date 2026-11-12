@@ -47,25 +47,30 @@ pub fn extract_mcp_headers(
 fn raw_headers_from_secret_fields(
     secret_fields: Option<&JsonValue>,
 ) -> Result<Option<BTreeMap<String, String>>, ResponsesParametersError> {
-    let fields = match secret_fields {
-        None | Some(JsonValue::Null) => return Ok(None),
-        Some(JsonValue::Object(fields)) => fields,
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
-        ) => {
-            return Err(ResponsesParametersError::NotAnObject {
-                field: "secret_fields",
-            });
-        }
+    let Some(present) = secret_fields.filter(|value| !matches!(value, JsonValue::Null)) else {
+        return Ok(None);
     };
-    match fields.get("raw_headers") {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Object(headers)) => text_map(headers, "raw_headers").map(Some),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
-        ) => Err(ResponsesParametersError::NotAnObject {
-            field: "raw_headers",
-        }),
+    let fields = object_fields(present, "secret_fields")?;
+    match fields
+        .get("raw_headers")
+        .filter(|value| !matches!(value, JsonValue::Null))
+    {
+        None => Ok(None),
+        Some(value) => text_map(object_fields(value, "raw_headers")?, "raw_headers").map(Some),
+    }
+}
+
+const fn object_fields<'value>(
+    value: &'value JsonValue,
+    field: &'static str,
+) -> Result<&'value IndexMap<String, JsonValue>, ResponsesParametersError> {
+    match value {
+        JsonValue::Object(fields) => Ok(fields),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Text(_)
+        | JsonValue::Array(_) => Err(ResponsesParametersError::NotAnObject { field }),
     }
 }
 
@@ -75,13 +80,11 @@ fn text_map(
 ) -> Result<BTreeMap<String, String>, ResponsesParametersError> {
     fields
         .iter()
-        .map(|(name, value)| match value {
-            JsonValue::Text(text) => Ok((name.clone(), text.clone())),
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_) => Err(ResponsesParametersError::NotText { field }),
+        .map(|(name, value)| {
+            let JsonValue::Text(text) = value else {
+                return Err(ResponsesParametersError::NotText { field });
+            };
+            Ok((name.clone(), text.clone()))
         })
         .collect()
 }

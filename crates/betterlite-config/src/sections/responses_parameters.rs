@@ -75,10 +75,7 @@ fn quoted(text: &str) -> String {
 fn flag_text(value: &Json) -> String {
     match value {
         Json::Text(text) => quoted(text),
-        Json::Null => "None".to_owned(),
-        Json::Bool(true) => "True".to_owned(),
-        Json::Bool(false) => "False".to_owned(),
-        Json::Number(_) | Json::List(_) | Json::Object(_) => {
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             serde_json::to_string(value).unwrap_or_default()
         }
     }

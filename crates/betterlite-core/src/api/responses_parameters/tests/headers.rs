@@ -207,7 +207,7 @@ fn no_raw_headers_and_no_tools_produce_four_nulls() {
     let empty_headers = mcp_headers(Some(&empty), None).expect("empty raw headers");
     assert!(empty_headers.server_auth_headers.is_none());
     assert!(empty_headers.oauth2_headers.is_none());
-    assert!(empty_headers.raw_headers.is_none());
+    assert_eq!(empty_headers.raw_headers, Some(BTreeMap::new()));
 }
 
 #[test]

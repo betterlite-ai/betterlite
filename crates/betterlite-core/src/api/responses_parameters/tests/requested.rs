@@ -118,7 +118,10 @@ fn an_empty_metadata_object_stays() {
 fn a_wrong_control_key_type_is_an_error(#[case] source: &str) {
     let mut request = params(source);
     let error = requested_optional_params(&mut request).expect_err("a wrong type must fail");
-    assert!(error.status_code().is_none(), "not an SDK status");
+    assert!(
+        !matches!(error, ResponsesParametersError::UnsupportedParams { .. }),
+        "a wrong type is not an SDK status error"
+    );
     assert!(matches!(
         error,
         ResponsesParametersError::NotText { .. }
