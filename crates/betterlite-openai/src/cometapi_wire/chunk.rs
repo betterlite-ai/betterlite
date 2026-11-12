@@ -26,7 +26,7 @@ pub fn chunk_parser(chunk: &Object) -> Result<CometApiChunk, CometApiError> {
             Some(_) => shape("choices"),
         });
     };
-    let choices = projected_choices(choices)?;
+    let projected = projected_choices(choices)?;
     let (id, created, model) = chunk_keys(chunk)?;
     Ok(CometApiChunk {
         id,
@@ -34,7 +34,7 @@ pub fn chunk_parser(chunk: &Object) -> Result<CometApiChunk, CometApiError> {
         created,
         model,
         usage: chunk.get("usage").cloned(),
-        choices,
+        choices: projected,
     })
 }
 fn projected_choices(choices: &[Json]) -> Result<Vec<Json>, CometApiError> {

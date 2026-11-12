@@ -86,7 +86,7 @@ pub fn decode_comet_embedding_reply(
     }
     let parsed = serde_json::from_slice::<Json>(body).map_err(|_source| CometApiError {
         message: str::from_utf8(body).map_or_else(
-            |_source| String::from("the CometAPI embedding reply is not valid JSON"),
+            |_not_utf8| String::from("the CometAPI embedding reply is not valid JSON"),
             str::to_owned,
         ),
         status_code: Some(status),
