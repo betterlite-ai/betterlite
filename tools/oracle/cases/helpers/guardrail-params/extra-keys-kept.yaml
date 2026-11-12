@@ -1,0 +1,14 @@
+kind: helper
+name: guardrail-params-extra-keys-kept
+call:
+  b3662:
+    function: base_params
+    body:
+      guard_name: g
+      max_input_chars: 5
+      custom_key: 1.5
+      custom_nested:
+        depth: [1, 2, {inner: true}]
+        missing: null
+env: {}
+compare: {ignore: []}
