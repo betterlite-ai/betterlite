@@ -1,0 +1,28 @@
+kind: helper
+name: model-list-decode-failure
+call:
+  openai_chat_choices:
+    model_list_decode_failure:
+      steps:
+        - api_base: null
+          api_key: k
+          env: {}
+          reply: {status: 200, body: 'not json'}
+        - api_base: null
+          api_key: k
+          env: {}
+          reply: {status: 200, body: '{"models":[]}'}
+        - api_base: null
+          api_key: k
+          env: {}
+          reply: {status: 200, body: '{"data":"x"}'}
+        - api_base: null
+          api_key: k
+          env: {}
+          reply: {status: 200, body: '{"data":[{}]}'}
+        - api_base: null
+          api_key: k
+          env: {}
+          reply: {status: 200, body: '{"data":[{"id":5}]}'}
+env: {}
+compare: {ignore: []}

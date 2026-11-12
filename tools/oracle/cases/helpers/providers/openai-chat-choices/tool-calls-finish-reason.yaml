@@ -1,0 +1,31 @@
+kind: helper
+name: tool-calls-finish-reason
+call:
+  openai_chat_choices:
+    tool_calls_finish_reason:
+      steps:
+        - choices:
+            - index: 0
+              finish_reason: stop
+              message: {tool_calls: [{id: call_a, type: function, function: {name: lookup, arguments: '{"city":"Paris"}'}}]}
+        - choices:
+            - index: 0
+              finish_reason: tool_calls
+              message:
+                tool_calls:
+                  - id: call_1
+                    type: function
+                    function:
+                      name: multi_tool_use.parallel
+                      arguments: '{"tool_uses": [{"recipient_name": "functions.alpha", "parameters": {}}, {"recipient_name": "beta", "parameters": {}}]}'
+                  - {id: call_2, type: function, function: {name: gamma, arguments: '{}'}}
+        - json_mode: true
+          choices:
+            - {index: 0, finish_reason: length, message: {tool_calls: [{id: call_j, type: function, function: {name: json_tool_call, arguments: '{"a":1}'}}]}}
+        - json_mode: true
+          choices:
+            - {index: 0, finish_reason: stop, message: {tool_calls: [{id: call_j, type: function, function: {name: json_tool_call, arguments: ''}}]}}
+        - choices:
+            - {index: 0, finish_reason: stop_sequence, message: {content: x}}
+env: {}
+compare: {ignore: []}

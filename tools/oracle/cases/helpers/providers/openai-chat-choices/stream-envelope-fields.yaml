@@ -1,0 +1,14 @@
+kind: helper
+name: stream-envelope-fields
+call:
+  openai_chat_choices:
+    stream_envelope_fields:
+      steps:
+        - chunk: {id: c1, created: 7, model: m, object: something.else, choices: [], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}, service_tier: scale, system_fingerprint: fp}
+        - chunk: {choices: [], model: null}
+        - chunk: {id: c, created: 1, model: m, usage: null, service_tier: ''}
+        - chunk: {id: c, created: 1, model: m, service_tier: 3}
+        - chunk: {id: c, created: 1, model: m, usage: {prompt_tokens: null}}
+        - chunk: {id: c, created: 1, model: m, choices: [{index: 2, finish_reason: stop_sequence, delta: {content: x}, logprobs: null}]}
+env: {}
+compare: {ignore: []}
