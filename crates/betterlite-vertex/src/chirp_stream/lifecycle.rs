@@ -42,6 +42,8 @@ pub struct RecognizeStream {
     requests: mpsc::Sender<Option<StreamingRecognizeRequest>>,
     receiver: Mutex<Option<mpsc::Receiver<Option<StreamingRecognizeRequest>>>>,
     billed: Arc<Mutex<SignedDuration>>,
+    // cancels on a caller cancel or a failed audio send, so a drain failure still delivers its typed failure
+    stop: CancellationToken,
 }
 
 impl RecognizeStream {
@@ -55,6 +57,8 @@ impl RecognizeStream {
         requests
             .try_send(Some(first_request))
             .map_err(|_source| ChirpStreamError::QueueClosed)?;
+        let halt = CancellationToken::new();
+        let stop = halt.child_token();
         Ok(Self {
             connection: Connection {
                 client,
@@ -63,7 +67,8 @@ impl RecognizeStream {
             opened_at,
             turn,
             speech_active: Arc::new(AtomicBool::new(false)),
-            halt: CancellationToken::new(),
+            halt,
+            stop,
             requests,
             receiver: Mutex::new(Some(receiver)),
             billed: Arc::new(Mutex::new(SignedDuration::ZERO)),
@@ -109,7 +114,7 @@ impl RecognizeStream {
         };
         let failure = Arc::new(Mutex::new(None));
         let Some(stream) = self.open_stream(&failure) else {
-            report_failure(&outbox, &failure).await;
+            report_failure(&outbox, &failure, &self.halt).await;
             return;
         };
         let mut tasks = JoinSet::new();
@@ -118,7 +123,7 @@ impl RecognizeStream {
                 queue,
                 sink: stream.requests,
                 failure: Arc::clone(&failure),
-                halt: self.halt.clone(),
+                stop: self.stop.clone(),
             }
             .run(),
         );
@@ -126,7 +131,7 @@ impl RecognizeStream {
             .await;
         tasks.abort_all();
         while tasks.join_next().await.is_some() {}
-        report_failure(&outbox, &failure).await;
+        report_failure(&outbox, &failure, &self.halt).await;
     }
 
     fn open_stream(&self, failure: &Mutex<Option<String>>) -> Option<RecognizedStream> {
@@ -148,7 +153,7 @@ impl RecognizeStream {
     ) {
         loop {
             let Some(incoming) = self
-                .halt
+                .stop
                 .run_until_cancelled(responses.next_response())
                 .await
             else {
@@ -187,7 +192,7 @@ impl RecognizeStream {
             turn: self.turn,
             event,
         };
-        let _sent = self.halt.run_until_cancelled(outbox.send(result)).await;
+        let _sent = self.stop.run_until_cancelled(outbox.send(result)).await;
     }
 }
 
@@ -195,7 +200,7 @@ struct Drain {
     queue: mpsc::Receiver<Option<StreamingRecognizeRequest>>,
     sink: Box<dyn RequestSink>,
     failure: Arc<Mutex<Option<String>>>,
-    halt: CancellationToken,
+    stop: CancellationToken,
 }
 
 impl Drain {
@@ -214,7 +219,7 @@ impl Drain {
 
     fn fail(&self, error: &ChirpStreamError) {
         record_failure(&self.failure, error);
-        self.halt.cancel();
+        self.stop.cancel();
     }
 }
 
@@ -223,13 +228,18 @@ fn record_failure(slot: &Mutex<Option<String>>, error: &ChirpStreamError) {
         Some(format!("Google Speech-to-Text streaming failed: {error}"));
 }
 
-async fn report_failure(outbox: &mpsc::Sender<OutboxItem>, failure: &Mutex<Option<String>>) {
+async fn report_failure(
+    outbox: &mpsc::Sender<OutboxItem>,
+    failure: &Mutex<Option<String>>,
+    halt: &CancellationToken,
+) {
     let pending = failure
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .take();
     if let Some(reason) = pending {
         tracing::warn!("{reason}");
-        let _sent = outbox.send(OutboxItem::StreamFailure { reason }).await;
+        let failed = OutboxItem::StreamFailure { reason };
+        let _sent = halt.run_until_cancelled(outbox.send(failed)).await;
     }
 }

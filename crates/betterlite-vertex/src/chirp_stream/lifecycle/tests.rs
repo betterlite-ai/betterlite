@@ -460,6 +460,10 @@ async fn a_begin_makes_the_stream_active() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
     let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
+    assert!(
+        !stream.speech_active.load(Ordering::SeqCst),
+        "a new stream starts inactive"
+    );
     stream.half_close().await.expect("the terminator is queued");
     let (mut outbox_rx, tasks) = start_relay(&stream, 0.5);
     script_response(
@@ -511,6 +515,65 @@ async fn an_end_makes_the_stream_inactive() {
     drop(responses_tx);
     let billed = join_relay(tasks).await;
     assert_eq!(billed, SignedDuration::new(1, 250_000_000));
+    assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_response_without_an_activity_event_keeps_the_stream_active() {
+    let recorder = Arc::new(Recorder::default());
+    let half_closed = Arc::new(Notify::new());
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
+    stream.half_close().await.expect("the terminator is queued");
+    let (mut outbox_rx, tasks) = start_relay(&stream, 0.0);
+    script_response(
+        &responses_tx,
+        SpeechEventType::SpeechActivityBegin,
+        1,
+        250_000_000,
+    )
+    .await;
+    expect_turn(&mut outbox_rx).await;
+    assert!(stream.speech_active.load(Ordering::SeqCst));
+    script_response(&responses_tx, SpeechEventType::Unspecified, 0, 500_000_000).await;
+    expect_turn(&mut outbox_rx).await;
+    assert!(
+        stream.speech_active.load(Ordering::SeqCst),
+        "a response without an activity event leaves the state alone"
+    );
+    drop(responses_tx);
+    let billed = join_relay(tasks).await;
+    assert_eq!(billed, SignedDuration::new(1, 250_000_000));
+    assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_cancel_aborts_a_blocked_failure_send() {
+    let recorder = Arc::new(Recorder::default());
+    let half_closed = Arc::new(Notify::new());
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
+    responses_tx
+        .send(Some(Err(ChirpStreamError::ClientClosed)))
+        .await
+        .expect("the error is buffered");
+    let (outbox_tx, mut outbox_rx) = mpsc::channel(1);
+    outbox_tx
+        .send(OutboxItem::Closed)
+        .await
+        .expect("the outbox is full");
+    let relayed_stream = Arc::clone(&stream);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move { relayed_stream.relay(outbox_tx, 0.0).await });
+    let _second = timeout(Duration::from_secs(5), responses_tx.send(None))
+        .await
+        .expect("the relay consumed the error");
+    stream.halt.cancel();
+    let billed = join_relay(tasks).await;
+    assert_eq!(billed, SignedDuration::ZERO);
+    assert!(matches!(outbox_rx.try_recv(), Ok(OutboxItem::Closed)));
+    assert!(matches!(
+        outbox_rx.try_recv(),
+        Err(mpsc::error::TryRecvError::Disconnected)
+    ));
     assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
 }
 
