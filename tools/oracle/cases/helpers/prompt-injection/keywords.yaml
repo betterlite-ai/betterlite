@@ -1,0 +1,7 @@
+kind: helper
+name: prompt-injection-keywords
+call:
+  b3703:
+    operation: keywords
+env: {}
+compare: {ignore: []}

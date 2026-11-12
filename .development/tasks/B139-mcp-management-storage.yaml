@@ -1,0 +1,229 @@
+id: B139
+title: Prove MCP server management and its storage across route families through the booted proxy
+description: >-
+  This task closes the MCP management umbrella over mcp_management_endpoints.py. Every function in that file
+  already has a builder: B4711 the database handle, B4716 payload validation, B4717 redaction and access, B4718
+  temporary OAuth sessions, B4719 the OAuth browser legs, B4720 the catalog reads, B4721 server writes, B4722
+  submission review and pins, B4723 per-user credentials, B4724 per-user env vars, B4725 toolsets and gateway
+  sessions, and B4231 the OpenAPI registry loader. Every route already has a mount: B8625 the catalog and review
+  routes, B8627 the server writes, B8700 the credential and env var routes, B8701 toolsets and gateway sessions,
+  and B8702 the OAuth browser routes plus POST /v1/mcp/server/oauth/session. Each mount proves its own family.
+  None of them proves that a write through one family is what the next family reads back from the same database
+  and live registry. This task adds six database-backed HTTP transcripts for exactly that. It registers no
+  route, writes no product code and adds no helper adapter.
+
+  Put the six cases in tools/oracle/cases/http/mcp-management-storage. Each is an ordinary case with steps, no
+  kind field, `upstream: []` and its own `database:` block. Seed users, keys, teams and memberships with B860's
+  fixture rows (keys take the raw token and a role); a case that only needs the master key keeps an empty seed.
+  Give every case its own general_settings.master_key (sk-mcp-lifecycle, sk-mcp-review, sk-mcp-byok,
+  sk-mcp-purge, sk-mcp-env, sk-mcp-draft) so no two stateful cases ever share a process. Do not set
+  database_url and do not turn off schema setup: the runner injects the database, B5076 boots LiteLLM on it with
+  Prisma, and both gateways create the MCP tables themselves. Set env PROXY_BASE_URL=https://gateway.example.test
+  in every case, so registry urls and setup_url come out fixed. Every stored server points at
+  http://127.0.0.1:9/mcp and every OAuth server at http://127.0.0.1:9/oauth/authorize and
+  http://127.0.0.1:9/oauth/token. Nothing listens on port 9, so every health probe reports unhealthy on both
+  gateways. Every create, register, update and session body states transport http. LiteLLM mounts all of these
+  routes lazily under /v1/mcp/ only, so there is no unversioned or provider alias to cover, and the role route
+  check lets every key reach them, so each handler does its own authorization.
+
+  server-lifecycle.yaml (master key sk-mcp-lifecycle, general_settings.enable_mcp_registry true). POST
+  /v1/mcp/server creates storage-alpha (server_name storage_alpha, a description, auth_type api_key,
+  credentials auth_value plus upstream_resource https://api.example.test, mcp_access_groups [storage-readers]):
+  201, and the answer keeps only upstream_resource in credentials. Then GET /v1/mcp/server/storage-alpha, GET
+  /v1/mcp/server/storage_alpha (name lookup; its health lookup misses, so status differs), GET /v1/mcp/server,
+  GET /v1/mcp/server/health?server_ids=storage-alpha, GET /v1/mcp/access_groups, and GET /v1/mcp/registry.json
+  with no key (the builtin entry plus storage_alpha at https://gateway.example.test/storage_alpha/mcp). POST
+  /v1/mcp/make_public with mcp_server_ids [storage-alpha] (202), then GET by id shows mcp_info.is_public and
+  is_public_explicit true. DELETE /v1/mcp/server/storage-alpha/pin answers {"server_id", "status": "unpinned"}
+  with no upstream call. PUT /v1/mcp/server with server_id, a new description and mcp_access_groups
+  [storage-editors] (202), then GET /v1/mcp/access_groups shows storage-editors and no storage-readers. DELETE
+  /v1/mcp/server/storage-alpha (202, empty body). Repeat GET by id (404), the list, registry.json and
+  access_groups: the row is gone from every one.
+
+  submission-review.yaml (master key sk-mcp-review). Seed team storage-team, users storage-member and
+  storage-loner, a membership of storage-member in storage-team, key sk-storage-member (internal_user, team
+  storage-team) and key sk-storage-loner (internal_user, no team). POST /v1/mcp/server/register with the master
+  key gets 403, with the loner key 400, and with the member key and transport stdio (command npx, args
+  [-y, storage-mcp]) 400 with the stdio text. This case sets env LITELLM_ENABLE_MCP_STDIO=true (B4716's
+  mcp_env_values section reads it), so the stdio body passes the body check and reaches the handler's own
+  refusal. The member registers storage-sub (server_name storage_sub, auth_type none): 201 with approval_status
+  pending_review and submitted_by storage-member. The member's GET /v1/mcp/server is [] and its POST
+  /v1/mcp/server/storage-sub/pin is 403. The admin's POST /v1/mcp/server for storage-other with server_name
+  storage_sub gets the identifier conflict 400, the admin's POST pin on storage-sub gets 404 because the row is
+  not in the live registry, and GET /v1/mcp/server/submissions counts one pending item. PUT approve on an unknown
+  id gets 404, on storage-sub 200 active, and again 400 "MCP server is already active.". The member's list now
+  shows storage-sub in its non-admin form, and the admin's list shows it in full. PUT reject with review_notes
+  gets 200 rejected, and again 400. The member's list is [] again and submissions count one rejected item.
+
+  byok-delete-cleanup.yaml (master key sk-mcp-byok, user storage-byok-user with key sk-storage-byok-user,
+  internal_user). The admin creates storage-byok with is_byok true, allow_all_keys true and auth_type api_key.
+  The user POSTs /v1/mcp/server/storage-byok/user-credential {credential: byok-secret} and gets has_credential
+  true; the user's GET /v1/mcp/server shows has_user_credential true; the admin's GET
+  /v1/mcp/server/storage-byok/user-credentials lists one row for storage-byok-user. The admin DELETEs the
+  server and creates it again with the same body. The admin's credential list is now [] and the user's
+  has_user_credential is false: the delete removed the credential rows, so the new server with the old id
+  starts clean.
+
+  oauth-token-purge.yaml (master key sk-mcp-purge, users storage-oauth-user and storage-key-user with keys
+  sk-storage-oauth-user and sk-storage-key-user, internal_user). The admin creates storage-oauth with auth_type
+  oauth2, authorization_url, token_url, credentials client_id, client_secret and scopes, is_byok true and
+  allow_all_keys true. The OAuth user POSTs /v1/mcp/server/storage-oauth/oauth-user-credential (access_token,
+  expires_in 3600, scopes) and the key user POSTs user-credential. GET .../oauth-user-credential/status shows
+  has_credential true. A PUT that changes only description keeps it true. A PUT that sends the same credentials
+  again keeps it true, since the decrypted client_id and client_secret did not change. A PUT with url
+  http://127.0.0.1:9/mcp-moved purges the token: status turns false and the OAuth user's GET
+  /v1/mcp/user-credentials is []. The admin's GET /v1/mcp/server/storage-oauth/user-credentials still lists the
+  key user's BYOK row, since the purge removes only rows that decode as OAuth tokens.
+
+  env-var-lifecycle.yaml (master key sk-mcp-env, user storage-env-user with key sk-storage-env-user,
+  internal_user). The admin creates storage-env with auth_type none, allow_all_keys true, env_vars
+  [{name: STORAGE_REGION, value: eu-test, scope: global}, {name: STORAGE_TOKEN, scope: user, description}] and
+  static_headers {x-storage-region: "${STORAGE_REGION}", x-storage-token: "${STORAGE_TOKEN}"}. The admin's GET by
+  id shows the global value in clear; the user's GET /v1/mcp/server shows env_vars null. The user's GET
+  /v1/mcp/user-env-vars/status shows STORAGE_TOKEN not set, missing_count 1 and setup_url
+  https://gateway.example.test/ui/mcp-servers?fill_env_vars=storage-env. The user POSTs values
+  {STORAGE_TOKEN: token-one} to /v1/mcp/server/storage-env/user-env-vars and the answer and a following GET of
+  the same path show is_set true. The admin deletes the server and creates it again with the same body; the
+  user's GET of the per-server path and the status list both show the variable unset again.
+
+  oauth-session-draft.yaml (master key sk-mcp-draft). The admin creates storage-saved (server_name
+  storage_saved, auth_type oauth2, authorization_url, token_url, credentials client_id, client_secret, scopes
+  and upstream_resource https://api.example.test, mcp_access_groups [saved-readers]). POST
+  /v1/mcp/server/oauth/session with server_name storage_draft, the same OAuth endpoints, credentials client_id,
+  client_secret and scopes, and mcp_access_groups [draft-readers]: 200 with a generated server_id and only
+  scopes left in credentials. GET /v1/mcp/access_groups now lists draft-readers, because it reads every row
+  including drafts; GET /v1/mcp/server lists only storage-saved; GET /v1/mcp/server/submissions counts nothing.
+  POST /v1/mcp/server for storage-late with server_name storage_draft gets 201, since a draft holds no name. A
+  second session with server_id storage-saved, server_name storage_saved and no credentials keeps that id and
+  answers with the inherited upstream_resource, and GET /v1/mcp/server/storage-saved afterwards still shows the
+  saved row unchanged: the draft write skips an existing id.
+
+  Compare status, body and content-type on every step. Error bodies are FastAPI detail objects, compared whole.
+  Ignore only generated leaves, each with its own why: created_at, updated_at, submitted_at, reviewed_at,
+  last_health_check and health_check_error on server rows; connected_at, updated_at and expires_at on credential
+  rows; and the generated server_id of the storage_draft session. Keep status, approval_status, submitted_by,
+  review_notes, created_by, credentials, mcp_info, env_vars, has_credential, has_user_credential, is_set,
+  missing_count and setup_url compared. Never seed MCP rows through the fixture or add a test-only hook: every
+  row comes from an HTTP step. About 700 to 900 fixture lines are expected. A mismatch goes with its transcript
+  to the owner of the step that differs (the list above), not into a looser comparison.
+scope:
+  paths:
+    - tools/oracle/cases/http/mcp-management-storage/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1019-L1106
+    why: Access groups read every database row including drafts; registry.json needs no key and lists the builtin entry first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1192-L1371
+    why: Server list with its non-admin form, and the health route the lifecycle reads after create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1374-L1447
+    why: Register gate order (admin 403, no team 400, stdio 400) and the pending_review row.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1509-L1711
+    why: Submissions, pin and unpin, approve and reject with their 403, 404 and 400 texts and cache effects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1714-L1898
+    why: Fetch by id or name loads a database-only row into the registry; create forces active and answers 201.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2011-L2078
+    why: The OAuth session route; it writes a draft row and answers the redacted temporary record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L860-L980
+    why: Credential inheritance for a session on a saved id, and the rule that only a live saved id is kept.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2355-L2724
+    why: Delete answers 202 empty; BYOK and OAuth credential stores, status and both credential lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2763-L2939
+    why: Env var status with missing_count and setup_url, the merge that drops undeclared names, and clear.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2942-L3160
+    why: Edit answers 202 and purges OAuth tokens on a mint-relevant change; make_public saves the public list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L639-L668
+    why: Redaction keeps upstream_resource, upstream_token_header and scopes and stamps mcp_info.is_public.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L516-L529
+    why: Name conflicts skip only drafts, so pending and rejected rows still hold their names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L886-L1053
+    why: Delete removes credential, env var and OAuth client rows; a draft write never touches an existing id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1751-L1834
+    why: The OAuth token identity fields compared on edit, and the purge that keeps BYOK rows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2183-L2206
+    why: Submissions select rows with submitted_at set, newest first, with status counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3357-L3460
+    why: The submitter's cache of active submissions (60 seconds), cleared on approve, filtered to registry ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7141-L7215
+    why: Health checks a refused url as unhealthy and an unknown id as unknown with "Server not found".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1591-L1612
+    why: The stdio body check runs before the handler and needs LITELLM_ENABLE_MCP_STDIO and an allowed command.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L152-L158
+    why: The management router mounts under /v1/mcp/ only, so no alias exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L341-L342
+    why: The role route check passes every /v1/mcp/ route, leaving authorization to each handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L748-L752
+    why: setup_url is PROXY_BASE_URL plus /ui/mcp-servers?fill_env_vars=<id>.
+dod:
+  - text: A server created through the admin route is what the catalog, health, access groups and registry.json read back, and update, public, unpin and delete each show in those reads.
+    proof: [server-lifecycle-case, oracle]
+  - text: A team member's submission stays out of the live lists while pending, holds its name against an admin create, and appears for its submitter only after approval.
+    proof: [submission-review-case, oracle]
+  - text: Deleting a BYOK server removes its stored user keys, so the same id created again starts with none.
+    proof: [byok-delete-cleanup-case, oracle]
+  - text: Only a mint-relevant server edit purges stored OAuth tokens, and the purge keeps BYOK keys.
+    proof: [oauth-token-purge-case, oracle]
+  - text: Per-user env var values written for a server show in its status until the server is deleted, and not after it is created again.
+    proof: [env-var-cleanup-case, oracle]
+  - text: An OAuth session draft feeds access groups but stays out of the server list and submissions, holds no name, and leaves a saved server it re-authorizes unchanged.
+    proof: [oauth-session-draft-case, oracle]
+checks:
+  optional: []
+  commands:
+    - id: server-lifecycle-case
+      why: each mount's own cases never read one family's write back through another family
+      run: test -f tools/oracle/cases/http/mcp-management-storage/server-lifecycle.yaml && grep -q '^database:' tools/oracle/cases/http/mcp-management-storage/server-lifecycle.yaml && grep -qF '/v1/mcp/registry.json' tools/oracle/cases/http/mcp-management-storage/server-lifecycle.yaml
+    - id: submission-review-case
+      why: no mount has a register case, and review cases stop at the missing database
+      run: test -f tools/oracle/cases/http/mcp-management-storage/submission-review.yaml && grep -q '^database:' tools/oracle/cases/http/mcp-management-storage/submission-review.yaml && grep -qF '/v1/mcp/server/register' tools/oracle/cases/http/mcp-management-storage/submission-review.yaml
+    - id: byok-delete-cleanup-case
+      why: a stale BYOK row after delete would hand an old key to a new server with the same id
+      run: test -f tools/oracle/cases/http/mcp-management-storage/byok-delete-cleanup.yaml && grep -q '^database:' tools/oracle/cases/http/mcp-management-storage/byok-delete-cleanup.yaml && grep -qF '/user-credentials' tools/oracle/cases/http/mcp-management-storage/byok-delete-cleanup.yaml
+    - id: oauth-token-purge-case
+      why: the purge spans an admin write and a per-user read that live in different mounts
+      run: test -f tools/oracle/cases/http/mcp-management-storage/oauth-token-purge.yaml && grep -q '^database:' tools/oracle/cases/http/mcp-management-storage/oauth-token-purge.yaml && grep -qF '/oauth-user-credential/status' tools/oracle/cases/http/mcp-management-storage/oauth-token-purge.yaml
+    - id: env-var-cleanup-case
+      why: env var cleanup on delete is only visible through the user routes after a re-create
+      run: test -f tools/oracle/cases/http/mcp-management-storage/env-var-lifecycle.yaml && grep -q '^database:' tools/oracle/cases/http/mcp-management-storage/env-var-lifecycle.yaml && grep -qF '/v1/mcp/user-env-vars/status' tools/oracle/cases/http/mcp-management-storage/env-var-lifecycle.yaml
+    - id: oauth-session-draft-case
+      why: draft rows share the server table with saved and submitted rows and must not leak into them
+      run: test -f tools/oracle/cases/http/mcp-management-storage/oauth-session-draft.yaml && grep -q '^database:' tools/oracle/cases/http/mcp-management-storage/oauth-session-draft.yaml && grep -qF '/v1/mcp/server/oauth/session' tools/oracle/cases/http/mcp-management-storage/oauth-session-draft.yaml
+oracle_cases:
+  - tools/oracle/cases/http/mcp-management-storage/server-lifecycle.yaml
+  - tools/oracle/cases/http/mcp-management-storage/submission-review.yaml
+  - tools/oracle/cases/http/mcp-management-storage/byok-delete-cleanup.yaml
+  - tools/oracle/cases/http/mcp-management-storage/oauth-token-purge.yaml
+  - tools/oracle/cases/http/mcp-management-storage/env-var-lifecycle.yaml
+  - tools/oracle/cases/http/mcp-management-storage/oauth-session-draft.yaml
+deviations: []
+out_of_scope:
+  - "B4711 builds _get_prisma_client_or_none and get_prisma_client_or_throw."
+  - "B4716 builds _HasServerId and does_mcp_server_exist (only tests call it at the pin), the validate_tool_name fallback, _validate_mcp_server_name_fields, _validate_upstream_token_header, validate_and_normalize_mcp_server_payload, mcp_identifier_conflict_message, raise_mcp_identifier_conflict, warn_if_id_jag_server_outruns_sso, stamp_omitted_oauth2_flow, _VALID_MCP_REQUIRED_FIELDS and _validate_mcp_required_fields."
+  - "B4717 builds _redact_mcp_credentials, _preserved_admin_config_credentials, _redact_mcp_credentials_list, _user_is_full_admin, _resolve_credential_target_user_id, _is_restricted_virtual_key_request, _sanitize_mcp_server_for_non_admin, _sanitize_mcp_server_list_for_non_admin, _sanitize_mcp_server_for_virtual_key, _sanitize_mcp_server_list_for_virtual_key, _INHERITED_CREDENTIAL_FIELDS, _has_non_admin_config_credentials, _inherit_credentials_from_existing_server, _get_user_mcp_management_mode, _resolve_accessible_mcp_servers and _authorize_and_fetch_mcp_server."
+  - "B4718 builds TEMPORARY_MCP_SERVER_TTL_SECONDS, TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX, _TemporaryMCPServerEntry, _prune_expired_temporary_mcp_servers, _cache_temporary_mcp_server, _cache_temporary_mcp_server_in_redis, _get_temporary_mcp_server_from_redis, _persist_draft_mcp_server, _get_draft_mcp_server_as_mcp_server, get_cached_temporary_mcp_server, _resolve_session_server_id, _build_temporary_mcp_server_record, add_session_mcp_server and _get_cached_temporary_mcp_server_or_404."
+  - "B4719 builds _mcp_oauth_user_api_key_auth, mcp_authorize, mcp_token and mcp_register."
+  - "B4720 builds DEFAULT_MCP_REGISTRY_VERSION, _is_public_registry_enabled, _build_registry_remote_url, _build_mcp_registry_server_name, _McpRegistryRemote, _McpRegistryEntry, _build_mcp_registry_entry_for_server, _build_builtin_registry_entry, get_mcp_tools, get_mcp_access_groups, get_client_ip, get_mcp_registry, _mcp_server_display_order, _get_team_scoped_mcp_server_list, _connected_app_reachable_server_ids, fetch_all_mcp_servers, _mcp_health_status_for_response, health_check_servers, fetch_mcp_server, _MCP_REGISTRY_PATH, _load_mcp_registry, discover_mcp_servers and get_openapi_registry. B4231 (done) built _OPENAPI_REGISTRY_PATH and _load_openapi_registry."
+  - "B4721 builds add_mcp_server, import_mcp_servers with its nested _classify and _create, remove_mcp_server, edit_mcp_server and make_mcp_servers_public."
+  - "B4722 builds register_mcp_server, get_mcp_server_submissions, pin_mcp_server_tools, unpin_mcp_server_tools, _store_pinned_tools, approve_mcp_server_submission and reject_mcp_server_submission."
+  - "B4723 builds store_mcp_user_credential, delete_mcp_user_credential, store_mcp_oauth_user_credential, delete_mcp_oauth_user_credential, get_mcp_oauth_user_credential_status, list_mcp_user_credentials with its nested helpers, and list_mcp_server_user_credentials."
+  - "B4724 builds _compute_user_env_var_status, get_mcp_user_env_vars, store_mcp_user_env_vars, clear_mcp_user_env_vars and list_mcp_user_env_var_status."
+  - "B4725 builds get_mcp_gateway_sessions, delete_mcp_gateway_sessions, add_mcp_toolset, fetch_mcp_toolsets, fetch_mcp_toolset, edit_mcp_toolset and remove_mcp_toolset."
+  - "The /v1/mcp router and every route registration: B8625 catalog and review, B8627 server writes, B8700 user routes, B8701 toolsets and gateway sessions, B8702 OAuth routes and the session route. This task registers none of them again."
+  - "MCP_AVAILABLE and the mcp import guard only protect a Python optional import; betterlite has no such import, so nothing is ported."
+  - "Single-family behavior and error paths stay with each mount's own cases; toolsets, gateway sessions, import and the OAuth browser legs get no transcript here."
+  - "A successful pin needs a live MCP upstream that answers tools/list; it stays with B4722 and B8625, and this task only unpins and checks the pin refusals."
+  - "The db.py storage functions these routes call belong to B4710 to B4715."
+pitfalls:
+  - Point every stored server at http://127.0.0.1:9 so health is unhealthy on both gateways; a mock upstream or a public host makes status and health_check timing differ.
+  - server_name and alias may not contain "-" (validate_and_normalize_mcp_server_payload), so names use underscores while server_id keeps hyphens.
+  - NewMCPServerRequest and UpdateMCPServerRequest default transport to sse, so a body without transport http stores a different row.
+  - Pending and rejected rows hold server_name and alias against a later create; only approval_status draft is skipped by _identifier_where.
+  - An admin GET /v1/mcp/server/storage-sub before approval loads the pending row into the live registry (fetch_mcp_server L1777), so pin and the member list stop showing the pending state.
+  - Approve clears the submitter's 60 second cache of active submissions and reject does not; the member's list empties after reject only because the reload drops the row from the registry.
+  - Without LITELLM_ENABLE_MCP_STDIO=true the stdio register step answers 422 from the body check instead of the handler's 400.
+  - Re-sending the same client_id and client_secret in a PUT is not a mint-relevant change and must not purge tokens.
+  - DELETE /v1/mcp/server/{server_id} and PUT /v1/mcp/server answer 202, and the delete body is empty.
+  - The storage_draft session id is a fresh uuid on each gateway, so ignore it and never feed it into a later URL.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

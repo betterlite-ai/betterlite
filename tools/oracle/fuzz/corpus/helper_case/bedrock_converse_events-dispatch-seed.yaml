@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock_converse_events-dispatch-seed
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: true
+        ids:
+          - 00000000-0000-4000-8000-000000000021
+        steps:
+          - function: chunk
+            chunk: {outputText: plain}
+          - function: chunk
+            chunk: {outputs: [{text: mistral}], stop_reason: stop}
+          - function: chunk
+            chunk: {generation: meta}
+          - function: chunk
+            chunk: {text: cohere}
+          - function: chunk
+            chunk: {finish_reason: complete}
+          - function: chunk
+            chunk: {completionReason: FINISH}
+          - function: chunk
+            chunk: {usage: {inputTokens: 1, outputTokens: 2}}
+          - function: chunk
+            chunk: {metadata: {usage: {inputTokens: 1, outputTokens: 2}}}
+          - function: chunk
+            chunk: {messageStop: {stopReason: end_turn}}
+env: {}
+compare: {ignore: []}

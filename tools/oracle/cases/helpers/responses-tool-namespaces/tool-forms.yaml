@@ -1,0 +1,37 @@
+kind: helper
+name: responses-tool-namespaces-tool-forms
+call:
+  responses_tool_namespaces:
+    operation: tools_to_chat
+    tools:
+      - type: function
+        name: full
+        description: Everything set
+        parameters: {properties: {a: {type: string}}}
+        strict: true
+        cache_control: {type: ephemeral}
+        defer_loading: true
+        allowed_callers: [direct]
+        input_examples: [{a: x}]
+        eager_input_streaming: false
+      - {type: function, name: minimal}
+      - type: function
+        name: empties
+        parameters: null
+        strict: false
+        cache_control: {}
+        defer_loading: false
+        allowed_callers: []
+        input_examples: []
+        eager_input_streaming: null
+      - {type: function, name: typed, parameters: {type: string}}
+      - {type: web_search_preview, search_context_size: low, user_location: {type: approximate, country: US}}
+      - {type: web_search, search_context_size: high, user_location: null}
+      - {type: mcp, server_label: docs, server_url: "https://docs.example/mcp"}
+      - {type: file_search, vector_store_ids: [vs_1]}
+      - {type: custom, name: patch, description: Patch}
+      - {type: custom, name: other}
+      - {name: untyped}
+env: {}
+compare:
+  ignore: []

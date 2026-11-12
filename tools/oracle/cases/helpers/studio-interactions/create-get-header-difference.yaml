@@ -1,0 +1,30 @@
+kind: helper
+name: studio-interactions-create-get-header-difference
+call:
+  studio_interactions:
+    calls:
+      - function: response
+        action: create
+        status: 200
+        headers:
+          content-length: "62"
+          x-ratelimit-remaining-requests: "9"
+          x-litellm-spoofed: "yes"
+          x-request-id: "r1"
+        body: '{"id": "v1_a", "status": "completed", "steps": [{"type": "text"}], "extra": {"k": 1}}'
+      - function: response
+        action: get
+        status: 200
+        headers:
+          content-length: "62"
+          x-ratelimit-remaining-requests: "9"
+          x-litellm-spoofed: "yes"
+          x-request-id: "r1"
+        body: '{"id": "v1_a", "status": "completed", "steps": [{"type": "text"}], "extra": {"k": 1}}'
+      - function: response
+        action: create
+        status: 200
+        headers: {content-length: "2"}
+        body: "{}"
+env: {}
+compare: {ignore: []}

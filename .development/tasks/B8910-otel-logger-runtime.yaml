@@ -30,7 +30,8 @@ description: >-
   LITELLM_OTEL_EXCLUDED_SERVICES is resolved by B3842, not read here. The factory selects the generic
   callback unless mapper_names contains the exact name langfuse; with it select LangfuseOtel or
   LangfuseContentOtel according to capture_span_content. Preserve callback_name, injected trace/log/
-  meter providers and constructor settings. Langfuse wrappers still expose the wrapped V2 provider
+  meter providers and constructor settings. The runtime is built with an `Arc<dyn StreamOutputAssembler>` (B3857's port in
+  otel::content_projections) and hands that same value to every LangfuseContentOtel the factory builds. Langfuse wrappers still expose the wrapped V2 provider
   and config, and participate in V2 selection and callback registration.
 
   Also own _maybe_construct_otel_v2 and its five predicate/filter helpers in litellm_logging.py

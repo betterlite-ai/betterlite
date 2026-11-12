@@ -1,0 +1,72 @@
+kind: helper
+name: responses-tool-namespaces-tool-outputs
+call:
+  responses_tool_namespaces:
+    operation: tool_outputs
+    tools:
+      - {type: custom, name: apply_patch, description: Patch}
+      - type: namespace
+        name: crm
+        tools:
+          - {type: function, name: lookup}
+          - {type: function, name: shared}
+      - type: namespace
+        name: erp
+        tools:
+          - {type: function, name: shared}
+          - {type: function, name: only_erp}
+      - {type: function, name: top}
+    choices:
+      - provider_specific_fields: null
+        tool_calls:
+          - {id: call_ns, type: function, name: crm__lookup, arguments: '{"id":1}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_bare, type: function, name: only_erp, arguments: '{}', status: completed, tool_fields: null, function_fields: null}
+          - {id: call_shared, type: function, name: shared, arguments: '{"s":1}', status: in_progress, tool_fields: null, function_fields: null}
+          - {id: call_qualified, type: function, name: erp__shared, arguments: '{"s":2}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_custom, type: function, name: apply_patch, arguments: '{"content":"diff"}', status: incomplete, tool_fields: null, function_fields: null}
+          - {id: call_custom_raw, type: function, name: apply_patch, arguments: raw text, status: null, tool_fields: null, function_fields: null}
+          - {id: call_top, type: function, name: top, arguments: null, status: null, tool_fields: null, function_fields: null}
+          - {id: call_text_args, type: function, name: top, arguments: plain, status: null, tool_fields: null, function_fields: null}
+          - {id: call_dropped, type: custom, name: top, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+      - provider_specific_fields: null
+        tool_calls:
+          - id: call_tool_map
+            type: function
+            name: top
+            arguments: '{}'
+            status: null
+            tool_fields: {kind: mapping, fields: {thought_signature: sig}}
+            function_fields: {kind: mapping, fields: {ignored: skipped_value}}
+          - id: call_function_map
+            type: function
+            name: top
+            arguments: '{}'
+            status: null
+            tool_fields: {kind: mapping, fields: {}}
+            function_fields: {kind: mapping, fields: {thought_signature: from_function}}
+          - id: call_record
+            type: function
+            name: top
+            arguments: '{}'
+            status: null
+            tool_fields: {kind: record, fields: {a: 1, b: two}}
+            function_fields: null
+          - id: call_plain
+            type: function
+            name: top
+            arguments: '{}'
+            status: null
+            tool_fields: {kind: plain, value: not a mapping}
+            function_fields: {kind: mapping, fields: {thought_signature: shadowed}}
+          - id: call_plain_empty
+            type: function
+            name: top
+            arguments: '{}'
+            status: null
+            tool_fields: {kind: plain, value: ""}
+            function_fields: {kind: mapping, fields: {thought_signature: used}}
+      - provider_specific_fields: null
+        tool_calls: []
+env: {}
+compare:
+  ignore: []

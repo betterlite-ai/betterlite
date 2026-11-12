@@ -1,0 +1,23 @@
+task: B3703
+deviations:
+  - what: The info log line on a heuristics hit names the keyword and the ratio but leaves out the user's text.
+    why: LiteLLM logs "Rejected user input - {user_input}", which copies a possibly sensitive prompt into the proxy log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L142-L145
+  - what: A DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD value that is not a finite decimal (text, nan, inf) fails config loading with an error that names the variable.
+    why: Python fails at import with a ValueError for text, and accepts nan and inf, which make every comparison false or true; a finite Decimal keeps the strict comparison exact.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1886
+  - what: Verbose output has no print to stdout when litellm.set_verbose is on; only tracing log lines are written.
+    why: betterlite has no global verbose flag, and the repo rules forbid global state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L85-L86
+  - what: The model call goes through an injected InjectionJudge trait instead of llm_router.acompletion.
+    why: betterlite-guardrails cannot depend on the router or server crates; the server implements the trait over its router.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L255-L264
+  - what: Config loading validates the three llm_api_* fields whenever llm_api_check is true, even when the detect_prompt_injection callback is not registered.
+    why: LiteLLM builds LiteLLMPromptInjectionParams and runs its validator only when detect_prompt_injection is in callbacks, so a bad params block loads without the callback; betterlite validates at config load to fail fast instead of silently at request time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L325-L333
+  - what: A heuristics check that waits longer than PROMPT_INJECTION_HEURISTICS_TIMEOUT_SECONDS for a permit stops and the request passes.
+    why: LiteLLM runs the scan on a one-worker ThreadPoolExecutor with an unbounded queue, so one long prompt holds every later pre-call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L32-L34
+  - what: The scan stops at the same deadline and the request passes.
+    why: LiteLLM scans the whole formatted prompt with no length cap, about 376 matcher calls per character, so a 100k-character prompt runs for minutes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L118-L147

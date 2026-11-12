@@ -27,7 +27,10 @@ description: >-
 
   otel (L4790-L4828): when LITELLM_OTEL_V2 is on (B3853's is_otel_v2_enabled), build the V2 logger from
   `inputs.callback_settings["otel"]` (LiteLLM's _get_custom_logger_settings_from_proxy_server); otherwise build the
-  legacy OpenTelemetry from the same settings. Both paths then run the Phoenix auto start: when the Phoenix variables
+  legacy OpenTelemetry from the same settings: copy their `attributes` value into OpenTelemetryConfig.attributes and build
+  B3857's metric attribute filter from that config before calling B3868's init (LiteLLM's __init__ L395-L415), so a bad
+  otel.attributes returns CatalogError::Init before any provider is built or the logger registers. Every legacy arm builds
+  the filter from its config the same way. Both paths then run the Phoenix auto start: when the Phoenix variables
   are set and no arize_phoenix logger exists, resolve arize_phoenix too. That needs the catalog, so phoenix_auto.rs
   returns a flag and LoggerCatalog's otel arm resolves arize_phoenix after storing otel; add that one call to the otel
   branch of the match in catalog.rs (the only line of catalog.rs this task changes).
@@ -40,7 +43,8 @@ description: >-
 
 
   Tests in each <name>/tests.rs with a fake environment: the legacy path when V2 is off, the V2 path when on, the
-  Init error for a missing required variable, and for otel that Phoenix variables also produce an arize_phoenix logger.
+  Init error for a missing required variable, for otel that Phoenix variables also produce an arize_phoenix logger,
+  and for legacy otel that an attributes setting with both include_list and exclude_list gives CatalogError::Init.
 scope:
   paths:
     - crates/betterlite-logging/src/registry/catalog.rs
@@ -88,6 +92,10 @@ dod:
   - text: langtrace and signoz without their required variable give LiteLLM's init error before any V2 attempt.
     proof: [otel-arm-tests]
   - text: otel picks V2 or legacy by LITELLM_OTEL_V2 and starts arize_phoenix when the Phoenix variables are set.
+    proof: [otel-arm-tests]
+  - text: >-
+      The legacy otel arm builds the metric attribute filter from the attributes setting before B3868's init, so a bad
+      otel.attributes gives CatalogError::Init and registers no logger.
     proof: [otel-arm-tests]
 checks:
   optional: []

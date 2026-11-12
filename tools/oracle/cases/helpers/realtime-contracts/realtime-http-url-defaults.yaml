@@ -1,0 +1,13 @@
+kind: helper
+name: realtime-http-url-defaults
+call:
+  realtime_contracts:
+    function: http_urls
+    urls:
+      - {api_base: null, model: gpt-realtime, api_version: "2025-04-01", ephemeral_key: ep-test}
+      - {api_base: "https://host", model: gpt-realtime, api_version: null, ephemeral_key: ""}
+      - {api_base: "https://host/v1/", model: other, api_version: v2, ephemeral_key: ep-test}
+      - {api_base: "https://host/v1", model: "", api_version: null, ephemeral_key: ""}
+      - {api_base: "", model: m, api_version: v3, ephemeral_key: ep-2}
+env: {}
+compare: {ignore: []}
