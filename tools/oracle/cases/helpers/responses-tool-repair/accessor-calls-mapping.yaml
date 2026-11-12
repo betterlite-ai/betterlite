@@ -1,0 +1,10 @@
+kind: helper
+name: accessor-calls-mapping
+call:
+  responses_tool_repair:
+    operation: calls
+    assistant: {tool_calls: {a: 1, b: 2}}
+    tool_call_id: a
+env: {}
+compare:
+  ignore: []

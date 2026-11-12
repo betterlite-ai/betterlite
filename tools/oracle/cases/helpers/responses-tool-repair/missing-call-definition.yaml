@@ -1,0 +1,15 @@
+kind: helper
+name: missing-call-definition
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: null}
+      - {role: tool, tool_call_id: call_1, content: ok}
+    tools: [{type: function, function: {name: lookup}}]
+    cache:
+      call_1: {id: call_1, type: function, function: {name: weather, arguments: {city: Paris}}}
+env: {}
+compare:
+  ignore: []

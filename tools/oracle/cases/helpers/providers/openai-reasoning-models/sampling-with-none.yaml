@@ -1,0 +1,15 @@
+kind: helper
+name: openai-reasoning-models-sampling-with-none
+call:
+  openai_reasoning_models:
+    sampling_with_none:
+      probes:
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {logprobs: true, top_p: 0.9, reasoning_effort: high}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {logprobs: true, top_p: 0.9, reasoning_effort: high}, drop_params: true}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {logprobs: true, reasoning_effort: none}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {top_p: 0.5}}
+      - {model: gpt-5, chat_models: [gpt-5], model_cost: {gpt-5: {litellm_provider: openai, supports_tool_choice: false, supports_none_reasoning_effort: false}}, requested: {logprobs: true, top_p: 0.5}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, existing: {logprobs: true, top_p: 0.4}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, existing: {reasoning_effort: high, logprobs: true}}
+env: {}
+compare: {ignore: []}

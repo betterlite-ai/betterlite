@@ -1,0 +1,13 @@
+kind: helper
+name: openai-reasoning-models-o-series-capability-fallback
+call:
+  openai_reasoning_models:
+    o_series_capability_fallback:
+      probes:
+      - {model: fixture-capability-model, chat_models: [], model_cost: {fixture-capability-model: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true}}}
+      - {model: fixture-capability-model, chat_models: [], model_cost: {fixture-capability-model: {litellm_provider: openai, supports_function_calling: false, supports_parallel_function_calling: true, supports_response_schema: true}}}
+      - {model: fixture-capability-model, chat_models: [], model_cost: {fixture-capability-model: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: false, supports_response_schema: true}}}
+      - {model: fixture-capability-model, chat_models: [], model_cost: {fixture-capability-model: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: false}}}
+      - {model: openai/o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_function_calling: true, supports_parallel_function_calling: true, supports_response_schema: true, supports_system_messages: true}}, resolved: {model: o3, provider: openai}}
+env: {}
+compare: {ignore: []}
