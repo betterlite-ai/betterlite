@@ -17,6 +17,15 @@ const O3_OPEN: &str = r#"{
     }
 }"#;
 
+const O3_CLOSED: &str = r#"{
+    "o3": {
+        "litellm_provider": "openai",
+        "supports_function_calling": false,
+        "supports_parallel_function_calling": false,
+        "supports_response_schema": false
+    }
+}"#;
+
 const FIXTURE_OPEN: &str = r#"{
     "fixture-capability-model": {
         "litellm_provider": "openai",
@@ -83,6 +92,7 @@ pub(super) async fn o_series_capability_fallback() {
     }
     fallback_gates().await;
     resolved_gate().await;
+    closed_gate().await;
 }
 
 async fn fallback_gates() {
@@ -115,8 +125,23 @@ async fn resolved_gate() {
     .await;
     assert!(supported.contains(&"reasoning_effort"));
     assert!(!supported.contains(&"user"));
-    assert!(!supported.contains(&"tools"));
-    assert!(!supported.contains(&"response_format"));
+    assert!(supported.contains(&"tools"));
+    assert!(supported.contains(&"response_format"));
+}
+
+async fn closed_gate() {
+    let mut closed = Fixture::new(&["o3"], O3_CLOSED);
+    let catalog = closed.catalog.clone();
+    let limited = o_series::supported_params(
+        &mut closed,
+        &mut Resolver(Some(resolved_o3())),
+        "openai/o3",
+        &catalog,
+    )
+    .await;
+    assert!(!limited.contains(&"tools"));
+    assert!(!limited.contains(&"parallel_tool_calls"));
+    assert!(!limited.contains(&"response_format"));
 }
 
 async fn map_o3(

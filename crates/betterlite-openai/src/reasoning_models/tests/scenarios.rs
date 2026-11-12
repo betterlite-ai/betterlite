@@ -9,7 +9,7 @@ use super::{
     DropParams, Fixture, global_drop, gpt5_supported, map_gpt5, no_drop, request, request_drop,
 };
 use crate::chat::{ChatMessage, MessageContent, Role};
-use crate::openai_base_config::Object;
+use crate::openai_base_config::{CatalogCapabilities, Object};
 
 const SEARCH_SUPPORTED: [&str; 13] = [
     "max_tokens",
@@ -120,7 +120,17 @@ async fn search_mapping(fixture: &mut Fixture) {
 }
 
 pub(super) fn gpt5_chat_exclusion() {
-    let catalog = Fixture::new(&["gpt-5-chat", "gpt-5-search-api"], "{}").catalog;
+    let catalog = Fixture::new(
+        &[
+            "gpt-5-chat",
+            "gpt-5-search-api",
+            "o3",
+            "gpt-audio",
+            "gpt-4o",
+        ],
+        "{}",
+    )
+    .catalog;
     assert_eq!(select_policy("gpt-5-chat", &catalog), ReasoningPolicy::Base);
     assert_eq!(
         select_policy("proxy/gpt-5-chat", &catalog),
@@ -131,6 +141,7 @@ pub(super) fn gpt5_chat_exclusion() {
         ReasoningPolicy::Gpt5Search
     );
     assert_eq!(select_policy("gpt-5.1", &catalog), ReasoningPolicy::Gpt5);
+    o_series_and_audio_policies(&catalog);
     assert!(!super::super::is_model_gpt_5_search_model("gpt-5-chat"));
     assert!(super::super::is_model_gpt_5_search_model(
         "gpt-5-chat-search"
@@ -139,6 +150,21 @@ pub(super) fn gpt5_chat_exclusion() {
         select_policy("gpt-5-chat-search", &catalog),
         ReasoningPolicy::Base
     );
+}
+
+fn o_series_and_audio_policies(catalog: &CatalogCapabilities) {
+    assert_eq!(select_policy("o3", catalog), ReasoningPolicy::OSeries);
+    assert_eq!(
+        select_policy("openai/o3", catalog),
+        ReasoningPolicy::OSeries
+    );
+    assert_eq!(select_policy("o4-mini", catalog), ReasoningPolicy::Base);
+    assert_eq!(select_policy("gpt-audio", catalog), ReasoningPolicy::Audio);
+    assert_eq!(
+        select_policy("gpt-audio-mini", catalog),
+        ReasoningPolicy::Base
+    );
+    assert_eq!(select_policy("gpt-4o", catalog), ReasoningPolicy::Base);
 }
 
 pub(super) async fn gpt6_family_selection() {

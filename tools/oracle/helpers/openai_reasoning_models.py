@@ -161,6 +161,7 @@ def policy_of(model: str) -> str:
 
 
 def policy_value(probe: Probe) -> Object:
+    install(probe)
     result: Object = {"policy": policy_of(probe["model"])}
     return result
 
@@ -189,6 +190,7 @@ def version_value(probe: Probe) -> Object:
 
 
 def gpt6_value(probe: Probe) -> Object:
+    install(probe)
     value = version_value(probe)
     value["policy"] = policy_of(probe["model"])
     return value
