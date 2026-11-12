@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::fallback_plans::chains::FallbackTarget;
+use betterlite_config::types::RouterFallback;
 use rstest::rstest;
 
 use super::{FixedSample, availability, every_field, seconds, settings};
 use crate::cooldown_decisions::failure::FailureClass;
 use crate::retry_policy::backoff::{RetryTiming, sleep_before_retry};
 use crate::retry_policy::eligibility::{Availability, RetryDecision, StopReason, decide};
+use crate::retry_policy::fallback::first_default_fallback;
 use crate::retry_policy::policy::{RetryCounts, RetryPolicies, RetryPolicy, plan};
 use crate::retry_policy::retry_after::{RetryAfter, parse_retry_after};
 use crate::retry_policy::skip::{FailedDeployment, skipped_deployment_ids};
@@ -443,4 +446,37 @@ fn a_non_retryable_answer_skips_its_deployment(
         &already,
     );
     assert_eq!(skipped, expected);
+}
+
+fn fallback_entry(group: &str, names: &[&str]) -> RouterFallback {
+    BTreeMap::from([(
+        group.to_owned(),
+        names
+            .iter()
+            .map(|name| FallbackTarget::Model((*name).to_owned()))
+            .collect(),
+    )])
+}
+
+#[rstest]
+#[case::no_fallbacks(Vec::new(), None)]
+#[case::empty_star_list(vec![fallback_entry("*", &[])], None)]
+#[case::star_after_another_group(
+    vec![fallback_entry("gpt-3", &["gpt-3.5"]), fallback_entry("*", &["gpt-4o"])],
+    Some("gpt-4o")
+)]
+#[case::star_first(vec![fallback_entry("*", &["gpt-4o"])], Some("gpt-4o"))]
+#[case::empty_then_non_empty(
+    vec![fallback_entry("*", &[]), fallback_entry("*", &["gpt-4o"])],
+    Some("gpt-4o")
+)]
+fn the_first_default_fallback_is_the_first_star_target(
+    #[case] fallbacks: Vec<RouterFallback>,
+    #[case] expected: Option<&str>,
+) {
+    let first = first_default_fallback(&fallbacks).map(|target| match target {
+        FallbackTarget::Model(name) => name.as_str(),
+        FallbackTarget::Parameters(_) => "",
+    });
+    assert_eq!(first, expected);
 }
