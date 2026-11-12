@@ -109,17 +109,28 @@ impl Section for Raw {
     {
         let mut settings = Settings::default();
         for entry in self.guardrails {
-            let shown = resolve_text(entry.guardrail_name.clone(), lookup)
-                .unwrap_or_else(|| entry.guardrail_name.clone());
-            match entry.build(lookup) {
-                Ok(guardrail) => settings.guardrails.push(guardrail),
-                Err(error) => settings.rejected.push(RejectedGuardrail {
-                    guardrail_name: shown,
-                    reason: error.to_string(),
-                }),
-            }
+            settings.record(entry, lookup);
         }
         Ok(settings)
+    }
+}
+
+impl Settings {
+    fn record<L>(&mut self, entry: RawEntry, lookup: &L)
+    where
+        L: EnvironmentLookup,
+    {
+        let written = entry.guardrail_name.clone();
+        match entry.build(lookup) {
+            Ok(guardrail) => self.guardrails.push(guardrail),
+            Err(error) => {
+                let shown = resolve_text(written.clone(), lookup).unwrap_or(written);
+                self.rejected.push(RejectedGuardrail {
+                    guardrail_name: shown,
+                    reason: error.to_string(),
+                });
+            }
+        }
     }
 }
 
@@ -128,11 +139,11 @@ impl RawEntry {
     where
         L: EnvironmentLookup,
     {
-        let guardrail_name = resolve_text(self.guardrail_name, lookup).ok_or_else(|| {
-            GuardrailParamsError::MissingField {
+        let Some(guardrail_name) = resolve_text(self.guardrail_name, lookup) else {
+            return Err(GuardrailParamsError::MissingField {
                 field: "guardrail_name".to_owned(),
-            }
-        })?;
+            });
+        };
         let params = resolve_params(self.litellm_params.0, lookup)?;
         Ok(Guardrail {
             guardrail_id: self.guardrail_id.and_then(|id| resolve_text(id, lookup)),
