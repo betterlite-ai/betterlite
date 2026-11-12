@@ -31,15 +31,6 @@ impl CompatibleChatAlias {
             }
         }
     }
-    #[must_use]
-    pub const fn provider(self) -> &'static str {
-        match self {
-            Self::Empower => "empower",
-            Self::Friendliai => "friendliai",
-            Self::Galadriel => "galadriel",
-            Self::Github => "github",
-        }
-    }
 }
 // Baseten and Cerebras walk the caller's order, rename the token limit even when null, and copy supported values as given
 pub fn map_renaming_token_limit(

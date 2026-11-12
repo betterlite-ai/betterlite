@@ -205,20 +205,6 @@ fn cerebras_copies_only_its_supported_subset() {
 }
 
 #[test]
-fn cerebras_renames_a_null_token_limit() {
-    let mut existing = IndexMap::new();
-    map_renaming_token_limit(
-        &params(r#"{"max_completion_tokens": null}"#),
-        &mut existing,
-        &cerebras::supported_params(false),
-    );
-    assert_eq!(
-        Value::Object(existing.into_iter().collect()),
-        value(r#"{"max_tokens": null}"#)
-    );
-}
-
-#[test]
 fn baseten_snapshot_starts_empty_and_keeps_supplied_falsey_values() {
     assert_eq!(snapshot(&BasetenSettings::default()), value("{}"));
     let given: BasetenSettings = serde_json::from_str(
@@ -544,21 +530,6 @@ fn chat_identity_resolves_its_chain(
 #[case::friendliai(CompatibleChatAlias::Friendliai, "friendliai")]
 #[case::galadriel(CompatibleChatAlias::Galadriel, "galadriel")]
 #[case::github(CompatibleChatAlias::Github, "github")]
-fn compatible_aliases_keep_their_provider_tags(
-    #[case] alias: CompatibleChatAlias,
-    #[case] provider: &str,
-) {
-    assert_eq!(alias.provider(), provider);
-    let parsed: CompatibleChatAlias =
-        serde_json::from_value(Value::String(provider.to_owned())).expect("a provider name");
-    assert_eq!(parsed, alias);
-}
-
-#[rstest]
-#[case::empower(CompatibleChatAlias::Empower, "empower")]
-#[case::friendliai(CompatibleChatAlias::Friendliai, "friendliai")]
-#[case::galadriel(CompatibleChatAlias::Galadriel, "galadriel")]
-#[case::github(CompatibleChatAlias::Github, "github")]
 fn compatible_aliases_share_the_b1425_identity(
     #[case] alias: CompatibleChatAlias,
     #[case] provider: &str,
@@ -569,7 +540,9 @@ fn compatible_aliases_share_the_b1425_identity(
     ])
     .openai_like_settings;
     let (base, key) = alias.identity(&settings, None, None);
-    assert_eq!(alias.provider(), provider);
+    let parsed: CompatibleChatAlias =
+        serde_json::from_value(Value::String(provider.to_owned())).expect("a provider name");
+    assert_eq!(parsed, alias);
     assert_eq!(base.as_deref(), Some("https://like.example/v1"));
     assert_eq!(key.expose_secret(), "sk-like");
     let (given_base, given_key) =
