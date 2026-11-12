@@ -226,6 +226,28 @@ pub(super) fn refresh_fallback() {
     refresh_disabled_does_nothing();
     oidc_runs_alongside_provider();
     oidc_replaces_token();
+    refresh_skipped_with_provider();
+    refresh_skipped_after_oidc();
+}
+
+fn refresh_skipped_with_provider() {
+    let sources = FixtureSources::new();
+    let settings = params();
+    let (caller, _calls) = provider(Outcome::Token("caller-token".to_owned()));
+    let request = super::support::request(&settings, true, Some(caller), &sources);
+    assert_eq!(run(&request).unwrap().as_deref(), Some("caller-token"));
+    assert!(sources.calls().is_empty());
+}
+
+fn refresh_skipped_after_oidc() {
+    let sources = FixtureSources::new();
+    let mut settings = params();
+    settings.azure_ad_token = Some(SecretString::from("oidc/assertion"));
+    settings.client_id = Some("client".to_owned());
+    settings.tenant_id = Some("tenant".to_owned());
+    let request = super::support::request(&settings, true, None, &sources);
+    assert_eq!(run(&request).unwrap().as_deref(), Some("oidc-token"));
+    assert_eq!(sources.calls().len(), 1);
 }
 
 fn refresh_uses_resolved_scope() {
