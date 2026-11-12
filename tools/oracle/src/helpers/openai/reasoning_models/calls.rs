@@ -25,51 +25,31 @@ enum Mode {
 }
 
 impl Call {
-    const fn mode(&self) -> Mode {
+    const fn parts(&self) -> (Mode, &Probes) {
         match self {
-            Self::Gpt5SearchAllowlist(_) => Mode::SearchMapping,
-            Self::Gpt5ChatExclusion(_) => Mode::Policy,
-            Self::Gpt6FamilySelection(_) => Mode::Gpt6,
-            Self::DictEffortNormalization(_)
-            | Self::XhighOptIn(_)
-            | Self::LowMinimalOptOut(_)
-            | Self::TemperatureWhileThinking(_)
-            | Self::SamplingWithNone(_) => Mode::GptMapping,
-            Self::CatalogBeforeDefaultKey(_) => Mode::Effort,
-            Self::O1DeveloperRoles(_) => Mode::Messages,
-            Self::AudioTokenParameter(_) => Mode::Audio,
-            Self::Gpt5RegularAllowlist(_) => Mode::GptSupported,
-            Self::VersionBoundaries(_) => Mode::Version,
-            Self::OSeriesCapabilityFallback(_) => Mode::OSeriesSupported,
-            Self::OSeriesTemperatureLimit(_) => Mode::OSeriesMapping,
-        }
-    }
-
-    const fn probes(&self) -> &Probes {
-        match self {
-            Self::Gpt5SearchAllowlist(probes)
-            | Self::Gpt5ChatExclusion(probes)
-            | Self::Gpt6FamilySelection(probes)
-            | Self::DictEffortNormalization(probes)
+            Self::Gpt5SearchAllowlist(probes) => (Mode::SearchMapping, probes),
+            Self::Gpt5ChatExclusion(probes) => (Mode::Policy, probes),
+            Self::Gpt6FamilySelection(probes) => (Mode::Gpt6, probes),
+            Self::DictEffortNormalization(probes)
             | Self::XhighOptIn(probes)
             | Self::LowMinimalOptOut(probes)
-            | Self::CatalogBeforeDefaultKey(probes)
             | Self::TemperatureWhileThinking(probes)
-            | Self::SamplingWithNone(probes)
-            | Self::O1DeveloperRoles(probes)
-            | Self::AudioTokenParameter(probes)
-            | Self::Gpt5RegularAllowlist(probes)
-            | Self::VersionBoundaries(probes)
-            | Self::OSeriesCapabilityFallback(probes)
-            | Self::OSeriesTemperatureLimit(probes) => probes,
+            | Self::SamplingWithNone(probes) => (Mode::GptMapping, probes),
+            Self::CatalogBeforeDefaultKey(probes) => (Mode::Effort, probes),
+            Self::O1DeveloperRoles(probes) => (Mode::Messages, probes),
+            Self::AudioTokenParameter(probes) => (Mode::Audio, probes),
+            Self::Gpt5RegularAllowlist(probes) => (Mode::GptSupported, probes),
+            Self::VersionBoundaries(probes) => (Mode::Version, probes),
+            Self::OSeriesCapabilityFallback(probes) => (Mode::OSeriesSupported, probes),
+            Self::OSeriesTemperatureLimit(probes) => (Mode::OSeriesMapping, probes),
         }
     }
 }
 
 pub(super) async fn run(call: &Call) -> HelperResult {
-    let mode = call.mode();
-    let mut results = Vec::with_capacity(call.probes().probes.len());
-    for probe in &call.probes().probes {
+    let (mode, probes) = call.parts();
+    let mut results = Vec::with_capacity(probes.probes.len());
+    for probe in &probes.probes {
         results.push(outcome(probe, mode).await);
     }
     Ok(Value::Array(results))

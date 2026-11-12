@@ -39,15 +39,16 @@ impl Fixture {
         }
     }
 
-    fn entry(&self, request: &CapabilityRequest<'_>) -> Option<&Value> {
-        match request.custom_llm_provider {
+    fn field(&self, request: &CapabilityRequest<'_>, key: &str) -> Option<&Value> {
+        let entry = match request.custom_llm_provider {
             None => {
                 let known = self.catalog.chat_models.contains(request.model)
                     || self.catalog.text_models.contains(request.model);
                 known.then(|| self.entries.get(request.model)).flatten()
             }
             Some(_) => self.entries.get(request.model),
-        }
+        };
+        entry?.get(key)
     }
 }
 
@@ -57,13 +58,7 @@ impl ReasoningCapabilities for Fixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        let entry = self.entry(request);
-        ready(
-            entry
-                .and_then(|fields| fields.get(key))
-                .and_then(Value::as_bool)
-                == Some(true),
-        )
+        ready(self.field(request, key).and_then(Value::as_bool) == Some(true))
     }
 
     fn declared_value_factory(
@@ -71,8 +66,11 @@ impl ReasoningCapabilities for Fixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = Option<String>> + Send {
-        let entry = self.entry(request).and_then(|fields| fields.get(key));
-        ready(entry.and_then(Value::as_str).map(str::to_owned))
+        ready(
+            self.field(request, key)
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        )
     }
 
     fn is_explicitly_disabled_factory(
@@ -80,23 +78,15 @@ impl ReasoningCapabilities for Fixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        let entry = self.entry(request);
-        ready(
-            entry
-                .and_then(|fields| fields.get(key))
-                .and_then(Value::as_bool)
-                == Some(false),
-        )
+        ready(self.field(request, key).and_then(Value::as_bool) == Some(false))
     }
 
     fn supports_response_schema(
         &mut self,
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send {
-        let entry = self.entry(request);
         ready(
-            entry
-                .and_then(|fields| fields.get("supports_response_schema"))
+            self.field(request, "supports_response_schema")
                 .and_then(Value::as_bool)
                 == Some(true),
         )

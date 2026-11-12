@@ -44,6 +44,13 @@ pub struct Mapping<'request> {
     pub catalog: &'request CatalogCapabilities,
 }
 
+struct Resolution<'request> {
+    model: &'request str,
+    effort: Option<&'request str>,
+    supports_none: bool,
+    resolves_none: bool,
+}
+
 pub async fn supported_params<C>(
     capabilities: &mut C,
     model: &str,
@@ -125,22 +132,14 @@ where
     let supports_none = capabilities
         .supports_factory(&request, NamedCapability::NoneReasoningEffort.key())
         .await;
-    apply_sampling_guard(
-        capabilities,
-        &request,
-        effective.as_deref(),
+    let resolution = Resolution {
+        model,
+        effort: effective.as_deref(),
         supports_none,
-        mapping,
-    )
-    .await?;
-    apply_temperature_guard(
-        capabilities,
-        &request,
-        effective.as_deref(),
-        supports_none,
-        mapping,
-    )
-    .await?;
+        resolves_none: effort_resolves_to_none(capabilities, model, effective.as_deref()).await,
+    };
+    apply_sampling_guard(mapping, &resolution)?;
+    apply_temperature_guard(mapping, &resolution)?;
     let supported = supported_params(capabilities, model, mapping.catalog).await;
     copy_supported(
         mapping.non_default_params,
@@ -186,26 +185,34 @@ async fn apply_effort_guard<C>(
 where
     C: ReasoningCapabilities,
 {
-    match effort {
-        Some("xhigh") => {
-            let supported = capabilities
+    let rejected = match effort {
+        Some("xhigh")
+            if !capabilities
                 .supports_factory(request, "supports_xhigh_reasoning_effort")
-                .await;
-            if !supported {
-                drop_or_reject_effort(mapping, "xhigh")?;
-            }
+                .await =>
+        {
+            "xhigh"
         }
-        Some(level @ ("minimal" | "low")) => {
-            let key = format!("supports_{level}_reasoning_effort");
+        Some(level @ ("minimal" | "low"))
             if capabilities
-                .is_explicitly_disabled_factory(request, &key)
-                .await
-            {
-                drop_or_reject_effort(mapping, level)?;
-            }
+                .is_explicitly_disabled_factory(
+                    request,
+                    &format!("supports_{level}_reasoning_effort"),
+                )
+                .await =>
+        {
+            level
         }
-        Some(_) | None => {}
-    }
+        Some(_) | None => return Ok(()),
+    };
+    reject_unless_dropping(
+        mapping,
+        ReasoningError::UnsupportedEffort {
+            effort: rejected.to_owned(),
+        },
+    )?;
+    mapping.non_default_params.remove("reasoning_effort");
+    mapping.optional_params.remove("reasoning_effort");
     Ok(())
 }
 
@@ -217,77 +224,64 @@ fn map_max_tokens(mapping: &mut Mapping<'_>) {
     }
 }
 
-async fn apply_sampling_guard<C>(
-    capabilities: &mut C,
-    request: &CapabilityRequest<'_>,
-    effort: Option<&str>,
-    supports_none: bool,
+fn apply_sampling_guard(
     mapping: &mut Mapping<'_>,
-) -> Result<(), ReasoningError>
-where
-    C: ReasoningCapabilities,
-{
-    let has_sampling = SAMPLING
-        .iter()
-        .any(|param| mapping.non_default_params.contains_key(*param));
-    if !(supports_none && has_sampling) {
+    resolution: &Resolution<'_>,
+) -> Result<(), ReasoningError> {
+    let present: Vec<&str> = SAMPLING
+        .into_iter()
+        .filter(|param| mapping.non_default_params.contains_key(*param))
+        .collect();
+    if present.is_empty() || !resolution.supports_none || resolution.resolves_none {
         return Ok(());
     }
-    if effort_resolves_to_none(capabilities, request.model, effort).await {
-        return Ok(());
+    reject_unless_dropping(
+        mapping,
+        ReasoningError::UnsupportedSampling {
+            model: resolution.model.to_owned(),
+            effort: resolution.effort.map(str::to_owned),
+        },
+    )?;
+    for param in present {
+        mapping.non_default_params.remove(param);
     }
-    if mapping.drop_params.global || mapping.drop_params.request {
-        for param in SAMPLING {
-            mapping.non_default_params.remove(param);
-        }
-        return Ok(());
-    }
-    Err(ReasoningError::UnsupportedSampling {
-        model: request.model.to_owned(),
-        effort: effort.map(str::to_owned),
-    })
+    Ok(())
 }
 
-async fn apply_temperature_guard<C>(
-    capabilities: &mut C,
-    request: &CapabilityRequest<'_>,
-    effort: Option<&str>,
-    supports_none: bool,
+fn apply_temperature_guard(
     mapping: &mut Mapping<'_>,
-) -> Result<(), ReasoningError>
-where
-    C: ReasoningCapabilities,
-{
+    resolution: &Resolution<'_>,
+) -> Result<(), ReasoningError> {
     let Some(temperature) = mapping.non_default_params.remove("temperature") else {
         return Ok(());
     };
-    if temperature.is_null() {
-        return Ok(());
+    let allowed =
+        is_temperature_one(&temperature) || (resolution.supports_none && resolution.resolves_none);
+    match (temperature, allowed) {
+        (Value::Null, _) => Ok(()),
+        (kept, true) => {
+            mapping
+                .optional_params
+                .insert(String::from("temperature"), kept);
+            Ok(())
+        }
+        (rejected, false) => reject_unless_dropping(
+            mapping,
+            ReasoningError::UnsupportedTemperature {
+                model: resolution.model.to_owned(),
+                temperature: rejected,
+            },
+        ),
     }
-    if is_temperature_one(&temperature)
-        || (supports_none && effort_resolves_to_none(capabilities, request.model, effort).await)
-    {
-        mapping
-            .optional_params
-            .insert(String::from("temperature"), temperature);
-        return Ok(());
-    }
-    if mapping.drop_params.global || mapping.drop_params.request {
-        return Ok(());
-    }
-    Err(ReasoningError::UnsupportedTemperature {
-        model: request.model.to_owned(),
-        temperature,
-    })
 }
 
-fn drop_or_reject_effort(mapping: &mut Mapping<'_>, effort: &str) -> Result<(), ReasoningError> {
+fn reject_unless_dropping(
+    mapping: &Mapping<'_>,
+    error: ReasoningError,
+) -> Result<(), ReasoningError> {
     if mapping.drop_params.global || mapping.drop_params.request {
-        mapping.non_default_params.remove("reasoning_effort");
-        mapping.optional_params.remove("reasoning_effort");
-        return Ok(());
+        Ok(())
+    } else {
+        Err(error)
     }
-    Err(ReasoningError::UnsupportedEffort {
-        effort: effort.to_owned(),
-    })
 }
