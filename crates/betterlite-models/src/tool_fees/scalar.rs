@@ -186,19 +186,27 @@ pub fn code_interpreter_fee(
     let Some(count) = sessions.filter(|count| *count != 0) else {
         return Ok(Decimal::ZERO);
     };
-    let rate = match (model_info, provider) {
-        (Some(info), _) if info.code_interpreter_per_session != Rate::Absent => info
-            .code_interpreter_per_session
-            .or_zero(RateField::CodeInterpreterCostPerSession)?,
-        (_, Some(name)) if !name.is_empty() => {
-            match source.container_session_rate(name).unwrap_or_default() {
-                Rate::Value(value) => value,
-                Rate::Absent | Rate::Null => return Ok(Decimal::ZERO),
-            }
-        }
-        _ => return Ok(Decimal::ZERO),
-    };
+    let rate = session_rate(provider, model_info, source)?;
     Decimal::from(count)
         .checked_mul(rate)
         .ok_or(ToolFeeError::Overflow)
+}
+
+fn session_rate(
+    provider: Option<&str>,
+    model_info: Option<&ToolModelInfo>,
+    source: &dyn ToolPriceSource,
+) -> Result<Decimal, ToolFeeError> {
+    match (model_info, provider) {
+        (Some(info), _) if info.code_interpreter_per_session != Rate::Absent => info
+            .code_interpreter_per_session
+            .or_zero(RateField::CodeInterpreterCostPerSession),
+        (_, Some(name)) if !name.is_empty() => {
+            match source.container_session_rate(name).unwrap_or_default() {
+                Rate::Value(value) => Ok(value),
+                Rate::Absent | Rate::Null => Ok(Decimal::ZERO),
+            }
+        }
+        _ => Ok(Decimal::ZERO),
+    }
 }

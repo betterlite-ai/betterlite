@@ -142,7 +142,7 @@ fn model_info(fields: &Fields) -> Result<ToolModelInfo, Box<HelperError>> {
 }
 
 // LiteLLM returns a null web search rate or per-call file search rate as it is, and every other null meets arithmetic.
-fn outcome(fee: Result<Decimal, ToolFeeError>) -> Result<Value, Box<HelperError>> {
+fn outcome(fee: Result<Decimal, ToolFeeError>) -> Fee {
     match fee {
         Ok(amount) => Ok(json!(amount.normalize().to_string())),
         Err(ToolFeeError::NullRate {
@@ -163,73 +163,88 @@ fn outcome(fee: Result<Decimal, ToolFeeError>) -> Result<Value, Box<HelperError>
     }
 }
 
-fn web_search_call(call: &WebSearchCall) -> Result<Value, Box<HelperError>> {
+type Fee = Result<Value, Box<HelperError>>;
+
+impl FileSearchCall {
+    fn params(&self) -> Result<FileSearchParams, Box<HelperError>> {
+        Ok(FileSearchParams {
+            storage_gb: quantity(self.storage_gb.as_ref())?,
+            days: quantity(self.days.as_ref())?,
+        })
+    }
+}
+
+impl VectorStoreCall {
+    fn usage(&self) -> Result<VectorStoreUsage, Box<HelperError>> {
+        Ok(VectorStoreUsage {
+            storage_gb: quantity(self.usage.storage_gb.as_ref())?,
+            days: quantity(self.usage.days.as_ref())?,
+        })
+    }
+}
+
+impl ComputerUseCall {
+    const fn tokens(&self) -> TokenCounts {
+        TokenCounts {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+        }
+    }
+}
+
+fn optional_info(fields: Option<&Fields>) -> Result<Option<ToolModelInfo>, Box<HelperError>> {
+    let Some(found) = fields else {
+        return Ok(None);
+    };
+    model_info(found).map(Some)
+}
+
+fn web_search_call(call: &WebSearchCall) -> Fee {
     let options = call
         .options
         .clone()
         .map(|fields| WebSearchOptions { fields });
-    let info = call.model_info.as_ref().map(model_info).transpose()?;
+    let info = optional_info(call.model_info.as_ref())?;
     outcome(web_search_rate(options.as_ref(), info.as_ref()))
 }
 
-fn file_search_call(call: &FileSearchCall, prices: &ToolPrices) -> Result<Value, Box<HelperError>> {
+fn file_search_call(call: &FileSearchCall, prices: &ToolPrices) -> Fee {
     let tool = call
         .file_search
         .clone()
         .map(|fields| FileSearchTool { fields });
-    let info = call.model_info.as_ref().map(model_info).transpose()?;
-    let params = FileSearchParams {
-        storage_gb: quantity(call.storage_gb.as_ref())?,
-        days: quantity(call.days.as_ref())?,
-    };
+    let info = optional_info(call.model_info.as_ref())?;
+    let provider = call.provider.as_deref();
+    let params = call.params()?;
     outcome(file_search_fee(
         tool.as_ref(),
-        call.provider.as_deref(),
+        provider,
         info.as_ref(),
         params,
         prices,
     ))
 }
 
-fn vector_store_call(
-    call: &VectorStoreCall,
-    prices: &ToolPrices,
-) -> Result<Value, Box<HelperError>> {
-    let usage = VectorStoreUsage {
-        storage_gb: quantity(call.usage.storage_gb.as_ref())?,
-        days: quantity(call.usage.days.as_ref())?,
-    };
-    let info = call.model_info.as_ref().map(model_info).transpose()?;
-    outcome(vector_store_fee(
-        usage,
-        call.provider.as_deref(),
-        info.as_ref(),
-        prices,
-    ))
+fn vector_store_call(call: &VectorStoreCall, prices: &ToolPrices) -> Fee {
+    let info = optional_info(call.model_info.as_ref())?;
+    let provider = call.provider.as_deref();
+    let usage = call.usage()?;
+    outcome(vector_store_fee(usage, provider, info.as_ref(), prices))
 }
 
-fn computer_use_call(
-    call: &ComputerUseCall,
-    prices: &ToolPrices,
-) -> Result<Value, Box<HelperError>> {
-    let tokens = TokenCounts {
-        input_tokens: call.input_tokens,
-        output_tokens: call.output_tokens,
-    };
-    let info = call.model_info.as_ref().map(model_info).transpose()?;
-    outcome(computer_use_fee(
-        tokens,
-        call.provider.as_deref(),
-        info.as_ref(),
-        prices,
-    ))
+fn computer_use_call(call: &ComputerUseCall, prices: &ToolPrices) -> Fee {
+    let info = optional_info(call.model_info.as_ref())?;
+    let provider = call.provider.as_deref();
+    let tokens = call.tokens();
+    outcome(computer_use_fee(tokens, provider, info.as_ref(), prices))
 }
 
-fn code_interpreter_call(call: &CodeInterpreterCall) -> Result<Value, Box<HelperError>> {
-    let info = call.model_info.as_ref().map(model_info).transpose()?;
+fn code_interpreter_call(call: &CodeInterpreterCall) -> Fee {
+    let info = optional_info(call.model_info.as_ref())?;
+    let provider = call.provider.as_deref();
     outcome(code_interpreter_fee(
         call.sessions,
-        call.provider.as_deref(),
+        provider,
         info.as_ref(),
         &PinnedContainers,
     ))

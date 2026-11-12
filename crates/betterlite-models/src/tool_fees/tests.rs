@@ -86,6 +86,11 @@ impl FakePolicy {
     pub(super) fn seen(&self) -> Vec<String> {
         self.calls.lock().expect("call log").clone()
     }
+
+    fn record(&self, entry: String, price: Option<Decimal>) -> Option<Decimal> {
+        self.calls.lock().expect("call log").push(entry);
+        price
+    }
 }
 
 impl ToolPricePolicy for FakePolicy {
@@ -111,30 +116,30 @@ impl ToolPricePolicy for FakePolicy {
         requests: i64,
         _model_info: &ToolModelInfo,
     ) -> Option<Decimal> {
-        self.calls
-            .lock()
-            .expect("call log")
-            .push(format!("maps:{provider}:{requests}"));
-        self.maps
+        self.record(format!("maps:{provider}:{requests}"), self.maps)
     }
+}
+
+fn edited<Item, Edit>(mut item: Item, edit: Edit) -> Item
+where
+    Edit: FnOnce(&mut Item),
+{
+    edit(&mut item);
+    item
 }
 
 pub(super) fn info_with<Edit>(edit: Edit) -> ToolModelInfo
 where
     Edit: FnOnce(&mut ToolModelInfo),
 {
-    let mut info = ToolModelInfo::default();
-    edit(&mut info);
-    info
+    edited(ToolModelInfo::default(), edit)
 }
 
 pub(super) fn params_with<Edit>(edit: Edit) -> BuiltInToolParams
 where
     Edit: FnOnce(&mut BuiltInToolParams),
 {
-    let mut params = BuiltInToolParams::default();
-    edit(&mut params);
-    params
+    edited(BuiltInToolParams::default(), edit)
 }
 
 pub(super) fn policy(web: Option<Decimal>, maps: Option<Decimal>) -> FakePolicy {

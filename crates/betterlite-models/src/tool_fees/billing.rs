@@ -114,19 +114,27 @@ impl BuiltInToolBilling<'_> {
     }
 
     // A provider result wins for any non-None price, even zero; None falls back to the per-call rate.
+    fn provider_web_search_price(
+        &self,
+        request: &BuiltInToolRequest<'_>,
+        resolved: &ResolvedModel,
+    ) -> Option<Decimal> {
+        let repaired = anthropic_search_usage(request.response);
+        let (Some(info), Some(usage), Some(provider)) =
+            (&resolved.info, &repaired, &resolved.provider)
+        else {
+            return None;
+        };
+        self.policy.web_search_cost(provider, usage, info)
+    }
+
     fn web_search_cost(&self, request: &BuiltInToolRequest<'_>) -> Result<Decimal, ToolFeeError> {
         let resolved = self.resolve_model_info(request.model, request.custom_llm_provider);
-        let repaired = anthropic_search_usage(request.response);
-        if let (Some(info), Some(usage), Some(provider)) =
-            (&resolved.info, &repaired, &resolved.provider)
-            && let Some(price) = self.policy.web_search_cost(provider, usage, info)
-        {
+        if let Some(price) = self.provider_web_search_price(request, &resolved) {
             return Ok(price);
         }
-        let per_call = web_search_rate(
-            request.params.web_search_options.as_ref(),
-            resolved.info.as_ref(),
-        )?;
+        let options = request.params.web_search_options.as_ref();
+        let per_call = web_search_rate(options, resolved.info.as_ref())?;
         let calls = count_web_search_calls(request.response)?;
         per_call
             .checked_mul(Decimal::from(calls))
@@ -137,22 +145,12 @@ impl BuiltInToolBilling<'_> {
     fn file_search_cost(&self, request: &BuiltInToolRequest<'_>) -> Result<Decimal, ToolFeeError> {
         let info = self
             .source
-            .model_info(request.model, request.custom_llm_provider)
-            .ok();
-        let file_search = request
-            .params
-            .file_search
-            .as_ref()
-            .filter(|tool| !tool.fields.is_empty());
-        let usage = file_search.map(|tool| Json::Object(tool.fields.clone()));
+            .model_info(request.model, request.custom_llm_provider);
+        let tool = billable_file_search(request.params);
+        let usage = tool.map(|found| Json::Object(found.fields.clone()));
         let params = extract_file_search_params(usage.as_ref())?;
-        file_search_fee(
-            file_search,
-            request.custom_llm_provider,
-            info.as_ref(),
-            params,
-            self.prices,
-        )
+        let provider = request.custom_llm_provider;
+        file_search_fee(tool, provider, info.ok().as_ref(), params, self.prices)
     }
 
     fn azure_assistant_cost(
@@ -164,11 +162,7 @@ impl BuiltInToolBilling<'_> {
             return Ok(Decimal::ZERO);
         }
         let info = self.source.model_info(request.model, provider).ok();
-        let vector = request
-            .params
-            .vector_store_usage
-            .filter(|usage| usage.storage_gb.is_some() || usage.days.is_some());
-        let vector_fee = match vector {
+        let vector_fee = match billable_vector_usage(request.params) {
             Some(usage) => vector_store_fee(usage, provider, info.as_ref(), self.prices)?,
             None => Decimal::ZERO,
         };
@@ -184,9 +178,22 @@ impl BuiltInToolBilling<'_> {
             info.as_ref(),
             self.source,
         )?;
-        vector_fee
-            .checked_add(computer_fee)
-            .and_then(|partial| partial.checked_add(interpreter_fee))
+        [vector_fee, computer_fee, interpreter_fee]
+            .into_iter()
+            .try_fold(Decimal::ZERO, Decimal::checked_add)
             .ok_or(ToolFeeError::Overflow)
     }
+}
+
+fn billable_file_search(params: &BuiltInToolParams) -> Option<&FileSearchTool> {
+    params
+        .file_search
+        .as_ref()
+        .filter(|tool| !tool.fields.is_empty())
+}
+
+fn billable_vector_usage(params: &BuiltInToolParams) -> Option<VectorStoreUsage> {
+    params
+        .vector_store_usage
+        .filter(|usage| usage.storage_gb.is_some() || usage.days.is_some())
 }

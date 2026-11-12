@@ -344,11 +344,14 @@ fn code_interpreter_fee_prefers_the_model_key(
     #[case] info: ToolModelInfo,
     #[case] expected: Result<Decimal, ToolFeeError>,
 ) {
-    let source = FakeSource::default()
-        .with_container("azure", Ok(value(5, 2)))
-        .with_container("openai", Ok(value(5, 2)));
-    let fee = code_interpreter_fee(sessions, Some(provider), Some(&info), &source);
+    let fee = code_interpreter_fee(sessions, Some(provider), Some(&info), &priced_containers());
     assert_eq!(fee, expected);
+}
+
+fn priced_containers() -> FakeSource {
+    FakeSource::default()
+        .with_container("azure", Ok(value(5, 2)))
+        .with_container("openai", Ok(value(5, 2)))
 }
 
 #[rstest]
