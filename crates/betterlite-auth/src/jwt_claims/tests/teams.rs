@@ -129,7 +129,9 @@ fn plural_claims_that_are_not_lists_are_empty(#[case] claims: &str, #[case] fiel
 #[test]
 fn team_id_sources() {
     let settings = team_settings();
-    let nested = project(r#"{"team":{"id":"team-1"}}"#, &settings, &[]);
+    let mut nested_settings = team_settings();
+    nested_settings.team_id_jwt_field = Some("team.id".to_owned());
+    let nested = project(r#"{"team":{"id":"team-1"}}"#, &nested_settings, &[]);
     assert_eq!(
         nested.team_id(Some("given")).unwrap(),
         Some("team-1".to_owned())

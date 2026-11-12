@@ -121,6 +121,13 @@ fn unverified_claims_requires_three_segments() {
     assert_eq!(unverified_claims("a.b"), None);
     assert_eq!(unverified_claims("a.b.c.d"), None);
     assert_eq!(unverified_claims(""), None);
+    let trailing = format!(
+        "{}.{}.{}.",
+        segment(r#"{"alg":"RS256"}"#),
+        segment(r#"{"sub":"user-1"}"#),
+        segment("signature")
+    );
+    assert_eq!(unverified_claims(&trailing), None);
 }
 
 #[test]

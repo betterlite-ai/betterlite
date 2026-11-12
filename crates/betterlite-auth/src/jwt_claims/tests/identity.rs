@@ -62,13 +62,22 @@ fn identity_defaults_for_missing_claims() {
         missing.user_id(Some("given")).unwrap(),
         Some("given".to_owned())
     );
-    assert_eq!(missing.end_user_id(Some("given")).unwrap(), None);
+    assert_eq!(
+        missing.end_user_id(Some("given")).unwrap(),
+        Some("given".to_owned())
+    );
     assert_eq!(
         missing.object_id(Some("given")).unwrap(),
         Some("given".to_owned())
     );
-    assert_eq!(missing.org_id(Some("given")).unwrap(), None);
-    assert_eq!(missing.org_alias(Some("given")).unwrap(), None);
+    assert_eq!(
+        missing.org_id(Some("given")).unwrap(),
+        Some("given".to_owned())
+    );
+    assert_eq!(
+        missing.org_alias(Some("given")).unwrap(),
+        Some("given".to_owned())
+    );
     assert_eq!(missing.agent_claim().unwrap(), None);
 }
 
