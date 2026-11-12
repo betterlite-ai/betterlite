@@ -125,6 +125,7 @@ impl PromptInjectionDetection {
             .await
         {
             Ok(hit) => hit,
+            Err(PromptInjectionError::HeuristicsTimeout) => return Ok(PreCallOutcome::Pass),
             Err(source) => {
                 tracing::error!(
                     error = %source,

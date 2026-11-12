@@ -2,13 +2,13 @@
 
 use betterlite_config::sections::prompt_injection::PromptInjectionParams;
 
-use super::hook_support::{JUDGE_MODEL, Scenario, params, threshold};
+use super::hook_support::{JUDGE_MODEL, Scenario, params, threshold, timeout};
 use crate::prompt_injection::error::PromptInjectionError;
 use crate::prompt_injection::hook::PromptInjectionDetection;
 use crate::prompt_injection::pool::HeuristicsPool;
 
 fn detection(params: Option<PromptInjectionParams>) -> PromptInjectionDetection {
-    PromptInjectionDetection::new(params, threshold(), HeuristicsPool::new(1))
+    PromptInjectionDetection::new(params, threshold(), HeuristicsPool::new(1, timeout()))
 }
 
 fn listed_names() -> [String; 1] {

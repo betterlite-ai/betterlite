@@ -9,7 +9,7 @@ use reqwest::StatusCode;
 
 use super::hook_support::{
     ATTACK, FAIL_CALL_STRING, JUDGE_MODEL, SYSTEM_PROMPT, Scenario, chat_messages, params, text,
-    threshold,
+    threshold, timeout,
 };
 use crate::prompt_injection::error::PromptInjectionError;
 use crate::prompt_injection::hook::{HookCallType, InjectionJudge, PromptInjectionDetection};
@@ -61,7 +61,7 @@ impl InjectionJudge for ScriptedJudge {
 }
 
 fn detection(params: Option<PromptInjectionParams>) -> PromptInjectionDetection {
-    PromptInjectionDetection::new(params, threshold(), HeuristicsPool::new(1))
+    PromptInjectionDetection::new(params, threshold(), HeuristicsPool::new(1, timeout()))
 }
 
 fn detection_with_names(

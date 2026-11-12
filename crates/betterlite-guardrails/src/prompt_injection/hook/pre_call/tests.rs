@@ -8,14 +8,14 @@ use reqwest::StatusCode;
 use rstest::rstest;
 
 use super::hook_support::{
-    ATTACK, REJECTED_MESSAGE, Scenario, chat_messages, params, text, threshold,
+    ATTACK, REJECTED_MESSAGE, Scenario, chat_messages, params, text, threshold, timeout,
 };
 use crate::prompt_injection::error::PromptInjectionError;
 use crate::prompt_injection::hook::{HookCallType, PreCallOutcome, PromptInjectionDetection};
 use crate::prompt_injection::pool::HeuristicsPool;
 
 fn detection(params: Option<PromptInjectionParams>) -> PromptInjectionDetection {
-    PromptInjectionDetection::new(params, threshold(), HeuristicsPool::new(1))
+    PromptInjectionDetection::new(params, threshold(), HeuristicsPool::new(1, timeout()))
 }
 
 #[tokio::test]
@@ -175,7 +175,7 @@ async fn a_malformed_body_passes_the_request() {
 
 #[tokio::test]
 async fn a_failed_heuristics_check_passes_the_request() {
-    let pool = HeuristicsPool::new(1);
+    let pool = HeuristicsPool::new(1, timeout());
     Arc::clone(&pool.permits).close();
     let detection = PromptInjectionDetection::new(None, threshold(), pool);
     let list = chat_messages();

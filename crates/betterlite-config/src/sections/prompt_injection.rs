@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -13,8 +15,11 @@ mod tests;
 
 const MAX_THREADS_VARIABLE: &str = "PROMPT_INJECTION_HEURISTICS_MAX_THREADS";
 const SIMILARITY_THRESHOLD_VARIABLE: &str = "DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD";
+const TIMEOUT_VARIABLE: &str = "PROMPT_INJECTION_HEURISTICS_TIMEOUT_SECONDS";
 const DEFAULT_MAX_THREADS: i64 = 1;
 const MINIMUM_MAX_THREADS: usize = 1;
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_TIMEOUT_SECONDS: Decimal = Decimal::from_parts(30, 0, 0, false, 0);
 // 0.7 at scale 1, LiteLLM's DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD
 const DEFAULT_SIMILARITY_THRESHOLD: Decimal = Decimal::from_parts(7, 0, 0, false, 1);
 
@@ -34,6 +39,7 @@ struct RawSettings {
 pub struct Settings {
     pub params: Option<PromptInjectionParams>,
     pub heuristics_max_threads: usize,
+    pub heuristics_timeout: Duration,
     pub similarity_threshold: Decimal,
 }
 
@@ -42,6 +48,7 @@ impl Default for Settings {
         Self {
             params: None,
             heuristics_max_threads: MINIMUM_MAX_THREADS,
+            heuristics_timeout: DEFAULT_TIMEOUT,
             similarity_threshold: DEFAULT_SIMILARITY_THRESHOLD,
         }
     }
@@ -159,6 +166,7 @@ impl Section for Raw {
         Ok(Settings {
             params: self.settings.prompt_injection_params,
             heuristics_max_threads: heuristics_max_threads(lookup),
+            heuristics_timeout: heuristics_timeout(lookup)?,
             similarity_threshold: similarity_threshold(lookup)?,
         })
     }
@@ -190,4 +198,29 @@ where
         betterlite_env::number::<Decimal>(SIMILARITY_THRESHOLD_VARIABLE, &text)?
             .unwrap_or(DEFAULT_SIMILARITY_THRESHOLD),
     )
+}
+
+// a timeout of zero or a negative, text, nan or inf value stops startup and names the variable
+fn heuristics_timeout<L>(lookup: &L) -> Result<Duration, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(text) = lookup.lookup(TIMEOUT_VARIABLE) else {
+        return Ok(DEFAULT_TIMEOUT);
+    };
+    let seconds = betterlite_env::number::<Decimal>(TIMEOUT_VARIABLE, &text)?
+        .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
+    if seconds <= Decimal::ZERO {
+        return Err(invalid_timeout());
+    }
+    seconds
+        .to_f64()
+        .and_then(|value| Duration::try_from_secs_f64(value).ok())
+        .ok_or_else(invalid_timeout)
+}
+
+fn invalid_timeout() -> ConfigError {
+    ConfigError::from(betterlite_env::EnvError::Number {
+        name: TIMEOUT_VARIABLE.to_owned(),
+    })
 }

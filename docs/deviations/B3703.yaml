@@ -15,3 +15,9 @@ deviations:
   - what: Config loading validates the three llm_api_* fields whenever llm_api_check is true, even when the detect_prompt_injection callback is not registered.
     why: LiteLLM builds LiteLLMPromptInjectionParams and runs its validator only when detect_prompt_injection is in callbacks, so a bad params block loads without the callback; betterlite validates at config load to fail fast instead of silently at request time.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L325-L333
+  - what: A heuristics check that waits longer than PROMPT_INJECTION_HEURISTICS_TIMEOUT_SECONDS for a permit stops and the request passes.
+    why: LiteLLM runs the scan on a one-worker ThreadPoolExecutor with an unbounded queue, so one long prompt holds every later pre-call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L32-L34
+  - what: The scan stops at the same deadline and the request passes.
+    why: LiteLLM scans the whole formatted prompt with no length cap, about 376 matcher calls per character, so a 100k-character prompt runs for minutes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L118-L147

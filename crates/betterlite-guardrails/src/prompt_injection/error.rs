@@ -36,6 +36,8 @@ pub enum PromptInjectionError {
     },
     #[error("the prompt injection heuristics pool is closed")]
     HeuristicsClosed,
+    #[error("the prompt injection heuristics check timed out")]
+    HeuristicsTimeout,
     #[error("a prompt injection heuristics check failed")]
     HeuristicsWorker {
         #[source]
@@ -59,6 +61,7 @@ impl PromptInjectionError {
             | Self::InvalidLlmApiName
             | Self::Prompt { .. }
             | Self::HeuristicsClosed
+            | Self::HeuristicsTimeout
             | Self::HeuristicsWorker { .. }
             | Self::Judge => None,
         }

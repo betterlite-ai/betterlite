@@ -1,8 +1,11 @@
 #[path = "similarity/tests.rs"]
 mod tests;
 
+use std::time::Instant;
+
 use rust_decimal::Decimal;
 
+use super::error::PromptInjectionError;
 use super::matcher::{matching_characters, ratio};
 
 #[must_use]
@@ -10,14 +13,21 @@ pub fn check_user_input_similarity(
     keywords: &[String],
     user_input: &str,
     threshold: Decimal,
-) -> bool {
+    deadline: Option<Instant>,
+) -> Result<bool, PromptInjectionError> {
     let lowered: Vec<char> = user_input.to_lowercase().chars().collect();
     for keyword in keywords {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return Err(PromptInjectionError::HeuristicsTimeout);
+        }
         let keyword_characters: Vec<char> = keyword.chars().collect();
         if keyword_characters.is_empty() || lowered.len() < keyword_characters.len() {
             continue;
         }
         for window in lowered.windows(keyword_characters.len()) {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                return Err(PromptInjectionError::HeuristicsTimeout);
+            }
             let matched = matching_characters(window, &keyword_characters);
             let limit = threshold.checked_mul(Decimal::from(
                 window.len().saturating_add(keyword_characters.len()),
@@ -29,9 +39,9 @@ pub fn check_user_input_similarity(
                     ratio = %ratio(window, &keyword_characters),
                     "rejected a prompt similar to a prompt injection keyword"
                 );
-                return true;
+                return Ok(true);
             }
         }
     }
-    false
+    Ok(false)
 }

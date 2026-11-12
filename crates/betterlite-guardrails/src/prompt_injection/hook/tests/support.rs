@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_config::sections::prompt_injection::PromptInjectionParams;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
@@ -63,6 +65,10 @@ fn llm_api(params: &mut PromptInjectionParams) {
 
 pub(super) fn threshold() -> Decimal {
     "0.7".parse().expect("the test threshold is a decimal")
+}
+
+pub(super) fn timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 pub(super) fn messages(document: &str) -> Vec<Json> {

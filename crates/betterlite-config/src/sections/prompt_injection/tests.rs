@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
+use std::time::Duration;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -14,6 +15,7 @@ use crate::types::Config;
 
 const MAX_THREADS_VARIABLE: &str = "PROMPT_INJECTION_HEURISTICS_MAX_THREADS";
 const THRESHOLD_VARIABLE: &str = "DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD";
+const TIMEOUT_VARIABLE: &str = "PROMPT_INJECTION_HEURISTICS_TIMEOUT_SECONDS";
 
 fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
     variables
@@ -235,4 +237,27 @@ fn an_unparsable_threshold_fails_the_config(#[case] value: &str) {
     let error = load_error("litellm_settings: {}", &[(THRESHOLD_VARIABLE, value)]);
     assert_eq!(error.category(), "environment");
     assert!(error.to_string().contains(THRESHOLD_VARIABLE), "{error}");
+}
+
+#[rstest]
+#[case::unset(&[], Duration::from_secs(30))]
+#[case::empty(&[(TIMEOUT_VARIABLE, "")], Duration::from_secs(30))]
+#[case::plain(&[(TIMEOUT_VARIABLE, "45")], Duration::from_secs(45))]
+#[case::fractional(&[(TIMEOUT_VARIABLE, "0.5")], Duration::from_millis(500))]
+#[case::scientific(&[(TIMEOUT_VARIABLE, "1e1")], Duration::from_secs(10))]
+fn resolves_the_heuristics_timeout(#[case] variables: &[(&str, &str)], #[case] expected: Duration) {
+    let settings = loaded("litellm_settings: {}", variables);
+    assert_eq!(settings.heuristics_timeout, expected);
+}
+
+#[rstest]
+#[case::zero("0")]
+#[case::negative("-5")]
+#[case::text("soon")]
+#[case::nan("nan")]
+#[case::inf("inf")]
+fn an_invalid_timeout_fails_the_config(#[case] value: &str) {
+    let error = load_error("litellm_settings: {}", &[(TIMEOUT_VARIABLE, value)]);
+    assert_eq!(error.category(), "environment");
+    assert!(error.to_string().contains(TIMEOUT_VARIABLE), "{error}");
 }

@@ -2,6 +2,7 @@
 mod tests;
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
@@ -13,13 +14,15 @@ use super::similarity::check_user_input_similarity;
 #[derive(Debug)]
 pub struct HeuristicsPool {
     pub(crate) permits: Arc<Semaphore>,
+    timeout: Duration,
 }
 
 impl HeuristicsPool {
     #[must_use]
-    pub fn new(max_threads: usize) -> Self {
+    pub fn new(max_threads: usize, timeout: Duration) -> Self {
         Self {
             permits: Arc::new(Semaphore::new(max_threads.min(Semaphore::MAX_PERMITS))),
+            timeout,
         }
     }
 
@@ -29,18 +32,43 @@ impl HeuristicsPool {
         input: String,
         threshold: Decimal,
     ) -> Result<bool, PromptInjectionError> {
-        let permit = Arc::clone(&self.permits)
-            .acquire_owned()
-            .await
-            .map_err(|_closed| PromptInjectionError::HeuristicsClosed)?;
+        let prompt_length = input.chars().count();
+        let started = Instant::now();
+        let permit =
+            match tokio::time::timeout(self.timeout, Arc::clone(&self.permits).acquire_owned())
+                .await
+            {
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        elapsed = ?started.elapsed(),
+                        prompt_length,
+                        "the prompt injection heuristics check timed out waiting for a permit"
+                    );
+                    return Err(PromptInjectionError::HeuristicsTimeout);
+                }
+                Ok(Err(_closed)) => return Err(PromptInjectionError::HeuristicsClosed),
+                Ok(Ok(permit)) => permit,
+            };
+        let deadline = started.checked_add(self.timeout);
         let mut tasks = JoinSet::new();
         tasks.spawn_blocking(move || {
             let _permit = permit;
-            check_user_input_similarity(&keywords, &input, threshold)
+            check_user_input_similarity(&keywords, &input, threshold, deadline)
         });
         let Some(joined) = tasks.join_next().await else {
             return Err(PromptInjectionError::HeuristicsClosed);
         };
-        joined.map_err(|source| PromptInjectionError::HeuristicsWorker { source })
+        match joined {
+            Err(source) => Err(PromptInjectionError::HeuristicsWorker { source }),
+            Ok(Err(PromptInjectionError::HeuristicsTimeout)) => {
+                tracing::warn!(
+                    elapsed = ?started.elapsed(),
+                    prompt_length,
+                    "the prompt injection heuristics scan timed out"
+                );
+                Err(PromptInjectionError::HeuristicsTimeout)
+            }
+            Ok(result) => result,
+        }
     }
 }

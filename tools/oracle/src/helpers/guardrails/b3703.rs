@@ -31,9 +31,10 @@ impl Helper for Op {
             } => {
                 let threshold = Decimal::from_str(threshold_text).or_value_error()?;
                 let keywords = generate_injection_keywords();
-                Ok(serde_json::json!(check_user_input_similarity(
-                    &keywords, user_input, threshold
-                )))
+                Ok(serde_json::json!(
+                    check_user_input_similarity(&keywords, user_input, threshold, None)
+                        .or_value_error()?
+                ))
             }
         }
     }
