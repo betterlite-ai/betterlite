@@ -1,5 +1,7 @@
 import copy
+import io
 from collections.abc import Mapping, Sequence
+from contextlib import redirect_stdout
 from typing import Final, NotRequired, TypeAlias, TypedDict, cast
 
 import litellm
@@ -54,7 +56,9 @@ def run(input_value: Input) -> Answer:
     try:
         if input_value["shared_before"] is not None:
             model_cost[backend_keys[0]] = input_value["shared_before"]
-        Router._register_deployment_pricing(deployment)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10069
+        # LiteLLM logs debug lines to stdout, which would corrupt the answer
+        with redirect_stdout(io.StringIO()):
+            Router._register_deployment_pricing(deployment)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10069
         model_id: Final = given["model_info"]["id"]
         # the lookup adds supported_openai_params and null fields that depend on the provider
         shown: Final[Entries] = {
