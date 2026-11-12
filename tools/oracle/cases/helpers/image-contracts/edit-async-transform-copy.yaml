@@ -1,0 +1,20 @@
+kind: helper
+name: edit-async-transform-copy
+call:
+  image_contracts:
+    operation: edit_async_transform_copy
+    scenarios:
+      - model: gpt-image-1
+        prompt: null
+        options: {n: 2}
+        headers: {x: a}
+        litellm_params: {}
+        raise_status: null
+      - model: gpt-image-1
+        prompt: null
+        options: {n: 2}
+        headers: {x: a}
+        litellm_params: {}
+        raise_status: 418
+env: {}
+compare: {ignore: []}
