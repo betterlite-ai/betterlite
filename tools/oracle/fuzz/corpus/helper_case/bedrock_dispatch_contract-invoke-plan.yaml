@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-dispatch-contract-seed-invoke-plan
+call:
+  bedrock_dispatch_contract:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    cases:
+      - model: "anthropic.claude-3-haiku-20240307-v1:0"
+        aws_region_name: "us-east-1"
+      - model: "arn:aws:bedrock:us-west-2:123456789012:inference-profile/global.anthropic.claude"
+        api_base: "https://bedrock-runtime.example"
+env: {}
+compare: {ignore: []}
