@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod cases;
+mod grants;
 mod support;
 
 use rstest::rstest;
@@ -36,4 +37,20 @@ fn azure_credentials_credential_identity_isolation() {
 #[test]
 fn azure_credentials_secret_safe_failure() {
     cases::secret_safe_failure();
+}
+
+#[test]
+fn azure_credentials_grant_sources() {
+    grants::grant_tokens();
+    grants::grant_construction_failures();
+    grants::grant_link_failures();
+    grants::sdk_refresh_tokens();
+    grants::sdk_refresh_error_classes();
+    grants::default_credential_construction();
+    grants::oidc_exchange_results();
+}
+
+#[test]
+fn azure_credentials_token_error_status() {
+    grants::token_error_status();
 }
