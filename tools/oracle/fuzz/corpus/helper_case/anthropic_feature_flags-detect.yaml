@@ -1,0 +1,37 @@
+kind: helper
+name: anthropic_feature_flags-detect
+call:
+  anthropic_feature_flags:
+    fixture:
+      model_cost:
+        anthropic/claude-3-5-sonnet-20241022: {litellm_provider: anthropic, supports_prompt_caching: true, supports_adaptive_thinking: false}
+    calls:
+      - function: one_shot
+        user_agent: claude-cli/1.2.3
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: null
+      - function: billing_fields
+        texts: ["x-anthropic-billing-header: cc_is_subagent=true;team=t1"]
+      - {function: compaction, provider: anthropic, params: {compaction: false}, messages: []}
+      - {function: cache_control, model: claude-3-5-sonnet-20241022, custom_llm_provider: anthropic}
+      - function: file_ids
+        messages: [{role: user, content: [{type: file, file: {file_id: file-1}}]}]
+      - function: pdf
+        messages: [{role: user, content: [{type: image, source: {}}]}]
+      - {function: tools, tools: [{type: tool_search_tool_regex_20251119}, {type: web_search_20250305}]}
+      - {function: eager_flag, tool: {eager_input_streaming: true}}
+      - {function: eager_used, tools: [{eager_input_streaming: false}]}
+      - {function: computer, tools: [{type: computer_20250124}], versions: [computer_20250124]}
+      - function: skills
+        tools: [{type: code_execution_20250825}]
+        params: {container: {skills: [{type: custom}]}}
+        headers: [null]
+        providers: [bedrock]
+      - function: conversation
+        messages: [{role: system, content: [{type: tool_addition, tool: {type: tool_reference}}]}]
+        thinking: {type: adaptive, display: updates}
+        mcp_servers: [{type: url, url: "https://mcp.example", name: m}]
+      - {function: beta, model: claude-3-5-sonnet-20241022, custom_llm_provider: anthropic, params: {reasoning_effort: high}, computer_tool_used: null, prompt_caching_set: false, features: [file_id, thinking_display]}
+env: {}
+compare: {ignore: []}
