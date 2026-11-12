@@ -18,3 +18,13 @@ deviations:
       as RateLimitErrorRetry is dropped and the policy quietly stops applying to that error. no-silent-drops rules that out,
       and no working setup relies on a key LiteLLM never reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L47-L48
+  - what: >-
+      A negative router_settings.num_retries or litellm_settings.num_retries fails the config load with an error naming
+      the field, where LiteLLM keeps the number as given.
+    why: >-
+      LiteLLM stores whatever int the key holds (router.py L1075-L1076), passes it to the call (L4984, L7687) and treats
+      any request value other than 0 as present (L7740), so -1 admits a retry policy that then yields no retries.
+      betterlite's shared router and litellm settings hold the count as an unsigned integer, so the same file is refused
+      before this section reads it. A negative retry count is a config mistake rather than a working setup, and the
+      retry decisions this task owns never see it; the test asserts the rejection names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1075-L1080

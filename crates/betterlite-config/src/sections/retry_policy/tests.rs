@@ -225,6 +225,21 @@ fn num_retries_is_read_as_an_integer(#[case] value: &str, #[case] expected: i64)
     assert_eq!(loaded.num_retries, expected);
 }
 
+// the shared router and litellm settings hold the count as u32, so the load fails before this section reads it
+#[rstest]
+#[case::router("router_settings:\n  num_retries: -1\n", "router_settings.num_retries")]
+#[case::litellm(
+    "litellm_settings:\n  num_retries: -1\n",
+    "litellm_settings.num_retries"
+)]
+fn a_negative_num_retries_fails_the_whole_load_naming_the_field(
+    #[case] source: &str,
+    #[case] path: &str,
+) {
+    let error = settings(source, &[]).unwrap_err();
+    assert!(error.contains(path), "got {error}");
+}
+
 #[rstest]
 #[case::absent("router_settings: {}\n", 2)]
 #[case::litellm_only("router_settings: {}\nlitellm_settings:\n  num_retries: 3\n", 3)]
