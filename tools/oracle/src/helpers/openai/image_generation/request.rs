@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
@@ -22,20 +23,18 @@ use http::header::{HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::input::{Failure, Probe};
+use super::input::Probe;
 use super::support::{NOW, invalid};
 use crate::helpers::HelperResult;
 
-struct FakeTransport {
-    status: u16,
+struct FakeTransport<'probe> {
+    probe: &'probe Probe,
     headers: HeaderMap,
-    body: Vec<u8>,
-    failure: Option<Failure>,
     calls: Mutex<Vec<Value>>,
 }
 
-impl FakeTransport {
-    fn new(probe: &Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
+impl<'probe> FakeTransport<'probe> {
+    fn new(probe: &'probe Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
         let headers = probe
             .reply
             .headers
@@ -49,16 +48,14 @@ impl FakeTransport {
             })
             .collect::<Result<HeaderMap, Box<crate::helpers::HelperError>>>()?;
         Ok(Self {
-            status: probe.reply.status,
+            probe,
             headers,
-            body: probe.reply.body.as_bytes().to_vec(),
-            failure: probe.failure,
-            calls: Mutex::new(Vec::new()),
+            calls: Mutex::default(),
         })
     }
 }
 
-impl ImageGenerationTransport for FakeTransport {
+impl ImageGenerationTransport for FakeTransport<'_> {
     fn generate(
         &self,
         request: OutboundRequest,
@@ -69,15 +66,10 @@ impl ImageGenerationTransport for FakeTransport {
                 Value::Null
             }
         };
-        let headers: BTreeMap<&str, String> = request
+        let headers: BTreeMap<&str, Cow<'_, str>> = request
             .headers
             .iter()
-            .map(|(name, value)| {
-                (
-                    name.as_str(),
-                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
-                )
-            })
+            .map(|(name, value)| (name.as_str(), String::from_utf8_lossy(value.as_bytes())))
             .collect();
         let query: BTreeMap<&str, &str> = request
             .query
@@ -94,13 +86,13 @@ impl ImageGenerationTransport for FakeTransport {
                 "headers": headers,
                 "query": query,
             }));
-        let outcome = if self.failure.is_some() {
+        let outcome = if self.probe.failure.is_some() {
             Err(TransportError::Closed)
         } else {
             Ok(UpstreamResponse {
-                status: self.status,
+                status: self.probe.reply.status,
                 headers: self.headers.clone(),
-                body: self.body.clone(),
+                body: self.probe.reply.body.as_bytes().to_vec(),
             })
         };
         ready(outcome)
