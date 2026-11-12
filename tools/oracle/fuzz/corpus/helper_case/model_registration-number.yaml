@@ -3,6 +3,6 @@ name: model-registration-number-seed
 call:
   b5365:
     function: convert_stringified_numbers
-    value: {price: "1.5e-06", window: " 4096 ", label: word, list: ["7", x]}
+    value: " 4096 "
 env: {}
 compare: {ignore: []}

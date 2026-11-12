@@ -422,7 +422,7 @@ async fn register_new_model_warns_about_missing_cache_pricing(
     r#"{"gpt-5-mini":{"litellm_provider":"openai","cache_read_input_token_cost":0.0000001}}"#,
     "gpt-5-mini",
     "openai",
-    false,
+    true,
     true
 )]
 #[case::no_provider_on_the_entry(
@@ -444,7 +444,7 @@ async fn register_new_model_inherits_cache_pricing_from_a_built_in_variant(
     #[case] live: &str,
     #[case] key: &str,
     #[case] provider: &str,
-    #[case] inherits: bool,
+    #[case] cached: bool,
     #[case] warns: bool,
 ) {
     let mut registry = live_registry(live);
@@ -453,7 +453,7 @@ async fn register_new_model_inherits_cache_pricing_from_a_built_in_variant(
         r#"{{"{key}":{{"litellm_provider":"{provider}","input_cost_per_token":0.000001}}}}"#
     );
     let registered = register_entries(&mut registry, &world, &value).await;
-    let cache = if inherits {
+    let cache = if cached {
         r#","cache_read_input_token_cost":0.0000001"#
     } else {
         ""
