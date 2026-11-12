@@ -1,0 +1,12 @@
+kind: helper
+name: multimodal-embedding-records-image-then-text
+call:
+  multimodal_embedding_records:
+    requests:
+      - input: ["gs://bucket/bike.png", "a red bike", "plain trailing text"]
+        optional: {}
+      - input: ["data:image/png;base64,YWJj", "caption", "gs://bucket/car.jpg"]
+        optional: {}
+    replies: []
+compare: {ignore: []}
+env: {}

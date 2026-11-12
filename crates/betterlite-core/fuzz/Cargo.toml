@@ -167,3 +167,10 @@ path = "fuzz_targets/serper_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "responses_codex_tools"
+path = "fuzz_targets/responses_codex_tools.rs"
+test = false
+doc = false
+bench = false
