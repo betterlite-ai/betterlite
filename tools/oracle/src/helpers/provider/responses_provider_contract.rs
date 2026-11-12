@@ -8,7 +8,7 @@ use betterlite_provider::api::responses_provider_contract::records::{
     normalize_responses_request,
 };
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use fixtures::{Fixture, FixtureError};
@@ -101,7 +101,6 @@ impl crate::helpers::Helper for Op {
 
 fn capabilities(fields: &BaseCapabilitiesInput) -> crate::helpers::HelperResult {
     let fixture = Fixture::default();
-    let query = serde_json::to_value(InputItemsQuery::default())?;
     Ok(json!({
         "provider": fixture.provider().name(),
         "native_file_search": fixture.supports_native_file_search(),
@@ -113,35 +112,47 @@ fn capabilities(fields: &BaseCapabilitiesInput) -> crate::helpers::HelperResult 
             fields.stream,
             fields.custom_llm_provider.as_deref(),
         ),
-        "input_items": query,
+        "input_items": serde_json::to_value(InputItemsQuery::default())?,
     }))
+}
+
+#[derive(Serialize)]
+struct SignedReport {
+    headers: Headers,
+    signed_body: Option<Vec<u8>>,
+    extra_body: Params,
+    environment: Headers,
+}
+
+impl From<&SigningInput> for SignRequest {
+    fn from(fields: &SigningInput) -> Self {
+        Self {
+            headers: fields.headers.clone(),
+            optional_params: fields.optional_params.clone(),
+            request_data: fields.request_data.clone(),
+            api_base: fields.api_base.clone(),
+            api_key: fields.api_key.clone().map(SecretString::from),
+            model: Some(fields.model.clone()),
+            stream: fields.stream,
+            fake_stream: fields.fake_stream,
+        }
+    }
 }
 
 fn signing(fields: &SigningInput) -> crate::helpers::HelperResult {
     let fixture = Fixture::default();
-    let (headers, signed_body) = fixture.sign_request(SignRequest {
-        headers: fields.headers.clone(),
-        optional_params: fields.optional_params.clone(),
-        request_data: fields.request_data.clone(),
-        api_base: fields.api_base.clone(),
-        api_key: fields.api_key.clone().map(SecretString::from),
-        model: Some(fields.model.clone()),
-        stream: fields.stream,
-        fake_stream: fields.fake_stream,
-    });
-    let extra_body = fixture.transform_extra_body(
-        &fields.extra_body,
-        &fields.request,
-        &fields.model,
-        &Params::new(),
-    );
+    let (headers, signed_body) = fixture.sign_request(SignRequest::from(fields));
+    let params = Params::new();
+    let extra_body =
+        fixture.transform_extra_body(&fields.extra_body, &fields.request, &fields.model, &params);
     let environment = fixture.validate_environment(&fields.headers, &fields.model, None)?;
-    Ok(json!({
-        "headers": headers,
-        "signed_body": signed_body,
-        "extra_body": extra_body,
-        "environment": environment,
-    }))
+    let report = SignedReport {
+        headers,
+        signed_body,
+        extra_body,
+        environment,
+    };
+    Ok(serde_json::to_value(report)?)
 }
 
 fn websocket(fields: &WebsocketInput) -> Value {

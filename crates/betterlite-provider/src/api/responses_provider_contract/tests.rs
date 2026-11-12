@@ -188,6 +188,14 @@ impl Fixture {
             routes.push(route);
         }
     }
+
+    fn prepared(&self, route: &'static str, api_base: &str) -> PreparedRequest {
+        self.record_route(route);
+        PreparedRequest {
+            url: api_base.to_owned(),
+            params: Params::new(),
+        }
+    }
 }
 
 #[async_trait]
@@ -230,55 +238,35 @@ impl ResponsesProviderConfig for Fixture {
     }
 
     fn transform_get_request(&self, request: &IdRequest) -> Result<PreparedRequest, FixtureError> {
-        self.record_route("get");
-        Ok(PreparedRequest {
-            url: request.api_base.clone(),
-            params: Params::new(),
-        })
+        Ok(self.prepared("get", &request.api_base))
     }
 
     fn transform_delete_request(
         &self,
         request: &IdRequest,
     ) -> Result<PreparedRequest, FixtureError> {
-        self.record_route("delete");
-        Ok(PreparedRequest {
-            url: request.api_base.clone(),
-            params: Params::new(),
-        })
+        Ok(self.prepared("delete", &request.api_base))
     }
 
     fn transform_input_items_request(
         &self,
         request: &InputItemsRequest,
     ) -> Result<PreparedRequest, FixtureError> {
-        self.record_route("input_items");
-        Ok(PreparedRequest {
-            url: request.api_base.clone(),
-            params: Params::new(),
-        })
+        Ok(self.prepared("input_items", &request.api_base))
     }
 
     fn transform_cancel_request(
         &self,
         request: &IdRequest,
     ) -> Result<PreparedRequest, FixtureError> {
-        self.record_route("cancel");
-        Ok(PreparedRequest {
-            url: request.api_base.clone(),
-            params: Params::new(),
-        })
+        Ok(self.prepared("cancel", &request.api_base))
     }
 
     fn transform_compact_request(
         &self,
         request: &CompactRequest,
     ) -> Result<PreparedRequest, FixtureError> {
-        self.record_route("compact");
-        Ok(PreparedRequest {
-            url: request.api_base.clone(),
-            params: Params::new(),
-        })
+        Ok(self.prepared("compact", &request.api_base))
     }
 }
 
