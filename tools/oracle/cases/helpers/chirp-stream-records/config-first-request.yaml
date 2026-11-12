@@ -1,0 +1,13 @@
+kind: helper
+name: chirp-stream-records-config-first-request
+call:
+  chirp_stream_records:
+    configure:
+      model: chirp_2
+      language_codes: [en-US, fr-FR]
+      sample_rate_hertz: 24000
+    recognizer: projects/project/locations/us-central1/recognizers/_
+    billed_before: 0.0
+    responses: []
+env: {}
+compare: {ignore: []}

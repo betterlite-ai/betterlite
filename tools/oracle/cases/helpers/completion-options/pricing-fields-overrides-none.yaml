@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-overrides-none
+call:
+  b5650: {function: override_fields, sources: []}
+env: {}
+compare: {ignore: []}

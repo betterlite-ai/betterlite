@@ -1,0 +1,26 @@
+kind: helper
+name: reasoning-inspection
+call:
+  responses_input_messages:
+    request:
+      input:
+        - {type: reasoning, content: " x "}
+        - type: reasoning
+          content:
+            - {type: output_text, text: " a "}
+            - {type: summary_text, text: b}
+        - type: reasoning
+          content: [{type: encrypted_content, encrypted_content: opaque}]
+          summary:
+            - {type: summary_text, text: " s "}
+            - {type: other, text: t}
+        - {type: reasoning, content: [{type: encrypted_content, encrypted_content: opaque}]}
+        - {type: reasoning}
+        - {type: reasoning, content: "", summary: []}
+        - {type: reasoning, role: assistant, content: why}
+        - {type: reasoning, summary: [{text: " a "}, {text: b}, {text: ""}]}
+    replay_reasoning: false
+    cache: []
+env: {}
+compare:
+  ignore: []

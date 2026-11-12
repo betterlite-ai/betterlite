@@ -1,0 +1,15 @@
+kind: helper
+name: guardrail-params-patch-sent-keys
+call:
+  b3662:
+    function: patch_request
+    body:
+      guardrail_name: g
+      litellm_params:
+        guard_name: null
+        max_input_chars: 7
+        custom_key: [1, 2]
+      guardrail_info:
+        owner: team
+env: {}
+compare: {ignore: []}
