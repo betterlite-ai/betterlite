@@ -5,7 +5,6 @@ from unittest.mock import patch
 import httpx
 import litellm
 import litellm.utils
-from litellm import Router
 from litellm.exceptions import (
     AuthenticationError,
     BadRequestError,
@@ -18,6 +17,7 @@ from litellm.exceptions import (
     ServiceUnavailableError,
     Timeout,
 )
+from litellm.router import Router
 from litellm.router_utils.get_retry_from_policy import reset_retry_policy
 from litellm.types.router import RetryPolicy as LiteLlmRetryPolicy
 from pydantic import Field
@@ -289,7 +289,7 @@ class RetryPolicy(Operation):
         for step in payload.steps:
             exception = build_exception(step.error)
             try:
-                _ = router.should_retry_this_error(
+                _ = router.should_retry_this_error(  # pyright: ignore[reportUnknownMemberType]
                     error=exception,
                     healthy_deployments=deployments(step.healthy_deployments),
                     all_deployments=deployments(step.all_deployments),
@@ -319,7 +319,7 @@ class RetryPolicy(Operation):
                 exception = rate_limit_with_headers(headers)
                 router = Router(model_list=[], retry_after=step.min_timeout)
                 retry_afters.append(retry_after_text(headers))
-                timeout = router._time_to_sleep_before_retry(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8010-L8053
+                timeout = router._time_to_sleep_before_retry(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8010-L8053
                     e=exception,
                     remaining_retries=step.remaining_retries,
                     num_retries=step.max_retries,
