@@ -1,0 +1,17 @@
+task: B5369
+deviations:
+  - what: The wheel and the import package are named betterlite, where LiteLLM ships litellm.
+    why: betterlite is a drop-in rewrite with its own name, and the task fixes the distribution and module-name in pyproject.toml.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml
+  - what: The version is read with importlib.metadata and falls back to "unknown" only when the distribution is not installed, where LiteLLM catches every Exception.
+    why: A broad except hides real faults, and the rules ask for errors to surface. A missing distribution is the one case the fallback is for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_version.py
+  - what: The 45 family stubs are `pub const fn register` in `pub mod` files, where the plan names them as private functions in private modules.
+    why: The workspace lints (unnecessary_wraps, missing_const_for_fn, unreachable_pub) reject the private form, and the lint expect budget is 0.
+    link: ""
+  - what: bundled_model_cost_json returns the pinned backup text as it is, including the fallback_generalizations key, where litellm.model_cost drops that key.
+    why: Stripping needs a JSON round trip that reorders numbers and keys. The Python package removes the key when it loads the map, and test_model_cost_is_litellms compares the rest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
+  - what: test_model_sets_match_litellm clears LiteLLM's provider sets and calls add_known_models before it compares.
+    why: LiteLLM seeds some sets from litellm.constants at import and betterlite starts them empty, as the B5361 deviation says. The comparison covers the fold of the cost map, which is what betterlite builds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L636
