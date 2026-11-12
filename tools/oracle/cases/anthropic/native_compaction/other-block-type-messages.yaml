@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-other-block-type-messages
+call:
+  b3545: {"function": "summary", "protocol": "messages", "response": {"stop_reason": "compaction", "content": [{"type": "text", "signature": "sig", "content": "the summary"}]}}
+env: {}
+compare:
+  ignore: []

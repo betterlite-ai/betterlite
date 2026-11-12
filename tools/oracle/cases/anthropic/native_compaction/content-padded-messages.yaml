@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-content-padded-messages
+call:
+  b3545: {"function": "summary", "protocol": "messages", "response": {"stop_reason": "compaction", "content": [{"type": "compaction", "signature": "sig", "content": "  padded\n"}]}}
+env: {}
+compare:
+  ignore: []

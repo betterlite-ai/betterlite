@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-blocks-chat-ignores-messages-fields
+call:
+  b3545: {"function": "blocks", "protocol": "chat", "response": {"stop_reason": "compaction", "content": [{"type": "compaction", "signature": "sig", "content": "the summary"}]}}
+env: {}
+compare:
+  ignore: []

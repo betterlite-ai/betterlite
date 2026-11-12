@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-dispatch-chat
+call:
+  b3545: {"function": "dispatch", "protocol": "chat", "payload": {"model": "anthropic/claude-opus-4-7", "messages": [{"role": "user", "content": "hi"}]}, "reply_id": "chat_1"}
+env: {}
+compare:
+  ignore: []
