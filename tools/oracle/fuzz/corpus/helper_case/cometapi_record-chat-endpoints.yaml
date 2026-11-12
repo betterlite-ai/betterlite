@@ -1,0 +1,22 @@
+kind: helper
+name: cometapi-record-seed-chat-endpoints
+call:
+  cometapi_record:
+    steps:
+      - {kind: url, api_base: null}
+      - {kind: url, api_base: ""}
+      - {kind: url, api_base: "https://proxy.example/v10"}
+      - {kind: url, api_base: "https://proxy.example/x?q=/v1"}
+      - {kind: url, api_base: "//host"}
+      - kind: options
+        model: gpt-4o
+        params: {temperature: 0.5, user: u}
+        optional_params: {}
+        catalog: {chat: [gpt-4o], text: []}
+      - kind: request
+        model: m
+        messages: [{role: user, content: hi}]
+        optional_params: {extra_body: {a: 1}}
+        env: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: cometapi-record-seed-embedding
+call:
+  cometapi_record:
+    steps:
+      - {kind: embedding_headers, api_key: null, headers: {}, env: {}}
+      - {kind: embedding_headers, api_key: null, headers: {}, env: {COMETAPI_KEY: env-key}}
+      - {kind: embedding_url, api_base: null}
+      - kind: embedding_options
+        params: {dimensions: 8, other: 1}
+        optional_params: {}
+      - kind: embedding_request
+        model: m
+        input: [hello]
+        optional_params: {dimensions: 8}
+      - {kind: embedding_reply, body: '{"usage":{"prompt_tokens":3}}', status: 200, headers: {}}
+      - {kind: embedding_reply, body: 'not json', status: 502, headers: {}}
+env: {}
+compare: {ignore: []}
