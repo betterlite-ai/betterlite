@@ -57,6 +57,7 @@ CUSTOM_TOOL_CALL: dict[str, JsonValue] = {
 TOOL_CALLS: list[JsonValue] = [TOOL_CALL]
 EMPTY_LIST: list[JsonValue] = []
 ANNOTATIONS: list[JsonValue] = [{"type": "url_citation"}]
+IMAGES: list[JsonValue] = [{"image_url": {"url": "u"}, "index": 0, "type": "image_url"}]
 MESSAGE_TEXT: dict[str, JsonValue] = {"content": "x"}
 DELTA_TEXT: dict[str, JsonValue] = {"content": "y"}
 LOGPROBS: dict[str, JsonValue] = {
@@ -326,6 +327,55 @@ def test_dump_message_choices() -> None:
     ]
     for label, reference, item in cases:
         assert_same(label, reference, item)
+
+
+def test_dump_delta_parity() -> None:
+    ours = betterlite_utils.Delta
+    cases: list[tuple[str, Dumpable, Dumpable]] = [
+        ("empty", litellm_utils.Delta(), ours()),
+        ("content", litellm_utils.Delta(content="x"), ours(content="x")),
+        ("role", litellm_utils.Delta(role="assistant"), ours(role="assistant")),
+        (
+            "reasoning",
+            litellm_utils.Delta(reasoning="r"),
+            ours(reasoning="r"),
+        ),
+        (
+            "provider",
+            litellm_utils.Delta(provider_specific_fields=PROVIDER),
+            ours(provider_specific_fields=PROVIDER),
+        ),
+        (
+            "images empty",
+            litellm_utils.Delta(images=EMPTY_LIST),  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1518
+            ours(images=EMPTY_LIST),
+        ),
+        (
+            "images and annotations",
+            litellm_utils.Delta(images=IMAGES, annotations=ANNOTATIONS),  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1518-L1537
+            ours(images=IMAGES, annotations=ANNOTATIONS),
+        ),
+        (
+            "function call",
+            litellm_utils.Delta(function_call=FUNCTION_CALL),
+            ours(function_call=FUNCTION_CALL),
+        ),
+        (
+            "audio",
+            litellm_utils.Delta(audio=dict(AUDIO_CHUNK)),  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1517
+            ours(audio=dict(AUDIO_CHUNK)),
+        ),
+    ]
+    for label, reference, item in cases:
+        assert_same(label, reference, item)
+    reasoned = betterlite_utils.Delta(reasoning="r")
+    reference_reasoned = litellm_utils.Delta(reasoning="r")
+    assert reasoned.reasoning_content == reference_reasoned.reasoning_content
+    assert "reasoning" not in reasoned
+    assert "images" not in betterlite_utils.Delta(images=EMPTY_LIST)
+    assert betterlite_utils.Delta(audio=dict(AUDIO_CHUNK)).audio == AUDIO_CHUNK
+    extra = betterlite_utils.Delta(**EXTRA_VALUES)
+    assert parse_object(extra.model_dump_json())["foo"] == "bar"
 
 
 def test_dump_usage_parity() -> None:
