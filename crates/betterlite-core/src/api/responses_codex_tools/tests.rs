@@ -342,6 +342,31 @@ fn tool_call_items(
 #[case::custom_non_object(r#"{"type":"custom","custom":"x"}"#, r#""required""#)]
 #[case::unknown_type(r#"{"type":"mystery","a":1}"#, r#"{"type":"mystery","a":1}"#)]
 #[case::missing_type(r#"{"a":1}"#, r#"{"a":1}"#)]
+#[case::function_name_number(
+    r#"{"type":"function","function":{"name":5}}"#,
+    r#"{"type":"function","function":{"name":5}}"#
+)]
+#[case::function_name_zero(r#"{"type":"function","function":{"name":0}}"#, r#""required""#)]
+#[case::function_name_zero_float(r#"{"type":"function","function":{"name":0.0}}"#, r#""required""#)]
+#[case::function_name_true(
+    r#"{"type":"function","function":{"name":true}}"#,
+    r#"{"type":"function","function":{"name":true}}"#
+)]
+#[case::function_name_false(r#"{"type":"function","function":{"name":false}}"#, r#""required""#)]
+#[case::function_name_null(r#"{"type":"function","function":{"name":null}}"#, r#""required""#)]
+#[case::function_name_list(
+    r#"{"type":"function","function":{"name":[1]}}"#,
+    r#"{"type":"function","function":{"name":[1]}}"#
+)]
+#[case::function_name_empty_list(r#"{"type":"function","function":{"name":[]}}"#, r#""required""#)]
+#[case::function_name_object(
+    r#"{"type":"function","function":{"name":{"a":1}}}"#,
+    r#"{"type":"function","function":{"name":{"a":1}}}"#
+)]
+#[case::function_name_empty_object(
+    r#"{"type":"function","function":{"name":{}}}"#,
+    r#""required""#
+)]
 fn request_tool_choices(#[case] choice: &str, #[case] expected: &str) {
     assert_eq!(chat_tool_choice(&parse(choice)), parse(expected));
 }

@@ -20,6 +20,7 @@ call:
       - {type: function}
       - {type: function, name: ""}
       - {type: function, function: {name: ""}}
+      - {type: function, function: {name: 5}}
       - {type: custom, name: top, custom: {name: inner}}
       - {type: custom, custom: {name: inner}}
       - {type: custom, name: "", custom: {name: inner}}

@@ -17,9 +17,9 @@ from litellm.responses.litellm_completion_transformation.transformation import (
     _attribute_fields,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L179
     _input_item_role,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L185
 )
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+Json: TypeAlias = JsonValue
 
 
 class PaddedInput(TypedDict):
@@ -83,7 +83,7 @@ class Record:
 
 
 def run(input_value: Input) -> Json:
-    wire = TypeAdapter(Json)
+    wire = TypeAdapter(JsonValue)
     request_choice = ResponsesConfig._transform_tool_choice  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L228
     response_choice = ResponsesConfig._transform_tool_choice_for_responses_api_response  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAny]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L290
     if input_value["operation"] == "custom_names":

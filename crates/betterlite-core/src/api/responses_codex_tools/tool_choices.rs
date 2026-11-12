@@ -34,6 +34,18 @@ fn nonempty_text(value: Option<&Json>) -> Option<&str> {
     None
 }
 
+// LiteLLM passes a choice through when function.name is truthy, whatever its type
+fn has_value(value: &Json) -> bool {
+    match value {
+        Json::Null | Json::Bool(false) => false,
+        Json::Bool(true) => true,
+        Json::Number(number) => number.as_f64() != Some(0.0),
+        Json::Text(text) => !text.is_empty(),
+        Json::List(items) => !items.is_empty(),
+        Json::Object(entries) => !entries.is_empty(),
+    }
+}
+
 fn named_function(name: Option<&str>) -> Json {
     let Some(function_name) = name else {
         return Json::Text("required".to_owned());
@@ -51,7 +63,7 @@ pub fn chat_tool_choice(tool_choice: &Json) -> Json {
         return tool_choice.clone();
     };
     if let Some(Json::Object(function)) = fields.get("function")
-        && nonempty_text(function.get("name")).is_some()
+        && function.get("name").is_some_and(has_value)
     {
         return tool_choice.clone();
     }
