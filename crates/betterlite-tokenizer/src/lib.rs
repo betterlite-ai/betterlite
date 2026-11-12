@@ -1,3 +1,4 @@
+pub mod a2a_text;
 pub mod count;
 pub mod engine;
 pub mod error;

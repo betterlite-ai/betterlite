@@ -17,7 +17,6 @@ aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
 aws-smithy-types = "=1.9.1"
 aws-types = "=1.6.0"
 base64 = "0.23.1"
-betterlite-a2a = { path = "../betterlite-a2a" }
 betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
