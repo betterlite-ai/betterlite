@@ -1,0 +1,11 @@
+task: B5365
+deviations:
+  - what: The registry is a struct, the URL fetch is a trait, and register_model returns its warnings.
+    why: Rule inject-dependencies bars globals, and this crate makes no network call, so the caller wires the registry and the fetch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3317-L3479
+  - what: A stringified number that Python reads only through underscore separators or non-ASCII digits ("1_000", "1_0.5") stays text. A float that overflows ("1e999") also stays text instead of becoming infinity.
+    why: Rust's number parsing rejects both spellings, and JSON has no infinity to hold the overflowed value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3154-L3178
+  - what: is_region_allowed is not a function. The region check compares the resolved region name with the allowed one inline in the caller.
+    why: The comparison is one expression, and rule no-one-line-functions bars a function for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5341-L5347

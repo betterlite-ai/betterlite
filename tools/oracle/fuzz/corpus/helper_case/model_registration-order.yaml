@@ -1,0 +1,11 @@
+kind: helper
+name: model-registration-order-seed
+call:
+  b5365:
+    function: order_filter
+    deployments:
+      - {id: a, litellm_params: {order: 2}}
+      - {id: b, model_info: {order: 1}}
+    target_order: null
+env: {}
+compare: {ignore: []}
