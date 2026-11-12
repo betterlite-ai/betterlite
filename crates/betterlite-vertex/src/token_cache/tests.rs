@@ -1,13 +1,16 @@
 #![cfg(test)]
 
+mod probes;
+mod unpacking;
+
 use std::collections::VecDeque;
 use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, decode_vertex_credentials,
@@ -24,8 +27,8 @@ use super::CredentialCache;
 use super::error::{CredentialCacheError, needs_reauthentication};
 use super::executor::{CredentialExecutor, LoadedCredential};
 use super::key::CredentialKey;
-use super::record::{CacheRecord, CredentialSnapshot, unpack_cached_credentials};
-use super::state::{TokenState, token_state};
+use super::record::{CacheRecord, CredentialSnapshot};
+use super::state::TokenState;
 
 const SECRET_TOKEN: &str = "token-secret-value";
 const SECRET_CREDENTIAL: &str = "credential-secret-value";
@@ -52,6 +55,7 @@ struct FakeExecutor {
     refreshes: Mutex<VecDeque<RefreshReply>>,
     load_calls: AtomicUsize,
     refresh_calls: AtomicUsize,
+    repeat_reauth: bool,
 }
 
 impl FakeExecutor {
@@ -64,15 +68,27 @@ impl FakeExecutor {
             refreshes: Mutex::new(VecDeque::from(refreshes)),
             load_calls: AtomicUsize::new(0),
             refresh_calls: AtomicUsize::new(0),
+            repeat_reauth: false,
+        }
+    }
+
+    // every later load and refresh repeats the reauthentication failure, so a retry that loops never ends
+    fn repeating_reauth() -> Self {
+        Self {
+            loads: Mutex::new(VecDeque::new()),
+            refreshes: Mutex::new(VecDeque::new()),
+            load_calls: AtomicUsize::new(0),
+            refresh_calls: AtomicUsize::new(0),
+            repeat_reauth: true,
         }
     }
 
     fn load_count(&self) -> usize {
-        self.load_calls.load(Ordering::SeqCst)
+        self.load_calls.load(AtomicOrdering::SeqCst)
     }
 
     fn refresh_count(&self) -> usize {
-        self.refresh_calls.load(Ordering::SeqCst)
+        self.refresh_calls.load(AtomicOrdering::SeqCst)
     }
 }
 
@@ -84,9 +100,16 @@ impl CredentialExecutor for FakeExecutor {
     ) -> Pin<
         Box<dyn Future<Output = Result<LoadedCredential, CredentialCacheError>> + Send + 'borrow>,
     > {
-        self.load_calls.fetch_add(1, Ordering::SeqCst);
+        self.load_calls.fetch_add(1, AtomicOrdering::SeqCst);
         let next = self.loads.lock().unwrap().pop_front();
-        Box::pin(async move { next.unwrap_or_else(|| Err(load_error())) })
+        let repeat = self.repeat_reauth;
+        Box::pin(async move {
+            match next {
+                Some(reply) => reply,
+                None if repeat => Ok(loaded("token-old", TokenState::Invalid, Some("project-p"))),
+                None => Err(load_error()),
+            }
+        })
     }
 
     fn refresh<'borrow>(
@@ -95,8 +118,9 @@ impl CredentialExecutor for FakeExecutor {
     ) -> Pin<
         Box<dyn Future<Output = Result<CredentialSnapshot, CredentialCacheError>> + Send + 'borrow>,
     > {
-        self.refresh_calls.fetch_add(1, Ordering::SeqCst);
+        self.refresh_calls.fetch_add(1, AtomicOrdering::SeqCst);
         let next = self.refreshes.lock().unwrap().pop_front();
+        let repeat = self.repeat_reauth;
         Box::pin(async move {
             match next {
                 Some(RefreshReply::Immediate(reply)) => reply,
@@ -109,6 +133,7 @@ impl CredentialExecutor for FakeExecutor {
                     gate.notified().await;
                     reply
                 }
+                None if repeat => Err(reauthentication_error()),
                 None => Err(network_error()),
             }
         })
@@ -221,6 +246,7 @@ enum Scenario {
     UnrelatedRefreshErrorIsNotRetried,
     StaleTokenIsReturnedWithoutRefresh,
     FallbackFlagsMarkFresh,
+    ResolvedAliasServesExplicitProject,
 }
 
 #[rstest]
@@ -239,6 +265,7 @@ enum Scenario {
 #[case::unrelated_refresh_error(Scenario::UnrelatedRefreshErrorIsNotRetried)]
 #[case::stale_token(Scenario::StaleTokenIsReturnedWithoutRefresh)]
 #[case::fallback_flags(Scenario::FallbackFlagsMarkFresh)]
+#[case::resolved_alias(Scenario::ResolvedAliasServesExplicitProject)]
 #[tokio::test]
 async fn cache_cases(#[case] scenario: Scenario) {
     match scenario {
@@ -261,6 +288,9 @@ async fn cache_cases(#[case] scenario: Scenario) {
             stale_token_is_returned_without_refresh().await;
         }
         Scenario::FallbackFlagsMarkFresh => fallback_flags_mark_fresh().await,
+        Scenario::ResolvedAliasServesExplicitProject => {
+            resolved_alias_serves_explicit_project().await;
+        }
     }
 }
 
@@ -587,190 +617,6 @@ async fn fallback_flags_mark_fresh() {
     assert_eq!(executor.refresh_count(), 0);
 }
 
-struct ProjectionCase {
-    state: Option<TokenState>,
-    expires_in_seconds: Option<u64>,
-    token: Option<&'static str>,
-    expired: Option<bool>,
-    valid: Option<bool>,
-}
-
-#[rstest]
-#[case::reported_state_wins(
-    ProjectionCase {
-        state: Some(TokenState::Invalid),
-        expires_in_seconds: Some(3600),
-        token: Some("token"),
-        expired: Some(false),
-        valid: Some(true),
-    },
-    TokenState::Invalid
-)]
-#[case::expiry_far_ahead(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: Some(3600),
-        token: Some("token"),
-        expired: None,
-        valid: None,
-    },
-    TokenState::Fresh
-)]
-#[case::expiry_inside_threshold(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: Some(100),
-        token: Some("token"),
-        expired: None,
-        valid: None,
-    },
-    TokenState::Stale
-)]
-#[case::expiry_exactly_threshold(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: Some(225),
-        token: Some("token"),
-        expired: None,
-        valid: None,
-    },
-    TokenState::Stale
-)]
-#[case::expiry_just_past_threshold(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: Some(226),
-        token: Some("token"),
-        expired: None,
-        valid: None,
-    },
-    TokenState::Fresh
-)]
-#[case::expiry_reached(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: Some(0),
-        token: Some("token"),
-        expired: None,
-        valid: None,
-    },
-    TokenState::Invalid
-)]
-#[case::missing_token_with_expiry(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: Some(3600),
-        token: None,
-        expired: None,
-        valid: None,
-    },
-    TokenState::Invalid
-)]
-#[case::expired_flag(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: None,
-        token: Some("token"),
-        expired: Some(true),
-        valid: Some(true),
-    },
-    TokenState::Invalid
-)]
-#[case::valid_flag(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: None,
-        token: Some("token"),
-        expired: Some(false),
-        valid: Some(true),
-    },
-    TokenState::Fresh
-)]
-#[case::expired_false_without_valid(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: None,
-        token: Some("token"),
-        expired: Some(false),
-        valid: None,
-    },
-    TokenState::Invalid
-)]
-#[case::missing_expired_beats_valid(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: None,
-        token: Some("token"),
-        expired: None,
-        valid: Some(true),
-    },
-    TokenState::Invalid
-)]
-#[case::no_projection(
-    ProjectionCase {
-        state: None,
-        expires_in_seconds: None,
-        token: Some("token"),
-        expired: None,
-        valid: None,
-    },
-    TokenState::Invalid
-)]
-fn token_state_projects_reported_expiry_and_flags(
-    #[case] case: ProjectionCase,
-    #[case] expected: TokenState,
-) {
-    let now = SystemTime::UNIX_EPOCH;
-    let expires_at = case
-        .expires_in_seconds
-        .map(|seconds| now.checked_add(Duration::from_secs(seconds)).unwrap());
-    let credential = CredentialSnapshot {
-        token: case.token.map(SecretString::from),
-        state: case.state,
-        expires_at,
-        expired: case.expired,
-        valid: case.valid,
-        quota_project_id: None,
-        project_id: None,
-    };
-    assert_eq!(token_state(&credential, now), expected);
-}
-
-#[rstest]
-#[case::quota_wins(Some("quota-project"), Some("own-project"), Some("quota-project"))]
-#[case::project_fallback(None, Some("own-project"), Some("own-project"))]
-#[case::absent(None, None, None)]
-fn unpack_recovers_the_legacy_project(
-    #[case] quota: Option<&str>,
-    #[case] project: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
-    let record = CacheRecord::Legacy {
-        credential: Arc::new(legacy_snapshot(quota, project)),
-    };
-    let (credential, recovered) = unpack_cached_credentials(Some(&record));
-    assert!(credential.is_some());
-    assert_eq!(recovered, expected);
-}
-
-#[test]
-fn unpack_absent_record_is_empty() {
-    let (credential, project) = unpack_cached_credentials(None);
-    assert!(credential.is_none());
-    assert!(project.is_none());
-}
-
-#[test]
-fn unpack_paired_keeps_the_cached_project() {
-    let record = CacheRecord::Paired {
-        credential: Arc::new(legacy_snapshot(Some("quota-project"), Some("own-project"))),
-        project: Some("cached-project".to_owned()),
-    };
-    let (credential, project) = unpack_cached_credentials(Some(&record));
-    assert!(credential.is_some());
-    assert_eq!(project, Some("cached-project"));
-}
-
 fn gated_executor(
     started: &Arc<Notify>,
     gate: &Arc<Notify>,
@@ -867,5 +713,42 @@ async fn credentials_are_redacted() {
     assert!(!format!("{record:?}").contains(SECRET_TOKEN));
     assert!(!format!("{record:?}").contains(SECRET_CREDENTIAL));
     assert!(!format!("{access:?}").contains(SECRET_TOKEN));
+    assert!(format!("{cache:?}").contains("records: 2"));
     assert_eq!(access.token.expose_secret(), SECRET_TOKEN);
+}
+
+async fn resolved_alias_serves_explicit_project() {
+    let executor = Arc::new(FakeExecutor::scripted(
+        vec![Ok(loaded("token-a", TokenState::Fresh, Some("project-p")))],
+        Vec::new(),
+    ));
+    let cache = cache_with(Arc::clone(&executor));
+    let credentials = credential_text();
+    let unresolved = cache
+        .get_access_token(Some(&credentials), None)
+        .await
+        .unwrap();
+    assert_eq!(unresolved.token.expose_secret(), "token-a");
+    assert_eq!(unresolved.project, "project-p");
+    let explicit = cache
+        .get_access_token(Some(&credentials), Some("project-p"))
+        .await
+        .unwrap();
+    assert_eq!(explicit.token.expose_secret(), "token-a");
+    assert_eq!(explicit.project, "project-p");
+    assert_eq!(executor.load_count(), 1);
+}
+
+#[tokio::test]
+async fn a_retried_refresh_keeps_the_first_error() {
+    let executor = Arc::new(FakeExecutor::repeating_reauth());
+    let cache = cache_with(Arc::clone(&executor));
+    let credentials = credential_text();
+    let error = cache
+        .get_access_token(Some(&credentials), Some("project-p"))
+        .await
+        .unwrap_err();
+    assert!(needs_reauthentication(&error));
+    assert_eq!(executor.load_count(), 2);
+    assert_eq!(executor.refresh_count(), 2);
 }
