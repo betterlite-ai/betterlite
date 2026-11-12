@@ -7,7 +7,7 @@ call:
       - {}
       - {dict_body: {}}
       - {ssml_body: "<speak>hello</speak>"}
-      - {headers: {x: y}}
+      - {headers: {x: "y"}}
       - {dict_body: {input: hi}, ssml_body: "<speak/>", headers: {z: "1", a: "2"}}
 env: {}
 compare: {ignore: []}
