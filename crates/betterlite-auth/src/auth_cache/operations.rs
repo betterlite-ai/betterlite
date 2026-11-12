@@ -1,0 +1,268 @@
+use std::any::type_name;
+use std::sync::Arc;
+
+use betterlite_models::decisions::Json;
+use betterlite_redis::batch::result::BatchResult;
+use betterlite_redis::redis_cache::RedisCache;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+
+use super::AuthCache;
+use super::AuthCacheError;
+use super::WriteOptions;
+use super::WriteTtl;
+use super::backend::{AuthCacheTier, PreCall};
+use super::decode::decode_auth_payload;
+use super::keys::{Partition, partition};
+use super::payload::{self, PayloadError, ReadOperation, log_decode_miss};
+use crate::resolved_key::auth::{AuthError, UserAPIKeyAuth};
+
+impl<T: AuthCacheTier> AuthCache<T> {
+    pub(crate) fn tier(&self, key: &str) -> &T {
+        match partition(key) {
+            Partition::KeyObject => &self.key_objects,
+            Partition::Ordinary => &self.ordinary,
+        }
+    }
+
+    #[must_use]
+    pub fn in_memory_cache_for(&self, key: &str) -> &Arc<T::Memory> {
+        match partition(key) {
+            Partition::KeyObject => self.key_objects.in_memory(),
+            Partition::Ordinary => self.ordinary.in_memory(),
+        }
+    }
+
+    pub fn update_cache_ttl(&self, memory_ttl: Option<f64>, redis_ttl: Option<f64>) {
+        self.ordinary.update_cache_ttl(memory_ttl, redis_ttl);
+        self.key_objects.update_cache_ttl(memory_ttl, redis_ttl);
+    }
+
+    pub fn update_in_memory_max_size(&self, max_size: Option<usize>) {
+        self.ordinary.update_in_memory_max_size(max_size);
+        self.key_objects.update_in_memory_max_size(max_size);
+    }
+
+    pub fn attach_redis_cache(&self, redis: Option<Arc<RedisCache>>, redis_ttl: Option<f64>) {
+        self.ordinary.attach_redis_cache(redis.clone(), redis_ttl);
+        self.key_objects.attach_redis_cache(redis, redis_ttl);
+    }
+
+    #[must_use]
+    pub fn management_object_ttl(&self) -> f64 {
+        self.ordinary
+            .memory_ttl()
+            .unwrap_or(self.management_ttl_fallback)
+    }
+
+    pub fn get(&self, key: &str, local_only: bool) -> Option<Json> {
+        match partition(key) {
+            Partition::KeyObject => self.key_objects.get(key, local_only),
+            Partition::Ordinary => self.ordinary.get(key, local_only),
+        }
+    }
+
+    pub async fn async_get(&self, key: &str, local_only: bool) -> Option<Json> {
+        match partition(key) {
+            Partition::KeyObject => self.key_objects.async_get(key, local_only).await,
+            Partition::Ordinary => self.ordinary.async_get(key, local_only).await,
+        }
+    }
+
+    pub fn get_typed<Model>(
+        &self,
+        key: &str,
+        local_only: bool,
+    ) -> Result<Option<Model>, PayloadError>
+    where
+        Model: DeserializeOwned,
+    {
+        let Some(cached) = self.get(key, local_only) else {
+            return Ok(None);
+        };
+        let decoded = payload::decode::<Model>(&cached)?;
+        if decoded.is_none() {
+            log_decode_miss(ReadOperation::Get, type_name::<Model>());
+        }
+        Ok(decoded)
+    }
+
+    pub async fn async_get_typed<Model>(
+        &self,
+        key: &str,
+        local_only: bool,
+    ) -> Result<Option<Model>, PayloadError>
+    where
+        Model: DeserializeOwned,
+    {
+        let Some(cached) = self.async_get(key, local_only).await else {
+            return Ok(None);
+        };
+        let decoded = payload::decode::<Model>(&cached)?;
+        if decoded.is_none() {
+            log_decode_miss(ReadOperation::AsyncGet, type_name::<Model>());
+        }
+        Ok(decoded)
+    }
+
+    pub fn get_auth(
+        &self,
+        key: &str,
+        local_only: bool,
+    ) -> Result<Option<UserAPIKeyAuth>, AuthError> {
+        let Some(cached) = self.get(key, local_only) else {
+            return Ok(None);
+        };
+        decode_auth_payload(&cached, ReadOperation::Get)
+    }
+
+    pub async fn async_get_auth(
+        &self,
+        key: &str,
+        local_only: bool,
+    ) -> Result<Option<UserAPIKeyAuth>, AuthError> {
+        let Some(cached) = self.async_get(key, local_only).await else {
+            return Ok(None);
+        };
+        decode_auth_payload(&cached, ReadOperation::AsyncGet)
+    }
+
+    pub fn set<Value>(
+        &self,
+        key: Option<&str>,
+        value: &Value,
+        options: WriteOptions,
+    ) -> Result<(), AuthCacheError>
+    where
+        Value: Serialize,
+    {
+        let payload = payload::encode(value)?;
+        let target = key.map_or(&self.ordinary, |name| self.tier(name));
+        target.set(key, &payload, options.cache_options());
+        Ok(())
+    }
+
+    pub async fn async_set<Value>(
+        &self,
+        key: Option<&str>,
+        value: &Value,
+        options: WriteOptions,
+    ) -> Result<(), AuthCacheError>
+    where
+        Value: Serialize + Sync,
+    {
+        let payload = payload::encode(value)?;
+        self.async_write_payload(key, &payload, options).await?;
+        Ok(())
+    }
+
+    pub async fn async_set_payload<Model>(
+        &self,
+        key: &str,
+        payload: &Json,
+        options: WriteOptions,
+    ) -> Result<(), AuthCacheError>
+    where
+        Model: DeserializeOwned + Serialize + Sync,
+    {
+        let encoded = payload::encode_validated::<Model>(payload)?;
+        self.async_write_payload(Some(key), &encoded, options)
+            .await?;
+        Ok(())
+    }
+
+    async fn async_write_payload(
+        &self,
+        key: Option<&str>,
+        payload: &Json,
+        options: WriteOptions,
+    ) -> Result<(), AuthCacheError> {
+        let Some(name) = key else {
+            // a null key still serialized, and reaches the ordinary partition here
+            self.ordinary
+                .async_set(None, payload, options.cache_options())
+                .await;
+            return Ok(());
+        };
+        let target = self.tier(name);
+        if !options.local_only && !options.refresh_ttl {
+            let queued = target.set_pre_call(name, payload, options.ttl.map(WriteTtl::seconds))?;
+            if matches!(queued, PreCall::Queued) {
+                return Ok(());
+            }
+        }
+        target
+            .async_set(Some(name), payload, options.cache_options())
+            .await;
+        Ok(())
+    }
+
+    pub async fn async_set_pipeline<Value>(
+        &self,
+        entries: &[(String, Value)],
+        options: WriteOptions,
+    ) -> Result<(), AuthCacheError>
+    where
+        Value: Serialize + Sync,
+    {
+        // every entry is serialized before either partition hears about the batch
+        let mut normalized = Vec::with_capacity(entries.len());
+        for (key, value) in entries {
+            normalized.push((key.clone(), payload::encode(value)?));
+        }
+        let (key_objects, ordinary): (Vec<_>, Vec<_>) = normalized
+            .into_iter()
+            .partition(|(key, _value)| partition(key) == Partition::KeyObject);
+        if !key_objects.is_empty() {
+            self.key_objects
+                .async_set_pipeline(&key_objects, options.cache_options())
+                .await?;
+        }
+        if !ordinary.is_empty() {
+            self.ordinary
+                .async_set_pipeline(&ordinary, options.cache_options())
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub fn delete(&self, key: &str) -> Result<(), AuthCacheError> {
+        match self.tier(key).delete(key) {
+            Ok(()) => Ok(()),
+            Err(error) => Err(AuthCacheError::from(error)),
+        }
+    }
+
+    pub async fn async_delete(&self, key: &str) -> Result<(), AuthCacheError> {
+        match self.tier(key).async_delete(key).await {
+            Ok(()) => Ok(()),
+            Err(error) => Err(AuthCacheError::from(error)),
+        }
+    }
+
+    pub fn delete_pre_call(&self, key: &str) -> Result<Option<BatchResult<()>>, AuthCacheError> {
+        match self.tier(key).delete_pre_call(key) {
+            Ok(queued) => Ok(queued),
+            Err(error) => Err(AuthCacheError::from(error)),
+        }
+    }
+
+    // both partitions are attempted at once, and the first failure in partition order is the one raised
+    pub async fn async_delete_keys(&self, keys: &[String]) -> Result<(), AuthCacheError> {
+        let (key_objects, ordinary): (Vec<String>, Vec<String>) = keys
+            .iter()
+            .cloned()
+            .partition(|key| partition(key) == Partition::KeyObject);
+        let (key_result, other_result) = tokio::join!(
+            self.key_objects.async_delete_keys(&key_objects),
+            self.ordinary.async_delete_keys(&ordinary),
+        );
+        if let Err(error) = key_result {
+            return Err(AuthCacheError::from(error));
+        }
+        match other_result {
+            Ok(()) => Ok(()),
+            Err(error) => Err(AuthCacheError::from(error)),
+        }
+    }
+}

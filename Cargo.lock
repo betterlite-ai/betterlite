@@ -1120,9 +1120,14 @@ dependencies = [
 name = "betterlite-auth"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
+ "betterlite-cache",
+ "betterlite-context",
  "betterlite-db",
  "betterlite-error",
+ "betterlite-models",
+ "betterlite-redis",
  "chrono",
  "hex",
  "lru",
