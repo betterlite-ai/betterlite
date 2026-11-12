@@ -13,6 +13,8 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::HeaderMap;
 use secrecy::{ExposeSecret, SecretString};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 use tokio::task::yield_now;
 use url::Url;
@@ -113,6 +115,38 @@ pub(super) fn model_list() {
         )]
     );
     default_base();
+    proxied_client_request();
+}
+
+async fn serve_models(listener: TcpListener) -> String {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while !received.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream.read(&mut chunk).await.unwrap();
+        received.extend_from_slice(&chunk[..read]);
+    }
+    let length = MODELS.len();
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {length}\r\nconnection: close\r\n\r\n{MODELS}"
+    );
+    stream.write_all(reply.as_bytes()).await.unwrap();
+    String::from_utf8(received).unwrap()
+}
+
+fn proxied_client_request() {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let (head, models) = runtime.block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/ignored", listener.local_addr().unwrap());
+        let models_request = request(Some(base.as_str()), Some("k"));
+        tokio::join!(serve_models(listener), get_models(&client, &models_request))
+    });
+    assert_eq!(models.unwrap(), ["b", "a"]);
+    assert!(head.starts_with("GET /v1/models HTTP/1.1"), "{head}");
+    assert!(head.contains("authorization: Bearer k"), "{head}");
 }
 
 fn default_base() {

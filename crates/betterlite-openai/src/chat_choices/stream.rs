@@ -60,7 +60,12 @@ pub fn extract_error_from_chunk(chunk: &Value) -> Option<(String, u16)> {
         return None;
     }
     if !error.is_object() {
-        return Some((error.to_string(), 500));
+        return Some((
+            error
+                .as_str()
+                .map_or_else(|| error.to_string(), str::to_owned),
+            500,
+        ));
     }
     let message = error
         .get("message")

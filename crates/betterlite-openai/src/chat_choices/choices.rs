@@ -9,7 +9,7 @@ use crate::chat_choices::tool_calls::{
     content_tool_call, convert_tool_calls, repair_parallel_tool_calls,
 };
 use crate::chat_choices::wire::{
-    ChoiceMessage, ChoiceToolCall, ReplyChoice, ReplyMessage, TransformedChoice,
+    ChoiceMessage, ChoiceToolCall, ProviderField, ReplyChoice, ReplyMessage, TransformedChoice,
 };
 use crate::openai_base_config::Object;
 use crate::text_completion_policy::reply::mapped_finish_reason;
@@ -155,16 +155,17 @@ fn json_mode_content(calls: Option<&[ChoiceToolCall]>, json_mode: bool) -> Optio
     Some(function.arguments.clone())
 }
 
-// _extract_reasoning_content: a reasoning provider field wins, else the content's leading think block
+// _extract_reasoning_content: a reasoning key wins even when null, else the content's leading think block
 fn extract_reasoning_content(
     message: &ReplyMessage,
     content: Option<String>,
 ) -> (Option<String>, Option<String>) {
-    if let Some(reasoning) = &message.reasoning_content {
-        return (Some(reasoning.clone()), content);
+    let provided = [&message.reasoning_content, &message.reasoning]
+        .into_iter()
+        .find(|field| !matches!(field, ProviderField::Absent));
+    match provided {
+        Some(ProviderField::Text(reasoning)) => (Some(reasoning.clone()), content),
+        Some(ProviderField::Null | ProviderField::Absent) => (None, content),
+        None => parse_content_for_reasoning(content.as_deref()),
     }
-    if let Some(reasoning) = &message.reasoning {
-        return (Some(reasoning.clone()), content);
-    }
-    parse_content_for_reasoning(content.as_deref())
 }

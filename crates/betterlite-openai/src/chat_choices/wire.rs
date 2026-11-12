@@ -19,11 +19,22 @@ pub struct ReplyMessage {
     #[serde(default)]
     pub content: Option<String>,
     #[serde(default)]
-    pub reasoning_content: Option<String>,
+    pub reasoning_content: ProviderField,
     #[serde(default)]
-    pub reasoning: Option<String>,
+    pub reasoning: ProviderField,
     #[serde(default)]
     pub tool_calls: Option<Vec<ReplyToolCall>>,
+}
+
+// _extract_reasoning_content tests key presence, so an explicit null differs from a missing key
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(untagged)]
+pub enum ProviderField {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Null,
+    Text(String),
 }
 
 #[derive(Debug, Clone, Deserialize)]

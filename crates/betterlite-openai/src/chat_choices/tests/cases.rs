@@ -4,8 +4,9 @@ use rstest::rstest;
 use serde_json::Value;
 
 use super::support::{choice, optional_params, parse, text, tool_call, tools, value};
+use crate::chat_choices::ChatChoicesError;
 use crate::chat_choices::choices::passed_in_tools;
-use crate::chat_choices::wire::TransformedChoice;
+use crate::chat_choices::wire::{CustomPayload, TransformedChoice};
 use crate::openai_base_config::Object;
 
 const NIL_ID: &str = "00000000-0000-0000-0000-000000000000";
@@ -136,6 +137,36 @@ fn tool_call_json_content_precedence() {
     let null_tools = optional_params(&[("tools", Value::Null)]);
     assert!(!passed_in_tools(&null_tools));
     assert!(passed_in_tools(&params));
+    let without_tools = optional_params(&[("temperature", Value::from(1_i64))]);
+    let kept = only(&[content_choice(CONTENT)], Some(&without_tools), false);
+    assert_eq!(kept.message.content.as_deref(), Some(CONTENT));
+    content_arguments(&params);
+}
+
+fn content_arguments(params: &Object) {
+    let head = r#"{"type":"function","name":"lookup""#;
+    for (tail, expected) in [
+        ("}", Some("")),
+        (r#","arguments":null}"#, Some("")),
+        (r#","arguments":{"a":1}}"#, Some(r#"{"a":1}"#)),
+        (r#","arguments":[1]}"#, None),
+        (r#","arguments":3}"#, None),
+        (r#","arguments":true}"#, None),
+    ] {
+        let content = format!("{head}{tail}");
+        let read = only(&[content_choice(&content)], Some(params), false);
+        match expected {
+            Some(arguments) => {
+                assert_eq!(read.message.content, None, "{content}");
+                let call = &read.message.tool_calls.as_ref().unwrap()[0];
+                assert_eq!(call.function.as_ref().unwrap().arguments, arguments);
+            }
+            None => assert_eq!(read.message.content.as_deref(), Some(content.as_str())),
+        }
+    }
+    let wrong_type = r#"{"type":"tool","name":"lookup"}"#;
+    let read = only(&[content_choice(wrong_type)], Some(params), false);
+    assert_eq!(read.message.content.as_deref(), Some(wrong_type));
 }
 
 fn tool_calls_finish_reason() {
@@ -143,6 +174,71 @@ fn tool_calls_finish_reason() {
     parallel_tool_calls();
     json_mode_tool_calls();
     mapped_finish_reason();
+    custom_tool_calls();
+    broken_custom_tool_calls();
+}
+
+fn custom_tool_calls() {
+    let custom = value(&[
+        ("id", text("call_c")),
+        (
+            "custom",
+            value(&[("name", text("patch")), ("input", text("diff"))]),
+        ),
+    ]);
+    let read = only(
+        &[choice(
+            0,
+            Some("stop"),
+            value(&[("tool_calls", Value::Array(vec![custom]))]),
+        )],
+        None,
+        false,
+    );
+    assert_eq!(read.finish_reason, "tool_calls");
+    let call = &read.message.tool_calls.as_ref().unwrap()[0];
+    assert_eq!((call.id.as_str(), call.kind.as_str()), ("call_c", "custom"));
+    assert!(call.function.is_none());
+    assert_eq!(
+        call.custom,
+        Some(CustomPayload {
+            name: String::from("patch"),
+            input: String::from("diff"),
+        })
+    );
+}
+
+fn broken_custom_tool_calls() {
+    for (broken, expected) in [
+        (
+            value(&[("id", text("c")), ("type", text("custom"))]),
+            "MissingCustom",
+        ),
+        (
+            value(&[
+                ("type", text("custom")),
+                (
+                    "custom",
+                    value(&[("name", text("n")), ("input", text("i"))]),
+                ),
+            ]),
+            "MissingCustomId",
+        ),
+        (
+            value(&[("id", text("c")), ("type", text("function"))]),
+            "MissingFunction",
+        ),
+    ] {
+        let choices = [choice(
+            0,
+            Some("stop"),
+            value(&[("tool_calls", Value::Array(vec![broken]))]),
+        )];
+        let Err(ChatChoicesError::Choices(error)) = parse(&choices, None, false) else {
+            panic!("{expected} expected");
+        };
+        assert_eq!(format!("{error:?}"), expected);
+    }
 }
 
 fn native_tool_calls() {
@@ -296,4 +392,46 @@ fn empty_choice() {
     let null_finish = only(&[choice(3, None, value(&[]))], None, false);
     assert_eq!(null_finish.index, 3);
     assert_eq!(null_finish.finish_reason, "stop");
+    message_reasoning();
+}
+
+fn message_reasoning() {
+    let tagged = "<think>plan</think>answer";
+    for (message, reasoning, content) in [
+        (content_message(tagged), Some("plan"), Some("answer")),
+        (
+            value(&[
+                ("content", text(tagged)),
+                ("reasoning_content", text("given")),
+            ]),
+            Some("given"),
+            Some(tagged),
+        ),
+        (
+            value(&[("content", text(tagged)), ("reasoning", text("alt"))]),
+            Some("alt"),
+            Some(tagged),
+        ),
+        (
+            value(&[
+                ("content", text(tagged)),
+                ("reasoning_content", Value::Null),
+            ]),
+            None,
+            Some(tagged),
+        ),
+        (
+            value(&[
+                ("content", text(tagged)),
+                ("reasoning_content", Value::Null),
+                ("reasoning", text("alt")),
+            ]),
+            None,
+            Some(tagged),
+        ),
+    ] {
+        let read = only(&[choice(0, Some("stop"), message)], None, false);
+        assert_eq!(read.message.reasoning_content.as_deref(), reasoning);
+        assert_eq!(read.message.content.as_deref(), content);
+    }
 }
