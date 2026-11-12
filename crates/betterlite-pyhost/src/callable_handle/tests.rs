@@ -360,6 +360,37 @@ async fn an_async_call_that_passes_the_deadline_is_cancelled_and_the_loop_serves
     assert_eq!(result, JsonValue::from("quick"));
 }
 
+const TIMEOUT_CODE: &CStr = c"async def fail_timeout():\n    raise TimeoutError('hook-own')\n";
+
+#[tokio::test]
+async fn an_async_hook_that_raises_timeout_error_is_a_python_error_not_a_deadline() {
+    let host = start_host();
+    let module = code_module(&host, c"hook_test", TIMEOUT_CODE);
+    let hook = handle_of(&host, attribute(&host, &module, "fail_timeout"));
+    let outcome = hook
+        .call(
+            &host,
+            &tracker(),
+            Duration::from_secs(5),
+            Vec::new(),
+            JsonObject::new(),
+        )
+        .await;
+    match outcome {
+        Err(CallError::Python(error)) => {
+            assert_eq!(error.type_name, "TimeoutError");
+            assert_eq!(error.module, "builtins");
+            assert_eq!(error.message, "hook-own");
+            assert!(
+                error.traceback.contains("TimeoutError: hook-own"),
+                "traceback was: {}",
+                error.traceback
+            );
+        }
+        other => panic!("expected a Python error, got {other:?}"),
+    }
+}
+
 const WHERE_CODE: &CStr = c"import threading\n\nasync def where():\n    return {'ident': threading.get_ident(), 'name': threading.current_thread().name}\n";
 
 #[tokio::test]

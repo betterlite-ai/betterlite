@@ -145,6 +145,8 @@ async fn is_instance_of_matches_the_raised_exception_and_its_bases() {
     assert!(error.is_instance_of(&host, "hook_errors.BoomBase"));
     assert!(error.is_instance_of(&host, "builtins.Exception"));
     assert!(!error.is_instance_of(&host, "hook_errors.ValueError"));
+    assert!(!error.is_instance_of(&host, "builtins.ValueError"));
+    assert!(!error.is_instance_of(&host, "builtins.KeyError"));
     assert!(!error.is_instance_of(&host, "missing_module.Boom"));
     assert!(!error.is_instance_of(&host, "hook_errors"));
 }

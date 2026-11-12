@@ -37,16 +37,32 @@ pub(super) fn wait_on_loop(
     // Future.result releases the GIL while it waits, so the loop thread runs the coroutine.
     match future.call_method1("result", (remaining.as_secs_f64(),)) {
         Ok(outcome) => guarded_outcome(py, &outcome),
-        Err(error) => {
-            if !is_timeout_error(py, &error) {
-                return Err(CallError::Python(PythonError::from_pyerr(py, &error)));
-            }
-            drop(future.call_method0("cancel").map_err(|cancel_error| {
-                CallError::Python(PythonError::from_pyerr(py, &cancel_error))
-            })?);
-            Err(CallError::TimedOut { after })
-        }
+        Err(_wait_error) => settled_outcome(py, &future, after),
     }
+}
+
+// Python 3.11+ makes the builtin TimeoutError both the class a hook raises and the one result() raises when the wait runs out, so the future's state tells a hook failure from the deadline.
+fn settled_outcome(
+    py: Python<'_>,
+    future: &Bound<'_, PyAny>,
+    after: Duration,
+) -> Result<Py<PyAny>, CallError> {
+    let settled = future
+        .call_method0("done")
+        .and_then(|done| done.is_truthy())
+        .map_err(|source| CallError::Python(PythonError::from_pyerr(py, &source)))?;
+    if settled {
+        return match future.call_method0("result") {
+            Ok(outcome) => guarded_outcome(py, &outcome),
+            Err(raised) => Err(CallError::Python(PythonError::from_pyerr(py, &raised))),
+        };
+    }
+    drop(
+        future
+            .call_method0("cancel")
+            .map_err(|source| CallError::Python(PythonError::from_pyerr(py, &source)))?,
+    );
+    Err(CallError::TimedOut { after })
 }
 
 fn guarded_outcome(py: Python<'_>, outcome: &Bound<'_, PyAny>) -> Result<Py<PyAny>, CallError> {
@@ -67,12 +83,6 @@ fn guarded_outcome(py: Python<'_>, outcome: &Bound<'_, PyAny>) -> Result<Py<PyAn
     }
     let raised = PyErr::from_value(error);
     Err(CallError::Python(PythonError::from_pyerr(py, &raised)))
-}
-
-fn is_timeout_error(py: Python<'_>, error: &PyErr) -> bool {
-    py.import("concurrent.futures")
-        .and_then(|futures| futures.getattr("TimeoutError"))
-        .is_ok_and(|timeout| error.is_instance(py, &timeout))
 }
 
 struct AsyncLoop {
