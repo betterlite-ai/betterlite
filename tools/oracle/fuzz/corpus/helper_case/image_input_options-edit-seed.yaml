@@ -1,0 +1,85 @@
+kind: helper
+name: image-input-options-edit-optional-params
+call:
+  image_input_options:
+    calls:
+      - function: select
+        supported: ["n", "user", "seed"]
+        params:
+          background: transparent
+          input_fidelity: high
+          n: 0
+          response_format: b64_json
+          mask: null
+          user: ""
+          imageConfig: {}
+          stream: true
+          seed: 0
+      - function: optional
+        model: edit-model
+        supported: ["n", "user"]
+        global_drop_params: false
+        call_drop_params: null
+        additional_drop_params: null
+        params:
+          background: transparent
+          input_fidelity: high
+          n: 0
+          response_format: b64_json
+          user: ""
+          imageConfig: {}
+          seed: 0
+      - function: optional
+        model: edit-model
+        supported: ["n", "user"]
+        global_drop_params: false
+        call_drop_params: null
+        additional_drop_params:
+          [background, input_fidelity, response_format, imageConfig, seed, absent]
+        params:
+          background: transparent
+          input_fidelity: high
+          n: 0
+          response_format: b64_json
+          user: ""
+          imageConfig: {}
+          seed: 0
+      - function: optional
+        model: edit-model
+        supported: ["n", "user"]
+        global_drop_params: true
+        call_drop_params: false
+        additional_drop_params: null
+        params:
+          background: transparent
+          input_fidelity: high
+          n: 0
+          response_format: b64_json
+          user: ""
+          imageConfig: {}
+          seed: 0
+      - function: optional
+        model: edit-model
+        supported: ["n", "user"]
+        global_drop_params: false
+        call_drop_params: true
+        additional_drop_params: null
+        params:
+          background: transparent
+          input_fidelity: high
+          n: 0
+          response_format: b64_json
+          user: ""
+          imageConfig: {}
+          seed: 0
+      - function: optional
+        model: edit-model
+        supported: ["n", "user"]
+        global_drop_params: false
+        call_drop_params: null
+        additional_drop_params: null
+        params:
+          n: 0
+          user: ""
+env: {}
+compare: {ignore: []}
