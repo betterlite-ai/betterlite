@@ -160,6 +160,15 @@ fn entra_exp_required_and_extra_claims() {
         parse_token_expiration(TokenAuthKind::Azure, &extra).unwrap(),
         Some(naive("2023-11-14T22:13:20"))
     );
+    // pydantic keeps the last duplicate, so an unreadable earlier exp is overwritten and a later one is not
+    let duplicates = unpadded_claims_token("{\"exp\":\"x\",\"exp\" : 1700000000 }");
+    assert_eq!(
+        parse_token_expiration(TokenAuthKind::Azure, &duplicates).unwrap(),
+        Some(naive("2023-11-14T22:13:20"))
+    );
+    assert_claim_rejected("{\"exp\":1700000000,\"exp\":\"x\"}");
+    assert_claim_rejected("[1]");
+    assert_claim_rejected("{\"exp\":\"-\"}");
     assert_claim_rejected("{}");
     assert_claim_rejected("{\"exp\":null}");
     assert_claim_rejected("{\"exp\":true}");
@@ -179,6 +188,8 @@ fn entra_invalid_claim_debug() {
 #[case::first_invalid_second("253402300800", None)]
 #[case::i64_max("9223372036854775807", None)]
 #[case::i64_min("-9223372036854775808", None)]
+#[case::two_to_63("9223372036854775808", None)]
+#[case::twenty_digits("99999999999999999999", None)]
 #[case::large_positive("999999999999999999", None)]
 #[case::before_epoch("-1", Some("1969-12-31T23:59:59"))]
 fn entra_timestamp_overflow_propagates(#[case] exp: &str, #[case] expected: Option<&str>) {

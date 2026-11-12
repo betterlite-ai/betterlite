@@ -27,6 +27,12 @@ call:
         token: "header.eyJleHAiOjk5OTk5OTk5OTk5OTk5OTk5OX0=.signature"
       - function: expiration
         kind: azure
+        token: "header.eyJleHAiOjkyMjMzNzIwMzY4NTQ3NzU4MDh9.signature"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOjk5OTk5OTk5OTk5OTk5OTk5OTk5fQ.signature"
+      - function: expiration
+        kind: azure
         token: "header.eyJleHAiOjI1MzQwMjMwMDc5OX0=.signature"
 env: {}
 compare: {ignore: []}

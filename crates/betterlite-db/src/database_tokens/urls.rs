@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::database_url_policy::query::add_missing_query_params;
@@ -13,11 +15,15 @@ use crate::database_urls::tls::tls_params;
 use crate::database_urls::update::{ConfigurationUpdate, WriterEnvResult};
 
 use super::endpoint::IAMEndpoint;
+use super::provider::AzureProviderFactory;
 use super::settings::TokenToggles;
 use super::strategy::{self, DatabaseTokenAuth, DatabaseTokenError, TokenProviders};
 
 #[derive(Debug, thiserror::Error)]
-pub enum UrlAssemblyError {
+pub enum UrlAssemblyError<AzureError>
+where
+    AzureError: Error + Send + Sync + 'static,
+{
     #[error(transparent)]
     Password {
         #[from]
@@ -26,17 +32,20 @@ pub enum UrlAssemblyError {
     #[error(transparent)]
     Token {
         #[from]
-        source: DatabaseTokenError,
+        source: DatabaseTokenError<AzureError>,
     },
 }
 
 // writer assembly resolves the token strategy before the pooled marker, and a token URL replaces even a pinned DATABASE_URL
-pub fn build_writer_url(
+pub fn build_writer_url<Factory>(
     settings: &DatabaseUrlSettings,
     toggles: TokenToggles,
     pooled: bool,
-    providers: &TokenProviders,
-) -> Result<Option<SecretString>, UrlAssemblyError> {
+    providers: &TokenProviders<Factory>,
+) -> Result<Option<SecretString>, UrlAssemblyError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     let auth = strategy::resolve(toggles, providers)?;
     if auth.is_some() && pooled {
         return Ok(None);
@@ -50,11 +59,14 @@ pub fn build_writer_url(
 }
 
 // a reader URL needs a configured reader host and no pinned reader URL, and its token mint ignores the pooled writer marker
-pub fn build_reader_url(
+pub fn build_reader_url<Factory>(
     settings: &DatabaseUrlSettings,
     toggles: TokenToggles,
-    providers: &TokenProviders,
-) -> Result<Option<SecretString>, UrlAssemblyError> {
+    providers: &TokenProviders<Factory>,
+) -> Result<Option<SecretString>, UrlAssemblyError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     if non_empty(settings.database_host_read_replica.as_deref()).is_none() {
         return Ok(None);
     }
@@ -77,10 +89,13 @@ pub fn build_reader_url(
     Ok(Some(SecretString::from(url)))
 }
 
-fn reader_endpoint(
+fn reader_endpoint<Factory>(
     fields: ReaderFields,
-    auth: &DatabaseTokenAuth,
-) -> Result<IAMEndpoint, DatabaseTokenError> {
+    auth: &DatabaseTokenAuth<Factory>,
+) -> Result<IAMEndpoint, DatabaseTokenError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     match (
         non_empty(fields.user.as_deref()),
         non_empty(fields.name.as_deref()),
@@ -103,12 +118,15 @@ fn reader_endpoint(
 }
 
 // the updates carry the URL and normalize only enabled token toggles, and only after a successful assembly
-pub fn apply_writer_url_to_env(
+pub fn apply_writer_url_to_env<Factory>(
     settings: &DatabaseUrlSettings,
     toggles: TokenToggles,
     pooled: bool,
-    providers: &TokenProviders,
-) -> Result<WriterEnvResult, UrlAssemblyError> {
+    providers: &TokenProviders<Factory>,
+) -> Result<WriterEnvResult, UrlAssemblyError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     let Some(url) = build_writer_url(settings, toggles, pooled, providers)? else {
         return Ok(WriterEnvResult {
             replaced: false,
@@ -137,10 +155,13 @@ pub fn apply_writer_url_to_env(
     })
 }
 
-fn writer_endpoint(
+fn writer_endpoint<Factory>(
     settings: &DatabaseUrlSettings,
-    auth: &DatabaseTokenAuth,
-) -> Result<IAMEndpoint, DatabaseTokenError> {
+    auth: &DatabaseTokenAuth<Factory>,
+) -> Result<IAMEndpoint, DatabaseTokenError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     let host = non_empty(settings.database_host.as_deref());
     let user = non_empty(settings.database_user.as_deref());
     let name = non_empty(settings.database_name.as_deref());
@@ -183,11 +204,14 @@ fn missing_fields(candidates: &[(&'static str, bool)]) -> String {
     missing.join(", ")
 }
 
-fn token_url(
+fn token_url<Factory>(
     settings: &DatabaseUrlSettings,
-    auth: &DatabaseTokenAuth,
+    auth: &DatabaseTokenAuth<Factory>,
     endpoint: &IAMEndpoint,
-) -> Result<String, UrlAssemblyError> {
+) -> Result<String, UrlAssemblyError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     let token = strategy::mint_database_token(auth, endpoint)?;
     let assembled = endpoint.build_url(token.expose_secret());
     add_missing_query_params(&assembled, &tls_params(settings)).map_err(|source| {

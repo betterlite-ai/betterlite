@@ -19,5 +19,11 @@ call:
       - function: expiration
         kind: azure
         token: "unsigned.eyJleHAiOjF9.ignored"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOiJ4IiwiZXhwIjoxNzAwMDAwMDAwfQ.signature"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOjE3MDAwMDAwMDAsImV4cCI6IngifQ.signature"
 env: {}
 compare: {ignore: []}

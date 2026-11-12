@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::iter::Peekable;
 use std::str;
@@ -6,6 +7,7 @@ use std::str::Bytes;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
 use chrono::{DateTime, Datelike as _, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
+use serde_json::value::RawValue;
 
 use crate::database_url_policy::url_codec::parse_qsl;
 
@@ -190,11 +192,32 @@ fn parse_entra_expiration(token: &str) -> Result<Option<NaiveDateTime>, ExpiryEr
         );
         return Ok(None);
     }
-    let Ok(claims) = serde_json::from_slice::<EntraClaims>(&claims_bytes) else {
+    // pydantic keeps the last of duplicate keys and ignores extra claims, so the object is read as raw values by name
+    let Ok(mut claims) = serde_json::from_slice::<HashMap<String, Box<RawValue>>>(&claims_bytes)
+    else {
         debug_unreadable(TokenAuthKind::Azure, &"the token claims are not readable");
         return Ok(None);
     };
-    entra_timestamp(claims.exp)
+    let Some(exp) = claims.remove("exp") else {
+        debug_unreadable(TokenAuthKind::Azure, &"the exp claim is missing");
+        return Ok(None);
+    };
+    let Some(seconds) = parse_integer_exp(exp.get())? else {
+        debug_unreadable(TokenAuthKind::Azure, &"the exp claim is not an integer");
+        return Ok(None);
+    };
+    entra_timestamp(seconds)
+}
+
+// pydantic's int accepts an integer of any width, so an exp past i64 still propagates the timestamp range error
+fn parse_integer_exp(raw: &str) -> Result<Option<i64>, ExpiryError> {
+    let digits = raw.strip_prefix('-').unwrap_or(raw);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Ok(None);
+    }
+    raw.parse::<i64>()
+        .map(Some)
+        .map_err(|_error| ExpiryError::TimestampOutOfRange)
 }
 
 fn decode_claims(payload: &str) -> Option<Vec<u8>> {
@@ -236,11 +259,6 @@ fn claims_depth(bytes: &[u8]) -> usize {
         }
     }
     deepest
-}
-
-#[derive(serde::Deserialize)]
-struct EntraClaims {
-    exp: i64,
 }
 
 fn entra_timestamp(seconds: i64) -> Result<Option<NaiveDateTime>, ExpiryError> {

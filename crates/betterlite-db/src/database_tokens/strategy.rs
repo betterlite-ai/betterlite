@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::sync::Arc;
 
 use percent_encoding::utf8_percent_encode;
@@ -9,7 +10,9 @@ use crate::rds_credentials::error::RdsCredentialsError;
 
 use super::endpoint::{IAMEndpoint, QUOTE_SET};
 use super::expiry::TokenAuthKind;
-use super::provider::{AzureProviderCache, AzureProviderError, RdsTokenProvider};
+use super::provider::{
+    AzureProviderCache, AzureProviderFactory, AzureTokenProvider as _, RdsTokenProvider,
+};
 use super::settings::TokenToggles;
 
 pub const CONFLICTING_TOKEN_AUTH_MESSAGE: &str = concat!(
@@ -22,21 +25,33 @@ pub struct RdsIamTokenAuth {
     pub provider: Arc<dyn RdsTokenProvider>,
 }
 
-pub struct AzureEntraTokenAuth {
-    pub providers: Arc<AzureProviderCache>,
+pub struct AzureEntraTokenAuth<Factory>
+where
+    Factory: AzureProviderFactory,
+{
+    pub providers: Arc<AzureProviderCache<Factory>>,
 }
 
-pub enum DatabaseTokenAuth {
+pub enum DatabaseTokenAuth<Factory>
+where
+    Factory: AzureProviderFactory,
+{
     Rds(RdsIamTokenAuth),
-    Azure(AzureEntraTokenAuth),
+    Azure(AzureEntraTokenAuth<Factory>),
 }
 
-pub struct TokenProviders {
+pub struct TokenProviders<Factory>
+where
+    Factory: AzureProviderFactory,
+{
     pub rds: Arc<dyn RdsTokenProvider>,
-    pub azure: Arc<AzureProviderCache>,
+    pub azure: Arc<AzureProviderCache<Factory>>,
 }
 
-impl DatabaseTokenAuth {
+impl<Factory> DatabaseTokenAuth<Factory>
+where
+    Factory: AzureProviderFactory,
+{
     #[must_use]
     pub const fn label(&self) -> &'static str {
         match self {
@@ -63,7 +78,10 @@ impl DatabaseTokenAuth {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum DatabaseTokenError {
+pub enum DatabaseTokenError<AzureError>
+where
+    AzureError: Error + Send + Sync + 'static,
+{
     #[error("{message}")]
     Conflict { message: &'static str },
     #[error(
@@ -89,14 +107,17 @@ pub enum DatabaseTokenError {
     #[error("the Azure Entra token could not be minted")]
     Azure {
         #[source]
-        source: AzureProviderError,
+        source: AzureError,
     },
 }
 
-pub fn resolve(
+pub fn resolve<Factory>(
     toggles: TokenToggles,
-    providers: &TokenProviders,
-) -> Result<Option<DatabaseTokenAuth>, DatabaseTokenError> {
+    providers: &TokenProviders<Factory>,
+) -> Result<Option<DatabaseTokenAuth<Factory>>, DatabaseTokenError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     if toggles.iam_token_db_auth && toggles.azure_postgresql_auth {
         return Err(DatabaseTokenError::Conflict {
             message: CONFLICTING_TOKEN_AUTH_MESSAGE,
@@ -120,10 +141,13 @@ pub fn resolve(
     Ok(None)
 }
 
-pub fn mint_database_token(
-    auth: &DatabaseTokenAuth,
+pub fn mint_database_token<Factory>(
+    auth: &DatabaseTokenAuth<Factory>,
     endpoint: &IAMEndpoint,
-) -> Result<SecretString, DatabaseTokenError> {
+) -> Result<SecretString, DatabaseTokenError<Factory::Error>>
+where
+    Factory: AzureProviderFactory,
+{
     match auth {
         DatabaseTokenAuth::Rds(rds) => rds
             .provider

@@ -72,6 +72,8 @@ fn endpoint_missing_host_user(#[case] url: &str) {
 #[rstest]
 #[case::no_path("postgresql://user@db.example")]
 #[case::empty_path("postgresql://user@db.example/")]
+#[case::double_slash("postgresql://user@db.example//")]
+#[case::triple_slash("postgresql://user@db.example///")]
 fn endpoint_missing_name(#[case] url: &str) {
     let error = parse_iam_endpoint_from_url(url).expect_err("the URL has no database name");
     assert_eq!(
@@ -83,7 +85,7 @@ fn endpoint_missing_name(#[case] url: &str) {
 #[test]
 fn endpoint_first_schema_and_default_port() {
     let parsed = parse_iam_endpoint_from_url(
-        "postgresql://sv%40corp@DB.Example/my%20db?schema=first&schema=second&schema=",
+        "postgresql://svc%40corp@DB.Example/my%20db?schema=first&schema=second&schema=",
     )
     .expect("the URL parses");
     assert_eq!(
@@ -105,6 +107,9 @@ fn endpoint_first_schema_and_default_port() {
     assert_eq!(explicit.port, "6543");
     let ipv6 = parse_iam_endpoint_from_url("postgresql://user@[::1]:5432/db").expect("parses");
     assert_eq!(ipv6.host, "::1");
+    let double_slash =
+        parse_iam_endpoint_from_url("postgresql://user@db.example//my%20db").expect("parses");
+    assert_eq!(double_slash.name, "my db");
 }
 
 #[rstest]
@@ -112,6 +117,37 @@ fn endpoint_first_schema_and_default_port() {
 #[case::over_range("postgresql://user@db.example:70000/db")]
 #[case::negative("postgresql://user@db.example:-1/db")]
 #[case::bracket("postgresql://[::1/db")]
+#[case::second_colon("postgresql://user@db.example:1:2/db")]
+#[case::signed("postgresql://user@db.example:+5/db")]
 fn endpoint_bad_port(#[case] url: &str) {
     parse_iam_endpoint_from_url(url).expect_err("the port or bracket is invalid");
+}
+
+// urllib reads the netloc without validating the password or percent-decoding the host
+#[rstest]
+#[case::bad_password_escape("postgresql://u:p%zz@h/db", "h", "5432", "u")]
+#[case::undecodable_password("postgresql://u:%ff@h/db", "h", "5432", "u")]
+#[case::bad_user_escape("postgresql://us%zz@h/db", "h", "5432", "us%zz")]
+#[case::at_in_password("postgresql://u:a@b@h/db", "h", "5432", "u")]
+#[case::empty_port("postgresql://u@h:/db", "h", "5432", "u")]
+#[case::empty_bracketed_port("postgresql://u@[::1]:/db", "::1", "5432", "u")]
+#[case::encoded_host("postgresql://u@H%41/db", "h%41", "5432", "u")]
+#[case::zone_kept("postgresql://u@[FE80::1%25ETH0]:5/db", "fe80::1%25ETH0", "5", "u")]
+#[case::leading_zeros("postgresql://u@h:00006543/db", "h", "6543", "u")]
+fn endpoint_netloc_like_urllib(
+    #[case] url: &str,
+    #[case] host: &str,
+    #[case] port: &str,
+    #[case] user: &str,
+) {
+    let parsed = parse_iam_endpoint_from_url(url).expect("the URL parses");
+    assert_eq!(
+        (
+            parsed.host.as_str(),
+            parsed.port.as_str(),
+            parsed.user.as_str()
+        ),
+        (host, port, user)
+    );
+    assert_eq!(parsed.name, "db");
 }

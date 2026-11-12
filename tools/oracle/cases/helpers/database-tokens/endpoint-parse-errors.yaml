@@ -28,5 +28,25 @@ call:
         url: "postgresql://user@db.example:70000/db"
       - function: parse_endpoint
         url: "postgresql://[::1/db"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example//"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example//db"
+      - function: parse_endpoint
+        url: "postgresql://u:p%zz@h/db"
+      - function: parse_endpoint
+        url: "postgresql://us%zz@h/db"
+      - function: parse_endpoint
+        url: "postgresql://u:%ff@h/db"
+      - function: parse_endpoint
+        url: "postgresql://u:a@b@h/db"
+      - function: parse_endpoint
+        url: "postgresql://u@h:/db"
+      - function: parse_endpoint
+        url: "postgresql://u@h:1:2/db"
+      - function: parse_endpoint
+        url: "postgresql://u@[FE80::1%25ETH0]:5/db"
+      - function: parse_endpoint
+        url: "postgresql://u@H%41/db"
 env: {}
 compare: {ignore: []}

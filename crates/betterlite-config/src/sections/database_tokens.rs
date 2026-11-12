@@ -33,11 +33,11 @@ impl Section for Raw {
         Ok(Settings {
             toggles: TokenToggles {
                 iam_token_db_auth: flag(
-                    environment.lookup(IAM_TOKEN_DB_AUTH_ENV_VAR),
+                    environment.toggle(IAM_TOKEN_DB_AUTH_ENV_VAR),
                     IAM_TOKEN_DB_AUTH_ENV_VAR,
                 )?,
                 azure_postgresql_auth: flag(
-                    environment.lookup(AZURE_POSTGRESQL_AUTH_ENV_VAR),
+                    environment.toggle(AZURE_POSTGRESQL_AUTH_ENV_VAR),
                     AZURE_POSTGRESQL_AUTH_ENV_VAR,
                 )?,
             },
@@ -50,15 +50,25 @@ struct LoaderEnvironment<'lookup, L> {
     variables: &'lookup L,
 }
 
+impl<L> LoaderEnvironment<'_, L>
+where
+    L: EnvironmentLookup,
+{
+    // the settings model folds the two toggle names to one case, so an operator can spell them in either
+    fn toggle(&self, name: &str) -> Option<String> {
+        self.variables
+            .lookup(name)
+            .or_else(|| self.variables.lookup(&name.to_ascii_lowercase()))
+    }
+}
+
 impl<L> EnvironmentSource for LoaderEnvironment<'_, L>
 where
     L: EnvironmentLookup,
 {
+    // pgbouncer reads the pooled marker with its exact name, so no case fallback here
     fn lookup(&self, name: &str) -> Option<String> {
-        // LiteLLM's settings fold the name to one case, so the loader is asked in the declared and folded spelling
-        self.variables
-            .lookup(name)
-            .or_else(|| self.variables.lookup(&name.to_ascii_lowercase()))
+        self.variables.lookup(name)
     }
 }
 

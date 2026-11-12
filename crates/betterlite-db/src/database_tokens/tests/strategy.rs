@@ -76,7 +76,7 @@ fn conflicting_flags_exact_error_before_provider() {
 
 #[test]
 fn strategy_labels_and_env_names() {
-    let rds_auth = DatabaseTokenAuth::Rds(RdsIamTokenAuth {
+    let rds_auth: DatabaseTokenAuth<FakeAzureFactory> = DatabaseTokenAuth::Rds(RdsIamTokenAuth {
         provider: Arc::new(RecordingRds::tokens(&[])),
     });
     assert_eq!(rds_auth.label(), "RDS IAM token");

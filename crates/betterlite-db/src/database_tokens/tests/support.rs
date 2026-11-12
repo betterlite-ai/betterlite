@@ -12,8 +12,7 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::database_tokens::provider::{
-    AzureProviderCache, AzureProviderError, AzureProviderFactory, AzureTokenProvider,
-    RdsTokenProvider,
+    AzureProviderCache, AzureProviderFactory, AzureTokenProvider, RdsTokenProvider,
 };
 use crate::database_tokens::settings::TokenToggles;
 use crate::database_tokens::strategy::TokenProviders;
@@ -112,13 +111,17 @@ impl FakeAzureProvider {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("no Entra credential is available")]
+pub(super) struct FakeAzureError;
+
 impl AzureTokenProvider for FakeAzureProvider {
-    fn token(&self) -> Result<SecretString, AzureProviderError> {
+    type Error = FakeAzureError;
+
+    fn token(&self) -> Result<SecretString, FakeAzureError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.failing.load(Ordering::SeqCst) {
-            return Err(AzureProviderError::Provider {
-                message: "no Entra credential is available".to_owned(),
-            });
+            return Err(FakeAzureError);
         }
         let mut tokens = self.tokens.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(SecretString::from(
@@ -174,7 +177,10 @@ impl FakeAzureFactory {
 }
 
 impl AzureProviderFactory for FakeAzureFactory {
-    fn build(&self, scope: &str) -> Result<Arc<dyn AzureTokenProvider>, AzureProviderError> {
+    type Provider = FakeAzureProvider;
+    type Error = FakeAzureError;
+
+    fn build(&self, scope: &str) -> Result<Arc<FakeAzureProvider>, FakeAzureError> {
         self.builds.fetch_add(1, Ordering::SeqCst);
         self.scopes
             .lock()
@@ -186,15 +192,13 @@ impl AzureProviderFactory for FakeAzureFactory {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         match outcome {
-            Some(Build::Failure) => Err(AzureProviderError::Provider {
-                message: "no Entra credential is available".to_owned(),
-            }),
+            Some(Build::Failure) => Err(FakeAzureError),
             Some(Build::Success) | None => Ok(Arc::new(self.provider.clone())),
         }
     }
 }
 
-pub(super) fn azure_providers(tokens: &[&str]) -> TokenProviders {
+pub(super) fn azure_providers(tokens: &[&str]) -> TokenProviders<FakeAzureFactory> {
     providers(
         RecordingRds::tokens(&["encoded"]),
         FakeAzureFactory::new(FakeAzureProvider::tokens(tokens)),
@@ -247,7 +251,10 @@ pub(super) fn reader_missing_message(environment: &[(&str, &str)]) -> String {
     .to_string()
 }
 
-pub(super) fn providers(rds: RecordingRds, factory: FakeAzureFactory) -> TokenProviders {
+pub(super) fn providers(
+    rds: RecordingRds,
+    factory: FakeAzureFactory,
+) -> TokenProviders<FakeAzureFactory> {
     TokenProviders {
         rds: Arc::new(rds),
         azure: Arc::new(AzureProviderCache::new(Arc::new(factory))),
