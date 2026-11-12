@@ -10,7 +10,7 @@ use super::hosted_search::calls_by_id;
 use super::namespace_names::{check_collisions, name_map, restore_name};
 use super::records::{ChoiceRecord, FunctionRecord, ProviderFields, ToolCallRecord};
 use super::responses_tools::{chat_tools_to_responses, responses_tools_to_chat};
-use super::tool_outputs::tool_outputs;
+use super::tool_outputs::tool_outputs as outputs_of;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_codex_tools::records::AttributeValue;
 
@@ -312,7 +312,7 @@ fn dropped(kind: &str) -> String {
 }
 
 #[test]
-fn unsupported_builtins_warn_in_order_once_per_occurrence() {
+fn unsupported_builtins() {
     let conversion = responses_tools_to_chat(&tools(
         r#"[{"type":"shell"},{"type":"function","name":"keep"},{"type":"computer_use"},{"type":"image_generation"},{"type":"shell"},{"type":"local_shell"},{"type":"tool_search"}]"#,
     ))
@@ -361,7 +361,7 @@ fn choice(tool_calls: Vec<ToolCallRecord>) -> ChoiceRecord {
 }
 
 fn output_items(choices: &[ChoiceRecord], request_tools: &str) -> Json {
-    let outputs = tool_outputs(choices, &tools(request_tools), ApiLimits::default()).unwrap();
+    let outputs = outputs_of(choices, &tools(request_tools), ApiLimits::default()).unwrap();
     serialized(&outputs.items)
 }
 
@@ -377,7 +377,7 @@ fn mapping(text: &str) -> ProviderFields {
 }
 
 #[test]
-fn tool_outputs_restore_the_namespace_of_a_flattened_function() {
+fn tool_outputs() {
     let choices = [choice(vec![call(
         "c",
         "function",
@@ -473,7 +473,7 @@ fn tool_outputs_custom_call_over_the_limit_fails() {
         string(r#"{"content":"patch"}"#),
     )])];
     let request = tools(r#"[{"type":"custom","name":"edit"}]"#);
-    let error = tool_outputs(&choices, &request, limits).unwrap_err();
+    let error = outputs_of(&choices, &request, limits).unwrap_err();
     assert!(matches!(error, NamespaceToolsError::Custom(_)), "{error}");
 }
 
@@ -486,7 +486,7 @@ fn tool_outputs_cache_every_call_before_the_type_filter() {
         ]),
         choice(vec![call("c", "function", "h", string("{}"))]),
     ];
-    let outputs = tool_outputs(&choices, &[], ApiLimits::default()).unwrap();
+    let outputs = outputs_of(&choices, &[], ApiLimits::default()).unwrap();
     let keys: Vec<&str> = outputs
         .cache_writes
         .iter()
@@ -567,7 +567,7 @@ fn tool_outputs_provider_fields(
 fn tool_outputs_reject_a_provider_record_that_is_not_pairs() {
     let mut tool = call("c", "function", "f", string("{}"));
     tool.provider_specific_fields = Some(record("[1]"));
-    let error = tool_outputs(&[choice(vec![tool])], &[], ApiLimits::default()).unwrap_err();
+    let error = outputs_of(&[choice(vec![tool])], &[], ApiLimits::default()).unwrap_err();
     assert!(matches!(error, NamespaceToolsError::Custom(_)), "{error}");
 }
 
@@ -599,7 +599,7 @@ fn search_choice(fields: &str) -> ChoiceRecord {
 #[case::null_calls_are_ignored(r#"{"web_search_calls":null}"#.to_owned(), "[]")]
 #[case::no_calls_field(r#"{"other":1}"#.to_owned(), "[]")]
 #[case::non_mapping_provider_fields_are_ignored(r#"[{"web_search_calls":[]}]"#.to_owned(), "[]")]
-fn hosted_search_output_indexes_valid_calls(#[case] fields: String, #[case] keys: &str) {
+fn hosted_search_output(#[case] fields: String, #[case] keys: &str) {
     let calls = calls_by_id(&[search_choice(&fields)]);
     assert_eq!(serialized(&calls.keys().collect::<Vec<_>>()), parse(keys));
 }
