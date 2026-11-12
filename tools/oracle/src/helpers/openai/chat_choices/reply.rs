@@ -63,8 +63,7 @@ pub(super) fn run(steps: &ResponseSteps) -> HelperResult {
 }
 
 fn one(step: &ResponseStep, redactor: &Redactor) -> Result<Value, Box<HelperError>> {
-    let env = environment(redactor)?;
-    let mut state = logging_state(redactor)?;
+    let (mut state, env) = fixture(redactor)?;
     let convert = Mutex::new(None);
     let record = &convert;
     let result = transform_response(
@@ -100,8 +99,8 @@ fn one(step: &ResponseStep, redactor: &Redactor) -> Result<Value, Box<HelperErro
     Ok(json!({"events": events, "outcome": outcome}))
 }
 
-fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
-    LoggingState::new(
+fn fixture(redactor: &Redactor) -> Result<(LoggingState, PrePostEnv<'_>), Box<HelperError>> {
+    let state = LoggingState::new(
         serde_json::from_str::<LoggingInit>(INIT).map_err(failure)?,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
@@ -111,7 +110,22 @@ fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> 
         || String::from("trace"),
         Duration::default,
     )
-    .map_err(failure)
+    .map_err(failure)?;
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: &Silent,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::<FixedOffset>::parse_from_rfc3339(NOW).map_err(failure)?,
+    };
+    Ok((state, env))
 }
 
 fn post_call_event(state: &LoggingState) -> Value {
@@ -147,21 +161,4 @@ fn error_outcome(error: &TransformResponseError) -> Value {
         | TransformResponseError::Projection(_)
         | TransformResponseError::Base { .. } => json!({"kind": "error"}),
     }
-}
-
-fn environment(redactor: &Redactor) -> Result<PrePostEnv<'_>, Box<HelperError>> {
-    Ok(PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: &Silent,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::<FixedOffset>::parse_from_rfc3339(NOW).map_err(failure)?,
-    })
 }
