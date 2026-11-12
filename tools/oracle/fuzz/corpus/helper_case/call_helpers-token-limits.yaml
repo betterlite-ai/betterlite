@@ -1,0 +1,8 @@
+kind: helper
+name: call-helpers-token-limits
+call:
+  call_helpers:
+    function: token_limits
+    values: [128000, " 128000 ", "-5", 128000.5, null, true, "128,000", [1]]
+env: {}
+compare: {ignore: []}

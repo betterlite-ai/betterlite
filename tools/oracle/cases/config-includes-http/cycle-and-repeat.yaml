@@ -1,0 +1,45 @@
+name: includes-cycle-and-repeat
+config: |
+  include:
+    - nested/entry.yaml
+    - models.yaml
+  general_settings:
+    master_key: oracle-master
+  router_settings:
+    num_retries: 0
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-cycle-model}
+  body: {model: cycle-model, messages: [{role: user, content: cycle}]}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-cycle-model}
+    body:
+      id: chatcmpl-cycle-model
+      object: chat.completion
+      created: 1700000108
+      model: gpt-4o
+      choices: [{index: 0, message: {role: assistant, content: Cycle!}, finish_reason: stop}]
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+config_files:
+  nested/entry.yaml: |
+    include:
+      - ../config.yaml
+      - ../models.yaml
+  models.yaml: |
+    model_list:
+      - model_name: cycle-model
+        model_info:
+          id: cycle-deployment-id
+        litellm_params:
+          model: openai/gpt-4o
+          api_base: "{{upstream}}"
+          api_key: cycle-key
+          max_retries: 0
+compare:
+  headers: [content-type, llm_provider-content-type, llm_provider-x-request-id, x-litellm-call-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base, x-litellm-attempted-retries, x-litellm-attempted-fallbacks]
+  headers_present: [x-litellm-response-duration-ms, x-litellm-overhead-duration-ms, x-litellm-callback-duration-ms, x-litellm-version]
+  upstream_headers: [authorization, content-type]
+  ignore: []

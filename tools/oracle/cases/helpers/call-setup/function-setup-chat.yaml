@@ -1,0 +1,22 @@
+kind: helper
+name: call-setup-function-setup-chat
+call:
+  b5367:
+    action: setup
+    call_type: completion
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      litellm_call_id: call-1
+      litellm_trace_id: trace-1
+      id: fn-1
+      metadata: {team: a}
+      logger_fn: my-logger
+      success_callback: ["langfuse", "dynamodb"]
+      failure_callback: ["s3_v2"]
+      stream: false
+      stream_options: {include_usage: true}
+    callbacks: [{logger: "otel"}]
+    resolver: {langfuse: {label: "langfuse"}}
+env: {}
+compare: {ignore: []}

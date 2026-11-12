@@ -4,7 +4,7 @@ budget:
 checks:
   commands:
   - id: helper-python
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_primitives.py)" &&
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_primitives.py tools/oracle/helpers/bedrock_invoke_primitives)" &&
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     why: The operation adapter is absent, unchanged or fails strict Python checks.
@@ -344,6 +344,7 @@ review_level: security
 scope:
   lint_tables: false
   paths:
+  - "tools/oracle/helpers/pyrightconfig.json"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/invoke_primitives.rs
   - crates/betterlite-bedrock/src/invoke_primitives/**

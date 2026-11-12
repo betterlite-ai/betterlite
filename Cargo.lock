@@ -1300,6 +1300,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "rusqlite",
  "secrecy",
@@ -1340,6 +1341,7 @@ dependencies = [
  "clap",
  "console",
  "dbus-secret-service-keyring-store",
+ "getrandom 0.4.3",
  "hex",
  "httparse",
  "indexmap 2.14.2",
@@ -1359,6 +1361,8 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "shlex",
+ "signal-hook",
+ "socket2",
  "soft-canonicalize",
  "strum",
  "subtle",
@@ -1445,6 +1449,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redact",
  "hex",
+ "indexmap 2.14.2",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1596,8 +1601,10 @@ dependencies = [
  "betterlite-config",
  "betterlite-db",
  "betterlite-postgres-fixture",
+ "chrono",
  "clap",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "tempfile",
  "thiserror",
@@ -1971,6 +1978,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "strum",
+ "subtle",
  "temp-env",
  "tempfile",
  "thiserror",
@@ -2044,7 +2052,9 @@ dependencies = [
 name = "betterlite-models"
 version = "0.1.0"
 dependencies = [
+ "betterlite-context",
  "betterlite-env",
+ "betterlite-error",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2247,6 +2257,7 @@ dependencies = [
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "betterlite-transcribe",
  "betterlite-vertex",
  "betterlite-websearch",
  "bytes",
@@ -2376,6 +2387,7 @@ dependencies = [
  "rustls-native-certs",
  "secrecy",
  "serde",
+ "serde_json",
  "sha2 0.11.1",
  "subtle",
  "tempfile",
@@ -2738,14 +2750,23 @@ dependencies = [
 name = "betterlite-sdk"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-core",
+ "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-redact",
  "chrono",
+ "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -2861,6 +2882,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-postgres-fixture",
+ "betterlite-provider",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
@@ -3038,13 +3060,30 @@ dependencies = [
 name = "betterlite-transcribe"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-auth",
+ "betterlite-bedrock",
+ "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
+ "betterlite-http",
+ "chrono",
+ "claxon",
+ "futures-util",
+ "hound",
+ "http 1.5.0",
+ "lewton",
+ "mutants",
+ "ogg",
+ "percent-encoding",
  "rstest",
  "rust_decimal",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "symphonia-bundle-mp3",
+ "symphonia-core",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3054,9 +3093,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-transcribe-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-transcribe",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "betterlite-bedrock",
  "betterlite-config",
  "betterlite-error",
  "betterlite-http",
@@ -3065,6 +3113,7 @@ dependencies = [
  "betterlite-prompts",
  "http 1.5.0",
  "jiff",
+ "percent-encoding",
  "regex",
  "rstest",
  "rust_decimal",
@@ -3553,6 +3602,12 @@ name = "clap_lex"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
+
+[[package]]
+name = "claxon"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bfbf56724aa9eca8afa4fcfadeb479e722935bb2a0900c2d37e0cc477af0688"
 
 [[package]]
 name = "cmake"
@@ -5059,6 +5114,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hound"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
+
+[[package]]
 name = "http"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5785,6 +5846,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lewton"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "777b48df9aaab155475a83a7df3070395ea1ac6902f5cd062b8f2b028075c030"
+dependencies = [
+ "byteorder",
+ "ogg",
+ "tinyvec",
+]
+
+[[package]]
 name = "lexical-parse-float"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6410,6 +6482,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "ogg"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6951b4e8bf21c8193da321bcce9c9dd2e13c858fe078bf9054a288b419ae5d6e"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -8633,6 +8714,31 @@ name = "symlink"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7973cce6668464ea31f176d85b13c7ab3bba2cb3b77a2ed26abd7801688010a"
+
+[[package]]
+name = "symphonia-bundle-mp3"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98ea5ffc8716bff677dfb3b01b420c7b758de901a72b8c330bf2040ab74b4add"
+dependencies = [
+ "lazy_static",
+ "log",
+ "symphonia-core",
+]
+
+[[package]]
+name = "symphonia-core"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01c412864d599d4750d0c3d684d7e093ec05e5309681ef5252cc1096a437f6e0"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "lazy_static",
+ "log",
+ "num-complex",
+ "smallvec",
+]
 
 [[package]]
 name = "syn"

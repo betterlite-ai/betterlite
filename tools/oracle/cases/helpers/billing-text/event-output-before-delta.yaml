@@ -1,0 +1,44 @@
+kind: helper
+name: billing-text-event-output-before-delta
+call:
+  billing_text:
+    calls:
+      - function: response_string
+        response:
+          event:
+            event_type: response.output_text.delta
+            output: [{content: [{text: a}, {type: image}]}, {text: b}]
+            delta: ignored
+          choices:
+            - message: choice
+      - function: response_string
+        response:
+          event:
+            event_type: response.output_text.delta
+            output: []
+            delta: ignored
+      - function: response_string
+        response:
+          event:
+            event_type: response.text.delta
+            delta: streamed
+          choices:
+            - message: choice
+      - function: response_string
+        response:
+          event:
+            event_type: response.completed
+            delta: not-a-delta
+          choices:
+            - message: one
+            - delta: two
+      - function: response_string
+        response:
+          choices: []
+      - function: response_string
+        response:
+          choices:
+            - message: null
+            - delta: null
+env: {}
+compare: {ignore: []}

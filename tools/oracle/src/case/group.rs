@@ -53,6 +53,7 @@ impl ScenarioCase {
         Case {
             name: self.name.clone(),
             config: self.config.clone(),
+            config_files: BTreeMap::new(),
             env: self.env.clone(),
             native_feature_eligibility: self.native_feature_eligibility,
             request: Box::new(Request::default()),

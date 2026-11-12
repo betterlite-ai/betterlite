@@ -1,0 +1,75 @@
+kind: helper
+name: non-default-params-extra-body
+call:
+  b5362:
+    calls:
+      - function: add_provider_specific
+        optional_params: {temperature: 0.5}
+        passed_params: {temperature: 0.5, custom_field: 1, other: {a: 1}}
+        custom_llm_provider: openai
+        openai_params: [temperature]
+      - function: add_provider_specific
+        optional_params: {extra_body: {kept: 1, custom_field: old}}
+        passed_params: {custom_field: new, fresh: 2}
+        custom_llm_provider: azure
+        openai_params: []
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {custom_field: 1}
+        custom_llm_provider: text-completion-openai
+        openai_params: []
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {custom_field: 1}
+        custom_llm_provider: groq
+        openai_params: []
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {custom_field: 1}
+        custom_llm_provider: hosted_vllm
+        openai_params: []
+      - function: add_provider_specific
+        optional_params: {extra_body: {kept: 1}}
+        passed_params: {custom_field: 1}
+        custom_llm_provider: openai
+        openai_params: []
+        additional_drop_params: [extra_body]
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {custom_field: 1, dropped: 2, model: gpt-4o}
+        custom_llm_provider: openai
+        openai_params: []
+        additional_drop_params: [dropped]
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {custom_field: 1, nothing: null}
+        custom_llm_provider: openai
+        openai_params: []
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {temperature: 0.5}
+        custom_llm_provider: openai
+        openai_params: [temperature]
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {custom_field: 1, nothing: null, dropped: 2, model: gpt-4o}
+        custom_llm_provider: anthropic
+        openai_params: []
+        additional_drop_params: [dropped]
+      - function: add_provider_specific
+        optional_params: {extra_body: {kept: 1}}
+        passed_params: {custom_field: 1}
+        custom_llm_provider: anthropic
+        openai_params: []
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {custom_field: 1, extra_body: {inner: 2}}
+        custom_llm_provider: openai
+        openai_params: []
+      - function: add_provider_specific
+        optional_params: {}
+        passed_params: {}
+        custom_llm_provider: openai
+        openai_params: []
+env: {}
+compare: {ignore: []}

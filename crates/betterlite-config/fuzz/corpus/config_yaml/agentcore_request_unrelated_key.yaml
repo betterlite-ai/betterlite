@@ -1,0 +1,8 @@
+model_list:
+  - model_name: agentcore
+    litellm_params:
+      model: bedrock/agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent
+      runtimeSessionId: short
+litellm_settings:
+  forward_multimodal_content: 'false'
+  runtimeUserId: global-user

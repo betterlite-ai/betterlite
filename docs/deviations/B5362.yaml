@@ -1,0 +1,23 @@
+task: B5362
+deviations:
+  - what: Provider mapping goes through the `OptionalParamsMapper` trait where LiteLLM calls a config object.
+    why: Provider crates depend on betterlite-context, so this crate can't name their types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3573-L3590
+  - what: The ollama function-calling fallback returns `add_function_to_prompt` to the caller instead of setting `litellm.add_function_to_prompt`.
+    why: LiteLLM writes a process-wide flag from inside a request, so one request changes the behavior of every later one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4411-L4431
+  - what: The merged `extra_body` is rejected above 1 MiB or 100 levels deep, and the error is a 400.
+    why: LiteLLM's `_ensure_extra_body_is_safe` has no size or depth limit, so a request can make the gateway copy an unbounded structure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L109
+  - what: When several image generation or transcription params are unsupported, the error names the first one in key order, which is sorted, where LiteLLM names the first one in the order the caller passed them.
+    why: Params are a sorted map, so the caller's insertion order is not kept. The status is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3680-L3693
+  - what: A `response_format` that is not an object is a 400 that names the field, where LiteLLM raises `TypeError` from `type_to_response_format_param` and the proxy answers 500.
+    why: An unhandled exception is the wrong answer for input the caller can fix. Other values outside a declared type follow docs/compatibility.md and are not listed here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4311-L4313
+  - what: An `extra_body` that is not an object is a 400 that names the field, where LiteLLM raises `TypeError` or `ValueError` from `dict(...)` and the proxy answers 500.
+    why: An unhandled exception is the wrong answer for input the caller can fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5063
+  - what: An image generation `n` that is a list or an object is a 400 that names the field, where LiteLLM raises `TypeError` from `int(n)` and the proxy answers 500.
+    why: An unhandled exception is the wrong answer for input the caller can fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3722-L3723

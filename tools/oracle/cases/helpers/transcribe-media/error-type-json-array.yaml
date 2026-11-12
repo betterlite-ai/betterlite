@@ -1,0 +1,8 @@
+kind: helper
+name: error-type-json-array
+call:
+  b3645:
+    function: error_type
+    body: '["com.amazon.coral.service#NotFoundException"]'
+env: {}
+compare: {ignore: []}

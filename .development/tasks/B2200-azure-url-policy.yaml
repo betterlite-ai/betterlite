@@ -31,7 +31,7 @@ checks:
       path segments; if present anywhere (including query) skip append. Reapply original query values after the
       v1 rewrite.
   - id: helper-python
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_urls.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_urls.py tools/oracle/helpers/azure_urls)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
     why: The operation adapter is absent, unchanged or fails strict Python checks.

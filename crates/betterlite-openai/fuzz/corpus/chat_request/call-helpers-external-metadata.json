@@ -1,0 +1,1 @@
+{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"metadata":{"user_api_key_hash":"hash","user_api_key_team_id":"team","used_client_oauth_token":false,"litellm_parent_otel_span":"span"},"litellm_metadata":{"used_client_oauth_token":true,"user_api_key_alias":"alias"}}

@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-invoke-primitives-prompt-template-selection-seed
+call:
+  bedrock_invoke_primitives:
+    prompt_template_selection:
+      cases:
+        - model: anthropic.claude-v2
+          provider: anthropic
+          messages: [{role: user, content: hi}]
+        - model: cohere.command-r-v1:0
+          provider: cohere
+          messages: [{role: user, content: hi}]
+env: {}
+compare: {ignore: []}
