@@ -38,6 +38,11 @@ where
     },
 }
 
+struct Committed<H> {
+    previous_generation: u64,
+    previous: Option<ActivePool<H>>,
+}
+
 struct CandidateGuard<H>
 where
     H: PoolHandle,
@@ -72,11 +77,71 @@ where
     recreate_locked(generation, new_db_url, transport, expected_generation).await
 }
 
+// Caller holds replacement_lock; the candidate connects while the published pool keeps serving.
 pub async fn replace_locked<P, T, C>(
     generation: &PoolGeneration<P, T, C>,
     new_db_url: &SecretString,
     transport: Option<&PoolTransport>,
 ) -> Result<(), ReplacementError<P::Error, C>>
+where
+    P: PoolProvider + 'static,
+    T: RefreshTrigger + 'static,
+    C: Error + Send + Sync + 'static,
+    P::Handle: 'static,
+{
+    let (candidate, tracker) = open_candidate(generation, new_db_url, transport).await?;
+    let committed = commit_replacement(generation, candidate, tracker)?;
+    schedule_retirement(
+        generation,
+        committed.previous,
+        committed.previous_generation,
+    );
+    Ok(())
+}
+
+async fn recreate_locked<P, T, C>(
+    generation: &PoolGeneration<P, T, C>,
+    new_db_url: &SecretString,
+    transport: Option<&PoolTransport>,
+    expected_generation: Option<u64>,
+) -> Result<bool, ReplacementError<P::Error, C>>
+where
+    P: PoolProvider + 'static,
+    T: RefreshTrigger + 'static,
+    C: Error + Send + Sync + 'static,
+    P::Handle: 'static,
+{
+    if !generation_matches(generation, expected_generation) {
+        return Ok(false);
+    }
+    if let Some(previous) = clone_current(&generation.current) {
+        previous.handle.close();
+    }
+    let Some(url) = replacement_url(generation, new_db_url) else {
+        return Err(ReplacementError::MissingUrl);
+    };
+    let built = generation
+        .provider
+        .build(&url, transport)
+        .map_err(|source| ReplacementError::Build { source })?;
+    let replacement = Arc::new(built);
+    drop(publish(generation, Arc::clone(&replacement), None));
+    replacement
+        .connect(None)
+        .await
+        .map_err(|source| ReplacementError::Connect { source })?;
+    let Some(tracker) = generation.instrument(&replacement) else {
+        return Err(ReplacementError::Untracked);
+    };
+    let _committed = commit_replacement(generation, replacement, tracker)?;
+    Ok(true)
+}
+
+async fn open_candidate<P, T, C>(
+    generation: &PoolGeneration<P, T, C>,
+    new_db_url: &SecretString,
+    transport: Option<&PoolTransport>,
+) -> Result<(Arc<P::Handle>, Arc<DrainTracker>), ReplacementError<P::Error, C>>
 where
     P: PoolProvider + 'static,
     T: RefreshTrigger + 'static,
@@ -102,64 +167,53 @@ where
         return Err(ReplacementError::Untracked);
     };
     pending.handle.take();
-    let old_generation = generation.generation.load(Ordering::SeqCst);
-    let previous = publish(generation, Arc::clone(&candidate), Some(tracker));
-    generation
-        .generation
-        .store(old_generation.saturating_add(1), Ordering::SeqCst);
-    invoke_replaced(generation.on_replaced.as_ref())
-        .map_err(|source| ReplacementError::Callback { source })?;
-    schedule_retirement(generation, previous, old_generation);
-    Ok(())
+    Ok((candidate, tracker))
 }
 
-async fn recreate_locked<P, T, C>(
+fn commit_replacement<P, T, C>(
     generation: &PoolGeneration<P, T, C>,
-    new_db_url: &SecretString,
-    transport: Option<&PoolTransport>,
-    expected_generation: Option<u64>,
-) -> Result<bool, ReplacementError<P::Error, C>>
+    handle: Arc<P::Handle>,
+    tracker: Arc<DrainTracker>,
+) -> Result<Committed<P::Handle>, ReplacementError<P::Error, C>>
 where
-    P: PoolProvider + 'static,
-    T: RefreshTrigger + 'static,
+    P: PoolProvider,
+    T: RefreshTrigger,
     C: Error + Send + Sync + 'static,
-    P::Handle: 'static,
 {
-    let current_generation = generation.generation.load(Ordering::SeqCst);
-    if let Some(expected) = expected_generation
-        && expected != current_generation
-    {
-        let prefix = generation.options.log_prefix.as_str();
-        tracing::info!(
-            "{prefix}Skipping database pool replacement: generation already replaced (current {current_generation} != expected {expected})."
-        );
-        return Ok(false);
-    }
-    if let Some(previous) = clone_current(&generation.current) {
-        previous.handle.close();
-    }
-    let Some(url) = replacement_url(generation, new_db_url) else {
-        return Err(ReplacementError::MissingUrl);
-    };
-    let built = generation
-        .provider
-        .build(&url, transport)
-        .map_err(|source| ReplacementError::Build { source })?;
-    let replacement = Arc::new(built);
-    drop(publish(generation, Arc::clone(&replacement), None));
-    replacement
-        .connect(None)
-        .await
-        .map_err(|source| ReplacementError::Connect { source })?;
-    let Some(_tracker) = generation.instrument(&replacement) else {
-        return Err(ReplacementError::Untracked);
-    };
+    let previous_generation = generation.generation.load(Ordering::SeqCst);
+    let previous = publish(generation, handle, Some(tracker));
     generation
         .generation
-        .store(current_generation.saturating_add(1), Ordering::SeqCst);
+        .store(previous_generation.saturating_add(1), Ordering::SeqCst);
     invoke_replaced(generation.on_replaced.as_ref())
         .map_err(|source| ReplacementError::Callback { source })?;
-    Ok(true)
+    Ok(Committed {
+        previous_generation,
+        previous,
+    })
+}
+
+fn generation_matches<P, T, C>(
+    generation: &PoolGeneration<P, T, C>,
+    expected_generation: Option<u64>,
+) -> bool
+where
+    P: PoolProvider,
+    T: RefreshTrigger,
+    C: Error + Send + Sync + 'static,
+{
+    let Some(expected) = expected_generation else {
+        return true;
+    };
+    let current = generation.generation.load(Ordering::SeqCst);
+    if expected == current {
+        return true;
+    }
+    let prefix = generation.options.log_prefix.as_str();
+    tracing::info!(
+        "{prefix}Skipping database pool replacement: generation already replaced (current {current} != expected {expected})."
+    );
+    false
 }
 
 fn replacement_url<P, T, C>(
