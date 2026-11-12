@@ -355,9 +355,9 @@ fn featherless_forwards_legacy_function_options() {
     r#"{"temperature": null, "stop": null, "max_tokens": null, "n": null}"#,
     "{}"
 )]
-#[case::later_limit_wins(
+#[case::null_limit_does_not_override_the_rename(
     r#"{"max_completion_tokens": 3, "max_tokens": null}"#,
-    r#"{"max_tokens": null}"#
+    r#"{"max_tokens": 3}"#
 )]
 fn featherless_maps_the_accepted_options(#[case] requested: &str, #[case] expected: &str) {
     let mut existing = IndexMap::new();
