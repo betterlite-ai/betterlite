@@ -2,32 +2,33 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::family::{
     ImageFamily, ImageParamError, map_openai_params, select_image_family,
 };
-use betterlite_openai::image_generation::reply::ImageGenerationReply;
 use betterlite_openai::image_generation::transform::{ImageTransformCall, transform_image_reply};
 use indexmap::IndexMap;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
+use super::Function;
 use super::input::Probe;
 use super::support::{NOW, Recorder, invalid, observe};
 use crate::helpers::{HelperError, HelperResult};
 
-pub(crate) fn value(probe: &Probe) -> HelperResult {
+type Detail = [(&'static str, Value); 2];
+
+pub(crate) fn value(probe: &Probe, function: Function) -> HelperResult {
     let family = select_image_family(&probe.model);
-    let recorder = Recorder::default();
-    let reply = transform(probe, family, &recorder)?;
-    Ok(json!({
-        "family": family_name(family),
-        "supported": family.supported_params(),
-        "transform": serde_json::to_value(&reply).map_err(|error| invalid(error.to_string()))?,
-        "post_call": recorder.last("post_api_call"),
-    }))
+    let detail = if function == Function::UnsupportedImageParam {
+        mapped_detail(probe, family)
+    } else {
+        transform_detail(probe, family)?
+    };
+    let mut answer = Map::new();
+    answer.insert(String::from("family"), json!(family_name(family)));
+    answer.insert(String::from("supported"), json!(family.supported_params()));
+    answer.extend(detail.map(|(name, found)| (String::from(name), found)));
+    Ok(Value::Object(answer))
 }
 
-fn transform(
-    probe: &Probe,
-    family: ImageFamily,
-    recorder: &Recorder,
-) -> Result<ImageGenerationReply, Box<HelperError>> {
+fn transform_detail(probe: &Probe, family: ImageFamily) -> Result<Detail, Box<HelperError>> {
+    let recorder = Recorder::default();
     let request_data = request_data(probe);
     let call = ImageTransformCall {
         family,
@@ -36,14 +37,20 @@ fn transform(
         request_data: &request_data,
         created_seconds: NOW,
     };
-    observe(recorder, |state, env| {
+    let reply = observe(&recorder, |state, env| {
         transform_image_reply(call, state, env)
     })?
-    .map_err(|error| invalid(error.to_string()))
+    .map_err(|error| invalid(error.to_string()))?;
+    Ok([
+        (
+            "transform",
+            serde_json::to_value(&reply).map_err(|error| invalid(error.to_string()))?,
+        ),
+        ("post_call", json!(recorder.last("post_api_call"))),
+    ])
 }
 
-pub(crate) fn mapped_value(probe: &Probe) -> Value {
-    let family = select_image_family(&probe.model);
+fn mapped_detail(probe: &Probe, family: ImageFamily) -> Detail {
     let mut mapped = probe.existing_params.clone();
     let outcome = map_openai_params(
         family,
@@ -52,16 +59,11 @@ pub(crate) fn mapped_value(probe: &Probe) -> Value {
         &mut mapped,
         probe.drop_params,
     );
-    let error: Value = match outcome {
+    let error = match outcome {
         Ok(()) => Value::Null,
         Err(ImageParamError::Unsupported { .. }) => json!({"kind": "unsupported_parameter"}),
     };
-    json!({
-        "family": family_name(family),
-        "supported": family.supported_params(),
-        "mapped": mapped,
-        "error": error,
-    })
+    [("mapped", json!(mapped)), ("error", error)]
 }
 
 fn request_data(probe: &Probe) -> IndexMap<String, Json> {

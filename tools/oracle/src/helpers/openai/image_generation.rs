@@ -44,8 +44,8 @@ impl crate::helpers::Helper for Op {
                 | Function::Dalle3QualityStyle
                 | Function::GptImageUsage
                 | Function::B64JsonAndUrl
-                | Function::MissingCreated => transform::value(probe),
-                Function::UnsupportedImageParam => Ok(transform::mapped_value(probe)),
+                | Function::MissingCreated
+                | Function::UnsupportedImageParam => transform::value(probe, input.function),
                 Function::ImageStatusError
                 | Function::ImageRequestOverlay
                 | Function::ImageRawResponseHeaders => request::value(probe),
