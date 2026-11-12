@@ -38,7 +38,7 @@ fn batch_records(fields: &Extra) -> Result<Vec<EmbeddingRecord>, GeminiEmbedding
         .map(|(position, embedding)| embedding_record(embedding, position))
         .collect()
 }
-fn fields_of(response: &Json) -> Result<&Extra, GeminiEmbeddingError> {
+const fn fields_of(response: &Json) -> Result<&Extra, GeminiEmbeddingError> {
     match response {
         Json::Object(fields) => Ok(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {

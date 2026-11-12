@@ -8,7 +8,6 @@ use super::support::object;
 use super::support::rejection;
 use super::support::resolved_files;
 use super::support::serialized;
-use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 use crate::gemini_embedding_records::input::EmbeddingInput;
 use crate::gemini_embedding_records::input::InputEntry;
 use crate::gemini_embedding_records::request::transform_batch_request;
@@ -27,9 +26,8 @@ fn batch(source: &str, optional: &str, resolved: &str) -> Outcome {
 }
 
 fn embed_content(source: &str, optional: &str, resolved: &str) -> Outcome {
-    let built =
-        transform_embed_content(&input(source), &object(optional), &resolved_files(resolved));
-    Ok(serialized(&built))
+    transform_embed_content(&input(source), &object(optional), &resolved_files(resolved))
+        .map(|built| serialized(&built))
 }
 
 #[rstest]
