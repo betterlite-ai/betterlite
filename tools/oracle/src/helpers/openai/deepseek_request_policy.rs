@@ -44,13 +44,13 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SupportedCase {
+pub(crate) struct SupportedCase {
     model: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct MapCase {
+pub(crate) struct MapCase {
     model: String,
     #[serde(default)]
     params: Object,
@@ -60,13 +60,13 @@ struct MapCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct HistoryCase {
+pub(crate) struct HistoryCase {
     messages: Vec<Message>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct MessagesCase {
+pub(crate) struct MessagesCase {
     model: String,
     messages: Vec<ChatMessage>,
     supports_vision: bool,
@@ -74,13 +74,21 @@ struct MessagesCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ToolsCase {
+pub(crate) struct ToolsCase {
     optional_params: Object,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RequestMode {
+    #[default]
+    Sync,
+    Async,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RequestCase {
+pub(crate) struct RequestCase {
     model: String,
     messages: Vec<ChatMessage>,
     #[serde(default)]
@@ -88,7 +96,7 @@ struct RequestCase {
     supports_vision: bool,
     supports_reasoning: bool,
     #[serde(default)]
-    asynchronous: bool,
+    mode: RequestMode,
 }
 
 fn openai_config() -> OpenAiConfig {
@@ -100,14 +108,14 @@ fn openai_config() -> OpenAiConfig {
     }
 }
 
-fn empty_catalog() -> CatalogCapabilities {
+const fn empty_catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
     }
 }
 
-fn content_error(error: ChatContentError) -> Box<HelperError> {
+fn content_error(error: &ChatContentError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("BadRequestError"),
         status: Some(error.status_code()),
@@ -118,7 +126,7 @@ fn content_error(error: ChatContentError) -> Box<HelperError> {
     })
 }
 
-fn map_value(case: &MapCase) -> Result<Value, Box<HelperError>> {
+fn map_value(case: &MapCase) -> Value {
     let mut optional = case.optional_params.clone();
     map_openai_params(
         &case.model,
@@ -127,12 +135,12 @@ fn map_value(case: &MapCase) -> Result<Value, Box<HelperError>> {
         &openai_config(),
         &empty_catalog(),
     );
-    Ok(json!(optional))
+    json!(optional)
 }
 
 fn messages_value(case: &MessagesCase) -> Result<Value, Box<HelperError>> {
     let transformed = transform_messages(&case.model, &case.messages, case.supports_vision)
-        .map_err(content_error)?;
+        .map_err(|source| content_error(&source))?;
     Ok(json!(transformed))
 }
 
@@ -144,12 +152,11 @@ fn request_value(case: &RequestCase) -> Result<Value, Box<HelperError>> {
         supports_vision: case.supports_vision,
         supports_reasoning: case.supports_reasoning,
     };
-    let mode = if case.asynchronous {
-        Mode::AsyncSubclass
-    } else {
-        Mode::Sync
+    let mode = match case.mode {
+        RequestMode::Sync => Mode::Sync,
+        RequestMode::Async => Mode::AsyncSubclass,
     };
-    let body = transform_request(&input, mode).map_err(content_error)?;
+    let body = transform_request(&input, mode).map_err(|source| content_error(&source))?;
     Ok(json!(body))
 }
 
@@ -163,7 +170,7 @@ where
 {
     let mut outcomes = Vec::with_capacity(cases.len());
     for case in cases {
-        let _ = logs.take();
+        drop(logs.take());
         let value = render(case)?;
         outcomes.push(json!({"value": value, "warnings": logs.take()}));
     }
@@ -179,30 +186,39 @@ impl Helper for Op {
         let logs = Logs::default();
         let subscriber = tracing_subscriber::registry().with(logs.clone());
         with_default(subscriber, || match input {
-            Input::Supported { cases } => captured(&logs, cases, |case| {
-                Ok(json!(supported_openai_params(
-                    &case.model,
-                    &openai_config(),
-                    &empty_catalog()
-                )))
-            })
-            .map(|values| json!({"supported": values})),
+            Input::Supported { cases } => {
+                let values = captured(&logs, cases, |case| {
+                    Ok(json!(supported_openai_params(
+                        &case.model,
+                        &openai_config(),
+                        &empty_catalog()
+                    )))
+                })?;
+                Ok(json!({"supported": values}))
+            }
             Input::Map { cases } => {
-                captured(&logs, cases, map_value).map(|values| json!({"mapped": values}))
+                let values = captured(&logs, cases, |case| Ok(map_value(case)))?;
+                Ok(json!({"mapped": values}))
             }
-            Input::History { cases } => captured(&logs, cases, |case| {
-                Ok(json!(fill_reasoning_content(&case.messages)))
-            })
-            .map(|values| json!({"history": values})),
+            Input::History { cases } => {
+                let values = captured(&logs, cases, |case| {
+                    Ok(json!(fill_reasoning_content(&case.messages)))
+                })?;
+                Ok(json!({"history": values}))
+            }
             Input::Messages { cases } => {
-                captured(&logs, cases, messages_value).map(|values| json!({"messages": values}))
+                let values = captured(&logs, cases, messages_value)?;
+                Ok(json!({"messages": values}))
             }
-            Input::Tools { cases } => captured(&logs, cases, |case| {
-                Ok(json!(drop_unsupported_tools(&case.optional_params).params))
-            })
-            .map(|values| json!({"tools": values})),
+            Input::Tools { cases } => {
+                let values = captured(&logs, cases, |case| {
+                    Ok(json!(drop_unsupported_tools(&case.optional_params).params))
+                })?;
+                Ok(json!({"tools": values}))
+            }
             Input::Request { cases } => {
-                captured(&logs, cases, request_value).map(|values| json!({"bodies": values}))
+                let values = captured(&logs, cases, request_value)?;
+                Ok(json!({"bodies": values}))
             }
         })
     }

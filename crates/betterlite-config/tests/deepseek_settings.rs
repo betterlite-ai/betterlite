@@ -23,10 +23,6 @@ fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-fn revealed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|secret| secret.expose_secret().to_owned())
-}
-
 #[rstest]
 #[case::both_keys(&[("DEEPSEEK_API_BASE", "https://env.example"), ("DEEPSEEK_API_KEY", "env-key")], Some("https://env.example"), Some("env-key"))]
 #[case::base_only(&[("DEEPSEEK_API_BASE", "https://env.example")], Some("https://env.example"), None)]
@@ -40,7 +36,11 @@ fn deepseek_environment_keys_load(
 ) {
     let loaded = settings(environment);
     assert_eq!(loaded.api_base.as_deref(), expected_base);
-    assert_eq!(revealed(loaded.api_key.as_ref()).as_deref(), expected_key);
+    let loaded_key = loaded
+        .api_key
+        .as_ref()
+        .map(|secret| secret.expose_secret().to_owned());
+    assert_eq!(loaded_key.as_deref(), expected_key);
 }
 
 #[rstest]
@@ -58,10 +58,11 @@ fn deepseek_identity_resolution_follows_the_pinned_fallbacks(
     #[case] expected_base: &str,
     #[case] expected_key: Option<&str>,
 ) {
-    let explicit_key = explicit_key.map(secret);
-    let (base, key) = settings(environment).resolve(explicit_base, explicit_key.as_ref());
+    let supplied_key = explicit_key.map(secret);
+    let (base, key) = settings(environment).resolve(explicit_base, supplied_key.as_ref());
     assert_eq!(base, expected_base);
-    assert_eq!(revealed(key.as_ref()).as_deref(), expected_key);
+    let resolved_key = key.as_ref().map(|secret| secret.expose_secret().to_owned());
+    assert_eq!(resolved_key.as_deref(), expected_key);
 }
 
 #[test]

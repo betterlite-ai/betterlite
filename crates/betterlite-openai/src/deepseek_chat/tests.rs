@@ -281,7 +281,7 @@ fn a_missing_reasoning_value_becomes_a_space_with_one_warning() {
 #[test]
 fn a_successful_promotion_does_not_warn() {
     let log = capture_logs(|| {
-        let _ = repaired(
+        let _patched = repaired(
             r#"[{"role":"assistant","content":"hi","provider_specific_fields":{"reasoning_content":"thought"}}]"#,
         );
     });
@@ -679,12 +679,13 @@ fn dropped_type_names_are_sorted_and_distinct() {
 #[test]
 fn a_dropped_tool_warns_once() {
     let log = capture_logs(|| {
-        let _ = dropped(r#"{"tools":[{"type":"namespace"},{"type":"web_search"}]}"#);
+        let _outcome = dropped(r#"{"tools":[{"type":"namespace"},{"type":"web_search"}]}"#);
     });
     assert_eq!(occurrences(&log, "only supports function tools"), 1);
     assert!(log.contains("namespace"));
 }
 
+#[derive(Clone, Copy)]
 struct Capabilities {
     vision: bool,
     reasoning: bool,
@@ -846,10 +847,10 @@ fn sync_and_async_requests_produce_the_same_body_and_warnings() {
         },
     );
     let sync_log = capture_logs(|| {
-        let _ = transform_request(&input, Mode::Sync).expect("the sync request");
+        let _body = transform_request(&input, Mode::Sync).expect("the sync request");
     });
     let async_log = capture_logs(|| {
-        let _ = transform_request(&input, Mode::AsyncSubclass).expect("the async request");
+        let _body = transform_request(&input, Mode::AsyncSubclass).expect("the async request");
     });
     assert_eq!(occurrences(&sync_log, "only supports function tools"), 1);
     assert_eq!(occurrences(&async_log, "only supports function tools"), 1);

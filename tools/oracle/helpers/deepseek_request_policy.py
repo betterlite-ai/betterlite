@@ -55,7 +55,7 @@ class RequestCase(TypedDict):
     optional_params: NotRequired[dict[str, Json]]
     supports_vision: bool
     supports_reasoning: bool
-    asynchronous: NotRequired[bool]
+    mode: NotRequired[Literal["sync", "async"]]
 
 
 class SupportedInput(TypedDict):
@@ -197,7 +197,7 @@ def request_case(config: DeepSeekChatConfig, case: RequestCase) -> Json:
     optional = dict_of(case.get("optional_params"))
     turns = case["messages"]
     with Capture() as capture:
-        if case.get("asynchronous") is True:
+        if case.get("mode") == "async":
             body = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/chat/transformation.py#L324
                 Json,
                 asyncio.run(
