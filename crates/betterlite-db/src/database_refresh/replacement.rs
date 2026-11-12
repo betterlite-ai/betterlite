@@ -112,12 +112,9 @@ where
     if !generation_matches(generation, expected_generation) {
         return Ok(false);
     }
-    if let Some(previous) = clone_current(&generation.current) {
-        previous.handle.close();
-    }
-    let replacement = build_candidate(generation, new_db_url, transport)?;
-    drop(publish(generation, Arc::clone(&replacement), None));
-    let tracker = connect_and_track(generation, &replacement).await?;
+    let retired = clone_current(&generation.current);
+    let (replacement, tracker) =
+        open_stopped_candidate(generation, retired, new_db_url, transport).await?;
     let _committed = commit_replacement(generation, replacement, tracker)?;
     Ok(true)
 }
@@ -132,36 +129,57 @@ where
     T: RefreshTrigger,
     C: Error + Send + Sync + 'static,
 {
-    let candidate = build_candidate(generation, new_db_url, transport)?;
+    let Some(url) = replacement_url(generation, new_db_url) else {
+        return Err(ReplacementError::MissingUrl);
+    };
+    let candidate = build_candidate(generation.provider.as_ref(), &url, transport)?;
     let mut pending = CandidateGuard {
         handle: Some(Arc::clone(&candidate)),
     };
-    let tracker = connect_and_track(generation, &candidate).await?;
+    let tracker = connect_candidate(generation, &candidate).await?;
     pending.handle.take();
     Ok((candidate, tracker))
 }
 
-fn build_candidate<P, T, C>(
+async fn open_stopped_candidate<P, T, C>(
     generation: &PoolGeneration<P, T, C>,
+    retired: Option<ActivePool<P::Handle>>,
     new_db_url: &SecretString,
     transport: Option<&PoolTransport>,
-) -> Result<Arc<P::Handle>, ReplacementError<P::Error, C>>
+) -> Result<(Arc<P::Handle>, Arc<DrainTracker>), ReplacementError<P::Error, C>>
 where
     P: PoolProvider,
     T: RefreshTrigger,
     C: Error + Send + Sync + 'static,
 {
+    if let Some(previous) = retired {
+        previous.handle.close();
+    }
     let Some(url) = replacement_url(generation, new_db_url) else {
         return Err(ReplacementError::MissingUrl);
     };
-    let built = generation
-        .provider
-        .build(&url, transport)
+    let replacement = build_candidate(generation.provider.as_ref(), &url, transport)?;
+    drop(publish(generation, Arc::clone(&replacement), None));
+    let tracker = connect_candidate(generation, &replacement).await?;
+    Ok((replacement, tracker))
+}
+
+fn build_candidate<P, C>(
+    provider: &P,
+    url: &SecretString,
+    transport: Option<&PoolTransport>,
+) -> Result<Arc<P::Handle>, ReplacementError<P::Error, C>>
+where
+    P: PoolProvider,
+    C: Error + Send + Sync + 'static,
+{
+    let built = provider
+        .build(url, transport)
         .map_err(|source| ReplacementError::Build { source })?;
     Ok(Arc::new(built))
 }
 
-async fn connect_and_track<P, T, C>(
+async fn connect_candidate<P, T, C>(
     generation: &PoolGeneration<P, T, C>,
     candidate: &Arc<P::Handle>,
 ) -> Result<Arc<DrainTracker>, ReplacementError<P::Error, C>>
