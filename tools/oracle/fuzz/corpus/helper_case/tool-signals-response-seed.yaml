@@ -1,0 +1,25 @@
+kind: helper
+name: tool-signals-response-seed
+call:
+  tool_signals:
+    responses:
+      - chat:
+          choices:
+            - message: {annotations: [{type: url_citation}]}
+            - {}
+          usage: {cost: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, prompt_details: {web_search_requests: 0}}, server_tool_use: {web_search_requests: 0}, server_side_tool_usage_details: {web_search_calls: true}}
+      - responses:
+          output: [{mapping: {type: web_search_call}}, {attribute: {type: file_search_call}}]
+          tool_usage: {web_search: {num_requests: 2}}
+          usage: null
+      - raw:
+          body: {usage: {server_tool_use: {web_search_requests: 0}}}
+          usage: null
+      - other:
+          usage: {cost: {prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, prompt_details: null}, server_tool_use: null, server_side_tool_usage_details: null}
+    file_search_params: []
+    token_counts: []
+    values: []
+    kwargs: []
+env: {}
+compare: {ignore: []}
