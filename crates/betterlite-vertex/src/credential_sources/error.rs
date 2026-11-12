@@ -26,8 +26,6 @@ pub enum CredentialSourceError {
     Decode(#[source] CredentialDecodeError),
     #[error("the vertex credentials document is not valid JSON")]
     Document(#[source] serde_json::Error),
-    #[error("the identity pool credential_source names an environment_id that is not an AWS one")]
-    InvalidIdentityPoolEnvironment,
     #[error("the {kind} Google credential could not be built")]
     Build {
         kind: &'static str,

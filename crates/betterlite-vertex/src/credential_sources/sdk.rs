@@ -8,6 +8,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use google_cloud_auth::build_errors::Error as BuildError;
 use google_cloud_auth::credentials::AccessTokenCredentials;
 use google_cloud_auth::credentials::external_account;
+use google_cloud_auth::credentials::impersonated;
 use google_cloud_auth::credentials::mds;
 use google_cloud_auth::credentials::service_account::{
     AccessSpecifier, Builder as ServiceAccountBuilder,
@@ -56,12 +57,13 @@ pub trait TokenSource: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<SecretString, CredentialSourceError>> + Send + '_>>;
 }
 
-// the six constructors VertexBase.load_auth dispatches to, behind a seam so a test injects them
+// the seven constructors VertexBase.load_auth dispatches to, behind a seam so a test injects them
 pub trait CredentialBuilders: Send + Sync {
     fn service_account(&self, document: &str, scopes: &[String]) -> BuiltSource;
     fn authorized_user(&self, document: &str, scopes: &[String]) -> BuiltSource;
     fn identity_pool(&self, document: &str, scopes: &[String]) -> BuiltSource;
     fn identity_pool_with_aws(&self, document: &str, scopes: &[String]) -> BuiltSource;
+    fn impersonated(&self, document: &str, scopes: &[String]) -> BuiltSource;
     fn metadata(&self, endpoint: Option<&str>, scopes: &[String]) -> BuiltSource;
     fn aws_federation(
         &self,
@@ -150,6 +152,15 @@ impl CredentialBuilders for GoogleAuth {
     // google-cloud-auth picks the AWS subject token from credential_source itself
     fn identity_pool_with_aws(&self, document: &str, scopes: &[String]) -> BuiltSource {
         self.identity_pool(document, scopes)
+    }
+
+    fn impersonated(&self, document: &str, scopes: &[String]) -> BuiltSource {
+        let key = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
+        let builder = with_http_policy!(impersonated::Builder::new(key), scopes, &self.policy);
+        build(
+            "impersonated_service_account",
+            builder.build_access_token_credentials(),
+        )
     }
 
     fn metadata(&self, endpoint: Option<&str>, scopes: &[String]) -> BuiltSource {

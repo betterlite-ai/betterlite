@@ -42,7 +42,7 @@ impl ExternalAccountSource {
     #[must_use]
     pub fn aws_environment(&self) -> Option<&str> {
         match &self.credential_source {
-            ExternalCredentialSource::Aws { environment_id, .. } => Some(environment_id),
+            ExternalCredentialSource::Aws { environment_id, .. } => Some(&environment_id.0),
             ExternalCredentialSource::Executable { .. }
             | ExternalCredentialSource::Url { .. }
             | ExternalCredentialSource::File { .. } => None,

@@ -111,6 +111,10 @@ fn refuses_executable_credentials() {
     br#"{"type":"service_account","private_key":"KEY"}"#,
     "not a credential document"
 )]
+#[case::non_aws_environment_without_a_source(
+    br#"{"type":"external_account","audience":"a","subject_token_type":"t","credential_source":{"environment_id":"azure1"}}"#,
+    "not a credential document"
+)]
 fn rejects_undecodable_credentials(#[case] bytes: &[u8], #[case] message: &str) {
     let error = decode_vertex_credentials(bytes).unwrap_err();
     assert!(error.to_string().contains(message), "{error}");
@@ -216,4 +220,44 @@ fn zeroizing_key_text_clears_the_key() {
     let mut key = KeyText("KEYMATERIAL".to_owned());
     key.zeroize();
     assert!(key.0.is_empty());
+}
+
+#[test]
+fn a_non_aws_environment_id_falls_through_to_the_file_source() {
+    let decoded = decode_vertex_credentials(
+        br#"{"type":"external_account","audience":"a","subject_token_type":"t","credential_source":{"environment_id":"azure1","file":"/run/token"}}"#,
+    )
+    .unwrap();
+    let CredentialSource::ExternalAccount(account) = &decoded else {
+        panic!("expected external account credentials");
+    };
+    assert_eq!(account.aws_environment(), None);
+    assert!(
+        matches!(&account.credential_source, ExternalCredentialSource::File { file, .. } if file == "/run/token")
+    );
+    assert!(!decoded.document().contains("environment_id"));
+}
+
+#[test]
+fn an_impersonated_document_is_the_file_text() {
+    let text = r#"{"type":"impersonated_service_account","service_account_impersonation_url":"https://iam.example/sa:generateAccessToken","source_credentials":{"type":"authorized_user","client_id":"c","client_secret":"CLIENTSECRET","refresh_token":"r"},"quota_project_id":"quota-project"}"#;
+    let decoded = decode_vertex_credentials(text.as_bytes()).unwrap();
+    assert!(matches!(decoded, CredentialSource::Impersonated(_)));
+    assert_eq!(decoded.document(), text);
+    assert_eq!(decoded.project_id(), None);
+    assert_eq!(decoded.quota_project_id(), None);
+    assert!(!format!("{decoded:?}").contains("CLIENTSECRET"));
+}
+
+#[rstest]
+#[case::workforce_user("external_account_authorized_user")]
+#[case::gdch("gdch_service_account")]
+fn refuses_credential_types_the_sdk_cannot_build(#[case] kind: &str) {
+    let document =
+        format!(r#"{{"type":"{kind}","private_key":"KEY","client_email":"sa@example"}}"#);
+    let error = decode_vertex_credentials(document.as_bytes()).unwrap_err();
+    assert!(
+        matches!(&error, CredentialDecodeError::Unsupported { kind: found } if found == kind),
+        "{error}"
+    );
 }

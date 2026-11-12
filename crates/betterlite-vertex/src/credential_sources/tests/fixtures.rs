@@ -94,6 +94,10 @@ impl CredentialBuilders for RecordingBuilders {
         Ok(self.recorded_source(format!("identity_pool_with_aws {document} {scopes:?}")))
     }
 
+    fn impersonated(&self, document: &str, scopes: &[String]) -> BuiltSource {
+        Ok(self.recorded_source(format!("impersonated {document} {scopes:?}")))
+    }
+
     fn metadata(&self, endpoint: Option<&str>, scopes: &[String]) -> BuiltSource {
         Ok(self.recorded_source(format!("metadata {endpoint:?} {scopes:?}")))
     }

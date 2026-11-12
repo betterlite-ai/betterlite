@@ -96,14 +96,14 @@ fn build_configured(source: &CredentialSource, deps: &LoadDeps<'_>) -> BuiltSour
     let scopes = [CLOUD_PLATFORM_SCOPE.to_owned()];
     let document = source.document();
     match source {
-        CredentialSource::ServiceAccount(_) => deps.http.service_account(&document, &scopes),
+        // load_auth sends every type it does not name to the service-account constructor
+        CredentialSource::ServiceAccount(_) | CredentialSource::Impersonated(_) => {
+            deps.http.service_account(&document, &scopes)
+        }
         CredentialSource::AuthorizedUser(_) => deps.http.authorized_user(&document, &scopes),
         CredentialSource::ExternalAccount(account) => {
-            let Some(environment_id) = account.aws_environment() else {
+            if account.aws_environment().is_none() {
                 return deps.http.identity_pool(&document, &scopes);
-            };
-            if !environment_id.contains("aws") {
-                return Err(CredentialSourceError::InvalidIdentityPoolEnvironment);
             }
             if account.aws.any() {
                 let input = serde_json::from_str::<FederationInput>(&document)

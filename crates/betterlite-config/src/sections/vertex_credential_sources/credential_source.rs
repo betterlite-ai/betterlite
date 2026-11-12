@@ -79,6 +79,8 @@ pub enum CredentialSource {
     ServiceAccount(ServiceAccountSource),
     AuthorizedUser(AuthorizedUserSource),
     ExternalAccount(Box<ExternalAccountSource>),
+    // google.auth.default loads an impersonated_service_account ADC file; the SDK reads its whole text
+    Impersonated(Secret),
 }
 
 impl CredentialSource {
@@ -86,7 +88,7 @@ impl CredentialSource {
     pub fn project_id(&self) -> Option<&str> {
         match self {
             Self::ServiceAccount(account) => account.project_id.as_deref(),
-            Self::AuthorizedUser(_) | Self::ExternalAccount(_) => None,
+            Self::AuthorizedUser(_) | Self::ExternalAccount(_) | Self::Impersonated(_) => None,
         }
     }
 
@@ -94,7 +96,7 @@ impl CredentialSource {
     pub fn quota_project_id(&self) -> Option<&str> {
         match self {
             Self::AuthorizedUser(user) => user.quota_project_id.as_deref(),
-            Self::ServiceAccount(_) | Self::ExternalAccount(_) => None,
+            Self::ServiceAccount(_) | Self::ExternalAccount(_) | Self::Impersonated(_) => None,
         }
     }
 
@@ -112,6 +114,7 @@ impl CredentialSource {
             }),
             Self::AuthorizedUser(user) => serde_json::to_string(user),
             Self::ExternalAccount(account) => serde_json::to_string(account),
+            Self::Impersonated(text) => Ok(text.expose_secret().0.clone()),
         };
         document.unwrap_or_default()
     }
@@ -153,6 +156,8 @@ pub enum CredentialDecodeError {
         "vertex_credentials names the executable credential source, which betterlite never runs"
     )]
     Executable,
+    #[error("vertex credentials of type {kind} have no Google auth SDK builder")]
+    Unsupported { kind: String },
 }
 
 #[derive(Deserialize)]
@@ -178,6 +183,14 @@ pub fn decode_vertex_credentials(bytes: &[u8]) -> Result<CredentialSource, Crede
                 return Err(CredentialDecodeError::Executable);
             }
             Ok(CredentialSource::ExternalAccount(Box::new(source)))
+        }
+        Some("impersonated_service_account") => Ok(CredentialSource::Impersonated(Secret::new(
+            Box::new(KeyText(text.to_owned())),
+        ))),
+        Some(unsupported @ ("external_account_authorized_user" | "gdch_service_account")) => {
+            Err(CredentialDecodeError::Unsupported {
+                kind: unsupported.to_owned(),
+            })
         }
         Some(AUTHORIZED_USER_TYPE) => serde_json::from_str::<AuthorizedUserSource>(text)
             .map(CredentialSource::AuthorizedUser)

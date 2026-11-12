@@ -161,6 +161,13 @@ async fn builds_an_identity_pool_with_aws_credential() {
 }
 
 #[tokio::test]
+async fn builds_an_impersonated_credential() {
+    let document = r#"{"type":"impersonated_service_account","service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/sa@example.iam.gserviceaccount.com:generateAccessToken","source_credentials":{"type":"authorized_user","client_id":"client","client_secret":"client-secret","refresh_token":"refresh-token"}}"#;
+    google_auth().impersonated(document, &scopes()).unwrap();
+    assert!(google_auth().impersonated("{}", &scopes()).is_err());
+}
+
+#[tokio::test]
 async fn builds_metadata_credentials() {
     let source = google_auth()
         .metadata(Some("127.0.0.1:1"), &scopes())

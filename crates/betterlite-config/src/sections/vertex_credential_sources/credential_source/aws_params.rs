@@ -54,11 +54,32 @@ pub struct CredentialSourceFormat {
     pub subject_token_field_name: Option<String>,
 }
 
+// LiteLLM takes the AWS route only when environment_id holds "aws"; any other id falls through to the file or url source
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(try_from = "String")]
+pub struct AwsEnvironmentId(pub String);
+
+#[derive(Debug, thiserror::Error)]
+#[error("credential_source.environment_id {0:?} names no AWS environment")]
+pub struct NotAwsEnvironment(String);
+
+impl TryFrom<String> for AwsEnvironmentId {
+    type Error = NotAwsEnvironment;
+
+    fn try_from(id: String) -> Result<Self, Self::Error> {
+        if id.contains("aws") {
+            Ok(Self(id))
+        } else {
+            Err(NotAwsEnvironment(id))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ExternalCredentialSource {
     Aws {
-        environment_id: String,
+        environment_id: AwsEnvironmentId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         region_url: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

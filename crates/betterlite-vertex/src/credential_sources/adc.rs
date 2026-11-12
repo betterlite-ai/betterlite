@@ -86,6 +86,7 @@ fn build_adc_source(
     match source {
         CredentialSource::ServiceAccount(_) => builders.service_account(&document, scopes),
         CredentialSource::AuthorizedUser(_) => builders.authorized_user(&document, scopes),
+        CredentialSource::Impersonated(_) => builders.impersonated(&document, scopes),
         CredentialSource::ExternalAccount(account) => {
             if account.aws_environment().is_some() {
                 builders.identity_pool_with_aws(&document, scopes)

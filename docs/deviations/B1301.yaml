@@ -12,3 +12,6 @@ deviations:
   - what: An external_account application default credential does not ask Cloud Resource Manager for the workload identity pool's project.
     why: google-auth's default() calls get_project_id, an authenticated Cloud Resource Manager request; betterlite resolves the project from the configured value, GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or the credential file's project_id instead.
     link: https://github.com/googleapis/google-auth-library-python/blob/master/google/auth/_default.py
+  - what: An external_account_authorized_user or gdch_service_account credential, from application default credentials or vertex_credentials, is refused with an error naming its type.
+    why: google.auth.default builds both from an ADC file, and google-cloud-auth has no builder for the first. Its gdch builder needs a token audience that LiteLLM never sets, so LiteLLM's own refresh sends none.
+    link: https://github.com/googleapis/google-auth-library-python/blob/v2.52.0/google/auth/_default.py

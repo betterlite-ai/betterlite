@@ -13,6 +13,7 @@ const GCLOUD_CREDENTIALS: &str = "/home/tester/.config/gcloud/application_defaul
 const GCLOUD_CONFIGURATION: &str = "/home/tester/.config/gcloud/configurations/config_default";
 const SERVICE_ACCOUNT: &str = r#"{"type":"service_account","project_id":"key-project","private_key":"KEYMATERIAL","client_email":"sa@example.iam.gserviceaccount.com"}"#;
 const AUTHORIZED_USER: &str = r#"{"type":"authorized_user","client_id":"client","client_secret":"CLIENTSECRET","refresh_token":"REFRESHTOKEN"}"#;
+const IMPERSONATED: &str = r#"{"type":"impersonated_service_account","service_account_impersonation_url":"https://iam.example/sa:generateAccessToken","source_credentials":{"type":"authorized_user","client_id":"c","client_secret":"s","refresh_token":"r"}}"#;
 
 #[tokio::test]
 async fn loads_application_default_credentials_from_the_environment_file() {
@@ -165,5 +166,20 @@ async fn an_absent_gcloud_credentials_file_falls_back_to_the_metadata_server() {
         fixture.builders.calls()[0].starts_with("metadata "),
         "{}",
         fixture.builders.calls()[0]
+    );
+}
+
+#[tokio::test]
+async fn loads_an_impersonated_service_account_file() {
+    let mut fixture = Fixture::new();
+    fixture.files = FakeFiles::default().with(APPLICATION_CREDENTIALS, IMPERSONATED.as_bytes());
+    fixture.environment.application_credentials = Some(PathBuf::from(APPLICATION_CREDENTIALS));
+    fixture.environment.project = Some("env-project".to_owned());
+    let loaded = fixture.load(None, None).await.unwrap();
+    assert_eq!(loaded.project, "env-project");
+    let call = &fixture.builders.calls()[0];
+    assert!(
+        call.starts_with(&format!("impersonated {IMPERSONATED} ")),
+        "{call}"
     );
 }

@@ -15,7 +15,8 @@ const AUTHORIZED_USER_WITHOUT_PROJECT: &str = r#"{"type":"authorized_user","clie
 const EXTERNAL_FILE: &str = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{"file":"/run/token"}}"#;
 const EXTERNAL_AWS: &str = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","token_url":"https://sts.example/v1/token","credential_source":{"environment_id":"aws1"},"aws_region_name":"us-east-1","aws_access_key_id":"AKIAEXAMPLE","aws_secret_access_key":"AWSSECRET"}"#;
 const EXTERNAL_AWS_WITHOUT_KEYS: &str = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","credential_source":{"environment_id":"aws1"}}"#;
-const EXTERNAL_AZURE: &str = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{"environment_id":"azure1"}}"#;
+const EXTERNAL_AZURE: &str = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{"environment_id":"azure1","file":"/run/token"}}"#;
+const IMPERSONATED: &str = r#"{"type":"impersonated_service_account","service_account_impersonation_url":"https://iam.example/sa:generateAccessToken","source_credentials":{"type":"authorized_user","client_id":"c","client_secret":"s","refresh_token":"r"}}"#;
 const EXECUTABLE: &str = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{"executable":{"command":"gcloud"}}}"#;
 
 #[tokio::test]
@@ -102,16 +103,26 @@ async fn selects_the_aws_federation_constructor() {
 }
 
 #[tokio::test]
-async fn refuses_an_identity_pool_environment_that_is_not_aws() {
+async fn routes_a_non_aws_environment_to_the_identity_pool() {
     let fixture = Fixture::new();
-    let error = fixture
+    fixture
         .load(Some(&text(EXTERNAL_AZURE)), Some("explicit-project"))
         .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        CredentialSourceError::InvalidIdentityPoolEnvironment
-    ));
+        .unwrap();
+    let call = &fixture.builders.calls()[0];
+    assert!(call.starts_with("identity_pool "), "{call}");
+    assert!(!call.contains("environment_id"), "{call}");
+}
+
+#[tokio::test]
+async fn a_configured_impersonated_credential_uses_the_service_account_constructor() {
+    let fixture = Fixture::new();
+    fixture
+        .load(Some(&text(IMPERSONATED)), Some("explicit-project"))
+        .await
+        .unwrap();
+    let call = &fixture.builders.calls()[0];
+    assert!(call.starts_with("service_account "), "{call}");
 }
 
 #[tokio::test]
