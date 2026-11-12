@@ -1,0 +1,14 @@
+task: B8743
+deviations:
+  - what: Opik always sends through its HTTP API; LiteLLM uses the opik SDK client when the package is installed.
+    why: There is no Rust opik SDK; the merged code already has the HTTP path LiteLLM falls back to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L103-L107
+  - what: Opik ignores the opik_project_name, opik_thread_id and opik_tags request headers; LiteLLM lets them override the trace's project name, thread id and tags.
+    why: A catalog wrapper sees LoggerEvent, which carries the standard logging payload, the callback dynamic params, the stream flag and the guardrail snapshot but no inbound request headers, and the payload's requester_custom_headers keeps only x- headers; B8740's LoggerEvent is where request headers would reach callbacks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik_payload_builder/extractors.py#L122-L158
+  - what: Braintrust records no time to first token on the async path; LiteLLM sends completion_start_time minus api_call_start_time.
+    why: The standard logging payload carries completionStartTime and startTime but no provider-handoff instant, so the wrapper passes no api_call_start_time and the merged metrics skip the field, as LiteLLM does when the key is absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L321-L325
+  - what: Braintrust gets an empty default tag list; LiteLLM reads litellm.langfuse_default_tags.
+    why: betterlite's LiteLlmSettings has no langfuse_default_tags field yet, so the config value cannot reach the wrapper; LiteLLM's global is None unless the proxy sets it, which matches the empty list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4548-L4556
