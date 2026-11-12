@@ -383,8 +383,21 @@ fn audio_seconds_uses_the_largest_results_end_without_a_metadata_duration() {
 #[case::rejected_metadata(
     r#"[{"type": "Metadata", "duration": 0}, {"type": "Metadata", "duration": -1}, {"type": "Results", "start": 1.0}]"#
 )]
+#[case::results_bound_beyond_decimal(r#"[{"type": "Results", "start": 1e30, "duration": 0}]"#)]
+#[case::metadata_float_beyond_decimal(r#"[{"type": "Metadata", "duration": 1e100}]"#)]
+#[case::metadata_integer_beyond_decimal(
+    r#"[{"type": "Metadata", "duration": 100000000000000000000000000000000}]"#
+)]
 fn audio_seconds_is_zero_without_candidates(#[case] source: &str) {
     assert_eq!(audio_seconds(&frames(source)), Decimal::ZERO);
+}
+
+#[rstest]
+#[case::declared(Some(4), 4)]
+#[case::absent(None, 1)]
+fn channel_count_ignores_a_count_beyond_u64(#[case] declared: Option<u64>, #[case] expected: u64) {
+    let frames = frames(r#"[{"type": "Metadata", "channels": 100000000000000000000}]"#);
+    assert_eq!(channel_count(&frames, declared), expected);
 }
 
 #[test]
