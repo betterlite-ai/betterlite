@@ -11,7 +11,9 @@ use crate::credentials;
 
 use super::environment::{safe_stdio_env, sdk_default_env};
 use super::error::{SessionConfigError, SessionError};
-use super::factory::{AuthSource, HttpClientConfig, RedirectGuard, SseRequest, TlsSettings};
+use super::factory::{
+    AuthSource, HttpClientConfig, RedirectGuard, RequestCredential, SseRequest, TlsSettings,
+};
 use super::negotiate::{Callbacks, ProtocolVersion};
 use super::runtime::McpRuntime;
 use super::transport::{StdioConfig, StdioServerParameters, TransportContexts, TransportType};
@@ -118,11 +120,17 @@ impl<Runtime: McpRuntime> SessionClient<Runtime> {
         } else {
             AuthSource::None
         };
+        let credential = match (&self.auth.resolved_auth, &self.auth.aws_auth) {
+            (Some(resolved), _) => Some(RequestCredential::Resolved(Arc::clone(resolved))),
+            (None, Some(aws)) => Some(RequestCredential::AwsSigV4(Arc::clone(aws))),
+            (None, None) => None,
+        };
         HttpClientConfig {
             headers: headers.clone(),
             timeout,
             tls: TlsSettings::from_policy(&self.settings.tls),
             auth,
+            credential,
             follow_redirects: true,
             redirect_guard: RedirectGuard::new(
                 &self.auth.server_url,

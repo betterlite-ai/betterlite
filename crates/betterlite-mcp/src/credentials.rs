@@ -1,7 +1,11 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use betterlite_http::mcp_sigv4::McpSigV4Auth;
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +50,10 @@ pub trait ResolvedAuth: Send + Sync {
     fn header_name(&self) -> Option<&str> {
         None
     }
+    // LiteLLM's ClientCredentialsBearerAuth refetches the token once after a 401; false leaves that answer standing
+    fn after_unauthorized(&self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+        Box::pin(async { false })
+    }
 }
 
 pub struct McpClient {
@@ -54,8 +62,8 @@ pub struct McpClient {
     pub auth_header_name: Option<String>,
     pub timeout: Duration,
     pub extra_headers: BTreeMap<String, String>,
-    pub resolved_auth: Option<Box<dyn ResolvedAuth>>,
-    pub aws_auth: Option<Box<dyn ResolvedAuth>>,
+    pub resolved_auth: Option<Arc<dyn ResolvedAuth>>,
+    pub aws_auth: Option<Arc<McpSigV4Auth>>,
     pub auth_value: Option<AuthValue>,
     pub credential_slot: Option<String>,
 }
@@ -73,8 +81,8 @@ impl McpClient {
         auth_header_name: Option<String>,
         extra_headers: BTreeMap<String, String>,
         timeout: Duration,
-        resolved_auth: Option<Box<dyn ResolvedAuth>>,
-        aws_auth: Option<Box<dyn ResolvedAuth>>,
+        resolved_auth: Option<Arc<dyn ResolvedAuth>>,
+        aws_auth: Option<Arc<McpSigV4Auth>>,
     ) -> Self {
         let credential_slot = auth_header_name.clone().or_else(|| {
             let auth = resolved_auth.as_ref()?;

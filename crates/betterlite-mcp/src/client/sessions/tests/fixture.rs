@@ -4,7 +4,12 @@ use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use aws_credential_types::Credentials;
+use aws_credential_types::provider::SharedCredentialsProvider;
+use aws_smithy_async::time::SharedTimeSource;
 use betterlite_config::tls::{TlsPolicy, Verification};
+use betterlite_http::mcp_sigv4::McpSigV4Auth;
+use betterlite_http::mcp_sigv4::cache::CredentialCache;
 use thiserror::Error;
 use tokio::time::{Instant, sleep};
 use tokio_util::sync::CancellationToken;
@@ -580,6 +585,23 @@ impl ResolvedAuth for PresenceAuth {
     }
 }
 
+// A signer with explicit credentials never reaches the credential chain or the network
+pub(crate) fn aws_signer() -> Arc<McpSigV4Auth> {
+    let clock = SharedTimeSource::default();
+    let credentials = Credentials::new("AKIDFIXTURE", "fixture-secret", None, None, "fixture");
+    Arc::new(McpSigV4Auth {
+        requires_request_body: true,
+        service_name: "bedrock-agentcore".to_owned(),
+        region_name: "us-east-1".to_owned(),
+        clock: clock.clone(),
+        cache: CredentialCache {
+            clock,
+            provider: SharedCredentialsProvider::new(credentials),
+            current: Mutex::new(None),
+        },
+    })
+}
+
 pub(crate) fn tls_policy() -> TlsPolicy {
     TlsPolicy {
         verification: Verification::Enabled,
@@ -604,8 +626,8 @@ pub(crate) struct Config {
     pub(crate) auth_value: Option<AuthValue>,
     pub(crate) auth_header_name: Option<String>,
     pub(crate) extra_headers: BTreeMap<String, String>,
-    pub(crate) resolved_auth: Option<PresenceAuth>,
-    pub(crate) aws_auth: Option<PresenceAuth>,
+    pub(crate) resolved_auth: Option<Arc<dyn ResolvedAuth>>,
+    pub(crate) aws_auth: Option<Arc<McpSigV4Auth>>,
     pub(crate) tls: TlsPolicy,
 }
 
@@ -707,12 +729,8 @@ pub(crate) fn build_client(
         config.auth_header_name,
         config.extra_headers,
         config.timeout,
-        config
-            .resolved_auth
-            .map(|auth| -> Box<dyn ResolvedAuth> { Box::new(auth) }),
-        config
-            .aws_auth
-            .map(|auth| -> Box<dyn ResolvedAuth> { Box::new(auth) }),
+        config.resolved_auth,
+        config.aws_auth,
     );
     SessionClient {
         runtime: Arc::new(runtime),

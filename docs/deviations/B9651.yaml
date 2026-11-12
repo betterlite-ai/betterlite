@@ -1,0 +1,8 @@
+task: B9651
+deviations:
+  - what: A SigV4-signed MCP request carries an x-amz-content-sha256 header holding the request body's SHA-256 when the caller did not set one.
+    why: The transport's contract proves the signed body by that header; aws-sigv4 signs a precomputed hash only when the header is present, and a caller-provided value (such as UNSIGNED-PAYLOAD) is kept. LiteLLM's botocore SigV4Auth leaves the header off for bedrock-agentcore requests and hashes the body only inside the canonical request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L353-L373
+  - what: The client timeout bounds the connect phase and each response read; no separate write or pool timeout is set.
+    why: httpx's Timeout(timeout) applies the same value to connect, read, write and pool, while reqwest exposes only connect and read timeouts. A stalled upload is not cut at the client timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L487-L490

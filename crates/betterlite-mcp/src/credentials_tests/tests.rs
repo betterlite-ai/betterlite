@@ -108,7 +108,7 @@ fn assert_resolved_auth_behavior() {
         None,
         BTreeMap::new(),
         Duration::from_secs(12),
-        Some(Box::new(auth)),
+        Some(Arc::new(auth)),
         None,
     );
     assert_eq!(resolved_client.timeout, Duration::from_secs(12));
@@ -137,7 +137,7 @@ fn assert_slot_and_empty_behavior() {
             injected_headers
         },
         Duration::from_secs(60),
-        Some(Box::new(SlotAuth)),
+        Some(Arc::new(SlotAuth)),
         None,
     );
     assert_eq!(
@@ -161,6 +161,14 @@ fn assert_slot_and_empty_behavior() {
         None,
     );
     assert!(empty_client.auth_headers().is_empty());
+}
+
+#[tokio::test]
+async fn after_unauthorized_defaults_to_false() {
+    let auth = TestAuth {
+        close_count: Arc::new(AtomicUsize::new(0)),
+    };
+    assert!(!auth.after_unauthorized().await);
 }
 
 struct TestAuth {
