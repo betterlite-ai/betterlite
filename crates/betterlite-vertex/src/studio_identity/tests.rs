@@ -92,23 +92,23 @@ fn projection_api_key_skips_the_generic_litellm_key() {
 
 #[rstest]
 #[case::explicit_wins(
-    Some("https://explicit.example"),
-    Some("https://environment.example"),
+    (Some("https://explicit.example"), Some("https://environment.example")),
     "https://explicit.example"
 )]
 #[case::environment_when_absent(
-    None,
-    Some("https://environment.example"),
+    (None, Some("https://environment.example")),
     "https://environment.example"
 )]
-#[case::default_when_nothing_is_set(None, None, DEFAULT_BASE)]
+#[case::default_when_nothing_is_set((None, None), DEFAULT_BASE)]
 fn projection_api_base_prefers_explicit_then_environment_then_default(
-    #[case] explicit: Option<&str>,
-    #[case] environment: Option<&str>,
+    #[case] base: (Option<&str>, Option<&str>),
     #[case] expected: &str,
 ) {
-    let settings = settings(None, None, environment);
-    assert_eq!(get_api_base(explicit, &settings), expected);
+    let (explicit, environment) = base;
+    assert_eq!(
+        get_api_base(explicit, &settings(None, None, environment)),
+        expected
+    );
 }
 
 #[test]
