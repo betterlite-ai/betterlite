@@ -11,16 +11,18 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat_choices::reply::{ResponseReply, transform_response};
+use betterlite_openai::chat_choices::reply::{
+    ResponseReply, TransformResponseError, transform_response,
+};
 use betterlite_openai::compatible_wire::LogInput;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::{Value, to_value};
+use serde_json::{Value, json};
 
-use super::endpoint::value;
+use super::failure;
 use crate::helpers::{HelperError, HelperResult};
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -62,17 +64,7 @@ pub(super) fn run(steps: &ResponseSteps) -> HelperResult {
 
 fn one(step: &ResponseStep, redactor: &Redactor) -> Result<Value, Box<HelperError>> {
     let env = environment(redactor)?;
-    let mut state = LoggingState::new(
-        serde_json::from_str::<LoggingInit>(INIT).map_err(failure)?,
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || String::from("trace"),
-        Duration::default,
-    )
-    .map_err(failure)?;
+    let mut state = logging_state(redactor)?;
     let convert = Mutex::new(None);
     let record = &convert;
     let result = transform_response(
@@ -88,18 +80,12 @@ fn one(step: &ResponseStep, redactor: &Redactor) -> Result<Value, Box<HelperErro
             data: RawBody::Object(step.request_data.clone()),
         },
         |decoded, response_headers, hidden_headers| {
-            *record.lock().unwrap_or_else(PoisonError::into_inner) = Some(value(&[
-                ("name", Value::String(String::from("convert"))),
-                ("response", decoded),
-                (
-                    "response_headers",
-                    to_value(response_headers).unwrap_or(Value::Null),
-                ),
-                (
-                    "hidden_headers",
-                    to_value(hidden_headers).unwrap_or(Value::Null),
-                ),
-            ]));
+            *record.lock().unwrap_or_else(PoisonError::into_inner) = Some(json!({
+                "name": "convert",
+                "response": decoded,
+                "response_headers": response_headers,
+                "hidden_headers": hidden_headers,
+            }));
             Ok(Value::String(String::from("projected")))
         },
     );
@@ -108,13 +94,24 @@ fn one(step: &ResponseStep, redactor: &Redactor) -> Result<Value, Box<HelperErro
         events.push(event);
     }
     let outcome = match result {
-        Ok(_projected) => value(&[("kind", Value::String(String::from("reply")))]),
+        Ok(_projected) => json!({"kind": "reply"}),
         Err(error) => error_outcome(&error),
     };
-    Ok(value(&[
-        ("events", Value::Array(events)),
-        ("outcome", outcome),
-    ]))
+    Ok(json!({"events": events, "outcome": outcome}))
+}
+
+fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
+    LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).map_err(failure)?,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || String::from("trace"),
+        Duration::default,
+    )
+    .map_err(failure)
 }
 
 fn post_call_event(state: &LoggingState) -> Value {
@@ -131,30 +128,24 @@ fn post_call_event(state: &LoggingState) -> Value {
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
         })
         .unwrap_or(Json::Null);
-    value(&[
-        ("name", Value::String(String::from("post_call"))),
-        ("input", to_value(input).unwrap_or(Value::Null)),
-        (
-            "original_response",
-            to_value(response).unwrap_or(Value::Null),
-        ),
-        ("complete_input_dict", to_value(data).unwrap_or(Value::Null)),
-    ])
+    json!({
+        "name": "post_call",
+        "input": input,
+        "original_response": response,
+        "complete_input_dict": data,
+    })
 }
 
-fn error_outcome(error: &betterlite_openai::chat_choices::reply::TransformResponseError) -> Value {
+fn error_outcome(error: &TransformResponseError) -> Value {
     match error {
-        betterlite_openai::chat_choices::reply::TransformResponseError::Json(record) => value(&[
-            ("kind", Value::String(String::from("error"))),
-            ("status_code", Value::from(record.status_code)),
-            (
-                "headers",
-                record.headers.as_ref().map_or(Value::Null, |headers| {
-                    to_value(headers).unwrap_or(Value::Null)
-                }),
-            ),
-        ]),
-        _ => value(&[("kind", Value::String(String::from("error")))]),
+        TransformResponseError::Json(record) => json!({
+            "kind": "error",
+            "status_code": record.status_code,
+            "headers": record.headers.as_ref(),
+        }),
+        TransformResponseError::BodyNotUtf8
+        | TransformResponseError::Projection(_)
+        | TransformResponseError::Base { .. } => json!({"kind": "error"}),
     }
 }
 
@@ -172,19 +163,5 @@ fn environment(redactor: &Redactor) -> Result<PrePostEnv<'_>, Box<HelperError>> 
         sentry: None,
         logger_fn: None,
         now: DateTime::<FixedOffset>::parse_from_rfc3339(NOW).map_err(failure)?,
-    })
-}
-
-fn failure<E>(error: E) -> Box<HelperError>
-where
-    E: std::fmt::Display,
-{
-    Box::new(HelperError {
-        class: String::from("ValueError"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
     })
 }

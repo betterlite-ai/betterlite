@@ -20,10 +20,10 @@ use betterlite_openai::openai_base_config::Headers;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde_json::{Value, to_value};
+use serde_json::{Value, json};
 use url::Url;
 
-use super::{AuthSteps, CredentialCall, UrlSteps};
+use super::{AuthSteps, CredentialCall, UrlSteps, failure};
 use crate::helpers::{HelperError, HelperResult};
 
 const DEADLINE: Duration = Duration::from_secs(600);
@@ -119,29 +119,16 @@ fn outcome(
     calls: &[(String, Option<String>)],
 ) -> Value {
     match models {
-        Ok(names) => value(&[
-            ("ok", Value::Bool(true)),
-            (
-                "models",
-                Value::Array(names.into_iter().map(Value::String).collect()),
-            ),
-            (
-                "url",
-                Value::String(
-                    calls
-                        .first()
-                        .map_or_else(String::new, |call| call.0.clone()),
-                ),
-            ),
-            (
-                "authorization",
-                calls
-                    .first()
-                    .and_then(|call| call.1.clone())
-                    .map_or(Value::Null, Value::String),
-            ),
-        ]),
-        Err(_error) => value(&[("ok", Value::Bool(false))]),
+        Ok(names) => {
+            let first = calls.first();
+            json!({
+                "ok": true,
+                "models": names,
+                "url": first.map_or(String::new(), |call| call.0.clone()),
+                "authorization": first.and_then(|call| call.1.clone()),
+            })
+        }
+        Err(_error) => json!({"ok": false}),
     }
 }
 
@@ -150,7 +137,7 @@ pub(super) fn url_join(steps: &UrlSteps) -> Value {
         steps
             .steps
             .iter()
-            .map(|step| value(&[("url", Value::String(complete_url(step.api_base.as_deref())))]))
+            .map(|step| json!({"url": complete_url(step.api_base.as_deref())}))
             .collect(),
     )
 }
@@ -160,7 +147,7 @@ pub(super) fn auth(steps: &AuthSteps) -> Value {
     for step in &steps.steps {
         let key = step.api_key.clone().map(SecretString::from);
         let headers: Headers = step.headers.clone();
-        outputs.push(to_value(validate_environment(key.as_ref(), &headers)).unwrap_or(Value::Null));
+        outputs.push(json!(validate_environment(key.as_ref(), &headers)));
     }
     Value::Array(outputs)
 }
@@ -185,18 +172,17 @@ pub(super) fn credentials(call: &CredentialCall) -> HelperResult {
     let counter: OpenAiTokenCounter = OpenAiChatConfig.token_counter(handler()?, None);
     let base_model = OpenAiChatConfig.base_model(Some(call.model.as_str()));
     drop(counter);
+    let api_key = resolved
+        .api_key
+        .as_ref()
+        .map(|key| key.expose_secret().to_owned());
 
-    Ok(value(&[
-        (
-            "api_key",
-            resolved.api_key.as_ref().map_or(Value::Null, |key| {
-                Value::String(key.expose_secret().to_owned())
-            }),
-        ),
-        ("api_base", Value::String(resolved.api_base)),
-        ("base_model", base_model.map_or(Value::Null, Value::String)),
-        ("token_counter", Value::String(String::from("openai_api"))),
-    ]))
+    Ok(json!({
+        "api_key": api_key,
+        "api_base": resolved.api_base,
+        "base_model": base_model,
+        "token_counter": "openai_api",
+    }))
 }
 
 fn handler() -> Result<CountTokensHandler, Box<HelperError>> {
@@ -206,28 +192,5 @@ fn handler() -> Result<CountTokensHandler, Box<HelperError>> {
     Ok(CountTokensHandler {
         client,
         request_timeout: DEADLINE,
-    })
-}
-
-pub(super) fn value(fields: &[(&str, Value)]) -> Value {
-    Value::Object(
-        fields
-            .iter()
-            .map(|(name, field)| ((*name).to_owned(), field.clone()))
-            .collect(),
-    )
-}
-
-fn failure<E>(error: E) -> Box<HelperError>
-where
-    E: std::fmt::Display,
-{
-    Box::new(HelperError {
-        class: String::from("ValueError"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
     })
 }

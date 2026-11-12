@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::helpers::HelperResult;
+use crate::helpers::{HelperError, HelperResult};
 
 mod choices;
 mod endpoint;
@@ -13,6 +13,20 @@ mod stream;
 mod tests;
 
 pub(crate) type Object = Map<String, Value>;
+
+pub(crate) fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: std::fmt::Display,
+{
+    Box::new(HelperError {
+        class: String::from("ValueError"),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -117,7 +131,7 @@ impl crate::helpers::Helper for Op {
             | ChatChoicesCall::EmptyChoice(steps) => choices::run(steps),
             ChatChoicesCall::ReasoningContentDelta(steps)
             | ChatChoicesCall::EmbeddedStreamError(steps)
-            | ChatChoicesCall::StreamEnvelopeFields(steps) => stream::run(steps),
+            | ChatChoicesCall::StreamEnvelopeFields(steps) => Ok(stream::run(steps)),
             ChatChoicesCall::ResponseHeaders(steps) => reply::run(steps),
             ChatChoicesCall::ModelList(steps) | ChatChoicesCall::ModelListDecodeFailure(steps) => {
                 endpoint::model_list(steps)

@@ -181,9 +181,12 @@ fn tool_call_names(tools: &Value) -> Result<Vec<String>, ChoicesError> {
         match fields.get("function") {
             None => {}
             Some(Value::Object(function)) => {
-                let name = function.get("name").and_then(Value::as_str);
-                if let Some(name) = name.filter(|name| !name.is_empty()) {
-                    names.push(name.to_owned());
+                if let Some(found) = function
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .filter(|given| !given.is_empty())
+                {
+                    names.push(found.to_owned());
                 }
             }
             Some(_) => return Err(ChoicesError::ToolNotObject),

@@ -3,8 +3,8 @@ use serde::Serialize;
 use serde_json::{Value, to_value};
 use uuid::Uuid;
 
-use super::ChoiceSteps;
-use crate::helpers::{HelperError, HelperResult};
+use super::{ChoiceSteps, failure};
+use crate::helpers::HelperResult;
 
 #[derive(Serialize)]
 struct Envelope<'step> {
@@ -28,18 +28,4 @@ pub(super) fn run(steps: &ChoiceSteps) -> HelperResult {
         outputs.push(to_value(choices).map_err(failure)?);
     }
     Ok(Value::Array(outputs))
-}
-
-fn failure<E>(error: E) -> Box<HelperError>
-where
-    E: std::fmt::Display,
-{
-    Box::new(HelperError {
-        class: String::from("ValueError"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
 }
