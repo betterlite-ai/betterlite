@@ -1,6 +1,5 @@
 from collections.abc import Callable
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
-from urllib.parse import urlencode
 
 import litellm
 from fastapi import HTTPException
@@ -92,16 +91,18 @@ class EmptyReceiver:
 def query_string(query_params: dict[str, str] | None) -> bytes:
     if query_params is None:
         return b""
-    return urlencode(query_params).encode()
+    joined = "&".join(f"{name}={value}" for name, value in query_params.items())
+    return joined.encode()
 
 
 def build_request(call: PopulateCall) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
     scope: Scope = {
         "type": "http",
         "method": "POST",
         "path": call["route_path"],
         "query_string": query_string(call.get("query_params")),
-        "headers": [],
+        "headers": headers,
     }
     request = Request(scope, EmptyReceiver())
     path_params = call.get("path_params")
@@ -128,7 +129,11 @@ def resolve_call(input_value: Json) -> Json:
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32
         "Json",
         resolve_inference_model(
-            call["body_model"], call["settings"], call["cli_model"], call["endpoint_model"], kind=call["kind"]
+            call["body_model"],
+            call["settings"],
+            call["cli_model"],
+            call["endpoint_model"],
+            kind=call["kind"],
         ),
     )
 
@@ -138,7 +143,7 @@ def reject_call(input_value: Json) -> Json:
     litellm.provider_url_destination_allowed_hosts = call["allowed_hosts"]
     try:
         reject_url_valued_destination(call["field"], call["value"])
-    except HTTPException as error:
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L423
         return rejection_facts(error)
     return None
 
@@ -151,7 +156,7 @@ def reject_data_call(input_value: Json) -> Json:
         litellm_pre_call_utils._reject_url_valued_destinations(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L394
             data
         )
-    except HTTPException as error:
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L423
         return rejection_facts(error)
     return None
 
