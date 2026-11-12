@@ -47,22 +47,22 @@ fn settled_outcome(
     future: &Bound<'_, PyAny>,
     after: Duration,
 ) -> Result<Py<PyAny>, CallError> {
-    let settled = future
+    let timed_out = !future
         .call_method0("done")
         .and_then(|done| done.is_truthy())
         .map_err(|source| CallError::Python(PythonError::from_pyerr(py, &source)))?;
-    if settled {
-        return match future.call_method0("result") {
-            Ok(outcome) => guarded_outcome(py, &outcome),
-            Err(raised) => Err(CallError::Python(PythonError::from_pyerr(py, &raised))),
-        };
+    if timed_out {
+        drop(
+            future
+                .call_method0("cancel")
+                .map_err(|source| CallError::Python(PythonError::from_pyerr(py, &source)))?,
+        );
+        return Err(CallError::TimedOut { after });
     }
-    drop(
-        future
-            .call_method0("cancel")
-            .map_err(|source| CallError::Python(PythonError::from_pyerr(py, &source)))?,
-    );
-    Err(CallError::TimedOut { after })
+    let outcome = future
+        .call_method0("result")
+        .map_err(|raised| CallError::Python(PythonError::from_pyerr(py, &raised)))?;
+    guarded_outcome(py, &outcome)
 }
 
 fn guarded_outcome(py: Python<'_>, outcome: &Bound<'_, PyAny>) -> Result<Py<PyAny>, CallError> {
