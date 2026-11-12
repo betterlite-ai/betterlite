@@ -5,9 +5,11 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use rstest::rstest;
 
+use betterlite_tokenizer::image::header::ImageType;
+
 use super::mime::{
-    DEFAULT_MIME, SNIFF_BYTES, image_content_type_bytes, image_content_type_seekable,
-    image_content_type_stream, mime_for_detected,
+    DEFAULT_MIME, SNIFF_BYTES, image_content_type_seekable, image_content_type_stream,
+    image_type_from_name, mime_for_image_type,
 };
 use super::options::{
     Background, ImageEditImage, ImageEditOptionalRequestParams, ImageEditRequestParams,
@@ -198,13 +200,52 @@ fn unsupported_params_report_the_model_and_names_in_order() {
     assert_eq!(UNSUPPORTED_PARAMS_STATUS, 400);
 }
 
+#[rstest]
+#[case::mask(r#"{"mask":"m"}"#, "mask")]
+#[case::quality(r#"{"quality":"low"}"#, "quality")]
+#[case::size(r#"{"size":"1024x1024"}"#, "size")]
+fn each_unsupported_declared_name_reports_it(#[case] source: &str, #[case] name: &str) {
+    let provider = RecordingProvider::with(&["n", "user"]);
+    let error = optional_params_image_edit(
+        &provider,
+        "edit-model",
+        &options(source),
+        &OptionalParamsPolicy::default(),
+    )
+    .expect_err("unsupported");
+    assert_eq!(
+        error,
+        ImageInputOptionsError::UnsupportedParams {
+            model: "edit-model".to_owned(),
+            params: name.to_owned(),
+        }
+    );
+}
+
+#[rstest]
+#[case::mask(r#"{"mask":"m"}"#)]
+#[case::quality(r#"{"quality":"low"}"#)]
+#[case::size(r#"{"size":"1024x1024"}"#)]
+fn each_unsupported_declared_name_drops_with_global_flag(#[case] source: &str) {
+    let provider = RecordingProvider::with(&["n", "user"]);
+    let policy = OptionalParamsPolicy {
+        global_drop_params: true,
+        call_drop_params: false,
+        additional_drop_params: Vec::new(),
+    };
+    let recorded = optional_params_image_edit(&provider, "edit-model", &options(source), &policy)
+        .expect("dropped");
+    assert!(recorded.drop_params);
+    assert_eq!(recorded.options, empty());
+}
+
 #[test]
 fn additional_drops_remove_names_before_validation() {
     let source = r#"{"background":"transparent","input_fidelity":"high","n":0,"response_format":"b64_json","user":"","imageConfig":{},"seed":0}"#;
     let provider = RecordingProvider::with(&["n", "user"]);
     let policy = OptionalParamsPolicy {
         global_drop_params: false,
-        call_drop_params: None,
+        call_drop_params: false,
         additional_drop_params: [
             "background",
             "input_fidelity",
@@ -226,7 +267,7 @@ fn additional_drops_remove_the_remaining_declared_names() {
     let provider = RecordingProvider::with(&[]);
     let policy = OptionalParamsPolicy {
         global_drop_params: false,
-        call_drop_params: None,
+        call_drop_params: false,
         additional_drop_params: ["mask", "quality", "size", "user"]
             .map(str::to_owned)
             .to_vec(),
@@ -246,7 +287,7 @@ fn additional_drops_remove_supported_names_too() {
     let provider = RecordingProvider::with(&["n", "user"]);
     let policy = OptionalParamsPolicy {
         global_drop_params: false,
-        call_drop_params: None,
+        call_drop_params: false,
         additional_drop_params: vec!["n".to_owned()],
     };
     let recorded = optional_params_image_edit(
@@ -260,15 +301,10 @@ fn additional_drops_remove_supported_names_too() {
 }
 
 #[rstest]
-#[case::global_only(true, None, true)]
-#[case::call_only(false, Some(true), true)]
-#[case::both(true, Some(true), true)]
-#[case::global_wins_over_call_false(true, Some(false), true)]
-fn drop_flag_from_global_or_call(
-    #[case] global: bool,
-    #[case] call: Option<bool>,
-    #[case] expected: bool,
-) {
+#[case::global_only(true, false)]
+#[case::call_only(false, true)]
+#[case::both(true, true)]
+fn drop_flag_from_global_or_call(#[case] global: bool, #[case] call: bool) {
     let provider = RecordingProvider::with(&["n", "user"]);
     let policy = OptionalParamsPolicy {
         global_drop_params: global,
@@ -279,18 +315,15 @@ fn drop_flag_from_global_or_call(
         optional_params_image_edit(&provider, "edit-model", &options(r#"{"seed":0}"#), &policy)
             .expect("dropped");
     assert!(recorded.drop_params);
-    assert_eq!(recorded.drop_params, expected);
     assert_eq!(recorded.options, empty());
 }
 
-#[rstest]
-#[case::absent(None)]
-#[case::not_true(Some(false))]
-fn neither_drop_flag_reports_unsupported(#[case] call: Option<bool>) {
+#[test]
+fn neither_drop_flag_reports_unsupported() {
     let provider = RecordingProvider::with(&["n", "user"]);
     let policy = OptionalParamsPolicy {
         global_drop_params: false,
-        call_drop_params: call,
+        call_drop_params: false,
         additional_drop_params: Vec::new(),
     };
     let error =
@@ -327,7 +360,7 @@ fn supported_options_are_mapped_with_drop_params_off() {
 #[case::webp(WEBP, "image/webp")]
 #[case::heic(HEIC, "image/heic")]
 fn content_type_from_signature(#[case] bytes: &[u8], #[case] expected: &str) {
-    assert_eq!(image_content_type_bytes(bytes), expected);
+    assert_eq!(image_content_type_stream(&mut &bytes[..]), expected);
     assert_eq!(
         image_content_type_seekable(&mut reader(bytes, 0, Failure::None)),
         expected
@@ -340,7 +373,10 @@ fn content_type_from_signature(#[case] bytes: &[u8], #[case] expected: &str) {
 
 #[test]
 fn content_type_falls_back_to_png_for_unknown_bytes() {
-    assert_eq!(image_content_type_bytes(b"not an image"), DEFAULT_MIME);
+    assert_eq!(
+        image_content_type_stream(&mut &b"not an image"[..]),
+        DEFAULT_MIME
+    );
     assert_eq!(
         image_content_type_seekable(&mut reader(b"not an image", 0, Failure::None)),
         DEFAULT_MIME
@@ -352,23 +388,33 @@ fn content_type_falls_back_to_png_for_unknown_bytes() {
 }
 
 #[rstest]
-#[case::png("png", "image/png")]
-#[case::jpeg("jpeg", "image/jpeg")]
-#[case::gif("gif", "image/gif")]
-#[case::webp("webp", "image/webp")]
-#[case::heic("heic", "image/heic")]
-fn detected_types_map_to_their_mime(#[case] detected: &str, #[case] expected: &str) {
-    assert_eq!(mime_for_detected(Some(detected)), expected);
+#[case::png(ImageType::Png, "image/png")]
+#[case::jpeg(ImageType::Jpeg, "image/jpeg")]
+#[case::gif(ImageType::Gif, "image/gif")]
+#[case::webp(ImageType::Webp, "image/webp")]
+#[case::heic(ImageType::Heic, "image/heic")]
+fn image_types_map_to_their_mime(#[case] detected: ImageType, #[case] expected: &str) {
+    assert_eq!(mime_for_image_type(Some(detected)), expected);
 }
 
 #[test]
-fn unknown_detected_type_falls_back_to_png() {
-    assert_eq!(mime_for_detected(Some("bmp")), DEFAULT_MIME);
+fn absent_image_type_falls_back_to_png() {
+    assert_eq!(mime_for_image_type(None), DEFAULT_MIME);
+}
+
+#[rstest]
+#[case::png("png", ImageType::Png)]
+#[case::jpeg("jpeg", ImageType::Jpeg)]
+#[case::gif("gif", ImageType::Gif)]
+#[case::webp("webp", ImageType::Webp)]
+#[case::heic("heic", ImageType::Heic)]
+fn detected_names_parse_to_image_types(#[case] name: &str, #[case] expected: ImageType) {
+    assert_eq!(image_type_from_name(name), Some(expected));
 }
 
 #[test]
-fn absent_detected_type_falls_back_to_png() {
-    assert_eq!(mime_for_detected(None), DEFAULT_MIME);
+fn unknown_detected_name_parses_to_none() {
+    assert_eq!(image_type_from_name("bmp"), None);
 }
 
 #[test]

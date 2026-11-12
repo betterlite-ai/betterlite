@@ -27,7 +27,7 @@ pub trait ImageEditProviderConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OptionalParamsPolicy {
     pub global_drop_params: bool,
-    pub call_drop_params: Option<bool>,
+    pub call_drop_params: bool,
     pub additional_drop_params: Vec<String>,
 }
 
@@ -69,7 +69,7 @@ where
                 .any(|supported_name| supported_name == name)
         })
         .collect::<Vec<_>>();
-    let drop_params = policy.global_drop_params || policy.call_drop_params == Some(true);
+    let drop_params = policy.global_drop_params || policy.call_drop_params;
     if !unsupported.is_empty() && !drop_params {
         return Err(P::Error::from(ImageInputOptionsError::UnsupportedParams {
             model: model.to_owned(),
