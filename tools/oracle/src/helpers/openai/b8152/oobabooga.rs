@@ -101,14 +101,17 @@ pub(super) fn embedding_value(call: &EmbeddingCall) -> Result<Value, Box<HelperE
 
 // the creation time is the wall clock, so the comparison leaves it out
 pub(super) fn reply_value(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
-    match transform_response(&call.model, call.status, &call.body, 0) {
-        Ok(reply) => Ok(json!({
+    let reply = transform_response(&call.model, call.status, &call.body, 0);
+    let value = reply.map(|chat| {
+        json!({
             "ok": true,
-            "model": reply.model,
-            "content": reply.content,
-            "usage": reply.usage,
-        })),
-        Err(ReplyError::Server(error)) => Ok(failure(&error)),
-        Err(other) => Err(invalid(other.to_string())),
-    }
+            "model": chat.model,
+            "content": chat.content,
+            "usage": chat.usage,
+        })
+    });
+    value.or_else(|error| match error {
+        ReplyError::Server(server) => Ok(failure(&server)),
+        other => Err(invalid(other.to_string())),
+    })
 }
