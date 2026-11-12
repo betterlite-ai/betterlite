@@ -95,7 +95,16 @@ pub fn dispatch(operation: &BedrockOperation) -> Result<BedrockPrepared, Bedrock
 }
 
 fn plan(request: &BedrockPlanRequest) -> Result<BedrockPrepared, BedrockDispatchError> {
-    let operation = select_operation(request)?;
+    let selector = ModelRouteSelector::new(
+        &request.price_map,
+        &request.converse_models,
+        request.request_metadata_owned,
+    )?;
+    let operation = selector.route_for_request(
+        &request.model,
+        &request.request_params,
+        Some(&request.additional_drop_params),
+    )?;
     let model_id = select_model_id(request)?;
     let region = select_region(request, operation)?;
     let endpoint = runtime_endpoint(RuntimeEndpointInput {
@@ -113,19 +122,6 @@ fn plan(request: &BedrockPlanRequest) -> Result<BedrockPrepared, BedrockDispatch
         endpoint_url: endpoint.endpoint_url,
         proxy_endpoint_url: endpoint.proxy_endpoint_url,
     })
-}
-
-fn select_operation(request: &BedrockPlanRequest) -> Result<BedrockRoute, BedrockDispatchError> {
-    let selector = ModelRouteSelector::new(
-        &request.price_map,
-        &request.converse_models,
-        request.request_metadata_owned,
-    )?;
-    Ok(selector.route_for_request(
-        &request.model,
-        &request.request_params,
-        Some(&request.additional_drop_params),
-    )?)
 }
 
 fn select_model_id(request: &BedrockPlanRequest) -> Result<String, BedrockDispatchError> {
