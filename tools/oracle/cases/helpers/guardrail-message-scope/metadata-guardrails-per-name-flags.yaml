@@ -1,0 +1,6 @@
+kind: helper
+name: metadata-guardrails-per-name-flags
+call:
+  b3663: {"function": "proceed", "data": {"metadata": {"guardrails": {"pii": true, "toxic": false}}}, "guardrail_name": "lakera", "callbacks": {"pii": ["presidio"], "toxic": ["lakera"]}}
+env: {}
+compare: {ignore: []}

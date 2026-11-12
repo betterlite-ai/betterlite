@@ -1,0 +1,29 @@
+kind: helper
+name: reasoning-options
+call:
+  responses_chat_options:
+    request:
+      model: gpt-5
+      input: hi
+      tools:
+        - {type: web_search, search_context_size: high, user_location: {type: approximate}}
+        - type: function
+          name: lookup
+          description: Find
+          parameters: {type: object, properties: {}}
+      reasoning: {effort: high, summary: auto}
+      parallel_tool_calls: true
+    provider: openai
+    stream: null
+    extra_headers: null
+    metadata: null
+    service_tier: null
+    api_base: "https://api.example/v1"
+    supported_openai_params: [tools, tool_choice, web_search_options]
+    bridge_mode: responses
+    bridge_failure: null
+    route_all_openai_to_responses: false
+    cache: []
+env: {}
+compare:
+  ignore: []

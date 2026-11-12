@@ -1,0 +1,6 @@
+kind: helper
+name: assistant-text-from-responses-output
+call:
+  b3663: {"function": "assistant_text", "response": {"output": [{"type": "message", "content": [{"type": "output_text", "text": "out"}]}]}}
+env: {}
+compare: {ignore: []}
