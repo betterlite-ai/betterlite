@@ -1,7 +1,7 @@
 id: B1675
 milestone: M4 keys, spend and management
 title: Apply Anthropic surcharges and Bedrock image-family prices
-status: todo
+status: done
 depends_on: [B171, B193, B204, B633, B634, B1668, B1672, B1678]
 file: tasks/B1675-anthropic-bedrock-prices.yaml
 covers:
@@ -16,7 +16,7 @@ covers:
   - "litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py"
 parent: B029
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1359

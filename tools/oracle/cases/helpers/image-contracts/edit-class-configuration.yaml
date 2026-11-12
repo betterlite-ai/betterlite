@@ -1,0 +1,21 @@
+kind: helper
+name: edit-class-configuration
+call:
+  image_contracts:
+    operation: edit_class_configuration
+    entries:
+      - {name: "n", kind: value, value: 0, inherited: false}
+      - {name: enabled, kind: value, value: false, inherited: false}
+      - {name: label, kind: value, value: "", inherited: false}
+      - {name: none, kind: value, value: null, inherited: false}
+      - {name: __private, kind: value, value: 1, inherited: false}
+      - {name: _abc_x, kind: value, value: 2, inherited: false}
+      - {name: method, kind: function, value: null, inherited: false}
+      - {name: builtin, kind: builtin_function, value: null, inherited: false}
+      - {name: class_method, kind: class_method, value: null, inherited: false}
+      - {name: static_method, kind: static_method, value: null, inherited: false}
+      - {name: prop, kind: property, value: null, inherited: false}
+      - {name: callable, kind: callable_object, value: null, inherited: false}
+      - {name: size, kind: value, value: 3, inherited: true}
+env: {}
+compare: {ignore: []}

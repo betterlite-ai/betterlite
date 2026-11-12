@@ -1,0 +1,18 @@
+kind: helper
+name: configured-prefix
+call:
+  vertex_gcs_access:
+    operation: configured_prefix
+    params: {gcs_bucket_name: "bucket/tenant", bucket_name: ignored-alias}
+    environment: {}
+    trusted: []
+    plain: []
+    file_ids:
+      - "gs://bucket/tenant/litellm-vertex-files/input.jsonl"
+      - "gs://bucket/tenant/other/input.jsonl"
+      - "gs://bucket/tenant-evil/litellm-vertex-files/input.jsonl"
+      - "gs://bucket/tenant/litellm-vertex-files-evil/input.jsonl"
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}

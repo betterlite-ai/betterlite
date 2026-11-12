@@ -141,6 +141,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "managed_resource_ids"
+path = "fuzz_targets/managed_resource_ids.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "searchapi_reply"
 path = "fuzz_targets/searchapi_reply.rs"
 test = false
@@ -157,6 +164,20 @@ bench = false
 [[bin]]
 name = "serper_reply"
 path = "fuzz_targets/serper_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_codex_tools"
+path = "fuzz_targets/responses_codex_tools.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "response_id_codecs"
+path = "fuzz_targets/response_id_codecs.rs"
 test = false
 doc = false
 bench = false
