@@ -25,7 +25,6 @@ pub struct ImageGenerationOutcome {
     pub provider_headers: ProviderHeaderProjection,
 }
 
-// the sync facade's build step: the body is ready and the pre-call record has gone to the logging object
 pub fn begin_image_generation(
     call: ImageGenerationCall,
     logger: &mut dyn ImageGenerationLogger,
@@ -88,7 +87,7 @@ where
     {
         let extra = &mut reply.usage.extra;
         extra
-            .entry(String::from("output_tokens_details"))
+            .entry("output_tokens_details".to_owned())
             .or_insert(Json::Null);
     }
     let provider_headers =
@@ -100,7 +99,6 @@ where
     })
 }
 
-// the post-call record and the failure the facade hands back: wrapped for sync, original for async
 pub fn finish_image_generation(
     prepared: &PreparedImageCall,
     sent: Result<ImageGenerationOutcome, ImageGenerationSource>,
@@ -154,7 +152,6 @@ fn checked_reply(
     }
     match decode_image_reply(&response.body, created_seconds) {
         Ok(reply) => Ok(reply),
-        // the converter raises an exception that carries the error object's status
         Err(ImageReplyError::ResponseObject { status, message }) => {
             Err(ImageGenerationSource::ResponseObject { status, message })
         }
@@ -172,7 +169,6 @@ struct StatusError {
     message: Option<String>,
 }
 
-// the error object's text message when the body carries one, else the body itself
 fn status_message(text: &str) -> String {
     serde_json::from_str::<StatusBody>(text)
         .ok()

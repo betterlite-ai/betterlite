@@ -19,7 +19,6 @@ use betterlite_openai::image_generation::request::{
 };
 use betterlite_openai::image_generation::transport::ImageGenerationTransport;
 use http::HeaderMap;
-use http::header::{HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
@@ -35,18 +34,8 @@ struct FakeTransport<'probe> {
 
 impl<'probe> FakeTransport<'probe> {
     fn new(probe: &'probe Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
-        let headers = probe
-            .reply
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                let header_name = HeaderName::from_bytes(name.as_bytes())
-                    .map_err(|error| invalid(error.to_string()))?;
-                let header_value =
-                    HeaderValue::from_str(value).map_err(|error| invalid(error.to_string()))?;
-                Ok((header_name, header_value))
-            })
-            .collect::<Result<HeaderMap, Box<crate::helpers::HelperError>>>()?;
+        let headers = HeaderMap::try_from(&probe.reply.headers)
+            .map_err(|error| invalid(error.to_string()))?;
         Ok(Self {
             probe,
             headers,
@@ -166,11 +155,7 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
         .calls
         .into_inner()
         .unwrap_or_else(PoisonError::into_inner);
-    let client = if calls.is_empty() {
-        Value::Null
-    } else {
-        json!({"max_retries": max_retries})
-    };
+    let client = (!calls.is_empty()).then(|| json!({"max_retries": max_retries}));
     let (result, provider_headers, error) = outcome_parts(outcome)?;
     Ok(json!({
         "client": client,

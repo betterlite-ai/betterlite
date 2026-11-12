@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -36,7 +36,7 @@ pub(crate) struct Probe {
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Reply {
     pub(crate) status: u16,
-    pub(crate) headers: BTreeMap<String, String>,
+    pub(crate) headers: HashMap<String, String>,
     pub(crate) body: String,
 }
 
@@ -44,7 +44,7 @@ impl Default for Reply {
     fn default() -> Self {
         Self {
             status: 200,
-            headers: BTreeMap::new(),
+            headers: HashMap::new(),
             body: String::new(),
         }
     }

@@ -209,7 +209,6 @@ fn usage_from_wire(
     })
 }
 
-// the converter's token-details wrapper: the counts it knows, and null for the rest of its fields
 fn details_wrapper(nulls: &[&str], text: Json, image: Json) -> Json {
     let mut fields = IndexMap::new();
     for name in nulls {

@@ -119,6 +119,5 @@ where
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
             .map_err(|error| invalid(error.to_string()))?,
     };
-    let result = action(&mut state, &env);
-    Ok(result)
+    Ok(action(&mut state, &env))
 }

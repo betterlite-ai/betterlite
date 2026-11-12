@@ -11,8 +11,6 @@ use super::input::Probe;
 use super::support::{NOW, Recorder, invalid, observe};
 use crate::helpers::{HelperError, HelperResult};
 
-type Detail = [(&'static str, Value); 2];
-
 pub(crate) fn value(probe: &Probe, function: Function) -> HelperResult {
     let family = select_image_family(&probe.model);
     let mut mapped = probe.existing_params.clone();
@@ -37,7 +35,10 @@ pub(crate) fn value(probe: &Probe, function: Function) -> HelperResult {
     Ok(Value::Object(answer))
 }
 
-fn transform_detail(probe: &Probe, family: ImageFamily) -> Result<Detail, Box<HelperError>> {
+fn transform_detail(
+    probe: &Probe,
+    family: ImageFamily,
+) -> Result<[(&'static str, Value); 2], Box<HelperError>> {
     let recorder = Recorder::default();
     let request_data = request_data(probe);
     let call = ImageTransformCall {

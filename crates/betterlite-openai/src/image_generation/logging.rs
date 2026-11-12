@@ -28,7 +28,6 @@ pub struct PostCallRecord {
     pub data: Option<IndexMap<String, Json>>,
 }
 
-// The logging crate's pre-call and post-call dispatch over the source methods' records.
 pub struct PrePostLogger<'call, 'env> {
     pub state: &'call mut LoggingState,
     pub env: &'call PrePostEnv<'env>,

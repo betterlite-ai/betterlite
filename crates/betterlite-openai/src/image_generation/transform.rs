@@ -28,7 +28,6 @@ pub struct ImageTransformCall<'raw> {
     pub created_seconds: i64,
 }
 
-// the family transforms parse the reply, log it, then convert it and set the family reply defaults
 pub fn transform_image_reply(
     call: ImageTransformCall<'_>,
     state: &mut LoggingState,
