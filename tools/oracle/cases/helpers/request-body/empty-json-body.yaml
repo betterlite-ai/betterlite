@@ -1,0 +1,14 @@
+kind: helper
+name: empty_json_body
+call:
+  request_body:
+    function: read_request_body
+    request:
+      method: POST
+      route_path: /v1/chat/completions
+      headers: {content-type: application/json}
+      body: {encoding: utf8, value: ""}
+    max_repair_bytes: 1048576
+env: {}
+compare:
+  ignore: []

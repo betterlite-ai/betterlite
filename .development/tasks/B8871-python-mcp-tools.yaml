@@ -42,13 +42,14 @@ description: >-
   settings, sandboxing, shutdown and remote download limits remain the embedded-host
   tasks' policies. No Python process is started for absent, empty or skipped mcp_tools.
 
-  The architect changes B8614 BootRegistries::mcp_tools to await this service at the existing
-  B8590 non-LLM-registry position, and passes the same PythonHooks handle B8587 uses. There
-  is still one startup call and one registry; do not add a second load in an area mount.
-  B124 supplies the HTTP integration cases through the already owned MCP routes once
-  that constructor change is in place. This task can run before those mounts and uses
-  native tests with actual temporary Python modules, not a helper adapter that simulates
-  imports. No new config/body decoder is introduced.
+  B8614's BootRegistries::mcp_tools awaits this service at B8590's non-LLM-registry
+  position with the PythonHooks it holds: the one B8375 builds for the process and
+  B8587's PyStartupHooks also wraps. The service takes that handle as `&PythonHooks` and
+  never calls PythonHooks::new outside tests. There is still one startup call and one
+  registry; do not add a second load in an area mount. B124 supplies the HTTP integration
+  cases through the already owned MCP routes once B8614's call is in place. This task can
+  run before those mounts and uses native tests with actual temporary Python modules, not
+  a helper adapter that simulates imports. No new config/body decoder is introduced.
 
   Tests in app/mcp/python_tools/tests.rs and tests/ exercise imports next to config.yaml,
   sync and async keyword calls, duplicate replacement without reordering, skipped entries
@@ -102,7 +103,7 @@ out_of_scope:
   - B4680 owns every tool_registry.py registry operation and the mcp_tools config decoder; this task supplies its previously missing production loader and handler only.
   - B8042 owns get_instance_fn and remote/local module loading, B8043 the loaded object interface, and B165 the lazy shared PythonHooks runtime and bucket-fetcher adapter.
   - B4683 owns OpenApiToolOutput and OpenAPI execution; B8198 owns _handle_local_mcp_tool, its missing-tool 404 and its handler error result, with the result-conversion tasks owning handler_outcome and wire compatibility.
-  - B8590 owns _init_non_llm_configs orchestration and B8614 its concrete registry calls; the architect must replace its temporary unsupported-handler path with this adapter.
+  - B8590 owns _init_non_llm_configs orchestration and B8614 its concrete registry calls, including the BootRegistries::mcp_tools call into this service. B8375 builds the one PythonHooks it passes.
   - B8626, B8701 and B8728 own MCP area mounts; B124 adds configured-local-tool HTTP cases without registering those routes again.
 pitfalls:
   - An async Python import cannot run inside the synchronous ToolHandlerLoader::load by blocking the current executor.
