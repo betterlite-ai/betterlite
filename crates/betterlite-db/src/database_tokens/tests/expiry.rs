@@ -296,7 +296,7 @@ fn native_expiry_depth_strings_escapes_and_siblings() {
     );
 
     // two backslashes escape only themselves, so the quote closes the string and the brackets count
-    let double_backslash = format!(r#"{{"exp":1,"pad":"\\\"{brackets}"}}"#);
+    let double_backslash = format!(r#"{{"exp":1,"pad":"\\"{brackets}"}}"#);
     assert!(
         parse_token_expiration(
             TokenAuthKind::Azure,
@@ -306,7 +306,7 @@ fn native_expiry_depth_strings_escapes_and_siblings() {
         .is_none()
     );
 
-    // a string that fails to close swallows the deep array that follows it
+    // a closing quote ends its string, so the deep array after it still counts toward the limit
     let string_before_array = format!("{{\"pad\":\"x\",\"exp\":{brackets}}}");
     assert!(
         parse_token_expiration(
