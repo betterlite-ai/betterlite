@@ -6,6 +6,7 @@ use betterlite_core::api::batch_records::{
     ReplacedContent, ReplacedFile,
 };
 use betterlite_core::routes::CallType;
+use betterlite_error::proxy_exception::ProxyException;
 use betterlite_openai::files::records::FilesPurpose;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -64,53 +65,61 @@ fn file_content(file: &FileInput) -> Result<BatchFileContent, String> {
     }
 }
 
+fn rewritten_rows(content: Vec<u8>) -> Result<Vec<Value>, String> {
+    let text = String::from_utf8(content).map_err(|error| error.to_string())?;
+    text.split('\n')
+        .map(serde_json::from_str::<Value>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
 fn replaced_value(replaced: ReplacedFile) -> Result<Value, String> {
-    match replaced.content {
-        ReplacedContent::Original => {
-            Ok(json!({"kind": "original", "logged_preview": replaced.logged_preview}))
-        }
-        ReplacedContent::Rewritten(output) => {
-            let text = String::from_utf8(output.content).map_err(|error| error.to_string())?;
-            let rows = text
-                .split('\n')
-                .map(serde_json::from_str::<Value>)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| error.to_string())?;
-            Ok(json!({
-                "kind": "rewritten",
-                "rows": rows,
-                "name": output.name,
-                "content_type": output.content_type,
-                "logged_preview": replaced.logged_preview,
-            }))
-        }
-    }
+    let ReplacedFile {
+        content,
+        logged_preview,
+    } = replaced;
+    let ReplacedContent::Rewritten(output) = content else {
+        return Ok(json!({"kind": "original", "logged_preview": logged_preview}));
+    };
+    let rows = rewritten_rows(output.content)?;
+    Ok(json!({
+        "kind": "rewritten",
+        "rows": rows,
+        "name": output.name,
+        "content_type": output.content_type,
+        "logged_preview": logged_preview,
+    }))
+}
+
+fn limit_error_value(exception: &ProxyException) -> Value {
+    json!({
+        "accepted": false,
+        "message": exception.message,
+        "type": exception.error_type,
+        "param": exception.param,
+        "code": exception.code,
+        "openai_code": exception.openai_code,
+        "headers": exception.headers,
+    })
 }
 
 fn result_value(outcome: Result<BatchRecordsResult, BatchRecordsError>) -> Result<Value, String> {
-    match outcome {
-        Ok(BatchRecordsResult::Rows(rows)) => Ok(json!({"rows": rows, "logged_preview": null})),
-        Ok(BatchRecordsResult::Replaced(replaced)) => replaced_value(replaced),
+    let value = match outcome {
+        Ok(BatchRecordsResult::Rows(rows)) => json!({"rows": rows, "logged_preview": null}),
+        Ok(BatchRecordsResult::Replaced(replaced)) => replaced_value(replaced)?,
         Ok(BatchRecordsResult::ShouldReplace(flag) | BatchRecordsResult::BatchRetrieve(flag)) => {
-            Ok(Value::Bool(flag))
+            Value::Bool(flag)
         }
-        Ok(BatchRecordsResult::MetadataName(name)) => Ok(Value::String(name.to_owned())),
-        Ok(BatchRecordsResult::ListLimitAccepted) => Ok(json!({"accepted": true})),
+        Ok(BatchRecordsResult::MetadataName(name)) => Value::String(name.to_owned()),
+        Ok(BatchRecordsResult::ListLimitAccepted) => json!({"accepted": true}),
         Err(BatchRecordsError::Unparsed(tail)) => {
-            Ok(json!({"rows": null, "logged_preview": tail.preview}))
+            json!({"rows": null, "logged_preview": tail.preview})
         }
-        Err(BatchRecordsError::ListLimit(exception)) => Ok(json!({
-            "accepted": false,
-            "message": exception.message,
-            "type": exception.error_type,
-            "param": exception.param,
-            "code": exception.code,
-            "openai_code": exception.openai_code,
-            "headers": exception.headers,
-        })),
-        Err(BatchRecordsError::Decode(error)) => Err(error.to_string()),
-        Err(BatchRecordsError::Encode(error)) => Err(error.to_string()),
-    }
+        Err(BatchRecordsError::ListLimit(exception)) => limit_error_value(&exception),
+        Err(BatchRecordsError::Decode(source)) => return Err(source.to_string()),
+        Err(BatchRecordsError::Encode(source)) => return Err(source.to_string()),
+    };
+    Ok(value)
 }
 
 fn service_input(input: &Input) -> Result<BatchRecordsInput, String> {

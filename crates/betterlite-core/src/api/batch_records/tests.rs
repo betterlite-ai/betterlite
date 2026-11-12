@@ -182,24 +182,27 @@ fn batch_retrieve_call_type(#[case] call_type: CallType, #[case] expected: bool)
     );
 }
 
+fn assert_limit_error(limit: i64, bound: &str, openai_code: &str) {
+    let exception = limit_error(limit);
+    assert_eq!(
+        exception.message,
+        format!("Invalid 'limit': integer {bound}, but got {limit} instead.")
+    );
+    assert_eq!(exception.error_type, "invalid_request_error");
+    assert_eq!(exception.param.as_deref(), Some("limit"));
+    assert_eq!(exception.code, "400");
+    assert_eq!(exception.openai_code.as_deref(), Some(openai_code));
+}
+
 #[rstest]
 #[case::one_below(-1)]
 #[case::far_below(-5000)]
 #[case::smallest(i64::MIN)]
 fn batch_limit_below(#[case] limit: i64) {
-    let exception = limit_error(limit);
-    assert_eq!(
-        exception.message,
-        format!(
-            "Invalid 'limit': integer below minimum value. Expected a value >= 0, but got {limit} instead."
-        )
-    );
-    assert_eq!(exception.error_type, "invalid_request_error");
-    assert_eq!(exception.param.as_deref(), Some("limit"));
-    assert_eq!(exception.code, "400");
-    assert_eq!(
-        exception.openai_code.as_deref(),
-        Some("integer_below_min_value")
+    assert_limit_error(
+        limit,
+        "below minimum value. Expected a value >= 0",
+        "integer_below_min_value",
     );
 }
 
@@ -208,19 +211,10 @@ fn batch_limit_below(#[case] limit: i64) {
 #[case::far_above(5000)]
 #[case::largest(i64::MAX)]
 fn batch_limit_above(#[case] limit: i64) {
-    let exception = limit_error(limit);
-    assert_eq!(
-        exception.message,
-        format!(
-            "Invalid 'limit': integer above maximum value. Expected a value <= 100, but got {limit} instead."
-        )
-    );
-    assert_eq!(exception.error_type, "invalid_request_error");
-    assert_eq!(exception.param.as_deref(), Some("limit"));
-    assert_eq!(exception.code, "400");
-    assert_eq!(
-        exception.openai_code.as_deref(),
-        Some("integer_above_max_value")
+    assert_limit_error(
+        limit,
+        "above maximum value. Expected a value <= 100",
+        "integer_above_max_value",
     );
 }
 

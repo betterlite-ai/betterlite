@@ -12,11 +12,14 @@ use crate::api::file_contracts::error::BaseLlmException;
 
 struct Config;
 
-fn batch_object() -> BatchObject {
-    serde_json::from_str(
-        "{\"id\":\"batch_1\",\"completion_window\":\"24h\",\"created_at\":1,\"endpoint\":\"/v1/chat/completions\",\"input_file_id\":\"file_1\",\"object\":\"batch\",\"status\":\"validating\"}",
+fn batch_text(id: &str) -> String {
+    format!(
+        "{{\"id\":\"{id}\",\"completion_window\":\"24h\",\"created_at\":1,\"endpoint\":\"/v1/chat/completions\",\"input_file_id\":\"file_1\",\"object\":\"batch\",\"status\":\"validating\"}}"
     )
-    .unwrap()
+}
+
+fn batch_object(id: &str) -> BatchObject {
+    serde_json::from_str(&batch_text(id)).unwrap()
 }
 
 fn create_request() -> CreateBatchRequest {
@@ -76,34 +79,46 @@ impl BaseBatchesConfig for Config {
     fn transform_create_batch_response(
         &self,
         _model: Option<&str>,
-        _raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
+        _raw: &FileResponse,
+        _logging: &mut FileLogging,
+        _params: &FileParams,
     ) -> Result<BatchObject, BatchContractError> {
-        Ok(batch_object())
+        Ok(batch_object("batch_1"))
     }
 
     fn transform_retrieve_batch_request(
         &self,
         batch_id: &str,
-        _optional_params: &FileParams,
-        _litellm_params: &FileParams,
+        optional_params: &FileParams,
+        _unused: &FileParams,
     ) -> Result<BatchBody, BatchContractError> {
-        Ok(BatchBody::Bytes(batch_id.as_bytes().to_vec()))
+        let mut bytes = batch_id.as_bytes().to_vec();
+        bytes.extend(optional_params.keys().flat_map(|key| key.bytes()));
+        Ok(BatchBody::Bytes(bytes))
     }
 
     fn transform_retrieve_batch_response(
         &self,
-        _model: Option<&str>,
+        _name: Option<&str>,
         raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
+        _log: &mut FileLogging,
+        _extra: &FileParams,
     ) -> Result<BatchObject, BatchContractError> {
-        Err(BatchContractError::Upstream(self.get_error_class(
-            "retrieve failed",
-            raw_response.status_code,
-            &raw_response.headers,
-        )))
+        match raw_response.status_code {
+            200 => serde_json::from_slice(&raw_response.body).map_err(|error| {
+                let failure = self.get_error_class(&error.to_string(), 502, &raw_response.headers);
+                BatchContractError::Upstream(failure)
+            }),
+            404 | 410 => Err(BatchContractError::Upstream(BaseLlmException {
+                status_code: raw_response.status_code,
+                message: "retrieve failed".to_owned(),
+                headers: raw_response.headers.clone(),
+            })),
+            code => {
+                let failure = self.get_error_class("retrieve failed", code, &raw_response.headers);
+                Err(BatchContractError::Upstream(failure))
+            }
+        }
     }
 
     fn get_error_class(
@@ -124,7 +139,7 @@ fn response(status_code: u16) -> FileResponse {
     FileResponse {
         status_code,
         headers: Headers::from([("retry-after".to_owned(), "3".to_owned())]),
-        body: Vec::new(),
+        body: batch_text("batch_1").into_bytes(),
         url: None,
     }
 }
@@ -176,9 +191,9 @@ fn contract_bodies() {
     );
     assert_eq!(
         config
-            .transform_retrieve_batch_request("batch_1", &empty, &empty)
+            .transform_retrieve_batch_request("batch_1", &params("{\"after\":1}"), &empty)
             .unwrap(),
-        BatchBody::Bytes(b"batch_1".to_vec())
+        BatchBody::Bytes(b"batch_1after".to_vec())
     );
 }
 
@@ -187,12 +202,25 @@ fn contract_responses() {
     let config: &dyn BaseBatchesConfig = &Config;
     let mut logging = FileLogging::default();
     let empty = FileParams::new();
+    let created = config
+        .transform_create_batch_response(Some("gpt-4o"), &response(200), &mut logging, &empty)
+        .unwrap();
+    assert_eq!(created, batch_object("batch_1"));
+    let garbled = FileResponse {
+        body: b"{".to_vec(),
+        ..response(200)
+    };
+    let broken = config
+        .transform_retrieve_batch_response(None, &garbled, &mut logging, &empty)
+        .unwrap_err();
     assert_eq!(
-        config
-            .transform_create_batch_response(Some("gpt-4o"), &response(200), &mut logging, &empty)
-            .unwrap(),
-        batch_object()
+        broken.to_string(),
+        "EOF while parsing an object at line 1 column 1"
     );
+    let retrieved = config
+        .transform_retrieve_batch_response(None, &response(200), &mut logging, &empty)
+        .unwrap();
+    assert_eq!(retrieved, batch_object("batch_1"));
     let failure = config
         .transform_retrieve_batch_response(None, &response(404), &mut logging, &empty)
         .unwrap_err();
