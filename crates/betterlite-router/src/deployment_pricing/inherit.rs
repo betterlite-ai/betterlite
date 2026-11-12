@@ -85,24 +85,10 @@ fn has_ptu_terms(model_info: &JsonObject) -> bool {
     ptu_terms(&PtuModelInfo::from(&scalars)).is_some()
 }
 
-// A lookup that finds nothing is LiteLLM's get_model_info raising for an unmapped model, which each step treats as no change.
-async fn backend_info<Lookup>(
-    registry: &mut ModelRegistry,
-    lookup: &Lookup,
-    backend: &BackendModel<'_>,
-) -> Option<JsonObject>
-where
-    Lookup: ModelInfoLookup,
-{
-    let name = match backend.custom_llm_provider {
-        Some(provider) if !backend.model.starts_with(&format!("{provider}/")) => {
-            format!("{provider}/{}", backend.model)
-        }
-        _ => backend.model.to_owned(),
-    };
-    lookup
-        .get_model_info(&name, &registry.model_cost, &mut registry.keys)
-        .await
+pub struct BackendSource<'run, Lookup> {
+    registry: &'run mut ModelRegistry,
+    lookup: &'run Lookup,
+    backend: BackendModel<'run>,
 }
 
 fn raw_backend_entry<'registry>(
@@ -129,105 +115,112 @@ where
     }
 }
 
-pub async fn inherit_cache_pricing<Lookup>(
-    model_info: &mut JsonObject,
-    registry: &mut ModelRegistry,
-    lookup: &Lookup,
-    backend: &BackendModel<'_>,
-) where
-    Lookup: ModelInfoLookup,
-{
-    if CACHE_FIELDS.iter().all(|field| is_set(model_info, field)) {
-        return;
-    }
-    let Some(info) = backend_info(registry, lookup, backend).await else {
-        return;
-    };
-    let inherited = info
-        .iter()
-        .filter(|(field, _value)| CACHE_FIELDS.contains(&field.as_str()));
-    copy_unset_fields(model_info, inherited);
-}
-
-pub async fn inherit_service_tier_pricing<Lookup>(
-    model_info: &mut JsonObject,
-    registry: &mut ModelRegistry,
-    lookup: &Lookup,
-    backend: &BackendModel<'_>,
-    inputs: &PricingInputs,
-) where
-    Lookup: ModelInfoLookup,
-{
-    if inputs.ptu_cost_attribution && has_ptu_terms(model_info) {
-        return;
-    }
-    if !is_set(model_info, "input_cost_per_token") && !is_set(model_info, "output_cost_per_token") {
-        return;
-    }
-    let Some(info) = backend_info(registry, lookup, backend).await else {
-        return;
-    };
-    let Some(entry) = raw_backend_entry(registry, &info) else {
-        return;
-    };
-    let tiers = entry.iter().filter(|(field, _value)| {
-        SERVICE_TIER_SUFFIXES
-            .iter()
-            .any(|suffix| field.ends_with(suffix))
-    });
-    copy_unset_fields(model_info, tiers);
-}
-
-pub async fn inherit_off_peak_rates<Lookup>(
-    model_info: &mut JsonObject,
-    registry: &mut ModelRegistry,
-    lookup: &Lookup,
-    backend: &BackendModel<'_>,
-) where
-    Lookup: ModelInfoLookup,
-{
-    if !model_info.get("off_peak_pricing").is_some_and(has_content) {
-        return;
-    }
-    if BASE_PRICE_FIELDS
-        .iter()
-        .any(|field| is_set(model_info, field))
-    {
-        return;
-    }
-    let Some(info) = backend_info(registry, lookup, backend).await else {
-        return;
-    };
-    let Some(entry) = raw_backend_entry(registry, &info) else {
-        return;
-    };
-    copy_unset_fields(model_info, entry.iter());
-}
-
-pub async fn inherit_tiered_output_rate<Lookup>(
-    model_info: &mut JsonObject,
-    registry: &mut ModelRegistry,
-    lookup: &Lookup,
-    backend: &BackendModel<'_>,
-) where
-    Lookup: ModelInfoLookup,
-{
+fn lacks_output_rate(model_info: &JsonObject) -> bool {
     let Some(Json::List(tiers)) = model_info.get("tiered_pricing") else {
-        return;
+        return false;
     };
     let every_tier_prices_output = tiers.iter().all(
         |tier| matches!(tier, Json::Object(fields) if fields.contains_key("output_cost_per_token")),
     );
-    if tiers.is_empty() || is_set(model_info, "output_cost_per_token") || every_tier_prices_output {
-        return;
+    !tiers.is_empty() && !is_set(model_info, "output_cost_per_token") && !every_tier_prices_output
+}
+
+impl<'run, Lookup: ModelInfoLookup> BackendSource<'run, Lookup> {
+    pub const fn new(
+        registry: &'run mut ModelRegistry,
+        lookup: &'run Lookup,
+        backend: BackendModel<'run>,
+    ) -> Self {
+        Self {
+            registry,
+            lookup,
+            backend,
+        }
     }
-    let Some(info) = backend_info(registry, lookup, backend).await else {
-        return;
-    };
-    if let Some(rate) = info
-        .get("output_cost_per_token")
-        .filter(|rate| has_content(rate))
+
+    // A lookup that finds nothing is LiteLLM's get_model_info raising for an unmapped model, which each step treats as no change.
+    async fn info(&mut self) -> Option<JsonObject> {
+        let backend = self.backend;
+        let name = match backend.custom_llm_provider {
+            Some(provider) if !backend.model.starts_with(&format!("{provider}/")) => {
+                format!("{provider}/{}", backend.model)
+            }
+            _ => backend.model.to_owned(),
+        };
+        let registry = &mut *self.registry;
+        self.lookup
+            .get_model_info(&name, &registry.model_cost, &mut registry.keys)
+            .await
+    }
+
+    async fn copy_raw<Keep>(&mut self, model_info: &mut JsonObject, keep: Keep)
+    where
+        Keep: Fn(&str) -> bool,
     {
-        model_info.insert("output_cost_per_token".to_owned(), rate.clone());
+        let Some(info) = self.info().await else {
+            return;
+        };
+        let Some(entry) = raw_backend_entry(self.registry, &info) else {
+            return;
+        };
+        copy_unset_fields(
+            model_info,
+            entry.iter().filter(|(field, _value)| keep(field)),
+        );
+    }
+
+    pub async fn inherit_cache_pricing(&mut self, model_info: &mut JsonObject) {
+        let unset: Vec<&str> = CACHE_FIELDS
+            .into_iter()
+            .filter(|field| !is_set(model_info, field))
+            .collect();
+        if unset.is_empty() {
+            return;
+        }
+        let Some(info) = self.info().await else {
+            return;
+        };
+        for field in unset {
+            if let Some(value) = info.get(field).filter(|value| !matches!(value, Json::Null)) {
+                model_info.insert(field.to_owned(), value.clone());
+            }
+        }
+    }
+
+    pub async fn inherit_service_tier_pricing(
+        &mut self,
+        model_info: &mut JsonObject,
+        inputs: &PricingInputs,
+    ) {
+        let priced = is_set(model_info, "input_cost_per_token")
+            || is_set(model_info, "output_cost_per_token");
+        if !priced || (inputs.ptu_cost_attribution && has_ptu_terms(model_info)) {
+            return;
+        }
+        let tiers = |field: &str| {
+            SERVICE_TIER_SUFFIXES
+                .iter()
+                .any(|tier| field.ends_with(tier))
+        };
+        self.copy_raw(model_info, tiers).await;
+    }
+
+    pub async fn inherit_off_peak_rates(&mut self, model_info: &mut JsonObject) {
+        let priced = BASE_PRICE_FIELDS
+            .iter()
+            .any(|name| is_set(model_info, name));
+        if !priced && model_info.get("off_peak_pricing").is_some_and(has_content) {
+            self.copy_raw(model_info, |_field| true).await;
+        }
+    }
+
+    pub async fn inherit_tiered_output_rate(&mut self, model_info: &mut JsonObject) {
+        if lacks_output_rate(model_info) {
+            let priced_output = |(field, rate): &(&String, &Json)| {
+                field.as_str() == "output_cost_per_token" && has_content(rate)
+            };
+            let info = self.info().await.unwrap_or_default();
+            copy_unset_fields(model_info, info.iter().filter(priced_output));
+        }
     }
 }

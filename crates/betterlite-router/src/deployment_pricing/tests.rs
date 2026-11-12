@@ -7,10 +7,7 @@ use rstest::rstest;
 use super::PricingInputs;
 use super::deployment::{DeploymentReadError, DeploymentTarget};
 use super::error::DeploymentPricingError;
-use super::inherit::{
-    inherit_cache_pricing, inherit_off_peak_rates, inherit_service_tier_pricing,
-    inherit_tiered_output_rate,
-};
+use super::inherit::BackendSource;
 use super::register::{register_deployment_pricing, register_in_cost_map};
 use super::replay::replay_deployment_pricing;
 use support::{
@@ -27,13 +24,9 @@ async fn inherit_cache_fills_only_the_unset_cache_fields() {
     let mut info = object(
         r#"{"id": "a", "cache_read_input_token_cost": 0.5, "cache_creation_input_token_cost": null}"#,
     );
-    inherit_cache_pricing(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_cache_pricing(&mut info)
+        .await;
     assert_eq!(
         info,
         object(
@@ -54,13 +47,9 @@ async fn inherit_cache_returns_before_the_lookup_when_all_five_fields_are_set() 
         "cache_read_input_token_cost_above_200k_tokens": 5
     }"#;
     let mut info = object(all_five);
-    inherit_cache_pricing(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_cache_pricing(&mut info)
+        .await;
     assert_eq!(info, object(all_five));
     assert!(world.lookup.queried().is_empty());
 }
@@ -77,13 +66,9 @@ async fn inherit_cache_looks_up_when_one_of_five_fields_is_missing() {
             "cache_read_input_token_cost_above_200k_tokens": 5
         }"#,
     );
-    inherit_cache_pricing(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_cache_pricing(&mut info)
+        .await;
     assert_eq!(
         info.get("cache_read_input_token_cost"),
         Some(&json("0.0000003"))
@@ -104,13 +89,9 @@ async fn inherit_lookups_name_the_model_with_its_provider(
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = JsonObject::new();
-    inherit_cache_pricing(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend(model, provider),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend(model, provider))
+        .inherit_cache_pricing(&mut info)
+        .await;
     assert_eq!(world.lookup.queried(), [queried]);
 }
 
@@ -125,12 +106,20 @@ async fn inherit_every_step_leaves_the_map_alone_when_the_lookup_finds_nothing()
     }"#;
     let mut info = object(start);
     let unmapped = backend("nope", None);
-    inherit_cache_pricing(&mut info, &mut registry, &world.lookup, &unmapped).await;
-    inherit_service_tier_pricing(&mut info, &mut registry, &world.lookup, &unmapped, &INPUTS).await;
+    BackendSource::new(&mut registry, &world.lookup, unmapped)
+        .inherit_cache_pricing(&mut info)
+        .await;
+    BackendSource::new(&mut registry, &world.lookup, unmapped)
+        .inherit_service_tier_pricing(&mut info, &INPUTS)
+        .await;
     let off_peak_only = r#"{"off_peak_pricing": {"window": "night"}}"#;
     let mut schedule = object(off_peak_only);
-    inherit_off_peak_rates(&mut schedule, &mut registry, &world.lookup, &unmapped).await;
-    inherit_tiered_output_rate(&mut info, &mut registry, &world.lookup, &unmapped).await;
+    BackendSource::new(&mut registry, &world.lookup, unmapped)
+        .inherit_off_peak_rates(&mut schedule)
+        .await;
+    BackendSource::new(&mut registry, &world.lookup, unmapped)
+        .inherit_tiered_output_rate(&mut info)
+        .await;
     assert_eq!(info, object(start));
     assert_eq!(schedule, object(off_peak_only));
     assert_eq!(world.lookup.queried(), ["nope", "nope", "nope", "nope"]);
@@ -143,22 +132,13 @@ async fn inherit_raw_copy_steps_change_nothing_when_the_lookup_result_has_no_key
     world.lookup.omit_key = true;
     let start = r#"{"input_cost_per_token": 0.5, "off_peak_pricing": {"window": "night"}}"#;
     let mut tiers = object(start);
-    inherit_service_tier_pricing(
-        &mut tiers,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-        &INPUTS,
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_service_tier_pricing(&mut tiers, &INPUTS)
+        .await;
     let mut off_peak = merged(start, r#"{"input_cost_per_token": null}"#);
-    inherit_off_peak_rates(
-        &mut off_peak,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_off_peak_rates(&mut off_peak)
+        .await;
     assert_eq!(tiers, object(start));
     assert_eq!(off_peak, merged(start, r#"{"input_cost_per_token": null}"#));
 }
@@ -168,13 +148,12 @@ async fn inherit_service_tier_copies_only_tier_fields_from_the_raw_entry() {
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(r#"{"input_cost_per_token": 0.5, "input_cost_per_token_priority": 9}"#);
-    inherit_service_tier_pricing(
-        &mut info,
+    BackendSource::new(
         &mut registry,
         &world.lookup,
-        &backend("claude-x", Some("anthropic")),
-        &INPUTS,
+        backend("claude-x", Some("anthropic")),
     )
+    .inherit_service_tier_pricing(&mut info, &INPUTS)
     .await;
     assert_eq!(
         info,
@@ -189,14 +168,9 @@ async fn inherit_service_tier_copies_the_four_suffixes_and_nothing_near_them() {
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(r#"{"output_cost_per_token": 0.5}"#);
-    inherit_service_tier_pricing(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("tiers-all", None),
-        &INPUTS,
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("tiers-all", None))
+        .inherit_service_tier_pricing(&mut info, &INPUTS)
+        .await;
     assert_eq!(
         info,
         object(
@@ -218,14 +192,9 @@ async fn inherit_service_tier_needs_a_base_price(#[case] start: &str, #[case] co
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(start);
-    inherit_service_tier_pricing(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-        &INPUTS,
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_service_tier_pricing(&mut info, &INPUTS)
+        .await;
     assert_eq!(info.contains_key("input_cost_per_token_flex"), copies);
     assert_eq!(world.lookup.queried().len(), usize::from(copies));
 }
@@ -247,14 +216,9 @@ async fn inherit_service_tier_skips_ptu_deployments_only_with_attribution_on(
         ..INPUTS
     };
     let mut info = merged(terms, r#"{"input_cost_per_token": 0.5}"#);
-    inherit_service_tier_pricing(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-        &inputs,
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_service_tier_pricing(&mut info, &inputs)
+        .await;
     assert_eq!(info.contains_key("input_cost_per_token_flex"), copies);
 }
 
@@ -263,13 +227,9 @@ async fn inherit_off_peak_copies_every_non_null_raw_field_and_keeps_user_fields(
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(r#"{"off_peak_pricing": {"window": "night"}, "mode": "embedding"}"#);
-    inherit_off_peak_rates(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_off_peak_rates(&mut info)
+        .await;
     assert_eq!(
         info,
         object(
@@ -295,13 +255,9 @@ async fn inherit_off_peak_does_not_store_the_zero_rates_the_lookup_makes_up() {
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(r#"{"off_peak_pricing": [1]}"#);
-    inherit_off_peak_rates(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("tiered-only", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("tiered-only", None))
+        .inherit_off_peak_rates(&mut info)
+        .await;
     assert!(info.contains_key("tiered_pricing"));
     assert!(!info.contains_key("input_cost_per_token"));
     assert!(!info.contains_key("output_cost_per_token"));
@@ -333,13 +289,9 @@ async fn inherit_off_peak_runs_only_for_a_truthy_schedule(
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(start);
-    inherit_off_peak_rates(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("claude-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("claude-x", None))
+        .inherit_off_peak_rates(&mut info)
+        .await;
     assert_eq!(info.contains_key("litellm_provider"), copies);
     assert_eq!(world.lookup.queried().len(), usize::from(copies));
 }
@@ -362,8 +314,12 @@ async fn inherit_off_peak_skips_when_a_base_price_field_is_set(
     let mut null = object(r#"{"off_peak_pricing": true}"#);
     null.insert(field.to_owned(), Json::Null);
     let backend_model = backend("claude-x", None);
-    inherit_off_peak_rates(&mut set, &mut registry, &world.lookup, &backend_model).await;
-    inherit_off_peak_rates(&mut null, &mut registry, &world.lookup, &backend_model).await;
+    BackendSource::new(&mut registry, &world.lookup, backend_model)
+        .inherit_off_peak_rates(&mut set)
+        .await;
+    BackendSource::new(&mut registry, &world.lookup, backend_model)
+        .inherit_off_peak_rates(&mut null)
+        .await;
     assert_eq!(set.contains_key("litellm_provider"), copies);
     assert!(null.contains_key("litellm_provider"));
 }
@@ -373,13 +329,9 @@ async fn inherit_tiered_output_copies_a_flat_backend_rate() {
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(r#"{"tiered_pricing": [{"range": [0, 1]}]}"#);
-    inherit_tiered_output_rate(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("gpt-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("gpt-x", None))
+        .inherit_tiered_output_rate(&mut info)
+        .await;
     assert_eq!(info.get("output_cost_per_token"), Some(&json("0.000008")));
     assert_eq!(info.len(), 2);
 }
@@ -408,13 +360,9 @@ async fn inherit_tiered_output_keeps_its_early_returns(#[case] start: &str, #[ca
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(start);
-    inherit_tiered_output_rate(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend("gpt-x", None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend("gpt-x", None))
+        .inherit_tiered_output_rate(&mut info)
+        .await;
     assert_eq!(
         info.get("output_cost_per_token") == Some(&json("0.000008")),
         copies
@@ -432,13 +380,9 @@ async fn inherit_tiered_output_never_copies_a_zero_rate(#[case] model: &str, #[c
     let mut registry = registry(COST_MAP);
     let world = World::new();
     let mut info = object(r#"{"tiered_pricing": [{"a": 1}]}"#);
-    inherit_tiered_output_rate(
-        &mut info,
-        &mut registry,
-        &world.lookup,
-        &backend(model, None),
-    )
-    .await;
+    BackendSource::new(&mut registry, &world.lookup, backend(model, None))
+        .inherit_tiered_output_rate(&mut info)
+        .await;
     assert_eq!(info.contains_key("output_cost_per_token"), copies);
 }
 

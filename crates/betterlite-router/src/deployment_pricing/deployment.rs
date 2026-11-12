@@ -42,10 +42,10 @@ fn object_field<'map>(
     fields: &'map JsonObject,
     field: &'static str,
 ) -> Result<&'map JsonObject, DeploymentReadError> {
-    match fields.get(field) {
-        Some(Json::Object(found)) => Ok(found),
-        _ => Err(DeploymentReadError::FieldNotObject { field }),
+    if let Some(Json::Object(found)) = fields.get(field) {
+        return Ok(found);
     }
+    Err(DeploymentReadError::FieldNotObject { field })
 }
 
 impl<'maps> Deployment<'maps> {
