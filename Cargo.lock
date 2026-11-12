@@ -2492,6 +2492,7 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -3112,6 +3113,7 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",

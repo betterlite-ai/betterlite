@@ -1,0 +1,23 @@
+kind: helper
+name: provider_model_sets-fill-seed
+call:
+  b5361:
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai}
+        "ft:gpt-3.5-turbo": {litellm_provider: openai}
+        "ft:gpt-3.5-turbo:acme": {litellm_provider: openai}
+        claude: {litellm_provider: anthropic}
+        vertex_ai/claude: {litellm_provider: vertex_ai-anthropic_models}
+        vertex_ai/vertex_ai/nested: {litellm_provider: vertex_ai-anthropic_models}
+        bedrock-key: {litellm_provider: bedrock}
+        bedrock/us-east-1/anthropic.claude: {litellm_provider: bedrock}
+        guard-model: {litellm_provider: bedrock, mode: guardrail}
+        converse-model: {litellm_provider: bedrock_converse}
+        fw-up-to-name: {litellm_provider: fireworks_ai}
+        fw-default: {litellm_provider: fireworks_ai}
+        chat-ai21: {litellm_provider: ai21, mode: chat}
+        plain-ai21: {litellm_provider: ai21}
+    steps: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+task: B907
+deviations:
+  - what: Custom tool call arguments larger than the configured JSON byte limit are rejected with an error, and bytes that are not UTF-8 are rejected too.
+    why: Every untrusted byte slice goes through the B1087 API boundary before it is parsed, and a Rust string cannot hold invalid UTF-8.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/custom_tools.py#L96-L115
