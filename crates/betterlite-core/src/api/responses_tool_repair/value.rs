@@ -71,99 +71,70 @@ impl Value {
 
     // dict.get, then a callable get(key, default), then the attribute when get raises TypeError or AttributeError
     pub fn field(&self, key: &str) -> Result<Option<&Self>, RepairError> {
-        let found = match self {
-            Self::Dict(map) => map.get(key),
-            Self::Instance { object } => match &object.get {
-                Getter::Mapping(map) => map.get(key),
-                Getter::Raises(Raised::Other) => return Err(RepairError::GetterFailed),
-                Getter::Absent | Getter::Raises(Raised::TypeError | Raised::AttributeError) => {
-                    object.attrs.get(key)
+        if let Self::Instance { object } = self {
+            match &object.get {
+                Getter::Mapping(map) => {
+                    return Ok(map.get(key).filter(|found| **found != Self::Null));
                 }
-            },
-            Self::Null
-            | Self::Bool(_)
-            | Self::Number(_)
-            | Self::Text(_)
-            | Self::Bytes { .. }
-            | Self::List(_)
-            | Self::Tuple { .. } => None,
-        };
-        Ok(found.filter(|value| **value != Self::Null))
+                Getter::Raises(Raised::Other) => return Err(RepairError::GetterFailed),
+                Getter::Absent | Getter::Raises(Raised::TypeError | Raised::AttributeError) => {}
+            }
+        }
+        Ok(self.plain_field(key))
     }
 
     // dict.get for a dict and getattr for an object
     #[must_use]
     pub fn plain_field(&self, key: &str) -> Option<&Self> {
-        let found = match self {
-            Self::Dict(map) => map.get(key),
-            Self::Instance { object } => object.attrs.get(key),
-            Self::Null
-            | Self::Bool(_)
-            | Self::Number(_)
-            | Self::Text(_)
-            | Self::Bytes { .. }
-            | Self::List(_)
-            | Self::Tuple { .. } => None,
+        let found = if let Self::Dict(map) = self {
+            map.get(key)
+        } else if let Self::Instance { object } = self {
+            object.attrs.get(key)
+        } else {
+            None
         };
         found.filter(|value| **value != Self::Null)
     }
 
     // LiteLLM reads message.get("role"), so a message without a working get fails
     pub fn has_role(&self, role: &str) -> Result<bool, RepairError> {
-        let found = match self {
-            Self::Dict(map) => map.get("role"),
-            Self::Instance { object } => match &object.get {
+        let found = if let Self::Dict(map) = self {
+            map.get("role")
+        } else if let Self::Instance { object } = self {
+            match &object.get {
                 Getter::Mapping(map) => map.get("role"),
                 Getter::Absent => return Err(RepairError::NoGetMethod),
                 Getter::Raises(_) => return Err(RepairError::GetterFailed),
-            },
-            Self::Null
-            | Self::Bool(_)
-            | Self::Number(_)
-            | Self::Text(_)
-            | Self::Bytes { .. }
-            | Self::List(_)
-            | Self::Tuple { .. } => return Err(RepairError::NoGetMethod),
+            }
+        } else {
+            return Err(RepairError::NoGetMethod);
         };
         Ok(matches!(found, Some(Self::Text(text)) if text == role))
     }
 
     // a dict gains the key; an object only changes an attribute it already has
     pub fn set_tool_call_id(&mut self, tool_call_id: &str) {
-        match self {
-            Self::Dict(map) => {
-                map.insert(
-                    "tool_call_id".to_owned(),
-                    Self::Text(tool_call_id.to_owned()),
-                );
-            }
-            Self::Instance { object } => {
-                if let Some(slot) = object.attrs.get_mut("tool_call_id") {
-                    *slot = Self::Text(tool_call_id.to_owned());
-                }
-            }
-            Self::Null
-            | Self::Bool(_)
-            | Self::Number(_)
-            | Self::Text(_)
-            | Self::Bytes { .. }
-            | Self::List(_)
-            | Self::Tuple { .. } => {}
+        if let Self::Dict(map) = self {
+            map.insert(
+                "tool_call_id".to_owned(),
+                Self::Text(tool_call_id.to_owned()),
+            );
+        }
+        if let Self::Instance { object } = self
+            && let Some(slot) = object.attrs.get_mut("tool_call_id")
+        {
+            *slot = Self::Text(tool_call_id.to_owned());
         }
     }
 
     // str(value) for the ids, types and names of a call
     pub fn text(&self, field: &'static str) -> Result<String, RepairError> {
-        match self {
-            Self::Text(text) => Ok(text.clone()),
-            Self::Number(number) => Ok(number.to_string()),
-            Self::Null
-            | Self::Bool(_)
-            | Self::Bytes { .. }
-            | Self::List(_)
-            | Self::Tuple { .. }
-            | Self::Dict(_)
-            | Self::Instance { .. } => Err(RepairError::WrongType { field }),
+        if let Self::Text(text) = self {
+            Ok(text.clone())
+        } else if let Self::Number(number) = self {
+            Ok(number.to_string())
+        } else {
+            Err(RepairError::WrongType { field })
         }
     }
 
