@@ -1,0 +1,31 @@
+kind: helper
+name: effort-validation
+call:
+  anthropic_capabilities:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        anthropic/claude-opus-4-8: {litellm_provider: anthropic, supports_max_reasoning_effort: true, supports_xhigh_reasoning_effort: true}
+        claude-config-model: {litellm_provider: anthropic, supports_output_config: true}
+        claude-levels: {litellm_provider: anthropic, supports_medium_reasoning_effort: true}
+        claude-haiku-4-5: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    steps:
+      - {function: validate_effort_for_model, model: claude-opus-4-7, custom_llm_provider: anthropic, effort: max}
+      - {function: validate_effort_for_model, model: claude-opus-4-8, custom_llm_provider: anthropic, effort: max}
+      - {function: validate_effort_for_model, model: claude-haiku-4-5, custom_llm_provider: anthropic, effort: max}
+      - {function: validate_effort_for_model, model: claude-opus-4-8, custom_llm_provider: anthropic, effort: xhigh}
+      - {function: validate_effort_for_model, model: claude-opus-4-7, custom_llm_provider: anthropic, effort: xhigh}
+      - {function: validate_effort_for_model, model: claude-haiku-4-5, custom_llm_provider: anthropic, effort: low}
+      - {function: validate_effort_for_model, model: claude-haiku-4-5, custom_llm_provider: anthropic, effort: medium}
+      - {function: validate_effort_for_model, model: claude-haiku-4-5, custom_llm_provider: anthropic, effort: high}
+      - {function: validate_effort_for_model, model: claude-haiku-4-5, custom_llm_provider: anthropic, effort: minimal}
+      - {function: validate_effort_for_model, model: claude-haiku-4-5, custom_llm_provider: anthropic, effort: null}
+      - {function: model_supports_effort_param, model: claude-opus-4-8, custom_llm_provider: anthropic}
+      - {function: model_supports_effort_param, model: claude-config-model, custom_llm_provider: anthropic}
+      - {function: model_supports_effort_param, model: claude-levels, custom_llm_provider: anthropic}
+      - {function: model_supports_effort_param, model: claude-haiku-4-5, custom_llm_provider: anthropic}
+      - {function: raise_invalid_reasoning_effort, model: claude-opus-4-8, llm_provider: anthropic, value: bogus}
+env: {}
+compare: {ignore: []}

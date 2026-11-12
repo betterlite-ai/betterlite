@@ -1,0 +1,31 @@
+kind: helper
+name: minimal-thinking-floor
+call:
+  anthropic_capabilities:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    steps:
+      - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: null}
+      - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: "none"}
+      - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: low}
+      - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: max}
+      - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: bogus}
+      - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: minimal}
+      - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: low}
+      - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: medium}
+      - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: high}
+      - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: xhigh}
+      - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: max}
+      - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: bogus}
+env:
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET: "128"
+  DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET: "1024"
+  DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "2048"
+  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "4096"
+  DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET: "8192"
+  DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET: "16384"
+compare: {ignore: []}
