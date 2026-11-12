@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-option-primitives-web-search
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: web_search_context_size
+        values:
+          - {}
+          - {user_location: {approximate: {city: Paris}}}
+          - {search_context_size: high}
+env: {}
+compare: {ignore: []}
