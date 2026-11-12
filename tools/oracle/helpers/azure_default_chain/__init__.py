@@ -132,6 +132,13 @@ def first_line(lines: list[str], marker: str) -> str | None:
     return None
 
 
+def selection_log() -> str | None:
+    line = first_line(STATE.litellm, SELECTION_MARKER)
+    if line is None:
+        return None
+    return line.replace("AzureCredentialType.", "")
+
+
 def error_report(category: str, variable: str | None, message: str | None) -> dict[str, Json]:
     return {
         "kind": "error",
@@ -142,7 +149,7 @@ def error_report(category: str, variable: str | None, message: str | None) -> di
             "missing": PASSWORD_ARGUMENTS if category == "type_error" else [],
         },
         "constructed": list(STATE.records),
-        "log": first_line(STATE.litellm, SELECTION_MARKER),
+        "log": selection_log(),
     }
 
 
@@ -203,7 +210,7 @@ def credential_step(step: CredentialStep, *, invoke: bool) -> dict[str, Json]:
         "scope": scope,
         "constructed": list(STATE.records),
         "warnings": list(STATE.warnings),
-        "log": first_line(STATE.litellm, SELECTION_MARKER),
+        "log": selection_log(),
     }
     if invoke:
         report.update(outcome)
@@ -217,7 +224,7 @@ def credential_step(step: CredentialStep, *, invoke: bool) -> dict[str, Json]:
 def boundary_step(step: BoundaryStep) -> dict[str, Json]:
     result: Json = None
     with session(step):
-        provider = BaseAzureLLM._try_get_default_azure_credential_provider(step["scope"])  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L452
+        provider = BaseAzureLLM._try_get_default_azure_credential_provider(step["scope"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L452
         logs = [line for line in STATE.litellm if line.startswith(BOUNDARY_PREFIXES)]
         if provider is not None and step.get("invoke") is not False:
             try:

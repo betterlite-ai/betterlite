@@ -55,6 +55,11 @@ fn read(settings: &Settings, field: Field) -> Option<String> {
     }
 }
 
+enum Scenario {
+    Load(Case),
+    UnrelatedKey,
+}
+
 struct Case {
     name: &'static str,
     value: &'static str,
@@ -66,7 +71,7 @@ struct Case {
 }
 
 #[rstest]
-#[case::loads_azure_credential(Case {
+#[case::loads_azure_credential(Scenario::Load(Case {
     name: "AZURE_CREDENTIAL",
     value: "CertificateCredential",
     expected: "CertificateCredential",
@@ -74,8 +79,8 @@ struct Case {
     empty: None,
     field: Field::AzureCredential,
     secret: false,
-})]
-#[case::loads_azure_federated_token_file(Case {
+}))]
+#[case::loads_azure_federated_token_file(Scenario::Load(Case {
     name: "AZURE_FEDERATED_TOKEN_FILE",
     value: "/var/run/secrets/token",
     expected: "/var/run/secrets/token",
@@ -83,8 +88,8 @@ struct Case {
     empty: Some(""),
     field: Field::FederatedTokenFile,
     secret: false,
-})]
-#[case::loads_azure_certificate_path(Case {
+}))]
+#[case::loads_azure_certificate_path(Scenario::Load(Case {
     name: "AZURE_CERTIFICATE_PATH",
     value: "/certs/azure.pem",
     expected: "/certs/azure.pem",
@@ -92,8 +97,8 @@ struct Case {
     empty: Some(""),
     field: Field::CertificatePath,
     secret: false,
-})]
-#[case::loads_azure_certificate_password(Case {
+}))]
+#[case::loads_azure_certificate_password(Scenario::Load(Case {
     name: "AZURE_CERTIFICATE_PASSWORD",
     value: "fixture-certificate-password",
     expected: "fixture-certificate-password",
@@ -101,8 +106,8 @@ struct Case {
     empty: Some(""),
     field: Field::CertificatePassword,
     secret: true,
-})]
-#[case::loads_azure_token_credentials(Case {
+}))]
+#[case::loads_azure_token_credentials(Scenario::Load(Case {
     name: "AZURE_TOKEN_CREDENTIALS",
     value: " EnvironmentCredential ",
     expected: "environmentcredential",
@@ -110,8 +115,8 @@ struct Case {
     empty: Some(""),
     field: Field::TokenCredentials,
     secret: false,
-})]
-#[case::loads_azure_client_certificate_path(Case {
+}))]
+#[case::loads_azure_client_certificate_path(Scenario::Load(Case {
     name: "AZURE_CLIENT_CERTIFICATE_PATH",
     value: "/certs/client.pem",
     expected: "/certs/client.pem",
@@ -119,8 +124,8 @@ struct Case {
     empty: Some(""),
     field: Field::ClientCertificatePath,
     secret: false,
-})]
-#[case::loads_azure_client_certificate_password(Case {
+}))]
+#[case::loads_azure_client_certificate_password(Scenario::Load(Case {
     name: "AZURE_CLIENT_CERTIFICATE_PASSWORD",
     value: "fixture-client-password",
     expected: "fixture-client-password",
@@ -128,8 +133,8 @@ struct Case {
     empty: Some(""),
     field: Field::ClientCertificatePassword,
     secret: true,
-})]
-#[case::loads_azure_client_send_certificate_chain(Case {
+}))]
+#[case::loads_azure_client_send_certificate_chain(Scenario::Load(Case {
     name: "AZURE_CLIENT_SEND_CERTIFICATE_CHAIN",
     value: "false",
     expected: "true",
@@ -137,8 +142,16 @@ struct Case {
     empty: Some("false"),
     field: Field::ClientSendCertificateChain,
     secret: false,
-})]
-fn azure_default_chain_config_cases(#[case] case: Case) {
+}))]
+#[case::rejects_unrelated_key(Scenario::UnrelatedKey)]
+fn azure_default_chain_config_cases(#[case] scenario: Scenario) {
+    let case = match scenario {
+        Scenario::Load(case) => case,
+        Scenario::UnrelatedKey => {
+            rejects_unrelated_key();
+            return;
+        }
+    };
     let explicit = settings(&[(case.name, case.value)]);
     assert_eq!(read(&explicit, case.field).as_deref(), Some(case.expected));
     assert_eq!(read(&settings(&[]), case.field).as_deref(), case.unset);
@@ -188,7 +201,6 @@ fn loads_every_azure_credential_name(#[case] name: &str, #[case] credential: Azu
     assert_eq!(AzureCredentialType::parse(name), Some(credential));
 }
 
-#[test]
 fn rejects_unrelated_key() {
     let source = "litellm_settings:\n  azure_default_chain_unrelated_key: 1\n";
     let error = ConfigLoader {

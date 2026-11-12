@@ -349,17 +349,17 @@ where
 }
 
 #[rstest]
-#[case::case_0_explicit_credential(cases::explicit_credential)]
-#[case::case_0_client_secret_inference(cases::client_secret_inference)]
-#[case::case_0_client_id_before_certificate(cases::client_id_before_certificate)]
-#[case::case_0_deployment_chain_order(cases::deployment_chain_order)]
-#[case::case_0_default_chain_fallback(cases::default_chain_fallback)]
-#[case::case_0_credential_constructor_arguments(cases::credential_constructor_arguments)]
-#[case::case_0_default_environment_certificate(cases::default_environment_certificate)]
-#[case::case_0_default_credential_filter(cases::default_credential_filter)]
-#[case::case_0_default_provider_try_boundary(cases::default_provider_try_boundary)]
-#[case::case_0_chain_exhaustion(cases::chain_exhaustion)]
-#[case::case_0_generic_credential_constructor(cases::generic_credential_constructor)]
+#[case::explicit_credential(cases::explicit_credential)]
+#[case::client_secret_inference(cases::client_secret_inference)]
+#[case::client_id_before_certificate(cases::client_id_before_certificate)]
+#[case::deployment_chain_order(cases::deployment_chain_order)]
+#[case::default_chain_fallback(cases::default_chain_fallback)]
+#[case::credential_constructor_arguments(cases::credential_constructor_arguments)]
+#[case::default_environment_certificate(cases::default_environment_certificate)]
+#[case::default_credential_filter(cases::default_credential_filter)]
+#[case::default_provider_try_boundary(cases::default_provider_try_boundary)]
+#[case::chain_exhaustion(cases::chain_exhaustion)]
+#[case::generic_credential_constructor(cases::generic_credential_constructor)]
 fn azure_default_chain_cases(#[case] case: fn()) {
     case();
 }
@@ -500,14 +500,14 @@ fn provider_debug_names_the_credential_and_scope_only() {
     let env = environment(&[]);
     let built = provider(
         Some("https://example.test/.default"),
-        Some(AzureCredentialType::ManagedIdentityCredential),
+        Some(AzureCredentialType::DefaultAzureCredential),
         &env,
         &grants,
     )
     .unwrap();
     let text = format!("{built:?}");
     assert!(text.starts_with("AzureTokenProvider {"));
-    assert!(text.contains("ManagedIdentityCredential"));
+    assert!(text.contains("DefaultAzureCredential"));
     assert!(text.contains("https://example.test/.default"));
     assert!(!text.contains("inner"));
 }

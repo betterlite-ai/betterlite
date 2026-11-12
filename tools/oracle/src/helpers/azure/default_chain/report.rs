@@ -158,9 +158,11 @@ fn chain_result(
         "constructed": recorder.records(),
         "warnings": provider.warnings,
         "log": log,
-        "token_calls": recorder.calls(),
     });
     let (result, execution_logs) = capture(|| provider.token());
+    if let Some(map) = report.as_object_mut() {
+        map.insert("token_calls".to_owned(), json!(recorder.calls()));
+    }
     let all_logs: Vec<String> = logs.iter().chain(&execution_logs).cloned().collect();
     match result {
         Ok(token) => {
