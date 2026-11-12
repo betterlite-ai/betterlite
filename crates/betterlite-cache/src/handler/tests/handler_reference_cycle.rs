@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use super::support::{
-    MODEL, ReadSupport, RecordingBackend, cache_text, chat_kwargs, handler, kwargs, source, text,
+    MODEL, ReadSupport, RecordingBackend, cache_object, cache_text, chat_kwargs, handler, kwargs,
+    source, text,
 };
 use crate::cache_key::value::KeyValue;
 use crate::handler::kwargs::LOGGING_OBJECT_KWARG;
@@ -76,7 +77,10 @@ async fn retrieval_does_not_keep_the_hit() {
         .preset_cache_key
         .clone()
         .expect("the first retrieval derives a preset key");
-    backend.seed(&key, super::support::envelope(cache_text("cached-answer")));
+    backend.seed(
+        &key,
+        super::support::envelope(cache_object(&[("id", cache_text("cached-answer"))])),
+    );
     let hit = retrieve_from_cache(
         &mut handler,
         Some(&source(&cache, AsyncSupport::Supported)),
@@ -86,7 +90,10 @@ async fn retrieval_does_not_keep_the_hit() {
     )
     .await
     .expect("the second retrieval runs");
-    assert_eq!(hit, Retrieval::Hit(cache_text("cached-answer")));
+    assert_eq!(
+        hit,
+        Retrieval::Hit(cache_object(&[("id", cache_text("cached-answer"))]))
+    );
     backend.clear();
     let after = retrieve_from_cache(
         &mut handler,
