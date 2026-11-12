@@ -2,6 +2,10 @@ kind: helper
 name: file-search-empty-object-versus-none
 call:
   tool_fees:
+    web_search: []
+    vector_store: []
+    computer_use: []
+    code_interpreter: []
     file_search:
       - {file_search: {}, provider: openai, model_info: null, storage_gb: null, days: null}
       - {file_search: null, provider: openai, model_info: null, storage_gb: null, days: null}

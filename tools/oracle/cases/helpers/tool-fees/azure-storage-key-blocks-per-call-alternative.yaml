@@ -2,6 +2,9 @@ kind: helper
 name: azure-storage-key-blocks-per-call-alternative
 call:
   tool_fees:
+    web_search: []
+    computer_use: []
+    code_interpreter: []
     file_search:
       - file_search: {}
         provider: azure

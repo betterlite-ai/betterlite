@@ -35,6 +35,13 @@ fn web_calls(count: usize) -> String {
     format!(r#"{{"responses": {{"output": [{items}]}}}}"#)
 }
 
+fn reported_calls(count: usize) -> String {
+    let items = vec![r#"{"mapping": {"type": "web_search_call"}}"#; count].join(",");
+    format!(
+        r#"{{"responses": {{"output": [{items}], "usage": {{"server_tool_use": {{"web_search_requests": {count}}}}}}}}}"#
+    )
+}
+
 fn file_tool(fields: &str) -> FileSearchTool {
     serde_json::from_str(&format!(r#"{{"fields": {fields}}}"#)).expect("the tool fixture is valid")
 }
@@ -231,7 +238,7 @@ fn a_provider_price_of_zero_prevents_the_generic_fallback() {
     let source =
         FakeSource::default().with_entry("gpt-4o", Some("gemini"), search_info(two_cents(), None));
     let policy = policy(Some(money(0, 0)), None);
-    let reply = response(&web_calls(3));
+    let reply = response(&reported_calls(3));
     let params = BuiltInToolParams::default();
     let asked = request(Some("gemini"), &reply, &params);
     assert_eq!(price(&source, &policy, &PRICES, &asked), Ok(money(0, 0)));
@@ -242,7 +249,7 @@ fn a_provider_price_replaces_the_per_call_rate() {
     let source =
         FakeSource::default().with_entry("gpt-4o", Some("gemini"), search_info(two_cents(), None));
     let policy = policy(Some(money(9, 1)), None);
-    let reply = response(&web_calls(3));
+    let reply = response(&reported_calls(3));
     let params = BuiltInToolParams::default();
     let asked = request(Some("gemini"), &reply, &params);
     assert_eq!(price(&source, &policy, &PRICES, &asked), Ok(money(9, 1)));
@@ -341,7 +348,7 @@ fn maps_and_branch_overflow_is_typed() {
     let source =
         FakeSource::default().with_entry("gpt-4o", Some("gemini"), search_info(two_cents(), None));
     let policy = policy(None, Some(Decimal::MAX));
-    let reply = response(&web_calls(1));
+    let reply = response(&reported_calls(1));
     let params = BuiltInToolParams::default();
     let mut asked = request(Some("gemini"), &reply, &params);
     asked.google_maps_requests = Some(1);

@@ -2,6 +2,10 @@ kind: helper
 name: search-context-null-versus-missing-rate
 call:
   tool_fees:
+    file_search: []
+    vector_store: []
+    computer_use: []
+    code_interpreter: []
     web_search:
       - options: {search_context_size: low}
         model_info: {search_context_cost_per_query: {search_context_size_low: 0.5, search_context_size_medium: 0.25, search_context_size_high: 1}}

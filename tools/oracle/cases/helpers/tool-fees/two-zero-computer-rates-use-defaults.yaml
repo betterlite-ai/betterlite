@@ -2,6 +2,10 @@ kind: helper
 name: two-zero-computer-rates-use-defaults
 call:
   tool_fees:
+    web_search: []
+    file_search: []
+    vector_store: []
+    code_interpreter: []
     computer_use:
       - input_tokens: 1000
         output_tokens: 500

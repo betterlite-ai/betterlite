@@ -2,6 +2,10 @@ kind: helper
 name: computer-defaults-three-and-twelve
 call:
   tool_fees:
+    web_search: []
+    file_search: []
+    vector_store: []
+    code_interpreter: []
     computer_use:
       - {input_tokens: 1000, output_tokens: 500, provider: azure, model_info: null}
       - {input_tokens: 2000, output_tokens: null, provider: azure, model_info: {}}
