@@ -1,0 +1,2 @@
+litellm_settings:
+  anthropic_beta_headers_url: http://beta.test/matrix.json
