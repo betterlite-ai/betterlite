@@ -432,7 +432,11 @@ fn a_configured_default_fills_the_missing_model() {
         model_defaults: defaults(Some("default"), None, None),
         allowed_hosts: Vec::new(),
     };
-    let result = resolve_request_destination(&body_input(), &settings).unwrap();
+    let request = RequestDestinationInput {
+        kind: InferenceModelKind::Completion,
+        ..body_input()
+    };
+    let result = resolve_request_destination(&request, &settings).unwrap();
     assert_eq!(
         result,
         RequestDestinationResult {
