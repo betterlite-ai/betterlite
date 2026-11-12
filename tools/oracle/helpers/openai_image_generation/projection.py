@@ -39,7 +39,7 @@ class Recorder:
         record = Record(
             input=kwargs["input"],
             additional_args=arguments(kwargs),
-            original_response=kwargs["original_response"],
+            original_response=response_value(kwargs["original_response"]),
         )
         self.post_calls.append(record)
 
@@ -86,7 +86,7 @@ def record_value(record: Record) -> Json:
     return {
         "input": record.input,
         "additional_args": additional,
-        "original_response": response_value(record.original_response),
+        "original_response": record.original_response,
     }
 
 

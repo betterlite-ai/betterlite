@@ -66,6 +66,11 @@ impl Recorder {
             .map(|headers| headers.keys().collect())
             .unwrap_or_default();
         header_names.sort();
+        let original_response = details
+            .pointer("/original_response")
+            .and_then(Value::as_str)
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+            .filter(Value::is_object);
         let api_base = details
             .pointer("/additional_args/api_base")
             .and_then(Value::as_str)
@@ -78,6 +83,7 @@ impl Recorder {
                 "acompletion": at("/additional_args/acompletion"),
                 "header_names": header_names,
             },
+            "original_response": original_response,
         }))
     }
 }

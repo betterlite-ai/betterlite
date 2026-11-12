@@ -36,6 +36,7 @@ class Raw:
             self.answer.status,
             headers=self.answer.headers,
             content=self.answer.body.encode(),
+            request=httpx.Request("POST", "https://example.test/"),
         )
         if self.answer.status < SUCCESS_MIN or self.answer.status >= SUCCESS_MAX:
             raise openai.APIStatusError(
@@ -110,10 +111,16 @@ def timeout_value(probe: Probe) -> float:
     return float(found)
 
 
+class BaseUrl:
+    def __init__(self, reference: str) -> None:
+        self._uri_reference = reference
+
+
 class Client:
     def __init__(self, fixture: Fixture, probe: Probe) -> None:
         self.api_key = probe.api_key
         self.base_url = api_base(probe)
+        self._base_url = BaseUrl(self.base_url)
         self.organization: str | None = None
         self.max_retries: int | None = None
         self.images: SyncImages | AsyncImages = (
