@@ -56,17 +56,12 @@ where
 
 pub async fn is_vision_explicitly_disabled<Predicates>(
     predicates: &mut Predicates,
-    model: &str,
-    custom_llm_provider: Option<&str>,
+    request: &CapabilityRequest<'_>,
 ) -> bool
 where
     Predicates: CapabilityPredicates + Send,
 {
-    let request = CapabilityRequest {
-        model,
-        custom_llm_provider,
-    };
     predicates
-        .is_explicitly_disabled_factory(&request, ModelCapabilityFlag::Vision.key())
+        .is_explicitly_disabled_factory(request, ModelCapabilityFlag::Vision.key())
         .await
 }

@@ -116,6 +116,10 @@ async fn supports_asks_the_factory_for_the_flags_key(
 #[tokio::test]
 async fn vision_disabled_asks_the_disabled_factory_for_vision() {
     let mut recorder = Recorder::default();
-    assert!(is_vision_explicitly_disabled(&mut recorder, "model", None).await);
+    let request = CapabilityRequest {
+        model: "model",
+        custom_llm_provider: None,
+    };
+    assert!(is_vision_explicitly_disabled(&mut recorder, &request).await);
     assert!(recorder.supported.is_empty());
 }

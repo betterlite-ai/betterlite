@@ -11,7 +11,7 @@ use betterlite_models::fireworks_catalog_metadata::Catalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
 use betterlite_models::model_capability_flags::{self, ModelCapabilityFlag};
-use betterlite_models::model_capability_predicates::CapabilityEnvironment;
+use betterlite_models::model_capability_predicates::{CapabilityEnvironment, CapabilityRequest};
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::MetadataEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::{
@@ -226,12 +226,13 @@ where
     let model = step.model.as_str();
     let provider = step.custom_llm_provider.as_deref();
     if step.function == "is_vision_explicitly_disabled" {
-        return Ok(model_capability_flags::is_vision_explicitly_disabled(
-            environment,
+        let request = CapabilityRequest {
             model,
-            provider,
-        )
-        .await);
+            custom_llm_provider: provider,
+        };
+        return Ok(
+            model_capability_flags::is_vision_explicitly_disabled(environment, &request).await,
+        );
     }
     let Some((_, flag)) = FUNCTIONS
         .iter()
