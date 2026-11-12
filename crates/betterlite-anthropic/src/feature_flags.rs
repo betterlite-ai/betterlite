@@ -34,6 +34,17 @@ pub enum FeatureFlagsError {
     FileIds(#[from] FileIdsError),
 }
 
+impl FeatureFlagsError {
+    // LiteLLM raises UnsupportedParamsError, a 400, only for a malformed eager_input_streaming
+    #[must_use]
+    pub const fn status_code(&self) -> Option<u16> {
+        match self {
+            Self::EagerInputStreaming => Some(400),
+            Self::Messages(_) | Self::FileIds(_) => None,
+        }
+    }
+}
+
 // The content and tool shapes that turn into a beta header in get_anthropic_beta_list.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Feature {

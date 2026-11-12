@@ -1,5 +1,4 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
-use betterlite_anthropic::feature_flags::FeatureFlagsError;
 use betterlite_anthropic::feature_flags::beta::{
     computer_tool_beta_header, tool_search_beta_header, user_beta_headers,
 };
@@ -118,10 +117,11 @@ where
 }
 
 fn file_ids_answer(case: &FileIds) -> Value {
-    match is_file_id_used(&case.messages) {
-        Ok(used) => json!({"file_id": used}),
-        Err(error) => failure(&error),
-    }
+    // LiteLLM raises on a content block with no type; the Python adapter reports that as no answer
+    is_file_id_used(&case.messages).map_or_else(
+        |_| json!({"file_id": null}),
+        |used| json!({"file_id": used}),
+    )
 }
 
 fn pdf_answer(case: &Pdf) -> Value {
@@ -146,14 +146,14 @@ fn tools_answer(case: &Tools) -> Value {
 fn eager_flag_answer(case: &EagerFlag) -> Value {
     match eager_input_streaming_flag(&case.tool) {
         Ok(flag) => json!({"flag": flag}),
-        Err(error) => failure(&error),
+        Err(error) => json!({"error": {"status": error.status_code()}}),
     }
 }
 
 fn eager_used_answer(case: &EagerUsed) -> Value {
     match is_eager_input_streaming_used(case.tools.as_deref()) {
         Ok(used) => json!({"used": used}),
-        Err(error) => failure(&error),
+        Err(error) => json!({"error": {"status": error.status_code()}}),
     }
 }
 
@@ -195,14 +195,6 @@ fn conversation_answer(case: &Conversation) -> Value {
         "output_config": has_output_config(&case.messages),
         "mcp": is_mcp_server_used(case.mcp_servers.as_deref()),
     })
-}
-
-fn failure(error: &FeatureFlagsError) -> Value {
-    let status: Option<u16> = match error {
-        FeatureFlagsError::EagerInputStreaming => Some(400_u16),
-        FeatureFlagsError::Messages(_) | FeatureFlagsError::FileIds(_) => None,
-    };
-    json!({"error": {"status": status}})
 }
 
 pub(super) async fn run(calls: &[Call], fixture: &Fixture) -> crate::helpers::HelperResult {

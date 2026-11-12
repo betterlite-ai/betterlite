@@ -8,7 +8,7 @@ use crate::feature_flags::beta::{
     OUTPUT_CONFIG_BETA, THINKING_DISPLAY_BETA, TOOL_CHANGES_BETA, beta_list,
     computer_tool_beta_header, tool_search_beta_header, user_beta_headers,
 };
-use crate::feature_flags::billing::{billing_fields, is_one_shot_subagent_request};
+use crate::feature_flags::billing::{billing_fields, billing_texts, is_one_shot_subagent_request};
 use crate::feature_flags::cache::supports_cache_control;
 use crate::feature_flags::compaction::requires_compaction_beta;
 use crate::feature_flags::messages::{
@@ -170,9 +170,25 @@ fn one_shot_system_cases() {
     }
 }
 
+fn billing_text_cases() {
+    assert_eq!(billing_texts(&single("[]")), None);
+    assert_eq!(
+        billing_texts(&single(r#"[{"type":"text","text":"   "}]"#)),
+        None,
+        "a whitespace-only text is not a billing text"
+    );
+    assert_eq!(
+        billing_texts(&single(
+            r#"[{"type":"text","text":"a"},{"type":"text","text":" "}]"#
+        )),
+        Some(vec!["a".to_owned()])
+    );
+}
+
 pub(crate) fn one_shot_subagent_billing() {
     one_shot_identity_cases();
     one_shot_system_cases();
+    billing_text_cases();
 }
 
 fn billing_field_parsed_cases() {
@@ -375,6 +391,11 @@ fn file_id_cases() {
     assert!(!is_file_id_used(&string_content).unwrap());
     let missing_file = values(r#"[{"role":"user","content":[{"type":"file"}]}]"#);
     assert!(!is_file_id_used(&missing_file).unwrap());
+    let typeless_block = values(r#"[{"role":"user","content":[{"text":"hi"}]}]"#);
+    assert!(matches!(
+        is_file_id_used(&typeless_block),
+        Err(FeatureFlagsError::Messages(_))
+    ));
 }
 
 fn pdf_cases() {
@@ -513,6 +534,13 @@ pub(crate) fn eager_input_boolean() {
     eager_flag_single_cases();
     eager_flag_rejections();
     eager_used_cases();
+    assert_eq!(
+        FeatureFlagsError::EagerInputStreaming.status_code(),
+        Some(400),
+        "LiteLLM raises UnsupportedParamsError, a 400, for a malformed flag"
+    );
+    let decode = serde_json::from_str::<Json>("{").unwrap_err();
+    assert_eq!(FeatureFlagsError::Messages(decode).status_code(), None);
 }
 
 fn computer_tool_cases() {
