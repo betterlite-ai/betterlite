@@ -1,0 +1,19 @@
+kind: helper
+name: trusted-legacy
+call:
+  vertex_gcs_access:
+    operation: trusted_legacy
+    params: {gcs_bucket_name: "bucket/tenant"}
+    environment: {}
+    trusted: [["allow_legacy_cloud_file_ids", true]]
+    plain: []
+    file_ids:
+      - "gs://bucket/tenant/legacy-input.jsonl"
+      - "gs://bucket/other/legacy-input.jsonl"
+      - "gs://other/tenant/legacy-input.jsonl"
+      - "gs://bucket/tenant/../escape.jsonl"
+      - "gs://bucket/tenant/litellm-vertex-files/managed.jsonl"
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}

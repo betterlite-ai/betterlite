@@ -1,0 +1,26 @@
+kind: helper
+name: azure-base-trailing-slash
+call:
+  mistral_options:
+    steps:
+      - kind: provider_info
+      - kind: provider_info
+        azure_api_base: https://azure.example
+        azure_api_key: azure-key
+        mistral_api_key: mistral-key
+      - kind: provider_info
+        api_base: https://given.example
+        api_key: given
+        azure_api_base: https://azure.example
+        azure_api_key: azure-key
+      - kind: provider_info
+        api_base: https://given.example/v1
+        api_key: given
+      - kind: provider_info
+        api_base: https://given.example/v1/
+        api_key: given
+      - kind: provider_info
+        azure_api_base: https://azure.example/v1
+        mistral_api_key: mistral-key
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: langgraph-chat-url-wait-and-stream
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: url
+    cases:
+      - {api_base: 'http://localhost:2024', stream: false}
+      - {api_base: 'http://localhost:2024', stream: true}
+      - {api_base: 'http://localhost:2024/', stream: false}
+      - {api_base: 'http://localhost:2024///', stream: true}
+      - {api_base: 'https://agents.example.com/api/v1', stream: false}
+      - {api_base: 'https://agents.example.com/api/v1/', stream: true}
+      - {api_base: 'https://agents.example.com/runs/wait', stream: true}
+      - {api_base: '', stream: false}
+      - {api_base: '/', stream: true}
+      - {api_base: null, stream: false}
+      - {api_base: null, stream: true}

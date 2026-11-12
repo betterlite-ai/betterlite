@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-services-vector-stores-filter
+call:
+  bedrock_services_vector_stores:
+    operation: filter_operator_map
+    operators: [eq, nin, startsWith, custom]
+    filters:
+      - {operator: eq, key: genre, value: fiction}
+      - {operator: eq, key: genre}
+      - [not, an, object]
+env: {}
+compare: {ignore: []}
