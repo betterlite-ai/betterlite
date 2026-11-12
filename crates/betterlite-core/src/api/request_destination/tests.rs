@@ -543,6 +543,28 @@ fn vector_store_ids_grow_from_the_route_path() {
         populated,
         data(r#"{"vector_store_ids":["already","vs_123"],"vector_store_id":"vs_123"}"#)
     );
+    let present = data(r#"{"vector_store_ids":["vs_123"]}"#);
+    let without_duplicates = populate_request_parameters(
+        &present,
+        None,
+        &IndexMap::new(),
+        "/v1/vector_stores/vs_123/files",
+    );
+    assert_eq!(
+        without_duplicates,
+        data(r#"{"vector_store_ids":["vs_123"],"vector_store_id":"vs_123"}"#)
+    );
+    let empty_params = RequestData::new();
+    let from_the_route = populate_request_parameters(
+        &empty_params,
+        Some(&RequestData::new()),
+        &IndexMap::new(),
+        "/v1/vector_stores/vs_123/files",
+    );
+    assert_eq!(
+        from_the_route,
+        data(r#"{"vector_store_ids":["vs_123"],"vector_store_id":"vs_123"}"#)
+    );
 }
 
 #[rstest]
