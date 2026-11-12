@@ -9,11 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use http::Method;
+use http::{HeaderMap, Method};
 use thiserror::Error;
 use tokio::time::{Instant, sleep};
 
-use super::super::http_client::{HttpResponse, Transport};
+use super::super::http_client::{HttpResponse, ResponseHead, Transport};
 use super::super::recording::ResponseBody;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -97,7 +97,12 @@ fn deadline_in(count: u64) -> Instant {
 fn reply(status: u16, body: FakeBody) -> Reply {
     Reply {
         delay: Duration::ZERO,
-        outcome: Ok(HttpResponse { status, body }),
+        outcome: Ok(HttpResponse {
+            status,
+            headers: HeaderMap::new(),
+            capture: None,
+            body,
+        }),
     }
 }
 
@@ -121,7 +126,7 @@ impl Transport for FakeTransport {
         next.outcome
     }
 
-    fn status_error(&self, status: u16) -> FakeError {
-        FakeError::Status(status)
+    fn status_error(&self, head: ResponseHead) -> FakeError {
+        FakeError::Status(head.status)
     }
 }
