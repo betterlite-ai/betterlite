@@ -3,7 +3,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::definitions::expand::unpack_defs;
 
 use super::anyof::convert_anyof_null_to_nullable;
-use super::enums::{fix_enum_empty_strings, fix_enum_types};
+use super::enum_empty_strings::fix_enum_empty_strings;
+use super::enum_types::fix_enum_types;
 use super::error::VertexSchemaError;
 use super::filter::filter_schema_fields;
 use super::items::process_items;

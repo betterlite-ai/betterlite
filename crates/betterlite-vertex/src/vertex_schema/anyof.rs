@@ -1,5 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 
+use super::children::visit_properties_and_items;
 use super::error::VertexSchemaError;
 use super::recursion::Recursion;
 
@@ -15,17 +16,9 @@ pub(crate) fn convert_anyof_null_to_nullable(
             mark_nullable(branches);
         }
     }
-    if let Some(Json::Object(properties)) = schema.get_mut("properties") {
-        for property in properties.values_mut() {
-            if let Json::Object(child) = property {
-                convert_anyof_null_to_nullable(child, recursion, depth.saturating_add(1))?;
-            }
-        }
-    }
-    if let Some(Json::Object(items)) = schema.get_mut("items") {
-        convert_anyof_null_to_nullable(items, recursion, depth.saturating_add(1))?;
-    }
-    Ok(())
+    visit_properties_and_items(schema, depth, &mut |child, child_depth| {
+        convert_anyof_null_to_nullable(child, recursion, child_depth)
+    })
 }
 
 // LiteLLM walks the live list while removing the null branch it is on, so two adjacent null branches leave the second one in the anyOf
