@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite-bedrock = { path = "../../betterlite-bedrock" }
 betterlite-vertex = { path = ".." }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
@@ -24,8 +25,29 @@ doc = false
 bench = false
 
 [[bin]]
+name = "embedding_data_url"
+path = "fuzz_targets/embedding_data_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "multimodal_embedding"
+path = "fuzz_targets/multimodal_embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "thinking_part"
 path = "fuzz_targets/thinking_part.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_gcs_id"
+path = "fuzz_targets/vertex_gcs_id.rs"
 test = false
 doc = false
 bench = false

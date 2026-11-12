@@ -1,0 +1,11 @@
+kind: helper
+name: request-middleware-gzip-large-refused
+call:
+  b122:
+    function: gzip
+    accept_encoding: identity
+    status: 200
+    body_size: 1048576
+    body_byte: 97
+env: {}
+compare: {ignore: []}

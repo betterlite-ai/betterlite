@@ -8,6 +8,13 @@ mod writes;
 #[path = "dual_cache/tests.rs"]
 mod tests;
 
+#[path = "dual_cache/tests/batch_integration.rs"]
+mod batch_integration;
+#[path = "dual_cache/tests/deferred_write.rs"]
+mod deferred_write;
+#[path = "dual_cache/tests/error_propagation.rs"]
+mod error_propagation;
+
 use std::fmt::Display;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 

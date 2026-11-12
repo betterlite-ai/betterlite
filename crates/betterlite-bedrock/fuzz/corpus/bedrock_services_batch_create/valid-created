@@ -1,0 +1,1 @@
+{"jobArn": "arn:aws:bedrock:us-west-2:123456789012:model-invocation-job/job", "jobName": "job", "status": "Submitted"}

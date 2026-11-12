@@ -1,0 +1,20 @@
+task: B3938
+deviations:
+  - what: Agent mode is chosen by LITELLM_DD_AGENT_HOST and needs no DD_API_KEY, while direct API mode requires both DD_API_KEY and DD_SITE and raises when one is missing.
+    why: LiteLLM branches on the agent host and enforces both credentials for direct API mode; betterlite refuses to start a logger that would drop every span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L451-L467
+  - what: Payloads are sent as uncompressed JSON, unlike the log delivery integration which gzips.
+    why: The LLM Observability intake accepts uncompressed JSON and LiteLLM sends it that way; only log delivery to /api/v2/logs requires gzip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L591-L595
+  - what: Without an APM current span or trace id, the payload carries no apm_id and the request still succeeds.
+    why: APM correlation is best effort; LiteLLM's _get_apm_trace_id returns None and the span is sent without it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L677-L679
+  - what: A refused threshold send keeps its events while the inherited periodic flush clears the queue after every attempt, and the queue is bounded at DEFAULT_MAX_QUEUE_SIZE, dropping its oldest events past the bound.
+    why: LiteLLM swallows the send error and its flush_queue clears the queue regardless, appending without a cap on the threshold path; betterlite reproduces both queue states and keeps the bound every batch logger uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L600-L610
+  - what: Spans assembled through the callback catalog report tool_output_tokens as zero.
+    why: betterlite-tokenizer depends transitively on betterlite-logging, so the logging crate cannot build B196's counter and CatalogInputs carries none; the counting function and its port are built, a composition root must pass the counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L207-L213
+  - what: The request metadata behind caller span ids, the redaction headers and the datadog_llm_observability_params config key reaches the logger only through betterlite channels.
+    why: A LoggerEvent has no litellm_params, and betterlite-config does not parse litellm_settings.datadog_llm_observability_params; the logger reads standard_callback_dynamic_params and callback_settings.datadog_llm_observability instead, and the logging pipeline and config loader tasks own the real fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L617-L667
