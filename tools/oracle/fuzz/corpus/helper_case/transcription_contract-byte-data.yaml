@@ -1,0 +1,12 @@
+kind: helper
+name: transcription-contract-byte-data-seed
+call:
+  transcription_contract:
+    function: defaults
+    data_object: {}
+    data_bytes: hello
+    named_files: {a.wav: abc}
+    content_type: audio/wav
+    api_bases: ["", https://mock/transcribe]
+env: {}
+compare: {ignore: []}

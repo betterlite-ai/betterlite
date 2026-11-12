@@ -1,0 +1,18 @@
+kind: helper
+name: knowledge-base-retrieve-url
+call:
+  bedrock_services_vector_stores:
+    operation: knowledge_base_retrieve_url
+    headers:
+      - [X-Custom, present]
+    urls:
+      - {litellm_params: {aws_region_name: us-east-1}}
+      - {litellm_params: {aws_region_name: us-east-1}, environment: {AWS_REGION: eu-central-1, AWS_REGION_NAME: eu-west-2}}
+      - {litellm_params: {}, environment: {AWS_REGION_NAME: ap-south-1}}
+      - {litellm_params: {}}
+      - {api_base: "https://custom.example", litellm_params: {aws_region_name: us-east-1, aws_bedrock_runtime_endpoint: "https://configured.example"}}
+      - {litellm_params: {aws_region_name: us-east-1, aws_bedrock_runtime_endpoint: "https://configured.example/"}, environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: "https://environment.example"}}
+      - {litellm_params: {aws_region_name: "US-EAST-1"}}
+      - {litellm_params: {aws_region_name: us-east-1}, environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: "https://environment.example/"}}
+env: {}
+compare: {ignore: []}

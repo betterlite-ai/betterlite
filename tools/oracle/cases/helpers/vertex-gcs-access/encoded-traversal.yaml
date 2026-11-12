@@ -1,0 +1,20 @@
+kind: helper
+name: encoded-traversal
+call:
+  vertex_gcs_access:
+    operation: encoded_traversal
+    params: {gcs_bucket_name: bucket}
+    environment: {}
+    trusted: []
+    plain: []
+    file_ids:
+      - "gs://bucket/litellm-vertex-files/%2e%2e/secret"
+      - "gs://bucket/litellm-vertex-files/a/%2E%2E/b"
+      - "gs://bucket/litellm-vertex-files/a/../b"
+      - "gs://bucket/litellm-vertex-files/a//b"
+      - "gs://bucket/litellm-vertex-files/a%2F..%2Fb"
+      - "gs://bucket/litellm-vertex-files/safe.jsonl"
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,26 @@
+kind: helper
+name: mistral-options-strict-survives-schema-cleanup
+call:
+  mistral_options:
+    steps:
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - - tools
+            - - type: function
+                function:
+                  name: lookup
+                  strict: true
+                  additionalProperties: false
+                  parameters:
+                    $id: top-level
+                    $schema: https://json-schema.org/draft/2020-12/schema
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      query:
+                        $id: nested
+                        type: string
+env: {}
+compare: {ignore: []}
