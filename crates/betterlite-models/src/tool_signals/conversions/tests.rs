@@ -142,6 +142,7 @@ fn a_non_mapping_computer_use_usage_yields_no_counts(#[case] source: &str) {
 #[case::blank_text(r#""  ""#, None)]
 #[case::invalid_text(r#""abc""#, None)]
 #[case::signed_text(r#""-1_0""#, Some(-10))]
+#[case::non_ascii_digits("\"\\u0661\\u0662\"", None)]
 fn int_conversion_follows_the_source_rules(#[case] source: &str, #[case] expected: Option<i64>) {
     assert_eq!(
         safe_convert_to_int(&json(source)).expect("the value converts"),

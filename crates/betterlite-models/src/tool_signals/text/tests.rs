@@ -12,6 +12,7 @@ use super::{digit_magnitude, is_float_literal, valid_underscored_digits};
 #[case::doubled_underscore("1__0", false)]
 #[case::empty("", false)]
 #[case::signed("-1", false)]
+#[case::non_ascii_digits("\u{661}\u{662}", false)]
 fn digit_runs_accept_single_inner_underscores(#[case] text: &str, #[case] expected: bool) {
     assert_eq!(valid_underscored_digits(text), expected);
 }
