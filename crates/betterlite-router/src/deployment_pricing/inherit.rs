@@ -197,12 +197,12 @@ impl<'run, Lookup: ModelInfoLookup> BackendSource<'run, Lookup> {
         if !priced || (inputs.ptu_cost_attribution && has_ptu_terms(model_info)) {
             return;
         }
-        let tiers = |field: &str| {
+        self.copy_raw(model_info, |field| {
             SERVICE_TIER_SUFFIXES
                 .iter()
                 .any(|tier| field.ends_with(tier))
-        };
-        self.copy_raw(model_info, tiers).await;
+        })
+        .await;
     }
 
     pub async fn inherit_off_peak_rates(&mut self, model_info: &mut JsonObject) {
@@ -216,11 +216,13 @@ impl<'run, Lookup: ModelInfoLookup> BackendSource<'run, Lookup> {
 
     pub async fn inherit_tiered_output_rate(&mut self, model_info: &mut JsonObject) {
         if lacks_output_rate(model_info) {
-            let priced_output = |(field, rate): &(&String, &Json)| {
-                field.as_str() == "output_cost_per_token" && has_content(rate)
-            };
             let info = self.info().await.unwrap_or_default();
-            copy_unset_fields(model_info, info.iter().filter(priced_output));
+            copy_unset_fields(
+                model_info,
+                info.iter().filter(|(field, rate)| {
+                    field.as_str() == "output_cost_per_token" && has_content(rate)
+                }),
+            );
         }
     }
 }
