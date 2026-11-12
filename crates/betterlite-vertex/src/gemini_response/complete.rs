@@ -5,10 +5,8 @@ use http::header::HeaderMap;
 use uuid::Uuid;
 
 use crate::gemini_candidates::blocked::complete_block;
-use crate::gemini_candidates::candidate::Candidate;
 use crate::gemini_candidates::choice::Choices;
 use crate::gemini_candidates::process::{Mode, process_candidates};
-use crate::gemini_metadata::extension::MetadataExtension;
 use crate::gemini_response::decode::{GenerateContentResponse, decode_generate_content};
 use crate::gemini_response::error::{GenerateContentError, header_text};
 use crate::gemini_response_parts::projection::{CallMode, PartContext};
@@ -16,8 +14,6 @@ use crate::gemini_usage::usage::{apply_grounding_counters, calculate_usage};
 use crate::model_policy::error::VertexAiError;
 
 pub const SERVICE_TIER_HEADER: &str = "x-gemini-service-tier";
-const STANDARD_SERVICE_TIER: &str = "standard";
-const DEFAULT_SERVICE_TIER: &str = "default";
 
 #[derive(Debug)]
 pub struct RawResponse<'raw> {
@@ -120,8 +116,10 @@ fn project_ordinary(
     request: &CompleteRequest<'_>,
     ids: &mut dyn FnMut() -> Uuid,
 ) -> Result<(Choices, Usage, CompleteMetadata), GenerateContentError> {
-    let (choices, extension, usage_candidates) = project_candidates(
-        body.candidates.as_deref().unwrap_or_default(),
+    let candidates = body.candidates.as_deref().unwrap_or_default();
+    let processed = process_candidates(
+        candidates,
+        Mode::Complete,
         PartContext {
             cumulative_tool_call_index: 0,
             call_mode: request.call_mode,
@@ -129,41 +127,25 @@ fn project_ordinary(
         },
         ids,
     )?;
+    // the usage step reads every candidate, including one the choices skip
+    let usage_candidates: Vec<Json> = candidates
+        .iter()
+        .map(|candidate| Json::Object(candidate.metadata.clone()))
+        .collect();
     let mut usage = calculate_usage(body.usage_metadata.as_ref(), &usage_candidates)?;
-    apply_grounding_counters(&mut usage, &extension.grounding_metadata);
+    apply_grounding_counters(&mut usage, &processed.metadata.grounding_metadata);
     Ok((
-        choices,
+        processed.choices,
         usage,
         CompleteMetadata {
-            grounding_metadata: extension.grounding_metadata,
-            url_context_metadata: extension.url_context_metadata,
-            safety_results: extension.safety_results,
-            citation_metadata: extension.citation_metadata,
+            grounding_metadata: processed.metadata.grounding_metadata,
+            url_context_metadata: processed.metadata.url_context_metadata,
+            safety_results: processed.metadata.safety_results,
+            citation_metadata: processed.metadata.citation_metadata,
         },
     ))
 }
 
-fn project_candidates(
-    candidates: &[Candidate],
-    context: PartContext,
-    ids: &mut dyn FnMut() -> Uuid,
-) -> Result<(Choices, MetadataExtension, Vec<Json>), GenerateContentError> {
-    if candidates.is_empty() {
-        return Ok((
-            Choices::Complete(Vec::new()),
-            MetadataExtension::default(),
-            Vec::new(),
-        ));
-    }
-    let processed = process_candidates(candidates, Mode::Complete, context, ids)?;
-    let usage_candidates = candidates
-        .iter()
-        .map(|candidate| Json::Object(candidate.metadata.clone()))
-        .collect();
-    Ok((processed.choices, processed.metadata, usage_candidates))
-}
-
-// LiteLLM splits the runtime modelVersion before its first @, and keeps the requested model otherwise
 #[must_use]
 pub fn served_model_name(model_version: Option<&Json>) -> Option<&str> {
     match model_version? {
@@ -187,8 +169,8 @@ fn service_tier(headers: &HeaderMap) -> Option<String> {
     if lowered.is_empty() {
         return None;
     }
-    if lowered == STANDARD_SERVICE_TIER {
-        return Some(DEFAULT_SERVICE_TIER.to_owned());
+    if lowered == "standard" {
+        return Some("default".to_owned());
     }
     Some(lowered)
 }
