@@ -1,0 +1,24 @@
+kind: helper
+name: search-context-key-and-first-tool-order
+call:
+  tool_signals:
+    responses: []
+    file_search_params: []
+    token_counts: []
+    values: []
+    kwargs:
+      - tools:
+          - {type: other, search_context_size: high, marker: first}
+          - {type: web_search, search_context_size: low, marker: second}
+      - tools:
+          - {type: web_search_preview, marker: first}
+          - {type: web_search, marker: second}
+      - tools: []
+      - {}
+      - {web_search_options: {}}
+      - {tools: null}
+      - {tools: "web_search"}
+      - {tools: {type: web_search}}
+      - {tools: [{type: file_search}]}
+compare: {ignore: []}
+env: {}

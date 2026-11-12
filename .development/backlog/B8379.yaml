@@ -2,7 +2,7 @@ id: B8379
 milestone: M8 platform
 title: Database config overlay, config reload and general settings sync
 status: todo
-depends_on: [B8371, B8380, B8382, B4140, B4143, B5082, B8397, B3616, B8230, B8873]
+depends_on: [B8371, B8380, B8382, B4140, B4143, B5082, B8397, B8230, B8873]
 file: tasks/B8379-db-config-overlay.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

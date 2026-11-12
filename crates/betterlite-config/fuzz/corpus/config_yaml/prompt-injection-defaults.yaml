@@ -1,0 +1,2 @@
+litellm_settings:
+  prompt_injection_params: {}

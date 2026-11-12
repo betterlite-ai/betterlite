@@ -1,0 +1,16 @@
+kind: helper
+name: model-registration-register-seed
+call:
+  b5365:
+    function: register_model
+    model_cost: {}
+    registrations:
+      - entries:
+          seed-model: {litellm_provider: openai, input_cost_per_token: 1.0e-06}
+        persist_across_reloads: false
+        warning_display_name: null
+    live: []
+    refresh: null
+    show: [litellm_provider, input_cost_per_token]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: embedded-stream-error
+call:
+  openai_chat_choices:
+    embedded_stream_error:
+      steps:
+        - chunk: {error: {message: boom, code: 400}}
+        - chunk: {error: {message: x, code: 599}}
+        - chunk: {error: {message: x, code: 600}}
+        - chunk: {error: {message: x, code: 399}}
+        - chunk: {error: {message: x, code: '400'}}
+        - chunk: {error: plain}
+        - chunk: {error: false, id: c, created: 1, model: m}
+        - chunk: {error: 0, id: c, created: 1, model: m}
+        - chunk: {error: '', id: c, created: 1, model: m}
+        - chunk: {error: [], id: c, created: 1, model: m}
+        - chunk: {error: {}, id: c, created: 1, model: m}
+env: {}
+compare: {ignore: []}

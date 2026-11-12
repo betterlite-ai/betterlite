@@ -1,0 +1,20 @@
+task: B733
+deviations:
+  - what: Redis auth payloads over 1048576 bytes or JSON depth 64 become a typed cache miss with an error diagnostic.
+    why: Bound decoding of external cache data; the source wrapper does not impose these byte/depth limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L175-L206
+  - what: Auth-cache config rejects nonfinite or unrepresentable TTLs at startup instead of retaining Python float values.
+    why: Native checked expiry arithmetic cannot represent NaN or infinity; finite zero, negative and fractional values still pass.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6709-L6718
+  - what: Cache validation diagnostics omit payload values and sensitive key contents while retaining warning/error order and model names.
+    why: Source validation exceptions and arbitrary cache keys can expose credentials; native diagnostics keep secrets redacted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L81-L90
+  - what: A null cache key is serialized and then stored nowhere, where LiteLLM's InMemoryCache keeps it under the None key that no string read can reach.
+    why: The native memory and Redis tiers take string keys, so a null key has no slot to hold; the entry is unreadable either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L208-L213
+  - what: The typed read's error line names the operation and model but not the cache key, where LiteLLM prints key=%r.
+    why: Management-object keys can carry user ids and secrets; the deviation above keeps the key out of every native diagnostic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L144-L151
+  - what: A Redis auth payload that is not JSON and has more than 1,215,000 units of literal work (bytes times 3 per bracket level, at least 4 levels, so 15,000 bytes at 4 levels or 185 bytes at 8; brackets inside quotes are skipped the way py_literal skips them, including a \N{ name up to the next } in a string but not in a b'..' bytes literal, and a quote left open counts as maximum depth) becomes a typed cache miss with an error diagnostic, where LiteLLM literal-evals it.
+    why: The shared Python literal parser in betterlite-redis (cache_primitives/decode.rs) backtracks. A 1 MiB payload took 6.7 s at 4 levels and 70 s at 8 levels in a release build. That file is outside this task, so the wrapper bounds size times depth before the parser runs. The root fix belongs in that parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L175-L206

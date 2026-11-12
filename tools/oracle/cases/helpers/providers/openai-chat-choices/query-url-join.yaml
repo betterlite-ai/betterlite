@@ -1,0 +1,16 @@
+kind: helper
+name: query-url-join
+call:
+  openai_chat_choices:
+    query_url_join:
+      steps:
+        - {api_base: null}
+        - {api_base: 'https://h/v1/'}
+        - {api_base: 'https://h/v1'}
+        - {api_base: 'https://h/v1/chat/completions'}
+        - {api_base: 'https://h/v1/chat/completions/'}
+        - {api_base: 'https://h/v1?x=1'}
+        - {api_base: 'https://h/chat/completions-proxy'}
+        - {api_base: ''}
+env: {}
+compare: {ignore: []}

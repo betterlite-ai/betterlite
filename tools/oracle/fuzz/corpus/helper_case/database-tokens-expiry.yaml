@@ -1,0 +1,17 @@
+kind: helper
+name: database-tokens-expiry-seed
+call:
+  database_tokens:
+    function: batch
+    calls:
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101T000000Z&X-Amz-Expires=900"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOjE3MDAwMDAwMDB9.signature"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOjI1MzQwMjMwMDgwMH0=.signature"
+env: {}
+compare: {ignore: []}
