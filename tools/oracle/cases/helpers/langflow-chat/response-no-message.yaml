@@ -1,0 +1,19 @@
+kind: helper
+name: langflow-response-no-message
+env: {}
+compare: {ignore: []}
+call:
+  b8101:
+    op: reply
+    replies:
+      - {model: langflow/abc, status: 200, body: "{}", messages: []}
+      - {model: langflow/abc, status: 200, body: '{"outputs":[]}', messages: []}
+      - {model: langflow/abc, status: 200, body: '{"outputs":{}}', messages: []}
+      - {model: langflow/abc, status: 200, body: '{"outputs":[1]}', messages: []}
+      - {model: langflow/abc, status: 200, body: '{"outputs":[{"outputs":[]}]}', messages: []}
+      - {model: langflow/abc, status: 200, body: '{"outputs":[{"outputs":[{"results":{}}]}]}', messages: []}
+      - {model: langflow/abc, status: 200, body: '{"outputs":[{"outputs":[{"results":{"message":{"text":""}},"outputs":{}}]}]}', messages: []}
+      - {model: langflow/abc, status: 200, body: '{"outputs":[{"outputs":[{"results":{"message":{"text":""}}}]},{"outputs":[{"results":{"message":{"text":"second"}}}]}]}', messages: []}
+      - {model: langflow/abc, status: 200, body: "not json", messages: []}
+      - {model: langflow/abc, status: 502, body: "not json", messages: []}
+      - {model: langflow/abc, status: 200, body: "", messages: []}
