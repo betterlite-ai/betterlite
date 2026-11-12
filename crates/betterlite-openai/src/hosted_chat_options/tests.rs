@@ -3,8 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::sections::hosted_chat_settings::Settings as HostedSettings;
-use betterlite_config::sections::openai_like_settings::Settings as OpenAiLikeSettings;
+use betterlite_config::sections::Sections;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -13,7 +12,9 @@ use serde_json::{Value, json};
 use super::CompatibleChatAlias;
 use super::baseten::{self, BasetenSettings};
 use super::cerebras::{self, CerebrasSettings};
-use super::featherless::{self, DropParams, FeatherlessSettings, HostedChatOptionsError};
+use super::featherless::{
+    self, ChatIdentity, DropParams, FeatherlessSettings, HostedChatOptionsError,
+};
 use super::map_renaming_token_limit;
 use crate::base_helpers::provider_config;
 use crate::openai_base_config::Headers;
@@ -25,24 +26,13 @@ fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn hosted(entries: &[(&str, &str)]) -> HostedSettings {
+fn loaded(entries: &[(&str, &str)]) -> Sections {
     ConfigLoader {
         lookup: environment(entries),
     }
     .load("")
     .expect("the config loads")
     .sections
-    .hosted_chat_settings
-}
-
-fn openai_like(entries: &[(&str, &str)]) -> OpenAiLikeSettings {
-    ConfigLoader {
-        lookup: environment(entries),
-    }
-    .load("")
-    .expect("the config loads")
-    .sections
-    .openai_like_settings
 }
 
 fn params(text: &str) -> IndexMap<String, Value> {
@@ -319,29 +309,6 @@ fn featherless_rejects_tool_options_unless_dropping(#[case] requested: &str, #[c
 }
 
 #[rstest]
-#[case::auto(r#"{"tool_choice": "auto"}"#, r#"{"tool_choice": "auto"}"#)]
-#[case::none(r#"{"tool_choice": "none"}"#, r#"{"tool_choice": "none"}"#)]
-fn featherless_accepts_the_two_supported_tool_choices(
-    #[case] requested: &str,
-    #[case] expected: &str,
-) {
-    let mut existing = IndexMap::new();
-    featherless::map_openai_params(
-        &params(requested),
-        &mut existing,
-        DropParams {
-            argument: false,
-            global: false,
-        },
-    )
-    .expect("the choice is accepted");
-    assert_eq!(
-        Value::Object(existing.into_iter().collect()),
-        value(expected)
-    );
-}
-
-#[rstest]
 #[case::argument(DropParams { argument: true, global: false })]
 #[case::global(DropParams { argument: false, global: true })]
 fn featherless_drops_tool_options_when_either_flag_is_true(#[case] drop: DropParams) {
@@ -374,6 +341,8 @@ fn featherless_forwards_legacy_function_options() {
 }
 
 #[rstest]
+#[case::choice_auto(r#"{"tool_choice": "auto"}"#, r#"{"tool_choice": "auto"}"#)]
+#[case::choice_none(r#"{"tool_choice": "none"}"#, r#"{"tool_choice": "none"}"#)]
 #[case::renamed_null(r#"{"max_completion_tokens": null}"#, r#"{"max_tokens": null}"#)]
 #[case::nulls_omitted(
     r#"{"temperature": null, "stop": null, "max_tokens": null, "n": null}"#,
@@ -383,10 +352,7 @@ fn featherless_forwards_legacy_function_options() {
     r#"{"max_completion_tokens": 3, "max_tokens": null}"#,
     r#"{"max_tokens": null}"#
 )]
-fn featherless_renames_the_token_limit_and_omits_other_nulls(
-    #[case] requested: &str,
-    #[case] expected: &str,
-) {
+fn featherless_maps_the_accepted_options(#[case] requested: &str, #[case] expected: &str) {
     let mut existing = IndexMap::new();
     featherless::map_openai_params(
         &params(requested),
@@ -400,77 +366,6 @@ fn featherless_renames_the_token_limit_and_omits_other_nulls(
     assert_eq!(
         Value::Object(existing.into_iter().collect()),
         value(expected)
-    );
-}
-
-#[rstest]
-#[case::defaults(&[], None, None, None, "https://api.featherless.ai/v1")]
-#[case::primary_environment(
-    &[
-        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
-        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
-    ],
-    None,
-    None,
-    Some("sk-primary"),
-    "https://primary.example"
-)]
-#[case::secondary_environment(
-    &[
-        ("FEATHERLESS_API_BASE", "https://secondary.example"),
-        ("FEATHERLESS_API_KEY", "sk-secondary"),
-    ],
-    None,
-    None,
-    Some("sk-secondary"),
-    "https://secondary.example"
-)]
-#[case::primary_environment_wins(
-    &[
-        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
-        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
-        ("FEATHERLESS_API_BASE", "https://secondary.example"),
-        ("FEATHERLESS_API_KEY", "sk-secondary"),
-    ],
-    None,
-    None,
-    Some("sk-primary"),
-    "https://primary.example"
-)]
-#[case::explicit_wins(
-    &[
-        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
-        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
-    ],
-    Some("https://explicit.example"),
-    Some("sk-explicit"),
-    Some("sk-explicit"),
-    "https://explicit.example"
-)]
-#[case::empty_explicit_falls_through(
-    &[
-        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
-        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
-    ],
-    Some(""),
-    Some(""),
-    Some("sk-primary"),
-    "https://primary.example"
-)]
-fn featherless_resolves_its_identity_chain(
-    #[case] entries: &[(&str, &str)],
-    #[case] explicit_base: Option<&str>,
-    #[case] explicit_key: Option<&str>,
-    #[case] expected_key: Option<&str>,
-    #[case] expected_base: &str,
-) {
-    let settings = hosted(entries);
-    let key_override = explicit_key.map(secret);
-    let (base, key) = featherless::featherless(&settings, explicit_base, key_override.as_ref());
-    assert_eq!(base, expected_base);
-    assert_eq!(
-        key.as_ref().map(|secret| secret.expose_secret().to_owned()),
-        expected_key.map(str::to_owned)
     );
 }
 
@@ -524,40 +419,121 @@ fn featherless_validation_creates_headers_when_none_are_given() {
 }
 
 #[rstest]
-#[case::defaults(&[], None, None, "https://api.aimlapi.com/v1")]
-#[case::environment(
+#[case::featherless_defaults(
+    ChatIdentity::Featherless,
+    &[],
+    None,
+    None,
+    None,
+    "https://api.featherless.ai/v1"
+)]
+#[case::featherless_primary_environment(
+    ChatIdentity::Featherless,
+    &[
+        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
+        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
+    ],
+    None,
+    None,
+    Some("sk-primary"),
+    "https://primary.example"
+)]
+#[case::featherless_secondary_environment(
+    ChatIdentity::Featherless,
+    &[
+        ("FEATHERLESS_API_BASE", "https://secondary.example"),
+        ("FEATHERLESS_API_KEY", "sk-secondary"),
+    ],
+    None,
+    None,
+    Some("sk-secondary"),
+    "https://secondary.example"
+)]
+#[case::featherless_primary_environment_wins(
+    ChatIdentity::Featherless,
+    &[
+        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
+        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
+        ("FEATHERLESS_API_BASE", "https://secondary.example"),
+        ("FEATHERLESS_API_KEY", "sk-secondary"),
+    ],
+    None,
+    None,
+    Some("sk-primary"),
+    "https://primary.example"
+)]
+#[case::featherless_explicit_wins(
+    ChatIdentity::Featherless,
+    &[
+        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
+        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
+    ],
+    Some("https://explicit.example"),
+    Some("sk-explicit"),
+    Some("sk-explicit"),
+    "https://explicit.example"
+)]
+#[case::featherless_empty_explicit_falls_through(
+    ChatIdentity::Featherless,
+    &[
+        ("FEATHERLESS_AI_API_BASE", "https://primary.example"),
+        ("FEATHERLESS_AI_API_KEY", "sk-primary"),
+    ],
+    Some(""),
+    Some(""),
+    Some("sk-primary"),
+    "https://primary.example"
+)]
+#[case::aiml_defaults(
+    ChatIdentity::Aiml,
+    &[],
+    None,
+    None,
+    None,
+    "https://api.aimlapi.com/v1"
+)]
+#[case::aiml_environment(
+    ChatIdentity::Aiml,
     &[
         ("AIML_API_BASE", "https://aiml.example/v1"),
         ("AIML_API_KEY", "sk-aiml"),
     ],
     None,
+    None,
     Some("sk-aiml"),
     "https://aiml.example/v1"
 )]
-#[case::explicit(
+#[case::aiml_explicit(
+    ChatIdentity::Aiml,
     &[
         ("AIML_API_BASE", "https://aiml.example/v1"),
         ("AIML_API_KEY", "sk-aiml"),
     ],
     Some("https://explicit.example/v1"),
     Some("sk-explicit"),
+    Some("sk-explicit"),
     "https://explicit.example/v1"
 )]
-#[case::image_alias_is_not_read(
+#[case::aiml_image_alias_is_not_read(
+    ChatIdentity::Aiml,
     &[("AIMLAPI_KEY", "sk-image-only")],
+    None,
     None,
     None,
     "https://api.aimlapi.com/v1"
 )]
-fn aiml_resolves_its_chat_identity(
+fn chat_identity_resolves_its_chain(
+    #[case] host: ChatIdentity,
     #[case] entries: &[(&str, &str)],
     #[case] explicit_base: Option<&str>,
+    #[case] explicit_key: Option<&str>,
     #[case] expected_key: Option<&str>,
     #[case] expected_base: &str,
 ) {
-    let settings = hosted(entries);
-    let explicit_key = explicit_base.map(|_| secret("sk-explicit"));
-    let (base, key) = featherless::aiml(&settings, explicit_base, explicit_key.as_ref());
+    let settings = loaded(entries).hosted_chat_settings;
+    let key_override = explicit_key.map(secret);
+    let (base, key) =
+        featherless::chat_identity(host, &settings, explicit_base, key_override.as_ref());
     assert_eq!(base, expected_base);
     assert_eq!(
         key.as_ref().map(|secret| secret.expose_secret().to_owned()),
@@ -589,10 +565,11 @@ fn compatible_aliases_share_the_b1425_identity(
     #[case] alias: CompatibleChatAlias,
     #[case] provider: &str,
 ) {
-    let settings = openai_like(&[
+    let settings = loaded(&[
         ("OPENAI_LIKE_API_BASE", "https://like.example/v1"),
         ("OPENAI_LIKE_API_KEY", "sk-like"),
-    ]);
+    ])
+    .openai_like_settings;
     let (base, key) = settings.resolve(None, None);
     assert_eq!(alias.provider(), provider);
     assert_eq!(base.as_deref(), Some("https://like.example/v1"));

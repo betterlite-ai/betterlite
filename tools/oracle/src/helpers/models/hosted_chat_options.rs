@@ -5,7 +5,9 @@ use betterlite_models::baseten_endpoint;
 use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::hosted_chat_options::baseten::{self, BasetenSettings};
 use betterlite_openai::hosted_chat_options::cerebras::{self, CerebrasSettings};
-use betterlite_openai::hosted_chat_options::featherless::{self, DropParams, FeatherlessSettings};
+use betterlite_openai::hosted_chat_options::featherless::{
+    self, ChatIdentity, DropParams, FeatherlessSettings,
+};
 use betterlite_openai::hosted_chat_options::map_renaming_token_limit;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -83,31 +85,45 @@ fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
             &cerebras::supported_params(call.supports_reasoning),
             None,
         ),
-        "featherless" => featherless_map(call, sections),
+        "featherless" => {
+            let mut options = IndexMap::new();
+            let drop = DropParams {
+                argument: call.drop_params,
+                global: sections.hosted_chat_settings.drop_params,
+            };
+            let requested = call.params.iter().cloned().collect();
+            if let Err(error) = featherless::map_openai_params(&requested, &mut options, drop) {
+                return Ok(json!({"ok": false, "error": {"status": error.status_code()}}));
+            }
+            let snapshot = class_snapshot::<FeatherlessSettings>(&call.config)?;
+            Ok(mapped_value(
+                snapshot,
+                &options,
+                featherless::SUPPORTED_PARAMS,
+                None,
+            ))
+        }
         _ => Err(failure(None, String::from("the host has no option map"))),
     }
 }
 fn info(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
     let explicit = call.api_key.as_ref().map(SecretString::from);
-    let hosted = &sections.hosted_chat_settings;
-    let (base, key) = match call.host.as_str() {
-        "featherless" => {
-            let (base, key) =
-                featherless::featherless(hosted, call.api_base.as_deref(), explicit.as_ref());
-            (Some(base), key)
-        }
-        "aiml" => {
-            let (base, key) =
-                featherless::aiml(hosted, call.api_base.as_deref(), explicit.as_ref());
-            (Some(base), key)
-        }
-        "empower" | "friendliai" | "galadriel" | "github" => {
-            let (base, key) = sections
-                .openai_like_settings
-                .resolve(call.api_base.as_deref(), explicit.as_ref());
-            (base, Some(key))
-        }
+    let chat_host = match call.host.as_str() {
+        "featherless" => Some(ChatIdentity::Featherless),
+        "aiml" => Some(ChatIdentity::Aiml),
+        "empower" | "friendliai" | "galadriel" | "github" => None,
         _ => return Err(failure(None, String::from("the host has no identity"))),
+    };
+    let (base, key) = if let Some(host) = chat_host {
+        let hosted = &sections.hosted_chat_settings;
+        let (base, key) =
+            featherless::chat_identity(host, hosted, call.api_base.as_deref(), explicit.as_ref());
+        (Some(base), key)
+    } else {
+        let (base, key) = sections
+            .openai_like_settings
+            .resolve(call.api_base.as_deref(), explicit.as_ref());
+        (base, Some(key))
     };
     let key = key.map(|secret| secret.expose_secret().to_owned());
     Ok(json!({"ok": true, "value": {"base": base, "key": key}}))
@@ -132,23 +148,6 @@ where
         supported,
         baseten_model,
     ))
-}
-fn featherless_map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
-    let mut options = IndexMap::new();
-    let drop = DropParams {
-        argument: call.drop_params,
-        global: sections.hosted_chat_settings.drop_params,
-    };
-    match featherless::map_openai_params(&call.params.iter().cloned().collect(), &mut options, drop)
-    {
-        Ok(()) => Ok(mapped_value(
-            class_snapshot::<FeatherlessSettings>(&call.config)?,
-            &options,
-            featherless::SUPPORTED_PARAMS,
-            None,
-        )),
-        Err(error) => Ok(json!({"ok": false, "error": {"status": error.status_code()}})),
-    }
 }
 fn mapped_value(
     snapshot: Value,

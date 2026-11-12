@@ -106,47 +106,57 @@ pub fn validate_environment(
     Ok(validated)
 }
 // LiteLLM chains the explicit value, each environment alias, then the default, skipping an empty one at every step
+fn resolved_identity(
+    api_base: Option<&str>,
+    api_key: Option<&SecretString>,
+    environment_base: Option<&str>,
+    environment_key: Option<&SecretString>,
+    default_base: &str,
+) -> (String, Option<SecretString>) {
+    let base = api_base
+        .filter(|value| !value.is_empty())
+        .or(environment_base)
+        .unwrap_or(default_base)
+        .to_owned();
+    let key = api_key
+        .filter(|key| !key.expose_secret().is_empty())
+        .or(environment_key)
+        .cloned();
+    (base, key)
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatIdentity {
+    Featherless,
+    // AIML's chat identity reads only the primary key alias, never the image-side AIMLAPI_KEY
+    Aiml,
+}
 #[must_use]
-pub fn featherless(
+pub fn chat_identity(
+    host: ChatIdentity,
     settings: &HostedSettings,
     api_base: Option<&str>,
     api_key: Option<&SecretString>,
 ) -> (String, Option<SecretString>) {
-    let base = api_base
-        .filter(|value| !value.is_empty())
-        .or(settings
-            .featherless_ai_api_base
-            .as_deref()
-            .or(settings.featherless_api_base.as_deref()))
-        .unwrap_or(FEATHERLESS_DEFAULT_API_BASE)
-        .to_owned();
-    let key = api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .cloned()
-        .or_else(|| {
+    match host {
+        ChatIdentity::Featherless => resolved_identity(
+            api_base,
+            api_key,
+            settings
+                .featherless_ai_api_base
+                .as_deref()
+                .or(settings.featherless_api_base.as_deref()),
             settings
                 .featherless_ai_api_key
                 .as_ref()
-                .or(settings.featherless_api_key.as_ref())
-                .cloned()
-        });
-    (base, key)
-}
-// AIML's chat identity reads only the primary key alias, never the image-side AIMLAPI_KEY
-#[must_use]
-pub fn aiml(
-    settings: &HostedSettings,
-    api_base: Option<&str>,
-    api_key: Option<&SecretString>,
-) -> (String, Option<SecretString>) {
-    let base = api_base
-        .filter(|value| !value.is_empty())
-        .or(settings.aiml_api_base.as_deref())
-        .unwrap_or(AIML_DEFAULT_API_BASE)
-        .to_owned();
-    let key = api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .cloned()
-        .or_else(|| settings.aiml_api_key.clone());
-    (base, key)
+                .or(settings.featherless_api_key.as_ref()),
+            FEATHERLESS_DEFAULT_API_BASE,
+        ),
+        ChatIdentity::Aiml => resolved_identity(
+            api_base,
+            api_key,
+            settings.aiml_api_base.as_deref(),
+            settings.aiml_api_key.as_ref(),
+            AIML_DEFAULT_API_BASE,
+        ),
+    }
 }
