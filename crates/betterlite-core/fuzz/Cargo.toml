@@ -197,6 +197,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "file_routing_ids"
+path = "fuzz_targets/file_routing_ids.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "listen_query"
 path = "fuzz_targets/listen_query.rs"
 test = false
