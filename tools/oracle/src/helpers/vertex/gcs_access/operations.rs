@@ -13,7 +13,7 @@ use crate::helpers::HelperResult;
 pub(super) const STORAGE_URL_PREFIX: &str = "https://storage.googleapis.com/storage/v1/b/";
 
 pub(super) fn run(input: &Input) -> HelperResult {
-    Ok(match input.operation {
+    let value = match input.operation {
         Operation::ConfiguredPrefix
         | Operation::EncodedTraversal
         | Operation::ForeignBucket
@@ -21,9 +21,22 @@ pub(super) fn run(input: &Input) -> HelperResult {
         | Operation::PercentReencoding
         | Operation::ForgedTrust => parse_values(input, &[]),
         Operation::TrustedLegacy => parse_values(input, input.trusted.as_slice()),
-        Operation::FilenameSanitization => filename_values(input),
-        Operation::ModelPath => model_path_values(input),
-    })
+        Operation::FilenameSanitization => json!({
+            "components": input
+                .filenames
+                .iter()
+                .map(|filename| cloud_storage::sanitize_component(filename.as_deref(), "file"))
+                .collect::<Vec<String>>(),
+        }),
+        Operation::ModelPath => json!({
+            "paths": input
+                .model_paths
+                .iter()
+                .map(|model_path| cloud_storage::sanitize_path(model_path.as_deref(), "model"))
+                .collect::<Vec<String>>(),
+        }),
+    };
+    Ok(value)
 }
 
 fn trusted_record(pairs: &[(String, WireValue)]) -> Option<TrustedModelCredentials> {
@@ -84,22 +97,4 @@ fn storage_url(object: &GcsObject) -> String {
         "{STORAGE_URL_PREFIX}{}/o/{}",
         object.bucket, object.encoded_object
     )
-}
-
-fn filename_values(input: &Input) -> Value {
-    let components: Vec<String> = input
-        .filenames
-        .iter()
-        .map(|filename| cloud_storage::sanitize_component(filename.as_deref(), "file"))
-        .collect();
-    json!({"components": components})
-}
-
-fn model_path_values(input: &Input) -> Value {
-    let paths: Vec<String> = input
-        .model_paths
-        .iter()
-        .map(|path| cloud_storage::sanitize_path(path.as_deref(), "model"))
-        .collect();
-    json!({"paths": paths})
 }
