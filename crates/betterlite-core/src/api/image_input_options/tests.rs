@@ -360,7 +360,7 @@ fn supported_options_are_mapped_with_drop_params_off() {
 #[case::webp(WEBP, "image/webp")]
 #[case::heic(HEIC, "image/heic")]
 fn content_type_from_signature(#[case] bytes: &[u8], #[case] expected: &str) {
-    assert_eq!(image_content_type_stream(&mut &bytes[..]), expected);
+    assert_eq!(image_content_type_stream(&mut &*bytes), expected);
     assert_eq!(
         image_content_type_seekable(&mut reader(bytes, 0, Failure::None)),
         expected
