@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -25,9 +26,13 @@ use super::input::{Failure, Probe};
 use super::support::{NOW, invalid};
 use crate::helpers::HelperResult;
 
+#[derive(Clone)]
 struct Recorded {
     body: Vec<u8>,
     deadline: Duration,
+    url: String,
+    headers: HeaderMap,
+    query: Vec<(String, String)>,
 }
 
 struct FakeTransport {
@@ -61,12 +66,7 @@ impl FakeTransport {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|record| Recorded {
-                body: record.body.clone(),
-                deadline: record.deadline,
-            })
-            .collect()
+            .clone()
     }
 }
 
@@ -87,6 +87,9 @@ impl ImageGenerationTransport for FakeTransport {
             .push(Recorded {
                 body,
                 deadline: request.deadline,
+                url: request.url.to_string(),
+                headers: request.headers,
+                query: request.query,
             });
         let outcome = if self.failure.is_some() {
             Err(TransportError::Closed)
@@ -120,11 +123,18 @@ impl ImageGenerationLogger for Recorder {
                 "acompletion": true,
                 "header_names": names,
             },
+            "original_response": Value::Null,
         }));
         Ok(())
     }
 
     fn post_call(&mut self, record: PostCallRecord) {
+        let original = match record.original_response {
+            Json::Object(fields) => json!(fields),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                Value::Null
+            }
+        };
         self.post_calls.push(json!({
             "input": record.input,
             "additional_args": {
@@ -133,6 +143,7 @@ impl ImageGenerationLogger for Recorder {
                 "acompletion": Value::Null,
                 "header_names": Vec::<String>::new(),
             },
+            "original_response": original,
         }));
     }
 }
@@ -144,7 +155,7 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
         .build()
         .map_err(|error| invalid(error.to_string()))?;
     let mut recorder = Recorder::default();
-    let begun = begin_image_generation(call_for(probe), &mut recorder);
+    let begun = begin_image_generation(call_for(probe)?, &mut recorder);
     let max_retries = begun.as_ref().ok().map(|prepared| prepared.max_retries);
     let outcome = match begun {
         Ok(prepared) => {
@@ -154,31 +165,21 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
         Err(failure) => Err(failure),
     };
     let calls = transport.calls();
-    let client = client_value(probe, max_retries, calls.is_empty());
+    let client = if calls.is_empty() {
+        Value::Null
+    } else {
+        json!({"max_retries": max_retries})
+    };
     let (result, provider_headers, error) = outcome_parts(outcome)?;
-    let bodies = call_bodies(&calls)?;
     Ok(json!({
         "client": client,
-        "calls": bodies,
+        "calls": call_values(&calls)?,
         "result": result,
         "provider_headers": provider_headers,
         "error": error,
         "pre_call": recorder.pre_calls.last().cloned().unwrap_or(Value::Null),
         "post_call": recorder.post_calls.last().cloned().unwrap_or(Value::Null),
     }))
-}
-
-fn client_value(probe: &Probe, max_retries: Option<i64>, empty: bool) -> Value {
-    if empty {
-        Value::Null
-    } else {
-        json!({
-            "api_key": probe.api_key,
-            "api_base": probe.api_base,
-            "organization": probe.organization,
-            "max_retries": max_retries,
-        })
-    }
 }
 
 fn outcome_parts(
@@ -199,19 +200,39 @@ fn outcome_parts(
     }
 }
 
-fn call_bodies(calls: &[Recorded]) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
+// the wire request as the transport saw it: its URL, headers, query and body
+fn call_values(calls: &[Recorded]) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
     calls
         .iter()
         .map(|record| {
             let body: Json =
                 serde_json::from_slice(&record.body).map_err(|error| invalid(error.to_string()))?;
-            Ok(json!({"body": body, "timeout": record.deadline.as_secs_f64()}))
+            let mut headers = BTreeMap::new();
+            for (name, value) in &record.headers {
+                let text = value.to_str().map_err(|error| invalid(error.to_string()))?;
+                headers.insert(name.as_str(), text);
+            }
+            let query: BTreeMap<&str, &str> = record
+                .query
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str()))
+                .collect();
+            Ok(json!({
+                "body": body,
+                "timeout": record.deadline.as_secs_f64(),
+                "url": record.url,
+                "headers": headers,
+                "query": query,
+            }))
         })
         .collect()
 }
 
-fn call_for(probe: &Probe) -> ImageGenerationCall {
-    ImageGenerationCall {
+fn call_for(probe: &Probe) -> Result<ImageGenerationCall, Box<crate::helpers::HelperError>> {
+    let seconds = probe
+        .timeout
+        .ok_or_else(|| invalid(String::from("a request probe needs timeout")))?;
+    Ok(ImageGenerationCall {
         model: probe.model.clone(),
         prompt: probe.prompt.clone(),
         optional_params: probe.optional_params.clone(),
@@ -222,10 +243,8 @@ fn call_for(probe: &Probe) -> ImageGenerationCall {
         api_base: probe.api_base.clone(),
         organization: probe.organization.clone(),
         headers: probe.headers.clone(),
-        timeout: probe
-            .timeout
-            .map(|seconds| Duration::from_secs(u64::try_from(seconds).unwrap_or_default())),
+        timeout: Duration::from_secs(u64::try_from(seconds).unwrap_or_default()),
         delegate_async: probe.is_async,
         now_seconds: NOW,
-    }
+    })
 }

@@ -12,6 +12,7 @@ litellm.suppress_debug_info = True
 class Record:
     input: Json
     additional_args: dict[str, Json] | None
+    original_response: Json = None
 
 
 def arguments(kwargs: dict[str, Json]) -> dict[str, Json] | None:
@@ -35,7 +36,11 @@ class Recorder:
         self.pre_calls.append(record)
 
     def post_call(self, **kwargs: Json) -> None:
-        record = Record(input=kwargs["input"], additional_args=arguments(kwargs))
+        record = Record(
+            input=kwargs["input"],
+            additional_args=arguments(kwargs),
+            original_response=kwargs["original_response"],
+        )
         self.post_calls.append(record)
 
 
@@ -68,9 +73,21 @@ def arguments_value(args: dict[str, Json] | None) -> Json:
     }
 
 
+def response_value(original: Json) -> Json:
+    match original:
+        case dict() as found:
+            return DOCUMENT.validate_python(found)
+        case None | bool() | int() | float() | str() | list():
+            return None
+
+
 def record_value(record: Record) -> Json:
     additional = arguments_value(record.additional_args)
-    return {"input": record.input, "additional_args": additional}
+    return {
+        "input": record.input,
+        "additional_args": additional,
+        "original_response": response_value(record.original_response),
+    }
 
 
 def last(records: list[Record]) -> Json:

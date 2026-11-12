@@ -1,29 +1,26 @@
-use std::time::Duration;
-
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::call_helpers::headers::{
     ProviderHeaderProjection, set_provider_response_headers,
 };
 use betterlite_models::decisions::Json;
-use http::Method;
 use indexmap::IndexMap;
 
 use super::call::{
     ImageGenerationCall, PreparedImageCall, authorization_headers, prepare_image_call,
 };
-use super::decode::decode_image_reply;
+use super::decode::{decode_image_reply, original_response};
 use super::error::{ImageGenerationFailure, ImageGenerationSource, OpenAiImageError};
 use super::logging::{ImageGenerationLogger, PostCallRecord, PreCallRecord};
 use super::reply::{ImageGenerationReply, ImageReplyError};
 use super::transport::ImageGenerationTransport;
+use super::wire::outbound_request;
 use crate::compatible_wire::error::OpenAiLikeError;
-
-const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
 
 #[derive(Debug)]
 pub struct ImageGenerationOutcome {
     pub reply: ImageGenerationReply,
+    // the provider's answer as the SDK dumps it, which is what post_call receives
+    pub original_response: Json,
     pub provider_headers: ProviderHeaderProjection,
 }
 
@@ -46,9 +43,17 @@ pub fn begin_image_generation(
             )));
         }
     };
+    // the SDK client refuses to exist without a key, so nothing reaches pre_call
+    let Some(api_key) = prepared.api_key.as_ref() else {
+        return Err(fail_after_prepared(
+            &prepared,
+            ImageGenerationSource::MissingApiKey,
+            logger,
+        ));
+    };
     let record = PreCallRecord {
         input: prepared.prompt.clone(),
-        headers: authorization_headers(prepared.api_key.as_ref()),
+        headers: authorization_headers(api_key),
         api_base: prepared.api_base.clone(),
         data: prepared.data.clone(),
     };
@@ -70,26 +75,17 @@ pub async fn send_image_generation<T>(
 where
     T: ImageGenerationTransport,
 {
-    let body = serde_json::to_vec(&prepared.wire_data).map_err(ImageGenerationSource::Encode)?;
-    let request = OutboundRequest {
-        method: Method::POST,
-        url: prepared.url.clone(),
-        query: Vec::new(),
-        headers: prepared.headers.clone(),
-        body: RequestBody::Json(body),
-        deadline: prepared
-            .timeout
-            .unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS)),
-    };
     let response = transport
-        .generate(request)
+        .generate(outbound_request(prepared)?)
         .await
         .map_err(ImageGenerationSource::Transport)?;
     let reply = checked_reply(&response, prepared.now_seconds)?;
+    let original_response = original_response(&response.body)?;
     let provider_headers =
         set_provider_response_headers(&IndexMap::new(), &response_headers(&response.headers)?);
     Ok(ImageGenerationOutcome {
         reply,
+        original_response,
         provider_headers,
     })
 }
@@ -102,17 +98,9 @@ pub fn finish_image_generation(
 ) -> Result<ImageGenerationOutcome, ImageGenerationFailure> {
     match sent {
         Ok(outcome) => {
-            let original = serde_json::to_value(&outcome.reply)
-                .map_err(ImageGenerationSource::Encode)
-                .and_then(|value| {
-                    serde_json::from_value(value).map_err(ImageGenerationSource::Encode)
-                })
-                .map_err(|source| {
-                    ImageGenerationFailure::Wrapped(OpenAiImageError::wrapped(source))
-                })?;
             logger.post_call(PostCallRecord {
                 input: prepared.prompt.clone(),
-                original_response: original,
+                original_response: outcome.original_response.clone(),
                 data: Some(prepared.data.clone()),
             });
             Ok(outcome)

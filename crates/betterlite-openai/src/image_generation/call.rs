@@ -2,17 +2,13 @@ use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::DEFAULT_API_BASE;
 use betterlite_models::decisions::Json;
-use http::header::{AUTHORIZATION, CONTENT_TYPE};
-use http::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use url::Url;
 
 use super::error::ImageGenerationSource;
 use crate::openai_base_config::Headers;
 
 const DEFAULT_MAX_RETRIES: i64 = 2;
-const IMAGES_PATH: &str = "/images/generations";
 
 pub struct ImageGenerationCall {
     pub model: String,
@@ -22,7 +18,7 @@ pub struct ImageGenerationCall {
     pub api_base: Option<String>,
     pub organization: Option<String>,
     pub headers: Option<Headers>,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
     pub delegate_async: bool,
     pub now_seconds: i64,
 }
@@ -31,11 +27,9 @@ pub struct ImageGenerationCall {
 pub struct PreparedImageCall {
     pub prompt: String,
     pub api_base: String,
-    pub url: Url,
     pub data: IndexMap<String, Json>,
     pub wire_data: IndexMap<String, Json>,
-    pub headers: HeaderMap,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
     pub max_retries: i64,
     pub api_key: Option<SecretString>,
     pub organization: Option<String>,
@@ -63,18 +57,12 @@ pub fn prepare_image_call(call: ImageGenerationCall) -> Result<PreparedImageCall
         Ok(value) => value,
         Err(source) => return Err(PrepareFailure { data, source }),
     };
-    let (url, wire_headers) = match wire_call(&base, call.api_key.as_ref()) {
-        Ok(found) => found,
-        Err(source) => return Err(PrepareFailure { data, source }),
-    };
     let wire_data = wire_body(&data, call.headers);
     Ok(PreparedImageCall {
         prompt: call.prompt,
         api_base: base,
-        url,
         data,
         wire_data,
-        headers: wire_headers,
         timeout: call.timeout,
         max_retries,
         api_key: call.api_key,
@@ -92,21 +80,11 @@ fn take_max_retries(data: &mut IndexMap<String, Json>) -> Result<i64, ImageGener
     }
 }
 
-pub(super) fn authorization_headers(api_key: Option<&SecretString>) -> IndexMap<String, Json> {
-    let key = api_key.map_or("None", |key| key.expose_secret());
+pub(super) fn authorization_headers(api_key: &SecretString) -> IndexMap<String, Json> {
     IndexMap::from([(
         String::from("Authorization"),
-        Json::Text(format!("Bearer {key}")),
+        Json::Text(format!("Bearer {}", api_key.expose_secret())),
     )])
-}
-
-fn wire_call(
-    base: &str,
-    api_key: Option<&SecretString>,
-) -> Result<(Url, HeaderMap), ImageGenerationSource> {
-    let url = images_url(base)?;
-    let headers = request_headers(api_key)?;
-    Ok((url, headers))
 }
 
 // a nonempty headers argument replaces the caller's extra_headers in the body alone
@@ -120,25 +98,4 @@ fn wire_body(data: &IndexMap<String, Json>, headers: Option<Headers>) -> IndexMa
         body.insert(String::from("extra_headers"), Json::Object(fields));
     }
     body
-}
-
-fn request_headers(api_key: Option<&SecretString>) -> Result<HeaderMap, ImageGenerationSource> {
-    let key = api_key.map_or("None", |key| key.expose_secret());
-    let value = HeaderValue::from_str(&format!("Bearer {key}")).map_err(|source| {
-        ImageGenerationSource::RequestHeader {
-            name: String::from("Authorization"),
-            source,
-        }
-    })?;
-    let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, value);
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    Ok(headers)
-}
-
-fn images_url(api_base: &str) -> Result<Url, ImageGenerationSource> {
-    let mut url = Url::parse(api_base).map_err(ImageGenerationSource::Url)?;
-    let path = format!("{}{IMAGES_PATH}", url.path().trim_end_matches('/'));
-    url.set_path(&path);
-    Ok(url)
 }

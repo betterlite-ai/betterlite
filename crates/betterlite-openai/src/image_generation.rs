@@ -8,5 +8,6 @@ pub mod reply;
 pub mod request;
 pub mod transform;
 pub mod transport;
+pub mod wire;
 
 mod tests;

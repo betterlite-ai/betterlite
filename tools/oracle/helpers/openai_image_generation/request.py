@@ -65,15 +65,6 @@ def invoke(probe: Probe, client: Client, recorder: Recorder) -> ImageResponse:
     return outcome
 
 
-def client_value(client: Client) -> Json:
-    return {
-        "api_key": client.api_key,
-        "api_base": client.base_url,
-        "organization": client.organization,
-        "max_retries": client.max_retries,
-    }
-
-
 def request_value(probe: Probe) -> Json:
     fixture = Fixture(probe)
     recorder = Recorder()
@@ -98,10 +89,17 @@ def request_value(probe: Probe) -> Json:
         if found is not None:
             provider_headers = DOCUMENT.validate_python(found)
     calls: list[Json] = [
-        {"body": call.body, "timeout": call.timeout} for call in fixture.calls
+        {
+            "body": call.body,
+            "timeout": call.timeout,
+            "url": call.url,
+            "headers": call.headers,
+            "query": call.query,
+        }
+        for call in fixture.calls
     ]
     return {
-        "client": None if not calls else client_value(client),
+        "client": None if not calls else {"max_retries": client.max_retries},
         "calls": calls,
         "result": result,
         "provider_headers": provider_headers,

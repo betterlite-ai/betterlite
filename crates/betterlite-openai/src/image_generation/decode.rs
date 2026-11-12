@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde::Deserialize;
 
 use super::reply::{
@@ -56,6 +57,37 @@ pub fn decode_image_reply(
         output_format: wire.output_format,
         size: wire.size,
     })
+}
+
+// the SDK's model_dump of the reply: the provider's fields as sent, and every declared field the reply left out as null
+pub fn original_response(bytes: &[u8]) -> Result<Json, ImageReplyError> {
+    let mut fields: IndexMap<String, Json> = serde_json::from_slice(bytes)?;
+    let top = [
+        "background",
+        "data",
+        "output_format",
+        "quality",
+        "size",
+        "usage",
+    ];
+    fill_declared(&mut fields, &top);
+    if let Some(Json::List(items)) = fields.get_mut("data") {
+        for item in items {
+            if let Json::Object(image) = item {
+                fill_declared(image, &["b64_json", "revised_prompt", "url"]);
+            }
+        }
+    }
+    if let Some(Json::Object(usage)) = fields.get_mut("usage") {
+        fill_declared(usage, &["output_tokens_details"]);
+    }
+    Ok(Json::Object(fields))
+}
+
+fn fill_declared(fields: &mut IndexMap<String, Json>, declared: &[&str]) {
+    for name in declared {
+        fields.entry((*name).to_owned()).or_insert(Json::Null);
+    }
 }
 
 fn response_object_error(error: &Json) -> Option<ImageReplyError> {

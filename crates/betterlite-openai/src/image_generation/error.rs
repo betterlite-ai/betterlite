@@ -2,7 +2,7 @@ use std::string::FromUtf8Error;
 
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use http::header::{InvalidHeaderValue, ToStrError};
+use http::header::{InvalidHeaderName, InvalidHeaderValue, ToStrError};
 use thiserror::Error;
 
 use super::reply::ImageReplyError;
@@ -37,6 +37,14 @@ pub enum ImageGenerationSource {
     ResponseObject { status: u16, message: String },
     #[error("max_retries must be an integer")]
     MaxRetries,
+    #[error(
+        "Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable."
+    )]
+    MissingApiKey,
+    #[error("{field} must map names to plain values")]
+    Extra { field: &'static str },
+    #[error(transparent)]
+    RequestHeaderName(#[from] InvalidHeaderName),
     #[error("the {name} request header cannot carry its value")]
     RequestHeader {
         name: String,
@@ -74,6 +82,9 @@ impl ImageGenerationSource {
             Self::Transport(_)
             | Self::Url(_)
             | Self::Encode(_)
+            | Self::MissingApiKey
+            | Self::Extra { .. }
+            | Self::RequestHeaderName(_)
             | Self::PreCall(_)
             | Self::StatusBody { .. }
             | Self::RequestHeader { .. }

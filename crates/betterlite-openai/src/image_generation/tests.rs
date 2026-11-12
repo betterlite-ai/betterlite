@@ -47,6 +47,7 @@ use super::request::{
 };
 use super::transform::{ImageTransformCall, transform_image_reply};
 use super::transport::ImageGenerationTransport;
+use super::wire::outbound_request;
 use crate::openai_base_config::Headers;
 
 const INIT: &str = r#"{"model":"dall-e-2","call_type":"image_generation","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -144,7 +145,7 @@ impl Runner {
     }
 }
 
-fn options(text: &str) -> IndexMap<String, Json> {
+pub(super) fn options(text: &str) -> IndexMap<String, Json> {
     serde_json::from_str(text).unwrap()
 }
 
@@ -153,7 +154,7 @@ fn decoded(body: &str) -> ImageGenerationReply {
     decode_image_reply(bytes, NOW).unwrap()
 }
 
-fn call(model: &str, optional_params: IndexMap<String, Json>) -> ImageGenerationCall {
+pub(super) fn call(model: &str, optional_params: IndexMap<String, Json>) -> ImageGenerationCall {
     ImageGenerationCall {
         model: model.to_owned(),
         prompt: String::from("a cat"),
@@ -162,20 +163,22 @@ fn call(model: &str, optional_params: IndexMap<String, Json>) -> ImageGeneration
         api_base: Some(API_BASE.to_owned()),
         organization: Some(String::from("org-test")),
         headers: None,
-        timeout: Some(Duration::from_secs(30)),
+        timeout: Duration::from_secs(30),
         delegate_async: false,
         now_seconds: NOW,
     }
 }
 
 #[derive(Clone)]
-struct Recorded {
-    body: Json,
+pub(super) struct Recorded {
+    pub(super) body: Json,
     deadline: Duration,
+    url: String,
+    pub(super) query: Vec<(String, String)>,
     headers: HeaderMap,
 }
 
-struct FakeTransport {
+pub(super) struct FakeTransport {
     status: u16,
     headers: BTreeMap<String, String>,
     body: Vec<u8>,
@@ -207,7 +210,7 @@ impl FakeTransport {
         }
     }
 
-    fn requests(&self) -> Vec<Recorded> {
+    pub(super) fn requests(&self) -> Vec<Recorded> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -232,6 +235,8 @@ impl ImageGenerationTransport for FakeTransport {
             .push(Recorded {
                 body,
                 deadline: request.deadline,
+                url: request.url.to_string(),
+                query: request.query,
                 headers: request.headers,
             });
         let outcome = if self.failure {
@@ -545,16 +550,17 @@ fn overlay_headers() {
         String::from("x-test"),
         String::from("yes"),
     )]));
-    let overridden = prepare_image_call(explicit).unwrap();
+    let prepared = prepare_image_call(explicit).unwrap();
+    let overridden = outbound_request(&prepared).unwrap();
+    assert_eq!(header_text(&overridden.headers, "x-test"), Some("yes"));
+    assert_eq!(header_text(&overridden.headers, "x-old"), None);
     assert_eq!(
-        overridden.wire_data.get("extra_headers"),
-        Some(&Json::Object(IndexMap::from([(
-            String::from("x-test"),
-            Json::Text(String::from("yes"))
-        )])))
+        header_text(&overridden.headers, "openai-organization"),
+        Some("org-test")
     );
+    assert!(!body_of(&overridden).contains_key("extra_headers"));
     assert_eq!(
-        overridden.data.get("extra_headers"),
+        prepared.data.get("extra_headers"),
         Some(&Json::Object(IndexMap::from([(
             String::from("x-old"),
             Json::Text(String::from("no"))
@@ -562,14 +568,21 @@ fn overlay_headers() {
     );
     let mut empty = call("dall-e-2", requested);
     empty.headers = Some(Headers::new());
-    let kept = prepare_image_call(empty).unwrap();
-    assert_eq!(
-        kept.wire_data.get("extra_headers"),
-        Some(&Json::Object(IndexMap::from([(
-            String::from("x-old"),
-            Json::Text(String::from("no"))
-        )])))
-    );
+    let kept = outbound_request(&prepare_image_call(empty).unwrap()).unwrap();
+    assert_eq!(header_text(&kept.headers, "x-old"), Some("no"));
+    assert!(!body_of(&kept).contains_key("extra_headers"));
+}
+
+pub(super) fn header_text<'map>(headers: &'map HeaderMap, name: &str) -> Option<&'map str> {
+    let value = headers.get(name)?;
+    value.to_str().ok()
+}
+
+pub(super) fn body_of(request: &OutboundRequest) -> IndexMap<String, Json> {
+    let RequestBody::Json(bytes) = &request.body else {
+        panic!("the request body is JSON");
+    };
+    serde_json::from_slice(bytes).unwrap()
 }
 
 async fn image_raw_response_headers() {
@@ -602,15 +615,22 @@ async fn raw_headers_sync(runner: &mut Runner, transport: &FakeTransport) {
     assert_eq!(outcome.reply.created, 7);
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].deadline, Duration::from_secs(30));
+    assert_sent_request(&requests[0]);
+}
+
+fn assert_sent_request(sent: &Recorded) {
+    assert_eq!(sent.deadline, Duration::from_secs(30));
     assert_eq!(
-        requests[0]
-            .headers
-            .get(AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
+        header_text(&sent.headers, AUTHORIZATION.as_str()),
         Some("Bearer sk-test")
     );
-    let Json::Object(request_body) = &requests[0].body else {
+    assert_eq!(
+        header_text(&sent.headers, "openai-organization"),
+        Some("org-test")
+    );
+    assert_eq!(sent.url, "https://example.test/v1/images/generations");
+    assert!(sent.query.is_empty());
+    let Json::Object(request_body) = &sent.body else {
         panic!("the request body is an object");
     };
     assert_eq!(
@@ -669,7 +689,7 @@ async fn image_generation_logs_the_pre_call_then_the_post_call() {
     assert_pre_and_post_call_records(snapshots);
 }
 
-fn ok_transport() -> FakeTransport {
+pub(super) fn ok_transport() -> FakeTransport {
     FakeTransport::answering(
         200,
         &[],

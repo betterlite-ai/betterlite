@@ -1,14 +1,26 @@
 from dataclasses import dataclass, field
+from typing import Final, TypedDict
 
 import httpx
 import litellm
 import openai
 from openai.types.images_response import ImagesResponse
 from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 from .probe import SUCCESS_MAX, SUCCESS_MIN, Answer, Probe
 
 litellm.suppress_debug_info = True
+
+
+class Extras(TypedDict, total=False):
+    extra_headers: dict[str, str]
+    extra_query: dict[str, str]
+    extra_body: dict[str, Json]
+
+
+EXTRAS: Final = TypeAdapter(Extras)
+EXTRA_NAMES: Final = frozenset({"extra_headers", "extra_query", "extra_body"})
 
 
 class Raw:
@@ -36,6 +48,9 @@ class Raw:
 class Call:
     body: dict[str, Json]
     timeout: float
+    url: str
+    headers: dict[str, Json]
+    query: dict[str, Json]
 
 
 @dataclass
@@ -43,8 +58,8 @@ class Fixture:
     probe: Probe
     calls: list[Call] = field(default_factory=list)
 
-    def answer(self, params: dict[str, Json], timeout: float) -> Raw:
-        self.calls.append(Call(body=dict(params), timeout=timeout))
+    def answer(self, call: Call) -> Raw:
+        self.calls.append(call)
         match self.probe.failure:
             case "timeout":
                 raise httpx.ReadTimeout("read timed out")
@@ -55,8 +70,9 @@ class Fixture:
 
 
 class SyncImages:
-    def __init__(self, fixture: Fixture) -> None:
+    def __init__(self, fixture: Fixture, client: "Client") -> None:
         self.fixture = fixture
+        self.client = client
 
     @property
     def with_raw_response(self) -> "SyncImages":
@@ -65,12 +81,13 @@ class SyncImages:
     def generate(self, *, timeout: float, **params: Json) -> Raw:
         if timeout < 0:
             raise ValueError("timeout must not be negative")
-        return self.fixture.answer(params, timeout)
+        return self.fixture.answer(self.client.wire_call(params, timeout))
 
 
 class AsyncImages:
-    def __init__(self, fixture: Fixture) -> None:
+    def __init__(self, fixture: Fixture, client: "Client") -> None:
         self.fixture = fixture
+        self.client = client
 
     @property
     def with_raw_response(self) -> "AsyncImages":
@@ -81,7 +98,7 @@ class AsyncImages:
     ) -> Raw:
         if timeout < 0:
             raise ValueError("timeout must not be negative")
-        return self.fixture.answer(params, timeout)
+        return self.fixture.answer(self.client.wire_call(params, timeout))
 
 
 def api_base(probe: Probe) -> str:
@@ -105,5 +122,27 @@ class Client:
         self.organization: str | None = None
         self.max_retries: int | None = None
         self.images: SyncImages | AsyncImages = (
-            AsyncImages(fixture) if probe.is_async else SyncImages(fixture)
+            AsyncImages(fixture, self) if probe.is_async else SyncImages(fixture, self)
         )
+
+    # the SDK moves extra_headers, extra_query and extra_body out of the body
+    def wire_call(self, params: dict[str, Json], timeout: float) -> Call:
+        extras = EXTRAS.validate_python(params)
+        headers: dict[str, Json] = {
+            "content-type": "application/json",
+            "authorization": f"Bearer {self.api_key}",
+        }
+        if self.organization is not None:
+            headers["openai-organization"] = self.organization
+        if "extra_headers" in extras:
+            headers.update(
+                {name.lower(): value for name, value in extras["extra_headers"].items()}
+            )
+        body = {name: value for name, value in params.items() if name not in EXTRA_NAMES}
+        if "extra_body" in extras:
+            body.update(extras["extra_body"])
+        query: dict[str, Json] = {}
+        if "extra_query" in extras:
+            query.update(extras["extra_query"])
+        url = f"{self.base_url.rstrip('/')}/images/generations"
+        return Call(body=body, timeout=timeout, url=url, headers=headers, query=query)
