@@ -1,4 +1,3 @@
-use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
@@ -71,45 +70,50 @@ impl Value {
 
     // dict.get, then a callable get(key, default), then the attribute when get raises TypeError or AttributeError
     pub fn field(&self, key: &str) -> Result<Option<&Self>, RepairError> {
-        if let Self::Instance { object } = self {
-            match &object.get {
-                Getter::Mapping(map) => {
-                    return Ok(map.get(key).filter(|found| **found != Self::Null));
-                }
-                Getter::Raises(Raised::Other) => return Err(RepairError::GetterFailed),
-                Getter::Absent | Getter::Raises(Raised::TypeError | Raised::AttributeError) => {}
+        let Self::Instance { object } = self else {
+            return Ok(self.plain_field(key));
+        };
+        match &object.get {
+            Getter::Mapping(map) => Ok(map.get(key).filter(|found| **found != Self::Null)),
+            Getter::Raises(Raised::Other) => Err(RepairError::GetterFailed),
+            Getter::Absent | Getter::Raises(Raised::TypeError | Raised::AttributeError) => {
+                Ok(self.plain_field(key))
             }
         }
-        Ok(self.plain_field(key))
     }
 
     // dict.get for a dict and getattr for an object
     #[must_use]
     pub fn plain_field(&self, key: &str) -> Option<&Self> {
-        let found = if let Self::Dict(map) = self {
-            map.get(key)
-        } else if let Self::Instance { object } = self {
-            object.attrs.get(key)
-        } else {
-            None
+        let entries = match self {
+            Self::Dict(map) => map,
+            Self::Instance { object } => &object.attrs,
+            Self::Null
+            | Self::Bool(_)
+            | Self::Number(_)
+            | Self::Text(_)
+            | Self::Bytes { .. }
+            | Self::List(_)
+            | Self::Tuple { .. } => return None,
         };
-        found.filter(|value| **value != Self::Null)
+        entries.get(key).filter(|found| **found != Self::Null)
     }
 
     // LiteLLM reads message.get("role"), so a message without a working get fails
     pub fn has_role(&self, role: &str) -> Result<bool, RepairError> {
-        let found = if let Self::Dict(map) = self {
-            map.get("role")
-        } else if let Self::Instance { object } = self {
-            match &object.get {
-                Getter::Mapping(map) => map.get("role"),
-                Getter::Absent => return Err(RepairError::NoGetMethod),
-                Getter::Raises(_) => return Err(RepairError::GetterFailed),
-            }
-        } else {
+        if let Self::Instance { object } = self {
+            return match &object.get {
+                Getter::Mapping(map) => {
+                    Ok(matches!(map.get("role"), Some(Self::Text(text)) if text == role))
+                }
+                Getter::Absent => Err(RepairError::NoGetMethod),
+                Getter::Raises(_) => Err(RepairError::GetterFailed),
+            };
+        }
+        let Self::Dict(map) = self else {
             return Err(RepairError::NoGetMethod);
         };
-        Ok(matches!(found, Some(Self::Text(text)) if text == role))
+        Ok(matches!(map.get("role"), Some(Self::Text(text)) if text == role))
     }
 
     // a dict gains the key; an object only changes an attribute it already has
@@ -135,27 +139,6 @@ impl Value {
             Ok(number.to_string())
         } else {
             Err(RepairError::WrongType { field })
-        }
-    }
-
-    pub fn to_json(&self, field: &'static str) -> Result<Json, RepairError> {
-        match self {
-            Self::Null => Ok(Json::Null),
-            Self::Bool(flag) => Ok(Json::Bool(*flag)),
-            Self::Number(number) => Ok(Json::Number(number.clone())),
-            Self::Text(text) => Ok(Json::Text(text.clone())),
-            Self::List(items) | Self::Tuple { items } => Ok(Json::List(
-                items
-                    .iter()
-                    .map(|item| item.to_json(field))
-                    .collect::<Result<_, _>>()?,
-            )),
-            Self::Dict(map) => Ok(Json::Object(
-                map.iter()
-                    .map(|(key, item)| Ok((key.clone(), item.to_json(field)?)))
-                    .collect::<Result<_, _>>()?,
-            )),
-            Self::Bytes { .. } | Self::Instance { .. } => Err(RepairError::WrongType { field }),
         }
     }
 }

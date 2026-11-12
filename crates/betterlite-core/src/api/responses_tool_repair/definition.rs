@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
 
@@ -112,7 +113,7 @@ pub fn create_tool_call_chunk(
         None => String::new(),
     };
     let arguments = match function.field("arguments")?.filter(|raw| raw.has_content()) {
-        Some(raw) => serialize_tool_call_arguments(&raw.to_json("arguments")?, "{}"),
+        Some(raw) => serialize_tool_call_arguments(&to_json(raw, "arguments")?, "{}"),
         None => "{}".to_owned(),
     };
     let id = match definition.field("id")? {
@@ -165,5 +166,26 @@ pub fn append_tool_call(assistant: &mut Value, chunk: Value) {
         | Value::Bytes { .. }
         | Value::List(_)
         | Value::Tuple { .. } => {}
+    }
+}
+
+fn to_json(value: &Value, field: &'static str) -> Result<Json, RepairError> {
+    match value {
+        Value::Null => Ok(Json::Null),
+        Value::Bool(flag) => Ok(Json::Bool(*flag)),
+        Value::Number(number) => Ok(Json::Number(number.clone())),
+        Value::Text(text) => Ok(Json::Text(text.clone())),
+        Value::List(items) | Value::Tuple { items } => Ok(Json::List(
+            items
+                .iter()
+                .map(|item| to_json(item, field))
+                .collect::<Result<_, _>>()?,
+        )),
+        Value::Dict(map) => Ok(Json::Object(
+            map.iter()
+                .map(|(key, item)| Ok((key.clone(), to_json(item, field)?)))
+                .collect::<Result<_, _>>()?,
+        )),
+        Value::Bytes { .. } | Value::Instance { .. } => Err(RepairError::WrongType { field }),
     }
 }
