@@ -8,7 +8,12 @@ const EFFORT_MODELS: &str = r#"{
     "anthropic/claude-opus-4-7": {"litellm_provider": "anthropic", "supports_adaptive_thinking": true},
     "anthropic/claude-opus-4-8": {"litellm_provider": "anthropic", "supports_max_reasoning_effort": true, "supports_xhigh_reasoning_effort": true},
     "claude-config-model": {"litellm_provider": "anthropic", "supports_output_config": true},
-    "claude-levels": {"litellm_provider": "anthropic", "supports_medium_reasoning_effort": true},
+    "claude-low": {"litellm_provider": "anthropic", "supports_low_reasoning_effort": true},
+    "claude-minimal": {"litellm_provider": "anthropic", "supports_minimal_reasoning_effort": true},
+    "claude-medium": {"litellm_provider": "anthropic", "supports_medium_reasoning_effort": true},
+    "claude-high": {"litellm_provider": "anthropic", "supports_high_reasoning_effort": true},
+    "claude-xhigh": {"litellm_provider": "anthropic", "supports_xhigh_reasoning_effort": true},
+    "claude-max": {"litellm_provider": "anthropic", "supports_max_reasoning_effort": true},
     "claude-haiku-4-5": {"litellm_provider": "anthropic"}
 }"#;
 
@@ -86,10 +91,27 @@ async fn other_levels_and_absence_are_allowed(fixture: &Fixture) {
     assert_eq!(validated(fixture, "claude-haiku-4-5", None).await, None);
 }
 
+async fn every_level_flag_accepts_the_effort_param(fixture: &Fixture) {
+    let models = [
+        "claude-low",
+        "claude-minimal",
+        "claude-medium",
+        "claude-high",
+        "claude-xhigh",
+        "claude-max",
+    ];
+    for model in models {
+        assert!(
+            accepts_effort(fixture, model).await,
+            "the {model} level flag"
+        );
+    }
+}
+
 async fn effort_param_support_accepts_output_config_or_a_level(fixture: &Fixture) {
     assert!(accepts_effort(fixture, "claude-opus-4-8").await);
     assert!(accepts_effort(fixture, "claude-config-model").await);
-    assert!(accepts_effort(fixture, "claude-levels").await);
+    every_level_flag_accepts_the_effort_param(fixture).await;
     assert!(!accepts_effort(fixture, "claude-haiku-4-5").await);
 }
 

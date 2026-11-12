@@ -7,7 +7,7 @@ call:
         anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
         claude-sonnet-4-5: {litellm_provider: anthropic}
       packaged: {}
-      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+      budgets: {minimal: 512, low: 1111, medium: 2222, high: 3333, xhigh: 5555, max: 7777}
     steps:
       - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: null}
       - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: "none"}
@@ -22,10 +22,10 @@ call:
       - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: max}
       - {function: map_reasoning_effort, model: claude-sonnet-4-5, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: bogus}
 env:
-  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET: "128"
-  DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET: "1024"
-  DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "2048"
-  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "4096"
-  DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET: "8192"
-  DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET: "16384"
+  DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET: "512"
+  DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET: "1111"
+  DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "2222"
+  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "3333"
+  DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET: "5555"
+  DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET: "7777"
 compare: {ignore: []}

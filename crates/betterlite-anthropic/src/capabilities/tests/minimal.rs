@@ -64,19 +64,35 @@ async fn adaptive_model_answers_before_validation(fixture: &Fixture) {
 }
 
 async fn legacy_levels_use_the_configured_budgets(fixture: &Fixture) {
+    let configured = Settings {
+        minimal: 512,
+        low: 1111,
+        medium: 2222,
+        high: 3333,
+        xhigh: 5555,
+        max: 7777,
+        bedrock_min: BEDROCK_MIN_THINKING_BUDGET,
+    };
     let expectations = [
-        ("minimal", 1024_i64),
-        ("low", 1024),
-        ("medium", 2048),
-        ("high", 4096),
-        ("xhigh", 8192),
-        ("max", 0x4000),
+        ("low", 1111_i64),
+        ("medium", 2222),
+        ("high", 3333),
+        ("xhigh", 5555),
+        ("max", 7777),
     ];
+    let mut session = Session::new(fixture);
     for (effort, budget) in expectations {
+        let request = ReasoningRequest {
+            reasoning_effort: Some(effort),
+            model: "claude-sonnet-4-5",
+            custom_llm_provider: "anthropic",
+            llm_provider: "anthropic",
+            budgets: &configured,
+        };
         assert_eq!(
-            mapped(fixture, "claude-sonnet-4-5", Some(effort)).await,
+            map_reasoning_effort(&request, &mut session.environment(), &fixture.catalogs()).await,
             Ok(Some(enabled(budget))),
-            "the {effort} budget"
+            "the {effort} budget comes from the loaded settings"
         );
     }
 }
