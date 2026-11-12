@@ -1,0 +1,8 @@
+kind: helper
+name: lm-studio-provider-api-base-and-key
+call:
+  b8152:
+    function: "provider_info"
+    calls: [{"provider": "lm_studio", "api_base": null, "api_key": null, "env": {}}, {"provider": "lm_studio", "api_base": null, "api_key": null, "env": {"LM_STUDIO_API_BASE": "http://env-host:1/v1", "LM_STUDIO_API_KEY": "env-key"}}, {"provider": "lm_studio", "api_base": "http://arg-host:2/v1", "api_key": "arg-key", "env": {"LM_STUDIO_API_BASE": "http://env-host:1/v1", "LM_STUDIO_API_KEY": "env-key"}}, {"provider": "lm_studio", "api_base": "", "api_key": "", "env": {"LM_STUDIO_API_BASE": "http://env-host:1/v1", "LM_STUDIO_API_KEY": "env-key"}}, {"provider": "lm_studio", "api_base": null, "api_key": null, "env": {"LM_STUDIO_API_BASE": "http://env-host:1/v1", "LM_STUDIO_API_KEY": ""}}, {"provider": "lm_studio", "api_base": "http://arg-host:2/v1", "api_key": null, "env": {"LM_STUDIO_API_KEY": "env-key"}}]
+env: {}
+compare: {ignore: []}

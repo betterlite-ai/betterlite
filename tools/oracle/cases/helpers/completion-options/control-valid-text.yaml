@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-control-valid-text
+call:
+  b5650: {function: control, kwargs: {stream_chunk_size: "12"}, model: gpt-4o, global_drop_params: null}
+env: {}
+compare: {ignore: []}
