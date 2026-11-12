@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use betterlite_config::sections::prompt_injection::PromptInjectionParams;
 use betterlite_models::billing_text::FormattedPromptData;
+use reqwest::StatusCode;
 
 use super::hook_support::{
     ATTACK, FAIL_CALL_STRING, JUDGE_MODEL, SYSTEM_PROMPT, Scenario, chat_messages, params, text,
@@ -171,6 +172,25 @@ async fn a_judged_attack_is_rejected_and_the_call_is_captured() {
             ATTACK.to_owned()
         )]
     );
+}
+
+#[tokio::test]
+async fn reject_as_response_does_not_turn_a_judged_attack_into_a_message() {
+    let judge = ScriptedJudge::new(Reply::Text(FAIL_CALL_STRING.to_owned()));
+    let detection = detection_with_names(params(Scenario::LlmApiRejectAsResponse), &listed_names());
+    let list = chat_messages();
+    let request = FormattedPromptData {
+        messages: Some(&list),
+        prompt: None,
+        input: None,
+    };
+    let error = detection
+        .moderation(&judge, HookCallType::Completion, &request)
+        .await
+        .expect_err("a judged attack is rejected");
+    assert!(matches!(error, PromptInjectionError::Rejected));
+    let rejection = error.rejection().expect("a rejection carries a status");
+    assert_eq!(rejection.status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

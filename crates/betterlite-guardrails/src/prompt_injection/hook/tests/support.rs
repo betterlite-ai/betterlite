@@ -18,6 +18,7 @@ pub(super) enum Scenario {
     HeuristicsRejectAsResponseNone,
     VectorDb,
     LlmApi,
+    LlmApiRejectAsResponse,
     LlmApiWithoutName,
     LlmApiWithoutSystemPrompt,
 }
@@ -37,6 +38,10 @@ pub(super) fn params(scenario: Scenario) -> PromptInjectionParams {
         }
         Scenario::VectorDb => params.vector_db_check = true,
         Scenario::LlmApi => llm_api(&mut params),
+        Scenario::LlmApiRejectAsResponse => {
+            llm_api(&mut params);
+            params.reject_as_response = Some(true);
+        }
         Scenario::LlmApiWithoutName => {
             llm_api(&mut params);
             params.llm_api_name = None;
