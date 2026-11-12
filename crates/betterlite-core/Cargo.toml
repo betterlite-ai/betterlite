@@ -19,6 +19,7 @@ betterlite-logging = { path = "../betterlite-logging" }
 betterlite-mcp = { path = "../betterlite-mcp" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-paths = { path = "../betterlite-paths" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
