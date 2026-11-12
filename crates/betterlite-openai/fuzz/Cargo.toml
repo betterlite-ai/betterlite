@@ -252,6 +252,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_image_generation"
+path = "fuzz_targets/openai_image_generation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "openai_fine_tuning"
 path = "fuzz_targets/openai_fine_tuning.rs"
 test = false
@@ -275,6 +282,13 @@ bench = false
 [[bin]]
 name = "openai_batches"
 path = "fuzz_targets/openai_batches.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_chat_choices"
+path = "fuzz_targets/openai_chat_choices.rs"
 test = false
 doc = false
 bench = false

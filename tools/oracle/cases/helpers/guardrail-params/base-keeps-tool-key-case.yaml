@@ -1,0 +1,11 @@
+kind: helper
+name: guardrail-params-base-keeps-tool-key-case
+call:
+  b3662:
+    function: base_params
+    body:
+      mode: PRE_CALL
+      default_action: BLOCK
+      on_disallowed_action: [Rewrite]
+env: {}
+compare: {ignore: []}

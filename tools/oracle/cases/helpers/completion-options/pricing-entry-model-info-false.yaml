@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-entry-model-info-false
+call:
+  b5650: {function: pricing_entry, custom_llm_provider: azure, kwargs: {}, model_info: {supports_prompt_caching: false, max_tokens: 0}}
+env: {}
+compare: {ignore: []}

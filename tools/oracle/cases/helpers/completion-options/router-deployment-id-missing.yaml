@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-router-deployment-id-missing
+call:
+  b5650: {function: deployment_id, kwargs: {metadata: {user: u}}}
+env: {}
+compare: {ignore: []}
