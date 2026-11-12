@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::api::api_boundaries::ApiLimitError;
 use crate::api::responses_input_messages::error::InputMessagesError;
 use crate::api::responses_tool_namespaces::error::NamespaceToolsError;
 
@@ -16,4 +17,6 @@ pub enum ChatOptionsError {
     Tools(#[from] NamespaceToolsError),
     #[error(transparent)]
     Messages(#[from] InputMessagesError),
+    #[error(transparent)]
+    Limit(#[from] ApiLimitError),
 }

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::convert::Infallible;
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::local_ttl_cache::Settings;
@@ -13,8 +14,9 @@ use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use serde_json::Value;
+use tracing::subscriber::{DefaultGuard, set_default};
 
-use crate::api::api_boundaries::ApiLimits;
+use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::responses_bridge::{
     BridgeRequest, ModelInfoError, ReasoningEffort, ResponsesBridgeCapabilities,
 };
@@ -153,11 +155,40 @@ impl StreamOptionsSink for RecordingSink {
     }
 }
 
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_debug() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    (captured, set_default(subscriber))
+}
+
 struct Harness {
     cache: DualLocalCache,
     parameters: Parameters,
     probe: Probe,
     sink: RecordingSink,
+    limits: ApiLimits,
 }
 
 impl Harness {
@@ -167,6 +198,7 @@ impl Harness {
             parameters: Parameters::new(supported),
             probe: Probe::bridging(bridged),
             sink: RecordingSink::default(),
+            limits: ApiLimits::default(),
         }
     }
 
@@ -175,7 +207,7 @@ impl Harness {
         context: &RequestContext<'_>,
     ) -> Result<ChatCompletionRequest, ChatOptionsError> {
         let mut assembly = RequestAssembly {
-            limits: ApiLimits::default(),
+            limits: self.limits,
             cache: &self.cache,
             parameters: &self.parameters,
             probe: &self.probe,
@@ -434,7 +466,9 @@ fn input_conversion_replays_reasoning_and_includes_instructions() {
     let completion = harness.run(&context(&request)).unwrap();
     assert_eq!(
         wire(&completion)["messages"],
-        expected_value(r#"[{"role":"system","content":"follow"},{"role":"user","content":" x "}]"#)
+        expected_value(
+            r#"[{"role":"system","content":"follow"},{"role":"assistant","content":null,"reasoning_content":" x "}]"#
+        )
     );
 }
 
@@ -492,6 +526,7 @@ fn summary_rides_only_a_request_that_bridges_back(
 
 #[test]
 fn probe_failure_drops_only_the_summary() {
+    let (captured, _guard) = capture_debug();
     let request =
         request(r#"{"model":"m","input":"hi","reasoning":{"effort":"high","summary":"auto"}}"#);
     let mut harness = Harness::new(None, false);
@@ -499,6 +534,17 @@ fn probe_failure_drops_only_the_summary() {
     let completion = harness.run(&context(&request)).unwrap();
     assert_eq!(completion.reasoning_effort.as_deref(), Some("high"));
     assert_eq!(completion.reasoning_summary, None);
+    let logged = String::from_utf8(
+        captured
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone(),
+    )
+    .unwrap();
+    assert!(logged.contains("DEBUG"));
+    assert!(logged.contains("responses bridge: reasoning effort mode check failed:"));
+    assert!(logged.contains("probe is down"));
 }
 
 #[test]
@@ -703,6 +749,22 @@ fn a_non_object_tool_item_is_a_tools_error() {
     assert!(matches!(
         harness.run(&context(&request)).unwrap_err(),
         ChatOptionsError::Tools(_)
+    ));
+}
+
+#[test]
+fn tools_past_the_item_limit_are_rejected_before_conversion() {
+    let request = request(&format!(
+        r#"{{"model":"m","input":"hi","tools":[{FUNCTION_TOOL},{FUNCTION_TOOL}]}}"#
+    ));
+    let mut harness = Harness::new(None, false);
+    harness.limits.max_items = 1;
+    assert!(matches!(
+        harness.run(&context(&request)).unwrap_err(),
+        ChatOptionsError::Limit(ApiLimitError::TooManyItems {
+            observed: 2,
+            limit: 1
+        })
     ));
 }
 

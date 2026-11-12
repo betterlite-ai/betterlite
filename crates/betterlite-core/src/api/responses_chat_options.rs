@@ -19,7 +19,7 @@ use betterlite_models::full_model_metadata::parameters::SupportedParameterSource
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use serde_json::Value;
 
-use crate::api::api_boundaries::ApiLimits;
+use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, ItemsBoundary};
 use crate::api::responses_codex_tools::tool_choices::chat_tool_choice;
 use crate::api::responses_input_messages::{InputRequest, input_messages};
 use crate::api::responses_tool_namespaces::chat_tools::{ChatTool, WebSearchOptions};
@@ -77,11 +77,15 @@ pub fn chat_completion_request(
     assembly: &mut RequestAssembly<'_>,
 ) -> Result<ChatCompletionRequest, ChatOptionsError> {
     let request = context.request;
-    let mapped = mapped_tools(request, context.provider, assembly.parameters)?;
+    let mapped = mapped_tools(
+        request,
+        context.provider,
+        assembly.parameters,
+        assembly.limits,
+    )?;
     let messages = converted_messages(request, assembly)?;
     let reasoned = mapped_reasoning(request, context, &mapped, assembly)?;
     let stream_options = derived_stream_options(context.stream, assembly);
-    let format = response_format(request.text.as_ref().and_then(Option::as_ref));
     let has_tools = !mapped.chat_tools.is_empty();
     Ok(ChatCompletionRequest {
         messages,
@@ -101,7 +105,7 @@ pub fn chat_completion_request(
         service_tier: context.service_tier.map(str::to_owned),
         safety_identifier: request.safety_identifier.clone().flatten(),
         web_search_options: mapped.web_search_options,
-        response_format: format,
+        response_format: response_format(request.text.as_ref().and_then(Option::as_ref)),
         reasoning_effort: reasoned.effort,
         reasoning_summary: reasoned.summary,
         context_management: request.context_management.clone().flatten(),
@@ -125,8 +129,9 @@ fn mapped_tools(
     request: &ResponsesApiRequestParams,
     provider: Option<&str>,
     parameters: &dyn SupportedParameterSource<Error = Infallible>,
+    limits: ApiLimits,
 ) -> Result<MappedTools, ChatOptionsError> {
-    let tools = tool_items(request.tools.as_ref().and_then(Option::as_ref))?;
+    let tools = tool_items(request.tools.as_ref().and_then(Option::as_ref), limits)?;
     let conversion = responses_tools_to_chat(&tools)?;
     let chat_tools = conversion.chat_tools;
     let web_search_options = conversion
@@ -197,10 +202,15 @@ fn derived_stream_options(
     Some(options)
 }
 
-fn tool_items(tools: Option<&Json>) -> Result<Vec<Json>, ChatOptionsError> {
+fn tool_items(tools: Option<&Json>, limits: ApiLimits) -> Result<Vec<Json>, ChatOptionsError> {
     match tools {
         None | Some(Json::Null) => Ok(Vec::new()),
-        Some(Json::List(items)) => Ok(items.clone()),
+        Some(Json::List(items)) => {
+            limits.check(ApiBoundariesInput::Items(ItemsBoundary {
+                known_count: items.len(),
+            }))?;
+            Ok(items.clone())
+        }
         Some(_) => Err(ChatOptionsError::WrongType { field: "tools" }),
     }
 }
