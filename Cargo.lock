@@ -1085,6 +1085,7 @@ name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
