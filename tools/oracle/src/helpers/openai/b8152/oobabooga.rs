@@ -63,65 +63,67 @@ fn wire(url: &str, api_key: Option<&str>, body: &JsonObject) -> Value {
     json!({"url": url, "headers": headers, "body": body})
 }
 
-pub(super) fn request_value(call: &RequestCall) -> Result<Value, Box<HelperError>> {
-    completion_url(&call.model, call.api_base.as_deref()).map_or_else(
-        |error| Ok(failure(&error)),
-        |url| {
-            let messages = &call.messages;
-            completion_body(
-                &call.model,
-                messages,
-                &call.optional_params,
-                &RefuseDownloads,
-            )
-            .map(|body| json!({"ok": true, "request": wire(&url, call.api_key.as_deref(), &body)}))
-            .map_err(|error| invalid(error.to_string()))
-        },
-    )
+// why a call stopped before it had an answer to record
+pub(super) enum Stop {
+    Server(Box<OobaboogaError>),
+    Reply(Box<ReplyError>),
+    Input(String),
 }
 
-// a server error is a recorded answer; any other reply error is bad input to the helper
-fn settle(result: Result<Value, ReplyError>) -> Result<Value, Box<HelperError>> {
+pub(super) fn finish(result: Result<Value, Stop>) -> Result<Value, Box<HelperError>> {
     match result {
         Ok(value) => Ok(value),
-        Err(ReplyError::Server(error)) => Ok(failure(&error)),
-        Err(other) => Err(invalid(other.to_string())),
+        Err(Stop::Server(error)) => Ok(failure(&error)),
+        Err(Stop::Reply(reply)) => match *reply {
+            ReplyError::Server(error) => Ok(failure(&error)),
+            other @ (ReplyError::Shape { .. } | ReplyError::Missing { .. }) => {
+                Err(invalid(other.to_string()))
+            }
+        },
+        Err(Stop::Input(message)) => Err(invalid(message)),
     }
 }
 
-pub(super) fn embedding_value(call: &EmbeddingCall) -> Result<Value, Box<HelperError>> {
-    let url = match embeddings_url(&call.model, call.api_base.as_deref()) {
-        Ok(url) => url,
-        Err(error) => return Ok(failure(&error)),
-    };
+pub(super) fn request_value(call: &RequestCall) -> Result<Value, Stop> {
+    let url = completion_url(&call.model, call.api_base.as_deref())
+        .map_err(|error| Stop::Server(Box::new(error)))?;
+    let messages = &call.messages;
+    let body = completion_body(
+        &call.model,
+        messages,
+        &call.optional_params,
+        &RefuseDownloads,
+    )
+    .map_err(|error| Stop::Input(error.to_string()))?;
+    Ok(json!({"ok": true, "request": wire(&url, call.api_key.as_deref(), &body)}))
+}
+
+pub(super) fn embedding_value(call: &EmbeddingCall) -> Result<Value, Stop> {
+    let url = embeddings_url(&call.model, call.api_base.as_deref())
+        .map_err(|error| Stop::Server(Box::new(error)))?;
     let input = EmbeddingInput::Texts(call.input.clone());
     let body = embedding_body(&input, &call.optional_params)
-        .map_err(|error| invalid(error.to_string()))?;
-    let request = wire(&url, call.api_key.as_deref(), &body);
-    settle(
-        transform_embedding_response(&call.model, &call.reply).map(|reply| {
-            json!({
-                "ok": true,
-                "request": request,
-                "model": reply.model,
-                "data": [{"embedding": reply.embedding, "index": 0, "object": "embedding"}],
-                "prompt_tokens": reply.prompt_tokens,
-                "total_tokens": reply.total_tokens,
-            })
-        }),
-    )
+        .map_err(|error| Stop::Input(error.to_string()))?;
+    let reply = transform_embedding_response(&call.model, &call.reply)
+        .map_err(|error| Stop::Reply(Box::new(error)))?;
+    Ok(json!({
+        "ok": true,
+        "request": wire(&url, call.api_key.as_deref(), &body),
+        "model": reply.model,
+        "data": [{"embedding": reply.embedding, "index": 0, "object": "embedding"}],
+        "prompt_tokens": reply.prompt_tokens,
+        "total_tokens": reply.total_tokens,
+    }))
 }
 
 // the creation time is the wall clock, so the comparison leaves it out
-pub(super) fn reply_value(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
-    match transform_response(&call.model, call.status, &call.body, 0) {
-        Ok(chat) => Ok(json!({
-            "ok": true,
-            "model": chat.model,
-            "content": chat.content,
-            "usage": chat.usage,
-        })),
-        Err(ReplyError::Server(error)) => Ok(failure(&error)),
-        Err(other) => Err(invalid(other.to_string())),
-    }
+pub(super) fn reply_value(call: &ReplyCall) -> Result<Value, Stop> {
+    let chat = transform_response(&call.model, call.status, &call.body, 0)
+        .map_err(|error| Stop::Reply(Box::new(error)))?;
+    Ok(json!({
+        "ok": true,
+        "model": chat.model,
+        "content": chat.content,
+        "usage": chat.usage,
+    }))
 }
