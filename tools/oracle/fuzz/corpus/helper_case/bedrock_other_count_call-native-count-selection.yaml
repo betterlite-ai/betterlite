@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-other-count-call-selection
+call:
+  bedrock_other_count_call:
+    native_count_selection:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: []
+          provider: bedrock_converse
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          tools: []
+          system: ''
+          now: 1767225600
+env: {}
+compare: {ignore: []}

@@ -19,12 +19,14 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 hex.workspace = true
 http = "1.5.0"
+image = { version = "0.25.10", default-features = false, features = ["bmp", "dds", "ff", "hdr", "ico", "jpeg", "png", "pnm", "tga"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 pem = "4.0.0"

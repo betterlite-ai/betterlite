@@ -1,0 +1,59 @@
+kind: helper
+name: mistral-options-recursion-boundary
+call:
+  mistral_options:
+    steps:
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 3
+        params:
+          - - tools
+            - - $id: tool
+                function:
+                  $schema: fn
+                  parameters:
+                    $id: params
+                    properties:
+                      leaf:
+                        $id: leaf
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 4
+        params:
+          - - tools
+            - - $id: tool
+                function:
+                  $schema: fn
+                  parameters:
+                    $id: params
+                    properties:
+                      leaf:
+                        $id: leaf
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 1
+        params:
+          - - tools
+            - - $id: tool
+                function:
+                  $schema: fn
+                  parameters:
+                    $id: params
+                    properties:
+                      leaf:
+                        $id: leaf
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 0
+        params:
+          - - tools
+            - - $id: tool
+                function:
+                  $schema: fn
+                  parameters:
+                    $id: params
+                    properties:
+                      leaf:
+                        $id: leaf
+env: {}
+compare: {ignore: []}

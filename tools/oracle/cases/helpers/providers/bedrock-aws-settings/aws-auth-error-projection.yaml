@@ -7,7 +7,7 @@
       "params": {
         "status": 403,
         "message": "denied",
-        "ssl_verify": "/fixture-ca.pem"
+        "ssl_verify": "/fixture-ca.pem\u0000"
       }
     }
   },
