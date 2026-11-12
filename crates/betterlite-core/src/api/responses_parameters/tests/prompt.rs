@@ -219,6 +219,48 @@ fn equal_copies_do_not_take_the_identity_branch() {
 }
 
 #[test]
+fn an_in_place_change_to_a_returned_message_counts_for_correspondence() {
+    let original = json(
+        r#"[{"role": "user", "content": "a"}, {"type": "function_call", "name": "f"}, {"role": "assistant", "content": "b"}]"#,
+    );
+    let merged = [
+        returned(Some(1), r#"{"role": "user", "content": "b2"}"#),
+        returned(Some(0), r#"{"role": "user", "content": "a"}"#),
+    ];
+    let outcome = merge_prompt_management_input(&original, &merged).expect("merges");
+    assert_eq!(
+        outcome.input,
+        json(
+            r#"[{"role": "user", "content": "b2"}, {"type": "function_call", "name": "f"}, {"role": "user", "content": "a"}]"#
+        )
+    );
+    assert_eq!(outcome.warning, None);
+}
+
+#[test]
+fn an_extra_merged_message_breaks_correspondence() {
+    let original = json(
+        r#"[{"type": "function_call", "name": "f"}, {"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]"#,
+    );
+    let merged = [
+        returned(None, r#"{"role": "user", "content": "a"}"#),
+        returned(None, r#"{"role": "assistant", "content": "b"}"#),
+        returned(None, r#"{"role": "user", "content": "c"}"#),
+    ];
+    let outcome = merge_prompt_management_input(&original, &merged).expect("merges");
+    assert_eq!(
+        outcome.input,
+        json(
+            r#"[{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}, {"role": "user", "content": "c"}]"#
+        )
+    );
+    assert_eq!(
+        outcome.warning,
+        Some(PromptMergeWarning::NonMessageItemsDropped)
+    );
+}
+
+#[test]
 fn an_empty_original_list_returns_the_shaped_merged_messages() {
     let original = json("[]");
     let merged = [
