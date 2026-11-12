@@ -148,6 +148,7 @@ fn decode_keeps_an_empty_usage_object_as_defaulted_metadata() {
 
 #[rstest]
 #[case::list("[]")]
+#[case::positional_list(r#"[null,null,{"totalTokenCount":1},null,null]"#)]
 #[case::text(r#""text""#)]
 #[case::number("7")]
 #[case::null("null")]
@@ -156,6 +157,15 @@ fn decode_rejects_a_non_object_root(#[case] source: &str) {
         decode_generate_content(source.as_bytes()),
         Err(GenerateContentError::Json { .. })
     ));
+}
+
+#[rstest]
+#[case::list(r#"{"promptFeedback":["SAFETY"],"usageMetadata":{}}"#)]
+#[case::text(r#"{"promptFeedback":"SAFETY","usageMetadata":{}}"#)]
+fn decode_rejects_a_non_object_prompt_feedback(#[case] source: &str) {
+    let failure = decode_generate_content(source.as_bytes()).unwrap_err();
+    assert!(matches!(failure, GenerateContentError::Json { .. }));
+    assert!(failure.to_string().contains("promptFeedback"));
 }
 
 #[test]
@@ -533,7 +543,7 @@ fn a_malformed_body_is_a_422_response() {
     };
     let failure = transform_response(&raw, &request(REQUESTED_MODEL), &mut fixed_id).unwrap_err();
     assert_eq!(failure.status_code, 422);
-    assert!(failure.message.contains("not valid JSON"));
+    assert!(failure.message.contains("malformed"));
     assert_eq!(
         failure
             .headers

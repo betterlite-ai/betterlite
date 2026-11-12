@@ -12,7 +12,7 @@ use crate::model_policy::error::VertexAiError;
 pub enum GenerateContentError {
     #[error("the Gemini response is {size} bytes, over the {MAX_RESPONSE_BYTES} byte limit")]
     TooLarge { size: usize },
-    #[error("the Gemini response is not valid JSON at {path}: {source}")]
+    #[error("the Gemini response is malformed at {path}: {source}")]
     Json {
         path: String,
         #[source]
@@ -44,18 +44,18 @@ pub(super) fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
                 .as_bytes()
                 .iter()
                 .map(|byte| char::from(*byte))
-                .collect::<String>()
+                .collect()
         })
         .collect();
     (!values.is_empty()).then(|| values.join(", "))
 }
 
 fn header_map(headers: &HeaderMap) -> BTreeMap<String, String> {
-    let mut mapped = BTreeMap::new();
-    for name in headers.keys() {
-        if let Some(value) = header_text(headers, name.as_str()) {
-            mapped.insert(name.as_str().to_owned(), value);
-        }
-    }
-    mapped
+    headers
+        .keys()
+        .filter_map(|name| {
+            let value = header_text(headers, name.as_str())?;
+            Some((name.as_str().to_owned(), value))
+        })
+        .collect()
 }

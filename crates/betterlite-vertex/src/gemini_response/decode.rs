@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, Error as _};
+use serde_json::Error as JsonError;
 use serde_json::value::RawValue;
 
 use crate::gemini_candidates::candidate::{Candidate, PromptFeedback};
@@ -14,7 +15,7 @@ pub const MAX_RESPONSE_BYTES: usize = 0x0100_0000;
 #[serde(rename_all = "camelCase")]
 struct RawGenerateContent {
     candidates: Option<Vec<Candidate>>,
-    prompt_feedback: Option<PromptFeedback>,
+    prompt_feedback: Option<Box<RawValue>>,
     usage_metadata: Option<Box<RawValue>>,
     response_id: Option<String>,
     model_version: Option<Json>,
@@ -48,21 +49,42 @@ pub fn decode_generate_content(
     if bytes.len() > MAX_RESPONSE_BYTES {
         return Err(GenerateContentError::TooLarge { size: bytes.len() });
     }
+    require_object(bytes, "the document root")?;
     let raw: RawGenerateContent = decode_json(bytes)?;
+    let prompt_feedback = match raw.prompt_feedback.as_deref() {
+        Some(feedback) => {
+            require_object(feedback.get().as_bytes(), "promptFeedback")?;
+            Some(decode_json(feedback.get().as_bytes())?)
+        }
+        None => None,
+    };
     let usage = raw
         .usage_metadata
         .as_deref()
         .map(decode_usage)
         .transpose()?;
+    let (usage_metadata, traffic_type) = match usage {
+        Some(decoded) => (Some(decoded.metadata), decoded.traffic_type),
+        None => (None, None),
+    };
     Ok(GenerateContentResponse {
         candidates: raw.candidates,
-        prompt_feedback: raw.prompt_feedback,
-        traffic_type: usage
-            .as_ref()
-            .and_then(|decoded| decoded.traffic_type.clone()),
-        usage_metadata: usage.map(|decoded| decoded.metadata),
+        prompt_feedback,
+        usage_metadata,
+        traffic_type,
         response_id: raw.response_id,
         model_version: raw.model_version,
+    })
+}
+
+// serde's derive also reads a struct from a JSON array by position, and LiteLLM rejects a non-object
+fn require_object(bytes: &[u8], path: &str) -> Result<(), GenerateContentError> {
+    if bytes.iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&b'{') {
+        return Ok(());
+    }
+    Err(GenerateContentError::Json {
+        path: path.to_owned(),
+        source: JsonError::custom("the value is not a JSON object"),
     })
 }
 
