@@ -10,18 +10,12 @@ use crate::sections::guardrail_identity::item::GuardrailValue;
 
 pub mod bedrock_checks;
 pub mod bedrock_streaming;
-pub mod provider_options;
 
 use bedrock_checks::{
     BedrockChecksConfigWire, BedrockContentFilterModel, BedrockPromptAttackModel,
     BedrockSensitiveInfoModel,
 };
 use bedrock_streaming::ChunkBudgetChars;
-use provider_options::{
-    LakeraOnFlagged, default_breakdown, default_dev_info, default_include_evidence,
-    default_include_scanners, default_on_flagged, default_on_flagged_action, default_payload,
-    default_send_team_id, default_send_user_alias, default_send_user_id, default_use_v2,
-};
 
 // serde's library adapter builds this private, non-Debug value only while a model is serialized
 #[derive(Serialize)]
@@ -124,6 +118,14 @@ impl Default for BedrockGuardrailConfigModel {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LakeraOnFlagged {
+    Block,
+    Monitor,
+    InjectSystemMessage,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LakeraV2GuardrailConfigModel {
     #[serde(
@@ -147,6 +149,22 @@ pub struct LakeraV2GuardrailConfigModel {
     pub on_flagged: Option<LakeraOnFlagged>,
     #[serde(default)]
     pub advisory_system_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LassoGuardrailConfigModel {
+    #[serde(default)]
+    pub lasso_user_id: Option<String>,
+    #[serde(default)]
+    pub lasso_conversation_id: Option<String>,
+    #[serde(default = "default_mask")]
+    pub mask: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeepKeepGuardrailConfigModel {
+    pub deepkeep_firewall_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,6 +217,67 @@ pub struct JavelinGuardrailConfigModel {
     pub metadata: Option<BTreeMap<String, GuardrailValue>>,
     pub application: Option<String>,
     pub config: Option<BTreeMap<String, GuardrailValue>>,
+}
+
+// LiteLLM declares these `bool | None` with a non-None default, so an absent key takes the value and null stays None
+#[must_use]
+pub const fn default_payload() -> Option<bool> {
+    Some(true)
+}
+
+#[must_use]
+pub const fn default_breakdown() -> Option<bool> {
+    Some(true)
+}
+
+#[must_use]
+pub const fn default_dev_info() -> Option<bool> {
+    Some(true)
+}
+
+#[must_use]
+pub const fn default_on_flagged() -> Option<LakeraOnFlagged> {
+    Some(LakeraOnFlagged::Block)
+}
+
+#[must_use]
+pub const fn default_mask() -> Option<bool> {
+    Some(false)
+}
+
+#[must_use]
+pub fn default_on_flagged_action() -> Option<String> {
+    Some("monitor".to_owned())
+}
+
+#[must_use]
+pub const fn default_include_scanners() -> Option<bool> {
+    Some(true)
+}
+
+#[must_use]
+pub const fn default_include_evidence() -> Option<bool> {
+    Some(true)
+}
+
+#[must_use]
+pub const fn default_use_v2() -> Option<bool> {
+    Some(false)
+}
+
+#[must_use]
+pub const fn default_send_user_alias() -> Option<bool> {
+    Some(false)
+}
+
+#[must_use]
+pub const fn default_send_user_id() -> Option<bool> {
+    Some(false)
+}
+
+#[must_use]
+pub const fn default_send_team_id() -> Option<bool> {
+    Some(false)
 }
 
 #[path = "guardrail_translation/guardrail_provider_options/tests.rs"]

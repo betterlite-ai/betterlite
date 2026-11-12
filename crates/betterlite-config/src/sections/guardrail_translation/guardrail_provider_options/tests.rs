@@ -10,12 +10,10 @@ use super::bedrock_checks::{
     BedrockSensitiveInfoEntity,
 };
 use super::bedrock_streaming::BedrockGuardrailStreamParams;
-use super::provider_options::{
-    DeepKeepGuardrailConfigModel, LakeraOnFlagged, LassoGuardrailConfigModel,
-};
 use super::{
-    BedrockChecksConfigModel, BedrockGuardrailConfigModel, JavelinGuardrailConfigModel,
-    LakeraV2GuardrailConfigModel, NomaGuardrailConfigModel, PillarGuardrailConfigModel,
+    BedrockChecksConfigModel, BedrockGuardrailConfigModel, DeepKeepGuardrailConfigModel,
+    JavelinGuardrailConfigModel, LakeraOnFlagged, LakeraV2GuardrailConfigModel,
+    LassoGuardrailConfigModel, NomaGuardrailConfigModel, PillarGuardrailConfigModel,
     ZscalerAIGuardConfigModel,
 };
 use crate::sections::guardrail_identity::item::GuardrailValue;
