@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{
     Content, ContentPart, Message, convert_content_list_to_str, extract_search_results_text,
@@ -7,10 +5,7 @@ use betterlite_prompts::message_content::{
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::chat::ChatMessage;
-use crate::chat_content::{ChatContent, ChatContentError, Mode, RefuseDownloads};
-
-use super::PROVIDER;
+use crate::chat_content::ChatContentError;
 
 const IMAGE_URL: &str = "image_url";
 const SEARCH_RESULTS: &str = "search_results";
@@ -101,30 +96,6 @@ fn with_search_results_block(message: &Message, parts: &[ContentPart]) -> Messag
         .provider_specific_fields
         .shift_remove(SEARCH_RESULTS);
     forwarded
-}
-
-pub fn transform_messages(
-    model: &str,
-    messages: &[ChatMessage],
-    supports_vision: bool,
-) -> Result<Vec<ChatMessage>, ChatContentError> {
-    let prompt: Vec<Message> = convert_messages(messages)?;
-    let prepared = forward_or_collapse(&prompt, supports_vision);
-    let typed: Vec<ChatMessage> = convert_messages(&prepared)?;
-    let optional_params = Object::new();
-    let environment = BTreeMap::new();
-    let content = ChatContent {
-        model,
-        messages: &typed,
-        optional_params: &optional_params,
-        provider: Some(PROVIDER),
-        api_base: None,
-        global_api_base: None,
-        openai_system_messages_first: false,
-        environment: &environment,
-        downloads: &RefuseDownloads,
-    };
-    Ok(content.transform(Mode::Sync)?.messages)
 }
 
 pub(super) fn convert_messages<Source, Target>(

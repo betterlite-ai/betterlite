@@ -17,7 +17,7 @@ use tracing::subscriber::with_default;
 use super::cost::GenericPricing;
 use super::history::{fill_reasoning_content, thinking_active};
 use super::identity::complete_url;
-use super::messages::{forward_or_collapse, transform_messages};
+use super::messages::forward_or_collapse;
 use super::options::{map_openai_params, supported_openai_params};
 use super::request::{RequestInput, transform_request};
 use super::tools::drop_unsupported_tools;
@@ -41,6 +41,19 @@ fn messages(text: &str) -> Vec<Message> {
 
 fn chats(text: &str) -> Vec<ChatMessage> {
     serde_json::from_str(text).expect("chat messages")
+}
+
+fn transformed_messages(model: &str, messages: &[ChatMessage], supports_vision: bool) -> Value {
+    let empty = Object::new();
+    let input = RequestInput {
+        model,
+        messages,
+        optional_params: &empty,
+        supports_vision,
+        supports_reasoning: false,
+    };
+    let body = transform_request(&input, Mode::Sync).expect("the parent transform");
+    rendered(&body)["messages"].clone()
 }
 
 fn rendered(mapped: &Object) -> Value {
@@ -510,16 +523,15 @@ fn a_textless_list_with_search_text_becomes_the_search_text() {
 
 #[test]
 fn transform_messages_applies_the_parent_content_transform() {
-    let transformed = transform_messages(
+    let transformed = transformed_messages(
         "deepseek-chat",
         &chats(
             r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"https://example.test/a.png","format":"png"}}]}]"#,
         ),
         true,
-    )
-    .expect("the parent transform");
+    );
     assert_eq!(
-        serde_json::to_value(transformed).expect("the transformed messages"),
+        transformed,
         value(
             r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]"#
         )
@@ -528,32 +540,27 @@ fn transform_messages_applies_the_parent_content_transform() {
 
 #[test]
 fn transform_messages_collapses_when_vision_is_off() {
-    let transformed = transform_messages(
+    let transformed = transformed_messages(
         "deepseek-chat",
         &chats(
             r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":"https://example.test/a.png"}]}]"#,
         ),
         false,
-    )
-    .expect("the parent transform");
-    assert_eq!(
-        serde_json::to_value(transformed).expect("the transformed messages"),
-        value(r#"[{"role":"user","content":"look"}]"#)
     );
+    assert_eq!(transformed, value(r#"[{"role":"user","content":"look"}]"#));
 }
 
 #[test]
 fn transform_messages_wraps_a_forwarded_image_url_string() {
-    let transformed = transform_messages(
+    let transformed = transformed_messages(
         "deepseek-chat",
         &chats(
             r#"[{"role":"user","content":[{"type":"image_url","image_url":"https://example.test/a.png"}]}]"#,
         ),
         true,
-    )
-    .expect("the parent transform");
+    );
     assert_eq!(
-        serde_json::to_value(transformed).expect("the transformed messages"),
+        transformed,
         value(
             r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]"#
         )

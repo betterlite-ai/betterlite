@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::{ChatContentError, Mode};
 use betterlite_openai::deepseek_chat::history::fill_reasoning_content;
-use betterlite_openai::deepseek_chat::messages::transform_messages;
-use betterlite_openai::deepseek_chat::options::{map_openai_params, supported_openai_params};
+use betterlite_openai::deepseek_chat::options::map_openai_params;
 use betterlite_openai::deepseek_chat::request::{RequestInput, transform_request};
 use betterlite_openai::deepseek_chat::tools::drop_unsupported_tools;
 use betterlite_openai::openai_base_config::{
@@ -34,18 +33,10 @@ const EVENTS: [(&str, &str); 2] = [
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    Supported { cases: Vec<SupportedCase> },
     Map { cases: Vec<MapCase> },
     History { cases: Vec<HistoryCase> },
-    Messages { cases: Vec<MessagesCase> },
     Tools { cases: Vec<ToolsCase> },
-    Request { cases: Vec<RequestCase> },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SupportedCase {
-    model: String,
+    Messages { cases: Vec<MessagesCase> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,37 +57,16 @@ pub(crate) struct HistoryCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct MessagesCase {
-    model: String,
-    messages: Vec<ChatMessage>,
-    supports_vision: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ToolsCase {
     optional_params: Object,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum RequestMode {
-    #[default]
-    Sync,
-    Async,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RequestCase {
+pub(crate) struct MessagesCase {
     model: String,
     messages: Vec<ChatMessage>,
-    #[serde(default)]
-    optional_params: Object,
     supports_vision: bool,
-    supports_reasoning: bool,
-    #[serde(default)]
-    mode: RequestMode,
 }
 
 fn openai_config() -> OpenAiConfig {
@@ -139,25 +109,16 @@ fn map_value(case: &MapCase) -> Value {
 }
 
 fn messages_value(case: &MessagesCase) -> Result<Value, Box<HelperError>> {
-    let transformed = transform_messages(&case.model, &case.messages, case.supports_vision)
-        .map_err(|source| content_error(&source))?;
-    Ok(json!(transformed))
-}
-
-fn request_value(case: &RequestCase) -> Result<Value, Box<HelperError>> {
+    let optional_params = Object::new();
     let input = RequestInput {
         model: &case.model,
         messages: &case.messages,
-        optional_params: &case.optional_params,
+        optional_params: &optional_params,
         supports_vision: case.supports_vision,
-        supports_reasoning: case.supports_reasoning,
+        supports_reasoning: false,
     };
-    let mode = match case.mode {
-        RequestMode::Sync => Mode::Sync,
-        RequestMode::Async => Mode::AsyncSubclass,
-    };
-    let body = transform_request(&input, mode).map_err(|source| content_error(&source))?;
-    Ok(json!(body))
+    let body = transform_request(&input, Mode::Sync).map_err(|source| content_error(&source))?;
+    Ok(json!(body.get("messages")))
 }
 
 fn captured<Case, Render>(
@@ -186,19 +147,9 @@ impl Helper for Op {
         let logs = Logs::default();
         let subscriber = tracing_subscriber::registry().with(logs.clone());
         with_default(subscriber, || match input {
-            Input::Supported { cases } => {
-                let values = captured(&logs, cases, |case| {
-                    Ok(json!(supported_openai_params(
-                        &case.model,
-                        &openai_config(),
-                        &empty_catalog()
-                    )))
-                })?;
-                Ok(json!({"supported": values}))
-            }
             Input::Map { cases } => {
                 let values = captured(&logs, cases, |case| Ok(map_value(case)))?;
-                Ok(json!({"mapped": values}))
+                Ok(json!({"map": values}))
             }
             Input::History { cases } => {
                 let values = captured(&logs, cases, |case| {
@@ -206,19 +157,15 @@ impl Helper for Op {
                 })?;
                 Ok(json!({"history": values}))
             }
-            Input::Messages { cases } => {
-                let values = captured(&logs, cases, messages_value)?;
-                Ok(json!({"messages": values}))
-            }
             Input::Tools { cases } => {
                 let values = captured(&logs, cases, |case| {
                     Ok(json!(drop_unsupported_tools(&case.optional_params).params))
                 })?;
                 Ok(json!({"tools": values}))
             }
-            Input::Request { cases } => {
-                let values = captured(&logs, cases, request_value)?;
-                Ok(json!({"bodies": values}))
+            Input::Messages { cases } => {
+                let values = captured(&logs, cases, messages_value)?;
+                Ok(json!({"messages": values}))
             }
         })
     }
