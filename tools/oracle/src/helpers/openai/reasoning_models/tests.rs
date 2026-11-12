@@ -54,7 +54,7 @@ fn helper_seeds_select_openai_reasoning_models() {
                 serde_json::to_value(call)
                     .ok()
                     .and_then(|value| value.as_object().cloned())
-                    .is_some_and(|fields| fields.keys().next() == Some(variant))
+                    .is_some_and(|round_trip| round_trip.keys().next() == Some(variant))
             })
             && validate_helper(Path::new("<helper>"), &case).is_ok()
     }));
