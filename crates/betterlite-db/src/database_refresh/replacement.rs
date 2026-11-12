@@ -68,10 +68,9 @@ pub async fn recreate<P, T, C>(
     expected_generation: Option<u64>,
 ) -> Result<bool, ReplacementError<P::Error, C>>
 where
-    P: PoolProvider + 'static,
-    T: RefreshTrigger + 'static,
+    P: PoolProvider,
+    T: RefreshTrigger,
     C: Error + Send + Sync + 'static,
-    P::Handle: 'static,
 {
     let _guard = generation.replacement_lock.lock().await;
     recreate_locked(generation, new_db_url, transport, expected_generation).await
@@ -106,10 +105,9 @@ async fn recreate_locked<P, T, C>(
     expected_generation: Option<u64>,
 ) -> Result<bool, ReplacementError<P::Error, C>>
 where
-    P: PoolProvider + 'static,
-    T: RefreshTrigger + 'static,
+    P: PoolProvider,
+    T: RefreshTrigger,
     C: Error + Send + Sync + 'static,
-    P::Handle: 'static,
 {
     if !generation_matches(generation, expected_generation) {
         return Ok(false);
@@ -117,22 +115,9 @@ where
     if let Some(previous) = clone_current(&generation.current) {
         previous.handle.close();
     }
-    let Some(url) = replacement_url(generation, new_db_url) else {
-        return Err(ReplacementError::MissingUrl);
-    };
-    let built = generation
-        .provider
-        .build(&url, transport)
-        .map_err(|source| ReplacementError::Build { source })?;
-    let replacement = Arc::new(built);
+    let replacement = build_candidate(generation, new_db_url, transport)?;
     drop(publish(generation, Arc::clone(&replacement), None));
-    replacement
-        .connect(None)
-        .await
-        .map_err(|source| ReplacementError::Connect { source })?;
-    let Some(tracker) = generation.instrument(&replacement) else {
-        return Err(ReplacementError::Untracked);
-    };
+    let tracker = connect_and_track(generation, &replacement).await?;
     let _committed = commit_replacement(generation, replacement, tracker)?;
     Ok(true)
 }
@@ -143,10 +128,28 @@ async fn open_candidate<P, T, C>(
     transport: Option<&PoolTransport>,
 ) -> Result<(Arc<P::Handle>, Arc<DrainTracker>), ReplacementError<P::Error, C>>
 where
-    P: PoolProvider + 'static,
-    T: RefreshTrigger + 'static,
+    P: PoolProvider,
+    T: RefreshTrigger,
     C: Error + Send + Sync + 'static,
-    P::Handle: 'static,
+{
+    let candidate = build_candidate(generation, new_db_url, transport)?;
+    let mut pending = CandidateGuard {
+        handle: Some(Arc::clone(&candidate)),
+    };
+    let tracker = connect_and_track(generation, &candidate).await?;
+    pending.handle.take();
+    Ok((candidate, tracker))
+}
+
+fn build_candidate<P, T, C>(
+    generation: &PoolGeneration<P, T, C>,
+    new_db_url: &SecretString,
+    transport: Option<&PoolTransport>,
+) -> Result<Arc<P::Handle>, ReplacementError<P::Error, C>>
+where
+    P: PoolProvider,
+    T: RefreshTrigger,
+    C: Error + Send + Sync + 'static,
 {
     let Some(url) = replacement_url(generation, new_db_url) else {
         return Err(ReplacementError::MissingUrl);
@@ -155,19 +158,26 @@ where
         .provider
         .build(&url, transport)
         .map_err(|source| ReplacementError::Build { source })?;
-    let candidate = Arc::new(built);
-    let mut pending = CandidateGuard {
-        handle: Some(Arc::clone(&candidate)),
-    };
+    Ok(Arc::new(built))
+}
+
+async fn connect_and_track<P, T, C>(
+    generation: &PoolGeneration<P, T, C>,
+    candidate: &Arc<P::Handle>,
+) -> Result<Arc<DrainTracker>, ReplacementError<P::Error, C>>
+where
+    P: PoolProvider,
+    T: RefreshTrigger,
+    C: Error + Send + Sync + 'static,
+{
     candidate
         .connect(None)
         .await
         .map_err(|source| ReplacementError::Connect { source })?;
-    let Some(tracker) = generation.instrument(&candidate) else {
+    let Some(tracker) = generation.instrument(candidate) else {
         return Err(ReplacementError::Untracked);
     };
-    pending.handle.take();
-    Ok((candidate, tracker))
+    Ok(tracker)
 }
 
 fn commit_replacement<P, T, C>(
