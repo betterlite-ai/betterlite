@@ -530,7 +530,7 @@ fn response_header_prefix_and_ratelimit_copy() {
     let unrelated = pairs(&[("X-Other", "value")]);
     assert_eq!(
         process_azure_headers(&unrelated, HeaderLookup::CaseInsensitive),
-        map(&[("llm_provider-X-Other", "value")])
+        map(&[("llm_provider-x-other", "value")])
     );
 }
 
@@ -543,9 +543,18 @@ fn response_header_lookup_mode() {
     assert_eq!(
         process_azure_headers(&mixed_case, HeaderLookup::CaseInsensitive),
         map(&[
-            ("llm_provider-X-Ratelimit-Limit-Requests", "12"),
+            ("llm_provider-x-ratelimit-limit-requests", "12"),
             ("x-ratelimit-limit-requests", "12"),
         ])
+    );
+    let duplicated = pairs(&[("Accept", "a"), ("accept", "b")]);
+    assert_eq!(
+        process_azure_headers(&duplicated, HeaderLookup::CaseInsensitive),
+        map(&[("llm_provider-accept", "a, b")])
+    );
+    assert_eq!(
+        process_azure_headers(&duplicated, HeaderLookup::Exact),
+        map(&[("llm_provider-Accept", "a"), ("llm_provider-accept", "b")])
     );
 }
 

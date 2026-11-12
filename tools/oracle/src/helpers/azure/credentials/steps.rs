@@ -77,11 +77,12 @@ fn token_step(step: &TokenStep) -> Result<Value, Box<HelperError>> {
         Ok(None) => json!({"kind": "absent"}),
         Err(error) => json!({"kind": "error", "class": error.class()}),
     };
+    let cache = cache_value(&step.cache, &sources)?;
     Ok(json!({
         "calls": sources.calls(),
         "provider_calls": sources.provider_calls.load(Ordering::Relaxed),
         "outcome": outcome,
-        "cache": cache_value(&step.cache, &sources)?,
+        "cache": cache,
     }))
 }
 

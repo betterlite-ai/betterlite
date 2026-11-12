@@ -31,10 +31,22 @@ pub fn process_azure_headers(
     headers: &[(String, String)],
     lookup: HeaderLookup,
 ) -> BTreeMap<String, String> {
-    let mut output: BTreeMap<String, String> = headers
-        .iter()
-        .map(|(name, value)| (format!("llm_provider-{name}"), value.clone()))
-        .collect();
+    let mut output: BTreeMap<String, String> = BTreeMap::new();
+    for (name, value) in headers {
+        let key = match lookup {
+            HeaderLookup::Exact => format!("llm_provider-{name}"),
+            HeaderLookup::CaseInsensitive => format!("llm_provider-{}", name.to_ascii_lowercase()),
+        };
+        match output.get_mut(&key) {
+            Some(existing) if lookup == HeaderLookup::CaseInsensitive => {
+                existing.push_str(", ");
+                existing.push_str(value);
+            }
+            _ => {
+                output.insert(key, value.clone());
+            }
+        }
+    }
     for name in RATE_LIMIT_HEADERS {
         if let Some(value) = find_header(headers, name, lookup) {
             output.insert(name.to_owned(), value.to_owned());
