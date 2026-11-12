@@ -17,6 +17,7 @@ call:
       - {function: get_requested_anthropic_messages_optional_param, params: {speed: null, max_tokens: 5}, model: claude-opus-4-6, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
       - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0.5, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
       - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0.5, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: true, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
       - {function: get_requested_anthropic_messages_optional_param, params: {top_p: 0.9, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: true}
       - {function: get_requested_anthropic_messages_optional_param, params: {top_k: 5, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
       - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 1, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
