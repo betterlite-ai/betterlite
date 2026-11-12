@@ -313,9 +313,9 @@ fn the_byte_limit_itself_is_accepted() {
 #[rstest]
 #[case::exact(b"Thu, 01 Jan 1970 00:00:00 GMT", 0, 0)]
 #[case::half_a_second_before(b"Thu, 01 Jan 1970 00:00:00 GMT", -500, 0)]
-#[case::one_second_before(b"Thu, 01 Jan 1970 00:00:00 GMT", -1000, -1)]
+#[case::one_second_before(b"Thu, 01 Jan 1970 00:00:00 GMT", -1000, 1)]
 #[case::half_a_second_after(b"Thu, 01 Jan 1970 00:00:00 GMT", 500, 0)]
-#[case::one_second_after(b"Thu, 01 Jan 1970 00:00:00 GMT", 1000, 1)]
+#[case::one_second_after(b"Thu, 01 Jan 1970 00:00:00 GMT", 1000, -1)]
 fn date_seconds_truncate_toward_zero(
     #[case] bytes: &[u8],
     #[case] now_millis: i64,

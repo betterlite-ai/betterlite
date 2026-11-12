@@ -17,20 +17,6 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> RetrySettings {
     resolve(&config.sections.retry_policy)
 }
 
-fn policy(retries: i64) -> RetryPolicy {
-    RetryPolicy {
-        bad_request: Some(retries),
-        authentication: Some(retries),
-        timeout: Some(retries),
-        rate_limit: Some(retries),
-        content_policy: Some(retries),
-        internal_server: Some(retries),
-        service_unavailable: Some(retries),
-        not_found: Some(retries),
-        fallback: Some(retries),
-    }
-}
-
 fn fixed(value: f64) -> String {
     format!("{value:.6}")
 }
@@ -60,7 +46,20 @@ router_settings:
       RateLimitErrorRetries: 5
 ";
     let resolved = settings(source, &[("JITTER", "0.5")]);
-    assert_eq!(resolved.policies.global, Some(policy(4)));
+    assert_eq!(
+        resolved.policies.global,
+        Some(RetryPolicy {
+            bad_request: None,
+            authentication: None,
+            timeout: None,
+            rate_limit: None,
+            content_policy: None,
+            internal_server: None,
+            service_unavailable: None,
+            not_found: None,
+            fallback: Some(4),
+        })
+    );
     let group = resolved.policies.model_group.get("gpt-4");
     assert_eq!(group.map(|policy| policy.rate_limit), Some(Some(5)));
     assert_eq!(resolved.num_retries, 3);

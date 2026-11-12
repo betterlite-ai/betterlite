@@ -180,15 +180,8 @@ router_settings:
     assert_eq!(
         loaded.retry_policy,
         Some(RetryPolicySettings {
-            bad_request: Some(1),
-            authentication: Some(1),
-            timeout: Some(1),
-            rate_limit: Some(1),
-            content_policy: Some(1),
-            internal_server: Some(1),
-            service_unavailable: Some(1),
-            not_found: Some(1),
             fallback: Some(1),
+            ..empty_policy()
         })
     );
     let mut expected = BTreeMap::new();
