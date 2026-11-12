@@ -593,7 +593,12 @@ async fn image_raw_response_headers() {
     );
     let mut runner = Runner::new();
     raw_headers_sync(&mut runner, &transport).await;
-    raw_headers_async(&mut runner, &transport).await;
+    let mut delegated = call("dall-e-2", options("{}"));
+    delegated.delegate_async = true;
+    let outcome = runner.run(delegated, &transport).await.unwrap();
+    let extra = outcome.provider_headers.headers.get("openai-processing-ms");
+    assert_eq!(extra, Some(&String::from("42")));
+    assert_eq!(transport.requests().len(), 2);
 }
 
 async fn raw_headers_sync(runner: &mut Runner, transport: &FakeTransport) {
@@ -637,17 +642,6 @@ fn assert_sent_request(sent: &Recorded) {
         request_body.get("model"),
         Some(&Json::Text(String::from("dall-e-2")))
     );
-}
-
-async fn raw_headers_async(runner: &mut Runner, transport: &FakeTransport) {
-    let mut async_call = call("dall-e-2", options("{}"));
-    async_call.delegate_async = true;
-    let outcome = runner.run(async_call, transport).await.unwrap();
-    assert_eq!(
-        outcome.provider_headers.headers.get("openai-processing-ms"),
-        Some(&String::from("42"))
-    );
-    assert_eq!(transport.requests().len(), 2);
 }
 
 #[tokio::test]

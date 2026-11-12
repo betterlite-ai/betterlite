@@ -26,21 +26,12 @@ use super::input::{Failure, Probe};
 use super::support::{NOW, invalid};
 use crate::helpers::HelperResult;
 
-#[derive(Clone)]
-struct Recorded {
-    body: Vec<u8>,
-    deadline: Duration,
-    url: String,
-    headers: HeaderMap,
-    query: Vec<(String, String)>,
-}
-
 struct FakeTransport {
     status: u16,
     headers: HeaderMap,
     body: Vec<u8>,
     failure: Option<Failure>,
-    calls: Mutex<Vec<Recorded>>,
+    calls: Mutex<Vec<Value>>,
 }
 
 impl FakeTransport {
@@ -61,13 +52,6 @@ impl FakeTransport {
             calls: Mutex::new(Vec::new()),
         })
     }
-
-    fn calls(&self) -> Vec<Recorded> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
 }
 
 impl ImageGenerationTransport for FakeTransport {
@@ -75,22 +59,37 @@ impl ImageGenerationTransport for FakeTransport {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> {
-        let body = match &request.body {
-            RequestBody::Json(bytes) => bytes.clone(),
+        let body: Value = match &request.body {
+            RequestBody::Json(bytes) => serde_json::from_slice(bytes).unwrap_or(Value::Null),
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
-                Vec::new()
+                Value::Null
             }
         };
+        let headers: BTreeMap<&str, String> = request
+            .headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str(),
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                )
+            })
+            .collect();
+        let query: BTreeMap<&str, &str> = request
+            .query
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(Recorded {
-                body,
-                deadline: request.deadline,
-                url: request.url.to_string(),
-                headers: request.headers,
-                query: request.query,
-            });
+            .push(json!({
+                "body": body,
+                "timeout": request.deadline.as_secs_f64(),
+                "url": request.url.as_str(),
+                "headers": headers,
+                "query": query,
+            }));
         let outcome = if self.failure.is_some() {
             Err(TransportError::Closed)
         } else {
@@ -164,7 +163,10 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
         }
         Err(failure) => Err(failure),
     };
-    let calls = transport.calls();
+    let calls = transport
+        .calls
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner);
     let client = if calls.is_empty() {
         Value::Null
     } else {
@@ -173,7 +175,7 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
     let (result, provider_headers, error) = outcome_parts(outcome)?;
     Ok(json!({
         "client": client,
-        "calls": call_values(&calls)?,
+        "calls": calls,
         "result": result,
         "provider_headers": provider_headers,
         "error": error,
@@ -198,34 +200,6 @@ fn outcome_parts(
             json!({"mapped": failure.mapped(), "status": failure.status()}),
         )),
     }
-}
-
-// the wire request as the transport saw it: its URL, headers, query and body
-fn call_values(calls: &[Recorded]) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
-    calls
-        .iter()
-        .map(|record| {
-            let body: Json =
-                serde_json::from_slice(&record.body).map_err(|error| invalid(error.to_string()))?;
-            let mut headers = BTreeMap::new();
-            for (name, value) in &record.headers {
-                let text = value.to_str().map_err(|error| invalid(error.to_string()))?;
-                headers.insert(name.as_str(), text);
-            }
-            let query: BTreeMap<&str, &str> = record
-                .query
-                .iter()
-                .map(|(name, value)| (name.as_str(), value.as_str()))
-                .collect();
-            Ok(json!({
-                "body": body,
-                "timeout": record.deadline.as_secs_f64(),
-                "url": record.url,
-                "headers": headers,
-                "query": query,
-            }))
-        })
-        .collect()
 }
 
 fn call_for(probe: &Probe) -> Result<ImageGenerationCall, Box<crate::helpers::HelperError>> {

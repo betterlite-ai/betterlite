@@ -114,20 +114,14 @@ fn fail_after_prepared(
     source: ImageGenerationSource,
     logger: &mut dyn ImageGenerationLogger,
 ) -> ImageGenerationFailure {
-    let original = Json::Text(source.to_string());
+    logger.post_call(PostCallRecord {
+        input: prepared.prompt.clone(),
+        original_response: Json::Text(source.to_string()),
+        data: (!prepared.async_mode).then(|| prepared.data.clone()),
+    });
     if prepared.async_mode {
-        logger.post_call(PostCallRecord {
-            input: prepared.prompt.clone(),
-            original_response: original,
-            data: None,
-        });
         ImageGenerationFailure::Raw(source)
     } else {
-        logger.post_call(PostCallRecord {
-            input: prepared.prompt.clone(),
-            original_response: original,
-            data: Some(prepared.data.clone()),
-        });
         ImageGenerationFailure::Wrapped(OpenAiImageError::wrapped(source))
     }
 }
