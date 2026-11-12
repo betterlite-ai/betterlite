@@ -148,8 +148,7 @@ fn assert_initial_buffers(state: &StreamState) {
     assert_eq!(state.json_buffer.snapshot(), "");
 }
 
-#[test]
-fn case_1_initial_state() {
+pub(super) fn initial_state() {
     let state = state_with(Some(true), Some("fast"));
     assert_initial_identity(&state);
     assert_initial_buffers(&state);
@@ -199,8 +198,7 @@ fn empty_args_input_json(state: &mut StreamState) {
     assert!(!check_empty_tool_call_args(state));
 }
 
-#[test]
-fn case_2_empty_tool_arguments() {
+pub(super) fn empty_tool_arguments() {
     let mut state = default_state();
     empty_args_first_blocks(&mut state);
     empty_args_input_json(&mut state);
@@ -274,8 +272,7 @@ fn partial_input_provider_fields(state: &mut StreamState) {
     assert_eq!(state.content_blocks[6].delta.kind, "text_delta");
 }
 
-#[test]
-fn case_3_partial_input_json() {
+pub(super) fn partial_input_json() {
     let mut state = default_state();
     partial_input_block_types(&mut state);
     partial_input_text_wins(&mut state);
@@ -328,8 +325,7 @@ fn thinking_non_string(state: &mut StreamState) {
     assert_eq!(signature.reasoning_content, None);
 }
 
-#[test]
-fn case_4_thinking_signature() {
+pub(super) fn thinking_signature() {
     let mut state = default_state();
     thinking_blocks(&mut state);
     thinking_non_string(&mut state);
@@ -408,8 +404,7 @@ fn redacted_missing_data() {
     ));
 }
 
-#[test]
-fn case_5_redacted_thinking() {
+pub(super) fn redacted_thinking() {
     redacted_projection();
     start_tool_use();
     start_non_tool_shapes();
@@ -490,8 +485,7 @@ fn usage_reasoning_and_speed(state: &mut StreamState, counter: &RecordingCounter
     assert_eq!(counter.texts(), ["hello world", "hello world"]);
 }
 
-#[test]
-fn case_6_usage_start_and_delta() {
+pub(super) fn usage_start_and_delta() {
     let counter = RecordingCounter::new(2);
     let mut state = state_with(Some(false), Some("fast"));
     usage_first_merges(&mut state, &counter);
@@ -553,8 +547,7 @@ fn web_search_untracked(state: &mut StreamState) {
     assert!(empty.web_search_calls.is_empty());
 }
 
-#[test]
-fn case_7_web_search_snapshot() {
+pub(super) fn web_search_snapshot() {
     let mut state = default_state();
     web_search_flow(&mut state);
     web_search_untracked(&mut state);
@@ -636,8 +629,7 @@ fn code_edge_cases(state: &mut StreamState) {
     );
 }
 
-#[test]
-fn case_8_code_output_buffer() {
+pub(super) fn code_output_buffer() {
     code_first_buffer();
     let mut state = default_state();
     state.container_id = Some("c-1".to_owned());
@@ -727,8 +719,7 @@ fn message_delta_provider_fields(state: &mut StreamState) {
     assert!(ignored.provider_specific_fields.is_empty());
 }
 
-#[test]
-fn case_9_stop_reason_state() {
+pub(super) fn stop_reason_state() {
     let counter = RecordingCounter::new(0);
     let mut state = default_state();
     message_delta_usage_container(&mut state, &counter);
