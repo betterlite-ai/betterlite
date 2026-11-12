@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 use betterlite_models::decisions::Json;
+use betterlite_redis::request_batch::scope::request_redis_batch_scope;
 use serde::Serialize;
 
 use betterlite_cache::backend::memory::MemoryCacheOps as _;
@@ -630,4 +631,89 @@ async fn later_partition_failure_keeps_key_write() {
         ["key:set_pipeline", "ordinary:set_pipeline"]
     );
     assert_eq!(lock(&fixture.key_objects).pipelines[0].len(), 1);
+}
+
+#[tokio::test]
+async fn real_partitions_delete_stored_entries() {
+    let cache = local_cache(Some(60.0_f64));
+    let key_object = hex_key("a");
+    let sync_key = CacheKey::Tag("sync").render();
+    let async_key = CacheKey::Tag("async").render();
+    let batch_key = CacheKey::Tag("batch").render();
+    cache
+        .set(Some(&key_object), &text("value"), memory_only())
+        .unwrap();
+    cache
+        .set(Some(&sync_key), &text("value"), memory_only())
+        .unwrap();
+    cache
+        .set(Some(&async_key), &text("value"), memory_only())
+        .unwrap();
+    cache
+        .set(Some(&batch_key), &text("value"), memory_only())
+        .unwrap();
+    cache.tier(&sync_key).delete(&sync_key).unwrap();
+    assert_eq!(cache.get(&sync_key, true), None);
+    cache
+        .tier(&async_key)
+        .async_delete(&async_key)
+        .await
+        .unwrap();
+    assert_eq!(cache.get(&async_key, true), None);
+    assert_eq!(cache.get(&key_object, true), Some(text("value")));
+    cache
+        .async_delete_keys(&[key_object.clone(), batch_key.clone()])
+        .await
+        .unwrap();
+    assert_eq!(cache.get(&key_object, true), None);
+    assert_eq!(cache.get(&batch_key, true), None);
+}
+
+#[tokio::test]
+async fn real_partitions_write_the_pipeline_to_memory() {
+    let cache = local_cache(Some(60.0_f64));
+    let entries = vec![
+        (CacheKey::Tag("one").render(), batch_entry(1)),
+        (hex_key("b"), batch_entry(2)),
+    ];
+    cache.async_set_pipeline(&entries, plain()).await.unwrap();
+    assert!(cache.get(&entries[0].0, true).is_some());
+    assert!(cache.get(&entries[1].0, true).is_some());
+}
+
+#[test]
+fn real_partition_ttl_is_the_configured_memory_ttl() {
+    let configured = local_cache(Some(60.0_f64));
+    assert_eq!(
+        configured.management_object_ttl().to_bits(),
+        60.0_f64.to_bits()
+    );
+    let unset = local_cache(None);
+    assert_eq!(unset.management_object_ttl().to_bits(), 45.0_f64.to_bits());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn real_partition_pre_call_delete_queues_on_the_request_batch() {
+    let server = FakeRedis::start().await;
+    let redis = connect_cache(server.addr).await;
+    let cache = gateway_cache(
+        memory(),
+        memory(),
+        Some(redis),
+        settings(Some(60.0_f64)),
+        45.0_f64,
+    );
+    let key = CacheKey::Tag("pre").render();
+    cache
+        .set(Some(&key), &text("value"), memory_only())
+        .unwrap();
+    let (batches, deferred) = request_redis_batch_scope(Duration::from_millis(500), async {
+        cache.tier(&key).delete_pre_call(&key).unwrap()
+    })
+    .await;
+    let queued = deferred.expect("the request batch takes the delete");
+    queued.await.expect("the queued delete settles");
+    drop(batches);
+    assert_eq!(server.commands("DEL").len(), 1);
+    assert_eq!(cache.get(&key, true), None);
 }

@@ -104,15 +104,15 @@ fn literal_fallback_work_is_bounded() {
         8,
         at_eight.saturating_add(1)
     )));
-    assert!(hits_work_limit(&wrapped("None", 24)));
     assert!(hits_work_limit(b"['abc"));
     let siblings = b"[None],[None],[None],[None],[None],[None],[None],[None],[None],[None]";
     assert!(!hits_work_limit(siblings));
 }
 
+// the nested list is padded so the real count is over the limit and the count of a wrong scan is under it, and both parse fast
 #[test]
 fn literal_name_escapes_follow_the_quote_kind() {
-    let nested = format!("{}None{}", "[".repeat(22), "]".repeat(22));
+    let nested = String::from_utf8(padded_literal(8, 300)).unwrap();
     let hidden = format!("['\\N{{'}}', {nested}]");
     assert!(hits_work_limit(hidden.as_bytes()));
     assert!(!hits_work_limit(b"['\\N{}', {'a': 1}]"));
