@@ -1,0 +1,5 @@
+kind: helper
+name: host-resolution-langfuse-host
+call: {"b3910": {"operation": "host", "environment": {"LANGFUSE_HOST": "lf.example.com"}}}
+env: {}
+compare: {ignore: []}

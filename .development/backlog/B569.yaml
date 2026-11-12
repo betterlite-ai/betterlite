@@ -1,7 +1,7 @@
 id: B569
 milestone: M3 providers
 title: Anthropic model capability and thinking policy
-status: todo
+status: done
 depends_on: [B688, B206, B171, B2216, B2221]
 file: tasks/B569-anthropic-capabilities.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/anthropic/chat/transformation.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1439

@@ -1,7 +1,7 @@
 id: B3662
 milestone: M6 guardrails
 title: Guardrail mode validation and request configuration
-status: todo
+status: done
 depends_on: [B3660, B3661]
 file: tasks/B3662-guardrail-params.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/proxy_server.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1436

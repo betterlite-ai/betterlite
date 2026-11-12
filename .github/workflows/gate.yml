@@ -57,7 +57,7 @@ jobs:
           if [[ $EVENT == merge_group ]]; then
             base=$QUEUE_BASE
             number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
-            branch=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
+            branch=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
           else
             base=$(git rev-parse HEAD^1)
             branch=$PR_BRANCH

@@ -18,6 +18,7 @@ betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 google-cloud-auth = { version = "=1.18.0", default-features = false, features = ["default-rustls-provider"] }
 google-cloud-gax = { version = "=1.15.0", default-features = false }
+google-cloud-speech-v2 = "=1.15.0"
 http = "1.5.0"
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
@@ -27,15 +28,19 @@ rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
+tokio.workspace = true
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+google-cloud-wkt = "=1.11.0"
 rstest = "=0.27.0"
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "time"] }
 uuid.workspace = true
 
 [lints]

@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-entry-unlisted
+call:
+  b5650: {function: pricing_entry, custom_llm_provider: openai, kwargs: {off_peak_pricing: {a: 1}, mode: chat, max_tokens: 10, litellm_provider: other, id: x}, model_info: {mode: embedding}}
+env: {}
+compare: {ignore: []}

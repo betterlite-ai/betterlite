@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-echoed-fields-no-entries
+call:
+  b5650: {function: echoed_fields, model_info: {key: gpt-4o, mode: chat}, entries: []}
+env: {}
+compare: {ignore: []}

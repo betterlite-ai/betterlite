@@ -1,0 +1,5 @@
+kind: helper
+name: openai-chat-choices-seed-query-url
+call: {openai_chat_choices: {query_url_join: {steps: [{api_base: 'https://h/v1?x=1'}, {api_base: null}]}}}
+env: {}
+compare: {ignore: []}

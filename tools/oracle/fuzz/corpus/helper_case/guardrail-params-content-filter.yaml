@@ -1,0 +1,5 @@
+kind: helper
+name: guardrail-params-content-filter-seed
+call: {b3662: {function: content_filter, body: {patterns: [{pattern_type: regex, pattern: "[0-9]+", action: MASK}], severity_threshold: high}}}
+env: {}
+compare: {ignore: []}

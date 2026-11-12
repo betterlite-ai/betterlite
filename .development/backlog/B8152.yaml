@@ -1,7 +1,7 @@
 id: B8152
 milestone: M3 providers
 title: docker_model_runner, llamafile, lm_studio, oobabooga, xinference and lemonade cost
-status: todo
+status: done
 depends_on: [B668, B2202, B997]
 file: tasks/B8152-local-server-configs.yaml
 covers:
@@ -17,7 +17,7 @@ covers:
   - "litellm/llms/xinference/image_generation/transformation.py"
 parent: B040
 split_from: B040
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1445

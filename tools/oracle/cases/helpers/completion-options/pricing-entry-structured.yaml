@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-entry-structured
+call:
+  b5650: {function: pricing_entry, custom_llm_provider: vertex_ai, kwargs: {tiered_pricing: [{range: [0, 128000], input_cost_per_token: 0.000001}], search_context_cost_per_query: {low: 0.01}, output_vector_size: 1536, input_cost_per_token_above_200k_tokens: 0.5}, model_info: null}
+env: {}
+compare: {ignore: []}

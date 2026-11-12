@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-echoed-pricing
+call:
+  b5650: {function: echoed_pricing, model_info: {key: gpt-4o, output_cost_per_token: 0.000002, input_cost_per_token: 0.000001, rate_above_8k_tokens: 1, mode: chat, output_vector_size: 4}}
+env: {}
+compare: {ignore: []}

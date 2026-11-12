@@ -1,0 +1,10 @@
+kind: helper
+name: opaque_audio_json_body
+call:
+  request_body:
+    function: is_opaque_audio_request
+    route: /v1/audio/speech
+    content_type: application/json
+env: {}
+compare:
+  ignore: []
