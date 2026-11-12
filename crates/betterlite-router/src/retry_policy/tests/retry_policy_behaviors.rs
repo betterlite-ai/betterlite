@@ -333,8 +333,10 @@ fn a_healthy_alternative_does_not_draw_a_sample() {
     assert_eq!(random.draws, 0);
 }
 
-#[test]
-fn the_jitter_scales_the_injected_sample() {
+#[rstest]
+#[case::exponential(None, "0.875000")]
+#[case::obeyed_header(Some(5), "5.375000")]
+fn the_jitter_scales_the_injected_sample(#[case] retry_after: Option<i64>, #[case] expected: &str) {
     let mut random = FixedSample::new(0x0010_0000_0000_0000);
     let delay = sleep_before_retry(
         &settings(0.0),
@@ -343,10 +345,10 @@ fn the_jitter_scales_the_injected_sample() {
             max_retries: 2,
         },
         &availability(0, 2),
-        None,
+        retry_after,
         &mut random,
     );
-    assert_eq!(seconds(delay), "0.875000");
+    assert_eq!(seconds(delay), expected);
 }
 
 #[rstest]
@@ -363,7 +365,36 @@ fn a_retry_after_value_is_seconds_or_a_date(#[case] bytes: &[u8], #[case] expect
 #[rstest]
 #[case::rfc_850(b"Sunday, 06-Nov-94 08:49:37 GMT", 784_111_777)]
 #[case::asctime(b"Sun Nov  6 08:49:37 1994", 784_111_777)]
-fn the_two_legacy_http_date_formats_parse(#[case] bytes: &[u8], #[case] expected: i64) {
+#[case::numeric_zone_plus(b"Wed, 21 Oct 2015 07:28:00 +0200", 1_445_405_280)]
+#[case::numeric_zone_minus(b"Wed, 21 Oct 2015 07:28:00 -0130", 1_445_417_880)]
+#[case::glued_zone(b"21 Oct 2015 07:28:00+0200", 1_445_405_280)]
+#[case::glued_minus_zone(b"21 Oct 2015 07:28:00-0200", 1_445_419_680)]
+#[case::utc_name(b"Wed, 21 Oct 2015 07:28:00 UTC", 1_445_412_480)]
+#[case::ut_name(b"Wed, 21 Oct 2015 07:28:00 UT", 1_445_412_480)]
+#[case::z_name(b"Wed, 21 Oct 2015 07:28:00 Z", 1_445_412_480)]
+#[case::us_zone(b"Wed, 21 Oct 2015 07:28:00 EST", 1_445_430_480)]
+#[case::lower_case_zone(b"Wed, 21 Oct 2015 07:28:00 pdt", 1_445_437_680)]
+#[case::unknown_zone_is_utc(b"Wed, 21 Oct 2015 07:28:00 XYZ", 1_445_412_480)]
+#[case::missing_zone_is_utc(b"Wed, 21 Oct 2015 07:28:00", 1_445_412_480)]
+#[case::no_weekday(b"21 Oct 2015 07:28:00 GMT", 1_445_412_480)]
+#[case::wrong_weekday(b"Fri, 21 Oct 2015 07:28:00 GMT", 1_445_412_480)]
+#[case::any_word_with_a_comma(b"Someday, 21 Oct 2015 07:28:00 GMT", 1_445_412_480)]
+#[case::comma_without_space(b"Wed,21 Oct 2015 07:28:00 GMT", 1_445_412_480)]
+#[case::one_digit_day(b"Thu, 5 Nov 2026 10:00:30 GMT", 1_793_872_830)]
+#[case::no_seconds(b"Wed, 21 Oct 2015 07:28 GMT", 1_445_412_480)]
+#[case::signed_hour(b"21 Oct 2015 +07:28", 1_445_412_480)]
+#[case::dotted_time(b"21 Oct 2015 07.28.00 GMT", 1_445_412_480)]
+#[case::month_first(b"Oct 21 2015 07:28:00 GMT", 1_445_412_480)]
+#[case::long_month(b"21 October 2015 07:28:00 GMT", 1_445_412_480)]
+#[case::zone_before_time(b"21 Oct GMT 07:28:00 2015", 1_445_412_480)]
+#[case::colon_first_year(b"21 Oct :5 07:28 2015", 1_445_412_480)]
+#[case::commas_after_fields(b"21 Oct 2015, 07:28:00, GMT", 1_445_412_480)]
+#[case::two_digit_year_69(b"21 Oct 69 07:28:00 GMT", -6_193_920)]
+#[case::two_digit_year_68(b"21 Oct 68 07:28:00 GMT", 3_118_030_080)]
+#[case::year_100(b"21 Oct 100 07:28:00 GMT", -58_986_117_120)]
+#[case::year_9999(b"31 Dec 9999 23:59:59 GMT", 253_402_300_799)]
+#[case::day_and_clock_roll_over(b"31 Feb 2015 25:61:61 GMT", 1_425_434_521)]
+fn the_date_forms_parsedate_tz_reads_parse(#[case] bytes: &[u8], #[case] expected: i64) {
     assert_eq!(
         parse_retry_after(bytes).unwrap(),
         RetryAfter::At {

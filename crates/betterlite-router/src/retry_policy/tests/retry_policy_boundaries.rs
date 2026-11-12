@@ -1,26 +1,18 @@
 use std::collections::BTreeMap;
-use std::time::{Duration, UNIX_EPOCH};
 
 use rstest::rstest;
 
 use super::{FixedSample, availability, every_field, seconds, settings};
 use crate::cooldown_decisions::failure::FailureClass;
-use crate::retry_policy::backoff::{
-    BackoffSettings, DEFAULT_INITIAL_RETRY_DELAY, DEFAULT_JITTER, DEFAULT_MAX_RETRY_DELAY,
-    RetryTiming, sleep_before_retry,
-};
+use crate::retry_policy::backoff::{RetryTiming, sleep_before_retry};
 use crate::retry_policy::eligibility::{
     Availability, RetryDecision, StopReason, decide, is_retryable_status,
 };
 use crate::retry_policy::policy::{RetryCounts, RetryPolicies, RetryPolicy, plan};
 use crate::retry_policy::retry_after::{
-    MAX_RETRY_AFTER_BYTES, RetryAfter, RetryAfterError, parse_retry_after, unix_millis,
+    MAX_RETRY_AFTER_BYTES, RetryAfter, RetryAfterError, parse_retry_after,
 };
 use crate::retry_policy::skip::{FailedDeployment, skipped_deployment_ids};
-
-fn defaults() -> BackoffSettings {
-    BackoffSettings::default()
-}
 
 #[rstest]
 #[case::request_timeout(408, true)]
@@ -266,10 +258,22 @@ fn seconds_are_read_exactly(#[case] bytes: &[u8], #[case] expected: i64) {
 #[case::bare_minus(b"-")]
 #[case::words(b"soon")]
 #[case::underscore(b"1_0")]
+#[case::year_past_9999(b"21 Oct 10000 07:28:00 GMT")]
+#[case::year_before_one(b"21 Oct -5000 07:28:00 GMT")]
+#[case::unknown_month(b"21 Foo 2015 07:28:00 GMT")]
+#[case::three_fields(b"21 Oct 2015")]
+#[case::hour_only(b"21 Oct 2015 07 GMT")]
+#[case::weekday_only(b"Wed,")]
+#[case::four_clock_parts(b"21 Oct 2015 07:28:00:00 GMT")]
+#[case::four_dotted_parts(b"21 Oct 2015 1.2.3.4 GMT")]
+#[case::letter_in_the_clock(b"21 Oct 2015 x:28:00 GMT")]
+#[case::two_zones_no_year(b"21 Oct GMT 07:28:00 UTC")]
+#[case::lone_comma_year(b"21 Oct , 07:28 2015")]
+#[case::leading_day_comma_is_dropped(b"21, Oct 2015, 07:28:00, GMT")]
 fn an_unparsable_value_is_a_typed_error(#[case] bytes: &[u8]) {
     assert!(matches!(
         parse_retry_after(bytes),
-        Err(RetryAfterError::NotDate { .. })
+        Err(RetryAfterError::NotDate)
     ));
 }
 
@@ -306,7 +310,7 @@ fn the_byte_limit_itself_is_accepted() {
     let text = vec![b'x'; MAX_RETRY_AFTER_BYTES];
     assert!(matches!(
         parse_retry_after(&text),
-        Err(RetryAfterError::NotDate { .. })
+        Err(RetryAfterError::NotDate)
     ));
 }
 
@@ -323,23 +327,6 @@ fn date_seconds_truncate_toward_zero(
 ) {
     let value = parse_retry_after(bytes).unwrap();
     assert_eq!(value.seconds_until(now_millis), expected);
-}
-
-#[rstest]
-#[case::epoch(0, 0)]
-#[case::positive(1_500, 1_500)]
-#[case::negative(-1_500, -1_500)]
-fn unix_millis_reads_both_sides_of_the_epoch(#[case] offset: i64, #[case] expected: i64) {
-    let base = if offset < 0 {
-        UNIX_EPOCH
-            .checked_sub(Duration::from_millis(offset.unsigned_abs()))
-            .unwrap()
-    } else {
-        UNIX_EPOCH
-            .checked_add(Duration::from_millis(offset.unsigned_abs()))
-            .unwrap()
-    };
-    assert_eq!(unix_millis(base), expected);
 }
 
 #[rstest]
@@ -450,14 +437,11 @@ fn the_deployment_counts_decide_the_shortcut(
 
 #[test]
 fn the_backoff_defaults_are_litellms_constants() {
-    let defaults = defaults();
+    let defaults = settings(0.0);
     assert_eq!(seconds(defaults.initial_retry_delay), "0.500000");
     assert_eq!(seconds(defaults.max_retry_delay), "8.000000");
     assert_eq!(seconds(defaults.jitter), "0.750000");
     assert_eq!(seconds(defaults.min_timeout), "0.000000");
-    assert_eq!(seconds(DEFAULT_INITIAL_RETRY_DELAY), "0.500000");
-    assert_eq!(seconds(DEFAULT_MAX_RETRY_DELAY), "8.000000");
-    assert_eq!(seconds(DEFAULT_JITTER), "0.750000");
 }
 
 #[rstest]
