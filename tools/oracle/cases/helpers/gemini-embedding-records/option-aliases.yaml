@@ -1,0 +1,37 @@
+kind: helper
+name: gemini-embedding-records-option-aliases
+call:
+  gemini_embedding_records:
+    batch_requests:
+      - model: gemini-embedding-001
+        input: hello
+        optional:
+          dimensions: 8
+          outputDimensionality: 4
+          task_type: RETRIEVAL_DOCUMENT
+          taskType: SEMANTIC_SIMILARITY
+          title: doc
+          user: me
+          encoding_format: float
+        resolved_files: {}
+      - model: gemini-embedding-001
+        input: hello
+        optional: {outputDimensionality: 4, taskType: CLUSTERING, title: t}
+        resolved_files: {}
+      - model: gemini-embedding-001
+        input: hello
+        optional: {dimensions: 2, task_type: FACT_VERIFICATION, auto_truncate: true}
+        resolved_files: {}
+      - model: gemini-embedding-001
+        input: hello
+        optional: {taskType: TASK_TYPE_UNSPECIFIED}
+        resolved_files: {}
+    embed_content_requests:
+      - model: gemini-embedding-001
+        input: hello
+        optional: {dimensions: 3, task_type: QUESTION_ANSWERING, title: t, user: u}
+        resolved_files: {}
+    batch_replies: []
+    embed_content_replies: []
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,27 @@
+task: B1340
+deviations:
+  - what: >-
+      An embedding input of token ids is rejected when it enters, where LiteLLM
+      calls startswith on the integer and dies with an unhandled AttributeError.
+    why: >-
+      gemini_embedding_records. EmbeddingInput admits token ids, so LiteLLM
+      answers 500; betterlite's typed input turns it into a request error that
+      names the input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L166-L193
+  - what: >-
+      The transformation rejections (empty combined group, unresolved files/
+      reference, unsupported data URL or gs:// media type, combined input on
+      the embedContent path, a taskType outside TaskTypeEnum) are typed errors
+      that reach the gateway as a request error, where LiteLLM raises
+      ValueError and answers 500.
+    why: >-
+      gemini_embedding_records. A 500 on input LiteLLM already refuses belongs
+      as a 4xx; the error keeps LiteLLM's cause and betterlite names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L240-L245
+  - what: >-
+      A negative token count in usageMetadata is an error, where LiteLLM
+      reports it unchanged as negative prompt and total usage.
+    why: >-
+      gemini_embedding_records. The embeddings record carries unsigned counts;
+      a negative provider count is a bug no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L370-L372

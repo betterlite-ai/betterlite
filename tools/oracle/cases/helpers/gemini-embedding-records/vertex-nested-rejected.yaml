@@ -1,0 +1,26 @@
+kind: helper
+name: gemini-embedding-records-vertex-nested-rejected
+call:
+  gemini_embedding_records:
+    batch_requests: []
+    embed_content_requests:
+      - model: gemini-embedding-001
+        input: [["alpha", "beta"]]
+        optional: {}
+        resolved_files: {}
+      - model: gemini-embedding-001
+        input: ["alpha", ["beta"]]
+        optional: {}
+        resolved_files: {}
+      - model: gemini-embedding-001
+        input: ["alpha", "data:image/png;base64,AAAA"]
+        optional: {dimensions: 2, task_type: FACT_VERIFICATION}
+        resolved_files: {}
+      - model: gemini-embedding-001
+        input: []
+        optional: {}
+        resolved_files: {}
+    batch_replies: []
+    embed_content_replies: []
+compare: {ignore: []}
+env: {}

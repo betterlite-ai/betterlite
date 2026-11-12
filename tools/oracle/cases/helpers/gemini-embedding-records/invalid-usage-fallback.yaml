@@ -1,0 +1,91 @@
+kind: helper
+name: gemini-embedding-records-invalid-usage-fallback
+call:
+  gemini_embedding_records:
+    batch_requests: []
+    embed_content_requests: []
+    batch_replies: []
+    embed_content_replies:
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response: {embedding: {values: [0.1]}, usageMetadata: "nope"}
+      - model: gemini-embedding-001
+        input: "data:image/png;base64,AAAA"
+        resolved_files: {}
+        response: {embedding: {values: [0.1]}, usageMetadata: {}}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata:
+            promptTokenCount: 5
+            promptTokensDetails: [{modality: text, tokenCount: 3}]
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata: {promptTokenCount: 5, candidatesTokenCount: bad}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata: {promptTokenCount: 5, promptTokensDetails: [{modality: TEXT}]}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata: {promptTokenCount: 5, promptTokensDetails: nope}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata: {promptTokenCount: 5, totalTokenCount: 0}
+      - model: gemini-embedding-001
+        input: "data:image/png;base64,AAAA"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata: {promptTokenCount: 5, promptTokensDetails: {}}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response: {embedding: {values: [0.1]}, usageMetadata: null}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata:
+            promptTokenCount: 10
+            totalTokenCount: 12
+            promptTokensDetails:
+              - {modality: TEXT, tokenCount: 2}
+              - {modality: TEXT, tokenCount: 3}
+              - {modality: IMAGE, tokenCount: 4}
+              - {modality: AUDIO, tokenCount: 1}
+              - {modality: VIDEO, tokenCount: 6}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response:
+          embedding: {values: [0.1]}
+          usageMetadata:
+            promptTokenCount: 3
+            promptTokensDetails: [{modality: TEXT, tokenCount: 3}]
+            futureCount: 4
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response: {values: [0.1]}
+      - model: gemini-embedding-001
+        input: "hello"
+        resolved_files: {}
+        response: {embedding: {values: [0.1]}}
+compare: {ignore: []}
+env: {}

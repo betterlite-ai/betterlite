@@ -1,0 +1,37 @@
+kind: helper
+name: gemini-embedding-records-batch-text-usage
+call:
+  gemini_embedding_records:
+    batch_requests: []
+    embed_content_requests: []
+    batch_replies:
+      - model: gemini-embedding-001
+        input: ["alpha", "beta"]
+        response: {embeddings: [{values: [0.1, 0.2]}, {values: [0.3]}]}
+      - model: gemini-embedding-001
+        input: [["alpha", "beta"], "gamma"]
+        response: {embeddings: [{values: [0.1]}]}
+      - model: gemini-embedding-001
+        input: ["alpha", "data:image/png;base64,AAAA"]
+        response: {embeddings: [{values: [0.1]}]}
+      - model: gemini-embedding-001
+        input: [["data:image/png;base64,AAAA"]]
+        response: {embeddings: [{values: [0.1]}]}
+      - model: gemini-embedding-001
+        input: "alpha"
+        response: {embeddings: [{values: [0.1]}]}
+      - model: gemini-embedding-001
+        input: ["alpha", "gs://bucket/photo.png", "https://example.com/a.png"]
+        response: {embeddings: [{values: [0.1]}]}
+      - model: gemini-embedding-001
+        input: []
+        response: {embeddings: []}
+      - model: gemini-embedding-001
+        input: ["alpha"]
+        response: {embeddings: [{values: "AAAA"}, {values: [0.1, 0.2]}]}
+      - model: gemini-embedding-001
+        input: ["alpha"]
+        response: {}
+    embed_content_replies: []
+compare: {ignore: []}
+env: {}
