@@ -60,9 +60,12 @@ fn enqueue_subregions(
     second_start: usize,
     size: usize,
 ) {
+    // the strictly-inside terms are redundant but stop a mutated longest_match from re-pushing the same bounds
     let left_gap = first_start
         .saturating_sub(bounds.first_low)
-        .min(second_start.saturating_sub(bounds.second_low));
+        .min(bounds.first_high.saturating_sub(first_start))
+        .min(second_start.saturating_sub(bounds.second_low))
+        .min(bounds.second_high.saturating_sub(second_start));
     if left_gap >= 1 {
         queue.push(Bounds {
             first_low: bounds.first_low,
@@ -73,9 +76,10 @@ fn enqueue_subregions(
     }
     let first_end = first_start.saturating_add(size);
     let second_end = second_start.saturating_add(size);
-    let right_gap = bounds
-        .first_high
-        .saturating_sub(first_end)
+    let right_gap = first_end
+        .saturating_sub(bounds.first_low)
+        .min(bounds.first_high.saturating_sub(first_end))
+        .min(second_end.saturating_sub(bounds.second_low))
         .min(bounds.second_high.saturating_sub(second_end));
     if right_gap >= 1 {
         queue.push(Bounds {
