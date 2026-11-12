@@ -36,5 +36,13 @@ call:
         timeout: 30
         is_async: true
         reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        prompt: a gull
+        optional_params: {max_retries: '3'}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        is_async: true
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
 env: {}
 compare: {ignore: []}

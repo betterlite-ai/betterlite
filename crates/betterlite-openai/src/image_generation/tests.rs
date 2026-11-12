@@ -41,7 +41,7 @@ use super::family::{
     map_openai_params, select_image_family,
 };
 use super::logging::PrePostLogger;
-use super::reply::{ImageGenerationReply, ImageReplyError};
+use super::reply::{ImageGenerationReply, ImageReplyError, ImageUsage};
 use super::request::{
     ImageGenerationOutcome, begin_image_generation, finish_image_generation, send_image_generation,
 };
@@ -187,7 +187,7 @@ pub(super) struct FakeTransport {
 }
 
 impl FakeTransport {
-    fn answering(status: u16, headers: &[(&str, &str)], body: &str) -> Self {
+    pub(super) fn answering(status: u16, headers: &[(&str, &str)], body: &str) -> Self {
         Self {
             status,
             headers: headers
@@ -342,7 +342,7 @@ fn gpt_image_usage() {
 }
 
 fn gpt_reply_values() {
-    let body = r#"{"created":7,"data":[],"size":"1792x1024","quality":"medium","output_format":"jpeg","usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":1,"text_tokens":3},"output_tokens":8,"total_tokens":12}}"#;
+    let body = r#"{"created":7,"data":[],"size":"1792x1024","quality":"medium","output_format":"jpeg","usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":1,"text_tokens":3},"output_tokens":8,"total_tokens":12,"output_tokens_details":{"image_tokens":2,"text_tokens":6},"vendor":{"a":1}}}"#;
     let mut reply = decoded(body);
     let supplied = options(r#"{"size":"512x512","quality":"low"}"#);
     apply_family_defaults(ImageFamily::GptImage, &mut reply, &supplied).unwrap();
@@ -355,6 +355,26 @@ fn gpt_reply_values() {
     assert_eq!(reply.usage.prompt_tokens, Some(4));
     assert_eq!(reply.usage.completion_tokens, Some(8));
     assert_eq!(reply.usage.input_tokens_details.image_tokens, 1);
+    gpt_usage_details(&reply.usage);
+}
+
+fn gpt_usage_details(usage: &ImageUsage) {
+    let found = serde_json::to_value(usage).unwrap();
+    assert_eq!(found["vendor"]["a"], 1_i64);
+    assert_eq!(found["output_tokens_details"]["image_tokens"], 2_i64);
+    let prompt = &found["prompt_tokens_details"];
+    assert_eq!(prompt["text_tokens"], 3_i64);
+    assert_eq!(prompt["image_tokens"], 1_i64);
+    assert!(prompt["audio_tokens"].is_null() && prompt["cached_tokens"].is_null());
+    let completion = &found["completion_tokens_details"];
+    assert_eq!(completion["text_tokens"], 6_i64);
+    assert_eq!(completion["image_tokens"], 2_i64);
+    assert!(completion["reasoning_tokens"].is_null());
+    let bare = decoded(r#"{"created":7,"data":[],"usage":{"input_tokens":1}}"#);
+    let bare_usage = serde_json::to_value(&bare.usage).unwrap();
+    assert_eq!(bare_usage["prompt_tokens_details"]["text_tokens"], 0_i64);
+    assert!(bare_usage.get("completion_tokens_details").is_none());
+    assert!(bare_usage.get("output_tokens_details").is_none());
 }
 
 fn gpt_option_values() {

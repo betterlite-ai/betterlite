@@ -242,3 +242,39 @@ fn original_response_fills_usage_details() {
         Some(&Json::Number(Number::from(1_i64)))
     );
 }
+
+#[rstest]
+#[case::sync(false)]
+#[case::async_mode(true)]
+#[tokio::test]
+async fn a_noninteger_max_retries_is_wrapped_before_dispatch(#[case] delegate_async: bool) {
+    let transport = ok_transport();
+    let mut bad = call("dall-e-2", options(r#"{"max_retries":"3"}"#));
+    bad.delegate_async = delegate_async;
+    let (outcome, spy) = spied(bad, &transport).await;
+    let failure = outcome.unwrap_err();
+    assert!(failure.mapped());
+    assert_eq!(failure.status(), Some(422));
+    assert!(transport.requests().is_empty());
+    assert!(spy.pre_calls.is_empty());
+}
+
+#[rstest]
+#[case::with_usage(
+    r#"{"created":7,"data":[],"usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":1,"text_tokens":3},"output_tokens":8,"total_tokens":12}}"#,
+    true
+)]
+#[case::without_usage(r#"{"created":7,"data":[]}"#, false)]
+#[tokio::test]
+async fn the_request_path_reply_carries_the_sdk_output_tokens_details(
+    #[case] body: &str,
+    #[case] has_usage: bool,
+) {
+    let transport = FakeTransport::answering(200, &[], body);
+    let (outcome, _) = spied(call("gpt-image-1", options("{}")), &transport).await;
+    let usage = serde_json::to_value(&outcome.unwrap().reply.usage).unwrap();
+    assert_eq!(
+        usage.get("output_tokens_details"),
+        has_usage.then_some(&serde_json::Value::Null)
+    );
+}

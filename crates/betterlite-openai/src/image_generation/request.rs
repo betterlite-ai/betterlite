@@ -80,8 +80,17 @@ where
         .generate(outbound_request(prepared)?)
         .await
         .map_err(ImageGenerationSource::Transport)?;
-    let reply = checked_reply(&response, prepared.now_seconds)?;
+    let mut reply = checked_reply(&response, prepared.now_seconds)?;
     let original_response = original_response(&response.body)?;
+    // the SDK model always dumps usage.output_tokens_details, null when the provider sent none
+    if let Json::Object(fields) = &original_response
+        && let Some(Json::Object(_)) = fields.get("usage")
+    {
+        let extra = &mut reply.usage.extra;
+        extra
+            .entry(String::from("output_tokens_details"))
+            .or_insert(Json::Null);
+    }
     let provider_headers =
         set_provider_response_headers(&IndexMap::new(), &response_headers(&response.headers)?);
     Ok(ImageGenerationOutcome {

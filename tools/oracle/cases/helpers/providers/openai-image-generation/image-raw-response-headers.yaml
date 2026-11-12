@@ -25,5 +25,26 @@ call:
           status: 200
           headers: {x-request-id: req-2, openai-processing-ms: '17'}
           body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'
+      - model: gpt-image-1
+        prompt: a bird
+        optional_params: {}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply:
+          status: 200
+          headers: {x-request-id: req-3}
+          body: '{"created":1700000000,"data":[],"usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":1,"text_tokens":3},"output_tokens":8,"total_tokens":12}}'
+      - model: gpt-image-1
+        prompt: a fox
+        optional_params: {}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        is_async: true
+        reply:
+          status: 200
+          headers: {x-request-id: req-4}
+          body: '{"created":1700000000,"data":[],"usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":1,"text_tokens":3},"output_tokens":8,"total_tokens":12,"output_tokens_details":{"image_tokens":2,"text_tokens":6},"vendor":{"a":1}}}'
 env: {}
 compare: {ignore: []}

@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde_json::Number;
 
 use super::reply::{
     ImageDatum, ImageGenerationReply, ImageReplyError, ImageUsage, ImageUsageDetails,
@@ -20,6 +21,11 @@ struct WireReply {
     quality: Option<String>,
     output_format: Option<String>,
     size: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UsageFields {
+    usage: Option<IndexMap<String, Json>>,
 }
 
 #[derive(Deserialize)]
@@ -45,7 +51,7 @@ pub fn decode_image_reply(
     }
     let wire: WireReply = serde_json::from_slice(bytes)?;
     let usage = match wire.usage {
-        Some(usage) => usage_from_wire(usage)?,
+        Some(usage) => usage_from_wire(usage, usage_extras(bytes)?)?,
         None => ImageUsage::default(),
     };
     Ok(ImageGenerationReply {
@@ -140,7 +146,27 @@ fn message_meaningful(message: Option<&Json>) -> bool {
     }
 }
 
-fn usage_from_wire(usage: WireUsage) -> Result<ImageUsage, ImageReplyError> {
+// the converter keeps the usage keys it does not know, so they stay in the reply
+fn usage_extras(bytes: &[u8]) -> Result<IndexMap<String, Json>, ImageReplyError> {
+    let found: UsageFields = serde_json::from_slice(bytes)?;
+    let mut fields = found.usage.unwrap_or_default();
+    for name in [
+        "input_tokens",
+        "input_tokens_details",
+        "output_tokens",
+        "total_tokens",
+        "prompt_tokens",
+        "completion_tokens",
+    ] {
+        fields.shift_remove(name);
+    }
+    Ok(fields)
+}
+
+fn usage_from_wire(
+    usage: WireUsage,
+    mut extra: IndexMap<String, Json>,
+) -> Result<ImageUsage, ImageReplyError> {
     let input_tokens = usage.input_tokens.unwrap_or(0);
     let output_tokens = usage.output_tokens.unwrap_or(0);
     let total_tokens = match usage.total_tokens {
@@ -149,12 +175,47 @@ fn usage_from_wire(usage: WireUsage) -> Result<ImageUsage, ImageReplyError> {
             .checked_add(output_tokens)
             .ok_or(ImageReplyError::TotalTokens)?,
     };
+    let details = usage.input_tokens_details.unwrap_or_default();
+    extra.insert(
+        String::from("prompt_tokens_details"),
+        details_wrapper(
+            &["audio_tokens", "cached_tokens", "video_tokens"],
+            Json::Number(Number::from(details.text_tokens)),
+            Json::Number(Number::from(details.image_tokens)),
+        ),
+    );
+    if let Some(Json::Object(output)) = extra.get("output_tokens_details") {
+        let wrapper = details_wrapper(
+            &[
+                "accepted_prediction_tokens",
+                "audio_tokens",
+                "reasoning_tokens",
+                "rejected_prediction_tokens",
+                "video_tokens",
+            ],
+            output.get("text_tokens").cloned().unwrap_or(Json::Null),
+            output.get("image_tokens").cloned().unwrap_or(Json::Null),
+        );
+        extra.insert(String::from("completion_tokens_details"), wrapper);
+    }
     Ok(ImageUsage {
         input_tokens,
-        input_tokens_details: usage.input_tokens_details.unwrap_or_default(),
+        input_tokens_details: details,
         output_tokens,
         total_tokens,
         prompt_tokens: Some(usage.prompt_tokens.unwrap_or(input_tokens)),
         completion_tokens: Some(usage.completion_tokens.unwrap_or(output_tokens)),
+        extra,
     })
+}
+
+// the converter's token-details wrapper: the counts it knows, and null for the rest of its fields
+fn details_wrapper(nulls: &[&str], text: Json, image: Json) -> Json {
+    let mut fields = IndexMap::new();
+    for name in nulls {
+        fields.insert(String::from(*name), Json::Null);
+    }
+    fields.insert(String::from("text_tokens"), text);
+    fields.insert(String::from("image_tokens"), image);
+    Json::Object(fields)
 }

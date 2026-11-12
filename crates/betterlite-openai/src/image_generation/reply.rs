@@ -33,6 +33,8 @@ pub struct ImageUsage {
     pub prompt_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completion_tokens: Option<i64>,
+    #[serde(flatten)]
+    pub extra: IndexMap<String, Json>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
