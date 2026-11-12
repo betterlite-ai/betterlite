@@ -1,4 +1,4 @@
-use crate::gemini_response_parts::projection::{CallMode, Part, PartKind, PartsError, ServerTool};
+use crate::gemini_response_parts::projection::{CallMode, Part, PartsError, ServerTool};
 use betterlite_models::decisions::Json;
 use betterlite_prompts::gemini_tool_invokes::signatures::encode_tool_call_id;
 use indexmap::IndexMap;
@@ -19,7 +19,7 @@ pub struct SignatureFields {
 pub struct ToolCallChunk {
     pub id: String,
     #[serde(rename = "type")]
-    pub kind: PartKind,
+    pub kind: &'static str,
     pub function: FunctionChunk,
     pub index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -53,37 +53,42 @@ pub(crate) fn transform(
         let Some(call) = &part.function_call else {
             continue;
         };
+        let signed = part
+            .thought_signature
+            .clone()
+            .map(|thought_signature| SignatureFields { thought_signature });
         let chunk = FunctionChunk {
             name: call.name.clone(),
             arguments: arguments(call.args.as_ref())?,
-            provider_specific_fields: match mode {
-                CallMode::LegacyFunction => signature(part),
-                CallMode::Tools => None,
-            },
+            provider_specific_fields: None,
         };
         match mode {
-            CallMode::LegacyFunction => function = Some(chunk),
+            CallMode::LegacyFunction => {
+                function = Some(FunctionChunk {
+                    provider_specific_fields: signed,
+                    ..chunk
+                });
+            }
             CallMode::Tools => {
-                let id = call.id.clone().unwrap_or_else(|| synthetic_id(ids));
-                tools.push(tool_chunk(part, id, chunk, index));
+                let id = call.id.clone().unwrap_or_else(|| {
+                    let simple = ids().simple().to_string();
+                    format!("call_{}", simple.chars().take(28).collect::<String>())
+                });
+                tools.push(ToolCallChunk {
+                    id: match &part.thought_signature {
+                        Some(signature) => encode_tool_call_id(&id, Some(signature)),
+                        None => id,
+                    },
+                    kind: "function",
+                    function: chunk,
+                    index,
+                    provider_specific_fields: signed,
+                });
             }
         }
         index = index.checked_add(1).ok_or(PartsError::ToolIndex)?;
     }
     Ok((function, (!tools.is_empty()).then_some(tools), index))
-}
-fn tool_chunk(part: &Part, id: String, function: FunctionChunk, index: u32) -> ToolCallChunk {
-    let encoded = match &part.thought_signature {
-        Some(signature) => encode_tool_call_id(&id, Some(signature)),
-        None => id,
-    };
-    ToolCallChunk {
-        id: encoded,
-        kind: PartKind::Function,
-        function,
-        index,
-        provider_specific_fields: signature(part),
-    }
 }
 fn arguments(args: Option<&Json>) -> Result<String, PartsError> {
     let Some(value) = args else {
@@ -91,32 +96,15 @@ fn arguments(args: Option<&Json>) -> Result<String, PartsError> {
     };
     serde_json::to_string(value).map_err(|source| PartsError::Arguments { source })
 }
-fn signature(part: &Part) -> Option<SignatureFields> {
-    let signature = part.thought_signature.as_ref()?;
-    Some(SignatureFields {
-        thought_signature: signature.clone(),
-    })
-}
-fn synthetic_id(ids: &mut dyn FnMut() -> Uuid) -> String {
-    let simple = ids().simple().to_string();
-    let prefix: String = simple.chars().take(28).collect();
-    format!("call_{prefix}")
-}
 pub(crate) fn invocations(parts: &[Part]) -> Option<Vec<ServerToolInvocation>> {
     let mut calls: IndexMap<String, ServerToolInvocation> = IndexMap::new();
     let mut responses: IndexMap<String, ServerToolInvocation> = IndexMap::new();
     for part in parts {
-        match (&part.tool_call, &part.tool_response) {
-            (Some(call), _) => {
-                calls.insert(call.id.clone().unwrap_or_default(), entry(part, call, true));
-            }
-            (None, Some(response)) => {
-                responses.insert(
-                    response.id.clone().unwrap_or_default(),
-                    entry(part, response, false),
-                );
-            }
-            (None, None) => {}
+        if let Some(call) = &part.tool_call {
+            calls.insert(call.id.clone().unwrap_or_default(), entry(part, call, true));
+        } else if let Some(response) = &part.tool_response {
+            let key = response.id.clone().unwrap_or_default();
+            responses.insert(key, entry(part, response, false));
         }
     }
     let mut merged = Vec::new();
@@ -128,9 +116,7 @@ pub(crate) fn invocations(parts: &[Part]) -> Option<Vec<ServerToolInvocation>> {
         merged.push(call);
     }
     for (_, mut response) in responses {
-        if let Some(signature) = response.thought_signature.clone() {
-            response.response_thought_signature = Some(signature);
-        }
+        response.response_thought_signature = response.thought_signature.clone();
         merged.push(response);
     }
     (!merged.is_empty()).then_some(merged)
@@ -141,11 +127,7 @@ fn entry(part: &Part, tool: &ServerTool, is_call: bool) -> ServerToolInvocation 
         id: tool.id.clone(),
         args: is_call.then(|| tool.args.clone().unwrap_or(Json::Null)),
         thought_signature: part.thought_signature.clone(),
-        response: if is_call {
-            None
-        } else {
-            Some(tool.response.clone().unwrap_or(Json::Null))
-        },
+        response: (!is_call).then(|| tool.response.clone().unwrap_or(Json::Null)),
         response_thought_signature: None,
     }
 }

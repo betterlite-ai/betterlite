@@ -1,4 +1,6 @@
 import json
+from functools import partial
+from types import SimpleNamespace
 from typing import Final, Protocol, TypedDict, cast
 
 from litellm._uuid import uuid as fastuuid
@@ -8,7 +10,6 @@ from litellm.types import utils as litellm_utils
 from litellm.types.llms.vertex_ai import LogprobsResult
 from litellm.types.utils import ChatCompletionAudioResponse, ChoiceLogprobs
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
 
 JSON_VALUE: Final = TypeAdapter(JsonValue)
 
@@ -23,7 +24,7 @@ class Part(TypedDict, total=False):
     thoughtSignature: str
 
 
-class Function(TypedDict, total=False):
+class Function(TypedDict):
     arguments: str
 
 
@@ -69,31 +70,16 @@ class Config(Protocol):
     def _transform_logprobs(self, result: LogprobsResult | None) -> ChoiceLogprobs | None: ...
 
 
-CONFIG: Final = cast(Config, VertexGeminiConfig())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1349
-
-
-class _IdSource(Protocol):
-    def uuid4(self) -> fastuuid.UUID: ...
-
-    def time(self) -> float: ...
-
-
-class _Fixed(_IdSource):
-    def __init__(self, value: str, seconds: int) -> None:
-        self._value = fastuuid.UUID(hex=value)
-        self._seconds = seconds
-
-    @override
-    def uuid4(self) -> fastuuid.UUID:
-        return self._value
-
-    @override
-    def time(self) -> float:
-        return float(self._seconds)
+CONFIG: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1349
+    Config, VertexGeminiConfig()
+)
 
 
 def _inject(input_value: Input) -> None:
-    fixed = _Fixed(input_value["generated_id"], input_value["now"])
+    fixed = SimpleNamespace(
+        uuid4=partial(fastuuid.UUID, hex=input_value["generated_id"]),
+        time=partial(float, input_value["now"]),
+    )
     # LiteLLM 1.105.1 draws its synthetic tool ids and audio ids from these module attributes
     gemini.uuid = fixed  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAttributeAccessIssue, reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1581
     litellm_utils.uuid = fixed  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAttributeAccessIssue, reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1358
@@ -109,21 +95,6 @@ def _audio(audio: ChatCompletionAudioResponse | None) -> JsonValue:
         "expires_at": audio.expires_at,
         "transcript": audio.transcript,
     }
-
-
-def _compact(chunk: Function) -> None:
-    arguments = chunk.get("arguments")
-    if arguments is None:
-        return
-    parsed = JSON_VALUE.validate_json(arguments)
-    chunk["arguments"] = json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
-
-
-def _compact_tools(tools: list[Tool] | None) -> list[Tool] | None:
-    if tools is not None:
-        for tool in tools:
-            _compact(tool["function"])
-    return tools
 
 
 def _logprobs(result: ChoiceLogprobs | None) -> JsonValue:
@@ -152,8 +123,12 @@ def run(input_value: Input) -> JsonValue:
         cumulative_tool_call_idx=input_value["cumulative_tool_call_idx"],
         is_function_call=input_value["legacy_function"],
     )
-    if function is not None:
-        _compact(function)
+    chunks = [] if function is None else [function]
+    if tool_calls is not None:
+        chunks += [tool["function"] for tool in tool_calls]
+    for chunk in chunks:
+        parsed = JSON_VALUE.validate_json(chunk["arguments"])
+        chunk["arguments"] = json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1349
         JsonValue,
         {
@@ -165,7 +140,7 @@ def run(input_value: Input) -> JsonValue:
             "images": CONFIG._extract_image_response_from_parts(parts),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1492
             "audio": _audio(CONFIG._extract_audio_response_from_parts(parts)),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1512
             "function": function,
-            "tool_calls": _compact_tools(tool_calls),
+            "tool_calls": tool_calls,
             "next_tool_call_index": next_tool_call_index,
             "logprobs": _logprobs(CONFIG._transform_logprobs(input_value["logprobs"])),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1606
         },

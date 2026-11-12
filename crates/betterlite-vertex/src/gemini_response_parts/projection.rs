@@ -41,16 +41,15 @@ pub struct ServerTool {
     pub response: Option<Json>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LogprobsResult {
-    #[serde(rename = "chosenCandidates")]
     pub chosen_candidates: Option<Vec<LogprobCandidate>>,
-    #[serde(rename = "topCandidates")]
     pub top_candidates: Option<Vec<TopCandidates>>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LogprobCandidate {
     pub token: String,
-    #[serde(rename = "logProbability")]
     pub log_probability: Number,
 }
 #[derive(Debug, Clone, Deserialize)]
@@ -68,13 +67,6 @@ pub enum PartsError {
     Expiry { now: i64 },
     #[error("the tool call index overflows")]
     ToolIndex,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub enum PartKind {
-    #[serde(rename = "function")]
-    Function,
-    #[serde(rename = "image_url")]
-    ImageUrl,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallMode {
@@ -142,17 +134,14 @@ fn transform_logprobs(source: Option<&LogprobsResult>) -> Option<Logprobs> {
             bytes: None,
             top_logprobs: top_candidates
                 .and_then(|tops| tops.get(index))
-                .map(|top| {
-                    top.candidates
-                        .iter()
-                        .map(|option| TopLogprob {
-                            token: option.token.clone(),
-                            logprob: option.log_probability.clone(),
-                            bytes: None,
-                        })
-                        .collect()
+                .into_iter()
+                .flat_map(|top| &top.candidates)
+                .map(|option| TopLogprob {
+                    token: option.token.clone(),
+                    logprob: option.log_probability.clone(),
+                    bytes: None,
                 })
-                .unwrap_or_default(),
+                .collect(),
         })
         .collect();
     Some(Logprobs {

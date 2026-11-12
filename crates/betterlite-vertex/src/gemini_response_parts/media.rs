@@ -1,4 +1,4 @@
-use crate::gemini_response_parts::projection::{Part, PartKind, PartsError};
+use crate::gemini_response_parts::projection::{Part, PartsError};
 use betterlite_prompts::media::base64_string::is_base64_encoded;
 use serde::Serialize;
 use uuid::Uuid;
@@ -8,7 +8,7 @@ pub struct ImagePart {
     pub image_url: ImageUrl,
     pub index: u32,
     #[serde(rename = "type")]
-    pub kind: PartKind,
+    pub kind: &'static str,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageUrl {
@@ -33,7 +33,7 @@ pub(crate) fn image_parts(parts: &[Part]) -> Vec<ImagePart> {
                     detail: "auto".to_owned(),
                 },
                 index: 0,
-                kind: PartKind::ImageUrl,
+                kind: "image_url",
             })
         })
         .collect()
@@ -43,29 +43,31 @@ pub(crate) fn audio_part(
     now: i64,
     ids: &mut dyn FnMut() -> Uuid,
 ) -> Result<Option<AudioPart>, PartsError> {
-    let data = parts.iter().find_map(|part| {
-        if let Some(text) = &part.text {
-            audio_uri(text).map(|(_, data)| data.to_owned())
-        } else {
-            part.inline_data
-                .as_ref()
-                .filter(|inline| inline.mime_type.starts_with("audio/"))
-                .map(|inline| inline.data.clone())
-        }
-    });
-    let Some(data) = data else {
-        return Ok(None);
-    };
-    Ok(Some(AudioPart {
-        id: ids().to_string(),
-        data,
-        expires_at: now
-            .checked_add(AUDIO_TTL_SECONDS)
-            .ok_or(PartsError::Expiry { now })?,
-        transcript: String::new(),
-    }))
+    parts
+        .iter()
+        .find_map(|part| {
+            if let Some(text) = &part.text {
+                audio_uri(text).map(str::to_owned)
+            } else {
+                part.inline_data
+                    .as_ref()
+                    .filter(|inline| inline.mime_type.starts_with("audio/"))
+                    .map(|inline| inline.data.clone())
+            }
+        })
+        .map(|data| {
+            Ok(AudioPart {
+                id: ids().to_string(),
+                data,
+                expires_at: now
+                    .checked_add(AUDIO_TTL_SECONDS)
+                    .ok_or(PartsError::Expiry { now })?,
+                transcript: String::new(),
+            })
+        })
+        .transpose()
 }
-pub(super) fn audio_uri(text: &str) -> Option<(&str, &str)> {
+pub(super) fn audio_uri(text: &str) -> Option<&str> {
     let (_, rest) = text.split_once("data:")?;
     if !text.starts_with("data:audio") || !is_base64_encoded(text) {
         return None;
@@ -75,7 +77,5 @@ pub(super) fn audio_uri(text: &str) -> Option<(&str, &str)> {
     if data.contains(";base64,") {
         return None;
     }
-    media_type
-        .starts_with("audio/")
-        .then_some((media_type, data))
+    media_type.starts_with("audio/").then_some(data)
 }
