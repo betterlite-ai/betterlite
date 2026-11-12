@@ -38,8 +38,8 @@ fn cached_counter(value: &CachedValue) -> Result<Option<Decimal>, CounterValueEr
     match value {
         CachedValue::Null => Ok(None),
         CachedValue::Boolean(flag) => Ok(Some(Decimal::from(u8::from(*flag)))),
-        CachedValue::Number(number) => number_counter(number),
-        CachedValue::Text(text) => text_counter(text),
+        CachedValue::Number(number) => amount_counter(&number.to_string()),
+        CachedValue::Text(text) => amount_counter(text),
         CachedValue::Object(entries) => object_counter(entries),
         CachedValue::Array(_) => Err(CounterValueError::NotNumeric { kind: "an array" }),
     }
@@ -52,22 +52,13 @@ fn object_counter(
         return Err(CounterValueError::NotNumeric { kind: "an object" });
     };
     match (entries.len(), key.as_str(), value) {
-        (1, ARBITRARY_PRECISION_NUMBER, CachedValue::Text(text)) => text_counter(text),
+        (1, ARBITRARY_PRECISION_NUMBER, CachedValue::Text(text)) => amount_counter(text),
         _ => Err(CounterValueError::NotNumeric { kind: "an object" }),
     }
 }
 
 // the JSON text keeps every digit, where a float round trip would drop a cent from a long counter
-fn number_counter(number: &serde_json::Number) -> Result<Option<Decimal>, CounterValueError> {
-    let text = number.to_string();
-    amount_from_text(&text).map_or_else(
-        || Err(CounterValueError::OutOfRange { text }),
-        |amount| Ok(Some(amount)),
-    )
-}
-
-// litellm validates the value as a float, so a numeric string and a bool widen the same way here
-fn text_counter(text: &str) -> Result<Option<Decimal>, CounterValueError> {
+fn amount_counter(text: &str) -> Result<Option<Decimal>, CounterValueError> {
     amount_from_text(text).map_or_else(
         || {
             Err(CounterValueError::OutOfRange {
