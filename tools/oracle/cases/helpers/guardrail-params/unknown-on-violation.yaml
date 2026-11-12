@@ -1,0 +1,11 @@
+kind: helper
+name: guardrail-params-unknown-on-violation
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: mcp_security
+      mode: pre_call
+      on_violation: warn
+env: {}
+compare: {ignore: []}
