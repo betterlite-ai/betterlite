@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-key-declared
+call:
+  b5650: {function: server_derived_key, key: input_cost_per_token}
+env: {}
+compare: {ignore: []}

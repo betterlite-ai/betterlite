@@ -1,0 +1,9 @@
+kind: helper
+name: guardrail-params-base-default-on-unset
+call:
+  b3662:
+    function: base_params
+    body:
+      guard_name: g
+env: {}
+compare: {ignore: []}

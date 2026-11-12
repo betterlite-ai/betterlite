@@ -1,0 +1,14 @@
+kind: helper
+name: otlp_get_body
+call:
+  request_body:
+    function: read_request_body
+    request:
+      method: GET
+      route_path: /v1/traces
+      headers: {content-type: application/json}
+      body: {encoding: utf8, value: '{"model":"gpt-4o"}'}
+    max_repair_bytes: 1048576
+env: {}
+compare:
+  ignore: []
