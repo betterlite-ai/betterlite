@@ -45,6 +45,7 @@ use super::reply::{ImageGenerationReply, ImageReplyError};
 use super::request::{
     ImageGenerationOutcome, begin_image_generation, finish_image_generation, send_image_generation,
 };
+use super::transform::{ImageTransformCall, transform_image_reply};
 use super::transport::ImageGenerationTransport;
 use crate::openai_base_config::Headers;
 
@@ -860,4 +861,45 @@ async fn proxied_client_posts_to_the_images_endpoint() {
         outcome.provider_headers.headers.get("x-request-id"),
         Some(&String::from("req-9"))
     );
+}
+
+#[test]
+fn transform_image_reply_logs_the_reply_then_applies_the_family_defaults() {
+    let (redactor, mut state, sink) = logging();
+    let snapshots = Mutex::new(Vec::new());
+    let params = options("{}");
+    let request_data = options(r#"{"model":"dall-e-3","prompt":"a cat"}"#);
+    let call = ImageTransformCall {
+        family: ImageFamily::DallE3,
+        raw: br#"{"data":[{"url":"https://example.test/a.png"}]}"#,
+        optional_params: &params,
+        request_data: &request_data,
+        created_seconds: NOW,
+    };
+    let reply = {
+        let logger = |details: &Json| {
+            snapshots
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(details.clone());
+            Ok(())
+        };
+        let env = logging_env(&redactor, &sink, Some(&logger));
+        transform_image_reply(call, &mut state, &env).unwrap()
+    };
+    assert_eq!(reply.created, NOW);
+    assert_eq!(reply.data.len(), 1);
+    assert_eq!(reply.quality.as_deref(), Some("hd"));
+    let recorded = snapshots
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(recorded.len(), 1);
+    let Json::Object(post) = &recorded[0] else {
+        panic!("the post-call record is an object");
+    };
+    assert_eq!(
+        post.get("log_event_type"),
+        Some(&Json::Text(String::from("post_api_call")))
+    );
+    assert_eq!(post.get("input"), Some(&Json::Text(String::from("a cat"))));
 }
