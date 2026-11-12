@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use rstest::rstest;
 
 use super::{
-    InMemoryTokenCacheBackend, OAuthToken, TokenCacheBackend as _, TokenCacheEntries, TokenKey,
-    TokenStoreUnavailable, WallClock, iso_to_epoch,
+    InMemoryTokenCacheBackend, OAuthToken, SystemWallClock, TokenCacheBackend as _,
+    TokenCacheEntries, TokenKey, TokenStoreUnavailable, WallClock, iso_to_epoch,
 };
 
 #[derive(Debug)]
@@ -97,6 +97,15 @@ fn oauth_token_is_expired_past_the_expiry() {
     let mut value = token("access");
     value.expires_at = Some(at(1_000));
     assert!(value.is_expired(at(1_001), Duration::from_secs(60)));
+}
+
+#[test]
+fn system_wall_clock_reads_the_current_time() {
+    let before = Utc::now();
+    let now = SystemWallClock.now();
+    let after = Utc::now();
+    assert!(now >= before);
+    assert!(now <= after);
 }
 
 #[test]
