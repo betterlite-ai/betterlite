@@ -1,0 +1,11 @@
+task: B5363
+deviations:
+  - what: Provider mapping goes through B5362's `OptionalParamsMapper` trait, with the caller passing the mapper for a branch and the supported list, where LiteLLM builds a provider config object and calls it. The trait takes the model and the per-call `drop_params` but no `**kwargs`, so a provider whose mapping reads a kwarg, as vertex_ai does with `input_type` and nvidia_nim does with every kwarg, gets a mapper built with the request's special params by its provider task.
+    why: Provider crates depend on betterlite-context, so this crate can't name their types, and the trait is fixed by B5362.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3898-L3903
+  - what: An `extra_body` that is not an object is a 400 that names the field, where LiteLLM copies it through and then raises `TypeError` from `len(final_params["extra_body"])`, and the proxy answers 500.
+    why: An unhandled exception is the wrong answer for input the caller can fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4098-L4100
+  - what: The merged `extra_body` this function hands back is rejected above 1 MiB or 100 levels deep, with a 400.
+    why: LiteLLM's `_ensure_extra_body_is_safe` has no size or depth limit, so a request can make the gateway copy an unbounded structure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L109

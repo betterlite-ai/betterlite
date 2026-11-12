@@ -1,0 +1,18 @@
+kind: helper
+name: forged-trust
+call:
+  vertex_gcs_access:
+    operation: forged_trust
+    params: {gcs_bucket_name: bucket}
+    environment: {}
+    trusted: []
+    plain:
+      - ["_litellm_internal_model_credentials", {allow_legacy_cloud_file_ids: true}]
+      - ["allow_legacy_cloud_file_ids", true]
+    file_ids:
+      - "gs://bucket/legacy-input.jsonl"
+      - "gs://bucket/litellm-vertex-files/managed.jsonl"
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}

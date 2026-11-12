@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-bedrock = { path = "../betterlite-bedrock" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
@@ -29,6 +30,7 @@ url = "2.5.8"
 [dev-dependencies]
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["rt"] }
+uuid.workspace = true
 
 [lints]
 workspace = true
