@@ -26,8 +26,7 @@ use super::input::{Input, Operation};
 pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     match input.operation {
         Operation::CostRouter => Ok(router(input)),
-        Operation::CostPerCharacter => character(input),
-        Operation::CostPerToken => token(input),
+        Operation::CostPerCharacter | Operation::CostPerToken => priced(input),
         Operation::WebSearchCost => search(input),
         Operation::MapsGroundingCost => maps(input),
     }
@@ -134,42 +133,44 @@ fn cost_value(
     }))
 }
 
-fn character(input: &Input) -> Result<Value, Box<HelperError>> {
+fn priced(input: &Input) -> Result<Value, Box<HelperError>> {
     let record = required_record(input)?;
     let usage: GoogleUsage = input.usage.google_usage();
     let pricing = FixturePricing {
         calls: RefCell::new(Vec::new()),
     };
-    let request = CharacterRequest {
-        model: &input.model,
-        custom_llm_provider: &input.custom_llm_provider,
-        prompt_characters: input.prompt_characters,
-        completion_characters: input.completion_characters,
-        service_tier: input.service_tier.as_deref(),
-        vertex_location: input.vertex_location.as_deref(),
+    let cost = match input.operation {
+        Operation::CostPerCharacter => cost_per_character(
+            &pricing,
+            &record,
+            &usage,
+            &CharacterRequest {
+                model: &input.model,
+                custom_llm_provider: &input.custom_llm_provider,
+                prompt_characters: input.prompt_characters,
+                completion_characters: input.completion_characters,
+                service_tier: input.service_tier.as_deref(),
+                vertex_location: input.vertex_location.as_deref(),
+            },
+        ),
+        Operation::CostPerToken => cost_per_token(
+            &pricing,
+            &record,
+            &usage,
+            &TokenRequest {
+                model: &input.model,
+                custom_llm_provider: &input.custom_llm_provider,
+                service_tier: input.service_tier.as_deref(),
+                vertex_location: input.vertex_location.as_deref(),
+            },
+        ),
+        Operation::CostRouter | Operation::WebSearchCost | Operation::MapsGroundingCost => {
+            return Err(failure(
+                "the operation does not bill a token or character cost".to_owned(),
+            ));
+        }
     };
-    cost_value(
-        cost_per_character(&pricing, &record, &usage, &request),
-        &pricing,
-    )
-}
-
-fn token(input: &Input) -> Result<Value, Box<HelperError>> {
-    let record = required_record(input)?;
-    let usage = input.usage.google_usage();
-    let pricing = FixturePricing {
-        calls: RefCell::new(Vec::new()),
-    };
-    let request = TokenRequest {
-        model: &input.model,
-        custom_llm_provider: &input.custom_llm_provider,
-        service_tier: input.service_tier.as_deref(),
-        vertex_location: input.vertex_location.as_deref(),
-    };
-    cost_value(
-        cost_per_token(&pricing, &record, &usage, &request),
-        &pricing,
-    )
+    cost_value(cost, &pricing)
 }
 
 fn search(input: &Input) -> Result<Value, Box<HelperError>> {
