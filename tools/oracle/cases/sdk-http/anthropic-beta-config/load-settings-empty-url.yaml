@@ -1,0 +1,13 @@
+kind: sdk_http
+name: anthropic-beta-config-load-settings-empty-url
+env: {}
+call:
+  anthropic_beta_config:
+    url: empty
+    steps: [load, load]
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

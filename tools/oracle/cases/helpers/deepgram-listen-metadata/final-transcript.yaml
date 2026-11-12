@@ -1,0 +1,45 @@
+kind: helper
+name: deepgram-listen-metadata-final-transcript
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: hello}, {transcript: ignored}]}}
+      - {type: Results, is_final: false, channel: {alternatives: [{transcript: skipped}]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: ""}, {transcript: ignored}]}}
+      - {type: Results, is_final: true, channel: {alternatives: []}}
+      - {type: Results, is_final: true}
+      - {type: Metadata, transcript: meta}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: world}]}}
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Results, is_final: true, start: "0", duration: 1.0, channel_index: [0, "x"], channel: {alternatives: [{transcript: hi}]}}
+      - {type: Results, is_final: 1, channel: {alternatives: [{transcript: skipped}]}}
+      - {type: Results, is_final: true, channel: []}
+      - {type: Results, is_final: true, channel: skipped}
+      - {type: Results, is_final: true, channel: {alternatives: skipped}}
+      - {type: Results, is_final: true, channel: {alternatives: [skipped, {transcript: later}]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: 5}]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: there}]}}
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Results, is_final: true, channel: [[[hi]]]}
+      - {type: Results, is_final: true, channel: {alternatives: [[hi]]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: valid}]}}
+compare: {ignore: []}
+env: {}

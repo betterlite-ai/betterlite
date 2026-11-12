@@ -147,9 +147,9 @@ jobs:
           rm -rf /runner-android/*
           df -h /
 
-      # g++: libfuzzer-sys compiles libFuzzer from C++ even under cargo check
+      # g++: libfuzzer-sys compiles libFuzzer from C++ even under cargo check; python3-dev: betterlite-python links libpython through PyO3, whose build script needs an interpreter
       - name: Install system packages
-        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd g++
+        run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq procps zstd g++ python3 python3-dev
 
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

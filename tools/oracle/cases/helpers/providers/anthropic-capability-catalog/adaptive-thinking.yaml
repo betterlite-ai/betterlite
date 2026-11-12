@@ -1,0 +1,61 @@
+kind: helper
+name: adaptive-thinking
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        claude-opus-4-6: {litellm_provider: anthropic, supports_adaptive_thinking: true, supports_legacy_thinking: true}
+        anthropic/claude-opus-4-8: {litellm_provider: anthropic, supports_adaptive_thinking: true, supports_xhigh_reasoning_effort: true}
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+      packaged: {}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: 5000, display: summarized}}
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: 4096, display: updates}}
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params:
+          thinking: {type: enabled, budget_tokens: 1000}
+          output_config: {effort: null, format: x}
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: 1000}, output_config: plain}
+      - function: adaptive_thinking
+        model: claude-opus-4-6
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: 5000}}
+      - function: adaptive_thinking
+        model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: 5000}}
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params: {thinking: {type: disabled}}
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: many}, output_config: {format: x}}
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled}}
+      - function: adaptive_thinking
+        model: claude-opus-4-8
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: 8192}}
+      - function: adaptive_thinking
+        model: claude-opus-4-7
+        custom_llm_provider: anthropic
+        params: {thinking: {type: enabled, budget_tokens: 8192}}
+env: {}
+compare: {ignore: []}

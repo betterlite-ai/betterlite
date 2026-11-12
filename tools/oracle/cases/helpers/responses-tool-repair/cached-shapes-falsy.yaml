@@ -1,0 +1,10 @@
+kind: helper
+name: cached-shapes-falsy
+call:
+  responses_tool_repair:
+    operation: normalize
+    definition: {}
+    tool_call_id: call_5
+env: {}
+compare:
+  ignore: []

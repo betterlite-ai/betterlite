@@ -29,6 +29,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 bytes = "1.12.1"
 chrono.workspace = true
@@ -42,6 +43,7 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 mime = "0.3.17"
 num-traits = "0.2.19"
 percent-encoding.workspace = true
+rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }

@@ -1,0 +1,4 @@
+# BEDROCK_MIN_THINKING_BUDGET_TOKENS is read from the process environment
+litellm_settings:
+  drop_params: true
+model_list: []

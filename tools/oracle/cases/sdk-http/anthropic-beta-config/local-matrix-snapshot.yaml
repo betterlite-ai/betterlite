@@ -1,0 +1,13 @@
+kind: sdk_http
+name: anthropic-beta-config-local-matrix-snapshot
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+call:
+  anthropic_beta_config:
+    url: mock
+    steps: [load, load]
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

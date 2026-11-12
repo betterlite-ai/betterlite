@@ -1,0 +1,26 @@
+kind: helper
+name: gemini-embedding-records-image-usage-seed
+call:
+  gemini_embedding_records:
+    calls:
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input: files/photo
+      optional: {}
+      resolved_files:
+        files/photo:
+          mime_type: image/jpeg
+          uri: https://example.com/v1beta/files/photo
+      response:
+        embedding:
+          values:
+          - 0.1
+          - 0.2
+        usageMetadata:
+          promptTokenCount: 6
+          promptTokensDetails:
+          - modality: IMAGE
+            tokenCount: 6
+compare:
+  ignore: []
+env: {}

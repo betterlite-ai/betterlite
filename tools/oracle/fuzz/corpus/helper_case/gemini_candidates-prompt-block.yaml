@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-candidates-prompt-block
+call:
+  gemini_candidates:
+    streaming: false
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      promptFeedback:
+        blockReason: OTHER
+        blockReasonMessage: prompt refused
+      candidates:
+        - content:
+            parts:
+              - text: ignored
+          finishReason: STOP
+      usageMetadata:
+        promptTokenCount: 7
+        totalTokenCount: 7
+        toolUsePromptTokenCount: 2
+env: {}
+compare: {ignore: []}
