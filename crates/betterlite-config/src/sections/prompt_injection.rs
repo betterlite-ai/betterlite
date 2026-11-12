@@ -77,33 +77,28 @@ impl Default for PromptInjectionParams {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(default)]
 struct RawPromptInjectionParams {
+    #[serde(default)]
     heuristics_check: PromptInjectionFlag,
+    #[serde(default)]
     vector_db_check: PromptInjectionFlag,
+    #[serde(default)]
     llm_api_check: PromptInjectionFlag,
+    #[serde(default)]
     llm_api_name: Option<String>,
+    #[serde(default)]
     llm_api_system_prompt: Option<String>,
+    #[serde(default)]
     llm_api_fail_call_string: Option<String>,
+    #[serde(default = "default_reject_as_response")]
     reject_as_response: Option<bool>,
     // pydantic's default config ignores keys the model does not declare; Option keeps the sink non-zero-sized
     #[serde(flatten)]
     _unknown: BTreeMap<String, Option<IgnoredAny>>,
 }
 
-impl Default for RawPromptInjectionParams {
-    fn default() -> Self {
-        Self {
-            heuristics_check: false,
-            vector_db_check: false,
-            llm_api_check: false,
-            llm_api_name: None,
-            llm_api_system_prompt: None,
-            llm_api_fail_call_string: None,
-            reject_as_response: Some(false),
-            _unknown: BTreeMap::new(),
-        }
-    }
+fn default_reject_as_response() -> Option<bool> {
+    Some(false)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

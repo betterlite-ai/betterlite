@@ -10,6 +10,7 @@ use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::prompt_injection::{
     PromptInjectionParams, PromptInjectionParamsError, Settings,
 };
+use crate::types::Config;
 
 const MAX_THREADS_VARIABLE: &str = "PROMPT_INJECTION_HEURISTICS_MAX_THREADS";
 const THRESHOLD_VARIABLE: &str = "DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD";
@@ -21,23 +22,19 @@ fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn loaded(source: &str, variables: &[(&str, &str)]) -> Settings {
+fn load(source: &str, variables: &[(&str, &str)]) -> Result<Config, ConfigError> {
     ConfigLoader {
         lookup: environment(variables),
     }
     .load(source)
-    .unwrap()
-    .sections
-    .prompt_injection
+}
+
+fn loaded(source: &str, variables: &[(&str, &str)]) -> Settings {
+    load(source, variables).unwrap().sections.prompt_injection
 }
 
 fn load_error(source: &str, variables: &[(&str, &str)]) -> ConfigError {
-    ConfigLoader {
-        lookup: environment(variables),
-    }
-    .load(source)
-    .err()
-    .unwrap()
+    load(source, variables).unwrap_err()
 }
 
 fn default_params() -> PromptInjectionParams {
