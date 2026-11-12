@@ -61,6 +61,8 @@ scope:
     - crates/betterlite-logging/src/logging_failure/handlers.rs
     - crates/betterlite-logging/src/logging_metadata/params.rs
     - crates/betterlite-server/src/trace_lifecycle/tests/support.rs
+    - tools/oracle/src/helpers/logging/b3933.rs
+    - tools/oracle/src/helpers/logging/b3944.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L42-L99
