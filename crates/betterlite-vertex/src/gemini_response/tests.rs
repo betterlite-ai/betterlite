@@ -223,6 +223,16 @@ fn decode_rejects_malformed_candidate_content() {
     ));
 }
 
+#[rstest]
+#[case::number(r#"{"candidates":[7]}"#)]
+#[case::list(r#"{"candidates":[[]]}"#)]
+fn decode_rejects_a_non_object_candidate(#[case] source: &str) {
+    assert!(matches!(
+        decode_generate_content(source.as_bytes()),
+        Err(GenerateContentError::Json { .. })
+    ));
+}
+
 #[test]
 fn decode_rejects_a_trailing_document() {
     assert!(matches!(
