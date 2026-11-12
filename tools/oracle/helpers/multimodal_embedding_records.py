@@ -76,7 +76,11 @@ def answer_entry(answer: EmbeddingResponse) -> Json:
     usage = answer.usage
     if usage is None:
         return {"error": True}
-    details = usage.prompt_tokens_details
+    details = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1748
+        "dict[str, Json] | None",
+        usage.prompt_tokens_details,
+    )
+    seconds = None if details is None else details.get("video_length_seconds")
     return {
         "model": answer.model,
         "data": records,
@@ -85,12 +89,10 @@ def answer_entry(answer: EmbeddingResponse) -> Json:
             "completion_tokens": usage.completion_tokens,
             "total_tokens": usage.total_tokens,
             "prompt_tokens_details": {
-                "character_count": None if details is None else details.character_count,
-                "image_count": None if details is None else details.image_count,
+                "character_count": None if details is None else details.get("character_count"),
+                "image_count": None if details is None else details.get("image_count"),
                 "video_length_seconds": (
-                    None
-                    if details is None or details.video_length_seconds is None
-                    else format(Decimal(str(details.video_length_seconds)).normalize(), "f")
+                    None if seconds is None else format(Decimal(str(seconds)).normalize(), "f")
                 ),
             },
         },
