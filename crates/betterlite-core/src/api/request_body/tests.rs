@@ -3,9 +3,10 @@
 use rstest::rstest;
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::decode::{DecodedJson, decode_json_body};
 use super::{
-    BodyKind, DEFAULT_MAX_REPAIR_BYTES, DecodedJson, MediaTypeKind, ParsedBody, RequestBodyError,
-    RequestBodyInput, RequestBodyResult, RewrittenBody, classify_media_type, decode_json_body,
+    BodyKind, DEFAULT_MAX_REPAIR_BYTES, MediaTypeKind, ParsedBody, RequestBodyError,
+    RequestBodyInput, RequestBodyResult, RewrittenBody, classify_media_type,
     is_opaque_audio_request, is_otlp_trace_request, normalize_media_type, parse_binary_body,
     rewrite_request_model,
 };

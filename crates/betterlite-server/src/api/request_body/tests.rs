@@ -6,11 +6,12 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::{
     BodyKind, JsonObject, ParsedBody, RequestBodyError, RequestBodyInput, is_opaque_audio_request,
 };
+use rstest::rstest;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
-use super::{decode_request_body, prepare_request_body, read_request_body};
+use super::{decode_request_body, read_request_body};
 
 fn object(source: &str) -> JsonObject {
     serde_json::from_str(source).unwrap()
@@ -109,8 +110,7 @@ fn opaque_audio_body() {
         &input.route_path,
         input.content_type()
     ));
-    let prepared =
-        prepare_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
+    let prepared = read_request_body(&input, &Settings::default(), &ApiLimits::default()).unwrap();
     assert_eq!(prepared.branch, BodyKind::OpaqueAudio);
     assert!(!prepared.body_read);
     assert_eq!(prepared.body, JsonObject::new());
@@ -121,7 +121,7 @@ fn opaque_audio_body() {
         "/azure_speech/audio/speech",
         br#"{"model":"gpt-4o"}"#.to_vec(),
     );
-    let read = prepare_request_body(&json, &Settings::default(), &ApiLimits::default()).unwrap();
+    let read = read_request_body(&json, &Settings::default(), &ApiLimits::default()).unwrap();
     assert_eq!(read.branch, BodyKind::Json);
 }
 
@@ -265,15 +265,8 @@ fn an_empty_json_body_is_cached_as_an_empty_object() {
     assert_eq!(result.cached_body(), Some(JsonObject::new()));
 }
 
-#[test]
-fn replays_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/request_body");
-    let seeds: Vec<Vec<u8>> = fs::read_dir(corpus)
-        .unwrap()
-        .map(|entry| fs::read(entry.unwrap().path()).unwrap())
-        .collect();
-    for seed in &seeds {
-        drop(decode_request_body(seed, &ApiLimits::default()));
-    }
-    assert!(seeds.len() >= 6);
+#[rstest]
+fn replays_corpus(#[files("fuzz/corpus/request_body/*")] path: PathBuf) {
+    let seed = fs::read(path).unwrap();
+    drop(decode_request_body(&seed, &ApiLimits::default()));
 }

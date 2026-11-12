@@ -3,12 +3,12 @@
     reason = "a proxy request body is arbitrary JSON the client sends; only its top-level type is known"
 )]
 
+pub mod decode;
 mod tests;
 
-use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, JsonBoundary};
+use crate::api::api_boundaries::ApiLimitError;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use std::str;
 use thiserror::Error;
 
 pub type JsonObject = BTreeMap<String, serde_json::Value>;
@@ -84,6 +84,7 @@ pub fn parse_binary_body(body: &[u8]) -> JsonObject {
 
 #[must_use]
 pub fn is_otlp_trace_request(method: &str, route_path: &str) -> bool {
+    // OTLP trace spans arrive only on POST /v1/traces, so auth must not consume their body
     method == OTLP_TRACE_METHOD && route_path == OTLP_TRACE_PATH
 }
 
@@ -137,6 +138,7 @@ pub struct RequestBodyInput {
 impl RequestBodyInput {
     #[must_use]
     pub fn content_type(&self) -> &str {
+        // a request without a content-type header has no media type to classify
         self.headers.get("content-type").map_or("", String::as_str)
     }
 }
@@ -151,6 +153,7 @@ pub struct RequestBodyResult {
 
 impl RequestBodyResult {
     pub fn cached_body(&self) -> Option<JsonObject> {
+        // only the keys accepted when the body was cached are visible to auth
         self.parsed_body.as_ref().map(ParsedBody::visible)
     }
 
@@ -170,13 +173,6 @@ pub struct RewrittenBody {
     pub request_data: JsonObject,
     pub cached_body: Option<ParsedBody>,
     pub raw_json_body: Option<Vec<u8>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DecodedJson {
-    Parsed { body: JsonObject, repaired: bool },
-    // LiteLLM's lenient fallback decodes UTF-8 first, so unusable bytes leave auth with an empty body
-    Unreadable,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -226,55 +222,6 @@ impl RequestBodyError {
             }
         }
     }
-}
-
-pub fn decode_json_body(
-    body: &[u8],
-    limits: &ApiLimits,
-    max_repair_bytes: Option<u64>,
-) -> Result<DecodedJson, RequestBodyError> {
-    limits.check(ApiBoundariesInput::Json(JsonBoundary {
-        known_bytes: body.len(),
-    }))?;
-    if body.is_empty() {
-        return Ok(DecodedJson::Parsed {
-            body: JsonObject::new(),
-            repaired: false,
-        });
-    }
-    match parse_json_bytes(body) {
-        ParsedJson::Object(object) => Ok(DecodedJson::Parsed {
-            body: object,
-            repaired: false,
-        }),
-        ParsedJson::NotObject => Err(RequestBodyError::NotAnObject),
-        ParsedJson::Invalid => repair_json_body(body, max_repair_bytes),
-    }
-}
-
-// the cap only guards the lenient fallback, as in the pinned proxy: a plain parse still runs first
-fn repair_json_body(
-    body: &[u8],
-    max_repair_bytes: Option<u64>,
-) -> Result<DecodedJson, RequestBodyError> {
-    if over_repair_cap(body.len(), max_repair_bytes) {
-        return Err(RequestBodyError::InvalidJson);
-    }
-    let Ok(text) = str::from_utf8(body) else {
-        return Ok(DecodedJson::Unreadable);
-    };
-    match parse_json_text(text) {
-        ParsedJson::Object(object) => Ok(DecodedJson::Parsed {
-            body: object,
-            repaired: true,
-        }),
-        ParsedJson::NotObject => Err(RequestBodyError::NotAnObject),
-        ParsedJson::Invalid => Err(RequestBodyError::InvalidJson),
-    }
-}
-
-fn over_repair_cap(observed: usize, max_repair_bytes: Option<u64>) -> bool {
-    max_repair_bytes.is_some_and(|cap| usize::try_from(cap).is_ok_and(|limit| observed > limit))
 }
 
 fn parse_json_bytes(body: &[u8]) -> ParsedJson {
