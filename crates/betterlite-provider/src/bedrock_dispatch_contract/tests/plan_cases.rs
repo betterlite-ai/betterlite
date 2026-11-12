@@ -31,7 +31,7 @@ struct Expected {
 }
 
 #[derive(Clone, Copy)]
-struct Row {
+pub(super) struct Row {
     model: &'static str,
     model_id: Option<&'static str>,
     region: Option<&'static str>,
@@ -45,7 +45,7 @@ struct Row {
     expected: Expected,
 }
 
-const BASE: Row = Row {
+pub(super) const BASE: Row = Row {
     model: CLAUDE,
     model_id: None,
     region: None,
@@ -187,7 +187,7 @@ const CONVERSE_ROWS: [Row; 4] = [
     },
 ];
 
-fn request(row: &Row) -> BedrockPlanRequest {
+pub(super) fn request(row: &Row) -> BedrockPlanRequest {
     let mut converse_models = IndexSet::new();
     if row.converse {
         converse_models.insert(row.model.to_owned());

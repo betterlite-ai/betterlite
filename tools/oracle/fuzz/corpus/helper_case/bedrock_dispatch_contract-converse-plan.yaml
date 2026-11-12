@@ -2,18 +2,9 @@ kind: helper
 name: bedrock-dispatch-contract-seed-converse-plan
 call:
   bedrock_dispatch_contract:
-    price_map: {}
     converse_models: ["anthropic.claude-3-haiku-20240307-v1:0"]
-    request_metadata_fields: []
     cases:
-      - model: "anthropic.claude-3-haiku-20240307-v1:0"
-        aws_region_name: "us-east-1"
-        settings:
-          aws_bedrock_runtime_endpoint: "https://env-runtime.example"
-      - model: "converse/amazon.titan-text-express-v1"
-        aws_region_name: "eu-central-1"
-        settings:
-          aws_bedrock_runtime_endpoint: "https://env-runtime.example"
-env:
-  AWS_BEDROCK_RUNTIME_ENDPOINT: "https://env-runtime.example"
+      - {model: "anthropic.claude-3-haiku-20240307-v1:0", aws_region_name: "us-east-1"}
+      - {model: "converse/amazon.titan-text-express-v1", aws_region_name: "eu-central-1"}
+env: {}
 compare: {ignore: []}
