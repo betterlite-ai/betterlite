@@ -62,18 +62,22 @@ pub fn async_audio_transcriptions(
     data: &TranscriptionData,
     logger: &mut dyn TranscriptionLogger,
 ) -> Result<(OutboundRequest, Pending), TranscriptionError> {
-    let model = match &data.model {
+    let started = begin(call, data, (ClientKind::Async, async_model(data)), logger);
+    if let Err(error) = &started {
+        log_failure(&call.input, error, logger);
+    }
+    started
+}
+
+// the hidden model: data.model, whisper-1 only when the key is missing, nothing for any other value
+fn async_model(data: &TranscriptionData) -> Option<String> {
+    match &data.model {
         Some(Json::Text(name)) => Some(name.clone()),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             None
         }
         None => Some(String::from("whisper-1")),
-    };
-    let started = begin(call, data, (ClientKind::Async, model), logger);
-    if let Err(error) = &started {
-        log_failure(&call.input, error, logger);
     }
-    started
 }
 
 fn begin(

@@ -21,18 +21,10 @@ pub struct DecodedReply {
 }
 
 pub fn reply_format(options: &IndexMap<String, Json>) -> Result<ReplyFormat, TranscriptionError> {
-    match options.get("response_format") {
-        Some(Json::Text(name)) if matches!(name.as_str(), "text" | "srt" | "vtt") => {
-            Ok(ReplyFormat::Text)
-        }
-        None | Some(Json::Null | Json::Text(_)) => Ok(ReplyFormat::Json),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(TranscriptionError::Field {
-                field: String::from("response_format"),
-                problem: "is not a string",
-            })
-        }
-    }
+    Ok(match string_field(options, "response_format")? {
+        Some("text" | "srt" | "vtt") => ReplyFormat::Text,
+        Some(_) | None => ReplyFormat::Json,
+    })
 }
 
 // decode_transcription_reply is the one place provider reply bytes turn into a TranscriptionResponse.
@@ -74,13 +66,16 @@ pub fn decode_transcription_reply(
     })
 }
 
-pub fn text_field(fields: &IndexMap<String, Json>) -> Result<Option<String>, TranscriptionError> {
-    match fields.get("text") {
+pub fn string_field<'fields>(
+    fields: &'fields IndexMap<String, Json>,
+    name: &str,
+) -> Result<Option<&'fields str>, TranscriptionError> {
+    match fields.get(name) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
+        Some(Json::Text(text)) => Ok(Some(text)),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(TranscriptionError::Field {
-                field: String::from("text"),
+                field: name.to_owned(),
                 problem: "is not a string",
             })
         }
@@ -117,7 +112,7 @@ fn response_from_object(
         }
     }
     Ok(TranscriptionResponse {
-        text: text_field(fields)?,
+        text: string_field(fields, "text")?.map(str::to_owned),
         extra,
     })
 }

@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
-use super::cases::{SyncCall, run};
+use super::cases::{Run, SyncCall, run};
 use super::fixture::{AudioFixture, ConnectionOptions, Fixture, Reply, authorization, connection};
 use crate::transcription::client::{ClientKind, TranscriptionConnection, select_client};
 use crate::transcription::error::TranscriptionError;
@@ -104,16 +104,17 @@ fn rejected_reply() -> Reply {
     }
 }
 
-async fn assert_rejection_is_safe() {
+async fn run_against(reply: Reply, call: SyncCall) -> (Fixture, Run) {
     let audio = AudioFixture::new("a.wav", b"abc", "audio/wav");
-    let fixture = Fixture::new(rejected_reply());
-    let run = run(
-        &fixture,
-        &audio,
-        SyncCall::whisper(IndexMap::new(), secret_connection()),
-    )
-    .await;
-    let error = run.outcome.expect_err("the 401 is an error");
+    let fixture = Fixture::new(reply);
+    let finished = run(&fixture, &audio, call).await;
+    (fixture, finished)
+}
+
+async fn assert_rejection_is_safe() {
+    let call = SyncCall::whisper(IndexMap::new(), secret_connection());
+    let (_fixture, finished) = run_against(rejected_reply(), call).await;
+    let error = finished.outcome.expect_err("the 401 is an error");
     assert!(!format!("{error:?}").contains(SECRET));
     assert!(!error.to_string().contains(SECRET));
 }
@@ -135,19 +136,13 @@ fn assert_missing_key_is_safe() {
 }
 
 async fn assert_async_is_safe() {
-    let audio = AudioFixture::new("a.wav", b"abc", "audio/wav");
-    let fixture = Fixture::new(Reply::json(r#"{"text":"hi"}"#));
     let data = TranscriptionData {
         model: Some(Json::Text(String::from("whisper-1"))),
         options: IndexMap::new(),
     };
-    let run = run(
-        &fixture,
-        &audio,
-        SyncCall::explicit(data, secret_connection()),
-    )
-    .await;
-    assert!(!format!("{:?}", run.outcome).contains(SECRET));
+    let call = SyncCall::explicit(data, secret_connection());
+    let (fixture, finished) = run_against(Reply::json(r#"{"text":"hi"}"#), call).await;
+    assert!(!format!("{:?}", finished.outcome).contains(SECRET));
     let expected = format!("Bearer {SECRET}");
     assert_eq!(authorization(&fixture).as_deref(), Some(expected.as_str()));
 }

@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::decode::text_field;
+use super::decode::string_field;
 use super::error::TranscriptionError;
 use crate::api::transcription_contract::TranscriptionResponse;
 use crate::openai_base_config::{Headers, Object};
@@ -107,7 +107,7 @@ pub fn transform_response(
         });
     }
     Ok(TranscriptionResponse {
-        text: text_field(&fields)?,
+        text: string_field(&fields, "text")?.map(str::to_owned),
         extra: Object::new(),
     })
 }
