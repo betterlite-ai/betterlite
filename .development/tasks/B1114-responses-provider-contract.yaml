@@ -23,6 +23,7 @@ description: >-
   operation.rs and prepared.rs as they are.
 scope:
   paths:
+  - "crates/betterlite-provider/src/operation/tests.rs"
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api/responses_provider_contract.rs
   - crates/betterlite-provider/src/api/responses_provider_contract/**
