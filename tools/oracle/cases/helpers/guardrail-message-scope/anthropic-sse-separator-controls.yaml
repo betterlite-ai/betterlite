@@ -1,6 +1,0 @@
-kind: helper
-name: anthropic-sse-separator-controls
-call:
-  b3663: {"function": "blocked_usage", "shape": "response", "original": {"kind": "stream", "items": [{"kind": "bytes", "text": "\u001cdata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":1}}}\u001d"}, {"kind": "bytes", "text": "\u001fdata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\u001e\u001f"}]}}
-env: {}
-compare: {ignore: []}

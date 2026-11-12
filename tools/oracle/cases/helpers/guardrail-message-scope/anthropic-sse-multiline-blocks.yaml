@@ -1,6 +1,6 @@
 kind: helper
 name: anthropic-sse-multiline-blocks
 call:
-  b3663: {"function": "blocked_usage", "shape": "response", "original": {"kind": "stream", "items": [{"kind": "bytes", "text": "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":11,\"output_tokens\":1}}}\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":42}}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\n"}, {"kind": "bytes", "text": "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":77}}\r\n\r\n"}]}}
+  b3663: {"function": "blocked_usage", "shape": "response", "original": {"kind": "stream", "items": [{"kind": "bytes", "text": "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":11,\"output_tokens\":1}}}\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":42}}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\n"}, {"kind": "bytes", "text": "\u001cdata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\u001d"}, {"kind": "bytes", "text": "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":77}}\r\n\r\n"}]}}
 env: {}
 compare: {ignore: []}

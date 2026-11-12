@@ -1,6 +1,6 @@
 kind: helper
 name: blocked-usage-responses-stream-completed-event
 call:
-  b3663: {"function": "blocked_usage", "shape": "responses_stream", "original": {"kind": "stream", "items": [{"kind": "json", "value": {"type": "response.created", "response": {"usage": {"input_tokens": 1}}}}, {"kind": "json", "value": {"type": "response.completed", "response": {"usage": {"input_tokens": 9, "output_tokens": 4}}}}, {"kind": "json", "value": {"type": "response.output_text.done", "text": "x"}}]}}
+  b3663: {"function": "blocked_usage", "shape": "responses_stream", "original": {"kind": "stream", "items": [{"kind": "json", "value": {"type": "response.created", "response": {"usage": {"input_tokens": 1}}}}, {"kind": "json", "value": {"type": "response.completed", "response": {"usage": {"input_tokens": 9, "output_tokens": 4, "input_tokens_details": {"cached_tokens": 2}, "cost": 0.5}}}}, {"kind": "json", "value": {"type": "response.output_text.done", "text": "x"}}]}}
 env: {}
 compare: {ignore: []}
