@@ -257,3 +257,32 @@ fn an_invalid_policy_value_names_its_field_and_group() {
         "got {error}"
     );
 }
+
+#[rstest]
+#[case::global("router_settings:\n  retry_policy:\n    RateLimitErrorRetry: 3\n")]
+#[case::group(
+    "router_settings:\n  model_group_retry_policy:\n    gpt-4:\n      RateLimitErrorRetry: 3\n"
+)]
+fn an_unknown_policy_key_fails_with_its_name(#[case] source: &str) {
+    let error = settings(source, &[]).unwrap_err();
+    assert!(error.contains("RateLimitErrorRetry"), "got {error}");
+}
+
+#[test]
+fn a_null_group_map_keeps_the_global_policy() {
+    let source = "\
+router_settings:
+  retry_policy:
+    DefaultRetries: 2
+  model_group_retry_policy: null
+";
+    let loaded = settings(source, &[]).unwrap();
+    assert!(loaded.model_group_retry_policy.is_empty());
+    assert_eq!(
+        loaded.retry_policy,
+        Some(RetryPolicySettings {
+            fallback: Some(2),
+            ..empty_policy()
+        })
+    );
+}

@@ -22,13 +22,13 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawRouter {
     retry_policy: Option<RawPolicy>,
-    #[serde(default)]
-    model_group_retry_policy: BTreeMap<String, RawPolicy>,
+    model_group_retry_policy: Option<BTreeMap<String, RawPolicy>>,
     num_retries: Option<RawNumber>,
     retry_after: Option<RawNumber>,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawPolicy {
     #[serde(rename = "BadRequestErrorRetries")]
     bad_request: Option<RawNumber>,
@@ -196,14 +196,14 @@ where
 }
 
 fn group_policies<L>(
-    raw: BTreeMap<String, RawPolicy>,
+    raw: Option<BTreeMap<String, RawPolicy>>,
     lookup: &L,
 ) -> Result<BTreeMap<String, RetryPolicySettings>, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let mut policies = BTreeMap::new();
-    for (group, policy) in raw {
+    for (group, policy) in raw.unwrap_or_default() {
         let path = format!("router_settings.model_group_retry_policy.{group}");
         policies.insert(group, policy.resolve(&path, lookup)?);
     }
