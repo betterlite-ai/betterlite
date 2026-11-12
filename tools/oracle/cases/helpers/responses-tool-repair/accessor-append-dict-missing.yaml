@@ -1,0 +1,10 @@
+kind: helper
+name: accessor-append-dict-missing
+call:
+  responses_tool_repair:
+    operation: append
+    assistant: {role: assistant}
+    chunk: {id: c1, type: function, function: {name: f, arguments: "{}"}, index: 0}
+env: {}
+compare:
+  ignore: []

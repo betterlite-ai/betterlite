@@ -1,0 +1,12 @@
+kind: helper
+name: file-contracts-metadata-seed
+call:
+  file_contracts:
+    function: batch_metadata_predicate
+    cases:
+      - {purpose: batch, content_type: text/plain, file: ""}
+      - {purpose: batch, content_type: text/plain, file: null}
+      - {purpose: batch, content_type: text/plain, file: {lazy: true}}
+      - {purpose: assistants, content_type: text/plain, file: upload.bin}
+env: {}
+compare: {ignore: []}

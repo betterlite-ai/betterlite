@@ -9,7 +9,10 @@ publish.workspace = true
 async-trait = "0.1.92"
 aws-lc-rs = "1.18.2"
 base64 = "0.23.1"
+betterlite-auth = { path = "../betterlite-auth" }
+betterlite-bedrock = { path = "../betterlite-bedrock" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
@@ -18,6 +21,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true

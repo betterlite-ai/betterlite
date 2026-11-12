@@ -1,0 +1,7 @@
+kind: helper
+name: speech-provider-contract-class-configuration-seed
+call:
+  speech_provider_contract:
+    function: class_configuration
+env: {}
+compare: {ignore: []}

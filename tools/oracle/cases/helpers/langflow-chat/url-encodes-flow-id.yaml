@@ -1,0 +1,20 @@
+kind: helper
+name: langflow-url-encodes-flow-id
+env: {}
+compare: {ignore: []}
+call:
+  b8101:
+    op: flow
+    provider:
+      api_base: null
+      api_key: null
+      environment: {}
+    urls:
+      - {model: "langflow/a b", options: {}, api_base: "http://host:7860"}
+      - {model: "langflow/a/b", options: {}, api_base: "http://host:7860"}
+      - {model: "langflow/a?b#c", options: {}, api_base: "http://host:7860"}
+      - {model: "langflow/my.flow-1_2~3", options: {}, api_base: "http://host:7860"}
+      - {model: "langflow/ü", options: {}, api_base: "http://host:7860"}
+      - {model: "langflow/abc", options: {}, api_base: "http://host:7860"}
+      - {model: "langflow/abc", options: {}, api_base: null}
+    validate: []

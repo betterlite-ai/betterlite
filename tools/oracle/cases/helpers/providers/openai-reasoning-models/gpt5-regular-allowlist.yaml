@@ -1,0 +1,11 @@
+kind: helper
+name: openai-reasoning-models-gpt5-regular-allowlist
+call:
+  openai_reasoning_models:
+    gpt5_regular_allowlist:
+      probes:
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}}
+      - {model: gpt-5, chat_models: [gpt-5], model_cost: {gpt-5: {litellm_provider: openai, supports_tool_choice: false, supports_none_reasoning_effort: false}}}
+      - {model: custom-gpt-5, chat_models: [], model_cost: {}}
+env: {}
+compare: {ignore: []}

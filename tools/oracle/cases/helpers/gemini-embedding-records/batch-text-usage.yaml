@@ -1,0 +1,102 @@
+kind: helper
+name: gemini-embedding-records-batch-text-usage
+call:
+  gemini_embedding_records:
+    calls:
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - alpha
+      - beta
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values:
+          - 0.1
+          - 0.2
+        - values:
+          - 0.3
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - - alpha
+        - beta
+      - gamma
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values:
+          - 0.1
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - alpha
+      - data:image/png;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values:
+          - 0.1
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - - data:image/png;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values:
+          - 0.1
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input: alpha
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values:
+          - 0.1
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - alpha
+      - gs://bucket/photo.png
+      - https://example.com/a.png
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values:
+          - 0.1
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input: []
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings: []
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - alpha
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values: AAAA
+        - values:
+          - 0.1
+          - 0.2
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - alpha
+      optional: {}
+      resolved_files: {}
+      response: {}
+compare:
+  ignore: []
+env: {}

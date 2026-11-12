@@ -1,0 +1,14 @@
+kind: helper
+name: missing-call-from-tools
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: null, tool_calls: [{id: other, type: function, function: {name: g, arguments: "{}"}}]}
+      - {role: tool, tool_call_id: call_2, content: ok}
+    tools: [{type: function, name: top_level}, {type: function, function: {name: lookup}}]
+    cache: {}
+env: {}
+compare:
+  ignore: []

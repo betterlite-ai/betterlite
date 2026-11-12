@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-content-separators-chat
+call:
+  b3545: {"function": "summary", "protocol": "chat", "response": {"choices": [{"message": {"provider_specific_fields": {"compaction_blocks": [{"type": "compaction", "signature": "sig", "content": "\u001c\u001d\u001e\u001f"}]}}}]}}
+env: {}
+compare:
+  ignore: []
