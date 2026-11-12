@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-services-vector-stores-retrieval
+call:
+  bedrock_services_vector_stores:
+    operation: retrieval_configuration
+    requests:
+      - vector_store_id: kb-1
+        query: [one, two]
+        api_base: "https://host/knowledgebases"
+        optional_params: {max_num_results: 2}
+        litellm_params: {userContext: {userId: reader}}
+        extra_body: {retrievalConfiguration: {vectorSearchConfiguration: {numberOfResults: 5}}}
+env: {}
+compare: {ignore: []}

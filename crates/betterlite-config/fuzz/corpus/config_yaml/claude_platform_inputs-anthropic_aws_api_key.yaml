@@ -1,0 +1,5 @@
+# ANTHROPIC_AWS_API_KEY is read directly from the process environment
+model_list:
+  - model_name: claude-platform
+    litellm_params:
+      model: bedrock/claude_platform/anthropic.claude-3
