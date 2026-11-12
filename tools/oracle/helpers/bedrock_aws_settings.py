@@ -176,7 +176,7 @@ def credentials_call(instance: BaseAWSLLM, config: AwsConfig) -> Credentials:  #
 
 
 def cached_ttl(instance: BaseAWSLLM, now: float) -> int | None:
-    entries = cast(dict[str, float], instance.iam_cache.in_memory_cache.ttl_dict)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L50
+    entries = cast(dict[str, float], instance.iam_cache.in_memory_cache.ttl_dict)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L51
     expiry = next(iter(entries.values()), None)
     return None if expiry is None else int(expiry - now)
 
