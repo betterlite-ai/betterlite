@@ -377,7 +377,6 @@ fn user_identifier_filter_case() {
         "user@example.com\n\n",
         "user@example.com\r\n",
         "abc def",
-        "123 456",
     ];
     let rejected = [
         "user@example.com",
@@ -385,6 +384,7 @@ fn user_identifier_filter_case() {
         "user.name+tag@sub.example.co.uk",
         "+1 555 010 0000",
         "1234567",
+        "123 456",
         "123-4567",
         "\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}",
         "\u{661}\u{662}\u{663}\u{664}\u{665}\u{666}\u{667}",
