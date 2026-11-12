@@ -23,7 +23,7 @@ pub(crate) enum Input {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RequestCall {
+pub(crate) struct RequestCall {
     api_base: Option<String>,
     model: String,
     messages: Vec<ChatMessage>,
@@ -32,14 +32,14 @@ struct RequestCall {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct HeaderCall {
+pub(crate) struct HeaderCall {
     api_key: Option<String>,
     headers: BTreeMap<String, String>,
     env: BTreeMap<String, String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ReplyCall {
+pub(crate) struct ReplyCall {
     body: String,
     status: u16,
     headers: BTreeMap<String, String>,
