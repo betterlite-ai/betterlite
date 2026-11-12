@@ -201,6 +201,13 @@ fn insert_optionals(fields: &mut IndexMap<String, Json>, request: &MapCohereRera
             )
         }),
     );
+    insert_limit_optionals(fields, request);
+}
+
+fn insert_limit_optionals(
+    fields: &mut IndexMap<String, Json>,
+    request: &MapCohereRerankParams<'_>,
+) {
     fields.insert(
         "return_documents".to_owned(),
         request.return_documents.map_or(Json::Null, Json::Bool),
@@ -265,7 +272,7 @@ fn accessor(response: &RerankResponse, key: &str) -> Value {
 }
 
 fn request_outcome(payload: &Value) -> Value {
-    decode_request(payload).map_or(json!({"ok": false}), |record| {
+    decode_request(payload).map_or_else(|| json!({"ok": false}), |record| {
         json!({
             "ok": true,
             "dump": serde_json::to_value(record).unwrap_or(Value::Null),
