@@ -1,0 +1,8 @@
+kind: helper
+name: router-deployment-pricing-user-cache-field-wins
+call:
+  b9710:
+    deployment: {"model_name": "alias", "litellm_params": {"model": "claude-sonnet-4-5", "custom_llm_provider": "anthropic", "input_cost_per_token": 0.000002, "output_cost_per_token": 0.00001, "cache_read_input_token_cost": 0.0000001}, "model_info": {"id": "dep-4"}}
+    shared_before: null
+compare: {ignore: []}
+env: {}
