@@ -5,6 +5,7 @@ use super::support::{
 };
 use crate::cache_key::value::KeyValue;
 use crate::handler::kwargs::LOGGING_OBJECT_KWARG;
+use crate::handler::response::CachingHandlerResponse;
 use crate::handler::retrieve::{AsyncSupport, Retrieval, retrieve_from_cache};
 use crate::types::call_type::CachingSupportedCallType;
 
@@ -97,4 +98,13 @@ async fn retrieval_does_not_keep_the_hit() {
     .await
     .expect("the third retrieval runs");
     assert_eq!(after, Retrieval::Miss);
+}
+
+#[test]
+fn response_defaults_match_the_caching_handler_response() {
+    let response = CachingHandlerResponse::default();
+    assert_eq!(response.cached_result, None);
+    assert_eq!(response.final_embedding_response, None);
+    assert!(!response.all_embeddings_cached);
+    assert_eq!(response.embedding_uncached_input, None);
 }
