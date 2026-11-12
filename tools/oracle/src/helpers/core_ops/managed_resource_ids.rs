@@ -1,7 +1,7 @@
 use betterlite_core::api::managed_resource_ids::{
-    PassthroughManagedIdScope, UNIFIED_ID_PREFIX, UnifiedIdParts, decode_unified_id,
-    is_base64_encoded_unified_id, model_id, parse_unified_id, passthrough_provider_scope,
-    provider_resource_id, resource_type, target_model_names, unified_uuid,
+    PassthroughManagedIdScope, UNIFIED_ID_PREFIX, decode_unified_id, is_base64_encoded_unified_id,
+    model_id, parse_unified_id, passthrough_provider_scope, provider_resource_id, resource_type,
+    target_model_names, unified_uuid,
 };
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
@@ -53,25 +53,35 @@ impl crate::helpers::Helper for Op {
     }
 }
 
+fn provider_scope(provider: Option<&ProviderInput>) -> Value {
+    let name = match provider {
+        Some(ProviderInput::Name(name)) => name,
+        Some(ProviderInput::LlmProvider { llm_provider }) => llm_provider,
+        None => return Value::Null,
+    };
+    match passthrough_provider_scope(name) {
+        Some(PassthroughManagedIdScope::Openai) => json!("openai"),
+        Some(PassthroughManagedIdScope::Azure) => json!("azure"),
+        None => Value::Null,
+    }
+}
+
 fn run_call(call: &Call) -> Value {
     if matches!(call.function, Function::ResolveProvider) {
-        let name = match &call.provider {
-            Some(ProviderInput::Name(name)) => name,
-            Some(ProviderInput::LlmProvider { llm_provider }) => llm_provider,
-            None => return Value::Null,
-        };
-        return match passthrough_provider_scope(name) {
-            Some(PassthroughManagedIdScope::Openai) => json!("openai"),
-            Some(PassthroughManagedIdScope::Azure) => json!("azure"),
-            None => Value::Null,
-        };
+        return provider_scope(call.provider.as_ref());
     }
     // LiteLLM's readers guard with isinstance(str), so any other JSON value takes the empty result
     let Some(Json::Text(text)) = &call.value else {
         return match call.function {
             Function::Detect => json!(false),
             Function::TargetModelNames => json!([]),
-            _ => Value::Null,
+            Function::ResolveProvider
+            | Function::Decode
+            | Function::ResourceType
+            | Function::UnifiedUuid
+            | Function::ModelId
+            | Function::ProviderResourceId
+            | Function::Parse => Value::Null,
         };
     };
     match call.function {
@@ -85,17 +95,15 @@ fn run_call(call: &Call) -> Value {
         Function::UnifiedUuid => json!(unified_uuid(text)),
         Function::ModelId => json!(model_id(text)),
         Function::ProviderResourceId => json!(provider_resource_id(text)),
-        Function::Parse => parse_unified_id(text).map_or(Value::Null, parts_json),
+        Function::Parse => parse_unified_id(text).map_or(Value::Null, |parts| {
+            json!({
+                "resource_type": parts.resource_type,
+                "unified_uuid": parts.unified_uuid,
+                "target_model_names": parts.target_model_names,
+                "provider_resource_id": parts.provider_resource_id,
+                "model_id": parts.model_id,
+            })
+        }),
         Function::ResolveProvider => Value::Null,
     }
-}
-
-fn parts_json(parts: UnifiedIdParts) -> Value {
-    json!({
-        "resource_type": parts.resource_type,
-        "unified_uuid": parts.unified_uuid,
-        "target_model_names": parts.target_model_names,
-        "provider_resource_id": parts.provider_resource_id,
-        "model_id": parts.model_id,
-    })
 }

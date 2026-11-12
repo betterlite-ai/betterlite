@@ -86,7 +86,6 @@ fn decode_lenient_base64(text: &str) -> Option<Vec<u8>> {
     // Python appends -len % 4 pad characters before decoding, and they count toward the quad
     let all_pads = pads.saturating_add(text.len().wrapping_neg().rem_euclid(4));
     match symbols.len().rem_euclid(4) {
-        1 => None,
         remainder @ (2 | 3) if remainder.saturating_add(all_pads) < 4 => None,
         _ => LENIENT_BASE64.decode(symbols).ok(),
     }
