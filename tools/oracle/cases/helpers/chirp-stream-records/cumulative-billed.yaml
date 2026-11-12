@@ -1,0 +1,19 @@
+kind: helper
+name: chirp-stream-records-cumulative-billed
+call:
+  chirp_stream_records:
+    configure:
+      model: chirp_2
+      language_codes: [en-US]
+      sample_rate_hertz: 8000
+    recognizer: projects/project/locations/us-central1/recognizers/_
+    billed_before: 0.5
+    responses:
+      - speech_event_type: SPEECH_ACTIVITY_BEGIN
+        results: []
+        total_billed_duration: {seconds: 1, nanos: 250000000}
+      - speech_event_type: SPEECH_EVENT_TYPE_UNSPECIFIED
+        results: []
+        total_billed_duration: {seconds: 0, nanos: 250000000}
+env: {}
+compare: {ignore: []}

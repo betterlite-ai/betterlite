@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-credentials-project-aliases
+call:
+  vertex_credentials:
+    scenarios:
+      - params: {vertex_project: params-project, vertex_ai_project: params-alias-project}
+        settings: {vertex_project: module-project}
+        environment: {VERTEXAI_PROJECT: env-project}
+      - params: {vertex_ai_project: params-alias-project}
+        settings: {vertex_project: module-project}
+        environment: {VERTEXAI_PROJECT: env-project}
+      - params: {}
+        settings: {vertex_project: module-project}
+        environment: {VERTEXAI_PROJECT: env-project}
+      - params: {}
+        settings: {}
+        environment: {VERTEXAI_PROJECT: env-project}
+      - params: {}
+        settings: {}
+        environment: {}
+env: {}
+compare: {ignore: []}

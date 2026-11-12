@@ -1,0 +1,42 @@
+kind: helper
+name: batch_partial_success
+call:
+  b3994:
+    source:
+      s3_bucket_name: logs
+      s3_region_name: us-east-1
+      s3_endpoint_url: http://127.0.0.1:9000
+      s3_aws_access_key_id: AKIAEXAMPLE
+      s3_aws_secret_access_key: secretKeyEXAMPLE
+      s3_max_retry_age_seconds: 3600
+    now: 1767323045
+    steps:
+      - enqueue:
+          - s3_object_key: 2026-01-02/delivered.json
+            s3_object_download_filename: delivered.json
+            payload: {a: 1}
+          - s3_object_key: 2026-01-02/stale.json
+            s3_object_download_filename: stale.json
+            payload: {b: 2}
+            retrying_since_offset: -7200.0
+          - s3_object_key: 2026-01-02/terminal.json
+            s3_object_download_filename: terminal.json
+            payload: {c: 3}
+          - s3_object_key: 2026-01-02/fresh.json
+            s3_object_download_filename: fresh.json
+            payload: {d: 4}
+        replies:
+          - match: stale.json
+            responses:
+              - status: 429
+                body: ""
+          - match: terminal.json
+            responses:
+              - status: 400
+                body: <Error><Code>EntityTooLarge</Code></Error>
+          - match: fresh.json
+            responses:
+              - status: 429
+                body: ""
+env: {}
+compare: {ignore: []}

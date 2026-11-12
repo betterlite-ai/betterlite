@@ -1,0 +1,22 @@
+kind: helper
+name: baseten-eight-character-id
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - {op: map, host: baseten, model: baseten/abcd1234, config: {}, params: []}
+          - {op: map, host: baseten, model: abcd1234, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/ABCD1234, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abc1234, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abcd12345, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abcd-123, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abcd_123, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/, config: {}, params: []}
+          - {op: map, host: baseten, model: "", config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/baseten/abcd1234, config: {}, params: []}
+          - {op: map, host: baseten, model: abcd1234xyz, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/абвг1234, config: {}, params: []}
+          - {op: map, host: baseten, model: "12345678", config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/1234abcd, config: {}, params: []}
+env: {}
+compare: {ignore: []}

@@ -81,6 +81,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_credentials"
+path = "fuzz_targets/vertex_credentials.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "tool_prices"
 path = "fuzz_targets/tool_prices.rs"
 test = false

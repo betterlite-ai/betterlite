@@ -1,0 +1,42 @@
+kind: probe
+name: retry-policy-404-before-bad-request
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: bad_request, status: 404}
+          model_group: null
+          retry_policy: {BadRequestErrorRetries: 2, NotFoundErrorRetries: 5}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: bad_request, status: 400}
+          model_group: null
+          retry_policy: {BadRequestErrorRetries: 2, NotFoundErrorRetries: 5}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: not_found, status: 404}
+          model_group: null
+          retry_policy: {BadRequestErrorRetries: 2}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 4
+          deployment_num_retries: null

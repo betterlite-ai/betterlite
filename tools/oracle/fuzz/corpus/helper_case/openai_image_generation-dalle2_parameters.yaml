@@ -1,0 +1,14 @@
+kind: helper
+name: openai-image-generation-seed-dalle2-parameters
+call:
+  openai_image_generation:
+    function: dalle2_parameters
+    probes:
+      - model: ''
+        prompt: a cat
+        optional_params: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"url":"https://example.test/a.png"}]}'}
+      - model: dall-e-2
+        optional_params: {size: 512x512}
+env: {}
+compare: {ignore: []}
