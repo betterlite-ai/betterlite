@@ -1,0 +1,240 @@
+use super::Preparation;
+use super::messages::{optional, text_of};
+use super::params::provider_name;
+use crate::completion_request::args::{CompletionArgs, CompletionSettings, JsonObject};
+use crate::completion_request::call::{FallbackCall, ModelListCall, PreparedCompletion};
+use crate::completion_request::error::{CompletionRequestError, RequestResult};
+use crate::completion_request::ports::ProviderLookup;
+use betterlite_models::decisions::Json;
+use betterlite_models::request_pricing::register::CustomPricingRequest;
+use betterlite_router::routing_timeouts::completion::{
+    TimeoutKwargs, TimeoutPhases, TimeoutValue, resolve as resolve_timeout, supports_httpx_timeout,
+};
+use betterlite_router::routing_timeouts::seconds::Seconds;
+pub(crate) fn fallbacks_for(
+    args: &CompletionArgs,
+    settings: &CompletionSettings,
+) -> RequestResult<Option<Vec<Json>>> {
+    match args.kwargs.get("fallbacks") {
+        None | Some(Json::Null) => Ok(settings.model_fallbacks.clone()),
+        Some(Json::List(items)) => Ok(Some(items.clone())),
+        Some(_) => Err(CompletionRequestError::FieldType {
+            field: "fallbacks",
+            expected: "a list",
+        }),
+    }
+}
+fn model_deployments(state: &Preparation<'_>) -> RequestResult<Vec<JsonObject>> {
+    let Some(model_list) = &state.args.model_list else {
+        return Ok(Vec::new());
+    };
+    let mut deployments = Vec::new();
+    for entry in model_list {
+        let name = entry.get("model_name").and_then(text_of).ok_or(
+            CompletionRequestError::ModelListEntry {
+                field: "model_name",
+            },
+        )?;
+        if name != state.call.model {
+            continue;
+        }
+        let params = match entry.get("litellm_params") {
+            Some(Json::Object(params)) => params.clone(),
+            None
+            | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+                return Err(CompletionRequestError::ModelListEntry {
+                    field: "litellm_params",
+                });
+            }
+        };
+        deployments.push(params);
+    }
+    Ok(deployments)
+}
+pub(crate) fn early_exit(state: &mut Preparation<'_>) -> RequestResult<Option<PreparedCompletion>> {
+    state.snapshot.kwargs.clone_from(&state.kwargs);
+    if let Some(fallbacks) = fallbacks_for(state.args, state.settings)? {
+        return Ok(Some(PreparedCompletion::Fallbacks(FallbackCall {
+            fallbacks,
+            args: state.snapshot.clone(),
+        })));
+    }
+    if state.args.model_list.is_none() {
+        return Ok(None);
+    }
+    let deployments = model_deployments(state)?;
+    Ok(Some(PreparedCompletion::ModelList(ModelListCall {
+        deployments,
+        args: state.snapshot.clone(),
+    })))
+}
+fn base_model(state: &Preparation<'_>) -> RequestResult<Option<String>> {
+    if let Some(base_model) = optional::<String>(&state.kwargs, "base_model")? {
+        return Ok(Some(base_model));
+    }
+    let model_info = optional::<JsonObject>(&state.kwargs, "model_info")?;
+    Ok(model_info
+        .as_ref()
+        .and_then(|info| info.get("base_model"))
+        .and_then(text_of)
+        .map(str::to_owned))
+}
+pub(crate) fn resolve(state: &mut Preparation<'_>) -> RequestResult<()> {
+    state.call.base_model = base_model(state)?;
+    if let Some(alias) = state.settings.model_alias_map.get(&state.call.model) {
+        state.call.model = alias.clone();
+    }
+    if optional::<bool>(&state.kwargs, "azure")?.unwrap_or(false) {
+        state.call.custom_llm_provider = Some(String::from("azure"));
+    }
+    if let Some(deployment) = &state.args.deployment_id {
+        state.call.model = deployment.clone();
+        state.call.custom_llm_provider = Some(String::from("azure"));
+    }
+    let api_key = state
+        .args
+        .api_key
+        .as_ref()
+        .or(state.settings.api_key.as_ref());
+    let lookup = ProviderLookup {
+        model: &state.call.model,
+        custom_llm_provider: state.call.custom_llm_provider.as_deref(),
+        api_base: state
+            .call
+            .api_base
+            .as_deref()
+            .or(state.settings.api_base.as_deref()),
+        api_key,
+    };
+    let resolved = state.ports.model_metadata.resolve_provider(&lookup)?;
+    state.call.model = resolved.model;
+    state.call.custom_llm_provider = Some(resolved.provider.slug().to_owned());
+    state.call.api_base = resolved
+        .api_base
+        .clone()
+        .or_else(|| state.call.api_base.clone());
+    state.call.api_key = resolved.api_key.or_else(|| api_key.cloned());
+    Ok(())
+}
+pub(crate) fn hidden_params(state: &mut Preparation<'_>) {
+    state.call.hidden_params.insert(
+        String::from("custom_llm_provider"),
+        Json::Text(provider_name(state)),
+    );
+    let region = state
+        .kwargs
+        .get("aws_region_name")
+        .cloned()
+        .unwrap_or(Json::Null);
+    state
+        .call
+        .hidden_params
+        .insert(String::from("region_name"), region);
+}
+fn seconds(value: &Json, field: &'static str) -> RequestResult<Seconds> {
+    let parsed = match value {
+        Json::Number(number) => number.as_f64(),
+        Json::Text(text) => text.parse::<f64>().ok(),
+        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
+    };
+    let count = parsed.ok_or(CompletionRequestError::FieldType {
+        field,
+        expected: "a number of seconds",
+    })?;
+    Ok(Seconds::new(field, count)?)
+}
+fn optional_seconds(value: Option<&Json>, field: &'static str) -> RequestResult<Option<Seconds>> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(given) => Ok(Some(seconds(given, field)?)),
+    }
+}
+fn timeout_phases(fields: &JsonObject) -> RequestResult<TimeoutPhases> {
+    Ok(TimeoutPhases {
+        connect: optional_seconds(fields.get("connect"), "timeout.connect")?,
+        read: optional_seconds(fields.get("read"), "timeout.read")?,
+        write: optional_seconds(fields.get("write"), "timeout.write")?,
+        pool: optional_seconds(fields.get("pool"), "timeout.pool")?,
+    })
+}
+fn model_timeout(value: &Json) -> RequestResult<Option<TimeoutValue>> {
+    match value {
+        Json::Null => Ok(None),
+        Json::Object(fields) => Ok(Some(TimeoutValue::Phases(timeout_phases(fields)?))),
+        Json::Number(_) | Json::Text(_) => {
+            Ok(Some(TimeoutValue::Seconds(seconds(value, "timeout")?)))
+        }
+        Json::Bool(_) | Json::List(_) => Err(CompletionRequestError::FieldType {
+            field: "timeout",
+            expected: "a number of seconds or a timeout object",
+        }),
+    }
+}
+pub(crate) fn timeout(state: &mut Preparation<'_>) -> RequestResult<()> {
+    let given = match &state.args.timeout {
+        Some(value) => model_timeout(value)?,
+        None => None,
+    };
+    let kwargs = TimeoutKwargs {
+        timeout: optional_seconds(state.kwargs.get("timeout"), "timeout")?,
+        request_timeout: optional_seconds(state.kwargs.get("request_timeout"), "request_timeout")?,
+    };
+    state.call.timeout = Some(resolve_timeout(
+        given,
+        &kwargs,
+        state.settings.request_timeout,
+        supports_httpx_timeout(&provider_name(state)),
+    ));
+    Ok(())
+}
+fn pricing_gate(kwargs: &JsonObject) -> bool {
+    let given =
+        |name: &str| matches!(kwargs.get(name), Some(value) if !matches!(value, Json::Null));
+    (given("input_cost_per_token") && given("output_cost_per_token"))
+        || given("input_cost_per_second")
+        || given("output_cost_per_second")
+        || given("cost_per_second")
+}
+pub(crate) async fn pricing(state: &Preparation<'_>) -> RequestResult<()> {
+    if !pricing_gate(&state.kwargs) {
+        return Ok(());
+    }
+    let model_info = optional::<JsonObject>(&state.kwargs, "model_info")?;
+    let provider = provider_name(state);
+    let request = CustomPricingRequest {
+        model: &state.call.model,
+        custom_llm_provider: &provider,
+        kwargs: &state.kwargs,
+        model_info: model_info.as_ref(),
+    };
+    state
+        .ports
+        .pricing
+        .register_custom_pricing(&request)
+        .await?;
+    Ok(())
+}
+pub(crate) fn custom_prompt(state: &mut Preparation<'_>) {
+    let mut template = JsonObject::new();
+    for name in [
+        "initial_prompt_value",
+        "roles",
+        "final_prompt_value",
+        "bos_token",
+        "eos_token",
+    ] {
+        if let Some(value) = state
+            .kwargs
+            .get(name)
+            .filter(|value| !matches!(value, Json::Null))
+        {
+            template.insert(name.to_owned(), value.clone());
+        }
+    }
+    if template.is_empty() {
+        return;
+    }
+    let mut dict = JsonObject::new();
+    dict.insert(state.call.model.clone(), Json::Object(template));
+    state.call.custom_prompt_dict = dict;
+}

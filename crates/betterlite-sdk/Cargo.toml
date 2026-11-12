@@ -7,12 +7,15 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-router = { path = "../betterlite-router" }
 chrono.workspace = true
 hex.workspace = true
 http = "1.5.0"
