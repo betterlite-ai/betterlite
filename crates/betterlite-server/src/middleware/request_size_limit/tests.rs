@@ -1,15 +1,19 @@
 #![cfg(test)]
 
+use std::convert::Infallible;
+use std::future::{Ready, ready};
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll, Waker};
 
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::http::{HeaderMap, HeaderValue, Request, StatusCode, header};
+use axum::response::Response;
 use futures_util::stream;
 use rstest::rstest;
-use tower::ServiceExt as _;
+use tower::{Layer as _, Service, ServiceExt as _};
 
 use betterlite_config::sections::request_size_limit::Settings;
 
@@ -199,4 +203,27 @@ async fn the_error_body_prints_a_fractional_size_without_a_trailing_zero() {
         body.as_ref(),
         br#"{"error":"Request size is too large. Max size is 0.5 MB"}"#
     );
+}
+
+struct PendingInner;
+
+impl Service<Request<Body>> for PendingInner {
+    type Response = Response;
+    type Error = Infallible;
+    type Future = Ready<Result<Response, Infallible>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+        Poll::Pending
+    }
+
+    fn call(&mut self, _request: Request<Body>) -> Self::Future {
+        ready(Ok(Response::new(Body::empty())))
+    }
+}
+
+#[test]
+fn poll_ready_delegates_to_the_inner_service() {
+    let mut service = limit(1, 1.0).layer(PendingInner);
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(service.poll_ready(&mut cx).is_pending());
 }

@@ -1,10 +1,14 @@
 #![cfg(test)]
 
+use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::fs;
+use std::future::{Future, Ready, ready};
 use std::io::{self, Read as _};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::str;
+use std::task::{Context, Poll, Waker};
 
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
@@ -13,7 +17,7 @@ use axum::response::Response;
 use flate2::read::GzDecoder;
 use futures_util::stream;
 use rstest::rstest;
-use tower::ServiceExt as _;
+use tower::{Layer as _, Service, ServiceExt as _};
 
 use super::{GzipBufferedLayer, accepts_gzip};
 
@@ -308,4 +312,60 @@ async fn gzip_reads_only_the_first_accept_encoding_header() {
         header_value(response.headers(), header::CONTENT_ENCODING),
         None
     );
+}
+
+struct PendingInner;
+
+impl Service<Request<Body>> for PendingInner {
+    type Response = Response;
+    type Error = Infallible;
+    type Future = Ready<Result<Response, Infallible>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+        Poll::Pending
+    }
+
+    fn call(&mut self, _request: Request<Body>) -> Self::Future {
+        ready(Ok(Response::new(Body::empty())))
+    }
+}
+
+#[test]
+fn poll_ready_delegates_to_the_inner_service() {
+    let mut service = GzipBufferedLayer.layer(PendingInner);
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(service.poll_ready(&mut cx).is_pending());
+}
+
+#[test]
+fn the_off_loop_threshold_is_one_mib() {
+    assert_eq!(super::OFF_LOOP_SIZE_BYTES, 1024 * 1024);
+}
+
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    let mut pinned = Box::pin(future);
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    loop {
+        match pinned.as_mut().poll(&mut cx) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => {}
+        }
+    }
+}
+
+#[test]
+fn a_large_body_is_compressed_on_the_blocking_pool() {
+    let size = usize::try_from(super::OFF_LOOP_SIZE_BYTES).unwrap();
+    let mut response = Response::new(Body::from(vec![b'a'; size]));
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        block_on(super::compress_body(
+            &mut response,
+            super::OFF_LOOP_SIZE_BYTES,
+        ))
+    }));
+    result.unwrap_err();
 }

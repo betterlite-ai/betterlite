@@ -1,12 +1,16 @@
 #![cfg(test)]
 
+use std::convert::Infallible;
+use std::future::{Ready, ready};
+use std::task::{Context, Poll, Waker};
+
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header};
 use axum::response::Response;
 use axum::routing::get;
 use rstest::rstest;
-use tower::ServiceExt as _;
+use tower::{Layer as _, Service, ServiceExt as _};
 
 use super::SecurityHeadersLayer;
 
@@ -134,4 +138,27 @@ async fn a_switching_protocols_handshake_carries_no_security_headers() {
         response.headers().get(header::STRICT_TRANSPORT_SECURITY),
         None
     );
+}
+
+struct PendingInner;
+
+impl Service<Request<Body>> for PendingInner {
+    type Response = Response;
+    type Error = Infallible;
+    type Future = Ready<Result<Response, Infallible>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+        Poll::Pending
+    }
+
+    fn call(&mut self, _request: Request<Body>) -> Self::Future {
+        ready(Ok(Response::new(Body::empty())))
+    }
+}
+
+#[test]
+fn poll_ready_delegates_to_the_inner_service() {
+    let mut service = SecurityHeadersLayer { enable_hsts: false }.layer(PendingInner);
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(service.poll_ready(&mut cx).is_pending());
 }
