@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_redis::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use betterlite_redis::request_batch::lock;
@@ -6,6 +7,7 @@ use betterlite_redis::request_batch::scope::{
     active_request_redis_batch, request_redis_batch_scope,
 };
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use crate::spend_counter_batch::batch::{
     BatchPhase, CounterValue, SpendCounterBatch, SpendCounterBatchError,
@@ -15,6 +17,18 @@ use super::support::{DebugEvents, FakeRedis, Reply, allow_cache, decimal, keys, 
 
 async fn open_batch(server: &FakeRedis) -> Arc<SpendCounterBatch> {
     SpendCounterBatch::new(allow_cache(server).await)
+}
+
+// a broken waiter would otherwise hang the mutant run instead of failing this test
+async fn join_reader(
+    tasks: &mut JoinSet<Result<Option<CounterValue>, SpendCounterBatchError>>,
+) -> Option<CounterValue> {
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the shared reader returns")
+        .expect("a reader task runs")
+        .expect("the reader task joins")
+        .expect("the reader read succeeds")
 }
 
 #[tokio::test]
@@ -103,8 +117,8 @@ async fn concurrent_readers_share_load() {
     tasks.spawn(async move { second.read("spend:key:a").await });
     held.wait_arrived().await;
     held.release();
-    let one = tasks.join_next().await.unwrap().unwrap().unwrap();
-    let two = tasks.join_next().await.unwrap().unwrap().unwrap();
+    let one = join_reader(&mut tasks).await;
+    let two = join_reader(&mut tasks).await;
     assert_eq!(one, Some(CounterValue::Amount(decimal("4"))));
     assert_eq!(two, Some(CounterValue::Amount(decimal("4"))));
     assert_eq!(server.mget_keys(), [vec!["spend:key:a".to_owned()]]);
