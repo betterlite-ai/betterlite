@@ -102,6 +102,8 @@ scope:
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/chat_choices.rs
   - crates/betterlite-openai/src/chat_choices/**
+  - crates/betterlite-openai/src/text_completion_policy/reply.rs
+  - crates/betterlite-openai/src/text_completion_policy/reply/usage.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/openai/chat_choices.rs
   - tools/oracle/src/helpers/openai/chat_choices/**
