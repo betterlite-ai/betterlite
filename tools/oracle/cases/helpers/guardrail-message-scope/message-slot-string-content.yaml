@@ -1,0 +1,6 @@
+kind: helper
+name: message-slot-string-content
+call:
+  b3663: {"function": "slots", "message": {"role": "user", "content": "plain"}, "texts": ["rewritten"]}
+env: {}
+compare: {ignore: []}
