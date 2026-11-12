@@ -1,0 +1,11 @@
+kind: helper
+name: realtime-session-refuses-fractional-tokens
+call:
+  realtime_contracts:
+    function: records
+    groups:
+      - kind: session
+        documents:
+          - {max_output_tokens: 5.5}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock_converse_events-message-start-seed
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000001
+          - 00000000-0000-4000-8000-000000000002
+        steps:
+          - function: state
+          - function: converse
+            chunk: {messageStart: {conversationId: abc-123, role: assistant}}
+          - function: converse
+            chunk: {messageStart: {conversationId: later}}
+          - function: converse
+            chunk: {delta: {text: hello}, contentBlockIndex: 0}
+          - function: state
+          - function: chunk
+            chunk: {messageStart: {conversationId: nova-id}}
+env: {}
+compare: {ignore: []}
