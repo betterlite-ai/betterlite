@@ -93,7 +93,7 @@ pub(super) fn marker_claim(
     claims: &JwtClaims<'_>,
     marker: &str,
 ) -> Result<Option<TypedValue>, ClaimError> {
-    if claims.has_trusted_claim(marker) {
+    if claims.is_trusted_marker_token() && claims.claims.json.get(marker).is_some() {
         return claims.nested(marker);
     }
     Ok(None)

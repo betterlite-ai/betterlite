@@ -111,7 +111,7 @@ fn untrusted_normalization_marker() {
     let configured = issuers(&[ISSUER]);
     let marked = project(TRUSTED_CLAIMS, &settings, &configured);
     assert!(marked.is_trusted_marker_token());
-    assert!(marked.has_trusted_claim("_litellm_team_id"));
+    assert!(marked.claims.json.get("_litellm_team_id").is_some());
     assert_eq!(
         marked.user_id(None).unwrap(),
         Some("trusted-user".to_owned())
@@ -133,7 +133,10 @@ fn untrusted_normalization_marker() {
 
     let unmarked = project(RAW_CLAIMS, &settings, &configured);
     assert!(!unmarked.is_trusted_marker_token());
-    assert!(!unmarked.has_trusted_claim("_litellm_team_id"));
+    assert!(
+        unmarked.claims.json.get("_litellm_team_id").is_some()
+            && !unmarked.is_trusted_marker_token()
+    );
     assert_eq!(unmarked.user_id(None).unwrap(), Some("raw-user".to_owned()));
     assert_eq!(unmarked.team_id(None).unwrap(), Some("raw-team".to_owned()));
 }
@@ -176,6 +179,8 @@ fn marker_shadows_a_null_trusted_claim() {
         "sub": "raw-user"
     }"#;
     let marked = project(null_claim, &settings, &configured);
-    assert!(marked.has_trusted_claim("_litellm_user_id"));
+    assert!(
+        marked.is_trusted_marker_token() && marked.claims.json.get("_litellm_user_id").is_some()
+    );
     assert_eq!(marked.user_id(None).unwrap(), None);
 }

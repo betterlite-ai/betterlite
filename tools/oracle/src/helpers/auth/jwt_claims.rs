@@ -73,9 +73,11 @@ fn project(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
         "agent_claim": claims.agent_claim().or_value_error()?,
         "org_id": claims.org_id(default).or_value_error()?,
         "org_alias": claims.org_alias(default).or_value_error()?,
-        "is_required_team_id": claims.is_required_team_id(),
-        "is_enforced_email_domain": claims.is_enforced_email_domain(),
-        "is_upsert_user_id": claims.is_upsert_user_id(scenario.valid_user_email),
+        "is_required_team_id": claims.settings.team_id_jwt_field.is_some()
+            || claims.settings.team_alias_jwt_field.is_some(),
+        "is_enforced_email_domain": claims.settings.user_allowed_email_domain.is_some(),
+        "is_upsert_user_id": scenario.valid_user_email != Some(false)
+            && claims.settings.user_id_upsert,
         "leeway": handler.leeway,
     }))
 }

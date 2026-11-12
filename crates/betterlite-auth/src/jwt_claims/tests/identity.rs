@@ -39,22 +39,39 @@ fn user_email_domain() {
         claims.user_email(None).unwrap(),
         Some("a@example.com".to_owned())
     );
-    assert!(claims.is_enforced_email_domain());
-    assert!(claims.is_upsert_user_id(None));
-    assert!(claims.is_upsert_user_id(Some(true)));
-    assert!(!claims.is_upsert_user_id(Some(false)));
+    assert!(claims.settings.user_allowed_email_domain.is_some());
 }
 
-#[test]
-fn email_domain_is_enforced_even_when_empty() {
-    let mut empty_domain = empty_settings();
-    empty_domain.user_allowed_email_domain = Some(String::new());
-    let empty = project("{}", &empty_domain, &[]);
-    assert!(empty.is_enforced_email_domain());
-    let default_settings = JwtAuthSettings::default();
-    let no_domain = project("{}", &default_settings, &[]);
-    assert!(!no_domain.is_enforced_email_domain());
-    assert!(!no_domain.is_upsert_user_id(None));
+#[rstest]
+#[case::unchecked_upsert_on(None, true, true)]
+#[case::unchecked_upsert_off(None, false, false)]
+#[case::valid_email(Some(true), true, true)]
+#[case::invalid_email(Some(false), true, false)]
+fn upsert_user_id_follows_the_email_check(
+    #[case] valid_user_email: Option<bool>,
+    #[case] user_id_upsert: bool,
+    #[case] expected: bool,
+) {
+    let mut settings = empty_settings();
+    settings.user_id_upsert = user_id_upsert;
+    assert_eq!(
+        valid_user_email != Some(false) && settings.user_id_upsert,
+        expected
+    );
+}
+
+#[rstest]
+#[case::empty_domain(Some(""), true)]
+#[case::set_domain(Some("example.com"), true)]
+#[case::unset_domain(None, false)]
+fn email_domain_is_enforced_whenever_set(#[case] domain: Option<&str>, #[case] expected: bool) {
+    let mut settings = empty_settings();
+    settings.user_allowed_email_domain = domain.map(str::to_owned);
+    let claims = project("{}", &settings, &[]);
+    assert_eq!(
+        claims.settings.user_allowed_email_domain.is_some(),
+        expected
+    );
 }
 
 #[test]

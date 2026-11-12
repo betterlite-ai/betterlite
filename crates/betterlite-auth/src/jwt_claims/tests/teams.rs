@@ -234,5 +234,9 @@ fn required_team_id(
     settings.team_id_jwt_field = team_id_jwt_field.map(str::to_owned);
     settings.team_alias_jwt_field = team_alias_jwt_field.map(str::to_owned);
     let projected = project("{}", &settings, &[]);
-    assert_eq!(projected.is_required_team_id(), expected);
+    assert_eq!(
+        projected.settings.team_id_jwt_field.is_some()
+            || projected.settings.team_alias_jwt_field.is_some(),
+        expected
+    );
 }

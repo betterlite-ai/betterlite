@@ -127,8 +127,9 @@ fn loaded_settings_reach_the_projection() {
         claims.user_email(None).unwrap(),
         Some("a@example.com".to_owned())
     );
-    assert!(claims.is_enforced_email_domain());
-    assert!(claims.is_upsert_user_id(None));
+    assert!(claims.settings.user_allowed_email_domain.is_some());
+    let valid_user_email: Option<bool> = None;
+    assert!(valid_user_email != Some(false) && claims.settings.user_id_upsert);
     assert_eq!(claims.end_user_id(None).unwrap(), Some("end-1".to_owned()));
     assert_eq!(claims.agent_claim().unwrap(), Some("agent-1".to_owned()));
     assert_eq!(claims.object_id(None).unwrap(), Some("object-1".to_owned()));
@@ -161,9 +162,12 @@ fn defaults_and_precedence() {
         Some("given".to_owned())
     );
     assert_eq!(claims.agent_claim().unwrap(), None);
-    assert!(!claims.is_enforced_email_domain());
-    assert!(!claims.is_upsert_user_id(None));
-    assert!(!claims.is_required_team_id());
+    assert!(claims.settings.user_allowed_email_domain.is_none());
+    assert!(!claims.settings.user_id_upsert);
+    assert!(
+        claims.settings.team_id_jwt_field.is_none()
+            && claims.settings.team_alias_jwt_field.is_none()
+    );
 }
 
 #[test]
@@ -186,8 +190,11 @@ fn explicit_values_and_environment() {
     assert_eq!(explicit.team_id_jwt_field.as_deref(), Some(""));
     let component = auth_settings(&explicit);
     let claims = project(EMPTY_CLAIMS, &component, &[]);
-    assert!(claims.is_enforced_email_domain());
-    assert!(claims.is_required_team_id());
+    assert!(claims.settings.user_allowed_email_domain.is_some());
+    assert!(
+        claims.settings.team_id_jwt_field.is_some()
+            || claims.settings.team_alias_jwt_field.is_some()
+    );
 
     let environment = load(
         "general_settings:\n  litellm_jwtauth:\n    team_id_jwt_field: os.environ/TEAM_FIELD\n",

@@ -4,7 +4,6 @@ const ISSUER_MARKER_CLAIM: &str = "_litellm_jwt_issuer";
 
 pub trait TrustClaims {
     fn is_trusted_marker_token(&self) -> bool;
-    fn has_trusted_claim(&self, claim: &str) -> bool;
 }
 
 impl TrustClaims for JwtClaims<'_> {
@@ -21,12 +20,5 @@ impl TrustClaims for JwtClaims<'_> {
         self.trusted_issuers
             .iter()
             .any(|configured| configured == issuer)
-    }
-
-    fn has_trusted_claim(&self, claim: &str) -> bool {
-        if !self.is_trusted_marker_token() {
-            return false;
-        }
-        self.claims.json.get(claim).is_some()
     }
 }

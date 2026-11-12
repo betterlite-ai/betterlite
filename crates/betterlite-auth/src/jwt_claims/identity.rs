@@ -10,8 +10,6 @@ pub trait IdentityClaims {
     fn end_user_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError>;
     fn object_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError>;
     fn agent_claim(&self) -> Result<Option<String>, ClaimError>;
-    fn is_upsert_user_id(&self, valid_user_email: Option<bool>) -> bool;
-    fn is_enforced_email_domain(&self) -> bool;
 }
 
 impl IdentityClaims for JwtClaims<'_> {
@@ -58,19 +56,5 @@ impl IdentityClaims for JwtClaims<'_> {
             return Ok(None);
         }
         Ok(Some(claim.to_owned()))
-    }
-
-    fn is_upsert_user_id(&self, valid_user_email: Option<bool>) -> bool {
-        if valid_user_email == Some(false) {
-            return false;
-        }
-        self.settings.user_id_upsert
-    }
-
-    fn is_enforced_email_domain(&self) -> bool {
-        if self.settings.user_allowed_email_domain.is_none() {
-            return false;
-        }
-        true
     }
 }

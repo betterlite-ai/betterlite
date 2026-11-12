@@ -8,7 +8,6 @@ const TEAM_ID_CLAIM: &str = "_litellm_team_id";
 const TEAM_IDS_CLAIM: &str = "_litellm_team_ids";
 
 pub trait TeamClaims {
-    fn is_required_team_id(&self) -> bool;
     fn team_ids(&self) -> Result<Vec<String>, ClaimError>;
     fn all_team_ids(&self) -> Result<Vec<String>, ClaimError>;
     fn team_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError>;
@@ -16,16 +15,8 @@ pub trait TeamClaims {
 }
 
 impl TeamClaims for JwtClaims<'_> {
-    fn is_required_team_id(&self) -> bool {
-        if self.settings.team_id_jwt_field.is_none() && self.settings.team_alias_jwt_field.is_none()
-        {
-            return false;
-        }
-        true
-    }
-
     fn team_ids(&self) -> Result<Vec<String>, ClaimError> {
-        if self.has_trusted_claim(TEAM_IDS_CLAIM) {
+        if self.is_trusted_marker_token() && self.claims.json.get(TEAM_IDS_CLAIM).is_some() {
             let Some(value) = self.nested(TEAM_IDS_CLAIM)? else {
                 return Ok(Vec::new());
             };
@@ -65,7 +56,7 @@ impl TeamClaims for JwtClaims<'_> {
     }
 
     fn team_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        if self.has_trusted_claim(TEAM_ID_CLAIM) {
+        if self.is_trusted_marker_token() && self.claims.json.get(TEAM_ID_CLAIM).is_some() {
             let Some(value) = self.nested(TEAM_ID_CLAIM)? else {
                 return Ok(None);
             };
@@ -91,7 +82,7 @@ impl TeamClaims for JwtClaims<'_> {
 
 // the singular claim the token carries: the issuer-normalized marker wins over the configured field
 fn singular_team_claim(claims: &JwtClaims<'_>) -> Result<Option<(TypedValue, String)>, ClaimError> {
-    if claims.has_trusted_claim(TEAM_ID_CLAIM) {
+    if claims.is_trusted_marker_token() && claims.claims.json.get(TEAM_ID_CLAIM).is_some() {
         let found = claims.nested(TEAM_ID_CLAIM)?;
         return Ok(found.map(|entry| (entry, TEAM_ID_CLAIM.to_owned())));
     }
