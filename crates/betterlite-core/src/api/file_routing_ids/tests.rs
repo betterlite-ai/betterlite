@@ -3,9 +3,16 @@
 use std::fs;
 use std::path::Path;
 
+use async_trait::async_trait;
+use betterlite_auth::auth_identity::records::{
+    CredentialRef, NetworkContext, Principal, SourceKey,
+};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_openai::batches::records::BatchObject;
 use rstest::rstest;
+use tokio::runtime::Builder;
 
+use super::ManagedResourceAccessChecker;
 use super::batch::encode_batch_response_ids;
 use super::error::FileRoutingIdsError;
 use super::legacy::{
@@ -386,6 +393,66 @@ fn boundary_enforces_limits_and_utf8() {
         decode_file_routing_ids(&[0xff], ApiLimits::default()),
         Err(FileRoutingIdsError::NotUtf8 { .. })
     ));
+}
+
+#[test]
+fn exported_literals() {
+    assert_eq!(super::MAX_FILE_LIST_LIMIT, 10_000);
+    assert_eq!(super::FILE_LIST_CHUNK_SIZE, 500);
+    assert_eq!(super::BATCH_CREATE_HIDDEN_PARAM, "batch_create");
+    assert_eq!(super::EXECUTED_BATCH_ID_PREFIX, "litellm_batch_");
+}
+
+struct AllowEncodedIds;
+
+#[async_trait]
+impl ManagedResourceAccessChecker for AllowEncodedIds {
+    async fn can_call_unified_file_id(
+        &self,
+        unified_file_id: &str,
+        _principal: &Principal,
+    ) -> bool {
+        unified_file_id.starts_with("litellm_proxy")
+    }
+
+    async fn can_call_unified_object_id(
+        &self,
+        unified_object_id: &str,
+        _principal: &Principal,
+    ) -> bool {
+        unified_object_id.starts_with("batch_")
+    }
+}
+
+fn principal() -> Principal {
+    Principal {
+        principal_type: PrincipalType::Human,
+        subject: "subject".to_owned(),
+        issuer: None,
+        audience: Vec::new(),
+        user: None,
+        organization: None,
+        teams: Vec::new(),
+        project: None,
+        end_user: None,
+        roles: Vec::new(),
+        scopes: Vec::new(),
+        auth_method: AuthMethod::ApiKey,
+        credential_ref: CredentialRef::default(),
+        network: NetworkContext::default(),
+        source_key: SourceKey::default(),
+    }
+}
+
+#[test]
+fn managed_resource_checker_protocol() {
+    let runtime = Builder::new_current_thread().build().unwrap();
+    let checker: &dyn ManagedResourceAccessChecker = &AllowEncodedIds;
+    let principal = principal();
+    assert!(runtime.block_on(checker.can_call_unified_file_id("litellm_proxy:x", &principal)));
+    assert!(!runtime.block_on(checker.can_call_unified_file_id("file-1", &principal)));
+    assert!(runtime.block_on(checker.can_call_unified_object_id("batch_x", &principal)));
+    assert!(!runtime.block_on(checker.can_call_unified_object_id("x", &principal)));
 }
 
 #[test]
