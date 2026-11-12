@@ -67,24 +67,24 @@ fn splitter_view(source: &ScriptedSource, collected: Collected) -> SplitterView 
     }
 }
 
-fn sources(step: &SplitStep, failure: Option<StreamFailure>) -> Vec<ScriptedSource> {
-    (0..step.splitters)
-        .map(|_| ScriptedSource {
-            chunks: step.chunks.clone(),
-            next: 0,
-            failure: failure.clone(),
-            chunks_attr: step.chunks_attr.clone(),
-            messages_attr: step.messages_attr.clone(),
-            pulls: 0,
-        })
-        .collect()
+fn sources(step: &SplitStep, failure: Option<&StreamFailure>) -> Vec<ScriptedSource> {
+    std::iter::repeat_with(|| ScriptedSource {
+        chunks: step.chunks.clone(),
+        next: 0,
+        failure: failure.cloned(),
+        chunks_attr: step.chunks_attr.clone(),
+        messages_attr: step.messages_attr.clone(),
+        pulls: 0,
+    })
+    .take(step.splitters)
+    .collect()
 }
 
 pub(super) fn run_split(step: &SplitStep) -> Result<SplitView, Box<HelperError>> {
     let failure = step.failure.as_ref().map(stream_failure).transpose()?;
     match step.mode {
-        Mode::Sync => Ok(run_sync(step, sources(step, failure))),
-        Mode::Async => run_async(step, sources(step, failure)),
+        Mode::Sync => Ok(run_sync(step, sources(step, failure.as_ref()))),
+        Mode::Async => run_async(step, sources(step, failure.as_ref())),
     }
 }
 
