@@ -75,8 +75,6 @@ scope:
     - tools/oracle/cases/helpers/dashscope-embed/**
     - tools/oracle/helpers/b8171.py
     - tools/oracle/helpers/b8171/**
-    - tools/oracle/src/helpers/openai/b8171.rs
-    - tools/oracle/src/helpers/openai/b8171/**
     - tools/oracle/src/helpers/provider/b8171.rs
     - tools/oracle/src/helpers/provider/b8171/**
   lint_tables: false

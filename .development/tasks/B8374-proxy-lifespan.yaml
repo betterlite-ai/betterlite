@@ -29,9 +29,9 @@ description: >-
   settings: memory TTL 60 seconds unless general_settings.user_api_key_cache_ttl is set, which then sets both memory and Redis
   TTLs.
 
-  LITELLM_WORKER_STARTUP_HOOKS is a comma list of "module.path:function_name" specs; blanks are skipped. This task defines the
-  `StartupHooks` port (one async `run(specs) -> Result<(), StartupHookError>`), carried in LifespanInputs as an Option,
-  and calls it with the list. B165's PythonHooks::run_startup_hooks runs the specs through betterlite-pyhost and B8587's
+  LITELLM_WORKER_STARTUP_HOOKS is a comma list of "module.path:function_name" specs; blanks are skipped. B8587 declares the
+  `StartupHooks` port and its `StartupHookError` in crates/betterlite/src/startup_hooks_py.rs; LifespanInputs carries it as
+  `startup_hooks: Option<Arc<dyn StartupHooks>>`, and this task calls it with the list. B165's PythonHooks::run_startup_hooks runs the specs through betterlite-pyhost and B8587's
   PyStartupHooks adapter implements the port over it: it imports each spec and runs it in order
   (awaiting a coroutine), logging "Worker startup hook '{spec}' executed successfully"; a spec without ":" is "Invalid hook spec '{spec}':
   expected format is 'module.path:function_name'", and any failure logs "Worker startup hook '{spec}' failed: {error}"

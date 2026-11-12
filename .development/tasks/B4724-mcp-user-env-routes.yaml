@@ -25,7 +25,7 @@ description: >-
   Order of checks: database present, caller has a user id, server authorized, read.
   No database gives 500 with detail.error "Database not connected. Connect a database to your proxy" (B4711's get_prisma_client_or_throw).
   An empty or missing user_id on the key gives 400 "User ID not found in token".
-  The server comes from B4717's authorize_mcp_server (LiteLLM authorize_and_fetch_mcp_server) (admin: any server, 404 "MCP Server {server_id} not found" for unknown; non-admin: 403 outside the allowed set, never 404, with the message B4717 owns).
+  The server comes from B4717's authorize_mcp_server (LiteLLM authorize_and_fetch_mcp_server), given the route state's ServerAccessCheck (B4731) (admin: any server, 404 "MCP Server {server_id} not found" for unknown; non-admin: 403 outside the allowed set, never 404, with the message B4717 owns).
   Then B4714's get_user_env_vars(user_id, server_id) and compute_user_env_status.
   2. POST /v1/mcp/server/{server_id}/user-env-vars stores values. Same first three checks as route 1, same order.
   allowed_names = the names of the server's user specs (parse_admin_env_vars, all of them, referenced or not).

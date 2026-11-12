@@ -29,15 +29,29 @@ description: >-
   inner mappings and litellm_params), in general_settings.litellm_jwtauth.custom_validate and in
   general_settings.pass_through_endpoints[].target.
 
-  `apply_general_settings_row(state, row, scheduler, caches)` ports _update_general_settings and
+  `apply_general_settings_row(state, row, scheduler, caches, installer)` ports _update_general_settings and
   _apply_general_settings_side_effects, in this order: remember whether user_api_key_cache_max_size came from the
   database and the cleanup schedule (B8371's cleanup_schedule_of), apply the row, then run the effects: alerting
   (alerting list, and alerting_args, alert_types, alert_to_webhook_url and plugins (B8230's PluginRegistry::replace_from_settings) only when their source is db),
-  pass-through endpoints (a database list is published and served through B3616's initialize_pass_through_endpoints; with none, publish the empty set unless the store
-  has the key), the three booleans store_prompts_in_spend_logs, disable_auto_add_proxy_admin_to_teams and
+  pass-through endpoints (when the row's pass_through_endpoints is a list it goes through serve_pass_through_endpoints below; otherwise,
+  and only when the store has no pass_through_endpoints key, publish an empty database list), the three booleans store_prompts_in_spend_logs, disable_auto_add_proxy_admin_to_teams and
   apply_user_budget_to_team_keys (coerced unless the file owns them), B8371's on_cache_size_changed, store_model_in_db
   (coerced), B8371's on_settings_changed, and B5082's SSRF settings. The supported_db_objects gate is B8380's
   should_load_db_object.
+
+  Pass-through routes. This module never registers a route: it declares the port the caller fills, so it builds
+  without the route registration code. `PassThroughInstaller` is a Send + Sync async trait (async_trait, as the server
+  crate's ports use) with `install(&self, endpoints: &[JsonValue]) -> Result<(), EndpointInstallError>`, JsonValue
+  being betterlite-config's settings alias. EndpointInstallError is a unit error declared here, because LiteLLM's
+  caller only logs the failure and the adapter logs its cause. `serve_pass_through_endpoints(state, db_endpoints,
+  installer)` ports _publish_pass_through_endpoints and _serve_pass_through_endpoints, the same step the /config/field
+  routes run: first publish into the general_settings store the database list followed by the entries of the startup
+  config list (LiteLLM's config_passthrough_endpoints) whose path the database list lacks, then check that every
+  database entry is an object (LiteLLM validates a list of dicts; a non-object entry is OverlayError::PassThroughEntry
+  with its index, and nothing is installed), then hand the database list alone, in stored order, to installer.install.
+  An install error becomes OverlayError::PassThroughInstall and ends apply_general_settings_row before the boolean,
+  cache size, store_model_in_db, retention and SSRF effects, as the raised error does in LiteLLM. Tests for this step
+  are named `pass_through_effect_*` and use a recording installer.
 
   Tests run the overlay against an in-memory config repository and assert store contents, scrub results, warning
   lines and the side-effect order. Helper cases (operation b8379 with an `operation:` field) compare
@@ -61,6 +75,8 @@ references:
     why: get_config with the bucket, overlay, resolution and snapshot order.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7833-L8062
     why: _update_general_settings, the side effects and _update_config_from_db.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3345-L3411
+    why: initialize_pass_through_endpoints, the call behind the installer port; it appends the config list itself, so the port takes only the database list.
 dod:
   - text: reload_config reads bucket or file, overlays database rows only with store_model_in_db, merges pass-through endpoints by path and stores the snapshot.
     proof: [overlay-tests]
@@ -70,6 +86,8 @@ dod:
     proof: [overlay-tests]
   - text: A general_settings row runs the side effects in LiteLLM's order, including B8371's two hooks.
     proof: [overlay-tests]
+  - text: A database pass-through list is published, checked and handed to the installer port in stored order, and a non-object entry or an install error stops the effects after it.
+    proof: [pass-through-effect]
 checks:
   optional: []
   commands:
@@ -77,6 +95,10 @@ checks:
       why: The config overlay, scrub, reload or a general settings side effect is missing or differs from LiteLLM
       run: >-
         cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_config_overlay::/)'
+    - id: pass-through-effect
+      why: The pass-through effect skips the publish, hands the installer the wrong list or keeps running later effects after a refused entry or failed install
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_config_overlay::.*::pass_through_effect_/)'
     - id: helper-python
       why: The strict oracle adapter for the overlay cases fails lint or type checks
       run: >-
@@ -93,11 +115,14 @@ out_of_scope:
   - "SettingsStore, ownership and source rules: B4140. The config param cache: B8397. Bucket download: B4143."
   - "ProxyConfig.load_config and the config file read itself: B002's loader and B4142's includes, with each key in its config section task."
   - "Secret manager init from the raw config (_initialize_secret_manager_from_raw_config): B8873. reload_config calls it on the parsed config before the whole-file reference resolution (B4412 only builds the KMS clients)."
+  - "Registering pass-through routes (initialize_pass_through_endpoints): B3616. The PassThroughInstaller adapter over it and B8614's PassThroughState, with no config file path: B8613. Passing that port into apply_general_settings_row: B8381's DeploymentSync."
 pitfalls:
   - The cache size hook needs whether the key came from the database before the row is applied, so read it first.
   - Pass-through endpoints merge by path with database entries first; a file entry whose path the database also has is dropped.
   - Environment variable rows are written to the process environment under both the stored and the upper-case names.
   - The scrub copies the value first, so the cached database row is never changed in place.
+  - The installer gets the database list alone, since the route registration appends config_passthrough_endpoints itself and the merged published list would register file entries twice.
+  - _serve_pass_through_endpoints publishes before it validates or installs, so a non-object entry or a failed install still leaves the new list in the store.
 review_level: security
 budget:
   max_changed_lines: 1500

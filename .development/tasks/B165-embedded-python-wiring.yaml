@@ -45,7 +45,7 @@ description: >-
   second load deadline, calls the function and awaits it when it returns a coroutine, with the messages B8374 lists: a spec without ":" is
   "Invalid hook spec '{spec}': expected format is 'module.path:function_name'", success logs "Worker startup hook '{spec}'
   executed successfully", and a failure logs "Worker startup hook '{spec}' failed: {error}" and returns that error without running
-  the later specs. B8587 wraps this method in the adapter that implements B8374's StartupHooks port in crates/betterlite; this
+  the later specs. B8587 declares the StartupHooks port in crates/betterlite and wraps this method in the adapter that implements it; this
   task does not depend on B8374, since that edge would form a cycle.
 
   The downloader: `BucketModuleFetcher` implements pyhost's `ModuleFetcher` by calling B4143's `download_python_module`
