@@ -4,7 +4,7 @@ use std::io::{Error, Read, Result};
 
 use rstest::rstest;
 
-use super::{is_batch_jsonl_file, is_batch_jsonl_request};
+use super::{is_batch_jsonl_file, valid_content_type};
 
 struct LazyFile;
 
@@ -23,14 +23,13 @@ enum Probe {
 }
 
 fn metadata_result(purpose: Option<&str>, content_type: Option<&str>, probe: Probe) -> bool {
-    match probe {
-        Probe::EmptyBytes => is_batch_jsonl_request(purpose, content_type, Some(&Vec::<u8>::new())),
-        Probe::Name => {
-            is_batch_jsonl_request(purpose, content_type, Some(&String::from("upload.bin")))
-        }
-        Probe::Missing => is_batch_jsonl_request::<LazyFile>(purpose, content_type, None),
-        Probe::Lazy => is_batch_jsonl_request(purpose, content_type, Some(&LazyFile)),
-    }
+    let file_present = match probe {
+        Probe::EmptyBytes => Some(&Vec::<u8>::new()).is_some(),
+        Probe::Name => Some(&String::from("upload.bin")).is_some(),
+        Probe::Missing => None::<&LazyFile>.is_some(),
+        Probe::Lazy => Some(&LazyFile).is_some(),
+    };
+    purpose == Some("batch") && valid_content_type(content_type) && file_present
 }
 
 #[rstest]
