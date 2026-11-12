@@ -463,8 +463,15 @@ fn a_valid_object_is_never_held_to_the_repair_cap() {
     assert_eq!(result.body, object(r#"{"model":"gpt-4o"}"#));
 }
 
-#[rstest]
-fn replays_corpus(#[files("fuzz/corpus/request_body/*")] path: PathBuf) {
-    let seed = fs::read(path).unwrap();
-    drop(decode_request_body(&seed, &ApiLimits::default()));
+#[test]
+fn replays_corpus() {
+    let seeds = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/request_body");
+    let replayed = fs::read_dir(seeds)
+        .unwrap()
+        .map(|entry| {
+            let seed = fs::read(entry.unwrap().path()).unwrap();
+            drop(decode_request_body(&seed, &ApiLimits::default()));
+        })
+        .count();
+    assert!(replayed >= 7);
 }

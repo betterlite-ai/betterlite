@@ -2984,6 +2984,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "multipart-rs",
+ "mutants",
  "opentelemetry",
  "opentelemetry_sdk",
  "percent-encoding",

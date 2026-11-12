@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     BodyKind, MediaTypeKind, ParsedBody, RequestBodyError, RequestBodyInput, RequestBodyResult,
-    RewrittenBody, classify_media_type, is_opaque_audio_request, normalize_media_type,
+    RewrittenBody, classify_media_type, form_body, is_opaque_audio_request, normalize_media_type,
     parse_binary_body, rewrite_request_model,
 };
 use crate::api::api_boundaries::ApiLimitError;
@@ -177,4 +177,48 @@ fn an_unread_request_has_no_body_to_expose() {
         parsed_body: None,
     };
     assert!(result.raw_json_body(&input).is_none());
+}
+
+#[rstest]
+#[case::json("application/json", true)]
+#[case::protobuf("application/x-protobuf", true)]
+#[case::no_content_type("", true)]
+#[case::urlencoded("application/x-www-form-urlencoded", false)]
+#[case::multipart("multipart/form-data; boundary=x", false)]
+fn a_read_body_is_exposed_unless_it_is_a_form(#[case] content_type: &str, #[case] exposed: bool) {
+    let mut input = json_input(r#"{"model":"gpt-4o"}"#);
+    input.headers = if content_type.is_empty() {
+        BTreeMap::new()
+    } else {
+        BTreeMap::from([("content-type".to_owned(), content_type.to_owned())])
+    };
+    let result = RequestBodyResult {
+        branch: BodyKind::Json,
+        body: object(r#"{"model":"gpt-4o"}"#),
+        body_read: true,
+        parsed_body: Some(ParsedBody::from_client_body(object(
+            r#"{"model":"gpt-4o"}"#,
+        ))),
+    };
+    let expected = exposed.then_some(input.body.as_slice());
+    assert_eq!(result.raw_json_body(&input), expected);
+}
+
+#[test]
+fn a_form_body_lifts_its_fields_and_parses_the_metadata() {
+    let fields = BTreeMap::from([
+        ("model".to_owned(), "whisper-1".to_owned()),
+        ("metadata".to_owned(), r#"{"team":"a"}"#.to_owned()),
+    ]);
+    assert_eq!(
+        form_body(&fields),
+        Ok(object(r#"{"model":"whisper-1","metadata":{"team":"a"}}"#))
+    );
+    let plain = BTreeMap::from([("file".to_owned(), "a.wav".to_owned())]);
+    assert_eq!(form_body(&plain), Ok(object(r#"{"file":"a.wav"}"#)));
+    let invalid = BTreeMap::from([("metadata".to_owned(), "not json".to_owned())]);
+    assert_eq!(
+        form_body(&invalid),
+        Err(RequestBodyError::InvalidFormMetadata)
+    );
 }
