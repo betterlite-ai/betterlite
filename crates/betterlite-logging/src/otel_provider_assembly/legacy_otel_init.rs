@@ -177,11 +177,8 @@ fn new_tracer_cache(
 fn init_logs(
     parts: &ProviderParts<'_>,
     injected: Option<SdkLoggerProvider>,
-) -> Result<Option<SdkLoggerProvider>, LegacyExporterError> {
-    if !parts.config.signals.enable_events {
-        return Ok(None);
-    }
-    let provider = get_or_create_provider(
+) -> Result<SdkLoggerProvider, LegacyExporterError> {
+    get_or_create_provider(
         &parts.globals.logger,
         injected,
         parts.skip_set_global,
@@ -195,8 +192,7 @@ fn init_logs(
                     .build(),
             )
         },
-    )?;
-    Ok(Some(provider))
+    )
 }
 
 fn resolve_config(
@@ -255,7 +251,11 @@ pub fn init_legacy_otel(
         environment.shared_exporter,
     );
     let metrics = init_metrics(&parts, init.injected.meter)?;
-    let logger_provider = init_logs(&parts, init.injected.logger)?;
+    let logger_provider = if config.signals.enable_events {
+        Some(init_logs(&parts, init.injected.logger)?)
+    } else {
+        None
+    };
     register_on_proxy_if_installed(environment.proxy, callback_name.clone());
     Ok(LegacyOtel {
         capture_policy: CapturePolicy::from_init_state(&config, env),
