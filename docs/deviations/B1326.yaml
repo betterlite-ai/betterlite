@@ -3,7 +3,7 @@ deviations:
   - what: A blocked reply whose body has no usageMetadata answers Vertex 422 through the envelope error, where LiteLLM indexes the missing key and raises a KeyError that escapes as HTTP 500.
     why: usageMetadata is declared required by LiteLLM's own response type, so the crash is a bug no working setup relies on; rule owned-behavior-is-built fixes a 500 on input LiteLLM already fails with a 4xx, and the counters inside it still default to 0 as in LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1655
-  - what: A body whose promptFeedback or first candidate is not a JSON object answers Vertex 422 naming the field, where LiteLLM raises an uncaught TypeError as HTTP 500 or, for a string promptFeedback, substring-matches blockReason against it.
+  - what: A body whose promptFeedback is not a JSON object, or whose first candidate is a number or list, answers Vertex 422 naming the field, where LiteLLM substring-matches blockReason against a string or raises an uncaught TypeError as HTTP 500.
     why: The pinned commit builds GenerateContentResponseBody by splatting the JSON without validating it, so the shape checks run on whatever arrived; docs/compatibility.md makes a wrong-typed value an error that names the field, and a 500 is the wrong answer for caller data.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2431
   - what: A response body over 16 MiB is refused with Vertex 422 before it is decoded, where LiteLLM decodes any size.

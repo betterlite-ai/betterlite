@@ -5,6 +5,7 @@ use http::header::HeaderMap;
 use uuid::Uuid;
 
 use crate::gemini_candidates::blocked::complete_block;
+use crate::gemini_candidates::candidate::Candidate;
 use crate::gemini_candidates::choice::Choices;
 use crate::gemini_candidates::process::{Mode, process_candidates};
 use crate::gemini_metadata::extension::MetadataExtension;
@@ -113,7 +114,15 @@ fn project_ordinary(
     request: &CompleteRequest<'_>,
     ids: &mut dyn FnMut() -> Uuid,
 ) -> Result<(Choices, Usage, CompleteMetadata), GenerateContentError> {
-    let (choices, extension, usage_candidates) = project_candidates(body, request, ids)?;
+    let (choices, extension, usage_candidates) = project_candidates(
+        body.candidates.as_deref().unwrap_or_default(),
+        PartContext {
+            cumulative_tool_call_index: 0,
+            call_mode: request.call_mode,
+            now: request.now,
+        },
+        ids,
+    )?;
     let mut usage = calculate_usage(body.usage_metadata.as_ref(), &usage_candidates)?;
     apply_grounding_counters(&mut usage, &extension.grounding_metadata);
     Ok((
@@ -129,31 +138,18 @@ fn project_ordinary(
 }
 
 fn project_candidates(
-    body: &GenerateContentResponse,
-    request: &CompleteRequest<'_>,
+    candidates: &[Candidate],
+    context: PartContext,
     ids: &mut dyn FnMut() -> Uuid,
 ) -> Result<(Choices, MetadataExtension, Vec<Json>), GenerateContentError> {
-    let Some(candidates) = body
-        .candidates
-        .as_deref()
-        .filter(|candidates| !candidates.is_empty())
-    else {
+    if candidates.is_empty() {
         return Ok((
             Choices::Complete(Vec::new()),
             MetadataExtension::default(),
             Vec::new(),
         ));
-    };
-    let processed = process_candidates(
-        candidates,
-        Mode::Complete,
-        PartContext {
-            cumulative_tool_call_index: 0,
-            call_mode: request.call_mode,
-            now: request.now,
-        },
-        ids,
-    )?;
+    }
+    let processed = process_candidates(candidates, Mode::Complete, context, ids)?;
     let usage_candidates = candidates
         .iter()
         .map(|candidate| Json::Object(candidate.metadata.clone()))
