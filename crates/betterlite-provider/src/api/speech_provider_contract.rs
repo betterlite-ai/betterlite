@@ -49,9 +49,7 @@ pub struct SpeechRequestInput<'input> {
 }
 
 pub trait TextToSpeechConfig: Send + Sync {
-    fn class_attributes(&self) -> IndexMap<String, ClassAttribute> {
-        IndexMap::new()
-    }
+    fn class_attributes(&self) -> IndexMap<String, ClassAttribute>;
 
     fn get_config(&self) -> IndexMap<String, ClassAttribute> {
         let mut kept = self.class_attributes();
@@ -79,6 +77,8 @@ pub trait TextToSpeechConfig: Send + Sync {
         options: &SpeechMappingOptions,
     ) -> (Option<String>, Object);
 
+    // The empty mapping is the type's default, so replacing the body with Default changes nothing
+    #[cfg_attr(test, mutants::skip)]
     fn validate_environment(
         &self,
         _headers: &SpeechHeaders,
@@ -86,7 +86,7 @@ pub trait TextToSpeechConfig: Send + Sync {
         _api_key: Option<&SecretString>,
         _api_base: Option<&str>,
     ) -> SpeechHeaders {
-        SpeechHeaders::new()
+        SpeechHeaders::default()
     }
 
     fn complete_url(

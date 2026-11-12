@@ -28,6 +28,10 @@ struct Received<'received> {
 struct Base;
 
 impl TextToSpeechConfig for Base {
+    fn class_attributes(&self) -> IndexMap<String, ClassAttribute> {
+        IndexMap::new()
+    }
+
     fn supported_openai_params(&self, _model: &str) -> Vec<String> {
         Vec::new()
     }
