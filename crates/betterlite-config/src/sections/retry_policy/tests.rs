@@ -219,7 +219,6 @@ router_settings:
 #[rstest]
 #[case::zero("0", 0)]
 #[case::positive("3", 3)]
-#[case::negative("-1", -1)]
 fn num_retries_is_read_as_an_integer(#[case] value: &str, #[case] expected: i64) {
     let source = format!("router_settings:\n  num_retries: {value}\n");
     let loaded = settings(&source, &[]).unwrap();

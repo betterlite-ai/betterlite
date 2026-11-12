@@ -139,7 +139,7 @@ fn an_empty_policy_grants_nothing(
 }
 
 #[rstest]
-#[case::explicit_zero_is_used(None, Some(0))]
+#[case::explicit_zero_is_used(Some(0), Some(0))]
 #[case::negative_is_used(Some(-1), Some(-1))]
 #[case::positive_is_used(Some(8), Some(8))]
 fn a_policy_value_is_used_as_given(#[case] not_found: Option<i64>, #[case] expected: Option<i64>) {
