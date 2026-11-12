@@ -4,15 +4,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::Mode;
-use betterlite_openai::deepseek_chat::history::fill_reasoning_content;
 use betterlite_openai::deepseek_chat::options::map_openai_params;
 use betterlite_openai::deepseek_chat::request::{RequestInput, transform_request};
-use betterlite_openai::deepseek_chat::tools::drop_unsupported_tools;
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
-use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::message_content::Message;
+use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
@@ -25,6 +22,8 @@ use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod tests;
 
+const REASONER: &str = "deepseek-reasoner";
+const BODY_KEYS: [&str; 4] = ["tools", "tool_choice", "parallel_tool_calls", "temperature"];
 const EVENTS: [(&str, &str); 2] = [
     ("only supports function tools", "tools_dropped"),
     ("assistant message is missing", "reasoning_placeholder"),
@@ -43,16 +42,14 @@ pub(crate) enum Input {
 #[serde(deny_unknown_fields)]
 pub(crate) struct MapCase {
     model: String,
-    #[serde(default)]
     params: Object,
-    #[serde(default)]
     optional_params: Object,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HistoryCase {
-    messages: Vec<Message>,
+    messages: Vec<ChatMessage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,12 +94,45 @@ fn map_value(case: &MapCase) -> Value {
     json!(optional)
 }
 
+fn thinking_enabled(mut optional_params: Object) -> Object {
+    let kind = Object::from([("type".to_owned(), Json::Text("enabled".to_owned()))]);
+    optional_params.insert("thinking".to_owned(), Json::Object(kind));
+    optional_params
+}
+
+fn history_value(case: &HistoryCase) -> Result<Value, Box<HelperError>> {
+    let input = RequestInput {
+        model: REASONER,
+        messages: &case.messages,
+        optional_params: &thinking_enabled(Object::new()),
+        supports_vision: false,
+        supports_reasoning: true,
+    };
+    let body = transform_request(&input, Mode::Sync).or_config_error()?;
+    Ok(json!(body.get("messages")))
+}
+
+fn tools_value(case: &ToolsCase) -> Result<Value, Box<HelperError>> {
+    let input = RequestInput {
+        model: REASONER,
+        messages: &[],
+        optional_params: &thinking_enabled(case.optional_params.clone()),
+        supports_vision: false,
+        supports_reasoning: true,
+    };
+    let body = transform_request(&input, Mode::Sync).or_config_error()?;
+    let kept: Object = body
+        .into_iter()
+        .filter(|(key, _)| BODY_KEYS.contains(&key.as_str()))
+        .collect();
+    Ok(json!(kept))
+}
+
 fn messages_value(case: &MessagesCase) -> Result<Value, Box<HelperError>> {
-    let optional_params = Object::new();
     let input = RequestInput {
         model: &case.model,
         messages: &case.messages,
-        optional_params: &optional_params,
+        optional_params: &Object::new(),
         supports_vision: case.supports_vision,
         supports_reasoning: false,
     };
@@ -137,12 +167,8 @@ impl Helper for Op {
         let subscriber = tracing_subscriber::registry().with(logs.clone());
         with_default(subscriber, || match input {
             Input::Map { cases } => captured(&logs, "map", cases, |case| Ok(map_value(case))),
-            Input::History { cases } => captured(&logs, "history", cases, |case| {
-                Ok(json!(fill_reasoning_content(&case.messages)))
-            }),
-            Input::Tools { cases } => captured(&logs, "tools", cases, |case| {
-                Ok(json!(drop_unsupported_tools(&case.optional_params).params))
-            }),
+            Input::History { cases } => captured(&logs, "history", cases, history_value),
+            Input::Tools { cases } => captured(&logs, "tools", cases, tools_value),
             Input::Messages { cases } => captured(&logs, "messages", cases, messages_value),
         })
     }

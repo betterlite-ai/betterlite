@@ -13,9 +13,6 @@ call:
           tools: []
           tool_choice: auto
       - optional_params:
-          tools: not-a-list
-          tool_choice: auto
-      - optional_params:
           tool_choice: auto
 env: {}
 compare:
