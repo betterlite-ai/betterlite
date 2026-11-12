@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::retry_policy::RetryPolicySettings;
 use rstest::rstest;
 
 use super::{FixedSample, availability, every_field, seconds, settings};
@@ -477,4 +478,20 @@ fn skipped_deployment_ids_are_sorted_and_unique() {
     );
     let expected = ["dep-1", "dep-5", "dep-9"].map(str::to_owned).to_vec();
     assert_eq!(skipped, expected);
+}
+
+#[test]
+fn a_config_policy_converts_field_by_field() {
+    let config = RetryPolicySettings {
+        bad_request: Some(1),
+        authentication: Some(2),
+        timeout: Some(3),
+        rate_limit: Some(4),
+        content_policy: Some(5),
+        internal_server: Some(6),
+        service_unavailable: Some(7),
+        not_found: Some(8),
+        fallback: Some(9),
+    };
+    assert_eq!(RetryPolicy::from(&config), every_field());
 }

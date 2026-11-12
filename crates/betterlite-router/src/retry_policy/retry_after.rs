@@ -153,10 +153,9 @@ fn parse_date(header: &str) -> Option<i64> {
 
 // calendar.timegm leaves day, hour, minute and second unchecked, so 31 Feb or 25:00 roll over as plain arithmetic
 fn unix_seconds(year: &str, month_index: usize, day: &str, time: &str, zone: &str) -> Option<i64> {
-    let mut clock: Vec<&str> = time.split(':').collect();
-    if clock.len() == 1 && time.contains('.') {
-        clock = time.split('.').collect();
-    }
+    // parsedate_tz falls back to dots only when the time has no colon at all
+    let separator = if time.contains(':') { ':' } else { '.' };
+    let clock: Vec<&str> = time.split(separator).collect();
     let (hour, minute, second) = match *clock.as_slice() {
         [hour_text, minute_text] => (hour_text, minute_text, "0"),
         [hour_text, minute_text, second_text] => (hour_text, minute_text, second_text),
