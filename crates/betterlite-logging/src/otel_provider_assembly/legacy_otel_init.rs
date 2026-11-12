@@ -103,6 +103,40 @@ struct ProviderParts<'parts> {
     skip_set_global: bool,
 }
 
+fn create_tracer_provider(
+    parts: &ProviderParts<'_>,
+) -> Result<SdkTracerProvider, LegacyExporterError> {
+    let plan = span_processor_plan(parts.config, None, None, parts.callback_name)?;
+    let processor = parts.builder.span_processor(&plan)?;
+    Ok(SdkTracerProvider::builder()
+        .with_resource(parts.resource.clone())
+        .with_span_processor(processor)
+        .build())
+}
+
+fn create_meter_provider(
+    parts: &ProviderParts<'_>,
+) -> Result<SdkMeterProvider, LegacyExporterError> {
+    let plan = metric_reader_plan(parts.config, parts.callback_name)?;
+    let reader = parts.builder.metric_reader(plan)?;
+    let provider = SdkMeterProvider::builder()
+        .with_reader(reader)
+        .with_resource(parts.resource.clone())
+        .build();
+    Ok(provider)
+}
+
+// Legacy logs always batch, whatever the exporter, unlike the v2 provider.
+fn create_logger_provider(
+    parts: &ProviderParts<'_>,
+) -> Result<SdkLoggerProvider, LegacyExporterError> {
+    let plan = log_exporter_plan(parts.config, parts.callback_name, parts.env)?;
+    let exporter = parts.builder.log_exporter(plan)?;
+    let processor = BatchLogProcessor::builder(exporter).build();
+    let builder = SdkLoggerProvider::builder().with_resource(parts.resource.clone());
+    Ok(builder.with_log_processor(processor).build())
+}
+
 fn init_tracing(
     parts: &ProviderParts<'_>,
     injected: Option<SdkTracerProvider>,
@@ -111,16 +145,7 @@ fn init_tracing(
         &parts.globals.tracer,
         injected,
         parts.skip_set_global,
-        || {
-            let plan = span_processor_plan(parts.config, None, None, parts.callback_name)?;
-            let processor = parts.builder.span_processor(&plan)?;
-            Ok::<_, LegacyExporterError>(
-                SdkTracerProvider::builder()
-                    .with_resource(parts.resource.clone())
-                    .with_span_processor(processor)
-                    .build(),
-            )
-        },
+        || create_tracer_provider(parts),
     )?;
     let tracer = provider.tracer(legacy_tracer_name(parts.env));
     Ok((provider, tracer))
@@ -130,25 +155,16 @@ fn init_metrics(
     parts: &ProviderParts<'_>,
     injected: Option<SdkMeterProvider>,
 ) -> Result<MetricsSignal, LegacyExporterError> {
+    let create = || create_meter_provider(parts);
     let meter_provider = get_or_create_provider(
         &parts.globals.meter,
         injected,
         parts.skip_set_global,
-        || {
-            let plan = metric_reader_plan(parts.config, parts.callback_name)?;
-            let reader = parts.builder.metric_reader(plan)?;
-            Ok::<_, LegacyExporterError>(
-                SdkMeterProvider::builder()
-                    .with_reader(reader)
-                    .with_resource(parts.resource.clone())
-                    .build(),
-            )
-        },
+        create,
     )?;
-    let instruments = create_instruments(&meter_provider.meter(METER_NAME));
     Ok(MetricsSignal {
+        instruments: create_instruments(&meter_provider.meter(METER_NAME)),
         meter_provider,
-        instruments,
     })
 }
 
@@ -172,7 +188,6 @@ fn new_tracer_cache(
     )
 }
 
-// Legacy logs always batch, whatever the exporter, unlike the v2 provider.
 fn init_logs(
     parts: &ProviderParts<'_>,
     injected: Option<SdkLoggerProvider>,
@@ -180,22 +195,11 @@ fn init_logs(
     if !parts.config.signals.enable_events {
         return Ok(None);
     }
-    let provider = get_or_create_provider(
-        &parts.globals.logger,
-        injected,
-        parts.skip_set_global,
-        || {
-            let plan = log_exporter_plan(parts.config, parts.callback_name, parts.env)?;
-            let sink = parts.builder.log_exporter(plan)?;
-            Ok::<_, LegacyExporterError>(
-                SdkLoggerProvider::builder()
-                    .with_resource(parts.resource.clone())
-                    .with_log_processor(BatchLogProcessor::builder(sink).build())
-                    .build(),
-            )
-        },
-    )?;
-    Ok(Some(provider))
+    let slot = &parts.globals.logger;
+    get_or_create_provider(slot, injected, parts.skip_set_global, || {
+        create_logger_provider(parts)
+    })
+    .map(Some)
 }
 
 fn resolve_config(
