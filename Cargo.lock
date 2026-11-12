@@ -1096,6 +1096,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "num-traits",
+ "regex",
  "rstest",
  "secrecy",
  "serde",
@@ -1239,6 +1240,7 @@ dependencies = [
  "num-traits",
  "percent-encoding",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -2488,8 +2490,10 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-auth",
  "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -2498,6 +2502,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
@@ -3115,14 +3120,18 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-tokenizer",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
  "regex",
@@ -3136,12 +3145,14 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]
 name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-bedrock",
  "betterlite-vertex",
  "jiff",
  "libfuzzer-sys",

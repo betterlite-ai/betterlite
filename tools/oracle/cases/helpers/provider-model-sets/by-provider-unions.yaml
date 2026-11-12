@@ -1,0 +1,43 @@
+kind: helper
+name: provider-model-sets-by-provider-unions
+call:
+  b5361:
+    fixture:
+      model_cost:
+        openai-chat: {litellm_provider: openai}
+        openai-text: {litellm_provider: text-completion-openai}
+        cohere-plain: {litellm_provider: cohere}
+        cohere-chat: {litellm_provider: cohere_chat}
+        vertex-chat: {litellm_provider: vertex_ai-chat-models}
+        vertex-text: {litellm_provider: vertex_ai-text-models}
+        vertex-anthropic: {litellm_provider: vertex_ai-anthropic_models}
+        vertex-vision: {litellm_provider: vertex_ai-vision-models}
+        vertex-language: {litellm_provider: vertex_ai-language-models}
+        vertex-deepseek: {litellm_provider: vertex_ai-deepseek_models}
+        vertex-minimax: {litellm_provider: vertex_ai-minimax_models}
+        vertex-moonshot: {litellm_provider: vertex_ai-moonshot_models}
+        vertex-zai: {litellm_provider: vertex_ai-zai_models}
+        vertex-image: {litellm_provider: vertex_ai-image-models}
+        vertex-video: {litellm_provider: vertex_ai-video-models}
+        vertex-openai: {litellm_provider: vertex_ai-openai_models}
+        vertex-llama: {litellm_provider: vertex_ai-llama_models}
+        vertex-mistral: {litellm_provider: vertex_ai-mistral_models}
+        vertex-ai21: {litellm_provider: vertex_ai-ai21_models}
+        vertex-code-chat: {litellm_provider: vertex_ai-code-chat-models}
+        vertex-code-text: {litellm_provider: vertex_ai-code-text-models}
+        vertex-embedding: {litellm_provider: vertex_ai-embedding-models}
+        bedrock-plain: {litellm_provider: bedrock}
+        bedrock-converse: {litellm_provider: bedrock_converse}
+        azure-plain: {litellm_provider: azure}
+        azure-text: {litellm_provider: azure_text}
+        fireworks-plain: {litellm_provider: fireworks_ai}
+        fireworks-embedding: {litellm_provider: fireworks_ai-embedding-models}
+        sambanova-plain: {litellm_provider: sambanova}
+        sambanova-embedding: {litellm_provider: sambanova-embedding-models}
+        nebius-chat: {litellm_provider: nebius-chat-models}
+        nebius-embedding: {litellm_provider: nebius-embedding-models}
+        ovhcloud-plain: {litellm_provider: ovhcloud}
+        ovhcloud-embedding: {litellm_provider: ovhcloud-embedding-models}
+    steps: []
+env: {}
+compare: {ignore: []}

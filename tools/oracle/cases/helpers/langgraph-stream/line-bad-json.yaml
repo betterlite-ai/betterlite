@@ -1,0 +1,12 @@
+kind: helper
+name: langgraph-stream-line-bad-json
+env: {}
+compare: {ignore: []}
+call:
+  b8103:
+    cases:
+      - model: langgraph/agent
+        lines:
+          - 'data: {"content": "kept", }'
+          - 'data: not json'
+          - 'data: {"content": "kept"}'

@@ -1,0 +1,10 @@
+kind: helper
+name: matrix-validation-aliases-only
+call:
+  anthropic_beta_config:
+    function: validate
+    matrix: {provider_aliases: {}}
+    provider: ignored
+env: {}
+compare:
+  ignore: []
