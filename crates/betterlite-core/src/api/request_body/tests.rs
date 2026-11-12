@@ -190,7 +190,7 @@ fn decode_json_body_checks_the_json_cap_first() {
     assert_eq!(
         decode_json_body(br#"{"model":"gpt-4o"}"#, &small, DEFAULT_CAP),
         Err(RequestBodyError::Limit(ApiLimitError::JsonTooLarge {
-            observed: 19,
+            observed: 18,
             limit: 8,
         }))
     );

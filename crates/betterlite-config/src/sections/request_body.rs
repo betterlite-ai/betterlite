@@ -8,7 +8,10 @@ const DEFAULT_MEGABYTES: i64 = 1;
 const MEBIBYTE: u64 = 1024 * 1024;
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
@@ -50,6 +53,6 @@ impl Section for Raw {
 
 // LiteLLM skips the repair entirely when the limit is zero or negative, so those values carry no cap
 fn repair_cap(megabytes: i64) -> Option<u64> {
-    let positive = u64::try_from(megabytes).ok().filter(|value| *value > 0);
-    positive.and_then(|value| value.checked_mul(MEBIBYTE))
+    let value = u64::try_from(megabytes).ok().filter(|value| *value > 0)?;
+    value.checked_mul(MEBIBYTE)
 }

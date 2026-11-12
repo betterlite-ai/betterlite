@@ -82,7 +82,7 @@ pub fn parse_binary_body(body: &[u8]) -> JsonObject {
 }
 
 #[must_use]
-pub const fn is_otlp_trace_request(method: &str, route_path: &str) -> bool {
+pub fn is_otlp_trace_request(method: &str, route_path: &str) -> bool {
     method == OTLP_TRACE_METHOD && route_path == OTLP_TRACE_PATH
 }
 
@@ -274,10 +274,7 @@ fn repair_json_body(
 }
 
 fn over_repair_cap(observed: usize, max_repair_bytes: Option<u64>) -> bool {
-    match max_repair_bytes {
-        None => false,
-        Some(cap) => usize::try_from(cap).is_ok_and(|limit| observed > limit),
-    }
+    max_repair_bytes.is_some_and(|cap| usize::try_from(cap).is_ok_and(|limit| observed > limit))
 }
 
 fn parse_json_bytes(body: &[u8]) -> ParsedJson {

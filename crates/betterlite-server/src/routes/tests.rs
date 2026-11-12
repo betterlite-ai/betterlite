@@ -17,6 +17,7 @@ use tower::ServiceExt as _;
 
 use super::router;
 
+#[must_use]
 pub(crate) fn empty_config() -> Config {
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
@@ -25,6 +26,7 @@ pub(crate) fn empty_config() -> Config {
     .unwrap()
 }
 
+#[must_use]
 pub(crate) fn state_for(config: &Config) -> Arc<ServerState> {
     let executor = chat_executor(config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
     let shared = Arc::new(Shared);
