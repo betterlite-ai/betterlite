@@ -8,7 +8,6 @@ use betterlite_openai::local_servers::{
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
 };
-use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
