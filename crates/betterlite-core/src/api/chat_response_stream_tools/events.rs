@@ -23,60 +23,54 @@ fn numbered(sequence_number: i64) -> Extra {
 }
 
 #[must_use]
-pub fn output_item_added(
+pub fn output_item_event(
     output_index: i64,
     item: Extra,
     sequence_number: i64,
+    done: bool,
 ) -> KnownResponseEvent {
-    KnownResponseEvent::OutputItemAdded(OutputItemAddedEvent {
-        output_index,
-        item: RequiredNullable::Value(item),
-        extra: numbered(sequence_number),
-    })
+    if done {
+        KnownResponseEvent::OutputItemDone(OutputItemDoneEvent {
+            output_index,
+            sequence_number,
+            item,
+            extra: Extra::new(),
+        })
+    } else {
+        KnownResponseEvent::OutputItemAdded(OutputItemAddedEvent {
+            output_index,
+            item: RequiredNullable::Value(item),
+            extra: numbered(sequence_number),
+        })
+    }
 }
 
 #[must_use]
-pub fn arguments_delta(
+pub fn function_call_arguments_event(
     item_id: &str,
     output_index: i64,
-    delta: &str,
+    payload: &str,
     sequence_number: i64,
+    done: bool,
 ) -> KnownResponseEvent {
-    KnownResponseEvent::FunctionCallArgumentsDelta(FunctionArgsDelta {
-        item_id: item_id.to_owned(),
-        output_index,
-        delta: delta.to_owned(),
-        extra: numbered(sequence_number),
-    })
-}
-
-#[must_use]
-pub fn arguments_done(
-    item_id: &str,
-    output_index: i64,
-    arguments: &str,
-    sequence_number: i64,
-) -> KnownResponseEvent {
-    KnownResponseEvent::FunctionCallArgumentsDone(FunctionArgsDone {
-        item_id: item_id.to_owned(),
-        output_index,
-        arguments: arguments.to_owned(),
-        extra: numbered(sequence_number),
-    })
-}
-
-#[must_use]
-pub const fn output_item_done(
-    output_index: i64,
-    item: Extra,
-    sequence_number: i64,
-) -> KnownResponseEvent {
-    KnownResponseEvent::OutputItemDone(OutputItemDoneEvent {
-        output_index,
-        sequence_number,
-        item,
-        extra: Extra::new(),
-    })
+    let owned_item_id = item_id.to_owned();
+    let owned_payload = payload.to_owned();
+    let extra = numbered(sequence_number);
+    if done {
+        KnownResponseEvent::FunctionCallArgumentsDone(FunctionArgsDone {
+            item_id: owned_item_id,
+            output_index,
+            arguments: owned_payload,
+            extra,
+        })
+    } else {
+        KnownResponseEvent::FunctionCallArgumentsDelta(FunctionArgsDelta {
+            item_id: owned_item_id,
+            output_index,
+            delta: owned_payload,
+            extra,
+        })
+    }
 }
 
 #[must_use]

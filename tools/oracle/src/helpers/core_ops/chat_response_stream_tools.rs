@@ -194,37 +194,25 @@ fn state_view(state: &ChatStreamState<String>) -> Value {
         "litellm_metadata": state.litellm_metadata,
         "logging_context": state.logging_context,
         "custom_tool_names": state.custom_tool_names.iter().collect::<Vec<_>>(),
-        "namespace_tool_names": namespace_view(state),
-        "flags": flags_view(&state.progress),
-        "counters": counters_view(&state.progress),
+        "namespace_tool_names": state
+            .namespace_tool_names
+            .iter()
+            .map(|(name, mapped)| (name.clone(), json!([&mapped.namespace, &mapped.name])))
+            .collect::<IndexMap<_, _>>(),
+        "flags": json!({
+            "finished": state.progress.finished,
+            "sent_response_created": state.progress.sent_response_created,
+            "sent_output_item_added": state.progress.sent_output_item_added,
+            "sent_content_part_added": state.progress.sent_content_part_added,
+            "upstream_exhausted": state.progress.upstream_exhausted,
+            "final_tool_events_queued": state.progress.final_tool_events_queued,
+        }),
+        "counters": json!({
+            "sequence_number": state.progress.sequence_number,
+            "message_output_index": state.progress.message_output_index,
+            "next_tool_output_index": state.progress.next_tool_output_index,
+        }),
         "queues": queues_view(&state.progress),
-    })
-}
-
-fn namespace_view(state: &ChatStreamState<String>) -> IndexMap<String, Value> {
-    state
-        .namespace_tool_names
-        .iter()
-        .map(|(name, mapped)| (name.clone(), json!([&mapped.namespace, &mapped.name])))
-        .collect()
-}
-
-fn flags_view(progress: &StreamProgress) -> Value {
-    json!({
-        "finished": progress.finished,
-        "sent_response_created": progress.sent_response_created,
-        "sent_output_item_added": progress.sent_output_item_added,
-        "sent_content_part_added": progress.sent_content_part_added,
-        "upstream_exhausted": progress.upstream_exhausted,
-        "final_tool_events_queued": progress.final_tool_events_queued,
-    })
-}
-
-fn counters_view(progress: &StreamProgress) -> Value {
-    json!({
-        "sequence_number": progress.sequence_number,
-        "message_output_index": progress.message_output_index,
-        "next_tool_output_index": progress.next_tool_output_index,
     })
 }
 

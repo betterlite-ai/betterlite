@@ -1,10 +1,8 @@
-use std::mem;
-
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::event_types::Extra;
 
 use super::error::StreamToolsError;
-use super::events::{arguments_delta, output_item_added};
+use super::events::{function_call_arguments_event, output_item_event};
 use super::fields::{list, object, string_value, text_or_empty};
 use super::state::{ChatStreamState, QueuedToolEvent, assign_tool_output_index, next_sequence};
 use crate::api::responses_codex_tools::custom_tools::{
@@ -33,19 +31,12 @@ pub fn normalize_tool_call_index(tool_call: &Json) -> Option<i64> {
 }
 
 pub(super) fn argument_chunks(arguments: &str) -> Vec<String> {
-    let mut chunks = Vec::new();
-    let mut chunk = String::new();
-    for character in arguments.chars() {
-        chunk.push(character);
-        if chunk.chars().count() < ARGUMENT_CHUNK_CHARS {
-            continue;
-        }
-        chunks.push(mem::take(&mut chunk));
-    }
-    if !chunk.is_empty() {
-        chunks.push(chunk);
-    }
-    chunks
+    arguments
+        .chars()
+        .collect::<Vec<_>>()
+        .chunks(ARGUMENT_CHUNK_CHARS)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
 }
 
 pub fn tool_call_id<Context>(state: &mut ChatStreamState<Context>, tool_call: &Json) -> String {
@@ -93,6 +84,20 @@ fn known_call_id<Context>(state: &ChatStreamState<Context>, index: Option<i64>) 
         .unwrap_or_default()
 }
 
+pub(super) fn tool_call_name_and_arguments(call: &Json) -> (String, String) {
+    let function = object(call)
+        .and_then(|fields| fields.get("function"))
+        .and_then(object);
+    let name = text_or_empty(function.and_then(|fields| fields.get("name")));
+    let arguments = serialize_tool_call_arguments(
+        function
+            .and_then(|fields| fields.get("arguments"))
+            .unwrap_or(&Json::Null),
+        "",
+    );
+    (name, arguments)
+}
+
 pub fn queue_tool_delta_events<Context>(
     state: &mut ChatStreamState<Context>,
     tool_calls: &Json,
@@ -114,16 +119,7 @@ fn queue_tool_delta<Context>(
     if call_id.is_empty() || state.progress.web_search_calls.contains_key(&call_id) {
         return Ok(());
     }
-    let function = object(call)
-        .and_then(|fields| fields.get("function"))
-        .and_then(object);
-    let fn_name = text_or_empty(function.and_then(|fields| fields.get("name")));
-    let arguments = serialize_tool_call_arguments(
-        function
-            .and_then(|fields| fields.get("arguments"))
-            .unwrap_or(&Json::Null),
-        "",
-    );
+    let (fn_name, arguments) = tool_call_name_and_arguments(call);
     let output_index = assign_tool_output_index(state, &call_id)?;
     if !state.progress.tool_args_by_call_id.contains_key(&call_id) {
         queue_tool_item_added(state, &call_id, &fn_name, output_index)?;
@@ -139,13 +135,13 @@ fn queue_tool_delta<Context>(
         let item_id = tool_item_id(state, &call_id);
         state.progress.pending_tool_events.push(QueuedToolEvent {
             output_index,
-            event: arguments_delta(&item_id, output_index, &chunk, sequence),
+            event: function_call_arguments_event(&item_id, output_index, &chunk, sequence, false),
         });
     }
     Ok(())
 }
 
-fn queue_tool_item_added<Context>(
+pub(super) fn queue_tool_item_added<Context>(
     state: &mut ChatStreamState<Context>,
     call_id: &str,
     fn_name: &str,
@@ -163,7 +159,7 @@ fn queue_tool_item_added<Context>(
         .insert(call_id.to_owned(), item_id);
     state.progress.pending_tool_events.push(QueuedToolEvent {
         output_index,
-        event: output_item_added(output_index, item, sequence),
+        event: output_item_event(output_index, item, sequence, false),
     });
     Ok(())
 }

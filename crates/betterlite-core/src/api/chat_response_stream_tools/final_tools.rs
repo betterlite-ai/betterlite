@@ -1,11 +1,13 @@
 use betterlite_models::decisions::Json;
 
 use super::error::StreamToolsError;
-use super::events::{arguments_delta, arguments_done, output_item_added, output_item_done};
-use super::fields::{list, object, string_value, text_or_empty};
+use super::events::{function_call_arguments_event, output_item_event};
+use super::fields::{list, object, string_value};
 use super::state::{ChatStreamState, QueuedToolEvent, assign_tool_output_index, next_sequence};
-use super::tool_calls::{argument_chunks, tool_call_fields, tool_item_id};
-use crate::api::responses_codex_tools::custom_tools::serialize_tool_call_arguments;
+use super::tool_calls::{
+    argument_chunks, queue_tool_item_added, tool_call_fields, tool_call_name_and_arguments,
+    tool_item_id,
+};
 use crate::api::responses_tool_namespaces::values::has_value;
 
 pub fn queue_final_tool_completion<Context>(
@@ -37,16 +39,7 @@ fn queue_final_call<Context>(
     };
     let call_id = string_value(id_field);
     let output_index = assign_tool_output_index(state, &call_id)?;
-    let function = object(call)
-        .and_then(|fields| fields.get("function"))
-        .and_then(object);
-    let fn_name = text_or_empty(function.and_then(|fields| fields.get("name")));
-    let arguments = serialize_tool_call_arguments(
-        function
-            .and_then(|fields| fields.get("arguments"))
-            .unwrap_or(&Json::Null),
-        "",
-    );
+    let (fn_name, arguments) = tool_call_name_and_arguments(call);
     if state.progress.web_search_calls.contains_key(&call_id) {
         return queue_final_web_search(state, &call_id);
     }
@@ -55,7 +48,7 @@ fn queue_final_call<Context>(
         .tool_item_id_by_call_id
         .contains_key(&call_id)
     {
-        queue_final_item_added(state, &call_id, &fn_name, output_index)?;
+        queue_tool_item_added(state, &call_id, &fn_name, output_index)?;
     }
     let final_args = if arguments.is_empty() {
         state
@@ -89,29 +82,6 @@ pub(super) fn queue_final_web_search<Context>(
     Ok(())
 }
 
-fn queue_final_item_added<Context>(
-    state: &mut ChatStreamState<Context>,
-    call_id: &str,
-    fn_name: &str,
-    output_index: i64,
-) -> Result<(), StreamToolsError> {
-    state
-        .progress
-        .tool_args_by_call_id
-        .insert(call_id.to_owned(), String::new());
-    let sequence = next_sequence(state)?;
-    let (item_id, item) = tool_call_fields(state, call_id, fn_name, "", "in_progress")?;
-    state
-        .progress
-        .tool_item_id_by_call_id
-        .insert(call_id.to_owned(), item_id);
-    state.progress.pending_tool_events.push(QueuedToolEvent {
-        output_index,
-        event: output_item_added(output_index, item, sequence),
-    });
-    Ok(())
-}
-
 fn queue_final_arguments<Context>(
     state: &mut ChatStreamState<Context>,
     call_id: &str,
@@ -129,14 +99,14 @@ fn queue_final_arguments<Context>(
         let item_id = tool_item_id(state, call_id);
         state.progress.pending_tool_events.push(QueuedToolEvent {
             output_index,
-            event: arguments_delta(&item_id, output_index, &chunk, sequence),
+            event: function_call_arguments_event(&item_id, output_index, &chunk, sequence, false),
         });
     }
     let sequence = next_sequence(state)?;
     let item_id = tool_item_id(state, call_id);
     state.progress.pending_tool_events.push(QueuedToolEvent {
         output_index,
-        event: arguments_done(&item_id, output_index, final_args, sequence),
+        event: function_call_arguments_event(&item_id, output_index, final_args, sequence, true),
     });
     Ok(())
 }
@@ -159,7 +129,7 @@ fn queue_final_item_done<Context>(
     item.insert(String::from("id"), Json::Text(item_id));
     state.progress.pending_tool_events.push(QueuedToolEvent {
         output_index,
-        event: output_item_done(output_index, item, sequence),
+        event: output_item_event(output_index, item, sequence, true),
     });
     Ok(())
 }

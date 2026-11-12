@@ -115,13 +115,11 @@ fn sdk_item_with_id(output: &SdkOutput, item_id: &str) -> Option<SdkOutput> {
 
 #[must_use]
 pub fn has_signed_thinking_block(delta: &Json) -> bool {
-    let Some(blocks) = object(delta).and_then(|fields| fields.get("thinking_blocks")) else {
+    let Some(Json::List(blocks)) = object(delta).and_then(|fields| fields.get("thinking_blocks"))
+    else {
         return false;
     };
-    let Json::List(listed) = blocks else {
-        return false;
-    };
-    listed.iter().any(|block| {
+    blocks.iter().any(|block| {
         object(block).is_some_and(|fields| {
             fields.get("signature").is_some_and(has_value)
                 || fields.get("data").is_some_and(has_value)

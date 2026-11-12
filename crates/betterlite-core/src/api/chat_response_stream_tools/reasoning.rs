@@ -14,10 +14,10 @@ pub fn reasoning_ended(chunk: &Json) -> bool {
         return false;
     };
     let delta = choice.get("delta").and_then(object);
-    if delta.is_some_and(|fields| fields.get("reasoning_content").is_some_and(has_value)) {
-        return false;
-    }
-    if delta.is_some_and(|fields| fields.get("thinking_blocks").is_some_and(has_value)) {
+    if delta.is_some_and(|fields| {
+        fields.get("reasoning_content").is_some_and(has_value)
+            || fields.get("thinking_blocks").is_some_and(has_value)
+    }) {
         return false;
     }
     let content = delta.is_some_and(|fields| fields.get("content").is_some_and(has_value));
