@@ -141,7 +141,7 @@ pub struct UnknownResponseField {
 
 impl RerankResponse {
     #[must_use]
-    fn field(&self, name: &str) -> Option<Json> {
+    pub fn field(&self, name: &str) -> Option<Json> {
         let encoded = serde_json::to_value(self).ok()?;
         let Json::Object(fields) = serde_json::from_value::<Json>(encoded).ok()? else {
             return None;
@@ -153,26 +153,5 @@ impl RerankResponse {
         self.field(name).ok_or_else(|| UnknownResponseField {
             name: name.to_owned(),
         })
-    }
-
-    #[must_use]
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "map_or would turn the accessor into a one-line function, which the repository bans"
-    )]
-    pub fn get(&self, name: &str, default: Json) -> Json {
-        if let Some(value) = self.field(name) {
-            value
-        } else {
-            default
-        }
-    }
-
-    #[must_use]
-    pub fn contains(&self, name: &str) -> bool {
-        match name {
-            "id" | "results" | "meta" => self.field(name).is_some(),
-            _ => false,
-        }
     }
 }

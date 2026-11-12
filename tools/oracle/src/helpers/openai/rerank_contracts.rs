@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_error::facts::presence::Field;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{RerankBilledUnits, RerankDocument};
-use betterlite_provider::api::rerank_contracts::RerankModelInfo;
+use betterlite_provider::api::rerank_contracts::{RerankCostError, RerankModelInfo};
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -93,6 +93,8 @@ enum ContractError {
     Config(#[from] recording::FixtureError),
     #[error("the supplied response is not a rerank response")]
     Response,
+    #[error("the query cost is out of range: {0}")]
+    Cost(#[from] RerankCostError),
 }
 
 pub(crate) struct Op;
@@ -105,7 +107,7 @@ impl crate::helpers::Helper for Op {
             Input::WireRecords { params } => Ok(wire_records::run(params)),
             Input::OptionProjection { params } => projection::run(params),
             Input::BaseDefaults { params } => defaults::run(params),
-            Input::QueryCost { params } => Ok(query_cost::run(params)),
+            Input::QueryCost { params } => query_cost::run(params),
         };
         output.map_err(|error| {
             Box::new(crate::helpers::HelperError {

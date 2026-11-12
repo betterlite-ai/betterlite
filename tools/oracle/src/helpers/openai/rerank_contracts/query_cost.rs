@@ -2,10 +2,10 @@ use betterlite_provider::api::rerank_contracts::BaseRerankConfig as _;
 use rust_decimal::Decimal;
 use serde_json::{Number, Value, json};
 
-use super::CostParams;
 use super::recording::Recording;
+use super::{ContractError, CostParams};
 
-pub(super) fn run(params: &CostParams) -> Value {
+pub(super) fn run(params: &CostParams) -> Result<Value, ContractError> {
     let config = Recording::default();
     let mut costs = Vec::new();
     for case in &params.cases {
@@ -14,10 +14,10 @@ pub(super) fn run(params: &CostParams) -> Value {
             None,
             case.billed_units.as_ref(),
             case.model_info.as_ref(),
-        );
+        )?;
         costs.push(json!([decimal_number(prompt), decimal_number(completion)]));
     }
-    json!({"costs": costs})
+    Ok(json!({"costs": costs}))
 }
 
 fn decimal_number(decimal: Decimal) -> Value {

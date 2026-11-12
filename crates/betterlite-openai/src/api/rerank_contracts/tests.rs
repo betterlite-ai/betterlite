@@ -132,6 +132,19 @@ fn response_rejects_missing_or_mistyped_fields(#[case] input: &[u8]) {
     let _error = decode(input, RerankRecordKind::Response).unwrap_err();
 }
 
+#[test]
+fn a_null_document_is_refused_and_an_absent_one_is_kept_absent() {
+    assert!(matches!(
+        decode(
+            br#"{"results":[{"index":0,"relevance_score":0.5,"document":null}]}"#,
+            RerankRecordKind::Response
+        ),
+        Err(RerankContractError::NullDocument)
+    ));
+    let absent = response(br#"{"results":[{"index":0,"relevance_score":0.5}]}"#);
+    assert_eq!(absent.results.unwrap()[0].document, None);
+}
+
 #[rstest]
 #[case::meta_null_members(
     br#"{"meta":{"api_version":null,"billed_units":null,"tokens":null}}"#,
@@ -163,13 +176,12 @@ fn response_ignores_unknown_fields_and_never_writes_hidden_params() {
 #[test]
 fn response_accessors_follow_the_python_object() {
     let decoded = response(b"{}");
-    assert!(decoded.contains("id"));
-    assert!(decoded.contains("results"));
-    assert!(decoded.contains("meta"));
-    assert!(!decoded.contains("hidden_params"));
-    assert!(!decoded.contains("missing"));
+    assert_eq!(decoded.field("id"), Some(Json::Null));
+    assert_eq!(decoded.field("results"), Some(Json::Null));
+    assert_eq!(decoded.field("meta"), Some(Json::Null));
+    assert_eq!(decoded.field("hidden_params"), None);
+    assert_eq!(decoded.field("missing"), None);
     assert_eq!(decoded.item("id").unwrap(), Json::Null);
-    assert_eq!(decoded.get("missing", Json::Bool(true)), Json::Bool(true));
     let error = decoded.item("missing").unwrap_err();
     assert_eq!(error.name, "missing");
     assert_eq!(
@@ -187,7 +199,7 @@ fn accessors_expose_decoded_results() {
         serde_json::to_value(decoded.item("results").unwrap()).unwrap(),
         json_value(r#"[{"index":2,"relevance_score":0.125,"document":{"text":"t"}}]"#)
     );
-    assert_eq!(decoded.get("id", Json::Null), Json::Text(String::from("r")));
+    assert_eq!(decoded.field("id"), Some(Json::Text(String::from("r"))));
 }
 
 #[test]

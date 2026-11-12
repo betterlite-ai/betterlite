@@ -35,6 +35,12 @@ impl TryFrom<Number> for ExactDecimal {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum RerankCostError {
+    #[error("the query cost does not fit an exact decimal")]
+    Overflow,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct BaseLlmException {
@@ -174,23 +180,19 @@ pub trait BaseRerankConfig: Send + Sync {
         _custom_llm_provider: Option<&str>,
         billed_units: Option<&RerankBilledUnits>,
         model_info: Option<&RerankModelInfo>,
-    ) -> (Decimal, Decimal) {
+    ) -> Result<(Decimal, Decimal), RerankCostError> {
         let Some(search_units) = billed_units.and_then(|units| units.search_units.flatten()) else {
-            return (Decimal::ZERO, Decimal::ZERO);
+            return Ok((Decimal::ZERO, Decimal::ZERO));
         };
         let Some(price) =
             model_info.and_then(|info| info.input_cost_per_query.map(|value| value.0))
         else {
-            return (Decimal::ZERO, Decimal::ZERO);
+            return Ok((Decimal::ZERO, Decimal::ZERO));
         };
-        let Some(prompt_cost) = price.checked_mul(Decimal::from(search_units)) else {
-            let negative = price.is_sign_negative() != search_units.is_negative();
-            return (
-                if negative { Decimal::MIN } else { Decimal::MAX },
-                Decimal::ZERO,
-            );
-        };
-        (prompt_cost, Decimal::ZERO)
+        let prompt_cost = price
+            .checked_mul(Decimal::from(search_units))
+            .ok_or(RerankCostError::Overflow)?;
+        Ok((prompt_cost, Decimal::ZERO))
     }
 }
 

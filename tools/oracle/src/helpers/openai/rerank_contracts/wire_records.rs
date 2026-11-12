@@ -39,13 +39,11 @@ fn accessor(response: &RerankResponse, key: &str) -> Value {
         |_unknown| json!({"ok": false}),
         |value| json!({"ok": true, "value": value}),
     );
+    let field = response.field(key);
     json!({
-        "contains": response.contains(key),
+        "contains": field.is_some(),
         "item": item,
-        "get": response.get(
-            key,
-            Json::List(vec![Json::Text(String::from("__absent__"))]),
-        ),
+        "get": field.unwrap_or_else(|| Json::List(vec![Json::Text(String::from("__absent__"))])),
     })
 }
 

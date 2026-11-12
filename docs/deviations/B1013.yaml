@@ -3,3 +3,6 @@ deviations:
   - what: Scores outside exact rust_decimal representation, including non-finite values, fail with native HTTP 502, type bad_gateway, param score, code decimal_out_of_range; LiteLLM's float model can represent finite 1e100 and non-finite scores.
     why: Preserve the current exact-number boundary and no-floats rule instead of rounding provider scores.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L77-L95
+  - what: A query cost that does not fit an exact decimal (price times search_units overflows) is an explicit RerankCostError::Overflow instead of a huge float product.
+    why: A float product beyond rust_decimal range has no exact value, and clamping it would quietly undercharge, so the caller gets an error to turn into a bad_gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/rerank/transformation.py#L133-L136

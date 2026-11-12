@@ -42,6 +42,8 @@ pub enum RerankContractError {
     Json(#[from] serde_json::Error),
     #[error("score cannot be represented as an exact decimal")]
     ScoreOutOfRange(#[source] DecimalLexemeError),
+    #[error("a rerank result document must be an object with text, not null")]
+    NullDocument,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -64,7 +66,9 @@ impl RerankContractError {
                 Some("decimal_out_of_range"),
                 None,
             ),
-            Self::UnknownKind(_) | Self::Shape(_) | Self::Json(_) => (None, None, None, None, None),
+            Self::UnknownKind(_) | Self::Shape(_) | Self::Json(_) | Self::NullDocument => {
+                (None, None, None, None, None)
+            }
         };
         ErrorDetails {
             status,
@@ -87,14 +91,14 @@ pub fn decode_rerank_contracts(
         )?)),
         RerankRecordKind::Response => {
             let value: Json = decode_responses_shapes(bytes, limits)?;
-            validate_scores(&value)?;
+            validate_results(&value)?;
             let raw = serde_json::to_value(&value)?;
             Ok(RerankContract::Response(serde_json::from_value(raw)?))
         }
     }
 }
 
-fn validate_scores(value: &Json) -> Result<(), RerankContractError> {
+fn validate_results(value: &Json) -> Result<(), RerankContractError> {
     let Json::Object(root) = value else {
         return Ok(());
     };
@@ -108,6 +112,9 @@ fn validate_scores(value: &Json) -> Result<(), RerankContractError> {
         if let Some(Json::Number(number)) = fields.get("relevance_score") {
             parse_decimal_lexeme(&number.to_string())
                 .map_err(RerankContractError::ScoreOutOfRange)?;
+        }
+        if fields.get("document") == Some(&Json::Null) {
+            return Err(RerankContractError::NullDocument);
         }
     }
     Ok(())

@@ -13,8 +13,9 @@ use thiserror::Error;
 
 use super::{
     BaseLlmException, BaseRerankConfig, EnvironmentRequest, ExactDecimal, HeaderMap, Headers,
-    MapCohereRerankParams, OptionalRerankParams, Params, RerankLogging, RerankModelInfo,
-    RerankProviderResponse, ResponseTransform, ReturnDocuments, get_optional_rerank_params,
+    MapCohereRerankParams, OptionalRerankParams, Params, RerankCostError, RerankLogging,
+    RerankModelInfo, RerankProviderResponse, ResponseTransform, ReturnDocuments,
+    get_optional_rerank_params,
 };
 
 #[derive(Debug, Error)]
@@ -279,7 +280,9 @@ fn an_empty_map_is_not_mutated() {
     let calls = fixture.recorded();
     assert_eq!(
         field(&calls[0], "non_default_params"),
-        Some(&parsed(r#"{"query":"q","documents":[]}"#))
+        Some(&parsed(
+            r#"{"query":"q","top_n":0,"documents":[],"max_chunks_per_doc":0,"max_tokens_per_doc":3,"instruction":""}"#
+        ))
     );
     assert_eq!(field(&calls[0], "return_documents"), Some(&Json::Null));
 }
@@ -297,7 +300,7 @@ fn an_absent_map_gets_a_new_one_and_the_default_documents_value() {
     assert_eq!(
         field(&calls[0], "non_default_params"),
         Some(&parsed(
-            r#"{"query":"q","documents":[],"return_documents":true}"#
+            r#"{"query":"q","top_n":0,"documents":[],"return_documents":true,"max_chunks_per_doc":0,"max_tokens_per_doc":3,"instruction":""}"#
         ))
     );
     assert_eq!(
@@ -333,7 +336,7 @@ fn an_existing_rank_fields_entry_is_not_overwritten() {
     assert_eq!(
         field(&calls[0], "non_default_params"),
         Some(&parsed(
-            r#"{"rank_fields":["old"],"query":"q","documents":["a"]}"#
+            r#"{"rank_fields":["old"],"query":"q","top_n":0,"documents":["a"],"max_chunks_per_doc":0,"max_tokens_per_doc":3,"instruction":""}"#
         ))
     );
 }
@@ -485,28 +488,25 @@ fn rerank_query_cost(
     let fixture = Fixture::default();
     let priced = info.map(model_info);
     let units = counted.map(billed_units);
-    let (prompt, completion) =
-        fixture.calculate_rerank_cost("rerank-model", None, units.as_ref(), priced.as_ref());
+    let (prompt, completion) = fixture
+        .calculate_rerank_cost("rerank-model", None, units.as_ref(), priced.as_ref())
+        .unwrap();
     assert_eq!(prompt, decimal(expected));
     assert_eq!(completion, Decimal::ZERO);
 }
 
-#[test]
-fn an_unrepresentable_cost_saturates() {
+#[rstest]
+#[case::overflowing_price(Decimal::MAX, r#"{"search_units":2}"#)]
+#[case::overflowing_negative_price(Decimal::MIN, r#"{"search_units":2}"#)]
+#[case::overflowing_negative_units(Decimal::MAX, r#"{"search_units":-2}"#)]
+fn an_unrepresentable_cost_is_refused(#[case] price: Decimal, #[case] counted: &str) {
     let fixture = Fixture::default();
-    let counted = billed_units(r#"{"search_units":2}"#);
-    let maximum = RerankModelInfo {
-        input_cost_per_query: Some(ExactDecimal(Decimal::MAX)),
+    let units = billed_units(counted);
+    let priced = RerankModelInfo {
+        input_cost_per_query: Some(ExactDecimal(price)),
     };
     assert_eq!(
-        fixture.calculate_rerank_cost("m", None, Some(&counted), Some(&maximum)),
-        (Decimal::MAX, Decimal::ZERO)
-    );
-    let minimum = RerankModelInfo {
-        input_cost_per_query: Some(ExactDecimal(Decimal::MIN)),
-    };
-    assert_eq!(
-        fixture.calculate_rerank_cost("m", None, Some(&counted), Some(&minimum)),
-        (Decimal::MIN, Decimal::ZERO)
+        fixture.calculate_rerank_cost("m", None, Some(&units), Some(&priced)),
+        Err(RerankCostError::Overflow)
     );
 }

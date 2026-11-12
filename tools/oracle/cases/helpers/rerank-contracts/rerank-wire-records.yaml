@@ -18,6 +18,7 @@ call:
         - {id: r, results: [{index: 2, relevance_score: 0.125, document: {text: t}}], meta: {api_version: {version: "2"}, billed_units: {search_units: 3, total_tokens: 9}, tokens: {input_tokens: 1, output_tokens: 2}}}
         - {results: [{index: 0, relevance_score: -0.5}]}
         - {results: [{index: 0, relevance_score: 0.125, document: {}}]}
+        - {results: [{index: 0, relevance_score: 0.5, document: null}]}
         - {results: [{index: 0}]}
         - {results: [{relevance_score: 0.5}]}
         - {meta: {billed_units: {}, tokens: {input_tokens: null}}}
