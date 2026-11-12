@@ -138,9 +138,9 @@ fn billed_duration_keeps_exact_seconds_and_nanos() {
     let duration = billed_duration(&response(
         SpeechEventType::Unspecified,
         Vec::new(),
-        Some(ProtoDuration::new(2, 250_000_000).expect("a valid duration")),
+        Some(ProtoDuration::new(2, 250_000_001).expect("a valid duration")),
     ));
-    assert_eq!(duration, SignedDuration::new(2, 250_000_000));
+    assert_eq!(duration, SignedDuration::new(2, 250_000_001));
 }
 
 #[test]

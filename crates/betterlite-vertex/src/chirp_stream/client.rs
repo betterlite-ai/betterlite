@@ -15,6 +15,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::error::ChirpStreamError;
 use super::target::SpeechStreamingTarget;
 
+mod tests;
+
 pub type ClientFuture<'client, T> = Pin<Box<dyn Future<Output = T> + Send + 'client>>;
 
 pub trait RequestSink: Send + Sync {
