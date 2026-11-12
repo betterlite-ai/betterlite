@@ -1,0 +1,26 @@
+kind: helper
+name: studio-identity-native-header-override
+call:
+  studio_identity:
+    calls:
+      - model: gemini-2.0-flash
+        api_key: request-key
+        headers: {Content-Type: text/plain, X-Caller: kept}
+      - model: gemini-2.0-flash
+        auth_map: {x-goog-api-key: map-key, X-Auth: mapped}
+        headers: {x-goog-api-key: caller-key}
+      - model: gemini-2.0-flash
+        params_api_key: params-key
+        params_gemini_api_key: params-gemini-key
+        env: {GOOGLE_API_KEY: google-key}
+      - model: gemini-2.0-flash
+        params_gemini_api_key: params-gemini-key
+        generic_key: generic-key
+      - model: gemini-2.0-flash
+        env: {GOOGLE_API_KEY: google-key}
+        generic_key: generic-key
+      - model: gemini-2.0-flash
+        generic_key: generic-key
+      - model: gemini-2.0-flash
+env: {}
+compare: {ignore: []}
