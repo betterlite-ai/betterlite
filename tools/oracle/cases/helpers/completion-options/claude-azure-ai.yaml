@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-azure-ai
+call:
+  b5650: {function: claude_target, custom_llm_provider: azure_ai, model: Claude-Sonnet}
+env: {}
+compare: {ignore: []}
