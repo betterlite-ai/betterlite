@@ -236,7 +236,8 @@ def rate_limit_with_headers(headers: httpx.Headers | None) -> RateLimitError:
 
 def retry_after_text(headers: httpx.Headers | None) -> str:
     value = litellm.utils._get_retry_after_from_exception_header(headers)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
-    return "invalid" if value == -1 else f"seconds:{value}"
+    # a date mktime_tz rejects ends in the outer except, which returns None where a bad header gives -1
+    return "invalid" if value is None or value == -1 else f"seconds:{value}"
 
 
 class RetryPolicy(Operation):
