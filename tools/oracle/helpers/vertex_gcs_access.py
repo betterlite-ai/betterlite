@@ -38,11 +38,6 @@ class Input(TypedDict):
     model_paths: list[str | None]
 
 
-def snapshot_of(pairs: list[tuple[str, Json]]) -> MappingProxyType[str, Json]:
-    values: dict[str, Json] = dict(pairs)
-    return MappingProxyType(values)
-
-
 def litellm_params_of(input_value: Input, trusted: list[tuple[str, Json]]) -> Params:
     params: Params = {}
     for name, value in input_value["params"].items():
@@ -51,7 +46,7 @@ def litellm_params_of(input_value: Input, trusted: list[tuple[str, Json]]) -> Pa
         params[plain_name] = plain_value
     if trusted:
         # LiteLLM trusts only a MappingProxyType snapshot, never a plain request mapping
-        params[TRUSTED_KEY] = cast(Json, snapshot_of(trusted))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L121
+        params[TRUSTED_KEY] = cast(Json, MappingProxyType(dict[str, Json](trusted)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L121
     return params
 
 

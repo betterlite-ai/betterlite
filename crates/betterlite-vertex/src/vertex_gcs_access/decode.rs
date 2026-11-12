@@ -10,7 +10,7 @@ pub const MAX_FILE_ID_BYTES: usize = 8192;
 pub fn decode_vertex_gcs_id(
     bytes: &[u8],
     configured_bucket_name: &str,
-    trusted: Option<&TrustedModelCredentials>,
+    trusted: &TrustedModelCredentials,
 ) -> Result<GcsObject, GcsAccessError> {
     let limit = MAX_FILE_ID_BYTES;
     if bytes.len() > limit {

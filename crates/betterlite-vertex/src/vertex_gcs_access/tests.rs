@@ -178,7 +178,7 @@ fn parse_gcs_uri_authorizes_the_managed_prefix(
 ) {
     let trusted = allows_legacy(allow_legacy);
     match (
-        parse_gcs_uri(file_id, configured_bucket_name, Some(&trusted)),
+        parse_gcs_uri(file_id, configured_bucket_name, &trusted),
         expected,
     ) {
         (Ok(found), Ok((bucket, object))) => {
@@ -215,7 +215,10 @@ fn parse_gcs_uri_encodes_the_object_once_more(
     #[case] file_id: &str,
     #[case] expected: Result<&str, GcsAccessError>,
 ) {
-    match (parse_gcs_uri(file_id, "bucket", None), expected) {
+    match (
+        parse_gcs_uri(file_id, "bucket", &TrustedModelCredentials::default()),
+        expected,
+    ) {
         (Ok(found), Ok(object)) => assert_eq!(found.encoded_object, object),
         (Err(error), Err(wanted)) => assert_eq!(error, wanted),
         (outcome, expectation) => panic!("{outcome:?} does not match {expectation:?}"),
@@ -227,7 +230,7 @@ fn default_credentials_do_not_allow_legacy_file_ids() {
     let trusted = TrustedModelCredentials::default();
 
     assert_eq!(
-        parse_gcs_uri("gs://bucket/legacy.jsonl", "bucket", Some(&trusted)).unwrap_err(),
+        parse_gcs_uri("gs://bucket/legacy.jsonl", "bucket", &trusted).unwrap_err(),
         GcsAccessError::Storage(CloudStorageError::Unmanaged)
     );
 }
@@ -315,7 +318,7 @@ fn decode_accepts_a_managed_identifier() {
     let decoded = decode_vertex_gcs_id(
         b"gs://bucket/litellm-vertex-files/input.jsonl",
         "bucket",
-        None,
+        &TrustedModelCredentials::default(),
     )
     .unwrap();
 
@@ -331,7 +334,11 @@ fn decode_accepts_a_managed_identifier() {
 #[test]
 fn decode_refuses_bytes_that_are_not_utf8() {
     assert!(matches!(
-        decode_vertex_gcs_id(b"gs://bucket/\xff", "bucket", None),
+        decode_vertex_gcs_id(
+            b"gs://bucket/\xff",
+            "bucket",
+            &TrustedModelCredentials::default(),
+        ),
         Err(GcsAccessError::FileIdNotUtf8(_))
     ));
 }
@@ -341,7 +348,8 @@ fn decode_refuses_an_identifier_over_the_limit() {
     let over_limit = vec![b'a'; MAX_FILE_ID_BYTES.saturating_add(1)];
 
     assert_eq!(
-        decode_vertex_gcs_id(&over_limit, "bucket", None).unwrap_err(),
+        decode_vertex_gcs_id(&over_limit, "bucket", &TrustedModelCredentials::default())
+            .unwrap_err(),
         GcsAccessError::FileIdTooLong {
             limit: MAX_FILE_ID_BYTES
         }
@@ -353,7 +361,7 @@ fn decode_accepts_an_identifier_at_the_limit() {
     let at_limit = vec![b'a'; MAX_FILE_ID_BYTES];
 
     assert!(matches!(
-        decode_vertex_gcs_id(&at_limit, "bucket", None),
+        decode_vertex_gcs_id(&at_limit, "bucket", &TrustedModelCredentials::default()),
         Err(GcsAccessError::Storage(CloudStorageError::Scheme(_)))
     ));
 }
@@ -361,5 +369,9 @@ fn decode_accepts_an_identifier_at_the_limit() {
 #[rstest]
 fn replays_the_vertex_gcs_id_corpus(#[files("fuzz/corpus/vertex_gcs_id/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let _decoded = decode_vertex_gcs_id(&bytes, "bucket/litellm-vertex-files", None);
+    let _decoded = decode_vertex_gcs_id(
+        &bytes,
+        "bucket/litellm-vertex-files",
+        &TrustedModelCredentials::default(),
+    );
 }

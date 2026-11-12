@@ -16,9 +16,9 @@ pub struct GcsObject {
 pub fn parse_gcs_uri(
     file_id: &str,
     configured_bucket_name: &str,
-    trusted: Option<&TrustedModelCredentials>,
+    trusted: &TrustedModelCredentials,
 ) -> Result<GcsObject, GcsAccessError> {
-    let allow_legacy = trusted.is_some_and(TrustedModelCredentials::allows_legacy);
+    let allow_legacy = trusted.allows_legacy();
     let (bucket, object) = decode_cloud_object_reference(
         file_id,
         GCS_SCHEME,

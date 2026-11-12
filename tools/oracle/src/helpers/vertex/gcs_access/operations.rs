@@ -37,14 +37,12 @@ pub(super) fn run(input: &Input) -> Value {
     }
 }
 
-fn trusted_record(pairs: &[(String, WireValue)]) -> Option<TrustedModelCredentials> {
-    (!pairs.is_empty()).then(|| {
-        frozen_mapping(
-            pairs
-                .iter()
-                .map(|(name, value)| (name.clone(), trusted_value(value))),
-        )
-    })
+fn trusted_record(pairs: &[(String, WireValue)]) -> TrustedModelCredentials {
+    frozen_mapping(
+        pairs
+            .iter()
+            .map(|(name, value)| (name.clone(), trusted_value(value))),
+    )
 }
 
 fn trusted_value(value: &WireValue) -> TrustedValue {
@@ -71,9 +69,9 @@ fn parse_values(input: &Input, trusted_pairs: &[(String, WireValue)]) -> Value {
     let results: Vec<Value> = input
         .file_ids
         .iter()
-        .map(|file_id| match (&configured, &trusted) {
-            (Ok(bucket), credentials) => decoded_value(file_id, bucket, credentials.as_ref()),
-            (Err(_error), _credentials) => json!({"failed": true}),
+        .map(|file_id| match &configured {
+            Ok(bucket) => decoded_value(file_id, bucket, &trusted),
+            Err(_error) => json!({"failed": true}),
         })
         .collect();
     json!({"results": results})
@@ -82,7 +80,7 @@ fn parse_values(input: &Input, trusted_pairs: &[(String, WireValue)]) -> Value {
 fn decoded_value(
     file_id: &str,
     configured_bucket_name: &str,
-    trusted: Option<&TrustedModelCredentials>,
+    trusted: &TrustedModelCredentials,
 ) -> Value {
     decode_vertex_gcs_id(file_id.as_bytes(), configured_bucket_name, trusted).map_or_else(
         |_error| json!({"failed": true}),
