@@ -57,11 +57,11 @@ pub struct TokenUsage {
     pub total_tokens: i64,
     pub input_token_details: InputTokenDetails,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DurationUsage {
     pub seconds: Number,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AudioTranscriptionUsage {
     Tokens(Box<TokenUsage>),
