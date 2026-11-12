@@ -7,6 +7,8 @@ call:
       - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTttb2RlbF9pZDptO2xsbV9iYXRjaF9pZDpi"}
       - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eWp1bms"}
       - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eQ==A"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxl=="}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxlOz8-Pg"}
       - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eQ"}
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwscHVibGlj"}
       - {"function": "original_id", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwscHVibGlj"}

@@ -12,6 +12,9 @@ call:
       - {"function": "convert", "value": "/w=="}
       - {"function": "convert", "value": ""}
       - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eQ==A"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxl=="}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxl="}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxlOz8-Pg"}
       - {"function": "convert", "value": "é"}
       - {"function": "target_models", "value": "target_model_names,a, b,,a"}
       - {"function": "target_models", "value": "bGl0ZWxsbV9wcm94eTp4O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxh"}
