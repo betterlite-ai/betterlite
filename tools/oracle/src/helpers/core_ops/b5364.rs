@@ -42,7 +42,7 @@ fn invalid(message: String) -> Box<HelperError> {
     })
 }
 
-// get_llm_provider with no catalog entries, so only a provider prefix names a provider.
+// get_llm_provider with the text completion set as its only catalog entries, so a provider prefix or that set names a provider.
 struct Resolver {
     catalog: ModelCatalog,
     names: BTreeSet<String>,
@@ -102,10 +102,36 @@ fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
         .map_err(|source| invalid(source.to_string()))
 }
 
+// LiteLLM checks the chat set first, so a model in both sets is an openai model and stays out of the catalog.
+fn text_set_catalog(input: &ModelSetsInput) -> Result<ModelCatalog, Box<HelperError>> {
+    let empty = BTreeSet::new();
+    let chat = input
+        .sets
+        .get("open_ai_chat_completion_models")
+        .unwrap_or(&empty);
+    let entries: serde_json::Map<String, Value> = input
+        .sets
+        .get("open_ai_text_completion_models")
+        .unwrap_or(&empty)
+        .iter()
+        .filter(|model| !chat.contains(*model))
+        .map(|model| {
+            (
+                model.clone(),
+                json!({"litellm_provider": "text-completion-openai"}),
+            )
+        })
+        .collect();
+    ModelCatalog::parse(
+        Value::Object(entries).to_string().as_bytes(),
+        UnknownFields::Warn,
+    )
+    .map_err(|source| invalid(source.to_string()))
+}
+
 fn environment_answer(input: &EnvironmentInput) -> HelperResult {
     let resolver = Resolver {
-        catalog: ModelCatalog::parse(b"{}", UnknownFields::Warn)
-            .map_err(|source| invalid(source.to_string()))?,
+        catalog: text_set_catalog(&input.model_sets)?,
         names: BTreeSet::new(),
         environment: BTreeMap::new(),
     };
