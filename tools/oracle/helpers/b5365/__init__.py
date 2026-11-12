@@ -51,6 +51,7 @@ class OrderFilter(TypedDict):
 class Region(TypedDict):
     function: Literal["region"]
     params: Params
+    lists: Json
     default_vertex_location: str | None
     provider: str | None
     allowed_model_region: str

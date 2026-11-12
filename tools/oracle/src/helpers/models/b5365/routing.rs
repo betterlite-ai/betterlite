@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::deployment_filters::{OrderedDeployment, get_order_filtered_deployments};
-use betterlite_models::deployment_regions::{RegionParams, get_model_region, infer_model_region};
+use betterlite_models::deployment_regions::{
+    ProviderRegionLists, RegionParams, get_model_region, infer_model_region,
+};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -10,7 +12,6 @@ use betterlite_models::resolution::ResolutionContext;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::region_lists::{lists_answer, provider_lists};
 use crate::helpers::{HelperResult, OrHelperError as _};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -55,6 +56,7 @@ struct Params {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RegionCall {
     params: Params,
+    lists: ProviderRegionLists,
     default_vertex_location: Option<String>,
     provider: Option<String>,
     allowed_model_region: String,
@@ -96,8 +98,8 @@ pub(super) fn region(input: &RegionCall) -> HelperResult {
         policies: ProviderPolicies::default(),
         globals: GlobalCredentials::default(),
     };
-    let inferred = infer_model_region(&params, &context, &provider_lists(), default_vertex)
-        .or_value_error()?;
+    let inferred =
+        infer_model_region(&params, &context, &input.lists, default_vertex).or_value_error()?;
     let model_region = input
         .provider
         .as_deref()
@@ -105,7 +107,7 @@ pub(super) fn region(input: &RegionCall) -> HelperResult {
     // is_region_allowed is this one comparison, so the helper holds it where it is used
     let allowed = found.region_name.as_deref() == Some(input.allowed_model_region.as_str());
     Ok(json!({
-        "lists": lists_answer(),
+        "lists": input.lists,
         "model_region": model_region,
         "inferred": inferred.map(|region| region.to_string()),
         "allowed": allowed,

@@ -11,7 +11,6 @@ use registration::{Scenario, omits_token_price, register};
 use routing::{Deployment, RegionCall, order_filter, region};
 
 mod project;
-mod region_lists;
 mod registration;
 mod routing;
 
@@ -36,7 +35,7 @@ pub(crate) enum Input {
         deployments: Vec<Deployment>,
         target_order: Option<i64>,
     },
-    Region(RegionCall),
+    Region(Box<RegionCall>),
 }
 
 impl crate::helpers::Helper for Op {

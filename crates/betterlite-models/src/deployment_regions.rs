@@ -1,4 +1,5 @@
 use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
 
 use crate::resolution::{ResolutionContext, ResolutionRequest, resolve};
 use error::RegionError;
@@ -15,13 +16,13 @@ pub enum ModelRegion {
     Us,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RegionLists {
     pub eu: Vec<String>,
     pub us: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProviderRegionLists {
     pub azure: RegionLists,
     pub vertex_ai: RegionLists,

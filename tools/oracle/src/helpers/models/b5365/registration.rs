@@ -18,38 +18,21 @@ use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 const COST_FIELDS: [&str; 2] = ["input_cost_per_token", "output_cost_per_token"];
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Registration {
-    entries: ModelCostEntries,
-    persist_across_reloads: bool,
-    warning_display_name: Option<String>,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Scenario {
     model_cost: ModelCostEntries,
-    registrations: Vec<Registration>,
-    live: Vec<Registration>,
+    registrations: Vec<LiveRegistration>,
+    live: Vec<LiveRegistration>,
     refresh: Option<ModelCostEntries>,
     show: Vec<String>,
 }
 
-struct Replay {
-    registrations: Vec<Registration>,
-}
+struct Replay(Vec<LiveRegistration>);
 
 impl LiveDeploymentReplay for Replay {
     fn registrations(&self) -> Vec<LiveRegistration> {
-        self.registrations
-            .iter()
-            .map(|registration| LiveRegistration {
-                entries: registration.entries.clone(),
-                persist_across_reloads: registration.persist_across_reloads,
-                warning_display_name: registration.warning_display_name.clone(),
-            })
-            .collect()
+        self.0.clone()
     }
 }
 
@@ -135,7 +118,7 @@ pub(super) fn omits_token_price(model_cost: &ModelCostEntries, keys: &[String]) 
 
 async fn apply(
     registry: &mut ModelRegistry,
-    registration: &Registration,
+    registration: &LiveRegistration,
     environment: &Environment<'_>,
 ) -> Result<Vec<RegistrationWarning>, Box<HelperError>> {
     let options = RegisterOptions {
@@ -153,9 +136,7 @@ async fn apply(
 async fn run_scenario(
     scenario: &Scenario,
 ) -> Result<(ModelRegistry, Vec<RegistrationWarning>), Box<HelperError>> {
-    let replay = Replay {
-        registrations: scenario.live.clone(),
-    };
+    let replay = Replay(scenario.live.clone());
     let mut registry = registry_with(as_object(&scenario.model_cost), Some(Box::new(replay)));
     let generalizations = CatalogGeneralizations::default();
     let environment = RegistrationEnvironment {

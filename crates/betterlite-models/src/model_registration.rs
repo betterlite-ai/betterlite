@@ -2,6 +2,7 @@ use std::error::Error;
 use std::future::Future;
 
 use indexmap::IndexMap;
+use serde::Deserialize;
 
 use crate::catalog_generalizations::CatalogGeneralizations;
 use crate::decisions::Json;
@@ -36,7 +37,8 @@ pub struct RegisterOptions<'name> {
     pub warning_display_name: Option<&'name str>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LiveRegistration {
     pub entries: ModelCostEntries,
     pub persist_across_reloads: bool,
