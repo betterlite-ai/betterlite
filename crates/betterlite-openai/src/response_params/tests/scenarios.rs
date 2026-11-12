@@ -270,47 +270,54 @@ pub(super) fn reasoning_summary_without_effort() {
     check_table(&mut bundled, &SUMMARY_ROWS);
 }
 
+#[rustfmt::skip]
+const SUPPORTED_PARAMS: [&str; 34] = [
+    "input",
+    "model",
+    "extra_headers",
+    "extra_query",
+    "extra_body",
+    "timeout",
+    "include",
+    "instructions",
+    "max_output_tokens",
+    "metadata",
+    "parallel_tool_calls",
+    "previous_response_id",
+    "reasoning",
+    "store",
+    "background",
+    "stream",
+    "temperature",
+    "text",
+    "tool_choice",
+    "tools",
+    "top_p",
+    "truncation",
+    "user",
+    "service_tier",
+    "safety_identifier",
+    "prompt",
+    "max_tool_calls",
+    "prompt_cache_key",
+    "prompt_cache_retention",
+    "prompt_cache_options",
+    "stream_options",
+    "top_logprobs",
+    "partial_images",
+    "context_management",
+];
+
 pub(super) fn responses_parameter_set() {
-    let expected: BTreeSet<&str> = [
-        "input",
-        "model",
-        "extra_headers",
-        "extra_query",
-        "extra_body",
-        "timeout",
-        "include",
-        "instructions",
-        "max_output_tokens",
-        "metadata",
-        "parallel_tool_calls",
-        "previous_response_id",
-        "reasoning",
-        "store",
-        "background",
-        "stream",
-        "temperature",
-        "text",
-        "tool_choice",
-        "tools",
-        "top_p",
-        "truncation",
-        "user",
-        "service_tier",
-        "safety_identifier",
-        "prompt",
-        "max_tool_calls",
-        "prompt_cache_key",
-        "prompt_cache_retention",
-        "prompt_cache_options",
-        "stream_options",
-        "top_logprobs",
-        "partial_images",
-        "context_management",
-    ]
-    .into_iter()
-    .collect();
+    let expected: BTreeSet<&str> = SUPPORTED_PARAMS.into_iter().collect();
     assert_eq!(supported_openai_params(), expected);
     assert_eq!(supported_openai_params().len(), 34_usize);
+    let unmodelled = json(r#"{"some_future_param": {"a": 1}}"#);
+    assert_mapped(
+        &mut BundledReasoningModels::default(),
+        Probe::new(json("{}"), options("gpt-4o", &unmodelled)),
+        &unmodelled,
+    );
 }
 
 pub(super) fn provider_capability_flags() {
