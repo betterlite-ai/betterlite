@@ -47,39 +47,49 @@ pub fn is_web_search_tool_call(tool: &IndexMap<String, Json>) -> bool {
 pub fn get_web_search_options(
     kwargs: &IndexMap<String, Json>,
 ) -> Result<Option<WebSearchOptions>, ToolSignalError> {
-    let explicit = match kwargs.get("web_search_options") {
-        Some(Json::Object(fields)) => Some(fields),
-        Some(_) => return Err(ToolSignalError::OptionsNotMapping),
-        None => first_matching_tool(kwargs, "web_search_preview", is_web_search_tool_call)?,
-    };
-    Ok(explicit.map(|fields| WebSearchOptions {
-        fields: fields.clone(),
-    }))
+    if let Some(explicit) = kwargs.get("web_search_options") {
+        let Json::Object(fields) = explicit else {
+            return Err(ToolSignalError::OptionsNotMapping);
+        };
+        return Ok(Some(WebSearchOptions {
+            fields: fields.clone(),
+        }));
+    }
+    let found = first_matching_tool(kwargs, "web_search_preview", is_web_search_tool_call)?;
+    Ok(found.map(|fields| WebSearchOptions { fields }))
 }
 
 pub fn get_file_search_tool_call(
     kwargs: &IndexMap<String, Json>,
 ) -> Result<Option<FileSearchTool>, ToolSignalError> {
-    Ok(first_matching_tool(kwargs, "file_search", |tool| {
-        tool_type(tool) == Some("file_search")
-    })?
-    .cloned()
-    .map(|fields| FileSearchTool { fields }))
+    let Some(tools) = tools_from_kwargs(kwargs, "file_search") else {
+        return Ok(None);
+    };
+    for tool in tool_candidates(tools)? {
+        if let Json::Object(fields) = tool
+            && tool_type(fields) == Some("file_search")
+        {
+            return Ok(Some(FileSearchTool {
+                fields: fields.clone(),
+            }));
+        }
+    }
+    Ok(None)
 }
 
-fn first_matching_tool<'kwargs>(
-    kwargs: &'kwargs IndexMap<String, Json>,
-    tool_type: &str,
+fn first_matching_tool(
+    kwargs: &IndexMap<String, Json>,
+    kind: &str,
     matches: fn(&IndexMap<String, Json>) -> bool,
-) -> Result<Option<&'kwargs IndexMap<String, Json>>, ToolSignalError> {
-    let Some(tools) = tools_from_kwargs(kwargs, tool_type) else {
+) -> Result<Option<IndexMap<String, Json>>, ToolSignalError> {
+    let Some(tools) = tools_from_kwargs(kwargs, kind) else {
         return Ok(None);
     };
     for tool in tool_candidates(tools)? {
         if let Json::Object(fields) = tool
             && matches(fields)
         {
-            return Ok(Some(fields));
+            return Ok(Some(fields.clone()));
         }
     }
     Ok(None)
