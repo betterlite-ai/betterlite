@@ -173,11 +173,11 @@ async fn callback_logger_queues_model_events() {
     assert_eq!(queued.entries.len(), 2);
     assert_eq!(
         queued.entries[0].s3_object_key,
-        "2026-01-02/time-23-31-30-000000_s3-model-event.json"
+        "2009-02-13/time-23-31-30-000000_s3-model-event.json"
     );
     assert_eq!(
         queued.entries[0].s3_object_download_filename,
-        "time-2026-01-02T23-31-30-000000_s3-model-event.json"
+        "time-2009-02-13T23-31-30-000000_s3-model-event.json"
     );
     assert_eq!(queued.entries[0].retrying_since, None);
     assert!(client.requests().is_empty());

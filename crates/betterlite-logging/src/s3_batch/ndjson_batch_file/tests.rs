@@ -45,10 +45,10 @@ fn groups_by_parent() {
     assert!(files[0].s3_object_key.contains("/batch_03-04-05_"));
     assert_eq!(files[0].s3_object_key.rsplit('.').next(), Some("jsonl"));
     assert_eq!(files[0].body.as_deref(), Some("{\"a\":1}\n{\"b\":2}"));
-    assert_eq!(
-        files[0].s3_object_download_filename,
-        "batch_03-04-05_id0.jsonl"
-    );
+    let name = &files[0].s3_object_download_filename;
+    assert!(name.starts_with("batch_03-04-05_") && name.rsplit('.').next() == Some("jsonl"));
+    assert_eq!(name.len(), "batch_03-04-05_".len() + 32 + ".jsonl".len());
+    assert_eq!(files[0].s3_object_key, format!("logs/2026-01-02/{name}"));
     assert_eq!(files[0].content_type, ContentType::Ndjson);
     assert_eq!(files[0].payload, payload("{}"));
 }

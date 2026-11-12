@@ -10,13 +10,15 @@ use std::time::{Duration, SystemTime};
 use crate::s3_batch::Element;
 use crate::s3_batch::S3BatchUploadError;
 use crate::s3_batch::flush::{
-    FlushContext, FlushError, FlushSettings, UploadOperation, send_batch,
+    FlushContext, FlushError, FlushSettings, MonotonicClock as _, SystemMonotonic, UploadOperation,
+    send_batch,
 };
 use crate::s3_batch::queue::{BatchQueue, QueueState};
 use crate::s3_transport::batch_element::ContentType;
 use crate::s3_transport::signing::Clock;
 use crate::s3_transport::transport::UploadOutcome;
 use betterlite_models::decisions::Json;
+use tokio::time::sleep;
 
 #[derive(Debug, Default)]
 struct ScriptedUpload<'queue> {
@@ -368,6 +370,50 @@ async fn preserve_events_added_during_flush() {
         .expect_err("both uploads survive");
     assert_eq!(keys(&queue), vec!["c", "d", "late"]);
     assert_eq!(queue.snapshot().requeued_count, 2);
+}
+
+#[tokio::test]
+async fn retry_age_limit_is_exclusive() {
+    let queue = queue(10);
+    queue.enqueue(element("delivered", "delivered"));
+    queue.enqueue(element_since("edge", "edge", Some(100.0_f64)));
+    let settings = settings(Some(Duration::from_secs(100)), 10);
+    let upload = ScriptedUpload::with(&[UploadOutcome::Delivered, UploadOutcome::Retry]);
+    run(&queue, &settings, 200.0_f64, &upload)
+        .await
+        .expect_err("the element at the age limit survives");
+    assert_eq!(keys(&queue), vec!["edge"]);
+    assert_eq!(queue.snapshot().entries[0].retrying_since, Some(100.0_f64));
+
+    let aged = self::queue(10);
+    aged.enqueue(element("delivered", "delivered"));
+    aged.enqueue(element_since("over", "over", Some(99.0_f64)));
+    let late = ScriptedUpload::with(&[UploadOutcome::Delivered, UploadOutcome::Retry]);
+    run(&aged, &settings, 200.0_f64, &late)
+        .await
+        .expect("the element past the age limit is dropped, so nothing survives");
+}
+
+#[tokio::test]
+async fn retrying_since_stays_unset_without_a_retry_age() {
+    let queue = queue(10);
+    queue.enqueue(element("delivered", "delivered"));
+    queue.enqueue(element("fresh", "fresh"));
+    let settings = settings(None, 10);
+    let upload = ScriptedUpload::with(&[UploadOutcome::Delivered, UploadOutcome::Retry]);
+    run(&queue, &settings, 500.0_f64, &upload)
+        .await
+        .expect_err("one upload survives");
+    assert_eq!(queue.snapshot().entries[0].retrying_since, None);
+}
+
+#[tokio::test]
+async fn monotonic_seconds_start_near_zero_and_advance() {
+    let clock = SystemMonotonic::default();
+    let first = clock.seconds();
+    assert!((0.0_f64..1.0_f64).contains(&first));
+    sleep(Duration::from_millis(5)).await;
+    assert!(clock.seconds() > first);
 }
 
 #[test]

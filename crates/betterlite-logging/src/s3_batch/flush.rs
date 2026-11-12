@@ -10,6 +10,7 @@ use crate::s3_transport::transport::UploadOutcome;
 use futures_util::future::join_all;
 use std::fmt::Debug;
 use std::future::Future;
+use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 pub trait MonotonicClock: Send + Sync + Debug {
@@ -136,18 +137,18 @@ fn reconcile(
         .map(|(element, outcome)| (element, *outcome))
         .collect();
     let requeued = survivors(context, &failed, bucket_wide);
-    let dropped = failed.len().saturating_sub(requeued.len());
-    if dropped > 0 {
-        tracing::warn!(dropped, max_retry_age = ?context.settings.max_retry_age, "s3 logging: uploads dropped (terminal, stale or over the retry age)");
+    if let Some(dropped) = NonZeroUsize::new(failed.len().saturating_sub(requeued.len())) {
+        tracing::warn!(dropped = dropped.get(), max_retry_age = ?context.settings.max_retry_age, "s3 logging: uploads dropped (terminal, stale or over the retry age)");
     }
     if requeued.is_empty() {
         return Ok(());
     }
-    let trimmed = context.queue.restore_after_failure(batch_len, requeued);
-    if trimmed > 0 {
+    if let Some(trimmed) =
+        NonZeroUsize::new(context.queue.restore_after_failure(batch_len, requeued))
+    {
         tracing::warn!(
             max_queue_size = context.settings.max_queue_size,
-            dropped = trimmed,
+            dropped = trimmed.get(),
             "s3 logging: queue exceeded max_queue_size; dropped the oldest events"
         );
     }
