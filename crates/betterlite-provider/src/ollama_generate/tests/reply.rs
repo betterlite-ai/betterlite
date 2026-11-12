@@ -201,6 +201,16 @@ async fn a_null_count_is_a_reply_field_error(#[case] body: &str) {
     assert_eq!(error.status(), None);
 }
 
+#[rstest]
+#[case::empty_list(r#"{"response":"hello","message":[]}"#)]
+#[case::list_with_content(r#"{"response":"hello","message":["abcd"]}"#)]
+#[case::list_with_eval_count(r#"{"response":"hello","eval_count":4,"message":[]}"#)]
+#[tokio::test]
+async fn a_non_object_message_is_a_reply_field_error(#[case] body: &str) {
+    let error = failed(body, &request_data(r#"{"prompt":"a b"}"#)).await;
+    assert_eq!(error.status(), None);
+}
+
 #[tokio::test]
 async fn a_counter_without_an_answer_counts_zero() {
     let response = transform(

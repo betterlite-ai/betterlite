@@ -107,9 +107,9 @@ impl TryFrom<&[u8]> for GenerateReply {
         let value: Json =
             serde_json::from_slice(bytes).map_err(|source| OllamaError::Shape { source })?;
         match value.as_object().map(|fields| fields.get("message")) {
-            Some(Some(Json::Null)) => return Err(OllamaError::ReplyField { field: "message" }),
+            Some(Some(Json::Object(_)) | None) => {}
+            Some(_) => return Err(OllamaError::ReplyField { field: "message" }),
             None => return Err(OllamaError::ReplyField { field: "body" }),
-            _ => {}
         }
         serde_json::from_slice(bytes).map_err(|source| OllamaError::Shape { source })
     }
