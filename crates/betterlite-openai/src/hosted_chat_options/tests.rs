@@ -304,6 +304,11 @@ fn featherless_rejects_tool_options_unless_dropping(#[case] requested: &str, #[c
         }
     );
     assert_eq!(error.status_code(), Some(400));
+    assert!(
+        error
+            .to_string()
+            .ends_with(&format!("the {name} parameter"))
+    );
 }
 
 #[rstest]
