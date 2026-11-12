@@ -85,7 +85,7 @@ fn error_chunk(error: &Json) -> Result<CometApiError, CometApiError> {
         return Err(shape("error"));
     };
     let message = match fields.get("message") {
-        None => String::from(UNKNOWN_ERROR),
+        None | Some(Json::Null) => String::from(UNKNOWN_ERROR),
         Some(Json::Text(text)) => text.clone(),
         Some(_) => return Err(shape("error.message")),
     };

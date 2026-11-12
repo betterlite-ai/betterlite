@@ -29,10 +29,11 @@ pub fn complete_url(api_base: Option<&str>) -> String {
         return base.to_owned();
     }
     // LiteLLM looks for /v1 after the first // of the base, so /v10 or a query value counts as versioned
-    if base
-        .split_once("//")
-        .map_or(base, |(_, rest)| rest)
-        .contains("/v1")
+    if base.ends_with("/v1")
+        || base
+            .split_once("//")
+            .map_or(base, |(_, rest)| rest)
+            .contains("/v1")
     {
         format!("{base}/{CHAT_ENDPOINT}")
     } else {

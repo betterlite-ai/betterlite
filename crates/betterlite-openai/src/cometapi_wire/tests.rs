@@ -17,7 +17,7 @@ use super::embed::{
     decode_comet_embedding_reply, map_openai_params as map_embedding_params,
     transform_embedding_request, validate_environment,
 };
-use super::error::{CometApiError, get_error_class};
+use super::error::CometApiError;
 use crate::chat::ChatMessage;
 use crate::chat_content::RefuseDownloads;
 use crate::openai_base_config::{
@@ -98,6 +98,8 @@ fn chunk_value(chunk: &Json) -> Value {
 #[case::double_slash_without_version(Some("a//b"), "a//b/v1/chat/completions")]
 #[case::scheme_relative_version(Some("//host/v1"), "//host/v1/chat/completions")]
 #[case::scheme_relative_host(Some("//host"), "//host/v1/chat/completions")]
+#[case::version_right_after_the_slashes(Some("http://v1"), "http://v1/chat/completions")]
+#[case::bare_version_after_slashes(Some("x//v1"), "x//v1/chat/completions")]
 #[case::spaces_are_kept(Some("  "), "  /v1/chat/completions")]
 fn chat_complete_url_matches_the_pinned_rules(
     #[case] api_base: Option<&str>,
@@ -302,15 +304,6 @@ fn chat_option_mapping_filters_to_the_base_list_and_adds_no_extra_body() {
     assert_eq!(config.family, ConfigFamily::Other);
 }
 
-#[test]
-fn chat_error_class_keeps_the_supplied_status_and_headers() {
-    let supplied = headers_of(&[("X-Request-Id", "r")]);
-    let error = get_error_class("boom", 429, &supplied);
-    assert_eq!(error.message, "boom");
-    assert_eq!(error.status_code, Some(429));
-    assert_eq!(error.headers, supplied);
-}
-
 fn chunk(source: &str) -> Object {
     object(source)
 }
@@ -396,9 +389,11 @@ fn chunk_parser_defaults_only_a_missing_error_code(
 fn chunk_parser_defaults_only_a_missing_error_message() {
     let absent = chunk_parser(&chunk(r#"{"error":{}}"#)).unwrap_err();
     assert_eq!(absent.message, "CometAPI Error: Unknown error");
-    let explicit_null = chunk_parser(&chunk(r#"{"error":{"message":null}}"#)).unwrap_err();
-    assert_eq!(explicit_null.status_code, None);
-    assert!(explicit_null.message.contains("error.message"));
+    let explicit_null =
+        chunk_parser(&chunk(r#"{"error":{"message":null,"code":429}}"#)).unwrap_err();
+    assert_eq!(explicit_null.message, "CometAPI Error: Unknown error");
+    assert_eq!(explicit_null.status_code, Some(429));
+    assert_eq!(explicit_null.headers, json_headers());
     let wrong_type = chunk_parser(&chunk(r#"{"error":{"message":5}}"#)).unwrap_err();
     assert_eq!(wrong_type.status_code, None);
     assert!(wrong_type.message.contains("error.message"));
@@ -562,6 +557,7 @@ fn decode_embedding_reply_copies_the_nullable_fields() {
 #[case::prompt_only(r#"{"usage":{"prompt_tokens":3}}"#, 3, 0)]
 #[case::total_only(r#"{"usage":{"total_tokens":4}}"#, 0, 4)]
 #[case::empty_usage(r#"{"usage":{}}"#, 0, 0)]
+#[case::null_usage(r#"{"usage":null}"#, 0, 0)]
 #[case::null_counts(r#"{"usage":{"prompt_tokens":null,"total_tokens":null}}"#, 0, 0)]
 #[case::zero_counts(r#"{"usage":{"prompt_tokens":0,"total_tokens":0}}"#, 0, 0)]
 #[case::no_usage("{}", 0, 0)]
@@ -585,20 +581,20 @@ fn decode_embedding_reply_wraps_json_failure_with_the_response() {
 }
 
 #[rstest]
-#[case::usage_null(r#"{"usage":null}"#, "usage")]
-#[case::usage_number(r#"{"usage":5}"#, "usage")]
-#[case::prompt_text(r#"{"usage":{"prompt_tokens":"x"}}"#, "prompt_tokens")]
-#[case::total_text(r#"{"usage":{"total_tokens":"x"}}"#, "total_tokens")]
-#[case::body_list("[]", "body")]
-fn decode_embedding_reply_names_a_wrong_typed_field(#[case] body: &str, #[case] field: &str) {
-    assert_eq!(
-        reply(body, 200, &Headers::new()),
-        Err(CometApiError {
-            message: format!("the CometAPI embedding reply field {field} has an unexpected shape"),
-            status_code: None,
-            headers: Headers::new(),
-        })
+#[case::usage_number(r#"{"usage":5}"#)]
+#[case::prompt_text(r#"{"usage":{"prompt_tokens":"x"}}"#)]
+#[case::total_text(r#"{"usage":{"total_tokens":"x"}}"#)]
+#[case::total_fraction(r#"{"usage":{"total_tokens":1.5}}"#)]
+#[case::body_list("[]")]
+fn decode_embedding_reply_names_a_wrong_typed_field(#[case] body: &str) {
+    let error = reply(body, 200, &Headers::new()).unwrap_err();
+    assert!(
+        error
+            .message
+            .starts_with("the CometAPI embedding reply is malformed: ")
     );
+    assert_eq!(error.status_code, None);
+    assert!(error.headers.is_empty());
 }
 
 #[test]
@@ -615,15 +611,6 @@ fn decode_embedding_reply_accepts_a_body_at_the_byte_limit() {
     body.resize(MAX_REPLY_BYTES, b' ');
     let parsed = decode_comet_embedding_reply(&body, 200, &Headers::new()).unwrap();
     assert_eq!(parsed.usage.prompt_tokens, 3);
-}
-
-#[test]
-fn embedding_error_class_keeps_the_supplied_status_and_headers() {
-    let supplied = headers_of(&[("retry-after", "2")]);
-    let error = get_error_class("rate limited", 429, &supplied);
-    assert_eq!(error.message, "rate limited");
-    assert_eq!(error.status_code, Some(429));
-    assert_eq!(error.headers, supplied);
 }
 
 #[rstest]

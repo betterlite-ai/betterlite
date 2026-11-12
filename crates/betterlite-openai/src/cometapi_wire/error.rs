@@ -8,12 +8,3 @@ pub struct CometApiError {
     pub status_code: Option<u16>,
     pub headers: Headers,
 }
-// both get_error_class methods build the native error from the status and headers they are given
-#[must_use]
-pub fn get_error_class(message: &str, status_code: u16, headers: &Headers) -> CometApiError {
-    CometApiError {
-        message: message.to_owned(),
-        status_code: Some(status_code),
-        headers: headers.clone(),
-    }
-}

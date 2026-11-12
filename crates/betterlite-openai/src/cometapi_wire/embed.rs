@@ -5,7 +5,8 @@ use betterlite_config::sections::cometapi_embedding_credentials::Settings;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::error::Category;
 use std::str;
 pub const MAX_REPLY_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -68,6 +69,27 @@ pub fn transform_embedding_request(model: &str, input: &Json, optional_params: &
     body.extend(optional_params.clone());
     body
 }
+// the three passthrough fields and the counters are read as a typed record, where an absent or null part takes its default
+#[derive(Debug, Deserialize)]
+struct WireReply {
+    #[serde(default)]
+    model: Option<Json>,
+    #[serde(default)]
+    data: Option<Json>,
+    #[serde(default)]
+    object: Option<Json>,
+    #[serde(default)]
+    usage: Option<WireUsage>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct WireUsage {
+    #[serde(default)]
+    prompt_tokens: Option<i64>,
+    #[serde(default)]
+    total_tokens: Option<i64>,
+}
+
 // model, data and object are copied with a nullable get; a missing usage contributes zero counters
 pub fn decode_comet_embedding_reply(
     body: &[u8],
@@ -84,56 +106,31 @@ pub fn decode_comet_embedding_reply(
             headers: Headers::new(),
         });
     }
-    let parsed = serde_json::from_slice::<Json>(body).map_err(|_source| CometApiError {
-        message: str::from_utf8(body).map_or_else(
-            |_not_utf8| String::from("the CometAPI embedding reply is not valid JSON"),
-            str::to_owned,
-        ),
-        status_code: Some(status),
-        headers: headers.clone(),
+    let reply = serde_json::from_slice::<WireReply>(body).map_err(|source| {
+        if source.classify() == Category::Data {
+            return CometApiError {
+                message: format!("the CometAPI embedding reply is malformed: {source}"),
+                status_code: None,
+                headers: Headers::new(),
+            };
+        }
+        CometApiError {
+            message: str::from_utf8(body).map_or_else(
+                |_not_utf8| String::from("the CometAPI embedding reply is not valid JSON"),
+                str::to_owned,
+            ),
+            status_code: Some(status),
+            headers: headers.clone(),
+        }
     })?;
-    let Json::Object(fields) = parsed else {
-        return Err(shape("body"));
-    };
+    let usage = reply.usage.unwrap_or_default();
     Ok(CometEmbeddingReply {
-        model: nullable(&fields, "model"),
-        data: nullable(&fields, "data"),
-        object: nullable(&fields, "object"),
-        usage: usage_of(&fields)?,
+        model: reply.model,
+        data: reply.data,
+        object: reply.object,
+        usage: CometEmbeddingUsage {
+            prompt_tokens: usage.prompt_tokens.unwrap_or_default(),
+            total_tokens: usage.total_tokens.unwrap_or_default(),
+        },
     })
-}
-fn nullable(fields: &Object, name: &str) -> Option<Json> {
-    match fields.get(name) {
-        None | Some(Json::Null) => None,
-        Some(value) => Some(value.clone()),
-    }
-}
-fn usage_of(fields: &Object) -> Result<CometEmbeddingUsage, CometApiError> {
-    let Some(usage) = fields.get("usage") else {
-        return Ok(CometEmbeddingUsage {
-            prompt_tokens: 0,
-            total_tokens: 0,
-        });
-    };
-    let Json::Object(usage_fields) = usage else {
-        return Err(shape("usage"));
-    };
-    Ok(CometEmbeddingUsage {
-        prompt_tokens: counter(usage_fields, "prompt_tokens")?,
-        total_tokens: counter(usage_fields, "total_tokens")?,
-    })
-}
-fn counter(usage: &Object, name: &'static str) -> Result<i64, CometApiError> {
-    match usage.get(name) {
-        None | Some(Json::Null) => Ok(0),
-        Some(Json::Number(number)) => number.as_i64().ok_or_else(|| shape(name)),
-        Some(_) => Err(shape(name)),
-    }
-}
-fn shape(field: &'static str) -> CometApiError {
-    CometApiError {
-        message: format!("the CometAPI embedding reply field {field} has an unexpected shape"),
-        status_code: None,
-        headers: Headers::new(),
-    }
 }
