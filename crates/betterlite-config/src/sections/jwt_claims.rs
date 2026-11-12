@@ -76,110 +76,42 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let mut configured = self.general_settings.litellm_jwtauth;
-        let teams = TeamFields::resolve(&mut configured, lookup)?;
-        let orgs = OrgFields::resolve(&mut configured, lookup)?;
-        let identity = IdentityFields::resolve(&mut configured, lookup)?;
+        let configured = self.general_settings.litellm_jwtauth;
         Ok(Settings {
-            team_id_jwt_field: teams.id,
-            team_ids_jwt_field: teams.ids,
-            team_id_default: teams.default_id,
-            team_alias_jwt_field: teams.alias,
-            org_id_jwt_field: orgs.id,
-            org_alias_jwt_field: orgs.alias,
-            user_id_jwt_field: identity.user_id,
-            user_email_jwt_field: identity.user_email,
-            user_allowed_email_domain: identity.allowed_email_domain,
-            user_id_upsert: identity.upsert,
-            end_user_id_jwt_field: identity.end_user_id,
-            agent_id_jwt_field: identity.agent_id,
-            object_id_jwt_field: identity.object_id,
-        })
-    }
-}
-
-struct TeamFields {
-    id: Option<String>,
-    ids: Option<String>,
-    default_id: Option<String>,
-    alias: Option<String>,
-}
-
-impl TeamFields {
-    fn resolve<L>(raw: &mut RawJwtAuth, lookup: &L) -> Result<Self, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        Ok(Self {
-            id: text_setting(raw.team_id_jwt_field.take(), "team_id_jwt_field", lookup)?,
-            ids: text_setting(raw.team_ids_jwt_field.take(), "team_ids_jwt_field", lookup)?,
-            default_id: text_setting(raw.team_id_default.take(), "team_id_default", lookup)?,
-            alias: text_setting(
-                raw.team_alias_jwt_field.take(),
+            team_id_jwt_field: text(configured.team_id_jwt_field, "team_id_jwt_field", lookup)?,
+            team_ids_jwt_field: text(configured.team_ids_jwt_field, "team_ids_jwt_field", lookup)?,
+            team_id_default: text(configured.team_id_default, "team_id_default", lookup)?,
+            team_alias_jwt_field: text(
+                configured.team_alias_jwt_field,
                 "team_alias_jwt_field",
                 lookup,
             )?,
-        })
-    }
-}
-
-struct OrgFields {
-    id: Option<String>,
-    alias: Option<String>,
-}
-
-impl OrgFields {
-    fn resolve<L>(raw: &mut RawJwtAuth, lookup: &L) -> Result<Self, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        Ok(Self {
-            id: text_setting(raw.org_id_jwt_field.take(), "org_id_jwt_field", lookup)?,
-            alias: text_setting(
-                raw.org_alias_jwt_field.take(),
+            org_id_jwt_field: text(configured.org_id_jwt_field, "org_id_jwt_field", lookup)?,
+            org_alias_jwt_field: text(
+                configured.org_alias_jwt_field,
                 "org_alias_jwt_field",
                 lookup,
             )?,
-        })
-    }
-}
-
-struct IdentityFields {
-    user_id: Option<String>,
-    user_email: Option<String>,
-    allowed_email_domain: Option<String>,
-    upsert: bool,
-    end_user_id: Option<String>,
-    agent_id: Option<String>,
-    object_id: Option<String>,
-}
-
-impl IdentityFields {
-    fn resolve<L>(raw: &mut RawJwtAuth, lookup: &L) -> Result<Self, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        Ok(Self {
-            user_id: text_setting(raw.user_id_jwt_field.take(), "user_id_jwt_field", lookup)?,
-            user_email: text_setting(
-                raw.user_email_jwt_field.take(),
+            user_id_jwt_field: text(configured.user_id_jwt_field, "user_id_jwt_field", lookup)?,
+            user_email_jwt_field: text(
+                configured.user_email_jwt_field,
                 "user_email_jwt_field",
                 lookup,
             )?,
-            allowed_email_domain: text_setting(
-                raw.user_allowed_email_domain.take(),
+            user_allowed_email_domain: text(
+                configured.user_allowed_email_domain,
                 "user_allowed_email_domain",
                 lookup,
             )?,
-            upsert: flag_setting(raw.user_id_upsert.take(), "user_id_upsert", lookup)?,
-            end_user_id: text_setting(
-                raw.end_user_id_jwt_field.take(),
+            user_id_upsert: flag(configured.user_id_upsert, "user_id_upsert", lookup)?,
+            end_user_id_jwt_field: text(
+                configured.end_user_id_jwt_field,
                 "end_user_id_jwt_field",
                 lookup,
             )?,
-            agent_id: text_setting(raw.agent_id_jwt_field.take(), "agent_id_jwt_field", lookup)?,
-            object_id: text_setting(
-                raw.object_id_jwt_field.take(),
+            agent_id_jwt_field: text(configured.agent_id_jwt_field, "agent_id_jwt_field", lookup)?,
+            object_id_jwt_field: text(
+                configured.object_id_jwt_field,
                 "object_id_jwt_field",
                 lookup,
             )?,
@@ -188,66 +120,65 @@ impl IdentityFields {
 }
 
 // an os.environ/ reference resolves through the supplied environment, and an empty variable counts as unset
-fn text_setting<L>(
-    raw: Option<RawText>,
-    field: &str,
-    lookup: &L,
-) -> Result<Option<String>, ConfigError>
+fn text<L>(raw: Option<RawText>, field: &str, lookup: &L) -> Result<Option<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let Some(configured) = raw else {
         return Ok(None);
     };
-    let RawText::Text(text) = configured else {
-        return Err(ConfigError::InvalidScalar {
-            path: format!("{PREFIX}.{field}"),
-            value: false,
-        });
+    let RawText::Text(value) = configured else {
+        return Err(invalid_scalar(field));
     };
-    let Some(variable) = text.strip_prefix("os.environ/") else {
-        return Ok(Some(text));
+    let Some(name) = value.strip_prefix("os.environ/") else {
+        return Ok(Some(value));
     };
-    let Some(value) = lookup.lookup(variable) else {
-        return Err(ConfigError::MissingEnvironment {
-            variable: variable.to_owned(),
-            path: format!("{PREFIX}.{field}"),
-        });
-    };
-    if value.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(value))
+    let resolved = lookup
+        .lookup(name)
+        .ok_or_else(|| missing_env(name, field))?;
+    Ok((!resolved.is_empty()).then_some(resolved))
 }
 
 // a flag is a YAML bool or an os.environ/ reference read by the shared parser; anything else is a load error
-fn flag_setting<L>(raw: Option<RawFlag>, field: &str, lookup: &L) -> Result<bool, ConfigError>
+fn flag<L>(raw: Option<RawFlag>, field: &str, lookup: &L) -> Result<bool, ConfigError>
 where
     L: EnvironmentLookup,
 {
     let Some(configured) = raw else {
         return Ok(false);
     };
-    match configured {
-        RawFlag::Bool(flag) => Ok(flag),
-        RawFlag::Text(text) => {
-            let Some(variable) = text.strip_prefix("os.environ/") else {
-                return Err(ConfigError::InvalidScalar {
-                    path: format!("{PREFIX}.{field}"),
-                    value: false,
-                });
-            };
-            let Some(value) = lookup.lookup(variable) else {
-                return Err(ConfigError::MissingEnvironment {
-                    variable: variable.to_owned(),
-                    path: format!("{PREFIX}.{field}"),
-                });
-            };
-            Ok(betterlite_env::flag(variable, &value)?.unwrap_or(false))
-        }
-        RawFlag::Other(_) => Err(ConfigError::InvalidScalar {
-            path: format!("{PREFIX}.{field}"),
-            value: false,
-        }),
+    if let RawFlag::Bool(value) = configured {
+        return Ok(value);
+    }
+    let RawFlag::Text(reference) = configured else {
+        return Err(invalid_scalar(field));
+    };
+    let Some(name) = reference.strip_prefix("os.environ/") else {
+        return Err(invalid_scalar(field));
+    };
+    environment_flag(name, field, lookup)
+}
+
+fn environment_flag<L>(name: &str, field: &str, lookup: &L) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let value = lookup
+        .lookup(name)
+        .ok_or_else(|| missing_env(name, field))?;
+    Ok(betterlite_env::flag(name, &value)?.unwrap_or(false))
+}
+
+fn missing_env(name: &str, field: &str) -> ConfigError {
+    ConfigError::MissingEnvironment {
+        variable: name.to_owned(),
+        path: format!("{PREFIX}.{field}"),
+    }
+}
+
+fn invalid_scalar(field: &str) -> ConfigError {
+    ConfigError::InvalidScalar {
+        path: format!("{PREFIX}.{field}"),
+        value: false,
     }
 }

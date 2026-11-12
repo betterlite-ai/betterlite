@@ -1,5 +1,7 @@
 use super::TypedValue;
-use super::claims::{ClaimError, JwtClaims, list_first, text_list, text_value};
+use super::claims::{
+    ClaimError, JwtClaims, WhenUnset, field_value, list_first, text_list, text_value,
+};
 use super::trust::TrustClaims as _;
 
 const TEAM_ID_CLAIM: &str = "_litellm_team_id";
@@ -82,10 +84,8 @@ impl TeamClaims for JwtClaims<'_> {
     }
 
     fn team_alias(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        let Some(field) = self.settings.team_alias_jwt_field.as_deref() else {
-            return Ok(None);
-        };
-        self.nested_text(field, default)
+        let field = self.settings.team_alias_jwt_field.as_deref();
+        field_value(self, field, default, WhenUnset::Absent)
     }
 }
 

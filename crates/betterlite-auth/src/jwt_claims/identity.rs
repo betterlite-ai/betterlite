@@ -1,5 +1,4 @@
-use super::claims::{ClaimError, JwtClaims, text_value};
-use super::trust::TrustClaims as _;
+use super::claims::{ClaimError, JwtClaims, WhenUnset, field_value, marker_claim, text_value};
 
 const USER_ID_CLAIM: &str = "_litellm_user_id";
 const USER_EMAIL_CLAIM: &str = "_litellm_user_email";
@@ -17,49 +16,32 @@ pub trait IdentityClaims {
 
 impl IdentityClaims for JwtClaims<'_> {
     fn user_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        if self.has_trusted_claim(USER_ID_CLAIM) {
-            let Some(value) = self.nested(USER_ID_CLAIM)? else {
-                return Ok(None);
-            };
+        if let Some(value) = marker_claim(self, USER_ID_CLAIM)? {
             return text_value(value, USER_ID_CLAIM);
         }
-        let Some(field) = self.settings.user_id_jwt_field.as_deref() else {
-            return Ok(default.map(str::to_owned));
-        };
-        self.nested_text(field, default)
+        let field = self.settings.user_id_jwt_field.as_deref();
+        field_value(self, field, default, WhenUnset::UseDefault)
     }
 
     fn user_email(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        if self.has_trusted_claim(USER_EMAIL_CLAIM) {
-            let Some(value) = self.nested(USER_EMAIL_CLAIM)? else {
-                return Ok(None);
-            };
+        if let Some(value) = marker_claim(self, USER_EMAIL_CLAIM)? {
             return text_value(value, USER_EMAIL_CLAIM);
         }
-        let Some(field) = self.settings.user_email_jwt_field.as_deref() else {
-            return Ok(None);
-        };
-        self.nested_text(field, default)
+        let field = self.settings.user_email_jwt_field.as_deref();
+        field_value(self, field, default, WhenUnset::Absent)
     }
 
     fn end_user_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        if self.has_trusted_claim(END_USER_ID_CLAIM) {
-            let Some(value) = self.nested(END_USER_ID_CLAIM)? else {
-                return Ok(None);
-            };
+        if let Some(value) = marker_claim(self, END_USER_ID_CLAIM)? {
             return text_value(value, END_USER_ID_CLAIM);
         }
-        let Some(field) = self.settings.end_user_id_jwt_field.as_deref() else {
-            return Ok(None);
-        };
-        self.nested_text(field, default)
+        let field = self.settings.end_user_id_jwt_field.as_deref();
+        field_value(self, field, default, WhenUnset::Absent)
     }
 
     fn object_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        let Some(field) = self.settings.object_id_jwt_field.as_deref() else {
-            return Ok(default.map(str::to_owned));
-        };
-        self.nested_text(field, default)
+        let field = self.settings.object_id_jwt_field.as_deref();
+        field_value(self, field, default, WhenUnset::UseDefault)
     }
 
     fn agent_claim(&self) -> Result<Option<String>, ClaimError> {

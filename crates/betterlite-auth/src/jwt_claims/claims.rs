@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use super::TypedValue;
 use super::settings::JwtAuthSettings;
+use super::trust::TrustClaims as _;
 
 const CLAIM_PATH_LIMITS: PathLimits = PathLimits {
     max_path_bytes: 8192,
@@ -70,6 +71,44 @@ impl JwtClaims<'_> {
         };
         found.map_or(Ok(None), |value| text_value(value, path))
     }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum WhenUnset {
+    UseDefault,
+    Absent,
+}
+
+impl WhenUnset {
+    pub(super) fn resolve(self, default: Option<&str>) -> Option<String> {
+        match self {
+            Self::UseDefault => default.map(str::to_owned),
+            Self::Absent => None,
+        }
+    }
+}
+
+// the issuer-normalized claim for a trusted issuer, present even when its value is null
+pub(super) fn marker_claim(
+    claims: &JwtClaims<'_>,
+    marker: &str,
+) -> Result<Option<TypedValue>, ClaimError> {
+    if claims.has_trusted_claim(marker) {
+        return claims.nested(marker);
+    }
+    Ok(None)
+}
+
+pub(super) fn field_value(
+    claims: &JwtClaims<'_>,
+    field: Option<&str>,
+    default: Option<&str>,
+    unset: WhenUnset,
+) -> Result<Option<String>, ClaimError> {
+    field.map_or_else(
+        || Ok(unset.resolve(default)),
+        |path| claims.nested_text(path, default),
+    )
 }
 
 pub(super) fn list_first(value: &TypedValue, claim: &str) -> Result<Option<String>, ClaimError> {

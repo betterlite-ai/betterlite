@@ -1,5 +1,4 @@
-use super::claims::{ClaimError, JwtClaims, text_value};
-use super::trust::TrustClaims as _;
+use super::claims::{ClaimError, JwtClaims, WhenUnset, field_value, marker_claim, text_value};
 
 const ORG_ID_CLAIM: &str = "_litellm_org_id";
 
@@ -10,22 +9,15 @@ pub trait OrgClaims {
 
 impl OrgClaims for JwtClaims<'_> {
     fn org_id(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        if self.has_trusted_claim(ORG_ID_CLAIM) {
-            let Some(value) = self.nested(ORG_ID_CLAIM)? else {
-                return Ok(None);
-            };
+        if let Some(value) = marker_claim(self, ORG_ID_CLAIM)? {
             return text_value(value, ORG_ID_CLAIM);
         }
-        let Some(field) = self.settings.org_id_jwt_field.as_deref() else {
-            return Ok(None);
-        };
-        self.nested_text(field, default)
+        let field = self.settings.org_id_jwt_field.as_deref();
+        field_value(self, field, default, WhenUnset::Absent)
     }
 
     fn org_alias(&self, default: Option<&str>) -> Result<Option<String>, ClaimError> {
-        let Some(field) = self.settings.org_alias_jwt_field.as_deref() else {
-            return Ok(None);
-        };
-        self.nested_text(field, default)
+        let field = self.settings.org_alias_jwt_field.as_deref();
+        field_value(self, field, default, WhenUnset::Absent)
     }
 }
