@@ -686,6 +686,30 @@ fn values_read_both_null_forms_as_null() {
 }
 
 #[test]
+fn values_read_each_scalar_kind() {
+    let scalars = [
+        ValueVisitor.visit_bool::<ValueError>(true).unwrap(),
+        ValueVisitor.visit_i64::<ValueError>(-5).unwrap(),
+        ValueVisitor.visit_u64::<ValueError>(7).unwrap(),
+        ValueVisitor.visit_u64::<ValueError>(u64::MAX).unwrap(),
+        ValueVisitor.visit_f64::<ValueError>(1.5).unwrap(),
+        ValueVisitor.visit_str::<ValueError>("text").unwrap(),
+    ];
+    let read: Vec<GuardrailValue> = scalars.into_iter().map(|scalar| scalar.0).collect();
+    assert_eq!(
+        read,
+        [
+            GuardrailValue::Boolean(true),
+            GuardrailValue::SignedInteger(-5),
+            GuardrailValue::SignedInteger(7),
+            GuardrailValue::UnsignedInteger(u64::MAX),
+            GuardrailValue::Decimal(1.5),
+            text("text"),
+        ]
+    );
+}
+
+#[test]
 fn debug_text_lists_the_key_names_only() {
     let shown = format!(
         "{:?}",
