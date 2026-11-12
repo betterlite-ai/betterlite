@@ -1,0 +1,5 @@
+kind: helper
+name: authorization-header-encoding
+call: {"b3910": {"operation": "authorization_header", "public_key": "\u00e9", "secret_key": "b:c"}}
+env: {}
+compare: {ignore: []}
