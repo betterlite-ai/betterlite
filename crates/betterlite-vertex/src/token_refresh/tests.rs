@@ -15,11 +15,12 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::{Notify, watch};
 use tokio::task::{JoinSet, yield_now};
 use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
 
 use crate::credential_sources::sdk::CredentialClock;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::token_cache::CredentialCache;
-use crate::token_cache::error::CredentialCacheError;
+use crate::token_cache::error::{CredentialCacheError, needs_reauthentication};
 use crate::token_cache::executor::{CredentialExecutor, LoadedCredential};
 use crate::token_cache::key::CredentialKey;
 use crate::token_cache::probe::AccessToken;
@@ -61,15 +62,27 @@ fn new_fixture(
     loads: Vec<Result<LoadedCredential, CredentialCacheError>>,
     refreshes: Vec<RefreshReply>,
 ) -> Fixture {
+    build_fixture(loads, refreshes, None)
+}
+
+fn build_fixture(
+    loads: Vec<Result<LoadedCredential, CredentialCacheError>>,
+    refreshes: Vec<RefreshReply>,
+    tasks: Option<TaskTracker>,
+) -> Fixture {
     let clock = Arc::new(ControlledClock::at(SystemTime::UNIX_EPOCH));
     let executor = Arc::new(ControlledExecutor::scripted(loads, refreshes));
     let clock_handle = Arc::clone(&clock);
     let clock_source: Arc<dyn CredentialClock> = clock_handle;
     let executor_handle = Arc::clone(&executor);
     let credential_executor: Arc<dyn CredentialExecutor> = executor_handle;
-    let cache = Arc::new(CredentialCache::new(clock_source, credential_executor));
+    let base = CredentialCache::new(clock_source, credential_executor);
+    let cache = match tasks {
+        Some(injected) => base.with_tasks(injected),
+        None => base,
+    };
     Fixture {
-        cache,
+        cache: Arc::new(cache),
         clock,
         executor,
     }
@@ -142,6 +155,13 @@ fn refreshing_identities(cache: &CredentialCache) -> Vec<CredentialKey> {
     cache.refreshes.lock().unwrap().keys().cloned().collect()
 }
 
+fn cached_project(record: &CacheRecord) -> Option<String> {
+    match record {
+        CacheRecord::Paired { project, .. } => project.clone(),
+        CacheRecord::Legacy { .. } => None,
+    }
+}
+
 fn token_of(record: &CacheRecord) -> String {
     record
         .credential()
@@ -199,14 +219,15 @@ async fn stale_returns_now() {
     );
     let key = requested_key(Some(PROJECT));
     let stale = store_project(&fixture.cache, &key, "token-stale", TokenState::Stale);
-    let served = lookup(&fixture.cache, Some(PROJECT)).await.unwrap();
+    let mut first_lookup = Box::pin(lookup(&fixture.cache, Some(PROJECT)));
+    let Poll::Ready(Ok(served)) = poll_once(first_lookup.as_mut()) else {
+        panic!("a stale cached token is served without waiting for the refresh");
+    };
     assert_eq!(served.token.expose_secret(), "token-stale");
     assert_eq!(served.project, PROJECT);
+    let again = lookup(&fixture.cache, Some(PROJECT)).await.unwrap();
+    assert_eq!(again.token.expose_secret(), "token-stale");
     timeout(WAIT, started.notified()).await.unwrap();
-    assert_eq!(
-        token_of(&fixture.cache.cached_record(&key).unwrap()),
-        "token-stale"
-    );
     gate.notify_one();
     fixture.cache.shutdown().await;
     let refreshed = fixture.cache.cached_record(&key).unwrap();
@@ -465,4 +486,156 @@ fn older_task_cleanup_keeps_its_replacement() {
     assert!(jobs.contains_key(&key));
     release_job(&mut jobs, &key, 2);
     assert!(jobs.is_empty());
+}
+
+#[tokio::test]
+async fn fresh_token_skips_the_lease() {
+    let started = Arc::new(Notify::new());
+    let gate = Arc::new(Notify::new());
+    let fixture = new_fixture(
+        Vec::new(),
+        vec![staged(&started, &gate, Ok(fresh("token-refreshed")))],
+    );
+    let key = requested_key(Some(PROJECT));
+    store_project(&fixture.cache, &key, "token-old", TokenState::Invalid);
+    let configured = credentials();
+    let mut blocking = Box::pin(get_access_token_async(
+        &fixture.cache,
+        Some(&configured),
+        Some(PROJECT),
+    ));
+    assert!(poll_once(blocking.as_mut()).is_pending());
+    timeout(WAIT, started.notified()).await.unwrap();
+    store_project(&fixture.cache, &key, "token-fresh", TokenState::Fresh);
+    let mut fast_lookup = Box::pin(get_access_token_async(
+        &fixture.cache,
+        Some(&configured),
+        Some(PROJECT),
+    ));
+    let Poll::Ready(Ok(served)) = poll_once(fast_lookup.as_mut()) else {
+        panic!("a fresh cached token must not wait for the refresh lease");
+    };
+    assert_eq!(served.token.expose_secret(), "token-fresh");
+    drop(fast_lookup);
+    assert_eq!(fixture.cache.leased_identities(), vec![key.clone()]);
+    gate.notify_one();
+    blocking.await.unwrap();
+    fixture.cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn resolved_alias_written_on_slow_path() {
+    let fixture = new_fixture(
+        Vec::new(),
+        vec![RefreshReply::Immediate(Ok(fresh("token-fresh")))],
+    );
+    let unresolved = requested_key(None);
+    store(
+        &fixture.cache,
+        &unresolved,
+        snapshot(Some("token-old"), TokenState::Invalid, Some(PROJECT)),
+        Some(PROJECT),
+    );
+    let granted = lookup(&fixture.cache, None).await.unwrap();
+    assert_eq!(granted.token.expose_secret(), "token-fresh");
+    assert_eq!(granted.project, PROJECT);
+    let alias = fixture
+        .cache
+        .cached_record(&requested_key(Some(PROJECT)))
+        .unwrap();
+    assert_eq!(cached_project(&alias), Some(PROJECT.to_owned()));
+    assert_eq!(fixture.executor.refresh_count(), 1);
+    fixture.cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn blocking_refresh_error_is_not_retried() {
+    let fixture = new_fixture(
+        Vec::new(),
+        vec![RefreshReply::Immediate(Err(network_error()))],
+    );
+    let key = requested_key(Some(PROJECT));
+    store_project(&fixture.cache, &key, "token-old", TokenState::Invalid);
+    let error = lookup(&fixture.cache, Some(PROJECT)).await.unwrap_err();
+    assert!(!needs_reauthentication(&error));
+    assert!(matches!(error, CredentialCacheError::Refresh(_)));
+    assert_eq!(fixture.executor.load_count(), 0);
+    assert_eq!(fixture.executor.refresh_count(), 1);
+    assert!(fixture.cache.cached_record(&key).is_some());
+    fixture.cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn vertex_wrappers_read_credentials() {
+    let fixture = new_fixture(Vec::new(), Vec::new());
+    let configured = credentials();
+    let synchronous = ensure_access_token(
+        &fixture.cache,
+        Some(&configured),
+        Some(PROJECT),
+        VertexCapabilityProvider::VertexAi,
+    )
+    .await;
+    assert!(matches!(synchronous, Err(CredentialCacheError::Load(_))));
+    let asynchronous = ensure_access_token_async(
+        &fixture.cache,
+        Some(&configured),
+        Some(PROJECT),
+        VertexCapabilityProvider::VertexAiBeta,
+    )
+    .await;
+    assert!(matches!(asynchronous, Err(CredentialCacheError::Load(_))));
+    assert_eq!(fixture.executor.load_count(), 2);
+    fixture.cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn reauth_keeps_the_requested_project() {
+    let fixture = new_fixture(
+        vec![Ok(loaded(
+            "token-reloaded",
+            TokenState::Fresh,
+            Some("loaded-project"),
+        ))],
+        vec![RefreshReply::Immediate(Err(reauthentication_error()))],
+    );
+    let key = requested_key(Some(PROJECT));
+    store_project(&fixture.cache, &key, "token-old", TokenState::Invalid);
+    let granted = lookup(&fixture.cache, Some(PROJECT)).await.unwrap();
+    assert_eq!(granted.token.expose_secret(), "token-reloaded");
+    assert_eq!(granted.project, PROJECT);
+    assert!(
+        fixture
+            .cache
+            .cached_record(&requested_key(Some("loaded-project")))
+            .is_none()
+    );
+    assert_eq!(fixture.executor.load_count(), 1);
+    fixture.cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn injected_tracker_drains_refresh() {
+    let started = Arc::new(Notify::new());
+    let gate = Arc::new(Notify::new());
+    let tracker = TaskTracker::new();
+    let fixture = build_fixture(
+        Vec::new(),
+        vec![staged(&started, &gate, Ok(fresh("token-fresh")))],
+        Some(tracker.clone()),
+    );
+    let key = requested_key(Some(PROJECT));
+    store_project(&fixture.cache, &key, "token-stale", TokenState::Stale);
+    let served = lookup(&fixture.cache, Some(PROJECT)).await.unwrap();
+    assert_eq!(served.token.expose_secret(), "token-stale");
+    timeout(WAIT, started.notified()).await.unwrap();
+    gate.notify_one();
+    tracker.close();
+    tracker.wait().await;
+    assert_eq!(
+        token_of(&fixture.cache.cached_record(&key).unwrap()),
+        "token-fresh"
+    );
+    assert_eq!(fixture.executor.refresh_count(), 1);
+    fixture.cache.shutdown().await;
 }
