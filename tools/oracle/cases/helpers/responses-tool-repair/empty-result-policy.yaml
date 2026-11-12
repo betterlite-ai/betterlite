@@ -1,0 +1,14 @@
+kind: helper
+name: empty-result-policy
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {role: user, content: hi}
+      - {role: tool, tool_call_id: "", content: dropped}
+      - {role: tool, tool_call_id: null, content: also dropped}
+    tools: []
+    cache: {}
+env: {}
+compare:
+  ignore: []
