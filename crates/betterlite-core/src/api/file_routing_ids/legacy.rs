@@ -7,7 +7,7 @@ use crate::api::managed_resource_ids::is_base64_encoded_unified_id;
 use super::error::FileRoutingIdsError;
 use super::{EXECUTED_BATCH_ID_PREFIX, MAX_FILE_LIST_LIMIT};
 
-const MANAGED_FILE_ID_PREFIX: &str = "litellm_proxy";
+pub(super) const MANAGED_FILE_ID_PREFIX: &str = "litellm_proxy";
 const TARGET_MODELS_FIELD: &str = "target_model_names,";
 const MODEL_ID_FIELD: &str = "model_id:";
 const BATCH_ID_FIELD: &str = "llm_batch_id:";
@@ -15,13 +15,9 @@ const GENERIC_RESPONSE_ID_FIELD: &str = "generic_response_id:";
 const BATCH_ID_MARKER: &str = "llm_batch_id";
 const BATCH_ID_TERMINATORS: [char; 2] = [';', ','];
 
-// str.strip() also removes U+001C to U+001F, which char::is_whitespace keeps
 pub(super) fn is_strip_whitespace(candidate: char) -> bool {
-    if candidate.is_whitespace() {
-        true
-    } else {
-        ('\u{1c}'..='\u{1f}').contains(&candidate)
-    }
+    // str.strip() also removes U+001C to U+001F, which char::is_whitespace keeps
+    candidate.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&candidate)
 }
 
 pub fn validate_file_list_limit(limit: Option<i64>) -> Result<(), FileRoutingIdsError> {
@@ -57,16 +53,8 @@ pub fn validate_file_list_limit(limit: Option<i64>) -> Result<(), FileRoutingIds
 }
 
 #[must_use]
-pub fn decode_legacy_unified_id(resource_id: &str) -> Option<String> {
-    if let Some(decoded) = is_base64_encoded_unified_id(resource_id, MANAGED_FILE_ID_PREFIX) {
-        return Some(decoded);
-    }
-    None
-}
-
-#[must_use]
 pub fn convert_b64_uid_to_unified_uid(b64_uid: &str) -> String {
-    if let Some(decoded) = decode_legacy_unified_id(b64_uid) {
+    if let Some(decoded) = is_base64_encoded_unified_id(b64_uid, MANAGED_FILE_ID_PREFIX) {
         return decoded;
     }
     b64_uid.to_owned()

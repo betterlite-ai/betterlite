@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::Principal;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
+use crate::api::managed_resource_ids::is_base64_encoded_unified_id;
 use error::FileRoutingIdsError;
+use legacy::MANAGED_FILE_ID_PREFIX;
 
 pub mod batch;
 pub mod error;
@@ -49,7 +51,7 @@ pub fn decode_file_routing_ids(
     }))?;
     let text = from_utf8(bytes).map_err(|source| FileRoutingIdsError::NotUtf8 { source })?;
     Ok(FileRoutingIds {
-        unified_id: legacy::decode_legacy_unified_id(text),
+        unified_id: is_base64_encoded_unified_id(text, MANAGED_FILE_ID_PREFIX),
         model: routing::decode_model_from_file_id(text),
         original_id: routing::get_original_file_id(text),
     })

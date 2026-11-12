@@ -16,9 +16,8 @@ use super::ManagedResourceAccessChecker;
 use super::batch::encode_batch_response_ids;
 use super::error::FileRoutingIdsError;
 use super::legacy::{
-    convert_b64_uid_to_unified_uid, decode_legacy_unified_id, is_litellm_executed_batch,
-    resolve_output_model, target_model_names, unified_batch_id, unified_batch_model_id,
-    validate_file_list_limit,
+    convert_b64_uid_to_unified_uid, is_litellm_executed_batch, resolve_output_model,
+    target_model_names, unified_batch_id, unified_batch_model_id, validate_file_list_limit,
 };
 use super::routing::{
     decode_model_from_file_id, encode_file_id_with_model, get_original_file_id,
@@ -75,7 +74,9 @@ fn list_limit_bounds(#[case] limit: Option<i64>, #[case] expected: Option<(&str,
 #[test]
 fn legacy_prefix_and_targets() {
     assert_eq!(
-        decode_legacy_unified_id(UNIFIED_SEMICOLON),
+        decode_file_routing_ids(UNIFIED_SEMICOLON.as_bytes(), ApiLimits::default())
+            .unwrap()
+            .unified_id,
         Some("litellm_proxy;model_id:m;llm_batch_id:b".to_owned())
     );
     // B1016's detector needs the colon, so the same legacy id passes only this file-prefix rule
@@ -128,7 +129,9 @@ fn output_model_selection_without_a_fallback() {
 #[case::interior_padding("bGl0ZWxs=bV9wcm94eQ", None)]
 fn legacy_encoded_edges(#[case] encoded: &str, #[case] expected: Option<&str>) {
     assert_eq!(
-        decode_legacy_unified_id(encoded),
+        decode_file_routing_ids(encoded.as_bytes(), ApiLimits::default())
+            .unwrap()
+            .unified_id,
         expected.map(str::to_owned)
     );
     match expected {
