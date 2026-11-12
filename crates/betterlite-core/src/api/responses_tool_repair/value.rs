@@ -70,16 +70,15 @@ impl Value {
 
     // dict.get, then a callable get(key, default), then the attribute when get raises TypeError or AttributeError
     pub fn field(&self, key: &str) -> Result<Option<&Self>, RepairError> {
-        let Self::Instance { object } = self else {
-            return Ok(self.plain_field(key));
-        };
-        match &object.get {
-            Getter::Mapping(map) => Ok(map.get(key).filter(|found| **found != Self::Null)),
-            Getter::Raises(Raised::Other) => Err(RepairError::GetterFailed),
-            Getter::Absent | Getter::Raises(Raised::TypeError | Raised::AttributeError) => {
-                Ok(self.plain_field(key))
+        if let Self::Instance { object } = self {
+            if object.get == Getter::Raises(Raised::Other) {
+                return Err(RepairError::GetterFailed);
+            }
+            if let Getter::Mapping(map) = &object.get {
+                return Ok(map.get(key).filter(|found| **found != Self::Null));
             }
         }
+        Ok(self.plain_field(key))
     }
 
     // dict.get for a dict and getattr for an object
