@@ -38,8 +38,12 @@ description: >-
 
   _safe_fetch debug-logs and rethrows HTTPException, ProxyException and BudgetExceededError;
   other exceptions debug-log 'swallowed' and return None. The reconstructed cached team copies
-  team_id, max/soft/model budgets, spend, tpm/rpm/tpd, blocked, models via B753, metadata and
+  team_id, max/soft/model budgets, spend, tpm/rpm/tpd, blocked, models, metadata and
   object_permission_id; it does not synthesize organization_id or team_alias. Team id is required.
+  models is the token's own team_models list. LiteLLM reads it through the _token_team_models typing
+  shim (L344-L345), which only returns valid_token.team_models; in Rust that is the plain team_models
+  field B2314 put on UserAPIKeyAuth's VerificationTokenView (crates/betterlite-auth/src/resolved_key/view.rs),
+  so read the field directly and add no accessor or trait for it.
   For vouching, litellm-dashboard always wins, even over TeamNotFoundError; other missing teams
   never vouch. Otherwise truthy team_models vouch before B1217's outage setting is consulted.
   Empty team_models use that setting. The policy does not inspect the exception's transport class.
@@ -127,6 +131,8 @@ references:
     why: Own _safe_fetch; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2654-L2673
     why: Own _team_obj_from_token; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L328-L345
+    why: The team_models protocol and accessor only return the token field, so the team copy reads it directly.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2676-L2703
     why: Own _token_can_vouch_for_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2706-L2744

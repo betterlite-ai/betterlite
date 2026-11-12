@@ -41,7 +41,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0 # a queued group's base lies as many commits back as the group holds pull requests
           persist-credentials: false
 
       - name: Find the base, the task and the parts to run
@@ -57,7 +57,7 @@ jobs:
           if [[ $EVENT == merge_group ]]; then
             base=$QUEUE_BASE
             number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
-            branch=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
+            branch=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
           else
             base=$(git rev-parse HEAD^1)
             branch=$PR_BRANCH
@@ -70,10 +70,23 @@ jobs:
           if [[ $EVENT == pull_request ]]; then
             parts='["lint"]'
             if [[ -n $task ]]; then
-              parts=$(jq -cn --argjson shards "$MUTANTS_SHARDS" '["lint","task"] + [range(1; $shards + 1) | "mutants-\(.)"]')
+              parts='["lint","task"]'
+              # a mutants runner took 2.7 minutes to print that its task has no mutants check, so the task file decides here
+              task_files=(.development/tasks/"$task"-*.yaml)
+              optional=$(yq '.checks.optional[]' "${task_files[0]}")
+              if grep -qx mutants <<<"$optional"; then
+                parts=$(jq -cn --argjson shards "$MUTANTS_SHARDS" '["lint","task"] + [range(1; $shards + 1) | "mutants-\(.)"]')
+              fi
             fi
           elif [[ $EVENT == merge_group && -n $task ]]; then
             parts='["lint","task"]'
+          elif [[ $EVENT == merge_group ]]; then
+            # a tests runner took 2.8 minutes to print that the change affects no package, so the paths rules.toml marks for no package decide here
+            changed=$(git diff --name-only --no-renames "$base" HEAD)
+            rules=$(yq -p toml -o json '.' .development/gate/src/affected/rules.toml)
+            if jq -en --arg changed "$changed" --argjson rules "$rules" '[$rules["path-rule"][] | select(.["mark-changed"] == []) | .globs[]] as $inert | $changed | split("\n") | all(. as $path | $inert | any(. as $glob | if endswith("/**") then $path | startswith($glob[:-2]) else $path == $glob end))' > /dev/null; then
+              parts='["lint"]'
+            fi
           fi
           echo "branch $branch, base $base, task ${task:-none}, parts $parts"
           printf 'base=%s\ntask=%s\nparts=%s\n' "$base" "$task" "$parts" >> "$GITHUB_OUTPUT"
@@ -260,6 +273,7 @@ jobs:
           GATE_BASE: ${{ needs.find.outputs.base }}
           GATE_ALL_TESTS: ${{ github.event_name == 'push' && 'true' || '' }}
           PART: ${{ matrix.part }}
+          PARTS: ${{ needs.find.outputs.parts }}
           TASK: ${{ needs.find.outputs.task }}
         run: |
           lint=(fmt clippy deny shear hooks similarity file-size module-tree case-ignores workflows)
@@ -272,7 +286,15 @@ jobs:
           if [[ $EVENT != pull_request ]]; then later+=(coverage); fi
           selection=()
           case $PART in
-            lint) for id in "${lint[@]}"; do selection+=(--only "$id"); done ;;
+            lint)
+              for id in "${lint[@]}"; do selection+=(--only "$id"); done
+              # clippy starts at once, so hooks and similarity run while it builds
+              selection+=(--beside clippy)
+              # find reads rules.toml without the gate, so a queued change that got no tests part must affect no package
+              if [[ $EVENT == merge_group && -z $TASK && $PARTS != *tests-1* ]]; then
+                affected=$(cargo gate affected) || exit 1
+                if [[ -n $affected ]]; then echo "the change affects $affected, but find started no tests part"; exit 1; fi
+              fi ;;
             tests-*)
               affected=$(cargo gate affected) || exit 1
               if [[ -z $affected ]]; then echo "the change affects no package"; exit 0; fi
@@ -291,6 +313,11 @@ jobs:
           esac
           if [[ $PART == task ]]; then
             checks=$(cargo gate list "$TASK")
+            # find reads the task file without the gate, so a task with a mutants check must have got its mutants parts
+            if [[ $EVENT == pull_request && $PARTS != *mutants-1* ]] && awk '$1 == "mutants" {found = 1} END {exit !found}' <<<"$checks"; then
+              echo "the task has a mutants check, but find started no mutants part"
+              exit 1
+            fi
             if ! awk -v skipped=" ${lint[*]} ${later[*]} " '/^[^ ]/ && !index(skipped, " "$1" "){remaining=1} END{exit !remaining}' <<<"$checks"; then
               echo "every task check belongs to another gate part"
               exit 0

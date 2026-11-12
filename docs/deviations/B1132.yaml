@@ -1,0 +1,12 @@
+task: B1132
+deviations:
+  - what: >-
+      An os.environ/ reference in general_settings.enable_claude_code_gateway whose variable is unset fails the config load with an error naming the variable, where LiteLLM resolves the reference to None and starts with the gateway disabled.
+    why: >-
+      betterlite's shared config resolution treats an unset os.environ/ reference as a load error naming the variable, so a config never silently changes the gateway state and a deployment that leaves the variable unset finds out at startup. The test is sections::claude_gateway_policy::tests::loads_settings::case_10_enabled_environment_missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
+  - what: >-
+      A config file nested deeper than 64 YAML containers, a claude_code_gateway_managed_settings subtree that deep included, fails the whole load with serde-saphyr's depth budget error, where LiteLLM reads the same file and resolves os.environ references down to its default depth of 100.
+    why: >-
+      betterlite decodes every config through serde-saphyr, which caps document nesting at 64 containers to protect the stack and CPU before any section sees the file, while LiteLLM's only depth limit applies to os.environ resolution inside the already-loaded mapping. Managed settings a working setup writes nest a handful of levels deep, far inside the parser budget. The test is sections::claude_gateway_policy::tests::a_config_nested_past_the_yaml_budget_fails_the_load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85

@@ -1,0 +1,33 @@
+kind: helper
+name: gemini-candidates-streaming-reasoning-fallback
+call:
+  gemini_candidates:
+    streaming: true
+    legacy_function: false
+    cumulative_tool_call_idx: 2
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      candidates:
+        - content:
+            parts:
+              - text: data:audio/wav;base64,QUJD
+                thought: true
+                thoughtSignature: sig-one
+              - text: ""
+                thought: true
+              - text: data:audio/mp3;base64,REVG
+                thought: true
+              - text: visible answer
+              - functionCall:
+                  name: lookup
+                  args: {city: Paris}
+          finishReason: STOP
+        - content:
+            parts:
+              - text: ordinary reasoning
+                thought: true
+              - text: second answer
+          finishReason: STOP
+env: {}
+compare: {ignore: []}

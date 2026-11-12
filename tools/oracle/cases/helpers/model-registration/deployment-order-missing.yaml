@@ -1,0 +1,10 @@
+kind: helper
+name: model-registration-deployment-order-missing
+call:
+  b5365:
+    function: order_filter
+    deployments:
+      - {id: a, litellm_params: {order: 3}}
+    target_order: 9
+env: {}
+compare: {ignore: []}

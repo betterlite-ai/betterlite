@@ -1,0 +1,5 @@
+task: B917
+deviations:
+  - what: A stored reasoning item without an id gets an opaque rs_N identifier, reused for an equal item within one conversion; LiteLLM builds the fallback from the item's Python process address.
+    why: A process address is not stable or portable and the Responses API only needs an opaque id that it did not mint, so betterlite mints its own instead of copying an address.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L271-L284

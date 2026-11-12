@@ -1,0 +1,38 @@
+kind: helper
+name: database-tokens-rds-expiry-fields
+call:
+  database_tokens:
+    function: batch
+    calls:
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:5432/d?X-Amz-Date=20240101T000000Z&X-Amz-Expires=900&X-Amz-Signature=abc"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=&X-Amz-Date=20240101T000000Z&X-Amz-Expires=60&X-Amz-Expires=900"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=2024101T000000Z&X-Amz-Expires=+60"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101t000000z&X-Amz-Expires=60"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101T00000Z&X-Amz-Expires=60"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101T000000Z&X-Amz-Expires=-60"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Expires=60"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101T000000Z"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101T000000Z&X-Amz-Expires="
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: openai-image-generation-gpt-image-usage
+call:
+  openai_image_generation:
+    function: gpt_image_usage
+    probes:
+      - model: gpt-image-1
+        prompt: a cat
+        optional_params: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[],"size":"1792x1024","quality":"medium","output_format":"jpeg","usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":1,"text_tokens":3},"output_tokens":8,"total_tokens":12}}'}
+      - model: gpt-image-1
+        prompt: a dog
+        optional_params: {width: 512, height: 256, quality: low}
+        reply: {status: 200, body: '{"created":1700000000,"data":[],"size":"","quality":"","output_format":""}'}
+      - model: chatgpt-image-latest
+        prompt: a bird
+        optional_params: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+env: {}
+compare: {ignore: []}
