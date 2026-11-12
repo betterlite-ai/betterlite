@@ -85,16 +85,12 @@ impl Value {
     // dict.get for a dict and getattr for an object
     #[must_use]
     pub fn plain_field(&self, key: &str) -> Option<&Self> {
-        let entries = match self {
-            Self::Dict(map) => map,
-            Self::Instance { object } => &object.attrs,
-            Self::Null
-            | Self::Bool(_)
-            | Self::Number(_)
-            | Self::Text(_)
-            | Self::Bytes { .. }
-            | Self::List(_)
-            | Self::Tuple { .. } => return None,
+        let entries = if let Self::Dict(map) = self {
+            map
+        } else if let Self::Instance { object } = self {
+            &object.attrs
+        } else {
+            return None;
         };
         entries.get(key).filter(|found| **found != Self::Null)
     }
