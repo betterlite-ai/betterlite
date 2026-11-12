@@ -188,7 +188,17 @@ pub(super) async fn gpt6_family_selection() {
 pub(super) async fn dict_effort_normalization() {
     let mut fixture = Fixture::new(&GPT_MODELS, GPT_ENTRIES);
     dict_effort_dictionaries(&mut fixture).await;
+    dict_effort_guards(&mut fixture).await;
     dict_effort_fallbacks(&mut fixture).await;
+}
+
+async fn dict_effort_guards(fixture: &mut Fixture) {
+    let mut thinking = request(r#"{"reasoning_effort": {"effort": "none"}, "temperature": 0.5}"#);
+    let mut stored = request("{}");
+    map_gpt5(fixture, "gpt-5.5", &mut thinking, &mut stored, no_drop())
+        .await
+        .expect("a dictionary effort of none permits a temperature");
+    assert_eq!(stored.get("temperature"), Some(&Value::from(0.5_f64)));
 }
 
 async fn dict_effort_dictionaries(fixture: &mut Fixture) {
@@ -343,6 +353,18 @@ async fn xhigh_dictionary(fixture: &mut Fixture) {
     assert_eq!(
         optional.get("reasoning_effort"),
         Some(&Value::from("xhigh"))
+    );
+
+    let mut refused = request(r#"{"reasoning_effort": {"effort": "xhigh"}}"#);
+    let mut empty = request("{}");
+    let failure = map_gpt5(fixture, "gpt-5.1", &mut refused, &mut empty, no_drop())
+        .await
+        .expect_err("a dictionary xhigh needs the explicit capability");
+    assert_eq!(
+        failure,
+        ReasoningError::UnsupportedEffort {
+            effort: String::from("xhigh")
+        }
     );
 }
 

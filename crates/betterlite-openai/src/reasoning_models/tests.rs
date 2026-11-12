@@ -305,4 +305,5 @@ fn o_series_provider_fallback_is_logged_at_debug() {
     let text = fs::read_to_string(log.path()).expect("log text");
     assert!(text.contains("o-series"), "{text}");
     assert!(text.contains("openai"), "{text}");
+    assert!(text.contains("DEBUG"), "{text}");
 }
