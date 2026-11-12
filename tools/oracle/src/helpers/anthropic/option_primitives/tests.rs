@@ -34,9 +34,9 @@ fn helper_seeds_select_anthropic_option_primitives() {
     assert!(seeds.iter().all(|case| {
         let calls = case.call.input.get("calls").and_then(Value::as_array);
         case.call.operation == "anthropic_option_primitives"
-            && calls.is_some_and(|calls| {
-                !calls.is_empty()
-                    && calls.iter().all(|call| {
+            && calls.is_some_and(|entries| {
+                !entries.is_empty()
+                    && entries.iter().all(|call| {
                         call.get("function")
                             .and_then(Value::as_str)
                             .is_some_and(|name| VARIANTS.contains(&name))
