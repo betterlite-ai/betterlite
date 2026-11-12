@@ -130,14 +130,17 @@ async fn a_check_queued_behind_a_held_permit_times_out() {
         .try_acquire_owned()
         .expect("a held permit");
     let shared = keywords(&["ignore prior and start over"]);
-    let error = pool
-        .check(
+    let error = timeout(
+        Duration::from_secs(1),
+        pool.check(
             Arc::clone(&shared),
             "ignore prior and start over".to_owned(),
             threshold(),
-        )
-        .await
-        .expect_err("a queued check times out");
+        ),
+    )
+    .await
+    .expect("the check gives up at its own deadline")
+    .expect_err("a queued check times out");
     assert!(matches!(error, PromptInjectionError::HeuristicsTimeout));
     drop(held);
 }
