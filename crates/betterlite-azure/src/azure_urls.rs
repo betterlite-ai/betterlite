@@ -71,14 +71,17 @@ pub fn get_base_azure_url(
     {
         query.push(("api-version".to_owned(), selected.to_owned()));
     }
-    let appended = if base.contains(route) {
-        base.to_owned()
+    let mut composed = if base.contains(route) {
+        HttpxUrl::parse(base).map_err(AzureUrlError::InvalidUrl)?
     } else {
-        overlapping_api_base_path(base, route).map_err(AzureUrlError::Compose)?
+        let merged = overlapping_api_base_path(base, route).map_err(AzureUrlError::Compose)?;
+        let mut url = HttpxUrl::parse(&merged).map_err(AzureUrlError::InvalidUrl)?;
+        // _add_path_to_api_base re-adds the original query through QueryParams, which re-encodes it
+        url.query = url_parts::encoded_query(&url_parts::query_pairs(original.query.as_deref()));
+        url
     };
-    let mut composed = HttpxUrl::parse(&appended).map_err(AzureUrlError::InvalidUrl)?;
     if version.is_some_and(|text| V1_API_VERSIONS.contains(&text))
-        && !appended.contains("/openai/v1")
+        && !composed.href().contains("/openai/v1")
     {
         // httpx's URL.path reads "/" for an empty path, so every rewrite starts from a slash
         let path = if composed.path.is_empty() {

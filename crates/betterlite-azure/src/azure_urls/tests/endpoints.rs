@@ -221,6 +221,28 @@ fn v1_uses_the_default_version() {
         .unwrap(),
         "https://example.openai.azure.com/openai/v1/openai/responses?api-version=v1"
     );
+    // an appended route re-encodes the query, so a query holding /openai/v1 does not stop the rewrite
+    assert_eq!(
+        get_base_azure_url(
+            Some("https://example.openai.azure.com?target=/openai/v1&keep=1"),
+            Some("v1"),
+            None,
+            "/openai/responses",
+        )
+        .unwrap(),
+        "https://example.openai.azure.com/openai/v1/responses?target=%2Fopenai%2Fv1&keep=1&api-version=v1"
+    );
+    // an api_base the append skips is checked as written, so its query can suppress the rewrite
+    assert_eq!(
+        get_base_azure_url(
+            Some("https://example.openai.azure.com/api?target=/openai/responses&x=/openai/v1"),
+            Some("v1"),
+            None,
+            "/openai/responses",
+        )
+        .unwrap(),
+        "https://example.openai.azure.com/api?target=%2Fopenai%2Fresponses&x=%2Fopenai%2Fv1&api-version=v1"
+    );
 }
 
 fn query_api_version_wins() {
