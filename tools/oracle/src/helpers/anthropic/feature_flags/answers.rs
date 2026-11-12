@@ -1,13 +1,13 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_anthropic::feature_flags::beta::{
-    computer_tool_beta_header, tool_search_beta_header,
+    computer_tool_beta_header, tool_search_beta_header, user_beta_headers,
 };
 use betterlite_anthropic::feature_flags::billing::{billing_fields, is_one_shot_subagent_request};
 use betterlite_anthropic::feature_flags::cache::supports_cache_control;
 use betterlite_anthropic::feature_flags::compaction::requires_compaction_beta;
 use betterlite_anthropic::feature_flags::messages::{
     has_output_config, has_thinking_display_updates, has_tool_change, is_cache_control_set,
-    is_file_id_used, is_pdf_used,
+    is_file_id_used, is_mcp_server_used, is_pdf_used,
 };
 use betterlite_anthropic::feature_flags::tools::{
     computer_tool_version, eager_input_streaming_flag, is_code_execution_tool_used,
@@ -180,11 +180,7 @@ fn skills_answer(case: &Skills) -> Value {
     let user_betas: Vec<Option<Vec<String>>> = case
         .headers
         .iter()
-        .map(|header| {
-            header
-                .as_deref()
-                .map(|text| text.split(',').map(str::to_owned).collect())
-        })
+        .map(|header| user_beta_headers(header.as_deref()))
         .collect();
     let tools = case.tools.as_deref().unwrap_or_default();
     let search_betas: Vec<&'static str> = case
@@ -201,10 +197,7 @@ fn skills_answer(case: &Skills) -> Value {
 }
 
 fn conversation_answer(case: &Conversation) -> Value {
-    let mcp = case
-        .mcp_servers
-        .as_deref()
-        .is_some_and(|servers| !servers.is_empty());
+    let mcp = is_mcp_server_used(case.mcp_servers.as_deref());
     json!({
         "thinking_display": has_thinking_display_updates(Some(&case.thinking)),
         "tool_change": has_tool_change(&case.messages),

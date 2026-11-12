@@ -88,5 +88,12 @@ call:
         messages: [{role: user, content: hello}]
         system: "x-anthropic-billing-header: cc_is_subagent=true;cc_is_subagent=true"
         tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system:
+          - {type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}
+          - {type: text, text: "You are Claude Code"}
+        tools: null
 env: {}
 compare: {ignore: []}

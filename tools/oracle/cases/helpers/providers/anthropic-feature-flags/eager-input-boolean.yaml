@@ -19,6 +19,7 @@ call:
       - {function: eager_flag, tool: {function: {eager_input_streaming: 0}}}
       - {function: eager_flag, tool: {function: x}}
       - {function: eager_flag, tool: {function: []}}
+      - {function: eager_flag, tool: {function: null}}
       - function: eager_used
         tools: [{eager_input_streaming: true}, {eager_input_streaming: bad}]
       - function: eager_used

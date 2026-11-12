@@ -46,6 +46,17 @@ pub fn tool_search_beta_header(custom_llm_provider: &str) -> &'static str {
     }
 }
 
+// LiteLLM splits the client's anthropic-beta header raw: spaces and empty entries stay
+#[must_use]
+pub fn user_beta_headers(header: Option<&str>) -> Option<Vec<String>> {
+    let text = header?;
+    let mut betas = Vec::new();
+    for beta in text.split(',') {
+        betas.push(beta.to_owned());
+    }
+    Some(betas)
+}
+
 #[must_use]
 pub async fn beta_list<Source, Transport>(
     request: &BetaRequest<'_>,

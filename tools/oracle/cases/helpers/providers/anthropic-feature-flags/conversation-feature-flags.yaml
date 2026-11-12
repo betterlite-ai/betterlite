@@ -31,6 +31,10 @@ call:
         thinking: null
         mcp_servers: null
       - function: conversation
+        messages: [{role: system, content: [{type: text, tool: {type: tool_reference}}]}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
         messages: [{role: system, content: tool_addition}]
         thinking: null
         mcp_servers: null

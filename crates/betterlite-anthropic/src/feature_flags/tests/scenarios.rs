@@ -6,14 +6,14 @@ use super::fixture::{Fixture, Session};
 use crate::feature_flags::beta::{
     BetaRequest, EFFORT_BETA, FILE_CODE_EXECUTION_BETA, FILES_API_BETA, MCP_CLIENT_BETA,
     OUTPUT_CONFIG_BETA, THINKING_DISPLAY_BETA, TOOL_CHANGES_BETA, beta_list,
-    computer_tool_beta_header, tool_search_beta_header,
+    computer_tool_beta_header, tool_search_beta_header, user_beta_headers,
 };
 use crate::feature_flags::billing::{billing_fields, billing_texts, is_one_shot_subagent_request};
 use crate::feature_flags::cache::supports_cache_control;
 use crate::feature_flags::compaction::requires_compaction_beta;
 use crate::feature_flags::messages::{
     has_output_config, has_thinking_display_updates, has_tool_change, is_cache_control_set,
-    is_file_id_used, is_pdf_used,
+    is_file_id_used, is_mcp_server_used, is_pdf_used,
 };
 use crate::feature_flags::tools::{
     computer_tool_version, eager_input_streaming_flag, is_code_execution_tool_used,
@@ -151,6 +151,11 @@ const ONE_SHOT_SYSTEM_CASES: &[(&str, &str, bool)] = &[
     (
         r#"[{"role":"user","content":"hello"}]"#,
         r#""x-anthropic-billing-header: cc_is_subagent=True""#,
+        false,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#"[{"type":"text","text":"x-anthropic-billing-header: cc_is_subagent=true"},{"type":"text","text":"You are Claude Code"}]"#,
         false,
     ),
 ];
@@ -478,6 +483,7 @@ fn eager_flag_single_cases() {
         (r#"{"eager_input_streaming":true}"#, Some(true)),
         (r#"{"eager_input_streaming":false}"#, Some(false)),
         (r#"{"eager_input_streaming":null}"#, None),
+        (r#"{"function":null}"#, None),
         ("{}", None),
         (r#""plain""#, None),
         ("[]", None),
@@ -607,6 +613,19 @@ fn container_skills_cases() {
     assert!(!is_container_with_skills_used(&FeatureParams::default()));
 }
 
+fn user_header_cases() {
+    assert_eq!(user_beta_headers(None), None);
+    assert_eq!(
+        user_beta_headers(Some("a,b")),
+        Some(vec!["a".to_owned(), "b".to_owned()])
+    );
+    assert_eq!(
+        user_beta_headers(Some(" a , ,b ")),
+        Some(vec![" a ".to_owned(), " ".to_owned(), "b ".to_owned()])
+    );
+    assert_eq!(user_beta_headers(Some("")), Some(vec![String::new()]));
+}
+
 fn tool_search_header_cases() {
     assert_eq!(
         tool_search_beta_header("vertex_ai"),
@@ -641,6 +660,7 @@ fn tool_search_header_cases() {
 pub(crate) fn skills_code_execution_beta() {
     code_execution_cases();
     container_skills_cases();
+    user_header_cases();
     tool_search_header_cases();
 }
 
@@ -680,21 +700,30 @@ fn tool_change_cases() {
     assert!(!has_tool_change(&wrong_tool));
     let missing_tool = values(r#"[{"role":"system","content":[{"type":"tool_addition"}]}]"#);
     assert!(!has_tool_change(&missing_tool));
+    let text_block = values(
+        r#"[{"role":"system","content":[{"type":"text","tool":{"type":"tool_reference"}}]}]"#,
+    );
+    assert!(!has_tool_change(&text_block));
     let string_content = values(r#"[{"role":"system","content":"tool_addition"}]"#);
     assert!(!has_tool_change(&string_content));
 }
 
-fn output_config_cases() {
+fn output_config_and_mcp_cases() {
     let with_config = values(r#"[{"role":"user","content":"hi","output_config":null}]"#);
     assert!(has_output_config(&with_config));
     let without = values(r#"[{"role":"user","content":"hi"}]"#);
     assert!(!has_output_config(&without));
+    assert!(!is_mcp_server_used(None));
+    let empty_servers = values("[]");
+    assert!(!is_mcp_server_used(Some(&empty_servers)));
+    let servers = values(r#"[{"type":"url","url":"https://mcp.example","name":"m"}]"#);
+    assert!(is_mcp_server_used(Some(&servers)));
 }
 
 pub(crate) fn conversation_feature_flags() {
     thinking_display_cases();
     tool_change_cases();
-    output_config_cases();
+    output_config_and_mcp_cases();
 }
 
 async fn betas(fixture: &Fixture, request: &BetaRequest<'_>) -> BTreeSet<&'static str> {
