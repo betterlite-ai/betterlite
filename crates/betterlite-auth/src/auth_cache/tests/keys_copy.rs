@@ -259,10 +259,10 @@ fn copy_clears_exactly_four_fields() {
         copied.extra.matched_model_access_groups,
         Some(vec!["group-1".to_owned()])
     );
-    assert_eq!(
-        serde_json::to_value(&copied).unwrap(),
-        serde_json::to_value(&auth).unwrap()
-    );
+    let mut expected = serde_json::to_value(&auth).unwrap();
+    expected["parent_otel_span"] = serde_json::Value::Null;
+    expected["request_route"] = serde_json::Value::Null;
+    assert_eq!(serde_json::to_value(&copied).unwrap(), expected);
 }
 
 #[test]

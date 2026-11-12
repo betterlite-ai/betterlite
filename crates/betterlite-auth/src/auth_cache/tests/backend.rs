@@ -436,7 +436,7 @@ async fn single_delete_partition_and_result() {
 #[test]
 fn single_pre_call_delete_partition_and_result() {
     let fixture = recording_cache();
-    let key_object = hex_key("g");
+    let key_object = hex_key("d");
     let queued = fixture
         .cache
         .tier(&key_object)
