@@ -16,6 +16,7 @@ call:
       - "litellm_enc:a;cipher"
       - "litellm_enc:;cipher"
       - "litellm_enc:bW9kZWxfaWQ6YW1vZGVsX2lkOmI=;c"
+      - "litellm_enc:litellm_enc:bW9kZWxfaWQ6YQ==;c"
 env: {}
 compare:
   ignore: []

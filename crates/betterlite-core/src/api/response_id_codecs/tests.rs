@@ -28,16 +28,20 @@ const EMPTY_ENVELOPE: &str =
 const SEMICOLON_ENVELOPE: &str =
     "bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXBfYTtyZXNwb25zZV9pZDphO2I=";
 const THREE_PART_ENVELOPE: &str = "YTtiO2M=";
+const EMBEDDED_LABELS_ENVELOPE: &str =
+    "eGxpdGVsbG06Y3VzdG9tX2xsbV9wcm92aWRlcjpwO2Ftb2RlbF9pZDptO2JyZXNwb25zZV9pZDpyZXNwb25zZV9pZDpy";
 
 const ITEM_ENVELOPE: &str = "bGl0ZWxsbTptb2RlbF9pZDpkZXBfYTtpdGVtX2lkOnJzX2E7Yg==";
 const ITEM_ENVELOPE_UNPADDED: &str = "bGl0ZWxsbTptb2RlbF9pZDpkZXBfYTtpdGVtX2lkOnJzX2E7Yg";
 const ITEM_PLAIN_ENVELOPE: &str = "YTti";
 const ITEM_EMBEDDED_ENVELOPE: &str = "bGl0ZWxsbTptb2RlbF9pZDpkZXBfYTtpdGVtX2lkOnJzX3hpdGVtX2lkOnk=";
+const ITEM_EMBEDDED_MODEL_ENVELOPE: &str = "eGxpdGVsbG06bW9kZWxfaWQ6YTti";
 const ITEM_EMPTY_ENVELOPE: &str = "YTs=";
 
 const CONTENT_METADATA: &str = "bW9kZWxfaWQ6ZGVwX2E=";
 const CONTENT_METADATA_UNPADDED: &str = "bW9kZWxfaWQ6ZGVwX2E";
 const CONTENT_DOUBLE_METADATA: &str = "bW9kZWxfaWQ6YW1vZGVsX2lkOmI=";
+const CONTENT_REPEATED_PREFIX: &str = "litellm_enc:litellm_enc:bW9kZWxfaWQ6YQ==;c";
 
 const CONTAINER_NULL_ENVELOPE: &str =
     "bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7Y29udGFpbmVyX2lkOmM7YQ==";
@@ -215,6 +219,14 @@ fn response_accepts_a_decoded_id_without_field_labels() {
 }
 
 #[test]
+fn response_strips_each_label_throughout_its_segment() {
+    let decoded = decode_response_id(&format!("resp_{EMBEDDED_LABELS_ENVELOPE}"));
+    assert_eq!(decoded.custom_llm_provider, Some(Some("xp".to_owned())));
+    assert_eq!(decoded.model_id, Some(Some("am".to_owned())));
+    assert_eq!(decoded.response_id, Some("br".to_owned()));
+}
+
+#[test]
 fn response_removes_every_prefix_occurrence() {
     let decoded = decode_response_id(&format!("resp_resp_{THREE_PART_ENVELOPE}"));
     assert_eq!(decoded.custom_llm_provider, Some(Some("a".to_owned())));
@@ -275,6 +287,13 @@ fn item_decodes_plain_and_embedded_parts() {
         })
     );
     assert_eq!(
+        decode_encrypted_item_id(&format!("encitem_{ITEM_EMBEDDED_MODEL_ENVELOPE}")),
+        Some(EncryptedItemId {
+            model_id: "xa".to_owned(),
+            item_id: "b".to_owned(),
+        })
+    );
+    assert_eq!(
         decode_encrypted_item_id(&format!("encitem_{ITEM_EMPTY_ENVELOPE}")),
         Some(EncryptedItemId {
             model_id: "a".to_owned(),
@@ -327,6 +346,10 @@ fn content_unwraps_an_empty_or_repeated_metadata_segment() {
     assert_eq!(
         unwrap_encrypted_content(&format!("litellm_enc:{CONTENT_DOUBLE_METADATA};c")),
         (Some("ab".to_owned()), "c".to_owned())
+    );
+    assert_eq!(
+        unwrap_encrypted_content(CONTENT_REPEATED_PREFIX),
+        (Some("a".to_owned()), "c".to_owned())
     );
 }
 
