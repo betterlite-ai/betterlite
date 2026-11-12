@@ -1,0 +1,23 @@
+kind: helper
+name: array-type-union
+call:
+  vertex_schema:
+    mode: build_vertex_schema
+    schema:
+      type: object
+      properties:
+        mixed: {type: [string, "null"], default: x}
+        either:
+          type: [object, array]
+          properties:
+            a: {type: string}
+          items: {type: string}
+          required: [a]
+          minItems: 1
+          maxItems: 3
+          minProperties: 1
+          maxProperties: 4
+    add_property_ordering: true
+    settings: {}
+env: {}
+compare: {ignore: []}

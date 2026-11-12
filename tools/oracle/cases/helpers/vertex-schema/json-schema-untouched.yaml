@@ -1,0 +1,22 @@
+kind: helper
+name: json-schema-untouched
+call:
+  vertex_schema:
+    mode: build_json_schema
+    schema:
+      $defs:
+        Node:
+          type: object
+          properties:
+            children:
+              type: array
+              items: {$ref: "#/$defs/Node"}
+      $ref: "#/$defs/Node"
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, format: email}
+    add_property_ordering: false
+    settings: {}
+env: {}
+compare: {ignore: []}

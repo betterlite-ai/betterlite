@@ -1,0 +1,20 @@
+kind: helper
+name: openai-response-params-unknown-catalog-model
+call:
+  openai_response_params:
+    unknown_catalog_model:
+      probes:
+      - {model: mystery-reasoner, params: {reasoning: {effort: high}}, model_cost: {mystery-reasoner: {litellm_provider: openai, supports_reasoning: true}}}
+      - {model: mystery-reasoner, params: {reasoning: {effort: high}}, model_cost: {mystery-reasoner: {litellm_provider: openai, supports_reasoning: false}}}
+      - {model: mystery-reasoner, params: {reasoning: {effort: high}}, model_cost: {mystery-reasoner: {litellm_provider: openai}}}
+      - {model: gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai}}}
+      - {model: gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: false}}}
+      - {model: openai/gpt-5.2, params: {reasoning: {effort: high}}, model_cost: {gpt-5.2: {}}}
+      - {model: unlisted-reasoner, params: {reasoning: {effort: high}}, model_cost: {}}
+      - {model: o3-mini, params: {reasoning: {effort: high}}, model_cost: {o3-mini: {}}}
+      - {model: gpt-4o, params: {reasoning: {effort: high}}, model_cost: {gpt-4o: {litellm_provider: openai}}}
+      - {model: deepseek-reasoner, params: {reasoning: {effort: high}}, model_cost: {deepseek-reasoner: {}}}
+      - {model: deepseek-reasoner, params: {reasoning: {effort: high}}, model_cost: {deepseek-reasoner: {litellm_provider: openai}}}
+      - {model: mystery-reasoner, params: {reasoning: {effort: high}}, model_cost: {mystery-reasoner: {litellm_provider: openai, supports_reasoning: false}}, provider: azure}
+env: {}
+compare: {ignore: []}

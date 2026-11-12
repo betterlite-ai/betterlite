@@ -287,6 +287,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_chat_choices"
+path = "fuzz_targets/openai_chat_choices.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xai_models"
 path = "fuzz_targets/xai_models.rs"
 test = false
@@ -416,3 +423,10 @@ bench = false
 name = "comet_embedding_reply"
 path = "fuzz_targets/comet_embedding_reply.rs"
 test = false
+
+[[bin]]
+name = "openai_response_params"
+path = "fuzz_targets/openai_response_params.rs"
+test = false
+doc = false
+bench = false

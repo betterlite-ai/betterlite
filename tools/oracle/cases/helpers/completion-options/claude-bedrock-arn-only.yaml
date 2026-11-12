@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-bedrock-arn-only
+call:
+  b5650: {function: claude_target, custom_llm_provider: bedrock, model: "arn:aws:s3:::bucket"}
+env: {}
+compare: {ignore: []}

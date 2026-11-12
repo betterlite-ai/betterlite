@@ -1,0 +1,14 @@
+kind: helper
+name: chat-auth-content-type
+call:
+  openai_chat_choices:
+    chat_auth_content_type:
+      steps:
+        - {api_key: k, headers: {}}
+        - {api_key: null, headers: {Authorization: caller}}
+        - {api_key: k, headers: {content-type: text/plain}}
+        - {api_key: k, headers: {Content-Type: text/plain}}
+        - {api_key: null, headers: {Content-type: text/plain}}
+        - {api_key: k, headers: {Authorization: caller}}
+env: {}
+compare: {ignore: []}
