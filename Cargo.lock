@@ -1339,10 +1339,12 @@ dependencies = [
  "betterlite-models",
  "betterlite-secrets",
  "clap",
+ "comfy-table",
  "console",
  "dbus-secret-service-keyring-store",
  "getrandom 0.4.3",
  "hex",
+ "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
  "inquire",
@@ -1523,6 +1525,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-core",
+ "betterlite-models",
+ "betterlite-openai",
  "chrono",
  "jiff",
  "libfuzzer-sys",
@@ -2894,6 +2898,7 @@ dependencies = [
  "deadpool-postgres",
  "email_address",
  "encoding_rs",
+ "flate2",
  "form_urlencoded",
  "futures-channel",
  "futures-util",
@@ -3663,6 +3668,16 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "comfy-table"
+version = "8.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b96a46ad395a5e00676eddaca4a45ed78b29c08be5a878d35e4b071c625637dd"
+dependencies = [
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

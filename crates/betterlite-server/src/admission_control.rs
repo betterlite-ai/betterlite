@@ -21,7 +21,6 @@ use tokio::time::timeout;
 use self::body::GuardedBody;
 use self::in_flight::{InFlightRequests, track_in_flight};
 use self::response::overloaded;
-use crate::middleware::request_root_paths::RequestRootPath;
 
 // LiteLLM lets health probes and metric scrapes through so a saturated worker stays observable
 const EXEMPT_PATHS: [&str; 8] = [
@@ -160,19 +159,20 @@ impl Drop for AdmissionSlot {
 pub struct AdmissionStack {
     pub admission: Arc<AdmissionControl>,
     pub in_flight: Arc<InFlightRequests>,
-    pub scalar_root: String,
 }
 
 impl AdmissionStack {
     pub fn wrap(&self, application: Router) -> Router {
-        let gate = (Arc::clone(&self.admission), Arc::from(&*self.scalar_root));
         // the root path layer must wrap this stack so an exemption check sees the route path
         application
             .layer(from_fn_with_state(
                 Arc::clone(&self.in_flight),
                 track_in_flight,
             ))
-            .layer(from_fn_with_state(gate, admit_request))
+            .layer(from_fn_with_state(
+                Arc::clone(&self.admission),
+                admit_request,
+            ))
     }
 }
 
@@ -199,26 +199,12 @@ fn is_websocket_upgrade(request: &Request<Body>) -> bool {
         && single(headers, header::SEC_WEBSOCKET_VERSION).is_some_and(|version| version == b"13")
 }
 
-// LiteLLM strips the scope root_path itself, and a scalar SERVER_ROOT_PATH has no middleware to do it here
-fn scalar_route_path<'path>(request: &'path Request<Body>, scalar_root: &str) -> &'path str {
-    let path = request.uri().path();
-    if request.extensions().get::<RequestRootPath>().is_some() {
-        return path;
-    }
-    // a root that stops inside a segment (/ before metrics, /proxy before health) leaves the path whole; an exact match leaves nothing
-    match path.strip_prefix(scalar_root) {
-        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
-        _ => path,
-    }
-}
-
 async fn admit_request(
-    State((control, scalar_root)): State<(Arc<AdmissionControl>, Arc<str>)>,
+    State(control): State<Arc<AdmissionControl>>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    let exempt = is_websocket_upgrade(&request)
-        || EXEMPT_PATHS.contains(&scalar_route_path(&request, &scalar_root));
+    let exempt = is_websocket_upgrade(&request) || EXEMPT_PATHS.contains(&request.uri().path());
     let (Some(limits), false) = (control.limits, exempt) else {
         return next.run(request).await;
     };
