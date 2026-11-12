@@ -1,2 +1,7 @@
 task: B1132
-deviations: []
+deviations:
+  - what: >-
+      An os.environ/ reference in general_settings.enable_claude_code_gateway whose variable is unset fails the config load with an error naming the variable, where LiteLLM resolves the reference to None and starts with the gateway disabled.
+    why: >-
+      Every betterlite section resolves os.environ/ references at the config boundary and an unset variable is a load error naming it, the shared parser docs/compatibility.md describes for every field; silently starting with a gateway the config asked to enable would hide the missing variable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787

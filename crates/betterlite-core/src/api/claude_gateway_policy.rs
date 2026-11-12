@@ -19,7 +19,7 @@ pub struct ClaudeGatewayPolicyInput {
 #[serde(deny_unknown_fields)]
 pub struct GatewayGeneralSettings {
     #[serde(default)]
-    pub enable_claude_code_gateway: Option<bool>,
+    pub enable_claude_code_gateway: bool,
     #[serde(default)]
     pub managed_settings: Option<ManagedSettings>,
 }
@@ -43,7 +43,7 @@ impl From<&ResolvedSettings> for ClaudeGatewayPolicyInput {
     fn from(settings: &ResolvedSettings) -> Self {
         Self {
             general_settings: GatewayGeneralSettings {
-                enable_claude_code_gateway: Some(settings.enabled),
+                enable_claude_code_gateway: settings.enabled,
                 managed_settings: settings.managed_settings.clone(),
             },
         }
@@ -51,17 +51,14 @@ impl From<&ResolvedSettings> for ClaudeGatewayPolicyInput {
 }
 
 #[must_use]
-pub fn evaluate(input: &ClaudeGatewayPolicyInput) -> ClaudeGatewayPolicyResult<'_> {
+pub const fn evaluate(input: &ClaudeGatewayPolicyInput) -> ClaudeGatewayPolicyResult<'_> {
     ClaudeGatewayPolicyResult {
-        enabled: input
-            .general_settings
-            .enable_claude_code_gateway
-            .unwrap_or(false),
+        enabled: input.general_settings.enable_claude_code_gateway,
         managed_settings: input.general_settings.managed_settings.as_ref(),
     }
 }
 
-pub fn ensure_gateway_enabled(
+pub const fn ensure_gateway_enabled(
     input: &ClaudeGatewayPolicyInput,
 ) -> Result<ClaudeGatewayPolicyResult<'_>, ClaudeGatewayPolicyError> {
     let result = evaluate(input);
