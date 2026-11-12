@@ -6,17 +6,17 @@ use super::fixture::{Fixture, Session};
 use crate::feature_flags::beta::{
     BetaRequest, EFFORT_BETA, FILE_CODE_EXECUTION_BETA, FILES_API_BETA, MCP_CLIENT_BETA,
     OUTPUT_CONFIG_BETA, THINKING_DISPLAY_BETA, TOOL_CHANGES_BETA, beta_list,
-    computer_tool_beta_header, tool_search_beta_header, user_beta_headers,
+    computer_tool_beta_header, tool_search_beta_header,
 };
 use crate::feature_flags::billing::{billing_fields, billing_texts, is_one_shot_subagent_request};
 use crate::feature_flags::cache::supports_cache_control;
 use crate::feature_flags::compaction::requires_compaction_beta;
 use crate::feature_flags::messages::{
     has_output_config, has_thinking_display_updates, has_tool_change, is_cache_control_set,
-    is_file_id_used, is_mcp_server_used, is_pdf_used,
+    is_file_id_used, is_pdf_used,
 };
 use crate::feature_flags::tools::{
-    eager_input_streaming_flag, is_code_execution_tool_used, is_computer_tool_used,
+    computer_tool_version, eager_input_streaming_flag, is_code_execution_tool_used,
     is_container_with_skills_used, is_eager_input_streaming_used, is_native_web_search_tool,
     is_tool_search_used, is_web_search_tool_used, uses_input_examples, uses_programmatic_calls,
 };
@@ -59,34 +59,34 @@ fn one_shot_identity_cases() {
     assert!(is_one_shot_subagent_request(
         &messages,
         &billing,
-        None,
+        NO_TOOLS,
         Some("claude-cli/1.2.3")
     ));
     assert!(is_one_shot_subagent_request(
         &messages,
         &billing,
-        Some(&empty),
+        &empty,
         Some("claude-code/0.1")
     ));
     assert!(!is_one_shot_subagent_request(
         &messages,
         &billing,
-        None,
+        NO_TOOLS,
         Some("Claude-CLI/1.2.3")
     ));
     assert!(!is_one_shot_subagent_request(
-        &messages, &billing, None, None
+        &messages, &billing, NO_TOOLS, None
     ));
     assert!(!is_one_shot_subagent_request(
         &messages,
         &billing,
-        None,
+        NO_TOOLS,
         Some("curl/8")
     ));
     assert!(!is_one_shot_subagent_request(
         &messages,
         &billing,
-        Some(&tools),
+        &tools,
         Some("claude-cli/1")
     ));
 }
@@ -161,7 +161,7 @@ fn one_shot_system_cases() {
             is_one_shot_subagent_request(
                 &values(messages),
                 &single(system),
-                None,
+                NO_TOOLS,
                 Some("claude-cli/1")
             ),
             *expected,
@@ -237,71 +237,64 @@ pub(crate) fn malformed_billing_text() {
 
 fn compaction_option_cases() {
     let compaction = params(r#"{"compaction": false}"#);
-    assert!(requires_compaction_beta(
-        "anthropic",
-        Some(&compaction),
-        NO_TOOLS
-    ));
+    assert!(requires_compaction_beta("anthropic", &compaction, NO_TOOLS));
     let null_option = params(r#"{"compaction": null}"#);
     assert!(!requires_compaction_beta(
         "anthropic",
-        Some(&null_option),
+        &null_option,
         NO_TOOLS
     ));
     let empty = params("{}");
+    assert!(!requires_compaction_beta("anthropic", &empty, NO_TOOLS));
     assert!(!requires_compaction_beta(
         "anthropic",
-        Some(&empty),
+        &FeatureParams::default(),
         NO_TOOLS
     ));
-    assert!(!requires_compaction_beta("anthropic", None, NO_TOOLS));
 }
 
 fn compaction_block_cases() {
+    let params = FeatureParams::default();
     let signed = values(r#"[{"role":"user","content":[{"type":"compaction","signature":"sig"}]}]"#);
-    assert!(requires_compaction_beta("anthropic", None, &signed));
+    assert!(requires_compaction_beta("anthropic", &params, &signed));
     let empty_signature =
         values(r#"[{"role":"user","content":[{"type":"compaction","signature":""}]}]"#);
     assert!(!requires_compaction_beta(
         "anthropic",
-        None,
+        &params,
         &empty_signature
     ));
     let numeric_signature = values(r#"[{"content":[{"type":"compaction","signature":5}]}]"#);
     assert!(!requires_compaction_beta(
         "anthropic",
-        None,
+        &params,
         &numeric_signature
     ));
     let missing_signature = values(r#"[{"content":[{"type":"compaction"}]}]"#);
     assert!(!requires_compaction_beta(
         "anthropic",
-        None,
+        &params,
         &missing_signature
     ));
     let string_content = values(r#"[{"content":"compaction"}]"#);
     assert!(!requires_compaction_beta(
         "anthropic",
-        None,
+        &params,
         &string_content
     ));
     let mixed =
         values(r#"[{"content":["block",{"type":"text"},{"type":"compaction","signature":"s"}]}]"#);
-    assert!(requires_compaction_beta("anthropic", None, &mixed));
+    assert!(requires_compaction_beta("anthropic", &params, &mixed));
     let non_object = values(r#"[7,{"content":[]}]"#);
-    assert!(!requires_compaction_beta("anthropic", None, &non_object));
+    assert!(!requires_compaction_beta("anthropic", &params, &non_object));
 }
 
 fn compaction_provider_cases() {
     let compaction = params(r#"{"compaction": true}"#);
-    assert!(!requires_compaction_beta(
-        "bedrock",
-        Some(&compaction),
-        NO_TOOLS
-    ));
+    assert!(!requires_compaction_beta("bedrock", &compaction, NO_TOOLS));
     assert!(!requires_compaction_beta(
         "vertex_ai",
-        Some(&compaction),
+        &compaction,
         NO_TOOLS
     ));
 }
@@ -424,43 +417,43 @@ pub(crate) fn file_and_pdf_flags() {
 
 fn tool_search_cases() {
     let regex = values(r#"[{"type":"tool_search_tool_regex_20251119"}]"#);
-    assert!(is_tool_search_used(Some(&regex)));
+    assert!(is_tool_search_used(&regex));
     let bm25 = values(r#"[{"type":"tool_search_tool_bm25_20251119"}]"#);
-    assert!(is_tool_search_used(Some(&bm25)));
+    assert!(is_tool_search_used(&bm25));
     let similar = values(r#"[{"type":"tool_search_tool_regex_20251120"}]"#);
-    assert!(!is_tool_search_used(Some(&similar)));
+    assert!(!is_tool_search_used(&similar));
     let empty = values("[]");
-    assert!(!is_tool_search_used(Some(&empty)));
-    assert!(!is_tool_search_used(None));
+    assert!(!is_tool_search_used(&empty));
+    assert!(!is_tool_search_used(NO_TOOLS));
 }
 
 fn programmatic_cases() {
     let top_level = values(r#"[{"allowed_callers":["code_execution_20250825"]}]"#);
-    assert!(uses_programmatic_calls(Some(&top_level)));
+    assert!(uses_programmatic_calls(&top_level));
     let nested = values(
         r#"[{"type":"function","function":{"allowed_callers":["code_execution_20250825"]}}]"#,
     );
-    assert!(uses_programmatic_calls(Some(&nested)));
+    assert!(uses_programmatic_calls(&nested));
     let other_caller = values(r#"[{"allowed_callers":["code_execution_20250101"]}]"#);
-    assert!(!uses_programmatic_calls(Some(&other_caller)));
+    assert!(!uses_programmatic_calls(&other_caller));
     let empty_callers = values(r#"[{"allowed_callers":[]}]"#);
-    assert!(!uses_programmatic_calls(Some(&empty_callers)));
+    assert!(!uses_programmatic_calls(&empty_callers));
     let string_callers = values(r#"[{"allowed_callers":"code_execution_20250825"}]"#);
-    assert!(!uses_programmatic_calls(Some(&string_callers)));
-    assert!(!uses_programmatic_calls(None));
+    assert!(!uses_programmatic_calls(&string_callers));
+    assert!(!uses_programmatic_calls(NO_TOOLS));
 }
 
 fn example_cases() {
     let examples = values(r#"[{"input_examples":[{"value":"one"}]}]"#);
-    assert!(uses_input_examples(Some(&examples)));
+    assert!(uses_input_examples(&examples));
     let nested_examples =
         values(r#"[{"type":"function","function":{"input_examples":[{"value":"one"}]}}]"#);
-    assert!(uses_input_examples(Some(&nested_examples)));
+    assert!(uses_input_examples(&nested_examples));
     let empty_examples = values(r#"[{"input_examples":[]}]"#);
-    assert!(!uses_input_examples(Some(&empty_examples)));
+    assert!(!uses_input_examples(&empty_examples));
     let text_examples = values(r#"[{"input_examples":"one"}]"#);
-    assert!(!uses_input_examples(Some(&text_examples)));
-    assert!(!uses_input_examples(None));
+    assert!(!uses_input_examples(&text_examples));
+    assert!(!uses_input_examples(NO_TOOLS));
 }
 
 pub(crate) fn tool_search_and_examples() {
@@ -517,17 +510,17 @@ fn eager_flag_rejections() {
 
 fn eager_used_cases() {
     let true_first = values(r#"[{"eager_input_streaming":true},{"eager_input_streaming":"bad"}]"#);
-    assert!(is_eager_input_streaming_used(Some(&true_first)).unwrap());
+    assert!(is_eager_input_streaming_used(&true_first).unwrap());
     let bad_first = values(r#"[{"eager_input_streaming":"bad"},{"eager_input_streaming":true}]"#);
     assert!(
-        is_eager_input_streaming_used(Some(&bad_first)).is_err(),
+        is_eager_input_streaming_used(&bad_first).is_err(),
         "the malformed tool before the first true raises"
     );
     let false_only = values(r#"[{"eager_input_streaming":false}]"#);
-    assert!(!is_eager_input_streaming_used(Some(&false_only)).unwrap());
+    assert!(!is_eager_input_streaming_used(&false_only).unwrap());
     let empty = values("[]");
-    assert!(!is_eager_input_streaming_used(Some(&empty)).unwrap());
-    assert!(!is_eager_input_streaming_used(None).unwrap());
+    assert!(!is_eager_input_streaming_used(&empty).unwrap());
+    assert!(!is_eager_input_streaming_used(NO_TOOLS).unwrap());
 }
 
 pub(crate) fn eager_input_boolean() {
@@ -544,9 +537,9 @@ pub(crate) fn eager_input_boolean() {
 }
 
 fn computer_tool_cases() {
-    let computer = values(r#"[{"type":"computer_20250124"}]"#);
+    let computer = single(r#"{"type":"computer_20250124"}"#);
     assert_eq!(
-        is_computer_tool_used(Some(&computer)),
+        computer_tool_version(&computer),
         Some("computer_20250124".to_owned())
     );
     assert_eq!(
@@ -563,26 +556,26 @@ fn computer_tool_cases() {
     );
     let first_wins = values(r#"[{"type":"computer_20241022"},{"type":"computer_20250124"}]"#);
     assert_eq!(
-        is_computer_tool_used(Some(&first_wins)),
+        first_wins.iter().find_map(computer_tool_version),
         Some("computer_20241022".to_owned())
     );
-    let untyped = values(r#"[{"name":"bash"}]"#);
-    assert_eq!(is_computer_tool_used(Some(&untyped)), None);
-    assert_eq!(is_computer_tool_used(None), None);
+    let untyped = single(r#"{"name":"bash"}"#);
+    assert_eq!(computer_tool_version(&untyped), None);
+    assert_eq!(NO_TOOLS.iter().find_map(computer_tool_version), None);
 }
 
 fn web_search_type_cases() {
     let versioned = values(r#"[{"type":"web_search_20250305"}]"#);
-    assert!(is_web_search_tool_used(Some(&versioned)));
+    assert!(is_web_search_tool_used(&versioned));
     let bare = values(r#"[{"type":"web_search"}]"#);
-    assert!(is_web_search_tool_used(Some(&bare)));
+    assert!(is_web_search_tool_used(&bare));
     let other_suffix = values(r#"[{"type":"web_searches"}]"#);
-    assert!(is_web_search_tool_used(Some(&other_suffix)));
+    assert!(is_web_search_tool_used(&other_suffix));
     let name_only = values(r#"[{"name":"web_search"}]"#);
-    assert!(!is_web_search_tool_used(Some(&name_only)));
+    assert!(!is_web_search_tool_used(&name_only));
     let empty = values("[]");
-    assert!(!is_web_search_tool_used(Some(&empty)));
-    assert!(!is_web_search_tool_used(None));
+    assert!(!is_web_search_tool_used(&empty));
+    assert!(!is_web_search_tool_used(NO_TOOLS));
 }
 
 pub(crate) fn computer_tool_beta() {
@@ -592,39 +585,26 @@ pub(crate) fn computer_tool_beta() {
 
 fn code_execution_cases() {
     let execution = values(r#"[{"type":"code_execution_20250825"}]"#);
-    assert!(is_code_execution_tool_used(Some(&execution)));
+    assert!(is_code_execution_tool_used(&execution));
     let older = values(r#"[{"type":"code_execution_20250101"}]"#);
-    assert!(!is_code_execution_tool_used(Some(&older)));
-    assert!(!is_code_execution_tool_used(None));
+    assert!(!is_code_execution_tool_used(&older));
+    assert!(!is_code_execution_tool_used(NO_TOOLS));
 }
 
 fn container_skills_cases() {
     let skills = params(r#"{"container":{"skills":[{"type":"custom"}]}}"#);
-    assert!(is_container_with_skills_used(Some(&skills)));
+    assert!(is_container_with_skills_used(&skills));
     let empty_skills = params(r#"{"container":{"skills":[]}}"#);
-    assert!(!is_container_with_skills_used(Some(&empty_skills)));
+    assert!(!is_container_with_skills_used(&empty_skills));
     let no_skills = params(r#"{"container":{}}"#);
-    assert!(!is_container_with_skills_used(Some(&no_skills)));
+    assert!(!is_container_with_skills_used(&no_skills));
     let null_container = params(r#"{"container":null}"#);
-    assert!(!is_container_with_skills_used(Some(&null_container)));
+    assert!(!is_container_with_skills_used(&null_container));
     let text_container = params(r#"{"container":"skills"}"#);
-    assert!(!is_container_with_skills_used(Some(&text_container)));
+    assert!(!is_container_with_skills_used(&text_container));
     let text_skills = params(r#"{"container":{"skills":"one"}}"#);
-    assert!(!is_container_with_skills_used(Some(&text_skills)));
-    assert!(!is_container_with_skills_used(None));
-}
-
-fn user_header_cases() {
-    assert_eq!(user_beta_headers(None), None);
-    assert_eq!(
-        user_beta_headers(Some("a,b")),
-        Some(vec!["a".to_owned(), "b".to_owned()])
-    );
-    assert_eq!(
-        user_beta_headers(Some(" a , ,b ")),
-        Some(vec![" a ".to_owned(), " ".to_owned(), "b ".to_owned()])
-    );
-    assert_eq!(user_beta_headers(Some("")), Some(vec![String::new()]));
+    assert!(!is_container_with_skills_used(&text_skills));
+    assert!(!is_container_with_skills_used(&FeatureParams::default()));
 }
 
 fn tool_search_header_cases() {
@@ -661,7 +641,6 @@ fn tool_search_header_cases() {
 pub(crate) fn skills_code_execution_beta() {
     code_execution_cases();
     container_skills_cases();
-    user_header_cases();
     tool_search_header_cases();
 }
 
@@ -705,22 +684,17 @@ fn tool_change_cases() {
     assert!(!has_tool_change(&string_content));
 }
 
-fn output_config_and_mcp_cases() {
+fn output_config_cases() {
     let with_config = values(r#"[{"role":"user","content":"hi","output_config":null}]"#);
     assert!(has_output_config(&with_config));
     let without = values(r#"[{"role":"user","content":"hi"}]"#);
     assert!(!has_output_config(&without));
-    assert!(!is_mcp_server_used(None));
-    let empty_servers = values("[]");
-    assert!(!is_mcp_server_used(Some(&empty_servers)));
-    let servers = values(r#"[{"type":"url","url":"https://mcp.example","name":"m"}]"#);
-    assert!(is_mcp_server_used(Some(&servers)));
 }
 
 pub(crate) fn conversation_feature_flags() {
     thinking_display_cases();
     tool_change_cases();
-    output_config_and_mcp_cases();
+    output_config_cases();
 }
 
 async fn betas(fixture: &Fixture, request: &BetaRequest<'_>) -> BTreeSet<&'static str> {
@@ -728,29 +702,6 @@ async fn betas(fixture: &Fixture, request: &BetaRequest<'_>) -> BTreeSet<&'stati
     let mut environment = session.environment();
     beta_list(request, &mut environment, &fixture.catalogs()).await
 }
-
-fn beta_request<'request>(
-    model: &'request str,
-    params: &'request FeatureParams,
-    features: &'request AnthropicFeatures,
-    prompt_caching_set: bool,
-) -> BetaRequest<'request> {
-    BetaRequest {
-        model,
-        custom_llm_provider: "anthropic",
-        params: Some(params),
-        features,
-        prompt_caching_set,
-    }
-}
-
-const ALL_FLAG_BETAS: &[Feature] = &[
-    Feature::FileId,
-    Feature::McpServer,
-    Feature::MidConversationOutputConfig,
-    Feature::ThinkingDisplayUpdates,
-    Feature::MidConversationToolChange,
-];
 
 struct BetaCase {
     model: &'static str,
@@ -814,16 +765,41 @@ const BETA_CASES: &[BetaCase] = &[
         model: "claude-sonnet-4-5",
         params: "{}",
         computer_tool: None,
-        flags: ALL_FLAG_BETAS,
+        flags: &[Feature::FileId],
         prompt_caching: false,
-        expected: &[
-            FILES_API_BETA,
-            FILE_CODE_EXECUTION_BETA,
-            MCP_CLIENT_BETA,
-            OUTPUT_CONFIG_BETA,
-            THINKING_DISPLAY_BETA,
-            TOOL_CHANGES_BETA,
-        ],
+        expected: &[FILES_API_BETA, FILE_CODE_EXECUTION_BETA],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: None,
+        flags: &[Feature::McpServer],
+        prompt_caching: false,
+        expected: &[MCP_CLIENT_BETA],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: None,
+        flags: &[Feature::MidConversationOutputConfig],
+        prompt_caching: false,
+        expected: &[OUTPUT_CONFIG_BETA],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: None,
+        flags: &[Feature::ThinkingDisplayUpdates],
+        prompt_caching: false,
+        expected: &[THINKING_DISPLAY_BETA],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: None,
+        flags: &[Feature::MidConversationToolChange],
+        prompt_caching: false,
+        expected: &[TOOL_CHANGES_BETA],
     },
     BetaCase {
         model: "claude-sonnet-4-5",
@@ -842,7 +818,13 @@ async fn beta_cases(fixture: &Fixture) {
             flags: case.flags.iter().copied().collect(),
             computer_tool: case.computer_tool.map(str::to_owned),
         };
-        let request = beta_request(case.model, &params, &features, case.prompt_caching);
+        let request = BetaRequest {
+            model: case.model,
+            custom_llm_provider: "anthropic",
+            params: &params,
+            features: &features,
+            prompt_caching_set: case.prompt_caching,
+        };
         assert_eq!(
             betas(fixture, &request).await,
             case.expected

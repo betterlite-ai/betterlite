@@ -23,6 +23,7 @@ from .contracts import (
     BetaCall,
     BillingFieldsCall,
     CacheCall,
+    CacheControlSetCall,
     Call,
     CompactionCall,
     ComputerCall,
@@ -65,11 +66,15 @@ def compaction_answer(call: CompactionCall) -> Json:
     return {"native": native}
 
 
-def cache_answer(call: CacheCall) -> Json:
-    supported = supports_anthropic_cache_control(
-        call["model"], call["custom_llm_provider"]
-    )
-    return {"supported": supported}
+def cache_answer(call: CacheCall | CacheControlSetCall) -> Json:
+    match call["function"]:
+        case "cache_control_set":
+            return {"cache_control": MODEL_INFO.is_cache_control_set(call["messages"])}
+        case _:
+            supported = supports_anthropic_cache_control(
+                call["model"], call["custom_llm_provider"]
+            )
+            return {"supported": supported}
 
 
 def file_ids_answer(call: FileIdsCall) -> Json:
@@ -184,7 +189,7 @@ def request_answer(call: RequestCall) -> Json:
             return billing_fields_answer(call)
         case "compaction":
             return compaction_answer(call)
-        case "cache_control":
+        case "cache_control" | "cache_control_set":
             return cache_answer(call)
         case "file_ids":
             return file_ids_answer(call)
@@ -213,6 +218,7 @@ def answer(call: Call) -> Json:
             | "billing_fields"
             | "compaction"
             | "cache_control"
+            | "cache_control_set"
             | "file_ids"
             | "pdf"
         ):

@@ -84,14 +84,6 @@ pub fn has_output_config(messages: &[Json]) -> bool {
 }
 
 #[must_use]
-pub const fn is_mcp_server_used(mcp_servers: Option<&[Json]>) -> bool {
-    let Some(servers) = mcp_servers else {
-        return false;
-    };
-    !servers.is_empty()
-}
-
-#[must_use]
 pub fn is_pdf_used(messages: &[Json]) -> bool {
     messages
         .iter()

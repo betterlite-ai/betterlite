@@ -16,7 +16,10 @@ call:
       - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: "", prompt_caching_set: false, features: []}
       - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [file_id]}
       - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [mcp_server]}
-      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [output_config, thinking_display, tool_change]}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [output_config]}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [thinking_display]}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [tool_change]}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [file_id, mcp_server, output_config, thinking_display, tool_change]}
       - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: true, features: []}
 env: {}
 compare: {ignore: []}

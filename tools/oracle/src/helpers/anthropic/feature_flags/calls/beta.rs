@@ -58,7 +58,7 @@ impl Beta {
         let request = BetaRequest {
             model: &self.model,
             custom_llm_provider: &self.custom_llm_provider,
-            params: Some(&self.params),
+            params: &self.params,
             features: &features,
             prompt_caching_set: self.prompt_caching_set,
         };

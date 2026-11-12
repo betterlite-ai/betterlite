@@ -6,28 +6,21 @@ use super::{FeatureFlagsError, FeatureParams};
 pub const CODE_EXECUTION_TOOL: &str = "code_execution_20250825";
 
 #[must_use]
-pub fn is_computer_tool_used(tools: Option<&[Json]>) -> Option<String> {
-    if let Some(present) = tools {
-        return present.iter().find_map(computer_tool_version);
-    }
-    None
-}
-
-fn computer_tool_version(tool: &Json) -> Option<String> {
+pub fn computer_tool_version(tool: &Json) -> Option<String> {
     let fields = tool.as_object()?;
     let kind = fields.get("type").and_then(Json::as_str)?;
     kind.starts_with("computer_").then(|| kind.to_owned())
 }
 
 #[must_use]
-pub fn is_web_search_tool_used(tools: Option<&[Json]>) -> bool {
+pub fn is_web_search_tool_used(tools: &[Json]) -> bool {
     any_tool(tools, |fields| {
         tool_kind(fields).is_some_and(|kind| kind.starts_with("web_search"))
     })
 }
 
 #[must_use]
-pub fn is_tool_search_used(tools: Option<&[Json]>) -> bool {
+pub fn is_tool_search_used(tools: &[Json]) -> bool {
     any_tool(tools, |fields| {
         matches!(
             tool_kind(fields),
@@ -37,14 +30,14 @@ pub fn is_tool_search_used(tools: Option<&[Json]>) -> bool {
 }
 
 #[must_use]
-pub fn is_code_execution_tool_used(tools: Option<&[Json]>) -> bool {
+pub fn is_code_execution_tool_used(tools: &[Json]) -> bool {
     any_tool(tools, |fields| {
         tool_kind(fields) == Some(CODE_EXECUTION_TOOL)
     })
 }
 
 #[must_use]
-pub fn uses_programmatic_calls(tools: Option<&[Json]>) -> bool {
+pub fn uses_programmatic_calls(tools: &[Json]) -> bool {
     any_tool(tools, |fields| {
         allowed_calls_code_execution(fields.get("allowed_callers"))
             || function_allows_code_execution(fields)
@@ -68,7 +61,7 @@ fn allowed_calls_code_execution(value: Option<&Json>) -> bool {
 }
 
 #[must_use]
-pub fn uses_input_examples(tools: Option<&[Json]>) -> bool {
+pub fn uses_input_examples(tools: &[Json]) -> bool {
     any_tool(tools, |fields| {
         has_examples(fields.get("input_examples")) || function_has_examples(fields)
     })
@@ -88,22 +81,18 @@ const fn has_examples(value: Option<&Json>) -> bool {
     !examples.is_empty()
 }
 
-fn any_tool<F>(tools: Option<&[Json]>, matches: F) -> bool
+fn any_tool<F>(tools: &[Json], matches: F) -> bool
 where
     F: Fn(&Object) -> bool,
 {
-    let Some(present) = tools else {
-        return false;
-    };
-    present
+    tools
         .iter()
         .any(|tool| tool.as_object().is_some_and(&matches))
 }
 
 #[must_use]
-pub fn is_container_with_skills_used(params: Option<&FeatureParams>) -> bool {
-    let Some(ParamsJson::Object(container)) = params.and_then(|source| source.container.as_ref())
-    else {
+pub fn is_container_with_skills_used(params: &FeatureParams) -> bool {
+    let Some(ParamsJson::Object(container)) = params.container.as_ref() else {
         return false;
     };
     matches!(container.get("skills"), Some(ParamsJson::List(skills)) if !skills.is_empty())
@@ -134,11 +123,8 @@ const fn eager_bool(value: Option<&Json>) -> Result<Option<bool>, FeatureFlagsEr
     }
 }
 
-pub fn is_eager_input_streaming_used(tools: Option<&[Json]>) -> Result<bool, FeatureFlagsError> {
-    let Some(present) = tools else {
-        return Ok(false);
-    };
-    for tool in present {
+pub fn is_eager_input_streaming_used(tools: &[Json]) -> Result<bool, FeatureFlagsError> {
+    for tool in tools {
         if eager_input_streaming_flag(tool)? == Some(true) {
             return Ok(true);
         }

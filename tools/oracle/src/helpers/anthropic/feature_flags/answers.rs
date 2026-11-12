@@ -1,16 +1,16 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_anthropic::feature_flags::beta::{
-    computer_tool_beta_header, tool_search_beta_header, user_beta_headers,
+    computer_tool_beta_header, tool_search_beta_header,
 };
 use betterlite_anthropic::feature_flags::billing::{billing_fields, is_one_shot_subagent_request};
 use betterlite_anthropic::feature_flags::cache::supports_cache_control;
 use betterlite_anthropic::feature_flags::compaction::requires_compaction_beta;
 use betterlite_anthropic::feature_flags::messages::{
-    has_output_config, has_thinking_display_updates, has_tool_change, is_file_id_used,
-    is_mcp_server_used, is_pdf_used,
+    has_output_config, has_thinking_display_updates, has_tool_change, is_cache_control_set,
+    is_file_id_used, is_pdf_used,
 };
 use betterlite_anthropic::feature_flags::tools::{
-    eager_input_streaming_flag, is_code_execution_tool_used, is_computer_tool_used,
+    computer_tool_version, eager_input_streaming_flag, is_code_execution_tool_used,
     is_container_with_skills_used, is_eager_input_streaming_used, is_native_web_search_tool,
     is_tool_search_used, is_web_search_tool_used, uses_input_examples, uses_programmatic_calls,
 };
@@ -22,8 +22,8 @@ use serde_json::{Value, json};
 
 use super::calls::beta::Beta;
 use super::calls::{
-    BillingFields, CacheControl, Compaction, Computer, Conversation, EagerFlag, EagerUsed, FileIds,
-    OneShot, Pdf, Skills, Tools,
+    BillingFields, CacheControl, CacheControlSet, Compaction, Computer, Conversation, EagerFlag,
+    EagerUsed, FileIds, OneShot, Pdf, Skills, Tools,
 };
 use super::fixture::Fixture;
 
@@ -34,6 +34,7 @@ pub(super) enum Call {
     BillingFields(BillingFields),
     Compaction(Compaction),
     CacheControl(CacheControl),
+    CacheControlSet(CacheControlSet),
     FileIds(FileIds),
     Pdf(Pdf),
     Tools(Tools),
@@ -60,6 +61,9 @@ impl Call {
             Self::BillingFields(case) => billing_fields_answer(case),
             Self::Compaction(case) => compaction_answer(case),
             Self::CacheControl(case) => cache_control_answer(case, environment).await,
+            Self::CacheControlSet(case) => {
+                json!({"cache_control": is_cache_control_set(&case.messages)})
+            }
             Self::FileIds(case) => file_ids_answer(case),
             Self::Pdf(case) => pdf_answer(case),
             Self::Tools(case) => tools_answer(case),
@@ -74,11 +78,12 @@ impl Call {
 }
 
 fn one_shot_answer(case: &OneShot) -> Value {
+    let tools = case.tools.as_deref().unwrap_or_default();
     json!({
         "one_shot": is_one_shot_subagent_request(
             &case.messages,
             &case.system,
-            case.tools.as_deref(),
+            tools,
             case.user_agent.as_deref(),
         ),
     })
@@ -95,7 +100,7 @@ fn billing_fields_answer(case: &BillingFields) -> Value {
 
 fn compaction_answer(case: &Compaction) -> Value {
     json!({
-        "native": requires_compaction_beta(&case.provider, Some(&case.params), &case.messages),
+        "native": requires_compaction_beta(&case.provider, &case.params, &case.messages),
     })
 }
 
@@ -131,15 +136,12 @@ fn pdf_answer(case: &Pdf) -> Value {
 }
 
 fn tools_answer(case: &Tools) -> Value {
-    let mut native = Vec::new();
-    if let Some(present) = &case.tools {
-        native.extend(present.iter().map(is_native_web_search_tool));
-    }
+    let tools = case.tools.as_deref().unwrap_or_default();
     json!({
-        "tool_search": is_tool_search_used(case.tools.as_deref()),
-        "programmatic": uses_programmatic_calls(case.tools.as_deref()),
-        "input_examples": uses_input_examples(case.tools.as_deref()),
-        "native": native,
+        "tool_search": is_tool_search_used(tools),
+        "programmatic": uses_programmatic_calls(tools),
+        "input_examples": uses_input_examples(tools),
+        "native": tools.iter().map(is_native_web_search_tool).collect::<Vec<_>>(),
     })
 }
 
@@ -151,21 +153,24 @@ fn eager_flag_answer(case: &EagerFlag) -> Value {
 }
 
 fn eager_used_answer(case: &EagerUsed) -> Value {
-    match is_eager_input_streaming_used(case.tools.as_deref()) {
+    let tools = case.tools.as_deref().unwrap_or_default();
+    match is_eager_input_streaming_used(tools) {
         Ok(used) => json!({"used": used}),
         Err(error) => json!({"error": {"status": error.status_code()}}),
     }
 }
 
 fn computer_answer(case: &Computer) -> Value {
-    let mut betas = Vec::with_capacity(case.versions.len());
-    for version in &case.versions {
-        betas.push(computer_tool_beta_header(version));
-    }
+    let tools = case.tools.as_deref().unwrap_or_default();
+    let betas: Vec<&'static str> = case
+        .versions
+        .iter()
+        .map(|version| computer_tool_beta_header(version))
+        .collect();
     json!({
-        "computer_tool": is_computer_tool_used(case.tools.as_deref()),
+        "computer_tool": tools.iter().find_map(computer_tool_version),
         "betas": betas,
-        "web_search": is_web_search_tool_used(case.tools.as_deref()),
+        "web_search": is_web_search_tool_used(tools),
     })
 }
 
@@ -173,16 +178,21 @@ fn skills_answer(case: &Skills) -> Value {
     let user_betas: Vec<Option<Vec<String>>> = case
         .headers
         .iter()
-        .map(|header| user_beta_headers(header.as_deref()))
+        .map(|header| {
+            header
+                .as_deref()
+                .map(|text| text.split(',').map(str::to_owned).collect())
+        })
         .collect();
     let search_betas: Vec<&'static str> = case
         .providers
         .iter()
         .map(|provider| tool_search_beta_header(provider))
         .collect();
+    let tools = case.tools.as_deref().unwrap_or_default();
     json!({
-        "code_execution": is_code_execution_tool_used(case.tools.as_deref()),
-        "container_skills": is_container_with_skills_used(Some(&case.params)),
+        "code_execution": is_code_execution_tool_used(tools),
+        "container_skills": is_container_with_skills_used(&case.params),
         "user_betas": user_betas,
         "tool_search_betas": search_betas,
     })
@@ -193,7 +203,7 @@ fn conversation_answer(case: &Conversation) -> Value {
         "thinking_display": has_thinking_display_updates(Some(&case.thinking)),
         "tool_change": has_tool_change(&case.messages),
         "output_config": has_output_config(&case.messages),
-        "mcp": is_mcp_server_used(case.mcp_servers.as_deref()),
+        "mcp": case.mcp_servers.as_deref().is_some_and(|servers| !servers.is_empty()),
     })
 }
 

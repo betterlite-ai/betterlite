@@ -9,6 +9,8 @@ JsonObject: TypeAlias = dict[str, Json]
 
 
 class FeatureModelInfo(Protocol):
+    def is_cache_control_set(self, messages: list[JsonObject]) -> bool: ...
+
     def is_file_id_used(self, messages: list[JsonObject]) -> bool: ...
 
     def is_pdf_used(self, messages: list[JsonObject]) -> bool: ...
@@ -116,6 +118,11 @@ class CacheCall(TypedDict):
     custom_llm_provider: str | None
 
 
+class CacheControlSetCall(TypedDict):
+    function: Literal["cache_control_set"]
+    messages: list[JsonObject]
+
+
 class FileIdsCall(TypedDict):
     function: Literal["file_ids"]
     messages: list[JsonObject]
@@ -186,6 +193,7 @@ RequestCall: TypeAlias = (
     | BillingFieldsCall
     | CompactionCall
     | CacheCall
+    | CacheControlSetCall
     | FileIdsCall
     | PdfCall
 )

@@ -7,14 +7,6 @@ const SUBAGENT_FIELD: &str = "cc_is_subagent";
 const SUBAGENT_VALUE: &str = "true";
 
 #[must_use]
-pub fn is_claude_code_user_agent(user_agent: &str) -> bool {
-    if user_agent.starts_with(CLAUDE_CLI_PREFIX) {
-        return true;
-    }
-    user_agent.starts_with(CLAUDE_CODE_PREFIX)
-}
-
-#[must_use]
 pub fn billing_fields(text: &str) -> Option<Vec<(String, String)>> {
     let stripped = text.trim();
     if stripped.contains(['\n', '\r']) {
@@ -93,7 +85,7 @@ pub fn is_subagent_billing_system(system: &Json) -> bool {
 pub fn is_one_shot_subagent_request(
     messages: &[Json],
     system: &Json,
-    tools: Option<&[Json]>,
+    tools: &[Json],
     user_agent: Option<&str>,
 ) -> bool {
     let [message] = messages else {
@@ -105,11 +97,12 @@ pub fn is_one_shot_subagent_request(
     if fields.get("role").and_then(Json::as_str) != Some("user") {
         return false;
     }
-    if !tools.is_none_or(<[Json]>::is_empty) {
+    if !tools.is_empty() {
         return false;
     }
     let Some(agent) = user_agent else {
         return false;
     };
-    is_claude_code_user_agent(agent) && is_subagent_billing_system(system)
+    (agent.starts_with(CLAUDE_CLI_PREFIX) || agent.starts_with(CLAUDE_CODE_PREFIX))
+        && is_subagent_billing_system(system)
 }

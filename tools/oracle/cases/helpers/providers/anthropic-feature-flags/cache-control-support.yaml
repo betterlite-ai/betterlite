@@ -24,5 +24,15 @@ call:
       - {function: cache_control, model: claude-3-5-sonnet, custom_llm_provider: azure_ai}
       - {function: cache_control, model: claude-3-5-sonnet, custom_llm_provider: azure}
       - {function: cache_control, model: claude-unmapped, custom_llm_provider: anthropic}
+      - function: cache_control_set
+        messages: [{role: user, content: [{type: text, text: hi}], cache_control: {type: ephemeral}}]
+      - function: cache_control_set
+        messages: [{role: user, content: [{type: text, text: hi}], cache_control: null}]
+      - function: cache_control_set
+        messages: [{role: user, content: [{type: text, text: hi, cache_control: null}]}]
+      - function: cache_control_set
+        messages: [{role: user, content: [{type: text, text: hi}]}]
+      - function: cache_control_set
+        messages: [{role: user, content: hi}]
 env: {}
 compare: {ignore: []}

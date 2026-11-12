@@ -3,18 +3,11 @@ use betterlite_prompts::arguments::json::Json;
 use super::FeatureParams;
 
 #[must_use]
-pub fn requires_compaction_beta(
-    provider: &str,
-    params: Option<&FeatureParams>,
-    messages: &[Json],
-) -> bool {
+pub fn requires_compaction_beta(provider: &str, params: &FeatureParams, messages: &[Json]) -> bool {
     if provider != "anthropic" {
         return false;
     }
-    if params
-        .and_then(|source| source.compaction.as_ref())
-        .is_some()
-    {
+    if params.compaction.is_some() {
         return true;
     }
     messages.iter().any(|message| {

@@ -31,6 +31,11 @@ pub(super) struct CacheControl {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct CacheControlSet {
+    pub(super) messages: Vec<Json>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct FileIds {
     pub(super) messages: Vec<Json>,
 }

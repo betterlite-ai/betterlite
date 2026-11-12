@@ -25,7 +25,7 @@ const TOOL_SEARCH_ANTHROPIC: &str = "advanced-tool-use-2025-11-20";
 pub struct BetaRequest<'request> {
     pub model: &'request str,
     pub custom_llm_provider: &'request str,
-    pub params: Option<&'request FeatureParams>,
+    pub params: &'request FeatureParams,
     pub features: &'request AnthropicFeatures,
     pub prompt_caching_set: bool,
 }
@@ -47,14 +47,6 @@ pub fn tool_search_beta_header(custom_llm_provider: &str) -> &'static str {
 }
 
 #[must_use]
-pub fn user_beta_headers(header: Option<&str>) -> Option<Vec<String>> {
-    if let Some(text) = header {
-        return Some(text.split(',').map(str::to_owned).collect());
-    }
-    None
-}
-
-#[must_use]
 pub async fn beta_list<Source, Transport>(
     request: &BetaRequest<'_>,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
@@ -65,13 +57,13 @@ where
     Transport: ModelInfoClient,
 {
     let mut betas = feature_betas(request.features);
-    let params = request.params.map(|params| OptionalParams {
-        reasoning_effort: params.reasoning_effort.clone(),
+    let params = OptionalParams {
+        reasoning_effort: request.params.reasoning_effort.clone(),
         thinking: None,
-        output_config: params.output_config.clone(),
-    });
+        output_config: request.params.output_config.clone(),
+    };
     if is_effort_used(
-        params.as_ref(),
+        Some(&params),
         request.model,
         request.custom_llm_provider,
         environment,
