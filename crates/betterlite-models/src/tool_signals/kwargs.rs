@@ -16,18 +16,6 @@ pub struct FileSearchTool {
     pub fields: IndexMap<String, Json>,
 }
 
-// The requested tool_type is ignored: a caller's tools list is returned whole and each scan decides the kind.
-#[must_use]
-pub fn tools_from_kwargs<'kwargs>(
-    kwargs: &'kwargs IndexMap<String, Json>,
-    _tool_type: &str,
-) -> Option<&'kwargs Json> {
-    if kwargs.contains_key("tools") {
-        return kwargs.get("tools");
-    }
-    None
-}
-
 fn tool_type(tool: &IndexMap<String, Json>) -> Option<&str> {
     match tool.get("type") {
         Some(Json::Text(text)) => Some(text),
@@ -55,14 +43,16 @@ pub fn get_web_search_options(
             fields: fields.clone(),
         }));
     }
-    let found = first_matching_tool(kwargs, "web_search_preview", is_web_search_tool_call)?;
+    // The requested tool type is ignored: the whole tools list is scanned and the first match wins.
+    let found = first_matching_tool(kwargs, is_web_search_tool_call)?;
     Ok(found.map(|fields| WebSearchOptions { fields }))
 }
 
 pub fn get_file_search_tool_call(
     kwargs: &IndexMap<String, Json>,
 ) -> Result<Option<FileSearchTool>, ToolSignalError> {
-    let Some(tools) = tools_from_kwargs(kwargs, "file_search") else {
+    // File search scans the same unfiltered list independently of the requested tool type.
+    let Some(tools) = kwargs.get("tools") else {
         return Ok(None);
     };
     for tool in tool_candidates(tools)? {
@@ -79,10 +69,9 @@ pub fn get_file_search_tool_call(
 
 fn first_matching_tool(
     kwargs: &IndexMap<String, Json>,
-    kind: &str,
     matches: fn(&IndexMap<String, Json>) -> bool,
 ) -> Result<Option<IndexMap<String, Json>>, ToolSignalError> {
-    let Some(tools) = tools_from_kwargs(kwargs, kind) else {
+    let Some(tools) = kwargs.get("tools") else {
         return Ok(None);
     };
     for tool in tool_candidates(tools)? {

@@ -3,9 +3,7 @@
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::{
-    get_file_search_tool_call, get_web_search_options, is_web_search_tool_call, tools_from_kwargs,
-};
+use super::{get_file_search_tool_call, get_web_search_options, is_web_search_tool_call};
 use crate::decisions::Json;
 use crate::tool_signals::error::ToolSignalError;
 
@@ -138,21 +136,28 @@ fn file_search_ignores_non_matching_and_non_object_tools() {
 }
 
 #[test]
-fn tools_from_kwargs_returns_the_original_list_for_any_tool_type() {
-    let kwargs = kwargs(r#"{"tools":[{"type":"file_search"},{"type":"web_search"}]}"#);
-    let preview = tools_from_kwargs(&kwargs, "web_search_preview");
-    let file_search = tools_from_kwargs(&kwargs, "file_search");
-    assert_eq!(preview, file_search);
-    assert!(preview.is_some());
+fn both_kinds_scan_the_whole_tools_list_regardless_of_type() {
+    let kwargs = kwargs(
+        r#"{"tools":[{"type":"file_search","vector_store_ids":["vs_1"]},{"type":"web_search_preview"}]}"#,
+    );
+    let options = get_web_search_options(&kwargs)
+        .expect("the options construct")
+        .expect("the web search tool after the file search tool is found");
+    assert_eq!(options.fields, fields(r#"{"type":"web_search_preview"}"#));
+    let tool = get_file_search_tool_call(&kwargs)
+        .expect("the tool constructs")
+        .expect("the file search tool before the web search tool is found");
+    assert_eq!(
+        tool.fields,
+        fields(r#"{"type":"file_search","vector_store_ids":["vs_1"]}"#)
+    );
 }
 
 #[test]
-fn tools_from_kwargs_preserves_an_explicit_null() {
-    assert_eq!(
-        tools_from_kwargs(&kwargs(r#"{"tools":null}"#), "web_search"),
-        Some(&Json::Null)
-    );
-    assert_eq!(tools_from_kwargs(&kwargs("{}"), "web_search"), None);
+fn an_explicit_null_tools_value_yields_no_selection() {
+    let kwargs = kwargs(r#"{"tools":null}"#);
+    assert_eq!(get_web_search_options(&kwargs), Ok(None));
+    assert_eq!(get_file_search_tool_call(&kwargs), Ok(None));
 }
 
 #[rstest]

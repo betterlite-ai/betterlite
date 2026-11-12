@@ -15,15 +15,4 @@ pub struct ToolUsage {
     pub server_side_details: Option<IndexMap<String, Json>>,
 }
 
-impl ToolUsage {
-    #[must_use]
-    pub fn with_server_tool_use(&self, server_tool_use: ServerToolUse) -> Self {
-        Self {
-            cost: self.cost.clone(),
-            server_tool_use: Some(server_tool_use),
-            server_side_details: self.server_side_details.clone(),
-        }
-    }
-}
-
 mod tests;

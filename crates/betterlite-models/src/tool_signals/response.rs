@@ -192,7 +192,7 @@ pub fn includes_file_search_call(response: &ToolBillingResponse) -> bool {
     includes_output_type(response, OutputItemType::FileSearchCall)
 }
 
-// The raw probe always wins; a typed chat or Responses object never falls through to the supplied usage.
+// A reported server_tool_use.web_search_requests wins; only a raw body's count repairs absent usage.
 #[must_use]
 pub fn anthropic_search_usage(response: &ToolBillingResponse) -> Option<ToolUsage> {
     let supplied = response.usage();
@@ -223,7 +223,10 @@ pub fn anthropic_search_usage(response: &ToolBillingResponse) -> Option<ToolUsag
             server_tool_use: Some(server_tool_use),
             server_side_details: None,
         },
-        |existing| existing.with_server_tool_use(server_tool_use),
+        |existing| ToolUsage {
+            server_tool_use: Some(server_tool_use),
+            ..existing.clone()
+        },
     ))
 }
 

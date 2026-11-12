@@ -78,7 +78,10 @@ fn replacing_the_server_tool_use_keeps_the_cost_and_side_details() {
         tool_search_requests: Some(1),
         browser_open_requests: None,
     };
-    let repaired = original.with_server_tool_use(replacement);
+    let repaired = ToolUsage {
+        server_tool_use: Some(replacement),
+        ..original.clone()
+    };
     assert_eq!(repaired.cost, original.cost);
     assert_eq!(repaired.server_side_details, original.server_side_details);
     assert_eq!(repaired.server_tool_use, Some(replacement));
