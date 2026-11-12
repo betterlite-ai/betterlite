@@ -1,0 +1,6 @@
+model_list:
+  - model_name: claude
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      max_tokens: 8192
+      anthropic_option_extra: 4

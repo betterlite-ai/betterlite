@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-option-primitives-stop
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: stop_sequence_filter
+        drop_params: true
+        stops: [null, "", " ", [END, " "], [1]]
+env: {}
+compare: {ignore: []}

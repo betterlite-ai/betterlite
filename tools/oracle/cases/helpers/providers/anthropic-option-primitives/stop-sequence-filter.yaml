@@ -1,0 +1,13 @@
+kind: helper
+name: option-stop-sequence-filter
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: stop_sequence_filter
+        drop_params: true
+        stops: [null, "", " ", "\t\n", END, [], [END, " ", ""], [" ", "\t"], [1], 5, true, {a: 1}, ["\u00a0"], ["\u001c"]]
+      - function: stop_sequence_filter
+        drop_params: false
+        stops: [null, "", " ", [END, " "], ["", " "], ["\u00a0"]]
+env: {}
+compare: {ignore: []}
