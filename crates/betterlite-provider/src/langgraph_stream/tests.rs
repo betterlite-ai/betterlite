@@ -117,6 +117,7 @@ fn stream_from(frames: Vec<Result<Vec<u8>, HttpError>>) -> LangGraphSseStream {
             chunks: stream::iter(frames).boxed(),
             decoder: LineDecoder::new(MAX_LINE_BYTES),
             lines: VecDeque::new(),
+            done: false,
         }),
         finished: false,
     }

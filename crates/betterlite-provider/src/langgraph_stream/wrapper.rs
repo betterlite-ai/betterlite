@@ -111,6 +111,7 @@ pub async fn open(
             chunks: head.chunks,
             decoder: LineDecoder::new(MAX_LINE_BYTES),
             lines: VecDeque::new(),
+            done: false,
         }),
         finished: false,
     };

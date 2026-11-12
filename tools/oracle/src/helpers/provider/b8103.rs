@@ -56,6 +56,7 @@ async fn chunks(case: &StreamCase) -> Result<Value, Box<HelperError>> {
             chunks: stream::iter(frames).boxed(),
             decoder: LineDecoder::new(MAX_LINE_BYTES),
             lines: VecDeque::new(),
+            done: false,
         }),
         finished: false,
     };

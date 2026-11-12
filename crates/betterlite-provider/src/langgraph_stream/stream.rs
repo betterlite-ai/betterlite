@@ -14,6 +14,8 @@ pub struct LineReader {
     pub chunks: Chunks,
     pub decoder: LineDecoder,
     pub lines: VecDeque<String>,
+    // an encoding_rs decoder flushes once and panics if used again, so the end of the body stays set
+    pub done: bool,
 }
 
 impl LineReader {
@@ -22,12 +24,15 @@ impl LineReader {
             if let Some(line) = self.lines.pop_front() {
                 return Ok(Some(line));
             }
+            if self.done {
+                return Ok(None);
+            }
             match timeout(STREAMING_TIMEOUT, self.chunks.next()).await {
                 Ok(Some(Ok(bytes))) => self.decoder.push(&bytes, &mut self.lines)?,
                 Ok(Some(Err(source))) => return Err(LangGraphStreamError::Body { source }),
                 Ok(None) => {
                     self.decoder.flush(&mut self.lines);
-                    return Ok(self.lines.pop_front());
+                    self.done = true;
                 }
                 Err(_elapsed) => return Err(LangGraphStreamError::Timeout),
             }
