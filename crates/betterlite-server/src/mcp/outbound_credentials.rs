@@ -141,10 +141,12 @@ impl WallClock for SystemWallClock {
     }
 }
 
+pub type TokenCacheEntries = Mutex<IndexMap<TokenKey, (OAuthToken, DateTime<Utc>)>>;
+
 pub struct InMemoryTokenCacheBackend {
     pub max_size: usize,
     pub clock: Arc<dyn WallClock>,
-    pub entries: Mutex<IndexMap<TokenKey, (OAuthToken, DateTime<Utc>)>>,
+    pub entries: TokenCacheEntries,
 }
 
 // A timezone-naive ISO expiry is stored as UTC, so anchor it before it names an instant.

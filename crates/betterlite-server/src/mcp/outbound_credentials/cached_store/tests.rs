@@ -7,12 +7,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use indexmap::IndexMap;
 
 use super::CachedOAuthTokenStore;
 use crate::mcp::outbound_credentials::{
     DEFAULT_EXPIRY_SKEW, InMemoryTokenCacheBackend, InvalidatableOAuthTokenStore as _, OAuthToken,
-    OAuthTokenStore, TokenStoreUnavailable, WallClock,
+    OAuthTokenStore, TokenCacheEntries, TokenStoreUnavailable, WallClock,
 };
 
 #[derive(Debug)]
@@ -94,7 +93,7 @@ fn store(
         backend: InMemoryTokenCacheBackend {
             max_size: 4096,
             clock: backend_clock,
-            entries: Mutex::new(IndexMap::new()),
+            entries: TokenCacheEntries::default(),
         },
         clock: cache_clock,
     }

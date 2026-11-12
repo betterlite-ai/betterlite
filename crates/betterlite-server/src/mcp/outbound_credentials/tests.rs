@@ -4,12 +4,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::{
-    InMemoryTokenCacheBackend, OAuthToken, TokenCacheBackend as _, TokenKey, TokenStoreUnavailable,
-    WallClock, iso_to_epoch,
+    InMemoryTokenCacheBackend, OAuthToken, TokenCacheBackend as _, TokenCacheEntries, TokenKey,
+    TokenStoreUnavailable, WallClock, iso_to_epoch,
 };
 
 #[derive(Debug)]
@@ -52,7 +51,7 @@ fn backend(clock: Arc<ManualClock>, max_size: usize) -> InMemoryTokenCacheBacken
     InMemoryTokenCacheBackend {
         max_size,
         clock,
-        entries: Mutex::new(IndexMap::new()),
+        entries: TokenCacheEntries::default(),
     }
 }
 
