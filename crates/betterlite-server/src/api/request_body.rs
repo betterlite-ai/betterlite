@@ -85,7 +85,7 @@ fn parsed_result(branch: BodyKind, body: JsonObject) -> RequestBodyResult {
     }
 }
 
-fn unread_body(branch: BodyKind, parsed_body: Option<ParsedBody>) -> RequestBodyResult {
+const fn unread_body(branch: BodyKind, parsed_body: Option<ParsedBody>) -> RequestBodyResult {
     RequestBodyResult {
         branch,
         body: JsonObject::new(),
