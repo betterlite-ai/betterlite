@@ -14,18 +14,18 @@ call:
       - kind: reserve
         provider_fields:
           web_search_calls:
-            a: {id: ws_call_x, status: searching, action: {type: open_page}}
+            a: {id: ws_call_x, type: web_search_call, status: searching, action: {type: open_page}}
       - kind: deltas
         tool_calls:
           - {id: call_x, index: 0, function: {name: web_search, arguments: "abcdefghijkl"}}
       - kind: reserve
         provider_fields:
           web_search_calls:
-            later: {id: ws_call_x, status: in_progress, action: {type: search, query: q}}
+            later: {id: ws_call_x, type: web_search_call, status: in_progress, action: {type: search, query: q}}
       - kind: reserve
         provider_fields:
           web_search_calls:
-            - {id: ws_two, status: completed, action: {type: find_in_page, pattern: p, url: "https://example.com"}}
+            - {id: ws_two, type: web_search_call, status: completed, action: {type: find_in_page, pattern: p, url: "https://example.com"}}
             - {status: completed}
             - {id: "", status: completed}
             - text

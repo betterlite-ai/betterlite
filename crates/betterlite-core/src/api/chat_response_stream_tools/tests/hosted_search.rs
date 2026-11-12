@@ -119,7 +119,7 @@ fn reserve_searching(state: &mut ChatStreamState<String>) {
     reserve_web_search_indexes(
         state,
         &json(
-            r#"{"web_search_calls":{"k":{"id":"ws_call_x","status":"searching","action":{"type":"open_page"}}}}"#,
+            r#"{"web_search_calls":{"k":{"id":"ws_call_x","status":"searching","type":"web_search_call","action":{"type":"open_page"}}}}"#,
         ),
     )
     .unwrap();
@@ -191,7 +191,7 @@ fn hosted_search_final_emits_a_known_call_once() {
     reserve_web_search_indexes(
         &mut state,
         &json(
-            r#"{"web_search_calls":{"k":{"id":"ws_call_x","status":"completed","action":{"type":"find_in_page","pattern":"p","url":"u"}}}}"#,
+            r#"{"web_search_calls":{"k":{"id":"ws_call_x","status":"completed","type":"web_search_call","action":{"type":"find_in_page","pattern":"p","url":"u"}}}}"#,
         ),
     )
     .unwrap();
@@ -257,7 +257,7 @@ fn hosted_search_final_keeps_extra_fields_from_the_record() {
     reserve_web_search_indexes(
         &mut state,
         &json(
-            r#"{"web_search_calls":{"k":{"id":"ws_x","status":"completed","action":{"type":"search","query":"q","provider":"p"},"vendor":7}}}"#,
+            r#"{"web_search_calls":{"k":{"id":"ws_x","status":"completed","type":"web_search_call","action":{"type":"search","query":"q","provider":"p"},"vendor":7}}}"#,
         ),
     )
     .unwrap();
@@ -303,7 +303,7 @@ fn sequence_numbers_continue_across_queues() {
     reserve_web_search_indexes(
         &mut state,
         &json(
-            r#"{"web_search_calls":{"k":{"id":"ws_call_x","status":"completed","action":{"type":"open_page"}}}}"#,
+            r#"{"web_search_calls":{"k":{"id":"ws_call_x","status":"completed","type":"web_search_call","action":{"type":"open_page"}}}}"#,
         ),
     )
     .unwrap();

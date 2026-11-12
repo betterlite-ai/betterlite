@@ -160,12 +160,10 @@ def completion_view(step: FinalStep) -> ModelResponse:
 
 def replace_items(step: ReplaceStep) -> list[Json]:
     adapter: TypeAdapter[ResponseOutputItem] = TypeAdapter(ResponseOutputItem)
-    inputs: list[Json] = []
+    inputs: list[ResponseOutputItem | Json] = []
     for entry in step["items"]:
         if entry["kind"] == "typed":
-            # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L63
-            dumped = adapter.validate_python(entry["item"]).model_dump(mode="json")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L63
-            inputs.append(cast(Json, dumped))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L63
+            inputs.append(adapter.validate_python(entry["item"]))
         else:
             inputs.append(entry["item"])
     # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L63
