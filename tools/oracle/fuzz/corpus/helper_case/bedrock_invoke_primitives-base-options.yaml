@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-invoke-primitives-base-options-seed
+call:
+  bedrock_invoke_primitives:
+    base_options:
+      non_default: {max_tokens: 5, max_completion_tokens: 9, stream: false}
+      optional: {max_tokens: 1}
+      config: {max_tokens: 7, top_k: 5}
+env: {}
+compare: {ignore: []}

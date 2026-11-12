@@ -1,14 +1,14 @@
 id: B3456
 milestone: M5 api families
 title: Bedrock RAG clients and knowledge base resource primitives
-status: todo
+status: done
 depends_on: [B173, B198, B591, B594, B595]
 file: tasks/B3456-bedrock-rag-clients.yaml
 covers:
   - "litellm/rag/ingestion/bedrock_ingestion.py"
 parent: B097
 split_from: B097
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1296

@@ -1,0 +1,107 @@
+# async_send_batch halves a batch on a 413 split, above batch_size records or above 1_000_000 UTF-8 bytes, accepts 200 and 204 and keeps or drops the records by status
+kind: helper
+name: azure-sentinel-batch-413-split
+call:
+  b4002:
+    scenarios:
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 4
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {status: 200}
+          - {status: 204}
+        actions:
+          - {do: model, ids: [a, b, c, d]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 3
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {status: 200}
+          - {status: 413, body: too large}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b, c]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+        actions:
+          - {do: model, ids: [a]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {status: 413, body: too large}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {status: 200}
+          - {status: 413, body: too large}
+        actions:
+          - {do: model, ids: [a, b]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 413, body: too large}
+          - {status: 503, body: down}
+        actions:
+          - {do: model, ids: [a, b]}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 2
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a, b], pad: 600000}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 500, body: boom}
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 200}
+          - {status: 200}
+          - {status: 200}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: model, ids: [b, c]}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {status: 400, body: bad}
+          - {status: 408, body: slow}
+          - {status: 429, body: slow}
+          - {status: 499, body: gone}
+          - {status: 500, body: boom}
+          - {status: 301, body: moved}
+          - {status: 204}
+        actions:
+          - {do: model, ids: [a]}
+          - {do: model, ids: [b]}
+          - {do: flush}
+          - {do: flush}
+          - {do: model, ids: [c]}
+          - {do: flush}
+          - {do: flush}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        batch_size: 1
+        replies:
+          - {status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}
+          - {network: true}
+        actions:
+          - {do: model, ids: [a]}
+env: {}
+compare: {ignore: []}

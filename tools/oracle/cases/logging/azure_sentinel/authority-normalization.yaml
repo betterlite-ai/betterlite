@@ -1,0 +1,25 @@
+# authority host normalize: strip, drop trailing slashes, prepend https:// to a bare host; only login.microsoftonline.us maps to the monitor.azure.us scope
+kind: helper
+name: azure-sentinel-authority-normalization
+call:
+  b4002:
+    scenarios:
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: login.microsoftonline.us}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: "https://login.microsoftonline.us/"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: "  login.microsoftonline.com//  "}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: "https://login.example.test"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: "http://login.microsoftonline.us"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: "https://login.microsoftonline.us:443"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: "LOGIN.MICROSOFTONLINE.US"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: "https://login.microsoftonline.us.evil.test"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        environment: {AZURE_SENTINEL_AUTHORITY_HOST: "login.microsoftonline.us/", AZURE_AUTHORITY_HOST: "https://login.example.test"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1}
+        environment: {AZURE_AUTHORITY_HOST: "https://login.microsoftonline.us"}
+      - init: {dcr_immutable_id: dcr-1, endpoint: "https://dce.example.test", tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, authority_host: login.microsoftonline.us}
+        batch_size: 1
+        replies: [{status: 200, body: '{"access_token": "tok-1", "expires_in": 3600}'}, {status: 204}]
+        actions:
+          - {do: model, ids: [a]}
+env: {}
+compare: {ignore: []}

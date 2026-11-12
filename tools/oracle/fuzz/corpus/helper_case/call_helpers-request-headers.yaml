@@ -1,0 +1,10 @@
+kind: helper
+name: call-helpers-request-headers
+call:
+  call_helpers:
+    function: request_headers
+    steps:
+      - null
+      - {proxy_server_request: {headers: {x-a: "1"}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# next-slot.sh puts this folder first on PATH, so `cargo gate` in a task checkout runs the gate next-slot built once for that gate version, outside the sandbox
+real=${CARGO_HOME:-${HOME}/.cargo}/bin/cargo
+if [[ ${1:-} == gate && -n ${GATE_SHARED_BUILDS:-} ]]; then
+  tree=$(git rev-parse --verify --quiet HEAD:.development/gate) || exec "${real}" "$@"
+  changes=$(git status --porcelain -- :/.development/gate) || exec "${real}" "$@"
+  built=${GATE_SHARED_BUILDS}/${tree}/gate
+  if [[ -x ${built} ]] && [[ -z ${changes} ]]; then
+    shift
+    exec "${built}" "$@"
+  fi
+fi
+exec "${real}" "$@"

@@ -1,0 +1,15 @@
+kind: helper
+name: kb-create-body
+call:
+  b3456:
+    step: create_knowledge_base
+    vector:
+      aws_region_name: cn-north-1
+      embedding_model: amazon.titan-embed-text-v2:0
+    environment: {}
+    kb_name: litellm-kb-abcd1234
+    knowledge_base_id: KB456
+    role_arn: "arn:aws-cn:iam::123456789012:role/Role"
+    collection_arn: "arn:aws-cn:aoss:cn-north-1:123456789012:collection/collection"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,29 @@
+task: B4583
+deviations:
+  - what: >-
+      A /v1/models response that is not a JSON list of model objects fails inside the
+      injected ModelDiscoveryClient's own deserialization, as a typed ModelDiscoveryError,
+      instead of a separate shape check inside run_configure_wizard.
+    why: >-
+      Rust's static types decide whether the response is list-shaped at the deserialization
+      boundary; by the time run_configure_wizard receives Vec<RawModelListing>, there is no
+      dynamic type left to re-check the way Python's isinstance(raw_models, list) does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L115-L118
+  - what: >-
+      The generated document's key order comes from the Rust struct's declared field order,
+      with no equivalent of yaml.safe_dump's sort_keys argument.
+    why: >-
+      serde-saphyr serializes a struct's fields in the order they are declared, the same
+      deterministic order sort_keys=False asks safe_dump to preserve for a Python dict; a
+      named struct needs no flag to get it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L160-L170
+  - what: >-
+      A persisted config.yaml whose model_list does not parse as generated deployments is
+      treated as unreadable, so its general_settings.master_key is not carried into the
+      rewrite; LiteLLM reads master_key from any mapping and ignores model_list entirely.
+    why: >-
+      The task reads the file through the typed GeneratedConfigDocument it writes, so an
+      unknown deployment shape is a parse error; a config the wizard wrote, or a hand-edited
+      one that still has the generated shape, carries the key through, and `start` mints a
+      fresh key whenever none is found.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/autoroute/wizard.py#L93-L106

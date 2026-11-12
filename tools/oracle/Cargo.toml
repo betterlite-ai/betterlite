@@ -62,6 +62,7 @@ betterlite-semantic = { path = "../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../crates/betterlite-tokenizer" }
+betterlite-transcribe = { path = "../../crates/betterlite-transcribe" }
 betterlite-vertex = { path = "../../crates/betterlite-vertex" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
 bytes = "1.12.1"

@@ -24,23 +24,24 @@ case ${mode} in
     [[ ${#strict[@]} -eq 0 ]] && exit 0
     status=0
     ast-grep scan --config .ast-grep/python/sgconfig.yml "${strict[@]}" || status=1
-    suppressed=$(grep -n -H -E '(^|[^[:alnum:]_])cast\(|#[[:space:]]*(noqa|type:[[:space:]]*ignore)' -- "${strict[@]}")
+    suppressed=$(grep -n -H -E '(^|[^[:alnum:]_])cast\(|#[[:space:]]*(noqa|type:[[:space:]]*ignore|pyright:[[:space:]]*ignore\[)' -- "${strict[@]}")
     unlinked=
     owned=
     if [[ -n ${suppressed} ]]; then
       unlinked=$(grep -v -E 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/blob/[0-9a-f]{40}/' <<< "${suppressed}")
       owned=$(grep -E 'github\.com/betterlite-ai/' <<< "${suppressed}")
     fi
-    banned=$(grep -n -H -E '#[[:space:]]*(pyright:|mypy:|ruff:[[:space:]]*noqa)' -- "${strict[@]}")
+    # mypy never reports pyright's private-usage and unknown-member errors, so a pinned pyright: ignore[rule] passes above like a type: ignore
+    banned=$(awk '{ line = $0; gsub(/#[[:space:]]*pyright:[[:space:]]*ignore\[[A-Za-z, ]+\]/, "", line) } line ~ /#[[:space:]]*(pyright:|mypy:|ruff:[[:space:]]*noqa)/ { print FILENAME ":" FNR ":" $0 }' "${strict[@]}")
     for found in "${unlinked}" "${owned}"; do
       [[ -z ${found} ]] && continue
       printf '%s\n' "${found}"
-      echo "a cast, noqa or type: ignore is allowed only for an upstream dependency's own types, and its line carries the upstream source it works around as a link pinned to a commit (https://github.com/<owner>/<repo>/blob/<40-hex sha>/...)" >&2
+      echo "a cast, noqa, type: ignore or pyright: ignore[rule] is allowed only for an upstream dependency's own types, and its line carries the upstream source it works around as a link pinned to a commit (https://github.com/<owner>/<repo>/blob/<40-hex sha>/...)" >&2
       status=1
     done
     if [[ -n ${banned} ]]; then
       printf '%s\n' "${banned}"
-      echo "pyright and mypy comments and a file-wide ruff noqa have no upstream case; fix the code" >&2
+      echo "mypy comments, a pyright comment other than ignore[rule] and a file-wide ruff noqa have no upstream case; fix the code" >&2
       status=1
     fi
     for file in "${strict[@]}"; do
@@ -58,7 +59,11 @@ case ${mode} in
     [[ ${#strict[@]} -eq 0 ]] || exec "${oracle[@]}" mypy --config-file tools/oracle/litellm/pyproject.toml "${strict[@]}"
     ;;
   pyright)
-    [[ ${#legacy[@]} -eq 0 ]] || exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json "${legacy[@]}"
+    # 1031 task checks run basedpyright over the whole helpers folder, so a helper change has to pass that same run, importers included
+    exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    ;;
+  pyright-files)
+    exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json "$@"
     ;;
   similarity)
     tracked=$(git ls-files -- '*.py' ':!:**/fixtures/**') || exit 1

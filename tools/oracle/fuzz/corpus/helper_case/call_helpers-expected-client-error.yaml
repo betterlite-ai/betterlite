@@ -1,0 +1,14 @@
+kind: helper
+name: call-helpers-expected-client-error
+call:
+  call_helpers:
+    function: expected_client_error
+    values:
+      - null
+      - {code: "400"}
+      - {llm_provider: openai, status_code: 400}
+      - {llm_provider: openai, category: litellm_rate_limit, status_code: 429}
+      - {base_llm_exception: true, status_code: 400}
+      - {http_exception: true, status_code: 429}
+env: {}
+compare: {ignore: []}
