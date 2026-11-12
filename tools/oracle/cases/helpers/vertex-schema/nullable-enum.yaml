@@ -1,0 +1,16 @@
+kind: helper
+name: nullable-enum
+call:
+  vertex_schema:
+    mode: build_vertex_schema
+    schema:
+      type: object
+      properties:
+        empty: {type: string, enum: [a, "", b]}
+        number: {type: integer, enum: [1, 2]}
+        upper: {type: STRING, enum: [a]}
+        branchy: {anyOf: [{type: string}, {type: integer}], enum: [x]}
+    add_property_ordering: false
+    settings: {}
+env: {}
+compare: {ignore: []}

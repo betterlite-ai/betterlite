@@ -1,0 +1,22 @@
+kind: helper
+name: structured-order
+call:
+  vertex_schema:
+    mode: build_vertex_schema
+    schema:
+      type: object
+      properties:
+        z: {type: string}
+        a: {type: integer}
+        list:
+          type: array
+          items:
+            type: object
+            properties:
+              y: {type: string}
+              x: {type: string}
+      required: [z, a]
+    add_property_ordering: true
+    settings: {}
+env: {}
+compare: {ignore: []}
