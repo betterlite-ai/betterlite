@@ -39,9 +39,11 @@ fn helper_seeds_select_hosted_chat_options() {
         "a seed must exercise the capability projection"
     );
     assert!(
-        seeds
-            .iter()
-            .any(|source| { source.contains("tools:") && source.contains("drop_params: false") }),
+        seeds.iter().any(|source| {
+            source.contains("host: featherless")
+                && source.contains("drop_params: false")
+                && source.contains("tools")
+        }),
         "a seed must exercise the Featherless tool rejection"
     );
 }

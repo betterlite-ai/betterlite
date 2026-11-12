@@ -18,7 +18,7 @@ call:
               - [temperature, null]
               - [stop, null]
               - [max_tokens, null]
-              - [n, null]
+              - ["n", null]
           - op: map
             host: featherless
             model: featherless-ai/model
