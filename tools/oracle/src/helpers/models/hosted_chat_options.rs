@@ -113,15 +113,22 @@ fn map(call: &MapCall, sections: &Sections) -> Result<Value, Box<HelperError>> {
                 return Ok(json!({"ok": false, "error": {"status": error.status_code()}}));
             }
             let snapshot = class_snapshot::<FeatherlessSettings>(&call.config)?;
-            let supported = featherless::SUPPORTED_PARAMS;
-            Ok(mapped_value(&snapshot, &options, supported, None))
+            Ok(mapped_value(
+                &snapshot,
+                &options,
+                featherless::SUPPORTED_PARAMS,
+                None,
+            ))
         }
     }
 }
 fn info(call: &InfoCall, sections: &Sections) -> Value {
     let explicit = call.api_key.clone().map(SecretString::from);
     let api_base = call.api_base.as_deref();
-    let hosted = &sections.hosted_chat_settings;
+    let (hosted, like) = (
+        &sections.hosted_chat_settings,
+        &sections.openai_like_settings,
+    );
     let (base, secret) = match &call.host {
         InfoHost::Own(OwnIdentity::Featherless) => {
             let (base, key) = featherless::chat_identity(hosted, api_base, explicit.as_ref());
@@ -132,7 +139,6 @@ fn info(call: &InfoCall, sections: &Sections) -> Value {
             (Some(base), key)
         }
         InfoHost::Compatible(alias) => {
-            let like = &sections.openai_like_settings;
             let (base, key) = alias.identity(like, api_base, explicit.as_ref());
             (base, Some(key))
         }

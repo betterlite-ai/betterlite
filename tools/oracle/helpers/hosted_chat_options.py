@@ -143,30 +143,20 @@ def map_value(step: MapStep) -> Json:
 def info_value(step: InfoStep) -> Json:
     base: str | None
     key: str | None
+    api_base = step.get("api_base")
+    api_key = step.get("api_key")
     if step["host"] == "featherless":
-        base, key = FeatherlessAIConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L100
-            step.get("api_base"), step.get("api_key")
-        )
+        base, key = FeatherlessAIConfig()._get_openai_compatible_provider_info(api_base, api_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L100
     elif step["host"] == "aiml":
-        base, key = AIMLChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiml/chat/transformation.py#L12
-            step.get("api_base"), step.get("api_key")
-        )
+        base, key = AIMLChatConfig()._get_openai_compatible_provider_info(api_base, api_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiml/chat/transformation.py#L12
     elif step["host"] == "empower":
-        base, key = EmpowerChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/empower/chat/transformation.py#L8
-            step.get("api_base"), step.get("api_key")
-        )
+        base, key = EmpowerChatConfig()._get_openai_compatible_provider_info(api_base, api_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/empower/chat/transformation.py#L8
     elif step["host"] == "friendliai":
-        base, key = FriendliaiChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/friendliai/chat/transformation.py#L8
-            step.get("api_base"), step.get("api_key")
-        )
+        base, key = FriendliaiChatConfig()._get_openai_compatible_provider_info(api_base, api_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/friendliai/chat/transformation.py#L8
     elif step["host"] == "galadriel":
-        base, key = GaladrielChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/galadriel/chat/transformation.py#L8
-            step.get("api_base"), step.get("api_key")
-        )
+        base, key = GaladrielChatConfig()._get_openai_compatible_provider_info(api_base, api_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/galadriel/chat/transformation.py#L8
     else:
-        base, key = GithubChatConfig()._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github/chat/transformation.py#L8
-            step.get("api_base"), step.get("api_key")
-        )
+        base, key = GithubChatConfig()._get_openai_compatible_provider_info(api_base, api_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github/chat/transformation.py#L8
     return {"ok": True, "value": {"base": base, "key": key}}
 
 
