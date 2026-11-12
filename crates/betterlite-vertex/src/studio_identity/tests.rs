@@ -147,48 +147,58 @@ fn projection_api_base_uses_an_explicit_empty_base_as_given() {
 #[rstest]
 #[case::explicit(
     Some(AuthValue::Key(secret("explicit-key"))),
-    Some(AuthValue::Key(secret("params-key"))),
-    Some(AuthValue::Key(secret("params-gemini-key"))),
+    NativeParams {
+        api_key: Some(AuthValue::Key(secret("params-key"))),
+        gemini_api_key: Some(AuthValue::Key(secret("params-gemini-key"))),
+    },
+    Some("environment-key"),
+    Some("generic-key"),
     Some("explicit-key")
 )]
 #[case::params_api_key(
     None,
-    Some(AuthValue::Key(secret("params-key"))),
-    Some(AuthValue::Key(secret("params-gemini-key"))),
+    NativeParams {
+        api_key: Some(AuthValue::Key(secret("params-key"))),
+        gemini_api_key: Some(AuthValue::Key(secret("params-gemini-key"))),
+    },
+    Some("environment-key"),
+    Some("generic-key"),
     Some("params-key")
 )]
 #[case::params_gemini_key(
     None,
-    None,
-    Some(AuthValue::Key(secret("params-gemini-key"))),
+    NativeParams {
+        api_key: None,
+        gemini_api_key: Some(AuthValue::Key(secret("params-gemini-key"))),
+    },
+    Some("environment-key"),
+    Some("generic-key"),
     Some("params-gemini-key")
 )]
-fn projection_native_api_key_follows_the_params_chain(
+#[case::environment(
+    None,
+    NativeParams::default(),
+    Some("environment-key"),
+    Some("generic-key"),
+    Some("environment-key")
+)]
+#[case::generic(
+    None,
+    NativeParams::default(),
+    None,
+    Some("generic-key"),
+    Some("generic-key")
+)]
+#[case::nothing(None, NativeParams::default(), None, None, None)]
+fn projection_native_api_key_follows_the_litellm_chain(
     #[case] explicit: Option<AuthValue>,
-    #[case] params_api_key: Option<AuthValue>,
-    #[case] params_gemini_key: Option<AuthValue>,
-    #[case] expected: Option<&str>,
-) {
-    let params = NativeParams {
-        api_key: params_api_key,
-        gemini_api_key: params_gemini_key,
-    };
-    let settings = settings(Some("environment-key"), Some("generic-key"), None);
-    let found = native_api_key(explicit.as_ref(), &params, &settings);
-    assert_eq!(auth_text(found).as_deref(), expected);
-}
-
-#[rstest]
-#[case::environment(Some("environment-key"), Some("generic-key"), Some("environment-key"))]
-#[case::generic(None, Some("generic-key"), Some("generic-key"))]
-#[case::nothing(None, None, None)]
-fn projection_native_api_key_falls_back_to_settings(
+    #[case] params: NativeParams,
     #[case] environment: Option<&str>,
     #[case] generic: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
     let settings = settings(environment, generic, None);
-    let found = native_api_key(None, &NativeParams::default(), &settings);
+    let found = native_api_key(explicit.as_ref(), &params, &settings);
     assert_eq!(auth_text(found).as_deref(), expected);
 }
 
