@@ -2,7 +2,6 @@ import asyncio
 import base64
 from collections.abc import Callable
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
-from unittest.mock import patch
 
 from litellm.proxy._types import ProxyException
 from litellm.proxy.common_utils import http_parsing_utils
@@ -77,19 +76,11 @@ class RewriteCall(TypedDict):
     request: NotRequired[RequestIn]
 
 
-Function: TypeAlias = Literal[
-    "normalize_media_types",
-    "parse_binary_body",
-    "is_otlp_trace_request",
-    "is_opaque_audio_request",
-    "read_request_body",
-    "cached_body",
-    "set_cached_body",
-    "rewrite_request_model",
-]
+class Envelope(TypedDict):
+    function: str
 
-ENVELOPE = TypeAdapter(dict[str, Json])
-FUNCTION = TypeAdapter(Function)
+
+ENVELOPE = TypeAdapter(Envelope)
 MEDIA_TYPES = TypeAdapter(MediaTypesCall)
 BINARY_BODY = TypeAdapter(BinaryBodyCall)
 OTLP = TypeAdapter(OtlpCall)
@@ -230,18 +221,19 @@ def encoded(raw: bytes | None) -> str | None:
     return base64.b64encode(raw).decode()
 
 
-def read_body(call: ReadCall) -> Json:
+def read_body(input_value: Json) -> Json:
+    call = READ.validate_python(input_value)
     request, receiver = build_request(call["request"])
     megabytes = 0.0 if call["max_repair_bytes"] is None else call["max_repair_bytes"] / MEGABYTE
-    with patch.object(http_parsing_utils, "MAX_REQUEST_BODY_SIZE_TO_REPAIR_MB", megabytes):
-        try:
-            parsed = asyncio.run(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L175
-                http_parsing_utils._read_request_body(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L175
-                    request=request
-                )
+    http_parsing_utils.MAX_REQUEST_BODY_SIZE_TO_REPAIR_MB = megabytes  # type: ignore[attr-defined, assignment]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L146
+    try:
+        parsed = asyncio.run(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L175
+            http_parsing_utils._read_request_body(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L175
+                request=request
             )
-        except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
-            return error_facts(error)
+        )
+    except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
+        return error_facts(error)
     body_read = receiver.reads > 0
     cached = cached_body(request)
     raw = asyncio.run(http_parsing_utils.read_raw_json_body(request=request))
@@ -251,10 +243,6 @@ def read_body(call: ReadCall) -> Json:
         "cached": cached,
         "raw": encoded(raw),
     }
-
-
-def read_call(input_value: Json) -> Json:
-    return read_body(READ.validate_python(input_value))
 
 
 def cached_call(input_value: Json) -> Json:
@@ -293,12 +281,12 @@ def rewrite_call(input_value: Json) -> Json:
     return {"request_data": request_data, "cached": cached_body(request)}
 
 
-RUNNERS: dict[Function, Callable[[Json], Json]] = {
+RUNNERS: dict[str, Callable[[Json], Json]] = {
     "normalize_media_types": media_types_call,
     "parse_binary_body": binary_body_call,
     "is_otlp_trace_request": otlp_call,
     "is_opaque_audio_request": opaque_audio_call,
-    "read_request_body": read_call,
+    "read_request_body": read_body,
     "cached_body": cached_call,
     "set_cached_body": set_cached_call,
     "rewrite_request_model": rewrite_call,
@@ -306,6 +294,6 @@ RUNNERS: dict[Function, Callable[[Json], Json]] = {
 
 
 def run(input_value: Json) -> Json:
-    function = FUNCTION.validate_python(ENVELOPE.validate_python(input_value)["function"])
+    function = ENVELOPE.validate_python(input_value)["function"]
     runner = RUNNERS[function]
     return runner(input_value)
