@@ -86,8 +86,8 @@ impl Helper for Op {
     }
 }
 
-fn run_call(call: &Call) -> HelperResult {
-    match call {
+fn run_call(entry: &Call) -> HelperResult {
+    match entry {
         Call::ResolveInferenceModel(call) => Ok(resolve_value(call)),
         Call::RejectUrlValuedDestination(call) => Ok(single_rejection(call)),
         Call::RejectUrlValuedDestinations(call) => data_rejection(call),
@@ -166,20 +166,22 @@ fn rejection(result: Result<(), RequestDestinationError>) -> Value {
 fn object(value: &Json) -> Result<RequestData, Box<HelperError>> {
     match value {
         Json::Object(map) => Ok(map.clone()),
-        _other => Err(Box::new(HelperError {
-            class: "InvalidInput".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: "the request body must be a JSON object".to_owned(),
-        })),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Err(Box::new(HelperError {
+                class: "InvalidInput".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: "the request body must be a JSON object".to_owned(),
+            }))
+        }
     }
 }
 
-fn as_object(value: &Json) -> Option<&RequestData> {
+const fn as_object(value: &Json) -> Option<&RequestData> {
     match value {
         Json::Object(map) => Some(map),
-        _other => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
