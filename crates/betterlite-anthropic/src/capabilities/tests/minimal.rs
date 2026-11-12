@@ -73,8 +73,10 @@ async fn legacy_levels_use_the_configured_budgets(fixture: &Fixture) {
         max: 7777,
         bedrock_min: BEDROCK_MIN_THINKING_BUDGET,
     };
+    // minimal is configured below the 1024 floor, so it comes back raised rather than as 512.
     let expectations = [
-        ("low", 1111_i64),
+        ("minimal", 1024_i64),
+        ("low", 1111),
         ("medium", 2222),
         ("high", 3333),
         ("xhigh", 5555),
