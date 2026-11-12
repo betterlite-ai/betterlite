@@ -5,7 +5,7 @@ description: >-
   /mcp, /mcp/, /mcp/proxy, /mcp/{server}, /{server}/mcp, /toolset/{toolset}/mcp, /mcp/enabled
   and the SSE paths /mcp/sse, /mcp/sse/, /mcp/sse/messages and /mcp/sse/messages/.
   B8626 owns GET /mcp-rest/tools/list and POST /mcp-rest/tools/call and the two preview routes;
-  B8701 owns GET/DELETE /v1/mcp/sessions and toolsets. Keep every mount and production port
+  B8701 owns the toolset routes and B9950 GET/DELETE /v1/mcp/sessions. Keep every mount and production port
   with those tasks. The missing HTTP cases are the successful upstream conversations,
   permission and header composition, prompt/resource discovery and live session handoff
   that B8461-B8465 and the operations parts previously tested only through helpers.
@@ -94,7 +94,7 @@ description: >-
   check the admin-terminated 404, then confirm an empty report. Capture the id independently
   for each peer. Ignore only worker_pid, idle_seconds and generated session-id prefix values,
   never counts, client metadata, selector behavior or the terminal status. The existing
-  B8701 empty-report case and B8728 unknown-session DELETE case are not repeated.
+  B9950 empty-report case and B8728 unknown-session DELETE case are not repeated.
 
   Native boot tests under gateway_parity::tests::composition named shared_registry,
   startup_warning_once, trace_current_request and trace_response_interleave prove the shared registry identity
@@ -147,7 +147,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1366
     why: Existing REST tools/call decorator, manager invocation and 401 challenge boundary mounted by B8626.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1260-L1377
-    why: Existing session reporting and termination composed with the live transport by B8701/B8728.
+    why: Existing session reporting and termination composed with the live transport by B9950/B8728.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1427-L1519
     why: Admin-terminated session replay and stale-id responses exercised after the management action.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/mcp_tools.py#L1-L35
@@ -205,7 +205,7 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-gateway-parity/trace-http-response.yaml
 deviations: []
 out_of_scope:
-  - "No new mount: B8610 composes areas, B8626 owns REST/preview, B8728 owns MCP transports, B8701 owns toolsets/sessions, B8624/B8702 own OAuth, B8625 owns catalog views and B8627/B8700 own server and per-user mutations."
+  - "No new mount: B8610 composes areas, B8626 owns REST/preview, B8728 owns MCP transports, B8701 owns toolsets, B9950 owns sessions, B8624/B8702 own OAuth, B8625 owns catalog views and B8627/B8700 own server and per-user mutations."
   - "operations.py functions remain assigned to B8195 scoping/display-name/cache invalidation (including _resolved_to_server), B8196 header/BYOK/OAuth preparation, B8197 listings and nested _fetch_and_filter_server_tools, B8198 execution/logging/local tools and B8199 gateway dispatch/prompt get/resource read/prepare_context."
   - "B8970 owns the remaining manager invocation and separator probe; B8971 owns the missing server.py trace bridge; other manager functions remain B6760-B6765, B4731, B6591-B6592, B4682 and B8460-B8465."
   - "All functions in contracts.py, capabilities.py, tool_outcome.py, result_conversion.py and exceptions.py are B8190; mcp_context.py, client_allowlist.py, elicitation_handler.py and legacy_callbacks.py are B8191; sampling_handler.py is B8192 conversion/preferences and B8193 access/budgets/completion; mcp_debug.py is B8194; cost_calculator.py is B1689; sse_transport.py is B8726; server_resolution.py is B4731; stdio_gate.py is B4716, including the warning caller used by B3211."

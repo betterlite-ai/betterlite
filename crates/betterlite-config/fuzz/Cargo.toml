@@ -81,6 +81,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_credentials"
+path = "fuzz_targets/vertex_credentials.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "guardrail_params"
 path = "fuzz_targets/guardrail_params.rs"
 test = false

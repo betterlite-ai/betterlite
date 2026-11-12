@@ -1,4 +1,13 @@
-helper_group! {
+#![expect(
+    clippy::absolute_paths,
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::map_err_ignore,
+    clippy::pub_use,
+    reason = "The operation files name crate::helpers paths, build provider JSON with serde_json::json!, ignore transport errors on purpose, and reach the trait through the re-export the shared macro generates."
+)]
+
+betterlite_oracle_helper_api::helper_group! {
     "access_group_models" => access_group_models, "assets" => assets,
     "audit_events" => audit_events, "auth_common_checks" => auth_common_checks,
     "auth_end_users" => auth_end_users, "auth_errors" => auth_errors,

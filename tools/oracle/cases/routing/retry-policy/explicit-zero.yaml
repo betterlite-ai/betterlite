@@ -1,0 +1,55 @@
+kind: probe
+name: retry-policy-explicit-zero
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: rate_limit, status: 429}
+          model_group: null
+          retry_policy: {RateLimitErrorRetries: 3}
+          model_group_retry_policy: null
+          request_num_retries: 0
+          router_num_retries: 4
+          deployment_num_retries: 2
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: rate_limit, status: 429}
+          model_group: null
+          retry_policy: {RateLimitErrorRetries: 3}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 4
+          deployment_num_retries: 2
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: rate_limit, status: 429}
+          model_group: null
+          retry_policy: {RateLimitErrorRetries: 3}
+          model_group_retry_policy: null
+          request_num_retries: 1
+          router_num_retries: 4
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: rate_limit, status: 429}
+          model_group: null
+          retry_policy: null
+          model_group_retry_policy: null
+          request_num_retries: 0
+          router_num_retries: 4
+          deployment_num_retries: null

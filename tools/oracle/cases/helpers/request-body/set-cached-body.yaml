@@ -1,0 +1,13 @@
+kind: helper
+name: set_cached_body
+call:
+  request_body:
+    function: set_cached_body
+    request:
+      method: POST
+      route_path: /v1/chat/completions
+      body: {encoding: utf8, value: ""}
+    body: {model: gpt-4o}
+env: {}
+compare:
+  ignore: []

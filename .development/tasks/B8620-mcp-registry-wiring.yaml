@@ -14,7 +14,7 @@ description: >-
   `pub(crate) fn mount_public(router: Router, state: &Arc<ServerState>) -> Router` (outside them) and
   `pub(crate) async fn start(state: &Arc<ServerState>)` (awaited once before the listener). This task makes mount and
   mount_public fetch the state with `McpState::shared(state)` and return the router unchanged; the mount parts
-  (B8624, B8702, B8625, B8627, B8700, B8701, B8626) each add one line to one of them. start fetches the state and calls
+  (B8624, B8702, B8625, B8627, B8700, B8701, B9950, B8626) each add one line to one of them. start fetches the state and calls
   B6762's prime on the DiscoverySlots inside `shared.mcp_registry`, which spawns discovery for every server that needs
   it when LITELLM_MCP_OAUTH_DISCOVERY_ON_STARTUP is on and only records the set otherwise (LiteLLM's
   _prime_oauth_discovery after the startup load).
@@ -119,7 +119,7 @@ deviations:
     why: rules.yaml allows reading the environment only in the config crate, which loads once.
 out_of_scope:
   - "Loading config and database servers into shared.mcp_registry, and the mutator's own ports: B8614 and B8384."
-  - "Mounting any MCP route: B8624, B8702, B8625, B8627, B8700, B8701 and B8626."
+  - "Mounting any MCP route: B8624, B8702, B8625, B8627, B8700, B8701, B9950 and B8626."
   - "Caller identity and admission state: B8621. Per-user token stores, the SSO assertion store and the OAuth SessionStore: B8622. OAuth flow ports: B8623."
 pitfalls:
   - Building McpState in mount and again in mount_public splits the per-user token cache and the single-use store between the keyed and public routes; always go through McpState::shared.
