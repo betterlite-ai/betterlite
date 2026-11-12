@@ -1,9 +1,168 @@
+use std::ffi::CStr;
+use std::path::Path;
+use std::sync::Arc;
+
+use betterlite_pyhost::callable_handle::CallableHandle;
+use betterlite_pyhost::host::{HostConfig, PythonHost};
+use betterlite_pyhost::instance_loader::{InstanceLoader, LoadError, LoadedObject};
+use betterlite_pyhost::remote_module::{FetchError, ModuleFetcher, ModuleRequest};
+use betterlite_pyhost::return_check::{ReturnCheckError, check_literal_true_return};
+use pyo3::Bound;
+use pyo3::types::{PyAnyMethods as _, PyModule};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::helpers::{Helper, HelperError, HelperResult};
+
+const LITERAL_TRUE_CODE: &CStr =
+    c"from typing import Literal\n\ndef validator() -> Literal[True]:\n    return True\n";
+const BOOL_CODE: &CStr = c"def validator() -> bool:\n    return True\n";
+const PRINT_CODE: &CStr = c"validator = print\n";
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    Load {
+        value: String,
+        #[serde(default)]
+        config_file_path: Option<String>,
+    },
+    CheckReturn {
+        fixture: Fixture,
+    },
+}
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("b8042")
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Fixture {
+    LiteralTrue,
+    BoolAnnotation,
+    NoAnnotation,
+    NoneArgument,
+}
+
+struct NoFetch;
+
+impl ModuleFetcher for NoFetch {
+    fn fetch(&self, _request: &ModuleRequest) -> Result<(), FetchError> {
+        Err(FetchError {
+            message: "the oracle helper downloads nothing".to_owned(),
+        })
     }
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        let host = PythonHost::start(&HostConfig::default())
+            .map_err(|error| helper_error("PyHostError", error.to_string()))?;
+        match input {
+            Input::Load {
+                value,
+                config_file_path,
+            } => load(&host, value, config_file_path.as_deref()),
+            Input::CheckReturn { fixture } => check_return(&host, *fixture),
+        }
+    }
+}
+
+fn load(host: &PythonHost, value: &str, config_file_path: Option<&str>) -> HelperResult {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| helper_error("PyHostError", error.to_string()))?;
+    let loader = InstanceLoader::new(host.clone(), Arc::new(NoFetch));
+    let config = config_file_path.map(Path::new);
+    match runtime.block_on(loader.load(value, config)) {
+        Ok(instance) => describe(host, &instance),
+        Err(error) => Ok(describe_error(&error)),
+    }
+}
+
+fn describe(host: &PythonHost, loaded: &LoadedObject) -> HelperResult {
+    host.attach(|py| {
+        let object = loaded.object.bind(py);
+        let module = object
+            .getattr("__module__")
+            .and_then(|value| value.extract::<String>())
+            .map_err(|error| helper_error("PythonError", error.to_string()))?;
+        let qualname = object
+            .getattr("__qualname__")
+            .and_then(|value| value.extract::<String>())
+            .map_err(|error| helper_error("PythonError", error.to_string()))?;
+        Ok(json!({
+            "ok": true,
+            "module": module,
+            "qualname": qualname,
+        }))
+    })
+}
+
+fn describe_error(error: &LoadError) -> Value {
+    match error {
+        LoadError::Reference(reference) => failure_json("ValueError", &reference.to_string()),
+        LoadError::RemoteNeedsConfigPath => failure_json("ValueError", &error.to_string()),
+        LoadError::Python(failure) => failure_json(&failure.type_name, &failure.message),
+        LoadError::Import { .. }
+        | LoadError::UnsafeModulePath { .. }
+        | LoadError::Remote { .. }
+        | LoadError::PathNotUtf8 { .. }
+        | LoadError::Work(_) => failure_json("ImportError", &error.to_string()),
+    }
+}
+
+fn failure_json(class: &str, text: &str) -> Value {
+    json!({
+        "ok": false,
+        "type": class,
+        "text": text,
+    })
+}
+
+fn check_return(host: &PythonHost, fixture: Fixture) -> HelperResult {
+    let handle = fixture_handle(host, fixture)?;
+    match check_literal_true_return(host, handle.as_ref()) {
+        Ok(Some(_)) => Ok(json!({"ok": true, "result": "function"})),
+        Ok(None) => Ok(json!({"ok": true, "result": "none"})),
+        Err(ReturnCheckError::Python(failure)) => {
+            Ok(failure_json(&failure.type_name, &failure.message))
+        }
+    }
+}
+
+fn fixture_handle(
+    host: &PythonHost,
+    fixture: Fixture,
+) -> Result<Option<CallableHandle>, Box<HelperError>> {
+    match fixture {
+        Fixture::LiteralTrue => Ok(Some(fixture_function(host, LITERAL_TRUE_CODE)?)),
+        Fixture::BoolAnnotation => Ok(Some(fixture_function(host, BOOL_CODE)?)),
+        Fixture::NoAnnotation => Ok(Some(fixture_function(host, PRINT_CODE)?)),
+        Fixture::NoneArgument => Ok(None),
+    }
+}
+
+fn fixture_function(host: &PythonHost, code: &CStr) -> Result<CallableHandle, Box<HelperError>> {
+    let function = host
+        .attach(|py| {
+            let module = PyModule::from_code(py, code, c"b8042_fixture.py", c"b8042_fixture")?;
+            module.getattr("validator").map(Bound::unbind)
+        })
+        .map_err(|error| helper_error("PythonError", error.to_string()))?;
+    CallableHandle::new(host, function)
+        .map_err(|error| helper_error("CallError", error.to_string()))
+}
+
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
 }
