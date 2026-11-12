@@ -2,8 +2,7 @@ from collections.abc import Iterable
 from typing import ClassVar, Literal, Required, TypeAlias, TypedDict, Union
 
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.json_types import JsonValue
-from betterlite.types.utils.values import StoredValue
+from betterlite.types.utils.values import JsonValue, StoredValue
 
 
 # ast-grep-ignore: no-long-names
@@ -37,7 +36,7 @@ ChatCompletionContentPartParam: TypeAlias = Union[
 
 
 class ChatCompletionUserMessageParam(TypedDict, total=False):
-    content: Required[str | Iterable["ChatCompletionContentPartParam"]]
+    content: Required[str | Iterable[ChatCompletionContentPartParam]]
     role: Required[Literal["user"]]
     name: str
 
@@ -53,14 +52,14 @@ class Function(TypedDict, total=False):
 
 
 class ChatCompletionToolMessageParam(TypedDict, total=False):
-    content: Required[str | Iterable["ChatCompletionContentPartParam"]]
+    content: Required[str | Iterable[ChatCompletionContentPartParam]]
     role: Required[Literal["tool"]]
     tool_call_id: Required[str]
 
 
 # ast-grep-ignore: no-long-names
 class ChatCompletionFunctionMessageParam(TypedDict, total=False):
-    content: Required[str | Iterable["ChatCompletionContentPartParam"]]
+    content: Required[str | Iterable[ChatCompletionContentPartParam]]
     name: Required[str]
     role: Required[Literal["function"]]
 
@@ -117,30 +116,4 @@ class CompletionRequest(ResponseObject):
     api_version: str | None
     api_key: str | None
     model_list: list[str] | None
-    defaults: ClassVar[dict[str, StoredValue]] = {
-        "messages": [],
-        "timeout": None,
-        "temperature": None,
-        "top_p": None,
-        "n": None,
-        "stream": None,
-        "stop": None,
-        "max_tokens": None,
-        "presence_penalty": None,
-        "frequency_penalty": None,
-        "logit_bias": None,
-        "user": None,
-        "response_format": None,
-        "seed": None,
-        "tools": None,
-        "tool_choice": None,
-        "logprobs": None,
-        "top_logprobs": None,
-        "deployment_id": None,
-        "functions": None,
-        "function_call": None,
-        "base_url": None,
-        "api_version": None,
-        "api_key": None,
-        "model_list": None,
-    }
+    defaults: ClassVar[dict[str, StoredValue]] = {"messages": []}

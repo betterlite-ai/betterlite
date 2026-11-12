@@ -1,24 +1,50 @@
 import json
 import uuid
 from collections.abc import Mapping
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.custom_tools import (
-    ChatCompletionMessageCustomToolCall as MessageCustomToolCall,
-)
-from betterlite.types.utils.json_types import ValidationError
-from betterlite.types.utils.validation import field_validator
-from betterlite.types.utils.values import StoredValue
+from betterlite.types.utils.values import StoredValue, ValidationError, field_validator
+
+__all__ = ["_CustomToolCallAccess"]
+
+
+class _CustomToolCallAccess(ResponseObject):
+    __slots__ = ()
+
+
+class ChatCompletionCustomToolCallPayload(_CustomToolCallAccess):  # ast-grep-ignore: no-long-names
+    name: str
+    input: str
+
+
+# ast-grep-ignore: no-long-names
+class ChatCompletionDeltaCustomToolCallPayload(_CustomToolCallAccess):
+    name: str | None
+    input: str | None
+
+
+# ast-grep-ignore: no-long-names
+class ChatCompletionMessageCustomToolCall(_CustomToolCallAccess):
+    id: str
+    type: Literal["custom"]
+    custom: ChatCompletionCustomToolCallPayload  # ast-grep-ignore: no-long-names
+    defaults: ClassVar[dict[str, StoredValue]] = {"type": "custom"}
+
+
+class ChatCompletionDeltaCustomToolCall(_CustomToolCallAccess):  # ast-grep-ignore: no-long-names
+    id: str | None
+    type: str | None
+    custom: ChatCompletionDeltaCustomToolCallPayload  # ast-grep-ignore: no-long-names
+    index: int
 
 
 class TopLogprob(ResponseObject):
     token: str
     bytes: list[int] | None
     logprob: float
-    defaults: ClassVar[dict[str, StoredValue]] = {"bytes": None}
 
 
 class ChatCompletionTokenLogprob(ResponseObject):
@@ -26,7 +52,6 @@ class ChatCompletionTokenLogprob(ResponseObject):
     bytes: list[int] | None
     logprob: float
     top_logprobs: list[TopLogprob]
-    defaults: ClassVar[dict[str, StoredValue]] = {"bytes": None}
 
     @field_validator("top_logprobs", mode="before")
     def ensure_top_logprobs_is_list(self, value: StoredValue) -> StoredValue:
@@ -37,26 +62,20 @@ class ChatCompletionTokenLogprob(ResponseObject):
 
 class ChoiceLogprobs(ResponseObject):
     content: list[ChatCompletionTokenLogprob] | None
-    defaults: ClassVar[dict[str, StoredValue]] = {"content": None}
 
 
 class FunctionCall(ResponseObject):
     arguments: str
     name: str | None
-    defaults: ClassVar[dict[str, StoredValue]] = {"name": None}
 
 
 class Function(ResponseObject):
     arguments: str
     name: str | None
-    defaults: ClassVar[dict[str, StoredValue]] = {"name": None}
 
     @override
     def __init__(
-        self,
-        arguments: StoredValue = None,
-        name: StoredValue = None,
-        **params: StoredValue,
+        self, arguments: StoredValue = None, name: StoredValue = None, **params: StoredValue,
     ) -> None:
         super().__init__(arguments=function_arguments(arguments, params), name=name)
 
@@ -66,7 +85,6 @@ class ChatCompletionDeltaToolCall(ResponseObject):
     function: Function
     type: str | None
     index: int
-    defaults: ClassVar[dict[str, StoredValue]] = {"id": None, "type": None}
 
 
 class ChatCompletionMessageToolCall(ResponseObject):
@@ -76,10 +94,7 @@ class ChatCompletionMessageToolCall(ResponseObject):
 
     @override
     def __init__(
-        self,
-        function: StoredValue,
-        id: StoredValue = None,
-        type: StoredValue = None,
+        self, function: StoredValue, id: StoredValue = None, type: StoredValue = None,
         **params: StoredValue,
     ) -> None:
         generated = str(uuid.uuid4()) if id is None else id
@@ -95,28 +110,20 @@ class ChatCompletionAudioResponse(ResponseObject):
 
     @override
     def __init__(
-        self,
-        data: StoredValue,
-        expires_at: StoredValue,
-        transcript: StoredValue,
-        id: StoredValue = None,
-        **params: StoredValue,
+        self, data: StoredValue, expires_at: StoredValue, transcript: StoredValue,
+        id: StoredValue = None, **params: StoredValue,
     ) -> None:
         generated = str(uuid.uuid4()) if id is None else id
         super().__init__(
-            data=data,
-            expires_at=expires_at,
-            transcript=transcript,
-            id=generated,
-            **params,
+            data=data, expires_at=expires_at, transcript=transcript, id=generated, **params,
         )
 
 
 def function_arguments(arguments: StoredValue, params: dict[str, StoredValue]) -> str:
     match arguments:
+        case None if "parameters" not in params:
+            return ""
         case None:
-            if "parameters" not in params:
-                return ""
             parameters = params.pop("parameters")
             match parameters:
                 case dict():
@@ -139,12 +146,10 @@ def is_custom_tool_call_dict(tool_call: Mapping[str, StoredValue]) -> bool:
 
 def chat_completion_tool_call_from_dict(  # ast-grep-ignore: no-long-names
     tool_call: Mapping[str, StoredValue],
-) -> ChatCompletionMessageToolCall | MessageCustomToolCall:
+) -> "ChatCompletionMessageToolCall | ChatCompletionMessageCustomToolCall":
     if is_custom_tool_call_dict(tool_call):
-        filtered = {
-            key: value
-            for key, value in tool_call.items()
+        return ChatCompletionMessageCustomToolCall(**{
+            key: value for key, value in tool_call.items()
             if not (key in ("function", "type") and value is None)
-        }
-        return MessageCustomToolCall(**filtered)
+        })
     return ChatCompletionMessageToolCall(**tool_call)

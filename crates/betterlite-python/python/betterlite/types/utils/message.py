@@ -1,16 +1,8 @@
 from collections.abc import Mapping, Sequence
-from typing import ClassVar
 
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.custom_tools import (
-    ChatCompletionDeltaCustomToolCall as DeltaCustomToolCall,
-)
-from betterlite.types.utils.custom_tools import (
-    ChatCompletionMessageCustomToolCall as MessageCustomToolCall,
-)
-from betterlite.types.utils.json_types import JsonValue
 from betterlite.types.utils.tool_calls import (
     ChatCompletionAudioResponse,
     ChatCompletionDeltaToolCall,
@@ -19,12 +11,22 @@ from betterlite.types.utils.tool_calls import (
     chat_completion_tool_call_from_dict,
     is_custom_tool_call_dict,
 )
-from betterlite.types.utils.values import StoredValue
+from betterlite.types.utils.tool_calls import (
+    ChatCompletionDeltaCustomToolCall as DeltaCustomToolCall,
+)
+from betterlite.types.utils.tool_calls import (
+    ChatCompletionMessageCustomToolCall as MessageCustomToolCall,
+)
+from betterlite.types.utils.values import JsonValue, StoredValue
+
+MESSAGE_OPTIONAL = (
+    "audio", "images", "annotations", "reasoning_content", "thinking_blocks", "reasoning_items",
+)
+DELTA_OPTIONAL = ("annotations", "reasoning_content", "thinking_blocks", "reasoning_items")
 
 
 def add_provider_specific_fields(
-    response: ResponseObject,
-    provider_specific_fields: StoredValue,
+    response: ResponseObject, provider_specific_fields: StoredValue,
 ) -> None:
     match provider_specific_fields:
         case None:
@@ -47,49 +49,27 @@ class Message(ResponseObject):
     reasoning_items: list[JsonValue] | None
     provider_specific_fields: dict[str, JsonValue] | None
     annotations: list[JsonValue] | None
-    defaults: ClassVar[dict[str, StoredValue]] = {
-        "audio": None,
-        "images": None,
-        "reasoning_content": None,
-        "thinking_blocks": None,
-        "reasoning_items": None,
-        "provider_specific_fields": None,
-        "annotations": None,
-    }
 
     @override
     def __init__(
-        self,
-        content: StoredValue = None,
-        role: StoredValue = None,
-        function_call: StoredValue = None,
-        tool_calls: StoredValue = None,
-        audio: StoredValue = None,
-        images: StoredValue = None,
-        provider_specific_fields: StoredValue = None,
-        reasoning_content: StoredValue = None,
-        thinking_blocks: StoredValue = None,
-        reasoning_items: StoredValue = None,
-        annotations: StoredValue = None,
-        **params: StoredValue,
+        self, content: StoredValue = None, role: StoredValue = None,
+        function_call: StoredValue = None, tool_calls: StoredValue = None,
+        audio: StoredValue = None, images: StoredValue = None,
+        provider_specific_fields: StoredValue = None, reasoning_content: StoredValue = None,
+        thinking_blocks: StoredValue = None, reasoning_items: StoredValue = None,
+        annotations: StoredValue = None, **params: StoredValue,
     ) -> None:
         data: dict[str, StoredValue] = dict(params)
-        data["content"] = content
-        data["role"] = "assistant" if role is None or role == "" else role
-        data["function_call"] = function_call
-        data["tool_calls"] = message_tool_calls(tool_calls)
-        optional: dict[str, StoredValue] = {
-            "audio": audio,
-            "images": images,
-            "annotations": annotations,
-            "reasoning_content": reasoning_content,
-            "thinking_blocks": thinking_blocks,
-            "reasoning_items": reasoning_items,
-        }
-        data.update({name: value for name, value in optional.items() if value is not None})
+        data.update(
+            content=content, role="assistant" if role is None or role == "" else role,
+            function_call=function_call, tool_calls=message_tool_calls(tool_calls),
+            audio=audio, images=images, annotations=annotations,
+            reasoning_content=reasoning_content, thinking_blocks=thinking_blocks,
+            reasoning_items=reasoning_items,
+        )
         super().__init__(**data)
-        for name, value in optional.items():
-            if value is None:
+        for name in MESSAGE_OPTIONAL:
+            if self[name] is None:
                 del self[name]
         add_provider_specific_fields(self, provider_specific_fields)
 
@@ -108,62 +88,34 @@ class Delta(ResponseObject):
     thinking_blocks: list[JsonValue] | None
     reasoning_items: list[JsonValue] | None
     provider_specific_fields: dict[str, JsonValue] | None
-    defaults: ClassVar[dict[str, StoredValue]] = {
-        "content": None,
-        "role": None,
-        "function_call": None,
-        "tool_calls": None,
-        "audio": None,
-        "reasoning_content": None,
-        "thinking_blocks": None,
-        "reasoning_items": None,
-        "provider_specific_fields": None,
-    }
 
     @override
     def __init__(
-        self,
-        content: StoredValue = None,
-        role: StoredValue = None,
-        function_call: StoredValue = None,
-        tool_calls: StoredValue = None,
-        audio: StoredValue = None,
-        images: StoredValue = None,
-        reasoning_content: StoredValue = None,
-        thinking_blocks: StoredValue = None,
-        reasoning_items: StoredValue = None,
-        annotations: StoredValue = None,
+        self, content: StoredValue = None, role: StoredValue = None,
+        function_call: StoredValue = None, tool_calls: StoredValue = None,
+        audio: StoredValue = None, images: StoredValue = None,
+        reasoning_content: StoredValue = None, thinking_blocks: StoredValue = None,
+        reasoning_items: StoredValue = None, annotations: StoredValue = None,
         **params: StoredValue,
     ) -> None:
         if reasoning_content is None and "reasoning" in params:
             reasoning_content = params.pop("reasoning")
         data: dict[str, StoredValue] = dict(params)
-        data["content"] = content
-        data["role"] = role
-        data["function_call"] = function_call
-        data["tool_calls"] = delta_tool_calls(tool_calls)
-        data["audio"] = audio
+        data.update(
+            content=content, role=role, function_call=function_call,
+            tool_calls=delta_tool_calls(tool_calls), audio=audio, annotations=annotations,
+            reasoning_content=reasoning_content, thinking_blocks=thinking_blocks,
+            reasoning_items=reasoning_items,
+        )
         images_value = nonempty_sequence(images)
         if images_value is not None:
             data["images"] = images_value
-        optional: dict[str, StoredValue] = {
-            "annotations": annotations,
-            "reasoning_content": reasoning_content,
-            "thinking_blocks": thinking_blocks,
-            "reasoning_items": reasoning_items,
-        }
-        data.update({name: value for name, value in optional.items() if value is not None})
         super().__init__(**data)
-        add_provider_specific_fields(self, delta_provider_fields(params))
-        for name, value in optional.items():
-            if value is None:
+        provider_fields = params.get("provider_specific_fields")
+        add_provider_specific_fields(self, provider_fields)
+        for name in DELTA_OPTIONAL:
+            if self[name] is None:
                 del self[name]
-
-
-def delta_provider_fields(params: Mapping[str, StoredValue]) -> StoredValue:
-    if "provider_specific_fields" in params:
-        return params["provider_specific_fields"]
-    return None
 
 
 def nonempty_sequence(value: StoredValue) -> StoredValue:
@@ -176,9 +128,7 @@ def nonempty_sequence(value: StoredValue) -> StoredValue:
 
 def message_tool_calls(tool_calls: StoredValue) -> StoredValue:
     match tool_calls:
-        case Sequence():
-            if len(tool_calls) == 0:
-                return None
+        case Sequence() if len(tool_calls) > 0:
             return [message_tool_call(tool_call) for tool_call in tool_calls]
         case _other:
             return None
