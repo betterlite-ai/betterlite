@@ -38,8 +38,8 @@ pub fn to_object<'py>(py: Python<'py>, value: &JsonValue) -> PyResult<Bound<'py,
         JsonValue::Bool(flag) => flag.into_bound_py_any(py),
         JsonValue::Number(number) => number_to_object(py, number),
         JsonValue::String(text) => text.into_bound_py_any(py),
-        JsonValue::Array(items) => array_to_object(py, items, 0),
-        JsonValue::Object(entries) => map_to_object(py, entries, 0),
+        JsonValue::Array(items) => JsonCollection::Array(items).into_object(py, 0),
+        JsonValue::Object(entries) => JsonCollection::Object(entries).into_object(py, 0),
     }
 }
 
@@ -66,38 +66,40 @@ fn nested_to_object<'py>(
     depth: usize,
 ) -> PyResult<Bound<'py, PyAny>> {
     if let JsonValue::Array(items) = value {
-        return array_to_object(py, items, depth);
+        return JsonCollection::Array(items).into_object(py, depth);
     }
     if let JsonValue::Object(entries) = value {
-        return map_to_object(py, entries, depth);
+        return JsonCollection::Object(entries).into_object(py, depth);
     }
     to_object(py, value)
 }
 
-fn array_to_object<'py>(
-    py: Python<'py>,
-    items: &[JsonValue],
-    depth: usize,
-) -> PyResult<Bound<'py, PyAny>> {
-    ensure_depth(depth).map_err(PyErr::from)?;
-    let list = PyList::empty(py);
-    for item in items {
-        list.append(nested_to_object(py, item, depth.saturating_add(1))?)?;
-    }
-    Ok(list.into_any())
+#[derive(Clone, Copy)]
+enum JsonCollection<'value> {
+    Array(&'value [JsonValue]),
+    Object(&'value JsonObject),
 }
 
-fn map_to_object<'py>(
-    py: Python<'py>,
-    entries: &JsonObject,
-    depth: usize,
-) -> PyResult<Bound<'py, PyAny>> {
-    ensure_depth(depth).map_err(PyErr::from)?;
-    let dict = PyDict::new(py);
-    for (key, value) in entries {
-        dict.set_item(key, nested_to_object(py, value, depth.saturating_add(1))?)?;
+impl JsonCollection<'_> {
+    fn into_object(self, py: Python<'_>, depth: usize) -> PyResult<Bound<'_, PyAny>> {
+        ensure_depth(depth).map_err(PyErr::from)?;
+        match self {
+            Self::Array(items) => {
+                let converted = items
+                    .iter()
+                    .map(|item| nested_to_object(py, item, depth.saturating_add(1)))
+                    .collect::<PyResult<Vec<_>>>()?;
+                Ok(PyList::new(py, converted)?.into_any())
+            }
+            Self::Object(entries) => {
+                let dict = PyDict::new(py);
+                for (key, value) in entries {
+                    dict.set_item(key, nested_to_object(py, value, depth.saturating_add(1))?)?;
+                }
+                Ok(dict.into_any())
+            }
+        }
     }
-    Ok(dict.into_any())
 }
 
 fn number_to_object<'py>(py: Python<'py>, number: &Number) -> PyResult<Bound<'py, PyAny>> {
@@ -116,20 +118,23 @@ fn number_to_object<'py>(py: Python<'py>, number: &Number) -> PyResult<Bound<'py
 
 fn list_to_value(object: &Bound<'_, PyList>, depth: usize) -> Result<JsonValue, ValueError> {
     ensure_depth(depth)?;
-    let mut items = Vec::with_capacity(object.len());
-    for item in object.iter() {
-        items.push(read_child(&item, depth.saturating_add(1))?);
-    }
-    Ok(JsonValue::Array(items))
+    sequence_to_value(object.iter(), depth)
 }
 
 fn tuple_to_value(object: &Bound<'_, PyTuple>, depth: usize) -> Result<JsonValue, ValueError> {
     ensure_depth(depth)?;
-    let mut items = Vec::with_capacity(object.len());
-    for item in object.iter() {
-        items.push(read_child(&item, depth.saturating_add(1))?);
+    sequence_to_value(object.iter(), depth)
+}
+
+fn sequence_to_value<'py, I>(items: I, depth: usize) -> Result<JsonValue, ValueError>
+where
+    I: Iterator<Item = Bound<'py, PyAny>>,
+{
+    let mut values = Vec::new();
+    for item in items {
+        values.push(read_child(&item, depth.saturating_add(1))?);
     }
-    Ok(JsonValue::Array(items))
+    Ok(JsonValue::Array(values))
 }
 
 fn dict_to_value(object: &Bound<'_, PyDict>, depth: usize) -> Result<JsonValue, ValueError> {

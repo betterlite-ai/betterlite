@@ -25,31 +25,32 @@ fn evaluate(py: Python<'_>, source: &str) -> Py<PyAny> {
     py.eval(&code, None, None).unwrap().unbind()
 }
 
-fn nested_list(py: Python<'_>, depth: usize) -> Py<PyAny> {
-    let mut value = py.None();
-    for _ in 0..depth {
-        let list = PyList::empty(py);
-        list.append(value.bind(py)).unwrap();
-        value = list.into_any().unbind();
-    }
-    value
+#[derive(Clone, Copy)]
+enum Nesting {
+    List,
+    Tuple,
+    Dict,
 }
 
-fn nested_tuple(py: Python<'_>, depth: usize) -> Py<PyAny> {
+fn nested_container(py: Python<'_>, depth: usize, nesting: Nesting) -> Py<PyAny> {
     let mut value = py.None();
     for _ in 0..depth {
-        let tuple = PyTuple::new(py, [value.bind(py)]).unwrap();
-        value = tuple.into_any().unbind();
-    }
-    value
-}
-
-fn nested_dict(py: Python<'_>, depth: usize) -> Py<PyAny> {
-    let mut value = py.None();
-    for _ in 0..depth {
-        let dict = PyDict::new(py);
-        dict.set_item("nest", value.bind(py)).unwrap();
-        value = dict.into_any().unbind();
+        value = match nesting {
+            Nesting::List => {
+                let list = PyList::empty(py);
+                list.append(value.bind(py)).unwrap();
+                list.into_any().unbind()
+            }
+            Nesting::Tuple => PyTuple::new(py, [value.bind(py)])
+                .unwrap()
+                .into_any()
+                .unbind(),
+            Nesting::Dict => {
+                let dict = PyDict::new(py);
+                dict.set_item("nest", value.bind(py)).unwrap();
+                dict.into_any().unbind()
+            }
+        };
     }
     value
 }
@@ -204,7 +205,7 @@ fn from_python_refuses_an_integer_outside_i64_and_u64(#[case] source: &str) {
 fn from_python_reads_a_list_nested_64_levels() {
     let host = start_host();
     host.attach(|py| {
-        let object = nested_list(py, MAX_DEPTH);
+        let object = nested_container(py, MAX_DEPTH, Nesting::List);
         assert_eq!(
             from_object(object.bind(py)).unwrap(),
             nested_array(MAX_DEPTH)
@@ -216,7 +217,7 @@ fn from_python_reads_a_list_nested_64_levels() {
 fn from_python_refuses_a_list_nested_65_levels() {
     let host = start_host();
     host.attach(|py| {
-        let object = nested_list(py, MAX_DEPTH.saturating_add(1));
+        let object = nested_container(py, MAX_DEPTH.saturating_add(1), Nesting::List);
         assert_eq!(from_object(object.bind(py)), Err(ValueError::TooDeep));
     });
 }
@@ -225,7 +226,7 @@ fn from_python_refuses_a_list_nested_65_levels() {
 fn from_python_refuses_a_tuple_nested_65_levels() {
     let host = start_host();
     host.attach(|py| {
-        let object = nested_tuple(py, MAX_DEPTH.saturating_add(1));
+        let object = nested_container(py, MAX_DEPTH.saturating_add(1), Nesting::Tuple);
         assert_eq!(from_object(object.bind(py)), Err(ValueError::TooDeep));
     });
 }
@@ -234,7 +235,7 @@ fn from_python_refuses_a_tuple_nested_65_levels() {
 fn from_python_refuses_a_dict_nested_65_levels() {
     let host = start_host();
     host.attach(|py| {
-        let object = nested_dict(py, MAX_DEPTH.saturating_add(1));
+        let object = nested_container(py, MAX_DEPTH.saturating_add(1), Nesting::Dict);
         assert_eq!(from_object(object.bind(py)), Err(ValueError::TooDeep));
     });
 }

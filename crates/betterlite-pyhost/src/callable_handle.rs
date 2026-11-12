@@ -74,12 +74,7 @@ impl CallableHandle {
         args: Vec<JsonValue>,
         kwargs: JsonObject,
     ) -> Result<JsonValue, CallError> {
-        let (positional, keywords) = host
-            .attach(|py| {
-                call_arguments(py, &args, &kwargs)
-                    .map_err(|error| PythonError::from_pyerr(py, &error))
-            })
-            .map_err(CallError::Python)?;
+        let (positional, keywords) = json_arguments(host, &args, &kwargs)?;
         let result = self
             .call_raw(host, tracker, deadline, positional, keywords)
             .await?;
@@ -170,6 +165,17 @@ fn detects_async(py: Python<'_>, object: &Bound<'_, PyAny>) -> PyResult<bool> {
             .is_truthy(),
         None => Ok(false),
     }
+}
+
+fn json_arguments(
+    host: &PythonHost,
+    args: &[JsonValue],
+    kwargs: &JsonObject,
+) -> Result<PythonArguments, CallError> {
+    host.attach(|py| {
+        call_arguments(py, args, kwargs).map_err(|error| PythonError::from_pyerr(py, &error))
+    })
+    .map_err(CallError::Python)
 }
 
 fn call_arguments(
