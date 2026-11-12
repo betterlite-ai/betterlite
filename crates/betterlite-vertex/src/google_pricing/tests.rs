@@ -528,13 +528,13 @@ fn studio_pricing_delegates_as_provider_gemini_without_a_location() {
     assert_eq!(calls[0].vertex_location, None);
 }
 
-fn search_usage(web_search: Option<i64>, server: Option<i64>) -> GoogleUsage {
+fn search_usage(detail_count: Option<i64>, tool_count: Option<i64>) -> GoogleUsage {
     google_usage(
         3,
         0,
-        Some(prompt_details(web_search, None)),
+        Some(prompt_details(detail_count, None)),
         ServerToolUse {
-            web_search_requests: server,
+            web_search_requests: tool_count,
         },
     )
 }

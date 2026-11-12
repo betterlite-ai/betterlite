@@ -30,19 +30,23 @@ pub fn cost_per_web_search_request(
         .as_ref()
         .and_then(|pricing| pricing.search_context_size_medium)
         .unwrap_or_else(|| Decimal::new(35, 3));
-    let billable = match record.fields.metadata.web_search_billing_unit {
-        Some(WebSearchBillingUnit::PerPrompt) | None if requests > 0 => 1,
-        Some(WebSearchBillingUnit::PerQuery | WebSearchBillingUnit::PerPrompt) | None => requests,
+    let per_prompt = !matches!(
+        record.fields.metadata.web_search_billing_unit,
+        Some(WebSearchBillingUnit::PerQuery)
+    );
+    let billable = if per_prompt && requests > 0 {
+        1
+    } else {
+        requests
     };
-    rate.checked_mul(Decimal::from(billable))
-        .ok_or(GooglePricingError::Overflow { field: "search" })
+    rate_charge(rate, billable, "search")
 }
 
 pub fn maps_grounding_cost(
     usage: &GoogleUsage,
-    record: &CatalogEntry,
+    entry: &CatalogEntry,
 ) -> Result<Decimal, GooglePricingError> {
-    let Some(requests) = usage
+    let Some(queries) = usage
         .tokens
         .prompt_tokens_details
         .as_ref()
@@ -51,25 +55,33 @@ pub fn maps_grounding_cost(
     else {
         return Ok(Decimal::ZERO);
     };
-    let billing = record
+    let billing_unit = entry
         .fields
         .metadata
         .web_search_billing_unit
         .unwrap_or(WebSearchBillingUnit::PerPrompt);
-    let default_rate = match billing {
+    let fallback_price = match billing_unit {
         WebSearchBillingUnit::PerQuery => Decimal::new(14, 3),
         WebSearchBillingUnit::PerPrompt => Decimal::new(25, 3),
     };
-    let rate = record
+    let price = entry
         .prices
         .values
         .other
         .google_maps_query
-        .unwrap_or(default_rate);
-    let billable = match billing {
-        WebSearchBillingUnit::PerQuery => requests,
+        .unwrap_or(fallback_price);
+    let billed_queries = match billing_unit {
+        WebSearchBillingUnit::PerQuery => queries,
         WebSearchBillingUnit::PerPrompt => 1,
     };
-    rate.checked_mul(Decimal::from(billable))
-        .ok_or(GooglePricingError::Overflow { field: "maps" })
+    rate_charge(price, billed_queries, "maps")
+}
+
+fn rate_charge(
+    rate: Decimal,
+    count: i64,
+    field: &'static str,
+) -> Result<Decimal, GooglePricingError> {
+    rate.checked_mul(Decimal::from(count))
+        .ok_or(GooglePricingError::Overflow { field })
 }

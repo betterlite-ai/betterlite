@@ -30,14 +30,28 @@ where
     let prompt_cost = character_side(pricing, record, usage, request, CharacterSide::Prompt)?;
     let completion_cost =
         character_side(pricing, record, usage, request, CharacterSide::Completion)?;
-    let uplift = pricing.vertex_endpoint_uplift(record, request.vertex_location);
+    scale_by_uplift(
+        GenericCostResult {
+            prompt_cost,
+            completion_cost,
+        },
+        pricing.vertex_endpoint_uplift(record, request.vertex_location),
+    )
+}
+
+// the source resolves one multiplier for the pair and multiplies each side by it
+fn scale_by_uplift(
+    cost: GenericCostResult,
+    uplift: Decimal,
+) -> Result<GenericCostResult, GooglePricingError> {
     Ok(GenericCostResult {
-        prompt_cost: prompt_cost
+        prompt_cost: cost
+            .prompt_cost
             .checked_mul(uplift)
             .ok_or(GooglePricingError::Overflow {
                 field: "prompt character",
             })?,
-        completion_cost: completion_cost.checked_mul(uplift).ok_or(
+        completion_cost: cost.completion_cost.checked_mul(uplift).ok_or(
             GooglePricingError::Overflow {
                 field: "completion character",
             },
