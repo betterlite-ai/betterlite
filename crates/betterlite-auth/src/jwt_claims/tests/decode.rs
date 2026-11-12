@@ -88,6 +88,21 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
         decode_unverified_claims(segment(&rejected).as_bytes()),
         Err(DecodeError::TooDeep { limit }) if limit == MAX_CLAIM_DEPTH
     ));
+    let arrays = format!(
+        "{{\"a\":{}null{}}}",
+        "[".repeat(MAX_CLAIM_DEPTH - 1),
+        "]".repeat(MAX_CLAIM_DEPTH - 1)
+    );
+    drop(decode_unverified_claims(segment(&arrays).as_bytes()).unwrap());
+    let deeper_arrays = format!(
+        "{{\"a\":{}null{}}}",
+        "[".repeat(MAX_CLAIM_DEPTH),
+        "]".repeat(MAX_CLAIM_DEPTH)
+    );
+    assert!(matches!(
+        decode_unverified_claims(segment(&deeper_arrays).as_bytes()),
+        Err(DecodeError::TooDeep { limit }) if limit == MAX_CLAIM_DEPTH
+    ));
     let at_limit = vec![b'A'; MAX_CLAIM_BYTES];
     assert!(matches!(
         decode_unverified_claims(&at_limit),

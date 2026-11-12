@@ -53,6 +53,10 @@ fn team_array_deduplicates_and_skips_empty_values() {
         &[],
     );
     assert_eq!(nulls.all_team_ids().unwrap(), vec!["team-a", "team-b"]);
+    let scalar = project(r#"{"groups":["team-a"],"team":"team-a"}"#, &settings, &[]);
+    assert_eq!(scalar.all_team_ids().unwrap(), vec!["team-a"]);
+    let empty_scalar = project(r#"{"groups":["team-a"],"team":""}"#, &settings, &[]);
+    assert_eq!(empty_scalar.all_team_ids().unwrap(), vec!["team-a"]);
 }
 
 #[test]
