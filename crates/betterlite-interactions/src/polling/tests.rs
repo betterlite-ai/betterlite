@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::future::ready;
 use std::io::{Result as IoResult, Write};
 use std::iter::repeat_with;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
@@ -615,26 +615,31 @@ async fn settlement_stops_the_poll_task_before_its_next_fetch() {
     registry.shutdown().await;
 }
 
+const TIMEOUT_FETCHES: usize = 3;
+
 #[tokio::test(start_paused = true)]
 async fn settlement_won_elsewhere_skips_the_timeout_cleanup() {
     let (logs, _guard) = capture_logs();
     let host = host_with(Some("reservation-1"), Failure::None);
-    let first_fetch = Arc::new(AtomicBool::new(true));
+    let poll_context = context(host.clone(), 5, 10, 30);
+    let settlement = poll_context.settlement.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
     let fetch: FetchInteraction<FakeHost, FakeError> = Arc::new(move |context| {
-        if first_fetch.swap(false, Ordering::SeqCst) {
+        let call = counted.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        if call == TIMEOUT_FETCHES {
             assert!(context.settlement.claim_settlement());
         }
         let response = Ok(answer("in_progress", false));
         Box::pin(async move { response })
     });
     let mut tasks = JoinSet::new();
-    tasks.spawn(poll_background_cost(
-        context(host.clone(), 5, 10, 30),
-        fetch,
-    ));
+    tasks.spawn(poll_background_cost(poll_context, fetch));
     yield_now().await;
     sleep(Duration::from_secs(31)).await;
     while tasks.join_next().await.is_some() {}
+    assert_eq!(calls.load(Ordering::SeqCst), TIMEOUT_FETCHES);
+    assert!(settlement.settled.load(Ordering::Acquire));
     assert!(host.released().is_empty());
     assert!(!logs.contents().contains("gave up cost polling"));
 }
