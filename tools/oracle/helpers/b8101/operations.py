@@ -1,11 +1,12 @@
 import httpx
 from litellm.types.utils import ModelResponse
 
-from .shapes import (
+from .views import (
+    FAILURE,
     MODEL,
+    ConfigView,
     FlowInput,
     Json,
-    RepliesInput,
     ReplyCase,
     RequestCase,
     RequestsInput,
@@ -13,7 +14,6 @@ from .shapes import (
     UrlCase,
     ValidateCase,
 )
-from .views import FAILURE, ConfigView, config_view
 
 
 def url_value(config: ConfigView, case: UrlCase) -> Json:
@@ -44,8 +44,7 @@ def validate_value(config: ConfigView, case: ValidateCase) -> Json:
     )
 
 
-def flow_value(input_value: FlowInput) -> Json:
-    config = config_view()
+def flow_value(config: ConfigView, input_value: FlowInput) -> Json:
     provider = input_value["provider"]
     base, key = config._get_openai_compatible_provider_info(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L45-L54
         provider["api_base"],
@@ -75,8 +74,7 @@ def request_value(config: ConfigView, case: RequestCase) -> Json:
     return {"ok": True, "body": body}
 
 
-def requests_value(input_value: RequestsInput) -> Json:
-    config = config_view()
+def requests_value(config: ConfigView, input_value: RequestsInput) -> Json:
     return {
         "bodies": [request_value(config, case) for case in input_value["requests"]],
         "signatures": [
@@ -129,8 +127,3 @@ def reply_value(config: ConfigView, case: ReplyCase) -> Json:
         "role": choice.message.role,
         "content": choice.message.content,
     }
-
-
-def replies_value(input_value: RepliesInput) -> Json:
-    config = config_view()
-    return {"replies": [reply_value(config, case) for case in input_value["replies"]]}
