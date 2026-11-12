@@ -88,17 +88,18 @@ const GPT5_TEMPERATURE_ROWS: [Row; 10] = [
 ];
 
 #[rustfmt::skip]
-const GPT5_MODEL_ROWS: [Row; 6] = [
+const GPT5_MODEL_ROWS: [Row; 7] = [
     (WITHOUT_DEFAULTS, "gpt-5.2", r#"{"temperature": 2}"#, Expected::Mapped(r#"{"temperature": 2}"#)),
     (DECLARED_ELSEWHERE, "gpt-5.2", r#"{"temperature": 2}"#, Expected::Error("temperature=2")),
     (GPT_5_CATALOG, "gpt-5", r#"{"temperature": 2}"#, Expected::Error("temperature=2")),
     (NONE_UNSUPPORTED, "gpt-5.2", r#"{"temperature": 2}"#, Expected::Error("temperature=2")),
     (GPT_5_CATALOG, "openai/gpt-5.2", r#"{"temperature": 2}"#, Expected::Mapped(r#"{"temperature": 2}"#)),
     (GPT_5_CATALOG, "gpt-5-chat-latest", r#"{"temperature": 2}"#, Expected::Mapped(r#"{"temperature": 2}"#)),
+    (GPT_5_CATALOG, "azure/gpt-5.2", r#"{"temperature": 2, "reasoning": {"effort": "high"}}"#, Expected::Mapped(r#"{"temperature": 2, "reasoning": {"effort": "high"}}"#)),
 ];
 
 #[rustfmt::skip]
-const TOP_P_ROWS: [Row; 12] = [
+const TOP_P_ROWS: [Row; 13] = [
     (GPT_5_CATALOG, "gpt-5.2", r#"{"top_p": 0.9}"#, Expected::Mapped(r#"{"top_p": 0.9}"#)),
     (GPT_5_CATALOG, "gpt-5.2", r#"{"temperature": 0.5}"#, Expected::Mapped(r#"{"temperature": 0.5}"#)),
     (GPT_5_CATALOG, "gpt-5.2", r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#, Expected::Error("top_p")),
@@ -111,6 +112,7 @@ const TOP_P_ROWS: [Row; 12] = [
     (GPT_5_CATALOG, "gpt-5-chat-latest", r#"{"top_p": 0.9}"#, Expected::Mapped(r#"{"top_p": 0.9}"#)),
     (GPT_5_CATALOG, "gpt-5", r#"{"top_p": 0.9}"#, Expected::Error("top_p")),
     (GPT_5_CATALOG, "gpt-5", r#"{"top_p": 0.9}"#, Expected::Dropped("{}")),
+    (GPT_5_CATALOG, "azure/gpt-5.2", r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#, Expected::Mapped(r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#)),
 ];
 
 #[rustfmt::skip]
