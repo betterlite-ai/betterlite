@@ -17,7 +17,7 @@ fn helper_seeds_select_gemini_response() {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("gemini_response"))
+                .is_some_and(|name| name.starts_with("gemini_response-"))
         })
         .map(|path| serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap())
         .collect();

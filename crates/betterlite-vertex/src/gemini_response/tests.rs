@@ -309,7 +309,7 @@ fn served_model_name_ignores_an_absent_version() {
 }
 
 #[rstest]
-#[case::served("gemini-2.5-pro@2025-06-17", "gemini-2.5-pro")]
+#[case::served(r#""gemini-2.5-pro@2025-06-17""#, "gemini-2.5-pro")]
 #[case::nonstring("7", REQUESTED_MODEL)]
 #[case::empty(r#""""#, REQUESTED_MODEL)]
 fn complete_response_uses_the_served_or_requested_model(
