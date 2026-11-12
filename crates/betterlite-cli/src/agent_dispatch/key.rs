@@ -23,6 +23,9 @@ where
     if let Some(key) = &ports.context.api_key {
         return Ok(key.clone());
     }
+    if let Some(key) = stored_key(ports)? {
+        return Ok(key);
+    }
     let Some(terminal) = ports.terminal else {
         return Err(AgentDispatchError::NoKey);
     };
@@ -34,22 +37,30 @@ where
         "No LiteLLM credentials found; starting login..."
     )?;
     login_through(ports)?;
+    stored_key(ports)?.ok_or(AgentDispatchError::LoginProducedNoKey)
+}
+
+fn stored_key<H, E, W>(
+    ports: &mut AgentPorts<'_, H, E, W>,
+) -> Result<Option<SecretString>, AgentDispatchError>
+where
+    H: Http + Send + Sync + 'static,
+    W: WallClock + Send + Sync + 'static,
+{
     let base_url = &ports.context.base_url;
-    let found = {
-        let sink = Mutex::new(&mut *ports.stdout);
-        let warn = |message: &str| echo_line(&sink, message);
-        let runtime = Builder::new_current_thread()
-            .build()
-            .map_err(AgentDispatchError::Runtime)?;
-        runtime.block_on(get_stored_api_key(StoredApiKeyRequest {
-            expected_base_url: Some(base_url),
-            files: ports.files,
-            vault: &mut *ports.vault,
-            http: Arc::clone(&ports.http),
-            clock: Arc::clone(&ports.clock),
-            warn: &warn,
-            token_path: ports.token_path,
-        }))
-    };
-    found.ok_or(AgentDispatchError::LoginProducedNoKey)
+    let sink = Mutex::new(&mut *ports.stdout);
+    let warn = |message: &str| echo_line(&sink, message);
+    let runtime = Builder::new_current_thread()
+        .build()
+        .map_err(AgentDispatchError::Runtime)?;
+    let found = runtime.block_on(get_stored_api_key(StoredApiKeyRequest {
+        expected_base_url: Some(base_url),
+        files: ports.files,
+        vault: &mut *ports.vault,
+        http: Arc::clone(&ports.http),
+        clock: Arc::clone(&ports.clock),
+        warn: &warn,
+        token_path: ports.token_path,
+    }));
+    Ok(found)
 }

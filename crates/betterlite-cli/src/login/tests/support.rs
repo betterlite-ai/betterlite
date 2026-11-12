@@ -91,7 +91,7 @@ pub(crate) fn token_body() -> String {
 
 pub(crate) fn start_body(prefilled: bool) -> String {
     let extra = if prefilled {
-        r#","verification_uri_complete":"https://idp.example/verify?code=code-1"#
+        r#","verification_uri_complete":"https://idp.example/verify?code=code-1""#
     } else {
         ""
     };
