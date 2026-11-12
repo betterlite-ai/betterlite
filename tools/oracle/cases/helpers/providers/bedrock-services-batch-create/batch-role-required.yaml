@@ -1,0 +1,39 @@
+kind: helper
+name: batch-role-required
+call:
+  bedrock_services_batch_create:
+    operation: batch_role_required
+    scenarios:
+      - model: m
+      - model: m
+        input_file_id: ""
+      - model: m
+        input_file_id: not-s3
+      - model: m
+        input_file_id: s3://bucket/key
+      - model: m
+        input_file_id: s3://bucket/key
+        optional_params:
+          aws_batch_role_arn: arn:aws:iam::222:role/request
+        environment:
+          AWS_BATCH_ROLE_ARN: arn:aws:iam::333:role/environment
+      - model: m
+        input_file_id: s3://bucket/key
+        litellm_params:
+          aws_batch_role_arn: ""
+        environment:
+          AWS_BATCH_ROLE_ARN: arn:aws:iam::333:role/environment
+      - model: m
+        input_file_id: s3://bucket/key
+        litellm_params:
+          aws_batch_role_arn: ""
+        optional_params:
+          aws_batch_role_arn: ""
+        environment:
+          AWS_BATCH_ROLE_ARN: ""
+      - model: ""
+        input_file_id: s3://bucket/key
+        litellm_params:
+          aws_batch_role_arn: arn:aws:iam::111:role/batch
+env: {}
+compare: {ignore: []}

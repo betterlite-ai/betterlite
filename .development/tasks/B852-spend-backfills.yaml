@@ -64,6 +64,8 @@ description: >-
   The operation adapter assembles native betterlite-db services directly.
 scope:
   paths:
+    - "tools/betterlite-db-admin/src/command_shell/tests.rs"
+    - "tools/betterlite-db-admin/src/command_shell/**"
     - crates/betterlite-db/src/spend_backfills.rs
     - crates/betterlite-db/src/spend_backfills/**
     - crates/betterlite-db/Cargo.toml
