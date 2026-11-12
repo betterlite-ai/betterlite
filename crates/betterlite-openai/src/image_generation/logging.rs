@@ -7,7 +7,6 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-// the source methods' logging_obj: pre_call before the call, post_call for the reply or the failure
 pub trait ImageGenerationLogger {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError>;
 

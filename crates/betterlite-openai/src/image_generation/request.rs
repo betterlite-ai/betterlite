@@ -20,7 +20,6 @@ use crate::compatible_wire::error::OpenAiLikeError;
 #[derive(Debug)]
 pub struct ImageGenerationOutcome {
     pub reply: ImageGenerationReply,
-    // the provider's answer as the SDK dumps it, which is what post_call receives
     pub original_response: Json,
     pub provider_headers: ProviderHeaderProjection,
 }
@@ -67,7 +66,6 @@ pub fn begin_image_generation(
     Ok(prepared)
 }
 
-// the one transport path both source methods share; it never touches the logging object
 pub async fn send_image_generation<T>(
     prepared: &PreparedImageCall,
     transport: &T,
