@@ -75,13 +75,13 @@ pub(super) fn texts(inputs: &[&str]) -> KeyValue {
 }
 
 pub(super) fn kwargs(inputs: &[&str]) -> KeyObject {
-    KeyObject::from([
-        (
-            "model".to_owned(),
-            KeyValue::String("kwargs-model".to_owned()),
-        ),
-        ("input".to_owned(), texts(inputs)),
-    ])
+    let mut object = KeyObject::new();
+    object.insert("input".to_owned(), texts(inputs));
+    object.insert(
+        "model".to_owned(),
+        KeyValue::String("kwargs-model".to_owned()),
+    );
+    object
 }
 
 pub(super) async fn try_process(
@@ -102,10 +102,10 @@ pub(super) async fn try_process(
 pub(super) async fn process(
     cached_result: &[Option<CachedEmbedding>],
     kwargs: &mut KeyObject,
-    previous: Option<CachedEmbeddingResponse>,
     services: &FakeServices,
 ) -> CachedOutcome {
-    try_process(cached_result, kwargs, previous, services)
-        .await
-        .expect("the cached results are processed")
+    match try_process(cached_result, kwargs, None, services).await {
+        Ok(outcome) => outcome,
+        Err(error) => panic!("the cached results are not processed: {error}"),
+    }
 }

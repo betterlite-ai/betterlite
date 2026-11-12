@@ -31,7 +31,7 @@ async fn counts_prompt_tokens_only_for_entries_lacking_them(
     let services = FakeServices::working();
     let mut kwargs = kwargs(&[input]);
     let cached_result = [Some(cached_entry(Some("a"), cached_tokens))];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(
         response.usage,
@@ -50,7 +50,7 @@ async fn does_not_count_a_token_list_input() {
     ]);
     kwargs.insert("input".to_owned(), KeyValue::Array(vec![tokens]));
     let cached_result = [Some(cached_entry(Some("a"), None))];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(response.usage, Some(usage([0, 0, 0], None)));
     assert!(
@@ -72,7 +72,7 @@ async fn counts_each_old_entry_on_its_own_text_and_never_an_uncached_one() {
         Some(cached_entry(Some("c"), None)),
         Some(cached_entry(Some("d"), Some(10))),
     ];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(response.usage, Some(usage([18, 0, 18], None)));
     assert_eq!(
@@ -121,7 +121,7 @@ async fn sums_the_totals_up_to_the_largest_count() {
         Some(cached_entry(Some("a"), Some(i64::MAX - 1))),
         Some(cached_entry(Some("b"), Some(1))),
     ];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(
         response.usage.map(|total| total.prompt_tokens),
@@ -172,7 +172,7 @@ async fn aggregates_the_prompt_token_details_of_the_cached_entries(
         Some(entry_with_details(1, Some(first))),
         Some(entry_with_details(2, Some(second))),
     ];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let total = outcome.response.and_then(|response| response.usage);
     assert_eq!(total, Some(usage([3, 0, 3], expected)));
 }
@@ -189,7 +189,7 @@ async fn leaves_the_details_out_when_no_entry_has_any(
     let services = FakeServices::working();
     let mut kwargs = kwargs(&["i0"]);
     let cached_result = [Some(entry_with_details(1, details))];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let total = outcome.response.and_then(|response| response.usage);
     assert_eq!(total, Some(usage([1, 0, 1], expected)));
 }
@@ -202,7 +202,7 @@ async fn skips_the_details_of_uncached_positions() {
         None,
         Some(entry_with_details(2, Some(r#"{"cached_tokens": 5}"#))),
     ];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(
         response.usage,

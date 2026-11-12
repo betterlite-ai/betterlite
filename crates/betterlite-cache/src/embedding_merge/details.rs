@@ -81,23 +81,19 @@ fn merge_maps(
 }
 
 fn merge_field(first: &Json, second: &Json) -> Result<Json, MergeError> {
-    match (first, second) {
-        (Json::Object(left), Json::Object(right)) => {
-            merge_maps(left, right, merge_scalar).map(Json::Object)
-        }
-        _ => merge_scalar(first, second),
+    if let (Json::Object(left), Json::Object(right)) = (first, second) {
+        let nested = merge_maps(left, right, merge_scalar)?;
+        return Ok(Json::Object(nested));
     }
+    merge_scalar(first, second)
 }
 
 fn merge_scalar(first: &Json, second: &Json) -> Result<Json, MergeError> {
-    match (first, second) {
-        (Json::Number(left), Json::Number(right)) => add_numbers(left, right).map(Json::Number),
-        _ => Ok(if is_unset(first) {
-            second.clone()
-        } else {
-            first.clone()
-        }),
+    if let (Json::Number(left), Json::Number(right)) = (first, second) {
+        return add_numbers(left, right).map(Json::Number);
     }
+    let kept = if is_unset(first) { second } else { first };
+    Ok(kept.clone())
 }
 
 // Python's falsy values: the first side wins unless it is one of these

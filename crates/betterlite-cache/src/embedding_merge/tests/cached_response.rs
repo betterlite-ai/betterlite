@@ -19,7 +19,7 @@ async fn splits_cached_and_uncached_positions_and_keeps_the_uncached_inputs() {
         None,
         Some(cached_entry(Some("c"), Some(5))),
     ];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(
         response.data,
@@ -36,7 +36,7 @@ async fn marks_the_response_as_a_cache_hit_without_headers() {
     let services = FakeServices::working();
     let mut kwargs = kwargs(&["i0", "i1"]);
     let cached_result = [Some(cached_entry(Some("a"), Some(1))), None];
-    let response = process(&cached_result, &mut kwargs, None, &services)
+    let response = process(&cached_result, &mut kwargs, &services)
         .await
         .response
         .expect("something was cached");
@@ -52,7 +52,7 @@ async fn an_entry_without_an_embedding_counts_as_cached_but_leaves_its_position_
         Some(cached_entry(None, Some(2))),
         Some(cached_entry(Some("b"), Some(1))),
     ];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(response.data, [None, Some(embedding("b", 1))]);
     assert_eq!(response.usage, Some(usage([3, 0, 3], None)));
@@ -68,7 +68,7 @@ async fn logs_a_complete_hit_once_with_the_final_response() {
         Some(cached_entry(Some("a"), Some(1))),
         Some(cached_entry(Some("b"), Some(2))),
     ];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     assert!(outcome.all_elements_cached);
     assert_eq!(kwargs["input"], texts(&[]));
     let logged = services.logged.lock().expect("the lock is held");
@@ -84,18 +84,19 @@ async fn passes_the_previous_response_through_when_nothing_is_cached() {
     let services = FakeServices::working();
     let mut kwargs = kwargs(&["i0", "i1"]);
     let previous = previous_response();
-    let outcome = process(
+    let outcome = try_process(
         &[None, None],
         &mut kwargs,
         Some(previous.clone()),
         &services,
     )
-    .await;
+    .await
+    .expect("the cached results are processed");
     assert_eq!(outcome.response, Some(previous));
     assert!(!outcome.all_elements_cached);
     assert_eq!(kwargs["input"], texts(&["i0", "i1"]));
     assert!(services.logged.lock().expect("the lock is held").is_empty());
-    let none = process(&[None, None], &mut kwargs, None, &services).await;
+    let none = process(&[None, None], &mut kwargs, &services).await;
     assert_eq!(none.response, None);
 }
 
@@ -105,7 +106,9 @@ async fn builds_a_new_response_instead_of_the_previous_one_when_something_is_cac
     let mut kwargs = kwargs(&["i0", "i1"]);
     let previous = previous_response();
     let cached_result = [Some(cached_entry(Some("a"), Some(1))), None];
-    let outcome = process(&cached_result, &mut kwargs, Some(previous), &services).await;
+    let outcome = try_process(&cached_result, &mut kwargs, Some(previous), &services)
+        .await
+        .expect("the cached results are processed");
     let response = outcome.response.expect("something was cached");
     assert_eq!(response.model.as_deref(), Some("kwargs-model"));
 }
@@ -134,7 +137,7 @@ async fn names_the_response_after_the_cached_model_or_the_request(
             ..cached_entry(Some("a"), Some(1))
         })
     });
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     let response = outcome.response.expect("something was cached");
     assert_eq!(response.model.as_deref(), expected);
 }
@@ -145,7 +148,7 @@ async fn a_null_request_model_leaves_the_response_unnamed() {
     let mut kwargs = kwargs(&["i0"]);
     kwargs.insert("model".to_owned(), KeyValue::Null);
     let cached_result = [Some(cached_entry(Some("a"), Some(1)))];
-    let outcome = process(&cached_result, &mut kwargs, None, &services).await;
+    let outcome = process(&cached_result, &mut kwargs, &services).await;
     assert_eq!(outcome.response.expect("a hit").model, None);
 }
 
