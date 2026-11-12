@@ -1,4 +1,4 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::file_ids::messages::get_file_ids_from_messages;
 use betterlite_prompts::message_content::Message;
 
@@ -6,25 +6,21 @@ use super::FeatureFlagsError;
 
 #[must_use]
 pub fn is_cache_control_set(messages: &[Json]) -> bool {
-    messages.iter().any(|message| {
-        let Some(fields) = message.as_object() else {
-            return false;
-        };
-        let present = fields
+    any_message(messages, |fields| {
+        if fields
             .get("cache_control")
-            .is_some_and(|value| !matches!(value, Json::Null));
-        if present {
+            .is_some_and(|value| !matches!(value, Json::Null))
+        {
             return true;
         }
-        let Some(Json::List(blocks)) = fields.get("content") else {
-            return false;
-        };
-        blocks.iter().any(|block| {
-            block
-                .as_object()
-                .is_some_and(|block_fields| block_fields.contains_key("cache_control"))
-        })
+        content_blocks(fields).is_some_and(|blocks| blocks.iter().any(block_has_cache_control))
     })
+}
+
+fn block_has_cache_control(block: &Json) -> bool {
+    block
+        .as_object()
+        .is_some_and(|block_fields| block_fields.contains_key("cache_control"))
 }
 
 pub fn is_file_id_used(messages: &[Json]) -> Result<bool, FeatureFlagsError> {
@@ -58,17 +54,9 @@ pub fn has_thinking_display_updates(thinking: Option<&Json>) -> bool {
 
 #[must_use]
 pub fn has_tool_change(messages: &[Json]) -> bool {
-    messages.iter().any(|message| {
-        let Some(fields) = message.as_object() else {
-            return false;
-        };
-        if fields.get("role").and_then(Json::as_str) != Some("system") {
-            return false;
-        }
-        let Some(Json::List(blocks)) = fields.get("content") else {
-            return false;
-        };
-        blocks.iter().any(is_tool_change_block)
+    any_message(messages, |fields| {
+        fields.get("role").and_then(Json::as_str) == Some("system")
+            && content_blocks(fields).is_some_and(|blocks| blocks.iter().any(is_tool_change_block))
     })
 }
 
@@ -105,24 +93,36 @@ pub const fn is_mcp_server_used(mcp_servers: Option<&[Json]>) -> bool {
 
 #[must_use]
 pub fn is_pdf_used(messages: &[Json]) -> bool {
-    messages.iter().any(|message| {
-        let Some(fields) = message.as_object() else {
-            return false;
-        };
-        let Some(Json::List(blocks)) = fields.get("content") else {
-            return false;
-        };
-        blocks.iter().any(is_non_text_block)
-    })
+    messages
+        .iter()
+        .filter_map(Json::as_object)
+        .flat_map(|fields| content_blocks(fields).unwrap_or_default())
+        .any(|block| block.as_object().is_some_and(is_non_text))
 }
 
-fn is_non_text_block(block: &Json) -> bool {
-    let Some(fields) = block.as_object() else {
-        return false;
-    };
+fn is_non_text(fields: &Object) -> bool {
     match fields.get("type") {
         Some(Json::Text(text)) => text != "text",
         Some(_) => true,
         None => false,
+    }
+}
+
+fn any_message<F>(messages: &[Json], matches: F) -> bool
+where
+    F: Fn(&Object) -> bool,
+{
+    for message in messages {
+        if message.as_object().is_some_and(&matches) {
+            return true;
+        }
+    }
+    false
+}
+
+fn content_blocks(fields: &Object) -> Option<&[Json]> {
+    match fields.get("content") {
+        Some(Json::List(blocks)) => Some(blocks),
+        Some(_) | None => None,
     }
 }

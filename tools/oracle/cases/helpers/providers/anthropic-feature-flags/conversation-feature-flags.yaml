@@ -1,0 +1,46 @@
+kind: helper
+name: conversation-feature-flags
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - {function: conversation, messages: [], thinking: {type: enabled, display: updates}, mcp_servers: null}
+      - {function: conversation, messages: [], thinking: {type: adaptive, display: updates}, mcp_servers: []}
+      - {function: conversation, messages: [], thinking: {type: disabled, display: updates}, mcp_servers: [{type: url, url: "https://mcp.example", name: m}]}
+      - {function: conversation, messages: [], thinking: {type: enabled, display: summarized}, mcp_servers: null}
+      - {function: conversation, messages: [], thinking: [], mcp_servers: null}
+      - {function: conversation, messages: [], thinking: null, mcp_servers: null}
+      - function: conversation
+        messages: [{role: system, content: [{type: tool_addition, tool: {type: tool_reference}}]}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
+        messages: [{role: system, content: [{type: tool_removal, tool: {type: tool_reference}}]}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
+        messages: [{role: user, content: [{type: tool_addition, tool: {type: tool_reference}}]}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
+        messages: [{role: system, content: [{type: tool_addition, tool: {type: tool}}]}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
+        messages: [{role: system, content: [{type: tool_addition}]}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
+        messages: [{role: system, content: tool_addition}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
+        messages: [{role: user, content: hi, output_config: null}]
+        thinking: null
+        mcp_servers: null
+      - function: conversation
+        messages: [{role: user, content: hi}]
+        thinking: null
+        mcp_servers: null
+env: {}
+compare: {ignore: []}

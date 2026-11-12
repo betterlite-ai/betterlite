@@ -1,0 +1,31 @@
+kind: helper
+name: eager-input-boolean
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - {function: eager_flag, tool: {eager_input_streaming: true}}
+      - {function: eager_flag, tool: {eager_input_streaming: false}}
+      - {function: eager_flag, tool: {eager_input_streaming: null}}
+      - {function: eager_flag, tool: {}}
+      - {function: eager_flag, tool: {function: {eager_input_streaming: true}}}
+      - {function: eager_flag, tool: {eager_input_streaming: false, function: {eager_input_streaming: true}}}
+      - {function: eager_flag, tool: {eager_input_streaming: true, function: {eager_input_streaming: false}}}
+      - {function: eager_flag, tool: {eager_input_streaming: true, extra: 5}}
+      - {function: eager_flag, tool: plain}
+      - {function: eager_flag, tool: []}
+      - {function: eager_flag, tool: {eager_input_streaming: "yes"}}
+      - {function: eager_flag, tool: {eager_input_streaming: 1}}
+      - {function: eager_flag, tool: {function: {eager_input_streaming: 0}}}
+      - {function: eager_flag, tool: {function: x}}
+      - {function: eager_flag, tool: {function: []}}
+      - function: eager_used
+        tools: [{eager_input_streaming: true}, {eager_input_streaming: bad}]
+      - function: eager_used
+        tools: [{eager_input_streaming: bad}, {eager_input_streaming: true}]
+      - function: eager_used
+        tools: [{eager_input_streaming: false}]
+      - {function: eager_used, tools: []}
+      - {function: eager_used, tools: null}
+env: {}
+compare: {ignore: []}

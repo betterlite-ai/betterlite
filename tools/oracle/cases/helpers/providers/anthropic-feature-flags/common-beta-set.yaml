@@ -1,0 +1,22 @@
+kind: helper
+name: common-beta-set
+call:
+  anthropic_feature_flags:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        anthropic/claude-opus-4-5: {litellm_provider: anthropic, supports_adaptive_thinking: false}
+        anthropic/claude-sonnet-4-5: {litellm_provider: anthropic}
+    calls:
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: []}
+      - {function: beta, model: claude-opus-4-5, custom_llm_provider: anthropic, params: {reasoning_effort: high}, computer_tool_used: null, prompt_caching_set: false, features: []}
+      - {function: beta, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {reasoning_effort: high}, computer_tool_used: null, prompt_caching_set: false, features: []}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {output_config: {effort: medium}}, computer_tool_used: null, prompt_caching_set: false, features: []}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: computer_20250124, prompt_caching_set: false, features: []}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: "", prompt_caching_set: false, features: []}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [file_id]}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [mcp_server]}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: false, features: [output_config, thinking_display, tool_change]}
+      - {function: beta, model: claude-sonnet-4-5, custom_llm_provider: anthropic, params: {}, computer_tool_used: null, prompt_caching_set: true, features: []}
+env: {}
+compare: {ignore: []}

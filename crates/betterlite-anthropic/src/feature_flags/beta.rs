@@ -65,7 +65,20 @@ where
     Transport: ModelInfoClient,
 {
     let mut betas = feature_betas(request.features);
-    if effort_beta(request, environment, catalogs).await {
+    let params = request.params.map(|params| OptionalParams {
+        reasoning_effort: params.reasoning_effort.clone(),
+        thinking: None,
+        output_config: params.output_config.clone(),
+    });
+    if is_effort_used(
+        params.as_ref(),
+        request.model,
+        request.custom_llm_provider,
+        environment,
+        catalogs,
+    )
+    .await
+    {
         betas.insert(EFFORT_BETA);
     }
     betas
@@ -100,28 +113,4 @@ fn feature_betas(features: &AnthropicFeatures) -> BTreeSet<&'static str> {
         betas.insert(TOOL_CHANGES_BETA);
     }
     betas
-}
-
-async fn effort_beta<Source, Transport>(
-    request: &BetaRequest<'_>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-    catalogs: &CatalogSources<'_>,
-) -> bool
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
-    let params = request.params.map(|params| OptionalParams {
-        reasoning_effort: params.reasoning_effort.clone(),
-        thinking: None,
-        output_config: params.output_config.clone(),
-    });
-    is_effort_used(
-        params.as_ref(),
-        request.model,
-        request.custom_llm_provider,
-        environment,
-        catalogs,
-    )
-    .await
 }

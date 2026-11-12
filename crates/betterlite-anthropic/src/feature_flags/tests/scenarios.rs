@@ -51,10 +51,6 @@ fn params(source: &str) -> FeatureParams {
     serde_json::from_str(source).unwrap()
 }
 
-fn text_pair(key: &str, value: &str) -> (String, String) {
-    (key.to_owned(), value.to_owned())
-}
-
 fn one_shot_identity_cases() {
     let messages = values(r#"[{"role":"user","content":"hello"}]"#);
     let billing = single(r#""x-anthropic-billing-header: cc_is_subagent=true""#);
@@ -95,137 +91,115 @@ fn one_shot_identity_cases() {
     ));
 }
 
-fn one_shot_shape_cases() {
-    let billing = single(r#""x-anthropic-billing-header: cc_is_subagent=true""#);
-    let two = values(r#"[{"role":"user","content":"a"},{"role":"user","content":"b"}]"#);
-    assert!(!is_one_shot_subagent_request(
-        &two,
-        &billing,
-        None,
-        Some("claude-cli/1")
-    ));
-    let assistant = values(r#"[{"role":"assistant","content":"a"}]"#);
-    assert!(!is_one_shot_subagent_request(
-        &assistant,
-        &billing,
-        None,
-        Some("claude-cli/1")
-    ));
-}
-
-fn one_shot_billing_lists() {
-    let messages = values(r#"[{"role":"user","content":"hello"}]"#);
-    let blocks =
-        single(r#"[{"type":"text","text":"x-anthropic-billing-header: cc_is_subagent=true"}]"#);
-    assert!(is_one_shot_subagent_request(
-        &messages,
-        &blocks,
-        None,
-        Some("claude-cli/1")
-    ));
-    let mixed_texts = single(
+const ONE_SHOT_SYSTEM_CASES: &[(&str, &str, bool)] = &[
+    (
+        r#"[{"role":"user","content":"a"},{"role":"user","content":"b"}]"#,
+        r#""x-anthropic-billing-header: cc_is_subagent=true""#,
+        false,
+    ),
+    (
+        r#"[{"role":"assistant","content":"a"}]"#,
+        r#""x-anthropic-billing-header: cc_is_subagent=true""#,
+        false,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#"[{"type":"text","text":"   "}]"#,
+        false,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#"[{"type":"image","source":{}}]"#,
+        false,
+    ),
+    (r#"[{"role":"user","content":"hello"}]"#, "null", false),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#""x-anthropic-billing-header: cc_is_subagent=true""#,
+        true,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#"[{"type":"text","text":"x-anthropic-billing-header: cc_is_subagent=true"}]"#,
+        true,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
         r#"[{"type":"text","text":"x-anthropic-billing-header: cc_is_subagent=true"},{"type":"text","text":"x-anthropic-billing-header: other=1"}]"#,
-    );
-    assert!(is_one_shot_subagent_request(
-        &messages,
-        &mixed_texts,
-        None,
-        Some("claude-cli/1")
-    ));
-    let blank_then_billing = single(
+        true,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
         r#"[{"type":"text","text":"   "},{"type":"text","text":"x-anthropic-billing-header: cc_is_subagent=true"}]"#,
-    );
-    assert!(is_one_shot_subagent_request(
-        &messages,
-        &blank_then_billing,
-        None,
-        Some("claude-cli/1")
-    ));
-}
-
-fn one_shot_system_rejections() {
-    let messages = values(r#"[{"role":"user","content":"hello"}]"#);
-    let blank_only = single(r#"[{"type":"text","text":"   "}]"#);
-    assert!(!is_one_shot_subagent_request(
-        &messages,
-        &blank_only,
-        None,
-        Some("claude-cli/1")
-    ));
-    let non_text = single(r#"[{"type":"image","source":{}}]"#);
-    assert!(!is_one_shot_subagent_request(
-        &messages,
-        &non_text,
-        None,
-        Some("claude-cli/1")
-    ));
-    assert!(!is_one_shot_subagent_request(
-        &messages,
-        &single("null"),
-        None,
-        Some("claude-cli/1")
-    ));
-}
-
-fn one_shot_billing_values() {
-    let messages = values(r#"[{"role":"user","content":"hello"}]"#);
-    let padded = single(r#""  x-anthropic-billing-header: cc_is_subagent=true  ""#);
-    assert!(is_one_shot_subagent_request(
-        &messages,
-        &padded,
-        None,
-        Some("claude-cli/1")
-    ));
-    let duplicate = single(
+        true,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#""  x-anthropic-billing-header: cc_is_subagent=true  ""#,
+        true,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
         r#"[{"type":"text","text":"x-anthropic-billing-header: cc_is_subagent=true"},{"type":"text","text":"x-anthropic-billing-header: cc_is_subagent=true"}]"#,
-    );
-    assert!(!is_one_shot_subagent_request(
-        &messages,
-        &duplicate,
-        None,
-        Some("claude-cli/1")
-    ));
-    let false_value = single(r#""x-anthropic-billing-header: cc_is_subagent=false""#);
-    assert!(!is_one_shot_subagent_request(
-        &messages,
-        &false_value,
-        None,
-        Some("claude-cli/1")
-    ));
-    let capital = single(r#""x-anthropic-billing-header: cc_is_subagent=True""#);
-    assert!(!is_one_shot_subagent_request(
-        &messages,
-        &capital,
-        None,
-        Some("claude-cli/1")
-    ));
+        false,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#""x-anthropic-billing-header: cc_is_subagent=false""#,
+        false,
+    ),
+    (
+        r#"[{"role":"user","content":"hello"}]"#,
+        r#""x-anthropic-billing-header: cc_is_subagent=True""#,
+        false,
+    ),
+];
+
+fn one_shot_system_cases() {
+    for (messages, system, expected) in ONE_SHOT_SYSTEM_CASES {
+        assert_eq!(
+            is_one_shot_subagent_request(
+                &values(messages),
+                &single(system),
+                None,
+                Some("claude-cli/1")
+            ),
+            *expected,
+            "messages {messages} system {system}"
+        );
+    }
 }
 
 pub(crate) fn one_shot_subagent_billing() {
     one_shot_identity_cases();
-    one_shot_shape_cases();
-    one_shot_system_rejections();
-    one_shot_billing_lists();
-    one_shot_billing_values();
+    one_shot_system_cases();
 }
 
-fn billing_field_valid() {
-    assert_eq!(
-        billing_fields("x-anthropic-billing-header: cc_is_subagent=true"),
-        Some(vec![text_pair("cc_is_subagent", "true")])
-    );
-    assert_eq!(
-        billing_fields(" \t x-anthropic-billing-header: a=1 ; b = 2 \n"),
-        Some(vec![text_pair("a", "1"), text_pair("b", "2")])
-    );
-    assert_eq!(
-        billing_fields("x-anthropic-billing-header: ;;a=1;"),
-        Some(vec![text_pair("a", "1")])
-    );
-    assert_eq!(
-        billing_fields("x-anthropic-billing-header:a=1"),
-        Some(vec![text_pair("a", "1")])
-    );
+fn billing_field_parsed_cases() {
+    let cases: &[(&str, &[(&str, &str)])] = &[
+        (
+            "x-anthropic-billing-header: cc_is_subagent=true",
+            &[("cc_is_subagent", "true")],
+        ),
+        (
+            " \t x-anthropic-billing-header: a=1 ; b = 2 \n",
+            &[("a", "1"), ("b", "2")],
+        ),
+        ("x-anthropic-billing-header: ;;a=1;", &[("a", "1")]),
+        ("x-anthropic-billing-header:a=1", &[("a", "1")]),
+        ("x-anthropic-billing-header: a=b=c", &[("a", "b=c")]),
+        (
+            "x-anthropic-billing-header: a=1;cc_is_subagent=true",
+            &[("a", "1"), ("cc_is_subagent", "true")],
+        ),
+    ];
+    for (source, expected) in cases {
+        let fields: Vec<(String, String)> = expected
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect();
+        assert_eq!(billing_fields(source), Some(fields));
+    }
 }
 
 fn billing_field_invalid() {
@@ -240,24 +214,9 @@ fn billing_field_invalid() {
     assert_eq!(billing_fields(""), None);
 }
 
-fn billing_field_splitting() {
-    assert_eq!(
-        billing_fields("x-anthropic-billing-header: a=b=c"),
-        Some(vec![text_pair("a", "b=c")])
-    );
-    assert_eq!(
-        billing_fields("x-anthropic-billing-header: a=1;cc_is_subagent=true"),
-        Some(vec![
-            text_pair("a", "1"),
-            text_pair("cc_is_subagent", "true")
-        ])
-    );
-}
-
 pub(crate) fn malformed_billing_text() {
-    billing_field_valid();
+    billing_field_parsed_cases();
     billing_field_invalid();
-    billing_field_splitting();
 }
 
 fn compaction_option_cases() {
@@ -343,37 +302,38 @@ async fn cache_case(fixture: &Fixture, model: &str, provider: Option<&str>) -> b
     supports_cache_control(model, provider, &mut environment).await
 }
 
-async fn cache_provider_cases(fixture: &Fixture) {
-    let model = "claude-3-5-sonnet-20241022";
-    assert!(cache_case(fixture, model, Some("anthropic")).await);
-    assert!(
-        !cache_case(fixture, "claude-3-5-sonnet-no-cache", Some("anthropic")).await,
-        "an explicit false declaration wins"
-    );
-    assert!(
-        cache_case(fixture, "CLAUDE-3-5-SONNET-20241022", Some("anthropic")).await,
-        "the model name is matched case-insensitively"
-    );
-    assert!(!cache_case(fixture, "gpt-4", Some("anthropic")).await);
-    assert!(!cache_case(fixture, model, Some("openai")).await);
-    assert!(!cache_case(fixture, model, Some("")).await);
-    assert!(!cache_case(fixture, "claude-unmapped", Some("anthropic")).await);
+const CACHE_CASES: &[(&str, Option<&str>, bool)] = &[
+    ("claude-3-5-sonnet-20241022", Some("anthropic"), true),
+    ("claude-3-5-sonnet-no-cache", Some("anthropic"), false),
+    ("CLAUDE-3-5-SONNET-20241022", Some("anthropic"), true),
+    ("gpt-4", Some("anthropic"), false),
+    ("claude-3-5-sonnet-20241022", Some("openai"), false),
+    ("claude-3-5-sonnet-20241022", Some(""), false),
+    ("claude-unmapped", Some("anthropic"), false),
+    ("anthropic/claude-3-5-sonnet-20241022", None, true),
+    ("unknown/model", None, false),
+    (
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        Some("bedrock"),
+        true,
+    ),
+    ("claude-3-5-sonnet@20240620", Some("vertex_ai"), true),
+    ("claude-3-5-sonnet", Some("azure_ai"), true),
+    ("claude-3-5-sonnet", Some("azure"), false),
+];
+
+async fn cache_support_cases(fixture: &Fixture) {
+    for (model, provider, expected) in CACHE_CASES {
+        assert_cache(fixture, model, *provider, *expected).await;
+    }
 }
 
-async fn cache_transport_cases(fixture: &Fixture) {
-    assert!(cache_case(fixture, "anthropic/claude-3-5-sonnet-20241022", None).await);
-    assert!(!cache_case(fixture, "unknown/model", None).await);
-    assert!(
-        cache_case(
-            fixture,
-            "anthropic.claude-3-5-sonnet-20241022-v2:0",
-            Some("bedrock")
-        )
-        .await
+async fn assert_cache(fixture: &Fixture, model: &str, provider: Option<&str>, expected: bool) {
+    assert_eq!(
+        cache_case(fixture, model, provider).await,
+        expected,
+        "model {model} provider {provider:?}"
     );
-    assert!(cache_case(fixture, "claude-3-5-sonnet@20240620", Some("vertex_ai")).await);
-    assert!(cache_case(fixture, "claude-3-5-sonnet", Some("azure_ai")).await);
-    assert!(!cache_case(fixture, "claude-3-5-sonnet", Some("azure")).await);
 }
 
 fn cache_control_presence() {
@@ -396,8 +356,7 @@ fn cache_control_presence() {
 
 pub(crate) async fn cache_control_support() {
     let fixture = Fixture::new(CACHE_MODELS);
-    cache_provider_cases(&fixture).await;
-    cache_transport_cases(&fixture).await;
+    cache_support_cases(&fixture).await;
     cache_control_presence();
 }
 
@@ -500,51 +459,31 @@ fn assert_eager_rejected(tool: &Json) {
     );
 }
 
-fn eager_flag_values() {
-    assert_eq!(
-        eager_input_streaming_flag(&single(r#"{"eager_input_streaming":true}"#)).unwrap(),
-        Some(true)
-    );
-    assert_eq!(
-        eager_input_streaming_flag(&single(r#"{"eager_input_streaming":false}"#)).unwrap(),
-        Some(false)
-    );
-    assert_eq!(
-        eager_input_streaming_flag(&single(r#"{"eager_input_streaming":null}"#)).unwrap(),
-        None
-    );
-    assert_eq!(eager_input_streaming_flag(&single("{}")).unwrap(), None);
-    assert_eq!(
-        eager_input_streaming_flag(&single(r#""plain""#)).unwrap(),
-        None
-    );
-    assert_eq!(eager_input_streaming_flag(&single("[]")).unwrap(), None);
-}
-
-fn eager_flag_nesting() {
-    assert_eq!(
-        eager_input_streaming_flag(&single(r#"{"function":{"eager_input_streaming":true}}"#))
-            .unwrap(),
-        Some(true)
-    );
-    assert_eq!(
-        eager_input_streaming_flag(&single(
-            r#"{"eager_input_streaming":false,"function":{"eager_input_streaming":true}}"#
-        ))
-        .unwrap(),
-        Some(false)
-    );
-    assert_eq!(
-        eager_input_streaming_flag(&single(
-            r#"{"eager_input_streaming":true,"function":{"eager_input_streaming":false}}"#
-        ))
-        .unwrap(),
-        Some(true)
-    );
-    assert_eq!(
-        eager_input_streaming_flag(&single(r#"{"eager_input_streaming":true,"extra":5}"#)).unwrap(),
-        Some(true)
-    );
+fn eager_flag_single_cases() {
+    let cases: &[(&str, Option<bool>)] = &[
+        (r#"{"eager_input_streaming":true}"#, Some(true)),
+        (r#"{"eager_input_streaming":false}"#, Some(false)),
+        (r#"{"eager_input_streaming":null}"#, None),
+        ("{}", None),
+        (r#""plain""#, None),
+        ("[]", None),
+        (r#"{"function":{"eager_input_streaming":true}}"#, Some(true)),
+        (
+            r#"{"eager_input_streaming":false,"function":{"eager_input_streaming":true}}"#,
+            Some(false),
+        ),
+        (
+            r#"{"eager_input_streaming":true,"function":{"eager_input_streaming":false}}"#,
+            Some(true),
+        ),
+        (r#"{"eager_input_streaming":true,"extra":5}"#, Some(true)),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(
+            eager_input_streaming_flag(&single(source)).unwrap(),
+            *expected
+        );
+    }
 }
 
 fn eager_flag_rejections() {
@@ -571,8 +510,7 @@ fn eager_used_cases() {
 }
 
 pub(crate) fn eager_input_boolean() {
-    eager_flag_values();
-    eager_flag_nesting();
+    eager_flag_single_cases();
     eager_flag_rejections();
     eager_used_cases();
 }
@@ -778,86 +716,121 @@ fn beta_request<'request>(
     }
 }
 
-async fn effort_beta_cases(fixture: &Fixture) {
-    let plain = params("{}");
-    let features = AnthropicFeatures::default();
-    let empty = beta_request("claude-sonnet-4-5", &plain, &features, false);
-    assert!(betas(fixture, &empty).await.is_empty());
-    let effort = params(r#"{"reasoning_effort":"high"}"#);
-    let requested = beta_request("claude-opus-4-5", &effort, &features, false);
-    assert_eq!(
-        betas(fixture, &requested).await,
-        BTreeSet::from([EFFORT_BETA])
-    );
-    let adaptive = beta_request("claude-opus-4-7", &effort, &features, false);
-    assert!(
-        betas(fixture, &adaptive).await.is_empty(),
-        "an adaptive-thinking model needs no effort beta"
-    );
-    let output_config = params(r#"{"output_config":{"effort":"medium"}}"#);
-    let configured = beta_request("claude-sonnet-4-5", &output_config, &features, false);
-    assert_eq!(
-        betas(fixture, &configured).await,
-        BTreeSet::from([EFFORT_BETA])
-    );
+const ALL_FLAG_BETAS: &[Feature] = &[
+    Feature::FileId,
+    Feature::McpServer,
+    Feature::MidConversationOutputConfig,
+    Feature::ThinkingDisplayUpdates,
+    Feature::MidConversationToolChange,
+];
+
+struct BetaCase {
+    model: &'static str,
+    params: &'static str,
+    computer_tool: Option<&'static str>,
+    flags: &'static [Feature],
+    prompt_caching: bool,
+    expected: &'static [&'static str],
 }
 
-async fn feature_beta_cases(fixture: &Fixture) {
-    let plain = params("{}");
-    let computer = AnthropicFeatures {
-        flags: BTreeSet::new(),
-        computer_tool: Some("computer_20250124".to_owned()),
-    };
-    let computer_request = beta_request("claude-sonnet-4-5", &plain, &computer, false);
-    assert_eq!(
-        betas(fixture, &computer_request).await,
-        BTreeSet::from(["computer-use-2025-01-24"])
-    );
-    let blank_computer = AnthropicFeatures {
-        flags: BTreeSet::new(),
-        computer_tool: Some(String::new()),
-    };
-    let blank_request = beta_request("claude-sonnet-4-5", &plain, &blank_computer, false);
-    assert!(betas(fixture, &blank_request).await.is_empty());
-}
-
-async fn feature_flag_beta_cases(fixture: &Fixture) {
-    let plain = params("{}");
-    let all = AnthropicFeatures {
-        flags: BTreeSet::from([
-            Feature::FileId,
-            Feature::McpServer,
-            Feature::MidConversationOutputConfig,
-            Feature::ThinkingDisplayUpdates,
-            Feature::MidConversationToolChange,
-        ]),
+const BETA_CASES: &[BetaCase] = &[
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
         computer_tool: None,
-    };
-    let all_request = beta_request("claude-sonnet-4-5", &plain, &all, false);
-    assert_eq!(
-        betas(fixture, &all_request).await,
-        BTreeSet::from([
+        flags: &[],
+        prompt_caching: false,
+        expected: &[],
+    },
+    BetaCase {
+        model: "claude-opus-4-5",
+        params: r#"{"reasoning_effort":"high"}"#,
+        computer_tool: None,
+        flags: &[],
+        prompt_caching: false,
+        expected: &[EFFORT_BETA],
+    },
+    BetaCase {
+        model: "claude-opus-4-7",
+        params: r#"{"reasoning_effort":"high"}"#,
+        computer_tool: None,
+        flags: &[],
+        prompt_caching: false,
+        expected: &[],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: r#"{"output_config":{"effort":"medium"}}"#,
+        computer_tool: None,
+        flags: &[],
+        prompt_caching: false,
+        expected: &[EFFORT_BETA],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: Some("computer_20250124"),
+        flags: &[],
+        prompt_caching: false,
+        expected: &["computer-use-2025-01-24"],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: Some(""),
+        flags: &[],
+        prompt_caching: false,
+        expected: &[],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: None,
+        flags: ALL_FLAG_BETAS,
+        prompt_caching: false,
+        expected: &[
             FILES_API_BETA,
             FILE_CODE_EXECUTION_BETA,
             MCP_CLIENT_BETA,
             OUTPUT_CONFIG_BETA,
             THINKING_DISPLAY_BETA,
             TOOL_CHANGES_BETA,
-        ])
-    );
-    let empty = AnthropicFeatures::default();
-    let caching = beta_request("claude-sonnet-4-5", &plain, &empty, true);
-    assert!(
-        betas(fixture, &caching).await.is_empty(),
-        "prompt_caching_set adds no beta header"
-    );
+        ],
+    },
+    BetaCase {
+        model: "claude-sonnet-4-5",
+        params: "{}",
+        computer_tool: None,
+        flags: &[],
+        prompt_caching: true,
+        expected: &[],
+    },
+];
+
+async fn beta_cases(fixture: &Fixture) {
+    for case in BETA_CASES {
+        let params = params(case.params);
+        let features = AnthropicFeatures {
+            flags: case.flags.iter().copied().collect(),
+            computer_tool: case.computer_tool.map(str::to_owned),
+        };
+        let request = beta_request(case.model, &params, &features, case.prompt_caching);
+        assert_eq!(
+            betas(fixture, &request).await,
+            case.expected
+                .iter()
+                .copied()
+                .collect::<BTreeSet<&'static str>>(),
+            "model {} params {}",
+            case.model,
+            case.params
+        );
+    }
 }
 
 pub(crate) async fn common_beta_set() {
     let fixture = Fixture::new(BETA_MODELS);
-    effort_beta_cases(&fixture).await;
-    feature_beta_cases(&fixture).await;
-    feature_flag_beta_cases(&fixture).await;
+    beta_cases(&fixture).await;
 }
 
 pub(crate) fn native_web_search_type() {

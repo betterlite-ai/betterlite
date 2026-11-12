@@ -21,51 +21,31 @@ fn computer_tool_version(tool: &Json) -> Option<String> {
 
 #[must_use]
 pub fn is_web_search_tool_used(tools: Option<&[Json]>) -> bool {
-    let Some(present) = tools else {
-        return false;
-    };
-    present.iter().any(|tool| {
-        tool.as_object().is_some_and(|fields| {
-            tool_kind(fields).is_some_and(|kind| kind.starts_with("web_search"))
-        })
+    any_tool(tools, |fields| {
+        tool_kind(fields).is_some_and(|kind| kind.starts_with("web_search"))
     })
 }
 
 #[must_use]
 pub fn is_tool_search_used(tools: Option<&[Json]>) -> bool {
-    let Some(present) = tools else {
-        return false;
-    };
-    present.iter().any(|tool| {
-        tool.as_object().is_some_and(|fields| {
-            matches!(
-                tool_kind(fields),
-                Some("tool_search_tool_regex_20251119" | "tool_search_tool_bm25_20251119")
-            )
-        })
+    any_tool(tools, |fields| {
+        matches!(
+            tool_kind(fields),
+            Some("tool_search_tool_regex_20251119" | "tool_search_tool_bm25_20251119")
+        )
     })
 }
 
 #[must_use]
 pub fn is_code_execution_tool_used(tools: Option<&[Json]>) -> bool {
-    let Some(present) = tools else {
-        return false;
-    };
-    present.iter().any(|tool| {
-        tool.as_object()
-            .is_some_and(|fields| tool_kind(fields) == Some(CODE_EXECUTION_TOOL))
+    any_tool(tools, |fields| {
+        tool_kind(fields) == Some(CODE_EXECUTION_TOOL)
     })
 }
 
 #[must_use]
 pub fn uses_programmatic_calls(tools: Option<&[Json]>) -> bool {
-    let Some(present) = tools else {
-        return false;
-    };
-    present.iter().any(|tool| {
-        let Some(fields) = tool.as_object() else {
-            return false;
-        };
+    any_tool(tools, |fields| {
         allowed_calls_code_execution(fields.get("allowed_callers"))
             || function_allows_code_execution(fields)
     })
@@ -89,13 +69,7 @@ fn allowed_calls_code_execution(value: Option<&Json>) -> bool {
 
 #[must_use]
 pub fn uses_input_examples(tools: Option<&[Json]>) -> bool {
-    let Some(present) = tools else {
-        return false;
-    };
-    present.iter().any(|tool| {
-        let Some(fields) = tool.as_object() else {
-            return false;
-        };
+    any_tool(tools, |fields| {
         has_examples(fields.get("input_examples")) || function_has_examples(fields)
     })
 }
@@ -112,6 +86,18 @@ const fn has_examples(value: Option<&Json>) -> bool {
         return false;
     };
     !examples.is_empty()
+}
+
+fn any_tool<F>(tools: Option<&[Json]>, matches: F) -> bool
+where
+    F: Fn(&Object) -> bool,
+{
+    let Some(present) = tools else {
+        return false;
+    };
+    present
+        .iter()
+        .any(|tool| tool.as_object().is_some_and(&matches))
 }
 
 #[must_use]
