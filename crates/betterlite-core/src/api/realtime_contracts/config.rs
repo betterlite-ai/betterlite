@@ -57,10 +57,10 @@ pub trait BaseRealtimeConfig: Send + Sync {
     ) -> Result<Vec<RealtimeMessage>, Self::Error>;
 
     async fn pace_backend_send(&self, _message: &[u8]) {}
-    fn is_setup_message(&self, _msg_obj: &Json) -> bool {
+    fn is_setup_message(&self, _message: &Json) -> bool {
         false
     }
-    fn is_content_message(&self, _msg_obj: &Json) -> bool {
+    fn is_content_message(&self, _message: &Json) -> bool {
         false
     }
     fn requires_session_configuration(&self) -> bool {

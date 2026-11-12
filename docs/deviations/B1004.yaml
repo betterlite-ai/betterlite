@@ -9,3 +9,6 @@ deviations:
   - what: A non-string input_audio_transcription.model resolves to None, where LiteLLM returns that value from a method declared str | None.
     why: The method's declared return is a string or None, so a value of another type is outside the contract; returning it would push a type error into routing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/realtime.py#L136-L141
+  - what: A realtime frame nested 128 or more levels deep is refused (127 levels decode), where LiteLLM's json.loads accepts roughly a thousand levels before Python's recursion limit.
+    why: Rule bounded-inputs gives the frame decoder a depth cap, so an adversarial frame cannot exhaust the stack; real realtime frames nest a handful of levels.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L106-L108

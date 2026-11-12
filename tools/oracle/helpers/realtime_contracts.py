@@ -2,7 +2,6 @@ import json
 from collections.abc import Callable
 from typing import Literal, TypeAlias, TypedDict, cast
 
-import httpx
 from litellm.litellm_core_utils import realtime_errors
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
 from litellm.litellm_core_utils.realtime_streaming import BackendClose, backend_close_from
@@ -165,7 +164,7 @@ class ContractConfig(BaseRealtimeConfig):
         return cast(realtime_types.RealtimeResponseTypedDict, {})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L117-L127
 
 
-class ContractHttpConfig(ContractConfig, BaseRealtimeHTTPConfig):  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/http_transformation.py#L15-L117
+class ContractHttpConfig(BaseRealtimeHTTPConfig):
     @override
     def get_api_base(self, api_base: str | None, **_kwargs: Json) -> str:
         return "" if api_base is None else api_base
@@ -175,10 +174,16 @@ class ContractHttpConfig(ContractConfig, BaseRealtimeHTTPConfig):  # pyright: ig
         return "" if api_key is None else api_key
 
     @override
-    def get_error_class(
-        self, error_message: str, status_code: int, headers: dict[str, Json] | httpx.Headers
-    ) -> BaseLLMException:
-        return BaseLLMException(status_code=status_code, message=error_message, headers=headers)
+    def get_complete_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str:
+        return "" if api_base is None else api_base
+
+    @override
+    def validate_environment(
+        self, headers: dict[str, Json], model: str, api_key: str | None = None
+    ) -> dict[str, Json]:
+        return dict(headers)
 
 
 def _error_record(error: BaseLLMException, *, raised: bool) -> Json:
@@ -189,7 +194,6 @@ def _error_record(error: BaseLLMException, *, raised: bool) -> Json:
 
 def _hooks(input_value: Input) -> Json:
     config = ContractConfig()
-    http_config = ContractHttpConfig()
     error = input_value["error"]
     try:
         config.get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L64-L69
@@ -198,21 +202,20 @@ def _hooks(input_value: Input) -> Json:
         raised: Json = None
     except BaseLLMException as exception:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L65
         raised = _error_record(exception, raised=True)
-    returned = http_config.get_error_class(error["message"], error["status_code"], error["headers"])
-    close_usage = cast(Json, config.unbilled_usage_on_session_close("model"))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L97-L98
+    returned: BaseLLMException = ContractHttpConfig().get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/http_transformation.py#L104-L117
+        error["message"], error["status_code"], error["headers"]
+    )
     created_event = cast(Json, config.transform_session_created_event("model", "session", None))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L103-L115
-    setup_message = config.is_setup_message(_EMPTY)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L83-L91
-    content_message = config.is_content_message(_EMPTY)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L83-L91
     return {
         "complete_urls": [
             config.get_complete_url(api_base, "model", None)
             for api_base in input_value["complete_urls"]
         ],
         "session_configuration_request": config.session_configuration_request("model"),
-        "session_close_usage": close_usage,
+        "session_close_usage": cast(Json, config.unbilled_usage_on_session_close("model")),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L97-L98
         "session_created_event": created_event,
-        "is_setup_message": setup_message,
-        "is_content_message": content_message,
+        "is_setup_message": config.is_setup_message(_EMPTY),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L83-L91
+        "is_content_message": config.is_content_message(_EMPTY),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L83-L91
         "requires_session_configuration": config.requires_session_configuration(),
         "websocket_error": raised,
         "http_error": _error_record(returned, raised=False),

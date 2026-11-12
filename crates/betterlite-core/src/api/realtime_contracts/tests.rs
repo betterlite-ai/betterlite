@@ -87,6 +87,26 @@ fn session_round_trips_declared_values_and_unknown_objects() {
     );
 }
 
+#[rstest]
+#[case::fractional(r#"{"max_output_tokens":5.5}"#)]
+#[case::list(r#"{"max_output_tokens":[1]}"#)]
+fn session_max_output_tokens_refuses_values_that_are_not_int_or_text(#[case] text: &str) {
+    let error = decode_realtime_contract(text.as_bytes(), RealtimeContractKind::Session, LIMITS)
+        .unwrap_err();
+    assert!(matches!(error, RealtimeContractError::Record(_)));
+}
+
+#[test]
+fn session_max_output_tokens_accepts_integers() {
+    let count = decode(RealtimeContractKind::Session, r#"{"max_output_tokens":-3}"#);
+    assert_eq!(
+        encode(&count),
+        parse(
+            r#"{"type":null,"model":null,"instructions":null,"audio":null,"include":null,"max_output_tokens":-3,"output_modalities":null,"tool_choice":null,"tools":null,"tracing":null,"truncation":null,"prompt":null}"#
+        )
+    );
+}
+
 #[test]
 fn client_secret_request_ignores_unknown_top_level_fields() {
     assert_eq!(
@@ -636,6 +656,17 @@ fn decoders_bound_the_input_size() {
         decode_realtime_contract(b"{\"a\":1}", RealtimeContractKind::Session, limits),
         Err(RealtimeContractError::JsonTooLarge { .. })
     ));
+}
+
+#[rstest]
+#[case::deepest_accepted(127, true)]
+#[case::one_too_deep(128, false)]
+fn frame_decoder_caps_nesting_depth(#[case] depth: usize, #[case] accepted: bool) {
+    let payload = format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+    assert_eq!(
+        decode_realtime_frame(payload.as_bytes(), LIMITS).is_ok(),
+        accepted
+    );
 }
 
 #[test]

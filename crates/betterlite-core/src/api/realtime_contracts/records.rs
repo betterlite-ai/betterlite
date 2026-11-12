@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::Number;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RealtimeExpiresAfter {
@@ -19,7 +18,7 @@ impl Default for RealtimeExpiresAfter {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MaxOutputTokens {
-    Number(Number),
+    Count(i64),
     Text(String),
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
