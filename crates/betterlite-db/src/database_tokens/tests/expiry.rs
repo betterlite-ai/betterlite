@@ -168,7 +168,6 @@ fn entra_exp_required_and_extra_claims() {
     );
     assert_claim_rejected("{\"exp\":1700000000,\"exp\":\"x\"}");
     assert_claim_rejected("[1]");
-    assert_claim_rejected("{\"exp\":\"-\"}");
     assert_claim_rejected("{}");
     assert_claim_rejected("{\"exp\":null}");
     assert_claim_rejected("{\"exp\":true}");

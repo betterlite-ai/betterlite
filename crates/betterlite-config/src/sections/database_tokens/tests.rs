@@ -62,6 +62,17 @@ fn flags_all_strict_spellings(#[case] value: &str) {
     assert!(!azure.toggles.iam_token_db_auth);
 }
 
+// LiteLLM's settings model is case-insensitive, so the folded spelling of either toggle name also enables it
+#[test]
+fn flags_read_lowercase_names() {
+    let iam = load("{}", &[("iam_token_db_auth", "true")]);
+    assert!(iam.toggles.iam_token_db_auth);
+    assert!(!iam.toggles.azure_postgresql_auth);
+    let azure = load("{}", &[("azure_postgresql_auth", "true")]);
+    assert!(azure.toggles.azure_postgresql_auth);
+    assert!(!azure.toggles.iam_token_db_auth);
+}
+
 #[rstest]
 #[case::t("t")]
 #[case::y("y")]

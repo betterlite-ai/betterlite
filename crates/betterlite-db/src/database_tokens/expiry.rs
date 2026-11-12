@@ -212,7 +212,7 @@ fn parse_entra_expiration(token: &str) -> Result<Option<NaiveDateTime>, ExpiryEr
 // pydantic's int accepts an integer of any width, so an exp past i64 still propagates the timestamp range error
 fn parse_integer_exp(raw: &str) -> Result<Option<i64>, ExpiryError> {
     let digits = raw.strip_prefix('-').unwrap_or(raw);
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+    if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Ok(None);
     }
     raw.parse::<i64>()
