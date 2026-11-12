@@ -18,3 +18,6 @@ deviations:
   - what: Guardrail has a required team_id field.
     why: The task asks for it. The TypedDict at the pinned commit does not declare it.
     link: ""
+  - what: A guardrails entry fails the whole config load when it sets categories or extra_headers as lists, or sets fail_on_error or default_on to os.environ/ text, because other sections type those keys more narrowly (grayswan.rs:59 and ibm_guardrails.rs:57 read categories and extra_headers as mappings, generic_guardrail_api.rs:35 and guardrail_judge.rs:35 read fail_on_error and default_on as bools). The guardrail_params section itself accepts the list types and the env text, and its tests cover them through the decoders.
+    why: ConfigLoader runs every section on the same YAML, and those sections are owned by other tasks. A working LiteLLM config can use the list types that the declared types allow, so this is a gap to close in those sections, not a choice made here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1088
