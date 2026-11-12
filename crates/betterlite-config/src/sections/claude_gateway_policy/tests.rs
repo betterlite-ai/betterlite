@@ -29,17 +29,6 @@ fn load(yaml: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigErro
     Ok(config.sections.claude_gateway_policy)
 }
 
-fn deny_bash() -> ManagedSettings {
-    let mut permissions = IndexMap::new();
-    permissions.insert(
-        "deny".to_owned(),
-        Json::List(vec![Json::Text("Bash".to_owned())]),
-    );
-    let mut settings = IndexMap::new();
-    settings.insert("permissions".to_owned(), Json::Object(permissions));
-    settings
-}
-
 fn managed_env(value: Json) -> ManagedSettings {
     let mut env = IndexMap::new();
     env.insert("ANTHROPIC_BASE_URL".to_owned(), value);
@@ -121,7 +110,7 @@ type Case = Result<(bool, Option<ManagedSettings>), &'static str>;
 #[case::enabled_environment_invalid(ENABLED_ENV, &[("CLAUDE_GATEWAY_ENABLED", "sometimes")], Err("environment"))]
 #[case::enabled_text("general_settings:\n  enable_claude_code_gateway: enabled\n", &[], Err("invalid_scalar"))]
 #[case::enabled_integer("general_settings:\n  enable_claude_code_gateway: 1\n", &[], Err("invalid_scalar"))]
-#[case::managed_configured(MANAGED_DENY_BASH, &[], Ok((false, Some(deny_bash()))))]
+#[case::managed_configured(MANAGED_DENY_BASH, &[], Ok((false, Some(managed_deny("Bash")))))]
 #[case::managed_null("general_settings:\n  claude_code_gateway_managed_settings: ~\n", &[], Ok((false, None)))]
 #[case::managed_empty("general_settings:\n  claude_code_gateway_managed_settings: {}\n", &[], Ok((false, Some(IndexMap::new()))))]
 #[case::managed_text("general_settings:\n  claude_code_gateway_managed_settings: policy\n", &[], Err("invalid_scalar"))]

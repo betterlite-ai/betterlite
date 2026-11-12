@@ -60,33 +60,36 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
+        let enabled = match general.enable_claude_code_gateway {
+            None => false,
+            Some(RawFlag::Boolean(flag)) => flag,
+            Some(RawFlag::Text(text)) => enabled_from_text(&text, lookup)?,
+            Some(RawFlag::Other(_)) => {
+                return Err(ConfigError::InvalidScalar {
+                    path: ENABLED_PATH.to_owned(),
+                    value: false,
+                });
+            }
+        };
         Ok(Settings {
-            enabled: enabled_value(general.enable_claude_code_gateway, lookup)?,
+            enabled,
             managed_settings: managed_value(general.managed_settings, lookup)?,
         })
     }
 }
 
-fn enabled_value<L>(value: Option<RawFlag>, lookup: &L) -> Result<bool, ConfigError>
+fn enabled_from_text<L>(text: &str, lookup: &L) -> Result<bool, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let invalid = || ConfigError::InvalidScalar {
-        path: ENABLED_PATH.to_owned(),
-        value: false,
+    let Some(variable) = text.strip_prefix("os.environ/").map(str::to_owned) else {
+        return Err(ConfigError::InvalidScalar {
+            path: ENABLED_PATH.to_owned(),
+            value: false,
+        });
     };
-    match value {
-        None => Ok(false),
-        Some(RawFlag::Boolean(flag)) => Ok(flag),
-        Some(RawFlag::Text(text)) => {
-            let Some(variable) = text.strip_prefix("os.environ/").map(str::to_owned) else {
-                return Err(invalid());
-            };
-            let resolved = resolve_string(text, ENABLED_PATH, lookup)?;
-            Ok(betterlite_env::flag(&variable, &resolved)?.unwrap_or(false))
-        }
-        Some(RawFlag::Other(_)) => Err(invalid()),
-    }
+    let resolved = resolve_string(text.to_owned(), ENABLED_PATH, lookup)?;
+    Ok(betterlite_env::flag(&variable, &resolved)?.unwrap_or(false))
 }
 
 fn managed_value<L>(
