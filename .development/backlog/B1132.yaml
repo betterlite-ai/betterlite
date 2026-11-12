@@ -1,14 +1,14 @@
 id: B1132
 milestone: M5 API families
 title: Claude gateway enable and settings policy
-status: todo
+status: done
 depends_on: [B002, B171, B1087]
 file: tasks/B1132-claude-gateway-policy.yaml
 covers:
   - "litellm/proxy/anthropic_endpoints/gateway_endpoints.py"
 parent: B081
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1379

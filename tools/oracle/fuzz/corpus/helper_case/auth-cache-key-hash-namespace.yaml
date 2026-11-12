@@ -1,0 +1,32 @@
+kind: helper
+name: auth-cache-key-hash-namespace
+call:
+  auth_cache:
+    scenario: partition
+    payloads: []
+    ttls: []
+    fallback: 60
+    keys:
+      - "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      - "0000000000000000000000000000000000000000000000000000000000000000"
+      - "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef"
+      - "hashed-jwt-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      - "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde"
+      - "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
+      - "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde\n"
+      - "tag:prod"
+      - "object_permission_id:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      - ""
+    ids:
+      user_id: user-1
+      object_permission_id: op-1
+      tag: tag-1
+      access_group: group-1
+      project_id: project-1
+      end_user_id: end-user-1
+      team_id: team-1
+      member_user_id: member-1
+    auth: {}
+env: {}
+compare:
+  ignore: []

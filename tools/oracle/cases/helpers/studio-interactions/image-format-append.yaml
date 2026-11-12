@@ -1,0 +1,29 @@
+kind: helper
+name: studio-interactions-image-format-append
+call:
+  studio_interactions:
+    calls:
+      - function: transform_request
+        model: "gemini-2.5-flash-image"
+        optional_params:
+          generation_config: {image_config: {aspect_ratio: "1:1"}}
+      - function: transform_request
+        model: "gemini-2.5-flash-image"
+        optional_params:
+          response_format: [{type: "text"}]
+          generation_config: {temperature: "warm", image_config: {image_size: "2K"}}
+      - function: transform_request
+        model: "gemini-2.5-flash-image"
+        optional_params:
+          response_mime_type: "application/json"
+          generation_config: {image_config: {}}
+      - function: transform_request
+        model: "gemini-2.5-flash-image"
+        optional_params:
+          generation_config: {}
+      - function: transform_request
+        model: "gemini-2.5-flash-image"
+        optional_params:
+          generation_config: {image_config: null, top_k: "3"}
+env: {}
+compare: {ignore: []}

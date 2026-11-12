@@ -1,11 +1,10 @@
 #![cfg(test)]
-use crate::auth::auth_route_patterns::AuthSettings;
 use crate::routes::router;
+use crate::routes::tests::state_for;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::sections::auth_route_patterns::Settings;
 use rstest::rstest;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -28,14 +27,10 @@ async fn send(config: &str, uri: &str, header: &str) -> (u16, String) {
     let loader = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     };
-    let model_list = loader.load(config).unwrap().model_list;
+    let document = loader.load(config).unwrap();
     let application = router(
-        AuthSettings {
-            master_key: None,
-            routes: Settings::default(),
-        },
+        state_for(&document),
         Arc::new(AtomicBool::new(false)),
-        &model_list,
         Router::new(),
         Router::new(),
     );

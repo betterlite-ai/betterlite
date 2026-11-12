@@ -1,0 +1,7 @@
+{
+  "include": ["python", "tests"],
+  "extraPaths": ["python"],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "reportMissingModuleSource": "none"
+}

@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use crate::error::GateError;
 
-fn take_free(folder: &Path, count: u32) -> Result<Option<File>, GateError> {
-    for number in 1..=count {
+fn take_free(folder: &Path, lowest: u32, count: u32) -> Result<Option<File>, GateError> {
+    for number in lowest..=count {
         let path = folder.join(format!("build-{number}"));
         let file = File::options()
             .create(true)
@@ -31,6 +31,7 @@ fn take_free(folder: &Path, count: u32) -> Result<Option<File>, GateError> {
 
 pub(super) fn acquire(
     folder: &Path,
+    lowest: u32,
     count: u32,
     notice: &mut dyn Write,
 ) -> Result<File, GateError> {
@@ -38,12 +39,12 @@ pub(super) fn acquire(
         path: folder.to_owned(),
         source,
     })?;
-    if let Some(file) = take_free(folder, count)? {
+    if let Some(file) = take_free(folder, lowest, count)? {
         return Ok(file);
     }
     writeln!(
         notice,
-        "gate: waiting for a build slot, all {count} in {} are busy",
+        "gate: waiting for a build slot, slots {lowest} to {count} in {} are busy",
         folder.display()
     )
     .map_err(|source| GateError::Write {
@@ -51,7 +52,7 @@ pub(super) fn acquire(
         source,
     })?;
     loop {
-        if let Some(file) = take_free(folder, count)? {
+        if let Some(file) = take_free(folder, lowest, count)? {
             return Ok(file);
         }
         thread::sleep(Duration::from_millis(100));

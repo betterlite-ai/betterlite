@@ -1,0 +1,27 @@
+task: B514
+deviations:
+  - what: >-
+      A failed speech call reads the provider's error body up to 1 MiB before the SDK status error is built, where
+      the OpenAI SDK reads the body to the end. A body over 1 MiB is cut there, so a JSON error body that large no
+      longer parses and the status error carries the cut text as its message with type, param and code unset.
+    why: >-
+      Rule bounded-inputs caps every read. Real provider error bodies are a few hundred bytes, so the cap only
+      matters for a body no provider sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1658
+  - what: >-
+      A supplied client of the wrong kind fails with a typed ClientKind error before any request is sent: a sync
+      client with aspeech true, or an async client with aspeech false. LiteLLM sends the request with a sync
+      client and then fails awaiting its result with a TypeError, and with an async client it fails reading
+      .response on an un-awaited coroutine with an AttributeError, both surfacing as an unhandled 500.
+    why: >-
+      Rule owned-behavior-is-built fixes an unhandled exception that no working setup can rely on. The typed
+      error names both client kinds and nothing is sent upstream in the sync-client case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1658
+  - what: >-
+      A speech call with no API key fails with a typed MissingApiKey error before any request is sent. LiteLLM
+      calls _get_openai_client, whose OpenAI constructor raises when neither api_key nor OPENAI_API_KEY is set,
+      and that exception surfaces as an unhandled 500.
+    why: >-
+      Rule owned-behavior-is-built fixes an unhandled exception that no working setup can rely on. The error
+      names the missing key instead of a bare constructor failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1590

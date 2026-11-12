@@ -53,6 +53,7 @@ pub mod collector;
 pub mod compaction_loopback;
 pub mod compliance_checks;
 pub mod config_fields;
+pub mod config_overlay_port;
 pub mod config_override_support;
 pub mod config_param_cache;
 pub mod config_update;

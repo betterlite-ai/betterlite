@@ -1,0 +1,9 @@
+kind: helper
+name: audio-file-input-process
+call:
+  audio_file_input:
+    calls:
+      - {function: process, file: {kind: bytes, content: YWJj}}
+      - {function: process, file: {kind: tuple, filename: voice.MP3, content: {kind: stream, name: inner.wav, content: YWJj, position: 1}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,83 @@
+kind: helper
+name: featherless-legacy-functions-and-tools
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            drop_params: false
+            params:
+              - [tools, [{type: function, function: {name: f}}]]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [tools, []]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [tools, null]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [tool_choice, required]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [tool_choice, null]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [tool_choice, auto]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [tool_choice, none]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [function_call, auto]
+              - [functions, [{name: f}]]
+              - [function_call_unknown, null]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            drop_params: true
+            params:
+              - [tools, [{type: function}]]
+              - [tool_choice, required]
+      - environment: {LITELLM_DROP_PARAMS: "true"}
+        calls:
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            drop_params: false
+            params:
+              - [tools, [{type: function}]]
+              - [tool_choice, required]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {}
+            params:
+              - [tools, []]
+env: {}
+compare: {ignore: []}

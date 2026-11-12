@@ -1,0 +1,4 @@
+model_list: []
+general_settings:
+  database_url: postgresql://user:password@db.example:5432/litellm
+# IAM_TOKEN_DB_AUTH, AZURE_POSTGRESQL_AUTH and LITELLM_PGBOUNCER_POOLED_DATABASE_URL are read from the environment
