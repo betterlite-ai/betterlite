@@ -12,6 +12,12 @@ pub enum LineOutcome {
     Skipped,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ChunkShape<'text> {
+    Content(Option<&'text str>),
+    Final,
+}
+
 pub fn parse_sse_line(
     line: &str,
     model: &str,
@@ -43,70 +49,64 @@ fn process_data(
     model: &str,
     ids: &dyn IdSource,
 ) -> Result<LineOutcome, LangGraphStreamError> {
-    match data {
-        Json::List(items) => process_list(items, model, ids),
-        Json::Object(fields) => process_object(fields, model, ids),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => Ok(LineOutcome::Skipped),
+    if let Json::List(items) = data {
+        return process_event(items, model, ids);
     }
+    let Some(fields) = data.as_object() else {
+        return Ok(LineOutcome::Skipped);
+    };
+    process_object(fields, model, ids)
 }
 
-// a list event of any other shape is not a dict event too: LiteLLM's dict branch is an elif of the list check
-fn process_list(
+// a short list comes back skipped, since LiteLLM's dict branch is an elif of the list check
+fn process_event(
     items: &[Json],
     model: &str,
     ids: &dyn IdSource,
 ) -> Result<LineOutcome, LangGraphStreamError> {
-    let [event_type, payload, ..] = items else {
+    let Some((event_type, payload)) = split_event(items) else {
         return Ok(LineOutcome::Skipped);
     };
-    match event_type.as_str() {
-        Some("messages") => process_messages(payload, model, ids),
-        Some("metadata") => Ok(process_metadata(payload, model, ids)),
-        Some(_) | None => Ok(LineOutcome::Skipped),
+    if event_type == "metadata" {
+        let has_run_id = payload
+            .as_object()
+            .is_some_and(|fields| fields.contains_key("run_id"));
+        return Ok(if has_run_id {
+            LineOutcome::Final(make_chunk(model, ids, ChunkShape::Final))
+        } else {
+            LineOutcome::Skipped
+        });
     }
-}
-
-fn process_metadata(payload: &Json, model: &str, ids: &dyn IdSource) -> LineOutcome {
-    match payload {
-        Json::Object(fields) if fields.contains_key("run_id") => {
-            LineOutcome::Final(final_chunk(model, ids))
-        }
-        Json::Null
-        | Json::Bool(_)
-        | Json::Number(_)
-        | Json::Text(_)
-        | Json::List(_)
-        | Json::Object(_) => LineOutcome::Skipped,
-    }
-}
-
-fn process_messages(
-    payload: &Json,
-    model: &str,
-    ids: &dyn IdSource,
-) -> Result<LineOutcome, LangGraphStreamError> {
-    let Json::List(items) = payload else {
+    let Json::List(entries) = payload else {
         return Ok(LineOutcome::Skipped);
     };
-    for item in items {
-        match item {
-            Json::List(entry) => {
-                let Some(Json::Object(message)) = entry.first() else {
-                    continue;
-                };
-                if let Some(text) = ai_text(message)? {
-                    return Ok(LineOutcome::Chunk(content_chunk(Some(text), model, ids)));
-                }
-            }
-            Json::Object(message) => {
-                if let Some(text) = ai_text(message)? {
-                    return Ok(LineOutcome::Chunk(content_chunk(Some(text), model, ids)));
-                }
-            }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
+    for item in entries {
+        let message = match item {
+            Json::List(entry) => entry.first().and_then(Json::as_object),
+            Json::Object(fields) => Some(fields),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => None,
+        };
+        let Some(found) = message else {
+            continue;
+        };
+        if event_type == "messages"
+            && let Some(text) = ai_text(found)?
+        {
+            return Ok(LineOutcome::Chunk(make_chunk(
+                model,
+                ids,
+                ChunkShape::Content(Some(text)),
+            )));
         }
     }
     Ok(LineOutcome::Skipped)
+}
+
+fn split_event(items: &[Json]) -> Option<(&str, &Json)> {
+    let [event_type, payload, ..] = items else {
+        return None;
+    };
+    Some((event_type.as_str()?, payload))
 }
 
 // an empty or null content is not an error: LiteLLM's condition falls through to the next item
@@ -115,10 +115,17 @@ fn ai_text(message: &Object) -> Result<Option<&str>, LangGraphStreamError> {
     if !matches!(kind, Some("ai" | "AIMessageChunk")) {
         return Ok(None);
     }
-    match message.get("content") {
-        Some(Json::Text(text)) if !text.is_empty() => Ok(Some(text)),
-        Some(Json::Text(_) | Json::Null) | None => Ok(None),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+    let Some(content) = message.get("content") else {
+        return Ok(None);
+    };
+    Ok(text_or_null(content)?.filter(|text| !text.is_empty()))
+}
+
+fn text_or_null(value: &Json) -> Result<Option<&str>, LangGraphStreamError> {
+    match value {
+        Json::Text(text) => Ok(Some(text)),
+        Json::Null => Ok(None),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             Err(LangGraphStreamError::FieldType { field: "content" })
         }
     }
@@ -131,36 +138,20 @@ fn process_object(
     ids: &dyn IdSource,
 ) -> Result<LineOutcome, LangGraphStreamError> {
     if let Some(content) = fields.get("content") {
-        return object_content(content, model, ids);
+        let text = text_or_null(content)?;
+        return Ok(LineOutcome::Chunk(make_chunk(
+            model,
+            ids,
+            ChunkShape::Content(text),
+        )));
     }
-    match fields.get("messages") {
-        None | Some(Json::Null) => Ok(LineOutcome::Skipped),
-        Some(Json::List(messages)) => process_last_message(messages, model, ids),
+    let messages = match fields.get("messages") {
+        None | Some(Json::Null) => return Ok(LineOutcome::Skipped),
+        Some(Json::List(messages)) => messages,
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(LangGraphStreamError::FieldType { field: "messages" })
+            return Err(LangGraphStreamError::FieldType { field: "messages" });
         }
-    }
-}
-
-fn object_content(
-    content: &Json,
-    model: &str,
-    ids: &dyn IdSource,
-) -> Result<LineOutcome, LangGraphStreamError> {
-    match content {
-        Json::Null => Ok(LineOutcome::Chunk(content_chunk(None, model, ids))),
-        Json::Text(text) => Ok(LineOutcome::Chunk(content_chunk(Some(text), model, ids))),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(LangGraphStreamError::FieldType { field: "content" })
-        }
-    }
-}
-
-fn process_last_message(
-    messages: &[Json],
-    model: &str,
-    ids: &dyn IdSource,
-) -> Result<LineOutcome, LangGraphStreamError> {
+    };
     let Some(Json::Object(last)) = messages.last() else {
         return Ok(LineOutcome::Skipped);
     };
@@ -169,16 +160,26 @@ fn process_last_message(
     }
     let text = match last.get("content") {
         None => Some(""),
-        Some(Json::Null) => None,
-        Some(Json::Text(text)) => Some(text.as_str()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(LangGraphStreamError::FieldType { field: "content" });
-        }
+        Some(value) => text_or_null(value)?,
     };
-    Ok(LineOutcome::Chunk(content_chunk(text, model, ids)))
+    Ok(LineOutcome::Chunk(make_chunk(
+        model,
+        ids,
+        ChunkShape::Content(text),
+    )))
 }
 
-pub(crate) fn content_chunk(text: Option<&str>, model: &str, ids: &dyn IdSource) -> Chunk {
+pub(crate) fn make_chunk(model: &str, ids: &dyn IdSource, shape: ChunkShape<'_>) -> Chunk {
+    let delta = match shape {
+        ChunkShape::Content(text) => Delta {
+            role: Some(CONTENT_ROLE.to_owned()),
+            content: text.map(str::to_owned),
+            refusal: None,
+            tool_calls: None,
+            function_call: None,
+        },
+        ChunkShape::Final => Delta::default(),
+    };
     Chunk {
         id: format!("{CHAT_COMPLETION_ID_PREFIX}{}", ids.next_id()),
         object: CHUNK_OBJECT.to_owned(),
@@ -186,38 +187,11 @@ pub(crate) fn content_chunk(text: Option<&str>, model: &str, ids: &dyn IdSource)
         model: model.to_owned(),
         choices: vec![Choice {
             index: 0,
-            delta: Delta {
-                role: Some(CONTENT_ROLE.to_owned()),
-                content: text.map(str::to_owned),
-                refusal: None,
-                tool_calls: None,
-                function_call: None,
+            delta,
+            finish_reason: match shape {
+                ChunkShape::Content(_) => None,
+                ChunkShape::Final => Some(FINISH_STOP.to_owned()),
             },
-            finish_reason: None,
-            logprobs: None,
-        }],
-        usage: None,
-        system_fingerprint: None,
-        service_tier: None,
-    }
-}
-
-pub(crate) fn final_chunk(model: &str, ids: &dyn IdSource) -> Chunk {
-    Chunk {
-        id: format!("{CHAT_COMPLETION_ID_PREFIX}{}", ids.next_id()),
-        object: CHUNK_OBJECT.to_owned(),
-        created: 0,
-        model: model.to_owned(),
-        choices: vec![Choice {
-            index: 0,
-            delta: Delta {
-                role: None,
-                content: None,
-                refusal: None,
-                tool_calls: None,
-                function_call: None,
-            },
-            finish_reason: Some(FINISH_STOP.to_owned()),
             logprobs: None,
         }],
         usage: None,

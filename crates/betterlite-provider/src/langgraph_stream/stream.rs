@@ -7,7 +7,7 @@ use futures_util::StreamExt as _;
 use tokio::time::timeout;
 
 use super::error::LangGraphStreamError;
-use super::iterator::{LineOutcome, final_chunk, parse_sse_line};
+use super::iterator::{ChunkShape, LineOutcome, make_chunk, parse_sse_line};
 use super::{Chunks, ERROR_LOG, IdSource, STREAMING_TIMEOUT};
 
 pub struct LineReader {
@@ -95,7 +95,11 @@ impl LangGraphSseStream {
             return Advancement::End;
         }
         self.finished = true;
-        Advancement::Finished(final_chunk(&self.model, self.ids.as_ref()))
+        Advancement::Finished(make_chunk(
+            &self.model,
+            self.ids.as_ref(),
+            ChunkShape::Final,
+        ))
     }
 
     fn fail(&mut self, error: &LangGraphStreamError) -> Advancement {
