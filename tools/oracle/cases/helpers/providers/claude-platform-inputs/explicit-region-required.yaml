@@ -1,0 +1,24 @@
+kind: helper
+name: claude-platform-explicit-region-required
+call:
+  claude_platform_inputs:
+    explicit_region_required:
+      cases:
+        - optional_params: {aws_region_name: eu-west-1}
+        - {}
+        - environment: {AWS_REGION_NAME: us-east-2}
+        - environment: {AWS_REGION: ap-south-1}
+        - environment: {AWS_DEFAULT_REGION: sa-east-1}
+        - environment: {AWS_REGION_NAME: us-east-2, AWS_REGION: ap-south-1, AWS_DEFAULT_REGION: sa-east-1}
+        - environment: {AWS_REGION: ap-south-1, AWS_DEFAULT_REGION: sa-east-1}
+        - optional_params: {aws_region_name: ''}
+          environment: {AWS_REGION_NAME: us-east-2}
+        - optional_params: {aws_region_name: US-WEST-2}
+        - environment: {AWS_REGION_NAME: ''}
+        - environment: {AWS_REGION: '', AWS_DEFAULT_REGION: ''}
+        - optional_params: {aws_region_name: null}
+        - optional_params: {aws_region_name: 1}
+        - optional_params: {aws_region_name: 0}
+        - optional_params: {aws_region_name: true}
+env: {}
+compare: {ignore: []}

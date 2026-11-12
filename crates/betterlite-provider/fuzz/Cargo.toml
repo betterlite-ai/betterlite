@@ -85,3 +85,10 @@ path = "fuzz_targets/ollama_chat_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ollama_generate_reply"
+path = "fuzz_targets/ollama_generate_reply.rs"
+test = false
+doc = false
+bench = false
