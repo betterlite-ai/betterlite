@@ -1,13 +1,13 @@
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_models::model_registration::merge::{
     convert_stringified_numbers, update_dictionary,
 };
-use betterlite_models::model_registration::{JsonObject, ModelCostEntries};
 use serde::Deserialize;
 
 use crate::helpers::HelperResult;
 use project::project;
-use registration::{Scenario, omits_token_price, register};
+use registration::{Scenario, register};
 use routing::{Deployment, RegionCall, order_filter, region};
 
 mod project;
@@ -25,10 +25,6 @@ pub(crate) enum Input {
     },
     ConvertStringifiedNumbers {
         value: String,
-    },
-    CostMapOmitsTokenPrice {
-        model_cost: ModelCostEntries,
-        keys: Vec<String>,
     },
     RegisterModel(Scenario),
     OrderFilter {
@@ -50,9 +46,6 @@ impl crate::helpers::Helper for Op {
             }
             Input::ConvertStringifiedNumbers { value } => {
                 Ok(project(&convert_stringified_numbers(value)))
-            }
-            Input::CostMapOmitsTokenPrice { model_cost, keys } => {
-                Ok(omits_token_price(model_cost, keys))
             }
             Input::RegisterModel(scenario) => register(scenario),
             Input::OrderFilter {

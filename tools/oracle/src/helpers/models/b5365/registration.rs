@@ -110,12 +110,6 @@ fn registry_with(
     }
 }
 
-pub(super) fn omits_token_price(model_cost: &ModelCostEntries, keys: &[String]) -> Value {
-    let registry = registry_with(as_object(model_cost), None);
-    let names: Vec<&str> = keys.iter().map(String::as_str).collect();
-    Value::Bool(registry.cost_map_omits_token_price(&names))
-}
-
 async fn apply(
     registry: &mut ModelRegistry,
     registration: &LiveRegistration,
@@ -179,17 +173,16 @@ pub(super) fn register(scenario: &Scenario) -> HelperResult {
         .build()
         .or_value_error()?;
     let (registry, warnings) = runtime.block_on(run_scenario(scenario))?;
-    let mut sets = serde_json::Map::new();
-    for (set, names) in &registry.provider_sets.sets {
-        if !names.is_empty() {
-            sets.insert(set.to_string(), json!(names));
-        }
-    }
+    let sets: serde_json::Map<String, Value> = registry
+        .provider_sets
+        .sets
+        .iter()
+        .filter(|(_, names)| !names.is_empty())
+        .map(|(set, names)| (set.to_string(), json!(names)))
+        .collect();
     let warned: Vec<&str> = warnings
         .iter()
-        .map(|warning| match warning {
-            RegistrationWarning::MissingCachePricing { model } => model.as_str(),
-        })
+        .map(|RegistrationWarning::MissingCachePricing { model }| model.as_str())
         .collect();
     Ok(json!({
         "model_cost": project(&shown_entries(&registry, &scenario.show)),

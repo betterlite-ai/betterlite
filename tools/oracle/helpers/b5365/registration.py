@@ -3,18 +3,16 @@ import logging
 import struct
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import redirect_stdout
+from functools import partial
+from logging.handlers import BufferingHandler
 from typing import Final, Protocol, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.utils import reapply_runtime_model_cost_registrations
-from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | Sequence["Json"] | Mapping[str, "Json"]
 Entry: TypeAlias = dict[str, Json]
 Entries: TypeAlias = dict[str, Entry]
-
-WARNING_PREFIX: Final = "register_model: model="
-WARNING_SUFFIX: Final = " has custom pricing"
 
 
 class Registration(TypedDict):
@@ -118,23 +116,9 @@ def apply(registration: Registration) -> None:
     )
 
 
-class LiveReplay:
-    def __init__(self, registrations: list[Registration]) -> None:
-        self.registrations = registrations
-
-    def __call__(self) -> None:
-        for registration in self.registrations:
-            apply(registration)
-
-
-class Recorder(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__(level=logging.WARNING)
-        self.messages: list[str] = []
-
-    @override
-    def emit(self, record: logging.LogRecord) -> None:
-        self.messages.append(record.getMessage())
+def replay(registrations: list[Registration]) -> None:
+    for registration in registrations:
+        apply(registration)
 
 
 def register(scenario: Scenario) -> Json:
@@ -142,8 +126,8 @@ def register(scenario: Scenario) -> Json:
     UTILS._runtime_registered_model_cost.clear()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3253
     for names in SETS.values():
         names.clear()
-    UTILS.set_live_deployment_replay(LiveReplay(scenario["live"]))
-    recorder = Recorder()
+    UTILS.set_live_deployment_replay(partial(replay, scenario["live"]))
+    recorder = BufferingHandler(capacity=100_000)
     logger = logging.getLogger("LiteLLM")
     logger.addHandler(recorder)
     # the provider lookup prints its provider list to stdout for a model with no provider
@@ -155,9 +139,9 @@ def register(scenario: Scenario) -> Json:
             reapply_runtime_model_cost_registrations()
     logger.removeHandler(recorder)
     warnings = [
-        message.removeprefix(WARNING_PREFIX).partition(WARNING_SUFFIX)[0]
-        for message in recorder.messages
-        if message.startswith(WARNING_PREFIX)
+        message.removeprefix("register_model: model=").partition(" has custom pricing")[0]
+        for message in (record.getMessage() for record in recorder.buffer)
+        if message.startswith("register_model: model=")
     ]
     shown = {
         key: {
