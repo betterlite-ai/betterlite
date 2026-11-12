@@ -9,10 +9,7 @@ from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 LOGGER_NAME: Final = "LiteLLM"
-REASONER: Final = "deepseek-reasoner"
-THINKING_ENABLED: Final[dict[str, Json]] = {"type": "enabled"}
 EMPTY: Final[dict[str, Json]] = {}
-BODY_KEYS: Final = ("tools", "tool_choice", "parallel_tool_calls", "temperature")
 EVENTS: Final[tuple[tuple[str, str], ...]] = (
     ("only supports function tools", "tools_dropped"),
     ("assistant message is missing", "reasoning_placeholder"),
@@ -33,18 +30,12 @@ class MapCase(TypedDict):
     optional_params: dict[str, Json]
 
 
-class HistoryCase(TypedDict):
-    messages: list[Message]
-
-
-class ToolsCase(TypedDict):
-    optional_params: dict[str, Json]
-
-
-class MessagesCase(TypedDict):
+class RequestCase(TypedDict):
     model: str
     messages: list[Message]
+    optional_params: dict[str, Json]
     supports_vision: bool
+    supports_reasoning: bool
 
 
 class MapInput(TypedDict):
@@ -52,22 +43,12 @@ class MapInput(TypedDict):
     cases: list[MapCase]
 
 
-class HistoryInput(TypedDict):
-    op: Literal["history"]
-    cases: list[HistoryCase]
+class RequestInput(TypedDict):
+    op: Literal["request"]
+    cases: list[RequestCase]
 
 
-class ToolsInput(TypedDict):
-    op: Literal["tools"]
-    cases: list[ToolsCase]
-
-
-class MessagesInput(TypedDict):
-    op: Literal["messages"]
-    cases: list[MessagesCase]
-
-
-Input: TypeAlias = MapInput | HistoryInput | ToolsInput | MessagesInput
+Input: TypeAlias = MapInput | RequestInput
 
 
 class Capture(logging.Handler):
@@ -100,33 +81,6 @@ class Capture(logging.Handler):
             self.events.append({"level": record.levelname.lower(), "event": event})
 
 
-def request_body(
-    model: str,
-    messages: list[Message],
-    optional_params: dict[str, Json],
-    *,
-    supports_vision: bool,
-    supports_reasoning: bool,
-) -> dict[str, Json]:
-    entry: dict[str, Json] = {
-        "litellm_provider": "deepseek",
-        "mode": "chat",
-        "supports_vision": supports_vision,
-        "supports_reasoning": supports_reasoning,
-    }
-    litellm.model_cost[f"deepseek/{model}"] = entry  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
-    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/chat/transformation.py#L296
-        "dict[str, Json]",
-        DeepSeekChatConfig().transform_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/chat/transformation.py#L296
-            model=model,
-            messages=cast("list[AllMessageValues]", messages),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
-            optional_params=optional_params,
-            litellm_params=EMPTY,
-            headers=EMPTY,
-        ),
-    )
-
-
 def run(input_value: Input) -> Json:
     results: list[Json] = []
     if input_value["op"] == "map":
@@ -142,38 +96,25 @@ def run(input_value: Input) -> Json:
                     ),
                 )
             results.append({"value": mapped, "warnings": capture.events})
-    elif input_value["op"] == "history":
-        for history_case in input_value["cases"]:
-            with Capture() as capture:
-                body = request_body(
-                    REASONER,
-                    history_case["messages"],
-                    {"thinking": THINKING_ENABLED},
-                    supports_vision=False,
-                    supports_reasoning=True,
-                )
-            results.append({"value": body["messages"], "warnings": capture.events})
-    elif input_value["op"] == "tools":
-        for tools_case in input_value["cases"]:
-            with Capture() as capture:
-                body = request_body(
-                    REASONER,
-                    [],
-                    {**tools_case["optional_params"], "thinking": THINKING_ENABLED},
-                    supports_vision=False,
-                    supports_reasoning=True,
-                )
-            kept: dict[str, Json] = {key: body[key] for key in BODY_KEYS if key in body}
-            results.append({"value": kept, "warnings": capture.events})
     else:
-        for messages_case in input_value["cases"]:
+        for request_case in input_value["cases"]:
+            entry: dict[str, Json] = {
+                "litellm_provider": "deepseek",
+                "mode": "chat",
+                "supports_vision": request_case["supports_vision"],
+                "supports_reasoning": request_case["supports_reasoning"],
+            }
+            litellm.model_cost[f"deepseek/{request_case['model']}"] = entry  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
             with Capture() as capture:
-                body = request_body(
-                    messages_case["model"],
-                    messages_case["messages"],
-                    {},
-                    supports_vision=messages_case["supports_vision"],
-                    supports_reasoning=False,
+                body = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/chat/transformation.py#L296
+                    "dict[str, Json]",
+                    DeepSeekChatConfig().transform_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/chat/transformation.py#L296
+                        model=request_case["model"],
+                        messages=cast("list[AllMessageValues]", request_case["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
+                        optional_params=request_case["optional_params"],
+                        litellm_params=EMPTY,
+                        headers=EMPTY,
+                    ),
                 )
-            results.append({"value": body["messages"], "warnings": capture.events})
+            results.append({"value": body, "warnings": capture.events})
     return {input_value["op"]: results}

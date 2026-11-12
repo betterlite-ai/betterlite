@@ -9,7 +9,7 @@ use betterlite_openai::deepseek_chat::request::{RequestInput, transform_request}
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
@@ -22,8 +22,6 @@ use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod tests;
 
-const REASONER: &str = "deepseek-reasoner";
-const BODY_KEYS: [&str; 4] = ["tools", "tool_choice", "parallel_tool_calls", "temperature"];
 const EVENTS: [(&str, &str); 2] = [
     ("only supports function tools", "tools_dropped"),
     ("assistant message is missing", "reasoning_placeholder"),
@@ -33,9 +31,7 @@ const EVENTS: [(&str, &str); 2] = [
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Map { cases: Vec<MapCase> },
-    History { cases: Vec<HistoryCase> },
-    Tools { cases: Vec<ToolsCase> },
-    Messages { cases: Vec<MessagesCase> },
+    Request { cases: Vec<RequestCase> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,22 +44,12 @@ pub(crate) struct MapCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HistoryCase {
-    messages: Vec<ChatMessage>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ToolsCase {
-    optional_params: Object,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct MessagesCase {
+pub(crate) struct RequestCase {
     model: String,
     messages: Vec<ChatMessage>,
+    optional_params: Object,
     supports_vision: bool,
+    supports_reasoning: bool,
 }
 
 fn openai_config() -> OpenAiConfig {
@@ -94,50 +80,17 @@ fn map_value(case: &MapCase) -> Value {
     json!(optional)
 }
 
-fn thinking_enabled(mut optional_params: Object) -> Object {
-    let kind = Object::from([("type".to_owned(), Json::Text("enabled".to_owned()))]);
-    optional_params.insert("thinking".to_owned(), Json::Object(kind));
-    optional_params
-}
-
-fn history_value(case: &HistoryCase) -> Result<Value, Box<HelperError>> {
-    let input = RequestInput {
-        model: REASONER,
-        messages: &case.messages,
-        optional_params: &thinking_enabled(Object::new()),
-        supports_vision: false,
-        supports_reasoning: true,
-    };
-    let body = transform_request(&input, Mode::Sync).or_config_error()?;
-    Ok(json!(body.get("messages")))
-}
-
-fn tools_value(case: &ToolsCase) -> Result<Value, Box<HelperError>> {
-    let input = RequestInput {
-        model: REASONER,
-        messages: &[],
-        optional_params: &thinking_enabled(case.optional_params.clone()),
-        supports_vision: false,
-        supports_reasoning: true,
-    };
-    let body = transform_request(&input, Mode::Sync).or_config_error()?;
-    let kept: Object = body
-        .into_iter()
-        .filter(|(key, _)| BODY_KEYS.contains(&key.as_str()))
-        .collect();
-    Ok(json!(kept))
-}
-
-fn messages_value(case: &MessagesCase) -> Result<Value, Box<HelperError>> {
+fn request_value(case: &RequestCase) -> Result<Value, Box<HelperError>> {
     let input = RequestInput {
         model: &case.model,
         messages: &case.messages,
-        optional_params: &Object::new(),
+        optional_params: &case.optional_params,
         supports_vision: case.supports_vision,
-        supports_reasoning: false,
+        supports_reasoning: case.supports_reasoning,
     };
-    let body = transform_request(&input, Mode::Sync).or_config_error()?;
-    Ok(json!(body.get("messages")))
+    Ok(json!(
+        transform_request(&input, Mode::Sync).or_config_error()?
+    ))
 }
 
 fn captured<Case, Render>(logs: &Logs, key: &str, cases: &[Case], render: Render) -> HelperResult
@@ -167,9 +120,7 @@ impl Helper for Op {
         let subscriber = tracing_subscriber::registry().with(logs.clone());
         with_default(subscriber, || match input {
             Input::Map { cases } => captured(&logs, "map", cases, |case| Ok(map_value(case))),
-            Input::History { cases } => captured(&logs, "history", cases, history_value),
-            Input::Tools { cases } => captured(&logs, "tools", cases, tools_value),
-            Input::Messages { cases } => captured(&logs, "messages", cases, messages_value),
+            Input::Request { cases } => captured(&logs, "request", cases, request_value),
         })
     }
 }

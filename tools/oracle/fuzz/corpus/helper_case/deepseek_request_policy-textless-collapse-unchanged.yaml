@@ -2,10 +2,12 @@ kind: helper
 name: deepseek-request-policy-textless-collapse-unchanged
 call:
   deepseek_request_policy:
-    op: messages
+    op: request
     cases:
       - model: deepseek-vision-model
         supports_vision: false
+        supports_reasoning: false
+        optional_params: {}
         messages:
           - role: user
             content:
@@ -13,12 +15,16 @@ call:
           - {role: user, content: identical string}
       - model: deepseek-vision-model
         supports_vision: true
+        supports_reasoning: false
+        optional_params: {}
         messages:
           - role: user
             content:
               - {type: image_url, image_url: https://example.test/b.png}
       - model: deepseek-vision-model
         supports_vision: true
+        supports_reasoning: false
+        optional_params: {}
         messages:
           - role: user
             content:
