@@ -852,9 +852,9 @@ fn decode_limits_reject_more_frames_and_faster_rates() {
 
 #[rstest]
 #[case::mono_cut_mid_frame(wav_bytes(10, 10, 1), 51, Decimal::new(3, 1))]
-#[case::three_channels(wav_bytes(10, 10, 3), 57, Decimal::new(2, 1))]
+#[case::three_channels(wav_bytes(10, 10, 3), 81, Decimal::new(2, 1))]
 #[case::header_only(wav_bytes(10, 10, 1), 44, Decimal::ZERO)]
-#[case::complete(wav_bytes(10, 10, 3), 104, Decimal::ONE)]
+#[case::complete(wav_bytes(10, 10, 3), 128, Decimal::ONE)]
 fn decode_caps_frames_at_the_bytes_present(
     #[case] clip: Vec<u8>,
     #[case] length: usize,
@@ -882,14 +882,46 @@ fn decode_measures_a_frame_by_its_container_size(
     );
 }
 
-#[test]
-fn decode_ignores_a_data_length_beyond_the_upload() {
-    let mut clip = wav_bytes(2, 10, 1);
-    clip[40..44].copy_from_slice(&u32::MAX.to_le_bytes());
+#[rstest]
+#[case::mono(wav_bytes(2, 10, 1), Decimal::new(2, 1))]
+#[case::three_channels(wav_bytes(2, 10, 3), Decimal::new(2, 1))]
+fn decode_ignores_a_data_length_beyond_the_upload(
+    #[case] mut clip: Vec<u8>,
+    #[case] expected: Decimal,
+) {
+    let data = clip
+        .windows(4)
+        .position(|window| window == b"data")
+        .unwrap();
+    clip[data..][4..8].copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(
         decode_audio_duration(&clip, &native_limits()),
-        Some(Decimal::new(2, 1))
+        Some(expected)
     );
+}
+
+#[test]
+fn decode_skips_chunks_before_the_data() {
+    let mut clip = wav_bytes(10, 10, 1);
+    let data = clip
+        .windows(4)
+        .position(|window| window == b"data")
+        .unwrap();
+    let list = [b"LIST".as_slice(), &4_u32.to_le_bytes(), b"abcd"].concat();
+    clip.splice(data..data, list);
+    assert_eq!(
+        decode_audio_duration(&clip, &native_limits()),
+        Some(Decimal::ONE)
+    );
+}
+
+#[test]
+fn decode_rejects_data_before_the_format() {
+    let clip = wav_bytes(10, 10, 1);
+    let mut swapped = clip[..12].to_vec();
+    swapped.extend_from_slice(&clip[36..]);
+    swapped.extend_from_slice(&clip[12..36]);
+    assert_eq!(decode_audio_duration(&swapped, &native_limits()), None);
 }
 
 #[rstest]
