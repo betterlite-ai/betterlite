@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use secrecy::ExposeSecret;
 
 use crate::azure_urls::{
-    EnvironmentHeadersRequest, get_base_azure_url, validate_azure_environment,
+    EnvironmentHeadersRequest, get_base_azure_url, url_parts, validate_azure_environment,
 };
 
 use support::{NoSources, credentials, load, token_settings};
@@ -88,4 +88,29 @@ fn azure_urls_secret_safe_failure() {
     .unwrap_err();
     assert!(!format!("{invalid}").contains("fixture-api-key"));
     assert!(!format!("{invalid:?}").contains("fixture-api-key"));
+}
+
+#[test]
+fn azure_urls_url_parts_helpers() {
+    assert!(url_parts::has_empty_path("https://example.com"));
+    assert!(!url_parts::has_empty_path("https://example.com/"));
+    assert!(!url_parts::has_empty_path("https://example.com/path"));
+    assert!(url_parts::has_empty_path("https://example.com?x=1"));
+    assert!(url_parts::has_empty_path("https://example.com#frag"));
+    assert_eq!(
+        url_parts::without_empty_path("https://example.com/"),
+        "https://example.com"
+    );
+    assert_eq!(
+        url_parts::without_empty_path("https://example.com/?x=1"),
+        "https://example.com?x=1"
+    );
+    assert_eq!(
+        url_parts::without_empty_path("https://example.com/#frag"),
+        "https://example.com#frag"
+    );
+    assert_eq!(
+        url_parts::without_empty_path("https://example.com/path"),
+        "https://example.com/path"
+    );
 }

@@ -83,7 +83,7 @@ pub fn get_base_azure_url(
     }
     url_parts::set_query_pairs(&mut composed, &query);
     let text = composed.to_string();
-    if keep_empty_path && !appended && !rewritten {
+    if keep_empty_path && !appended {
         return Ok(url_parts::without_empty_path(&text));
     }
     Ok(text)

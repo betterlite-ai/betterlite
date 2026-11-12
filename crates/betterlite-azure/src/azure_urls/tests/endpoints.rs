@@ -310,6 +310,7 @@ fn resolved_bases_come_from_config() {
 
 fn append_route_once() {
     route_presence_skips_append();
+    route_presence_empty_path_edges();
     route_segments_merge();
 }
 
@@ -344,6 +345,30 @@ fn route_presence_skips_append() {
         )
         .unwrap(),
         "https://example.openai.azure.com/api?target=%2Fopenai%2Fresponses"
+    );
+}
+
+fn route_presence_empty_path_edges() {
+    // an explicit empty path keeps its slash, unlike a bare authority
+    assert_eq!(
+        get_base_azure_url(
+            Some("https://example.openai.azure.com/?target=/openai/responses"),
+            None,
+            None,
+            "/openai/responses",
+        )
+        .unwrap(),
+        "https://example.openai.azure.com/?target=%2Fopenai%2Fresponses"
+    );
+    assert_eq!(
+        get_base_azure_url(
+            Some("https://example.openai.azure.com?target=/openai/responses"),
+            Some("v1"),
+            None,
+            "/openai/responses",
+        )
+        .unwrap(),
+        "https://example.openai.azure.com?target=%2Fopenai%2Fresponses&api-version=v1"
     );
 }
 
