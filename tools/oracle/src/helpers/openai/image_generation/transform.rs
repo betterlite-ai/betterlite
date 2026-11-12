@@ -15,8 +15,18 @@ type Detail = [(&'static str, Value); 2];
 
 pub(crate) fn value(probe: &Probe, function: Function) -> HelperResult {
     let family = select_image_family(&probe.model);
+    let mut mapped = probe.existing_params.clone();
     let detail = if function == Function::UnsupportedImageParam {
-        mapped_detail(probe, family)
+        let failure = map_openai_params(
+            family,
+            &probe.model,
+            &probe.non_default_params,
+            &mut mapped,
+            probe.drop_params,
+        )
+        .err()
+        .map(|ImageParamError::Unsupported { .. }| json!({"kind": "unsupported_parameter"}));
+        [("mapped", json!(mapped)), ("error", json!(failure))]
     } else {
         transform_detail(probe, family)?
     };
@@ -48,22 +58,6 @@ fn transform_detail(probe: &Probe, family: ImageFamily) -> Result<Detail, Box<He
         ),
         ("post_call", json!(recorder.last("post_api_call"))),
     ])
-}
-
-fn mapped_detail(probe: &Probe, family: ImageFamily) -> Detail {
-    let mut mapped = probe.existing_params.clone();
-    let outcome = map_openai_params(
-        family,
-        &probe.model,
-        &probe.non_default_params,
-        &mut mapped,
-        probe.drop_params,
-    );
-    let error = match outcome {
-        Ok(()) => Value::Null,
-        Err(ImageParamError::Unsupported { .. }) => json!({"kind": "unsupported_parameter"}),
-    };
-    [("mapped", json!(mapped)), ("error", error)]
 }
 
 fn request_data(probe: &Probe) -> IndexMap<String, Json> {
