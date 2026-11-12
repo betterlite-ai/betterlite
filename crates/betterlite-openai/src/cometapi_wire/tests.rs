@@ -311,10 +311,6 @@ fn chat_error_class_keeps_the_supplied_status_and_headers() {
     assert_eq!(error.headers, supplied);
 }
 
-fn shape_field(failure: CometApiError) -> String {
-    failure.message
-}
-
 fn chunk(source: &str) -> Object {
     object(source)
 }
@@ -401,9 +397,11 @@ fn chunk_parser_defaults_only_a_missing_error_message() {
     let absent = chunk_parser(&chunk(r#"{"error":{}}"#)).unwrap_err();
     assert_eq!(absent.message, "CometAPI Error: Unknown error");
     let explicit_null = chunk_parser(&chunk(r#"{"error":{"message":null}}"#)).unwrap_err();
-    assert_eq!(explicit_null.message, "CometAPI Error: null");
-    let wrong_type = shape_field(chunk_parser(&chunk(r#"{"error":{"message":5}}"#)).unwrap_err());
-    assert!(wrong_type.contains("error.message"));
+    assert_eq!(explicit_null.status_code, None);
+    assert!(explicit_null.message.contains("error.message"));
+    let wrong_type = chunk_parser(&chunk(r#"{"error":{"message":5}}"#)).unwrap_err();
+    assert_eq!(wrong_type.status_code, None);
+    assert!(wrong_type.message.contains("error.message"));
 }
 
 #[rstest]
@@ -418,10 +416,13 @@ fn chunk_parser_defaults_only_a_missing_error_message() {
 )]
 #[case::error(r#"{"error":"plain"}"#, "error")]
 fn chunk_parser_names_a_wrong_typed_field(#[case] source: &str, #[case] field: &str) {
+    let error = chunk_parser(&chunk(source)).unwrap_err();
     assert_eq!(
-        shape_field(chunk_parser(&chunk(source)).unwrap_err()),
-        field
+        error.message,
+        format!("the CometAPI stream chunk field {field} has an unexpected shape")
     );
+    assert_eq!(error.status_code, None);
+    assert!(error.headers.is_empty());
 }
 
 #[rstest]
@@ -540,9 +541,10 @@ fn decode_embedding_reply_copies_the_nullable_fields() {
     assert_eq!(full.model, Some(Json::Text(String::from("up"))));
     assert_eq!(
         full.data,
-        Some(Json::Object(object(
-            r#"[{"object":"embedding","embedding":[1,2],"index":0}]"#
-        )))
+        Some(
+            serde_json::from_str::<Json>(r#"[{"object":"embedding","embedding":[1,2],"index":0}]"#)
+                .unwrap()
+        )
     );
     assert_eq!(full.object, Some(Json::Text(String::from("list"))));
     let nulls = reply(r#"{"model":null,"data":null,"object":null}"#, 200, &empty).unwrap();
@@ -583,13 +585,19 @@ fn decode_embedding_reply_wraps_json_failure_with_the_response() {
 }
 
 #[rstest]
-#[case::usage_null(r#"{"usage":null}"#)]
-#[case::usage_number(r#"{"usage":5}"#)]
-#[case::prompt_text(r#"{"usage":{"prompt_tokens":"x"}}"#)]
-#[case::body_list("[]")]
-fn decode_embedding_reply_names_a_wrong_typed_field(#[case] body: &str) {
+#[case::usage_null(r#"{"usage":null}"#, "usage")]
+#[case::usage_number(r#"{"usage":5}"#, "usage")]
+#[case::prompt_text(r#"{"usage":{"prompt_tokens":"x"}}"#, "prompt_tokens")]
+#[case::total_text(r#"{"usage":{"total_tokens":"x"}}"#, "total_tokens")]
+#[case::body_list("[]", "body")]
+fn decode_embedding_reply_names_a_wrong_typed_field(#[case] body: &str, #[case] field: &str) {
     let error = reply(body, 200, &Headers::new()).unwrap_err();
+    assert_eq!(
+        error.message,
+        format!("the CometAPI embedding reply field {field} has an unexpected shape")
+    );
     assert_eq!(error.status_code, None);
+    assert!(error.headers.is_empty());
 }
 
 #[test]
