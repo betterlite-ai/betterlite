@@ -49,8 +49,7 @@ async fn set_pre_call_writes_memory_and_queues_the_set() {
     .await;
     let queued = deferred.expect("the request pipeline takes the write");
     assert!(server.commands("SET").is_empty());
-    let settled = queued.await;
-    assert!(settled.is_ok());
+    queued.await.expect("the queued set settles");
     drop(batches);
     let sets = server.commands("SET");
     assert_eq!(sets.len(), 1);
@@ -80,8 +79,7 @@ async fn set_pre_call_keeps_an_explicit_ttl_over_the_default() {
     })
     .await;
     let queued = deferred.expect("the request pipeline takes the write");
-    let settled = queued.await;
-    assert!(settled.is_ok());
+    queued.await.expect("the queued set settles");
     drop(batches);
     let sets = server.commands("SET");
     assert_eq!(sets.len(), 1);
@@ -114,8 +112,7 @@ async fn delete_pre_call_deletes_memory_and_queues_the_delete() {
     })
     .await;
     let queued = deferred.expect("the request pipeline takes the delete");
-    let settled = queued.await;
-    assert!(settled.is_ok());
+    queued.await.expect("the queued delete settles");
     drop(batches);
     let deletes = server.commands("DEL");
     assert_eq!(deletes.len(), 1);
