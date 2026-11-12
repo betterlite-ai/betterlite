@@ -485,6 +485,27 @@ async fn callback_logger_adaptive_throttle_samples_move_the_limit() {
 }
 
 #[tokio::test]
+async fn callback_logger_raises_the_adaptive_ceiling_to_the_window() {
+    let logger = logger(
+        ScriptedClient::with_replies(&[]),
+        r#","s3_adaptive_concurrency":true,"s3_max_concurrent_uploads":3,"s3_max_adaptive_concurrency":2"#,
+        BTreeMap::new(),
+        None,
+        None,
+    );
+    let throttle = logger
+        .transport
+        .throttle
+        .as_ref()
+        .expect("adaptive concurrency feeds the limiter");
+    throttle.record(false);
+    throttle.record(false);
+    throttle.record(false);
+    assert_eq!(logger.uploads.snapshot().limit, 3);
+    drop(logger);
+}
+
+#[tokio::test]
 async fn callback_logger_reuses_the_cold_storage_key_only_when_cold_storage_is_on() {
     let day_key = "2009-02-13/time-23-31-30-000000_s3-model-event.json";
     let text = PAYLOAD.replace(

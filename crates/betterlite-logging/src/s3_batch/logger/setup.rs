@@ -129,7 +129,11 @@ pub(super) fn transport(
     let adaptive = parameters.features.contains(&Feature::AdaptiveConcurrency);
     let uploads = Arc::new(UploadLimiter::new(
         parameters.max_concurrent_uploads,
-        adaptive.then_some(parameters.max_adaptive_concurrency),
+        adaptive.then_some(
+            parameters
+                .max_adaptive_concurrency
+                .max(parameters.max_concurrent_uploads),
+        ),
     )?);
     let throttle = adaptive.then(|| -> Arc<dyn ThrottleSink> {
         Arc::new(LimiterSink {

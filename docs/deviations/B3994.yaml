@@ -15,3 +15,9 @@ deviations:
   - what: The `_in_flush` context variable is an in-flight flush upload counter on the logger, not a task-local.
     why: tokio's task_local expands to a RefCell, which the repository denies. Every betterlite S3 upload runs through the bounded flush path, so the counter answers the same "is this upload inside a flush" question.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L715-L721
+  - what: DEFAULT_S3_BATCH_SIZE and DEFAULT_S3_FLUSH_INTERVAL_SECONDS fall back to 512 and 10 with a warning when they are zero, negative or not an integer.
+    why: LiteLLM reads them with a bare int() at import, so text crashes the process and zero or a negative interval makes the periodic flush loop spin without sleeping. The fallback matches how the S3 parameters already read DEFAULT_S3_MAX_CONCURRENT_UPLOADS.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L61-L62
+  - what: Each upload waits at most 600 seconds for its concurrency permit, with the fixed semaphore as well as the adaptive limiter, and a flush starts at most the window plus 1,024 uploads at a time. An upload that misses the deadline counts as a retry and stays queued.
+    why: The task carries B347's waiter cap and deadline into the flush. Starting uploads in chunks keeps a large flush under the waiter cap, so no upload is refused as overloaded, and the delivered, retry and dropped results are the same as LiteLLM's single gather.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L646-L648
