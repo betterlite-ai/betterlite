@@ -113,6 +113,7 @@ fn the_put_body_is_read_without_a_stored_first_reply(#[case] litellm_params: &st
 #[case::empty(r#"{"created_at":""}"#, NOW)]
 #[case::unparsable(r#"{"created_at":"not-a-time"}"#, NOW)]
 #[case::bad_day(r#"{"created_at":"2025-02-30T00:00:00"}"#, NOW)]
+#[case::april_31(r#"{"created_at":"2025-04-31T00:00:00"}"#, NOW)]
 #[case::bad_month(r#"{"created_at":"2025-13-01T00:00:00"}"#, NOW)]
 #[case::bad_hour(r#"{"created_at":"2025-01-02T24:00:00"}"#, NOW)]
 #[case::bad_minute(r#"{"created_at":"2025-01-02T03:60:00"}"#, NOW)]
