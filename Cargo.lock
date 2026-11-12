@@ -1570,6 +1570,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
+ "base64 0.23.1",
  "betterlite-env",
  "betterlite-postgres-fixture",
  "betterlite-roi",
