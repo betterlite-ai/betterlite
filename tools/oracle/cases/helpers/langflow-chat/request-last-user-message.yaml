@@ -1,0 +1,41 @@
+kind: helper
+name: langflow-request-last-user-message
+env: {}
+compare: {ignore: []}
+call:
+  b8101:
+    op: request
+    requests:
+      - messages:
+          - {role: system, content: be nice}
+          - {role: user, content: first}
+          - {role: assistant, content: answer}
+          - {role: user, content: second}
+        options: {}
+      - messages: [{role: user, content: question}, {role: assistant, content: answer}]
+        options: {}
+      - messages: [{role: system, content: be nice}, {role: assistant, content: answer}]
+        options: {}
+      - messages: []
+        options: {}
+      - messages: [{role: user, content: [{type: text, text: a}, {type: text, text: b}]}]
+        options: {}
+      - messages: [{role: user, content: [{type: text, text: a}], search_results: [{source: s, title: t, content: [{type: text, text: c}], citations: {x: 1}}]}]
+        options: {}
+      - messages: [{role: user, content: a, search_results: [{source: s, title: t}]}]
+        options: {}
+      - messages: [{role: user, content: hi}]
+        options: {session_id: s1}
+      - messages: [{role: user, content: hi}]
+        options: {session_id: ""}
+      - messages: [{role: user, content: hi}]
+        options: {session_id: 0}
+      - messages: [{role: user, content: hi}]
+        options: {session_id: false}
+      - messages: [{role: user, content: hi}]
+        options: {session_id: null}
+      - messages: [{role: user, content: hi}]
+        options: {input_type: "", output_type: text}
+      - messages: [{role: user, content: hi}]
+        options: {input_type: chat, output_type: ""}
+    signatures: []

@@ -1,0 +1,12 @@
+kind: helper
+name: stream-passthrough-and-replay
+call:
+  file_contracts:
+    function: stream_passthrough_and_replay
+    chunks_hex: ["61", "00ff"]
+    headers: {content-type: text/plain, x-provider: test}
+    request_url: u
+    litellm_params: {k: v}
+    upload_chunks_hex: ["616263"]
+env: {}
+compare: {ignore: []}
