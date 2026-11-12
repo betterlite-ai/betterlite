@@ -67,17 +67,17 @@ impl Quad {
                 self.position = 1;
             }
             1 => {
-                self.push_byte(((self.carry << 2_u16) | (value >> 4_u16)) & 0xff_u16)?;
+                self.push_byte(((self.carry << 2_u16).wrapping_add(value >> 4_u16)) & 0xff_u16)?;
                 self.carry = value & 0xf_u16;
                 self.position = 2;
             }
             2 => {
-                self.push_byte(((self.carry << 4_u16) | (value >> 2_u16)) & 0xff_u16)?;
+                self.push_byte(((self.carry << 4_u16).wrapping_add(value >> 2_u16)) & 0xff_u16)?;
                 self.carry = value & 0x3_u16;
                 self.position = 3;
             }
             _ => {
-                self.push_byte(((self.carry << 6_u16) | value) & 0xff_u16)?;
+                self.push_byte((self.carry << 6_u16).wrapping_add(value) & 0xff_u16)?;
                 self.position = 0;
             }
         }
