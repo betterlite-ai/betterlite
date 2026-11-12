@@ -23,7 +23,29 @@ pub struct UsableToken {
     pub cached_project: Option<String>,
 }
 
-// LiteLLM's _try_get_cached_token: only a fresh token and a project we can name make a hit
+struct CachedMatch<'records> {
+    credential: &'records Arc<CredentialSnapshot>,
+    project: String,
+    cached_project: Option<String>,
+}
+
+// the cached credential and the project LiteLLM can name for it, before either probe checks freshness
+fn cached_credential<'records>(
+    records: &'records BTreeMap<CredentialKey, CacheRecord>,
+    key: &CredentialKey,
+    requested_project: Option<&str>,
+) -> Option<CachedMatch<'records>> {
+    let (cached, cached_project) = unpack_cached_credentials(records.get(key));
+    let credential = cached?;
+    let project = requested_project.or(cached_project)?;
+    Some(CachedMatch {
+        credential,
+        project: project.to_owned(),
+        cached_project: cached_project.map(str::to_owned),
+    })
+}
+
+// LiteLLM's _try_get_cached_token: the usable projection with a fresh token and nothing else
 #[must_use]
 pub fn try_cached_token(
     records: &BTreeMap<CredentialKey, CacheRecord>,
@@ -31,17 +53,13 @@ pub fn try_cached_token(
     requested_project: Option<&str>,
     now: SystemTime,
 ) -> Option<AccessToken> {
-    let (cached, cached_project) = unpack_cached_credentials(records.get(key));
-    let credential = cached?;
-    if token_state(credential, now) != TokenState::Fresh {
-        return None;
+    match try_usable_cached_token(records, key, requested_project, now) {
+        Some(usable) if usable.state == TokenState::Fresh => Some(AccessToken {
+            token: usable.token,
+            project: usable.project,
+        }),
+        _ => None,
     }
-    let token = credential.token.clone()?;
-    let project = requested_project.or(cached_project)?;
-    Some(AccessToken {
-        token,
-        project: project.to_owned(),
-    })
 }
 
 // LiteLLM's _try_get_usable_cached_token: a stale token still serves the request while it refreshes
@@ -52,19 +70,17 @@ pub fn try_usable_cached_token(
     requested_project: Option<&str>,
     now: SystemTime,
 ) -> Option<UsableToken> {
-    let (cached, cached_project) = unpack_cached_credentials(records.get(key));
-    let credential = cached?;
-    let state = token_state(credential, now);
+    let matched = cached_credential(records, key, requested_project)?;
+    let state = token_state(matched.credential, now);
     if !matches!(state, TokenState::Fresh | TokenState::Stale) {
         return None;
     }
-    let token = credential.token.clone()?;
-    let project = requested_project.or(cached_project)?;
+    let token = matched.credential.token.clone()?;
     Some(UsableToken {
         token,
-        project: project.to_owned(),
+        project: matched.project,
         state,
-        credential: Arc::clone(credential),
-        cached_project: cached_project.map(str::to_owned),
+        credential: Arc::clone(matched.credential),
+        cached_project: matched.cached_project,
     })
 }

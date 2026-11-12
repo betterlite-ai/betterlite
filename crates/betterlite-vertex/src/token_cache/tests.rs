@@ -90,6 +90,33 @@ impl FakeExecutor {
     fn refresh_count(&self) -> usize {
         self.refresh_calls.load(AtomicOrdering::SeqCst)
     }
+
+    fn default_load(&self) -> Result<LoadedCredential, CredentialCacheError> {
+        if self.repeat_reauth {
+            return Ok(loaded("token-old", TokenState::Invalid, Some("project-p")));
+        }
+        Err(load_error())
+    }
+
+    async fn answer(
+        &self,
+        next: Option<RefreshReply>,
+    ) -> Result<CredentialSnapshot, CredentialCacheError> {
+        match next {
+            Some(RefreshReply::Gated {
+                started,
+                gate,
+                reply,
+            }) => {
+                started.notify_one();
+                gate.notified().await;
+                reply
+            }
+            Some(RefreshReply::Immediate(reply)) => reply,
+            None if self.repeat_reauth => Err(reauthentication_error()),
+            None => Err(network_error()),
+        }
+    }
 }
 
 impl CredentialExecutor for FakeExecutor {
@@ -102,14 +129,8 @@ impl CredentialExecutor for FakeExecutor {
     > {
         self.load_calls.fetch_add(1, AtomicOrdering::SeqCst);
         let next = self.loads.lock().unwrap().pop_front();
-        let repeat = self.repeat_reauth;
-        Box::pin(async move {
-            match next {
-                Some(reply) => reply,
-                None if repeat => Ok(loaded("token-old", TokenState::Invalid, Some("project-p"))),
-                None => Err(load_error()),
-            }
-        })
+        let reply = next.unwrap_or_else(|| self.default_load());
+        Box::pin(async move { reply })
     }
 
     fn refresh<'borrow>(
@@ -120,23 +141,7 @@ impl CredentialExecutor for FakeExecutor {
     > {
         self.refresh_calls.fetch_add(1, AtomicOrdering::SeqCst);
         let next = self.refreshes.lock().unwrap().pop_front();
-        let repeat = self.repeat_reauth;
-        Box::pin(async move {
-            match next {
-                Some(RefreshReply::Immediate(reply)) => reply,
-                Some(RefreshReply::Gated {
-                    started,
-                    gate,
-                    reply,
-                }) => {
-                    started.notify_one();
-                    gate.notified().await;
-                    reply
-                }
-                None if repeat => Err(reauthentication_error()),
-                None => Err(network_error()),
-            }
-        })
+        Box::pin(self.answer(next))
     }
 }
 
@@ -169,15 +174,9 @@ fn snapshot(token: Option<&str>, state: TokenState, project: Option<&str>) -> Cr
 }
 
 fn legacy_snapshot(quota: Option<&str>, project: Option<&str>) -> CredentialSnapshot {
-    CredentialSnapshot {
-        token: Some(SecretString::from("token-legacy")),
-        state: Some(TokenState::Fresh),
-        expires_at: None,
-        expired: None,
-        valid: None,
-        quota_project_id: quota.map(str::to_owned),
-        project_id: project.map(str::to_owned),
-    }
+    let mut snapshot = snapshot(Some("token-legacy"), TokenState::Fresh, project);
+    snapshot.quota_project_id = quota.map(str::to_owned);
+    snapshot
 }
 
 fn loaded_from(snapshot: CredentialSnapshot, project: Option<&str>) -> LoadedCredential {
@@ -278,9 +277,9 @@ async fn cache_cases(#[case] scenario: Scenario) {
         Scenario::SerializedSourcesAreDistinct => serialized_sources_are_distinct().await,
         Scenario::LegacyRecordProject => legacy_record_project().await,
         Scenario::RefreshedRecordKeepsProject => refreshed_record_keeps_project().await,
-        Scenario::MissingCredentials => missing_credentials().await,
-        Scenario::MissingToken => missing_token().await,
-        Scenario::MissingProject => missing_project().await,
+        Scenario::MissingCredentials => missing_input(MissingInput::Credentials).await,
+        Scenario::MissingToken => missing_input(MissingInput::Token).await,
+        Scenario::MissingProject => missing_input(MissingInput::Project).await,
         Scenario::UnrelatedRefreshErrorIsNotRetried => {
             unrelated_refresh_error_is_not_retried().await;
         }
@@ -499,55 +498,40 @@ async fn refreshed_record_keeps_project() {
     assert_eq!(executor.refresh_count(), 1);
 }
 
-async fn missing_credentials() {
-    let executor = Arc::new(FakeExecutor::scripted(
-        vec![Ok(LoadedCredential {
+#[derive(Clone, Copy)]
+enum MissingInput {
+    Credentials,
+    Token,
+    Project,
+}
+
+async fn missing_input(expected: MissingInput) {
+    let loaded = match expected {
+        MissingInput::Credentials => LoadedCredential {
             credential: None,
             project: Some("project-p".to_owned()),
-        })],
-        Vec::new(),
-    ));
-    let cache = cache_with(Arc::clone(&executor));
-    let credentials = credential_text();
-    let error = cache
-        .get_access_token(Some(&credentials), None)
-        .await
-        .unwrap_err();
-    assert!(matches!(error, CredentialCacheError::MissingCredentials));
-}
-
-async fn missing_token() {
-    let executor = Arc::new(FakeExecutor::scripted(
-        vec![Ok(loaded_from(
+        },
+        MissingInput::Token => loaded_from(
             snapshot(None, TokenState::Fresh, Some("project-p")),
             Some("project-p"),
-        ))],
-        Vec::new(),
-    ));
+        ),
+        MissingInput::Project => {
+            loaded_from(snapshot(Some("token-a"), TokenState::Fresh, None), None)
+        }
+    };
+    let executor = Arc::new(FakeExecutor::scripted(vec![Ok(loaded)], Vec::new()));
     let cache = cache_with(Arc::clone(&executor));
     let credentials = credential_text();
     let error = cache
         .get_access_token(Some(&credentials), None)
         .await
         .unwrap_err();
-    assert!(matches!(error, CredentialCacheError::MissingToken));
-}
-
-async fn missing_project() {
-    let executor = Arc::new(FakeExecutor::scripted(
-        vec![Ok(loaded_from(
-            snapshot(Some("token-a"), TokenState::Fresh, None),
-            None,
-        ))],
-        Vec::new(),
-    ));
-    let cache = cache_with(Arc::clone(&executor));
-    let credentials = credential_text();
-    let error = cache
-        .get_access_token(Some(&credentials), None)
-        .await
-        .unwrap_err();
-    assert!(matches!(error, CredentialCacheError::MissingProject));
+    let matched = match expected {
+        MissingInput::Credentials => matches!(error, CredentialCacheError::MissingCredentials),
+        MissingInput::Token => matches!(error, CredentialCacheError::MissingToken),
+        MissingInput::Project => matches!(error, CredentialCacheError::MissingProject),
+    };
+    assert!(matched);
 }
 
 async fn unrelated_refresh_error_is_not_retried() {
