@@ -1,0 +1,23 @@
+kind: helper
+name: option-context-compaction-edit
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: context_compaction_edit
+        values:
+          - {edits: [{type: compact_20260112}], other: [1, 2]}
+          - {edits: null, trigger: true}
+          - {type: compaction}
+          - [{type: compaction, compact_threshold: 200000}]
+          - [{type: compaction, compact_threshold: 200000.9}]
+          - [{type: compaction, compact_threshold: true}]
+          - [{type: compaction, compact_threshold: false}]
+          - [{type: compaction, compact_threshold: 5, trigger: {type: custom}, note: kept}]
+          - [{type: compaction, compact_threshold: "100"}]
+          - [{type: compaction, compact_threshold: null}]
+          - [5, x, null, {type: other, compact_threshold: 1}, {type: compaction}]
+          - []
+          - null
+          - text
+env: {}
+compare: {ignore: []}
