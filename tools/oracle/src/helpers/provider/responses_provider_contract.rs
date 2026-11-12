@@ -217,10 +217,8 @@ fn forwarded_calls(fixture: &Fixture) -> Result<Vec<Value>, Box<crate::helpers::
 fn forwarding(fields: &ForwardingInput) -> crate::helpers::HelperResult {
     let fixture = Fixture::default();
     let result = block_on_create(&fixture, fields)?;
-    Ok(json!({
-        "calls": forwarded_calls(&fixture)?,
-        "result": result,
-    }))
+    let calls = forwarded_calls(&fixture)?;
+    Ok(json!({"calls": calls, "result": result}))
 }
 
 fn raise_class(fixture: &Fixture, fields: &ErrorInput) -> FixtureError {
