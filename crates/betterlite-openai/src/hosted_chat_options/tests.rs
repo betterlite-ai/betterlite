@@ -7,7 +7,7 @@ use betterlite_config::sections::Sections;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::CompatibleChatAlias;
 use super::baseten::{self, BasetenSettings};
@@ -216,65 +216,68 @@ fn cerebras_renames_a_null_token_limit() {
 
 #[test]
 fn baseten_snapshot_starts_empty_and_keeps_supplied_falsey_values() {
-    assert_eq!(snapshot(&BasetenSettings::default()), json!({}));
-    let given: BasetenSettings = serde_json::from_value(json!({
+    assert_eq!(snapshot(&BasetenSettings::default()), value("{}"));
+    let given: BasetenSettings = serde_json::from_str(
+        r#"{
         "max_tokens": 0,
         "stream": false,
         "stop": [],
         "temperature": 0.5,
         "tools": null
-    }))
+    }"#,
+    )
     .expect("a settings snapshot");
     assert_eq!(
         snapshot(&given),
-        json!({"max_tokens": 0, "stream": false, "stop": [], "temperature": 0.5})
+        value(r#"{"max_tokens": 0, "stream": false, "stop": [], "temperature": 0.5}"#)
     );
 }
 
 #[test]
 fn cerebras_snapshot_keeps_reasoning_effort_and_temperature() {
     let given: CerebrasSettings =
-        serde_json::from_value(json!({"reasoning_effort": "low", "temperature": 0.0}))
+        serde_json::from_str(r#"{"reasoning_effort": "low", "temperature": 0.0}"#)
             .expect("a settings snapshot");
     assert_eq!(
         snapshot(&given),
-        json!({"reasoning_effort": "low", "temperature": 0.0})
+        value(r#"{"reasoning_effort": "low", "temperature": 0.0}"#)
     );
 }
 
 #[test]
 fn snapshots_reject_fields_their_constructor_does_not_take() {
-    let unknown = serde_json::from_value::<CerebrasSettings>(json!({"max_retries": 2}));
+    let unknown = serde_json::from_str::<CerebrasSettings>(r#"{"max_retries": 2}"#);
     assert!(unknown.is_err());
-    let unknown = serde_json::from_value::<BasetenSettings>(json!({"reasoning_effort": "low"}));
+    let unknown = serde_json::from_str::<BasetenSettings>(r#"{"reasoning_effort": "low"}"#);
     assert!(unknown.is_err());
-    let unknown = serde_json::from_value::<FeatherlessSettings>(json!({"stream": true}));
+    let unknown = serde_json::from_str::<FeatherlessSettings>(r#"{"stream": true}"#);
     assert!(unknown.is_err());
 }
 
 #[test]
 fn featherless_snapshot_renames_n_and_keeps_falsey_values() {
-    let given: FeatherlessSettings = serde_json::from_value(json!({
+    let given: FeatherlessSettings = serde_json::from_str(
+        r#"{
         "n": 3,
         "temperature": 0,
         "logit_bias": {},
         "functions": []
-    }))
+    }"#,
+    )
     .expect("a settings snapshot");
     assert_eq!(
         snapshot(&given),
-        json!({"n": 3, "temperature": 0, "logit_bias": {}, "functions": []})
+        value(r#"{"n": 3, "temperature": 0, "logit_bias": {}, "functions": []}"#)
     );
 }
 
 #[test]
 fn each_config_keeps_its_own_snapshot() {
-    let first: BasetenSettings =
-        serde_json::from_value(json!({"max_tokens": 5})).expect("a snapshot");
+    let first: BasetenSettings = serde_json::from_str(r#"{"max_tokens": 5}"#).expect("a snapshot");
     let second: BasetenSettings =
-        serde_json::from_value(json!({"temperature": 0.5})).expect("a snapshot");
-    assert_eq!(snapshot(&first), json!({"max_tokens": 5}));
-    assert_eq!(snapshot(&second), json!({"temperature": 0.5}));
+        serde_json::from_str(r#"{"temperature": 0.5}"#).expect("a snapshot");
+    assert_eq!(snapshot(&first), value(r#"{"max_tokens": 5}"#));
+    assert_eq!(snapshot(&second), value(r#"{"temperature": 0.5}"#));
 }
 
 #[rstest]
@@ -377,11 +380,13 @@ fn featherless_validation_requires_a_truthy_key() {
 
 #[test]
 fn featherless_validation_overwrites_the_two_headers_it_owns() {
-    let given: Headers = serde_json::from_value(json!({
+    let given: Headers = serde_json::from_str(
+        r#"{
         "Authorization": "mine",
         "content-type": "text/plain",
         "x-extra": "1"
-    }))
+    }"#,
+    )
     .expect("a header map");
     let validated = featherless::validate_environment(Some(&secret("sk-featherless")), Some(given))
         .expect("a key is present");
