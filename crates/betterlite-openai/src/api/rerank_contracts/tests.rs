@@ -5,7 +5,7 @@ use std::path::Path;
 
 use betterlite_models::decisions::Json;
 use rstest::rstest;
-use serde_json::json;
+use serde_json::Value;
 
 use super::records::{RerankDocument, RerankRequest, RerankResponse, RerankResponseMeta};
 use super::wire::{RerankContract, RerankContractError, RerankRecordKind, decode_rerank_contracts};
@@ -20,26 +20,33 @@ fn limits() -> WireDecodeLimits {
     }
 }
 
-fn request(bytes: &[u8]) -> Result<RerankRequest, RerankContractError> {
-    match decode_rerank_contracts(bytes, RerankRecordKind::Request, limits())? {
-        RerankContract::Request(record) => Ok(record),
+fn decode(bytes: &[u8], kind: RerankRecordKind) -> Result<RerankContract, RerankContractError> {
+    decode_rerank_contracts(bytes, kind, limits())
+}
+
+fn request(bytes: &[u8]) -> RerankRequest {
+    match decode(bytes, RerankRecordKind::Request).unwrap() {
+        RerankContract::Request(record) => record,
         RerankContract::Response(_) => panic!("the decoder returned a response"),
     }
 }
 
-fn response(bytes: &[u8]) -> Result<RerankResponse, RerankContractError> {
-    match decode_rerank_contracts(bytes, RerankRecordKind::Response, limits())? {
-        RerankContract::Response(record) => Ok(record),
+fn response(bytes: &[u8]) -> RerankResponse {
+    match decode(bytes, RerankRecordKind::Response).unwrap() {
+        RerankContract::Response(record) => record,
         RerankContract::Request(_) => panic!("the decoder returned a request"),
     }
+}
+
+fn json_value(source: &str) -> Value {
+    serde_json::from_str(source).unwrap()
 }
 
 #[test]
 fn rerank_wire_records_keep_documents_and_default_the_optionals() {
     let decoded = request(
         br#"{"model":"m","query":"q","documents":["text",{"title":"t","body":"b"}],"extra":"ignored"}"#,
-    )
-    .unwrap();
+    );
     assert_eq!(
         decoded.documents,
         vec![
@@ -54,20 +61,9 @@ fn rerank_wire_records_keep_documents_and_default_the_optionals() {
     );
     assert_eq!(
         serde_json::to_value(&decoded).unwrap(),
-        json!({
-            "model": "m",
-            "query": "q",
-            "top_n": null,
-            "documents": ["text", {"title": "t", "body": "b"}],
-            "rank_fields": null,
-            "return_documents": null,
-            "max_chunks_per_doc": null,
-            "max_tokens_per_doc": null,
-            "instruction": null,
-            "truncate_prompt_tokens": null,
-            "truncation_side": null,
-            "max_tokens_per_query": null,
-        })
+        json_value(
+            r#"{"model":"m","query":"q","top_n":null,"documents":["text",{"title":"t","body":"b"}],"rank_fields":null,"return_documents":null,"max_chunks_per_doc":null,"max_tokens_per_doc":null,"instruction":null,"truncate_prompt_tokens":null,"truncation_side":null,"max_tokens_per_query":null}"#
+        )
     );
 }
 
@@ -81,7 +77,10 @@ fn rerank_wire_records_keep_documents_and_default_the_optionals() {
     br#"{"model":"m","query":"q","documents":[],"truncate_prompt_tokens":0,"max_tokens_per_query":0,"max_chunks_per_doc":0,"max_tokens_per_doc":0,"instruction":"","return_documents":false}"#
 )]
 fn request_accepts_declared_values(#[case] input: &[u8]) {
-    request(input).unwrap();
+    assert!(matches!(
+        decode(input, RerankRecordKind::Request),
+        Ok(RerankContract::Request(_))
+    ));
 }
 
 #[rstest]
@@ -92,18 +91,18 @@ fn request_accepts_declared_values(#[case] input: &[u8]) {
 #[case::document_number(br#"{"model":"m","query":"q","documents":[7]}"#)]
 #[case::model_number(br#"{"model":7,"query":"q","documents":[]}"#)]
 fn request_rejects_missing_or_mistyped_fields(#[case] input: &[u8]) {
-    request(input).unwrap_err();
+    assert!(matches!(decode(input, RerankRecordKind::Request), Err(_)));
 }
 
 #[test]
 fn response_defaults_every_field_to_none() {
-    let decoded = response(b"{}").unwrap();
+    let decoded = response(b"{}");
     assert_eq!(decoded.id, None);
     assert_eq!(decoded.results, None);
     assert_eq!(decoded.meta, None);
     assert_eq!(
         serde_json::to_value(&decoded).unwrap(),
-        json!({"id": null, "results": null, "meta": null})
+        json_value(r#"{"id":null,"results":null,"meta":null}"#)
     );
 }
 
@@ -111,22 +110,12 @@ fn response_defaults_every_field_to_none() {
 fn response_retains_result_order_index_score_and_document() {
     let decoded = response(
         br#"{"id":"r","results":[{"index":2,"relevance_score":0.125,"document":{"text":"t"}},{"index":0,"relevance_score":-0.5}],"meta":{"api_version":{"version":"2"},"billed_units":{"search_units":3,"total_tokens":9},"tokens":{"input_tokens":1,"output_tokens":2}}}"#,
-    )
-    .unwrap();
+    );
     assert_eq!(
         serde_json::to_value(&decoded).unwrap(),
-        json!({
-            "id": "r",
-            "results": [
-                {"index": 2, "relevance_score": 0.125, "document": {"text": "t"}},
-                {"index": 0, "relevance_score": -0.5},
-            ],
-            "meta": {
-                "api_version": {"version": "2"},
-                "billed_units": {"search_units": 3, "total_tokens": 9},
-                "tokens": {"input_tokens": 1, "output_tokens": 2},
-            },
-        })
+        json_value(
+            r#"{"id":"r","results":[{"index":2,"relevance_score":0.125,"document":{"text":"t"}},{"index":0,"relevance_score":-0.5}],"meta":{"api_version":{"version":"2"},"billed_units":{"search_units":3,"total_tokens":9},"tokens":{"input_tokens":1,"output_tokens":2}}}"#
+        )
     );
 }
 
@@ -140,43 +129,40 @@ fn response_retains_result_order_index_score_and_document() {
 #[case::id_number(br#"{"id":7}"#)]
 #[case::results_object(br#"{"results":{}}"#)]
 fn response_rejects_missing_or_mistyped_fields(#[case] input: &[u8]) {
-    response(input).unwrap_err();
+    assert!(matches!(decode(input, RerankRecordKind::Response), Err(_)));
 }
 
 #[rstest]
 #[case::meta_null_members(
     br#"{"meta":{"api_version":null,"billed_units":null,"tokens":null}}"#,
-    json!({"api_version": null, "billed_units": null, "tokens": null})
+    r#"{"api_version":null,"billed_units":null,"tokens":null}"#
 )]
-#[case::absent_members(br#"{"meta":{}}"#, json!({}))]
+#[case::absent_members(br#"{"meta":{}}"#, "{}")]
 #[case::empty_units(
     br#"{"meta":{"billed_units":{},"tokens":{"input_tokens":null}}}"#,
-    json!({"billed_units": {}, "tokens": {"input_tokens": null}})
+    r#"{"billed_units":{},"tokens":{"input_tokens":null}}"#
 )]
-fn response_meta_keeps_absent_and_null_apart(
-    #[case] input: &[u8],
-    #[case] expected: serde_json::Value,
-) {
-    let decoded = response(input).unwrap();
+fn response_meta_keeps_absent_and_null_apart(#[case] input: &[u8], #[case] expected: &str) {
+    let decoded = response(input);
     let meta: &RerankResponseMeta = decoded.meta.as_ref().unwrap();
-    assert_eq!(serde_json::to_value(meta).unwrap(), expected);
+    assert_eq!(serde_json::to_value(meta).unwrap(), json_value(expected));
 }
 
 #[test]
 fn response_ignores_unknown_fields_and_never_writes_hidden_params() {
-    let mut decoded = response(br#"{"id":"r","top_extra":5}"#).unwrap();
+    let mut decoded = response(br#"{"id":"r","top_extra":5}"#);
     decoded
         .hidden_params
         .insert("model_id".to_owned(), Json::Text(String::from("secret")));
     assert_eq!(
         serde_json::to_value(&decoded).unwrap(),
-        json!({"id": "r", "results": null, "meta": null})
+        json_value(r#"{"id":"r","results":null,"meta":null}"#)
     );
 }
 
 #[test]
 fn response_accessors_follow_the_python_object() {
-    let decoded = response(b"{}").unwrap();
+    let decoded = response(b"{}");
     assert!(decoded.contains("id"));
     assert!(decoded.contains("results"));
     assert!(decoded.contains("meta"));
@@ -196,11 +182,10 @@ fn response_accessors_follow_the_python_object() {
 fn accessors_expose_decoded_results() {
     let decoded = response(
         br#"{"id":"r","results":[{"index":2,"relevance_score":0.125,"document":{"text":"t"}}]}"#,
-    )
-    .unwrap();
+    );
     assert_eq!(
         serde_json::to_value(decoded.item("results").unwrap()).unwrap(),
-        json!([{"index": 2, "relevance_score": 0.125, "document": {"text": "t"}}])
+        json_value(r#"[{"index":2,"relevance_score":0.125,"document":{"text":"t"}}]"#)
     );
     assert_eq!(decoded.get("id", Json::Null), Json::Text(String::from("r")));
 }
@@ -208,15 +193,15 @@ fn accessors_expose_decoded_results() {
 #[test]
 fn unknown_record_kind_is_refused() {
     assert!(matches!(
-        RerankRecordKind::try_from(2),
+        RerankRecordKind::try_from(2_u8),
         Err(RerankContractError::UnknownKind(2))
     ));
     assert!(matches!(
-        RerankRecordKind::try_from(0),
+        RerankRecordKind::try_from(0_u8),
         Ok(RerankRecordKind::Request)
     ));
     assert!(matches!(
-        RerankRecordKind::try_from(1),
+        RerankRecordKind::try_from(1_u8),
         Ok(RerankRecordKind::Response)
     ));
 }
@@ -240,17 +225,22 @@ fn byte_limits_are_enforced_by_the_shared_decoder() {
 #[case::beyond_json_range(br#"{"results":[{"index":0,"relevance_score":1e999}]}"#)]
 fn scores_beyond_exact_decimals_are_refused(#[case] input: &[u8]) {
     assert!(matches!(
-        response(input),
+        decode(input, RerankRecordKind::Response),
         Err(RerankContractError::ScoreOutOfRange(_))
     ));
 }
 
 #[test]
 fn compatibility_deviations() {
-    let boundary = response(br#"{"results":[{"index":0,"relevance_score":1e100}]}"#).unwrap_err();
+    let Err(boundary) = decode(
+        br#"{"results":[{"index":0,"relevance_score":1e100}]}"#,
+        RerankRecordKind::Response,
+    ) else {
+        panic!("the boundary score decoded");
+    };
     assert!(matches!(boundary, RerankContractError::ScoreOutOfRange(_)));
     let details = boundary.details();
-    assert_eq!(details.status, Some(502));
+    assert_eq!(details.status, Some(502_u16));
     assert_eq!(details.error_type, Some("bad_gateway"));
     assert_eq!(details.param, Some("score"));
     assert_eq!(details.code, Some("decimal_out_of_range"));

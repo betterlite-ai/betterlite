@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_error::facts::presence::Field;
 use betterlite_models::decisions::Json;
@@ -31,19 +31,19 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-struct WireParams {
+pub(crate) struct WireParams {
     requests: Vec<Value>,
     responses: Vec<Value>,
     accessor_keys: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ProjectionParams {
+pub(crate) struct ProjectionParams {
     calls: Vec<ProjectionCall>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ProjectionCall {
+pub(crate) struct ProjectionCall {
     model: String,
     drop_params: bool,
     query: String,
@@ -67,27 +67,27 @@ struct ProjectionCall {
 }
 
 #[derive(Debug, Deserialize)]
-struct DefaultsParams {
+pub(crate) struct DefaultsParams {
     api_bases: Vec<Option<String>>,
     response: Value,
     error: ErrorParams,
 }
 
 #[derive(Debug, Deserialize)]
-struct ErrorParams {
+pub(crate) struct ErrorParams {
     message: String,
     status_code: u16,
     headers: BTreeMap<String, Json>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CostParams {
+pub(crate) struct CostParams {
     model: String,
     cases: Vec<CostCase>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CostCase {
+pub(crate) struct CostCase {
     #[serde(default)]
     model_info: Option<RerankModelInfo>,
     #[serde(default)]
@@ -136,11 +136,11 @@ impl BaseRerankConfig for Recording {
         if request.query == "refuse" {
             return Err(FixtureError::Refused);
         }
-        let mut calls = match self.calls.lock() {
-            Ok(calls) => calls,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        calls.push(record(&request));
+        let recorded = record(&request);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(recorded);
         Ok(Params::from([("mapped".to_owned(), Json::Bool(true))]))
     }
 }
@@ -154,81 +154,78 @@ fn object_of(params: &Params) -> Json {
     )
 }
 
-fn optional_text(value: Option<&str>) -> Json {
-    match value {
-        Some(value) => Json::Text(value.to_owned()),
-        None => Json::Null,
-    }
-}
-
-fn optional_number(value: Option<i64>) -> Json {
-    match value {
-        Some(value) => Json::Number(Number::from(value)),
-        None => Json::Null,
-    }
-}
-
-fn optional_bool(value: Option<bool>) -> Json {
-    match value {
-        Some(value) => Json::Bool(value),
-        None => Json::Null,
-    }
-}
-
-fn rank_fields(values: Option<&[String]>) -> Json {
-    match values {
-        Some(values) => Json::List(
-            values
+fn record(request: &MapCohereRerankParams<'_>) -> Json {
+    let mut fields = IndexMap::new();
+    fields.insert(
+        "non_default_params".to_owned(),
+        object_of(request.non_default_params),
+    );
+    fields.insert("model".to_owned(), Json::Text(request.model.to_owned()));
+    fields.insert("drop_params".to_owned(), Json::Bool(request.drop_params));
+    fields.insert("query".to_owned(), Json::Text(request.query.to_owned()));
+    fields.insert(
+        "documents".to_owned(),
+        Json::List(
+            request
+                .documents
                 .iter()
-                .map(|value| Json::Text(value.clone()))
+                .map(RerankDocument::as_json)
                 .collect(),
         ),
-        None => Json::Null,
-    }
+    );
+    insert_optionals(&mut fields, request);
+    Json::Object(fields)
 }
 
-fn record(request: &MapCohereRerankParams<'_>) -> Json {
-    Json::Object(IndexMap::from([
-        (
-            "non_default_params".to_owned(),
-            object_of(request.non_default_params),
-        ),
-        ("model".to_owned(), Json::Text(request.model.to_owned())),
-        ("drop_params".to_owned(), Json::Bool(request.drop_params)),
-        ("query".to_owned(), Json::Text(request.query.to_owned())),
-        (
-            "documents".to_owned(),
+fn insert_optionals(fields: &mut IndexMap<String, Json>, request: &MapCohereRerankParams<'_>) {
+    fields.insert(
+        "custom_llm_provider".to_owned(),
+        request
+            .custom_llm_provider
+            .map_or(Json::Null, |provider| Json::Text(provider.to_owned())),
+    );
+    fields.insert(
+        "top_n".to_owned(),
+        request
+            .top_n
+            .map_or(Json::Null, |top_n| Json::Number(Number::from(top_n))),
+    );
+    fields.insert(
+        "rank_fields".to_owned(),
+        request.rank_fields.as_deref().map_or(Json::Null, |names| {
             Json::List(
-                request
-                    .documents
+                names
                     .iter()
-                    .map(RerankDocument::as_json)
+                    .map(|name| Json::Text(name.clone()))
                     .collect(),
-            ),
-        ),
-        (
-            "custom_llm_provider".to_owned(),
-            optional_text(request.custom_llm_provider),
-        ),
-        ("top_n".to_owned(), optional_number(request.top_n)),
-        ("rank_fields".to_owned(), rank_fields(request.rank_fields)),
-        (
-            "return_documents".to_owned(),
-            optional_bool(request.return_documents),
-        ),
-        (
-            "max_chunks_per_doc".to_owned(),
-            optional_number(request.max_chunks_per_doc),
-        ),
-        (
-            "max_tokens_per_doc".to_owned(),
-            optional_number(request.max_tokens_per_doc),
-        ),
-        ("instruction".to_owned(), optional_text(request.instruction)),
-    ]))
+            )
+        }),
+    );
+    fields.insert(
+        "return_documents".to_owned(),
+        request.return_documents.map_or(Json::Null, Json::Bool),
+    );
+    fields.insert(
+        "max_chunks_per_doc".to_owned(),
+        request
+            .max_chunks_per_doc
+            .map_or(Json::Null, |limit| Json::Number(Number::from(limit))),
+    );
+    fields.insert(
+        "max_tokens_per_doc".to_owned(),
+        request
+            .max_tokens_per_doc
+            .map_or(Json::Null, |limit| Json::Number(Number::from(limit))),
+    );
+    fields.insert(
+        "instruction".to_owned(),
+        request
+            .instruction
+            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
+    );
 }
 
-fn limits() -> WireDecodeLimits {
+const fn limits() -> WireDecodeLimits {
     WireDecodeLimits {
         max_json_bytes: 0x0010_0000,
         max_event_bytes: 0x0004_0000,
@@ -252,30 +249,28 @@ fn decode_response(payload: &Value) -> Option<RerankResponse> {
     }
 }
 
-fn absent() -> Json {
-    Json::List(vec![Json::Text(String::from("__absent__"))])
-}
-
 fn accessor(response: &RerankResponse, key: &str) -> Value {
-    let item = match response.item(key) {
-        Ok(value) => json!({"ok": true, "value": value}),
-        Err(_) => json!({"ok": false}),
-    };
+    let item = response.item(key).map_or_else(
+        |_unknown| json!({"ok": false}),
+        |value| json!({"ok": true, "value": value}),
+    );
     json!({
         "contains": response.contains(key),
         "item": item,
-        "get": response.get(key, absent()),
+        "get": response.get(
+            key,
+            Json::List(vec![Json::Text(String::from("__absent__"))]),
+        ),
     })
 }
 
 fn request_outcome(payload: &Value) -> Value {
-    match decode_request(payload) {
-        Some(record) => json!({
+    decode_request(payload).map_or(json!({"ok": false}), |record| {
+        json!({
             "ok": true,
             "dump": serde_json::to_value(record).unwrap_or(Value::Null),
-        }),
-        None => json!({"ok": false}),
-    }
+        })
+    })
 }
 
 fn response_outcome(payload: &Value, keys: &[String]) -> Value {
@@ -305,7 +300,7 @@ fn wire_records(params: &WireParams) -> Value {
 }
 
 fn option_projection(params: &ProjectionParams) -> Result<Value, ContractError> {
-    let mut calls = Vec::new();
+    let mut reports = Vec::new();
     for call in &params.calls {
         let mut nondefault = call.nondefault.clone();
         let return_documents = match call.return_documents {
@@ -331,31 +326,22 @@ fn option_projection(params: &ProjectionParams) -> Result<Value, ContractError> 
                 instruction: call.instruction.as_deref(),
             },
         )?;
-        let mapper = match config.calls.lock() {
-            Ok(calls) => calls.first().cloned(),
-            Err(poisoned) => poisoned.into_inner().first().cloned(),
-        };
-        calls.push(json!({
+        let mapper = config
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .first()
+            .cloned();
+        reports.push(json!({
             "mapper": mapper.unwrap_or(Json::Null),
-            "nondefault_after": match &nondefault {
-                Some(params) => object_of(params),
-                None => Json::Null,
-            },
+            "nondefault_after": nondefault.as_ref().map_or(Json::Null, object_of),
             "returned": object_of(&returned),
         }));
     }
-    Ok(json!({"calls": calls}))
+    Ok(json!({"calls": reports}))
 }
 
-fn base_defaults(params: &DefaultsParams) -> Result<Value, ContractError> {
-    let config = Recording::default();
-    let urls = params
-        .api_bases
-        .iter()
-        .map(|api_base| config.get_complete_url(api_base.as_deref(), "rerank-model", None))
-        .collect::<Vec<_>>();
-    let request =
-        config.transform_rerank_request("rerank-model", &Params::new(), &Headers::new(), None)?;
+fn default_response(config: &Recording, params: &DefaultsParams) -> Result<Value, ContractError> {
     let response = decode_response(&params.response).ok_or(ContractError::Response)?;
     let mut logging = RerankLogging::default();
     let raw_response = RerankProviderResponse {
@@ -378,6 +364,18 @@ fn base_defaults(params: &DefaultsParams) -> Result<Value, ContractError> {
             litellm_params: &litellm_params,
         },
     )?;
+    Ok(serde_json::to_value(transformed).unwrap_or(Value::Null))
+}
+
+fn base_defaults(params: &DefaultsParams) -> Result<Value, ContractError> {
+    let config = Recording::default();
+    let urls = params
+        .api_bases
+        .iter()
+        .map(|api_base| config.get_complete_url(api_base.as_deref(), "rerank-model", None))
+        .collect::<Vec<_>>();
+    let request =
+        config.transform_rerank_request("rerank-model", &Params::new(), &Headers::new(), None)?;
     let raised = config.get_error_class(
         &params.error.message,
         params.error.status_code,
@@ -386,7 +384,7 @@ fn base_defaults(params: &DefaultsParams) -> Result<Value, ContractError> {
     Ok(json!({
         "urls": urls,
         "request": object_of(&request),
-        "response": serde_json::to_value(transformed).unwrap_or(Value::Null),
+        "response": default_response(&config, params)?,
         "error": {
             "status_code": raised.status_code,
             "message": raised.message,
