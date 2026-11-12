@@ -61,25 +61,31 @@ fn function_chat_tool(tool: &Fields) -> Result<ChatFunctionTool, NamespaceToolsE
     })
 }
 
+fn web_search_options(tool: &Fields) -> WebSearchOptions {
+    WebSearchOptions {
+        search_context_size: tool
+            .get("search_context_size")
+            .cloned()
+            .unwrap_or(Json::Null),
+        user_location: present_value(tool, "user_location").unwrap_or(Json::Null),
+    }
+}
+
 fn convert_tool(tool: &Fields, conversion: &mut ChatConversion) -> Result<(), NamespaceToolsError> {
-    match tool_type(tool) {
+    let kind = tool_type(tool);
+    match kind {
         "web_search_preview" | "web_search" => {
-            conversion.web_search_options = Some(WebSearchOptions {
-                search_context_size: tool
-                    .get("search_context_size")
-                    .cloned()
-                    .unwrap_or(Json::Null),
-                user_location: present_value(tool, "user_location").unwrap_or(Json::Null),
-            });
+            conversion.web_search_options = Some(web_search_options(tool));
         }
-        "function" => conversion
-            .chat_tools
-            .push(ChatTool::Function(Box::new(function_chat_tool(tool)?))),
+        "function" => {
+            let function = function_chat_tool(tool)?;
+            conversion.chat_tools.push(ChatTool::Function(Box::new(function)));
+        }
         "namespace" => conversion.chat_tools.extend(namespace_chat_tools(tool)?),
         "custom" => conversion
             .chat_tools
             .extend(custom_to_function_tool(tool)?.map(ChatTool::Custom)),
-        kind if UNSUPPORTED_BUILTINS.contains(&kind) => conversion.warnings.push(format!(
+        _ if UNSUPPORTED_BUILTINS.contains(&kind) => conversion.warnings.push(format!(
             "Dropping Responses API tool of type '{kind}': it has no Chat Completions equivalent and the target provider would reject the request."
         )),
         _ => conversion
