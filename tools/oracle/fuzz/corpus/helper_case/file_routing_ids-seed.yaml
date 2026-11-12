@@ -1,0 +1,39 @@
+kind: helper
+name: file-routing-ids-seed
+call:
+  file_routing_ids:
+    calls:
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdQ"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTttb2RlbF9pZDptO2xsbV9iYXRjaF9pZDpi"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eWp1bms"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eQ==A"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxl=="}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxlOz8-Pg"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eQ"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwscHVibGlj"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwscHVibGlj"}
+      - {"function": "model_embedded", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwscHVibGlj"}
+      - {"function": "decode_model", "value": "batch_bGl0ZWxsbTpiYXRjaF9hO21vZGVsLHB1YmxpYw"}
+      - {"function": "decode_model", "value": "bGl0ZWxsbTpmaWxlLWE7bW9kZWwscHVibGlj"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbToxMjM7bW9kZWws"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbToxMjM7bW9kZWws"}
+      - {"function": "model_embedded", "value": "file-bGl0ZWxsbToxMjM7bW9kZWws"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwsO21vZGVsLHR3bw"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTphO2xsbV9iYXRjaF9pZDpsaXRlbGxtOmI7bW9kZWwsYw"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbTphO2xsbV9iYXRjaF9pZDpsaXRlbGxtOmI7bW9kZWwsYw"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA"}
+      - {"function": "model_id", "value": "model_id:a-model_id:b;c"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7eDttb2RlbCxi"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbTpmaWxlLWE7eDttb2RlbCxi"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTo7bW9kZWwseA"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbTo7bW9kZWwseA"}
+      - {"function": "decode_model", "value": "file-/w=="}
+      - {"function": "decode_model", "value": "file-not base64!"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxs=bV9wcm94eQ"}
+      - {"function": "decode_model", "value": "file-1"}
+      - {"function": "original_id", "value": "é"}
+      - {"function": "batch_id", "value": "llm_batch_idX;generic_response_id:g"}
+      - {"function": "batch_id", "value": "neither"}
+env: {}
+compare: {ignore: []}
