@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-control-call-drop-null
+call:
+  b5650: {function: control, kwargs: {stream_chunk_size: "abc", drop_params: null}, model: gpt-4o, global_drop_params: null}
+env: {}
+compare: {ignore: []}

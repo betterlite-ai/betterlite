@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-control-text-too-long
+call:
+  b5650: {function: control, kwargs: {stream_chunk_size: "1000000000000000000"}, model: gpt-4o, global_drop_params: null}
+env: {}
+compare: {ignore: []}
