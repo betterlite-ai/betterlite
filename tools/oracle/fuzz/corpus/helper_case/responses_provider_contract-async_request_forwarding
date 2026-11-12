@@ -1,0 +1,12 @@
+kind: helper
+name: responses-provider-async-request-forwarding
+call:
+  responses_provider_contract:
+    action: async_request_forwarding
+    model: m
+    input: hi
+    optional_params: {store: false}
+    litellm_params: {api_key: k}
+    headers: {x-test: "yes"}
+env: {}
+compare: {ignore: []}

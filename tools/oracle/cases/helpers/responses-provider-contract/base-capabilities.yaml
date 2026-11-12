@@ -1,0 +1,10 @@
+kind: helper
+name: responses-provider-base-capabilities
+call:
+  responses_provider_contract:
+    action: base_capabilities
+    model: m
+    stream: true
+    custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

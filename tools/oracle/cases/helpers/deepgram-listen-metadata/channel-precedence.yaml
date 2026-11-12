@@ -1,0 +1,71 @@
+kind: helper
+name: deepgram-listen-metadata-channel-precedence
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=5
+      messages:
+      - {type: Metadata, channels: 2}
+      - {type: Results, channel_index: [0, 3]}
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=5
+      messages:
+      - {type: Metadata, channels: 2}
+      - {type: Metadata, channels: true}
+      - {type: Metadata, channels: 0}
+      - {type: Metadata, channels: -3}
+      - {type: Metadata}
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=5
+      messages:
+      - {type: Results, channel_index: [0, 3]}
+      - {type: Results, channel_index: [0, 2]}
+      - {type: Results, channel_index: [0, 1, 9]}
+      - {type: Results, channel_index: [0]}
+      - {type: Results, channel_index: [0, true]}
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=4
+      messages: []
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=0
+      messages: []
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=abc
+      messages: []
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen
+      messages: []
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=5
+      messages:
+      - {type: Metadata, channels: "2", duration: 3.0}
+      - {type: Metadata, channels: [2]}
+      - {type: Results, channel_index: [0, "x"]}
+      - {type: Results, channel_index: "01"}
+      - {type: Results, channel_index: [0, 4], start: "0", is_final: 1}
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen
+      messages:
+      - {type: Metadata, channels: 3.0}
+      - {type: Metadata, channels: "2"}
+compare: {ignore: []}
+env: {}

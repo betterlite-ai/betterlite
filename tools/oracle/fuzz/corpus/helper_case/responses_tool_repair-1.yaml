@@ -1,0 +1,14 @@
+kind: helper
+name: responses-tool-repair-seed
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: null}
+      - {role: tool, tool_call_id: call_1, content: ok}
+    tools: []
+    cache:
+      call_1: {id: call_1, type: function, function: {name: f, arguments: {}}}
+env: {}
+compare: {ignore: []}
