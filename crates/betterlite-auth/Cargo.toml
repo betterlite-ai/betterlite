@@ -13,6 +13,7 @@ betterlite-context = { path = "../betterlite-context" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-paths = { path = "../betterlite-paths" }
 betterlite-redis = { path = "../betterlite-redis" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 hex.workspace = true

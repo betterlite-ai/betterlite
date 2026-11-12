@@ -1,0 +1,15 @@
+general_settings:
+  litellm_jwtauth:
+    team_id_jwt_field: realm.team.id
+    team_ids_jwt_field: realm.team.ids
+    team_id_default: fallback-team
+    team_alias_jwt_field: realm.team.name
+    org_id_jwt_field: org
+    org_alias_jwt_field: org_name
+    user_id_jwt_field: sub
+    user_email_jwt_field: email
+    user_allowed_email_domain: example.com
+    user_id_upsert: true
+    end_user_id_jwt_field: eid
+    agent_id_jwt_field: azp
+    object_id_jwt_field: oid
