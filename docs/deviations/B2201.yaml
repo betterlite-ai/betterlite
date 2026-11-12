@@ -1,0 +1,28 @@
+task: B2201
+deviations:
+  - what: >-
+      A huggingface model's max output tokens fall back to DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS. LiteLLM's get_max_tokens
+      downloads the model's config.json from huggingface.co and returns max_position_embeddings when the model map has
+      no limit, so a reachable model can answer a different number.
+    why: >-
+      The model lookup this task calls is B205's catalog lookup, which answers None for huggingface names rather than
+      fetching a remote config during a request. No request-time network read is available here, and the pinned
+      fallback keeps the call bounded; the value a fetch would return is not part of the request's own input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5457-L5474
+  - what: >-
+      A catalog max_output_tokens above i64::MAX falls back to DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS instead of being
+      returned. LiteLLM returns the arbitrarily large Python integer.
+    why: >-
+      betterlite's JSON numbers are bounded, so a catalog value that does not fit a signed 64-bit integer is treated
+      like any other lookup that cannot answer, which is the same fallback the exception path takes. No mapped model
+      in the pinned catalog comes near the bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L340-L354
+  - what: >-
+      A numeric compact_threshold whose int() truncation does not fit a signed 64-bit integer is refused with an
+      error. LiteLLM writes the arbitrarily large integer into trigger.value, and only a NaN or infinite threshold
+      raises.
+    why: >-
+      The trigger value is written into betterlite's bounded JSON number, so a value that cannot be represented is
+      named as an error instead of being dropped or wrapped. No working setup sends a compaction threshold past
+      9.2 quintillion tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1451-L1457
