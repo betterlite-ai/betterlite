@@ -70,20 +70,6 @@ pub(super) enum Stop {
     Input(String),
 }
 
-pub(super) fn finish(result: Result<Value, Stop>) -> Result<Value, Box<HelperError>> {
-    match result {
-        Ok(value) => Ok(value),
-        Err(Stop::Server(error)) => Ok(failure(&error)),
-        Err(Stop::Reply(reply)) => match *reply {
-            ReplyError::Server(error) => Ok(failure(&error)),
-            other @ (ReplyError::Shape { .. } | ReplyError::Missing { .. }) => {
-                Err(invalid(other.to_string()))
-            }
-        },
-        Err(Stop::Input(message)) => Err(invalid(message)),
-    }
-}
-
 // the call the helper was asked to run
 pub(super) enum Call<'call> {
     Request(&'call RequestCall),
@@ -130,5 +116,19 @@ pub(super) fn record(which: &Call<'_>) -> Result<Value, Stop> {
                 "usage": chat.usage,
             }))
         }
+    }
+}
+
+pub(super) fn answer(which: &Call<'_>) -> Result<Value, Box<HelperError>> {
+    match record(which) {
+        Ok(value) => Ok(value),
+        Err(Stop::Server(error)) => Ok(failure(&error)),
+        Err(Stop::Reply(reply)) => match *reply {
+            ReplyError::Server(error) => Ok(failure(&error)),
+            other @ (ReplyError::Shape { .. } | ReplyError::Missing { .. }) => {
+                Err(invalid(other.to_string()))
+            }
+        },
+        Err(Stop::Input(message)) => Err(invalid(message)),
     }
 }

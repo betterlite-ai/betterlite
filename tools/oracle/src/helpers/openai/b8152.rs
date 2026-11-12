@@ -50,12 +50,7 @@ impl Helper for Op {
             Input::ChatParams { calls } => Ok(Value::Array(
                 calls.iter().map(servers::params_value).collect(),
             )),
-            Input::DockerRequest { calls } => Ok(Value::Array(
-                calls
-                    .iter()
-                    .map(servers::docker_value)
-                    .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            )),
+            Input::DockerRequest { calls } => answers(calls, servers::docker_value),
             Input::LmStudioEmbed { optional_params } => Ok(servers::embed_value(optional_params)),
             Input::Xinference { calls } => Ok(Value::Array(
                 calls.iter().map(servers::xinference_value).collect(),
@@ -63,28 +58,15 @@ impl Helper for Op {
             Input::LemonadeCost { calls } => Ok(Value::Array(
                 calls.iter().map(servers::cost_value).collect(),
             )),
-            Input::OobaboogaRequest { calls } => Ok(Value::Array(
-                calls
-                    .iter()
-                    .map(|call| {
-                        oobabooga::finish(oobabooga::record(&oobabooga::Call::Request(call)))
-                    })
-                    .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            )),
-            Input::OobaboogaEmbedding { calls } => Ok(Value::Array(
-                calls
-                    .iter()
-                    .map(|call| {
-                        oobabooga::finish(oobabooga::record(&oobabooga::Call::Embedding(call)))
-                    })
-                    .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            )),
-            Input::OobaboogaReply { calls } => Ok(Value::Array(
-                calls
-                    .iter()
-                    .map(|call| oobabooga::finish(oobabooga::record(&oobabooga::Call::Reply(call))))
-                    .collect::<Result<Vec<Value>, Box<HelperError>>>()?,
-            )),
+            Input::OobaboogaRequest { calls } => answers(calls, |call| {
+                oobabooga::answer(&oobabooga::Call::Request(call))
+            }),
+            Input::OobaboogaEmbedding { calls } => answers(calls, |call| {
+                oobabooga::answer(&oobabooga::Call::Embedding(call))
+            }),
+            Input::OobaboogaReply { calls } => answers(calls, |call| {
+                oobabooga::answer(&oobabooga::Call::Reply(call))
+            }),
         }
     }
 }
@@ -98,4 +80,15 @@ fn invalid(message: String) -> Box<HelperError> {
         code: None,
         message,
     })
+}
+
+fn answers<Call, Make>(calls: &[Call], make: Make) -> HelperResult
+where
+    Make: Fn(&Call) -> Result<Value, Box<HelperError>>,
+{
+    let mut values = Vec::with_capacity(calls.len());
+    for call in calls {
+        values.push(make(call)?);
+    }
+    Ok(Value::Array(values))
 }
