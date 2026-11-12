@@ -110,8 +110,9 @@ async fn system_exit_from_an_async_hook_is_a_python_error_and_the_loop_keeps_ser
     let error = python_error(&host, &module, "quit_async").await;
     assert_eq!(error.type_name, "SystemExit");
     assert_eq!(error.message, "4");
-    let after = python_error(&host, &module, "fail_value").await;
+    let after = python_error(&host, &module, "fail_async").await;
     assert_eq!(after.type_name, "ValueError");
+    assert_eq!(after.message, "async-nope");
 }
 
 #[tokio::test]
