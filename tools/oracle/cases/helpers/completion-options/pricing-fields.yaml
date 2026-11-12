@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-custom-list
+call:
+  b5650: {function: custom_fields}
+env: {}
+compare: {ignore: []}

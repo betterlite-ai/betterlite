@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-tool-keys-none
+call:
+  b5650: {function: tool_keys, tools: null}
+env: {}
+compare: {ignore: []}

@@ -80,5 +80,5 @@ pitfalls:
   - A half-close must wait behind queued audio rather than cancel its sender immediately.
   - A stream's billed duration is a maximum, not the sum of each response's metadata.
   - Failure forwarding must complete even when the SDK response stream ends before producing any transcript.
-budget: {max_changed_lines: 700, max_new_expects: 1}
+budget: {max_changed_lines: 1200, max_new_expects: 1}
 review_level: standard

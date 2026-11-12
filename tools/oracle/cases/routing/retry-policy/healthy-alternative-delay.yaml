@@ -1,0 +1,71 @@
+kind: probe
+name: retry-policy-healthy-alternative-delay
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: sleep
+        sleep:
+          now_unix_millis: 0
+          steps:
+            - healthy_deployments: 1
+              all_deployments: 2
+              retry_after_header: null
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      retry_policy:
+        function: sleep
+        sleep:
+          now_unix_millis: 0
+          steps:
+            - healthy_deployments: 1
+              all_deployments: 1
+              retry_after_header: null
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: [0, 0]
+    operation:
+      retry_policy:
+        function: sleep
+        sleep:
+          now_unix_millis: 0
+          steps:
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "5"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: null
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 3
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: [2251799813685248, 0]
+    operation:
+      retry_policy:
+        function: sleep
+        sleep:
+          now_unix_millis: 0
+          steps:
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: "61"
+              remaining_retries: 2
+              max_retries: 2
+              min_timeout: 0
+            - healthy_deployments: 0
+              all_deployments: 2
+              retry_after_header: null
+              remaining_retries: 0
+              max_retries: 10
+              min_timeout: 0

@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
-mod usage;
+pub(crate) mod usage;
 use usage::{original_usage_shape, resolve_usage};
 
 #[derive(Debug, Error)]

@@ -1,0 +1,33 @@
+kind: helper
+name: message-inputs
+call:
+  responses_input_messages:
+    request:
+      instructions: follow
+      input:
+        - {type: message, role: user, content: hi}
+        - {role: user}
+        - {role: user, content: null}
+        - {role: "", content: ""}
+        - {type: mystery, content: x}
+        - type: web_search_call
+          id: ws_1
+          status: completed
+          action:
+            type: search
+            query: q
+            sources: [{type: url, url: "https://a.test"}]
+          note: kept
+        - type: web_search_call
+          id: ws_2
+          status: searching
+          action: {type: open_page, url: "https://b.test"}
+        - type: web_search_call
+          id: ws_3
+          status: failed
+          action: {type: find_in_page, pattern: p, url: "https://c.test"}
+    replay_reasoning: false
+    cache: []
+env: {}
+compare:
+  ignore: []
