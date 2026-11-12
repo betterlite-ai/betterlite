@@ -76,9 +76,9 @@ def answer_entry(answer: EmbeddingResponse) -> Json:
     usage = answer.usage
     if usage is None:
         return {"error": True}
-    details = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1748
-        "dict[str, Json] | None",
-        usage.prompt_tokens_details,
+    details = None if usage.prompt_tokens_details is None else cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1748
+        "dict[str, Json]",
+        usage.prompt_tokens_details.model_dump(),
     )
     seconds = None if details is None else details.get("video_length_seconds")
     video_length = None if seconds is None else format(Decimal(str(seconds)).normalize(), "f")
