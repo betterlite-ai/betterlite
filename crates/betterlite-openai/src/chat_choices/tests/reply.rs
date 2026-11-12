@@ -34,8 +34,8 @@ impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
 }
 
-fn logging(redactor: &Redactor) -> LoggingState {
-    LoggingState::new(
+fn fixture(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
+    let state = LoggingState::new(
         serde_json::from_str::<LoggingInit>(INIT).unwrap(),
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
@@ -45,11 +45,8 @@ fn logging(redactor: &Redactor) -> LoggingState {
         || String::from("trace"),
         Duration::default,
     )
-    .unwrap()
-}
-
-fn environment(redactor: &Redactor) -> PrePostEnv<'_> {
-    PrePostEnv {
+    .unwrap();
+    let env = PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
@@ -62,7 +59,8 @@ fn environment(redactor: &Redactor) -> PrePostEnv<'_> {
         sentry: None,
         logger_fn: None,
         now: DateTime::parse_from_rfc3339("2026-01-01T00:05:00+00:00").unwrap(),
-    }
+    };
+    (state, env)
 }
 
 fn input() -> LogInput {
@@ -141,8 +139,7 @@ const BODY: &[u8] =
 
 pub(super) fn response_headers() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let env = environment(&redactor);
-    let mut state = logging(&redactor);
+    let (mut state, env) = fixture(&redactor);
     let (returned, projected) = respond(&mut state, &env, 200, BODY).unwrap();
     assert_eq!(returned, text("projected"));
     assert_eq!(projected["decoded"]["id"], text("c"));
@@ -166,7 +163,7 @@ fn recorded_post_call(state: &LoggingState) {
 }
 
 fn malformed_reply(redactor: &Redactor, env: &PrePostEnv<'_>) {
-    let mut state = logging(redactor);
+    let (mut state, _) = fixture(redactor);
     let (error, _projected) = respond(&mut state, env, 400, b"not json").unwrap_err();
     match error {
         TransformResponseError::Json(record) => {

@@ -156,17 +156,13 @@ pub(super) fn url_join(steps: &UrlSteps) -> Value {
 }
 
 pub(super) fn auth(steps: &AuthSteps) -> Value {
-    Value::Array(
-        steps
-            .steps
-            .iter()
-            .map(|step| {
-                let key = step.api_key.clone().map(SecretString::from);
-                let headers: Headers = step.headers.clone();
-                to_value(validate_environment(key.as_ref(), &headers)).unwrap_or(Value::Null)
-            })
-            .collect(),
-    )
+    let mut outputs = Vec::with_capacity(steps.steps.len());
+    for step in &steps.steps {
+        let key = step.api_key.clone().map(SecretString::from);
+        let headers: Headers = step.headers.clone();
+        outputs.push(to_value(validate_environment(key.as_ref(), &headers)).unwrap_or(Value::Null));
+    }
+    Value::Array(outputs)
 }
 
 pub(super) fn credentials(call: &CredentialCall) -> HelperResult {

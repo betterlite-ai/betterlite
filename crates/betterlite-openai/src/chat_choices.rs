@@ -3,6 +3,7 @@ pub mod config;
 pub mod endpoint;
 pub mod reply;
 pub mod stream;
+pub mod tool_calls;
 pub mod wire;
 
 mod tests;

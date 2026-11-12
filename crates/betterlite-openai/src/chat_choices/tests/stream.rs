@@ -123,7 +123,7 @@ pub(super) fn embedded_stream_error() {
         Some((String::from("x"), 599))
     );
     status_bounds();
-    ignored_errors();
+    falsy_errors_are_ignored();
     assert_eq!(
         error_status(&error_chunk(value(&[
             ("message", text("boom")),
@@ -132,26 +132,6 @@ pub(super) fn embedded_stream_error() {
         Some(400)
     );
     assert_eq!(error_status(&error_chunk(text("plain"))), Some(500));
-    false_errors_are_ignored();
-}
-
-fn false_errors_are_ignored() {
-    let false_error = parse(&value(&[
-        ("id", text("c")),
-        ("created", Value::from(1_i64)),
-        ("model", text("m")),
-        ("error", Value::Bool(false)),
-    ]))
-    .unwrap();
-    assert_eq!(false_error.id, "c");
-    let zero_error = parse(&value(&[
-        ("id", text("c")),
-        ("created", Value::from(1_i64)),
-        ("model", text("m")),
-        ("error", Value::from(0_i64)),
-    ]))
-    .unwrap();
-    assert_eq!(zero_error.id, "c");
 }
 
 fn status_bounds() {
@@ -179,7 +159,7 @@ fn status_bounds() {
     );
 }
 
-fn ignored_errors() {
+fn falsy_errors_are_ignored() {
     for ignored in [
         Value::Null,
         Value::Bool(false),
@@ -188,7 +168,18 @@ fn ignored_errors() {
         Value::Array(Vec::new()),
         value(&[]),
     ] {
-        assert_eq!(extract_error_from_chunk(&error_chunk(ignored)), None);
+        assert_eq!(
+            extract_error_from_chunk(&error_chunk(ignored.clone())),
+            None
+        );
+        let parsed = parse(&value(&[
+            ("id", text("c")),
+            ("created", Value::from(1_i64)),
+            ("model", text("m")),
+            ("error", ignored),
+        ]))
+        .unwrap();
+        assert_eq!(parsed.id, "c");
     }
     assert_eq!(extract_error_from_chunk(&value(&[("id", text("c"))])), None);
 }
