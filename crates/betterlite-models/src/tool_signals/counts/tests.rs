@@ -94,7 +94,7 @@ fn an_empty_output_floors_at_one_call() {
 #[case::negative(r#"{"web_search":{"num_requests":-1}}"#)]
 #[case::missing_count(r#"{"web_search":{}}"#)]
 #[case::text_count(r#"{"web_search":{"num_requests":"many"}}"#)]
-#[case::fractional_count(r#"{"web_search":{"num_requests":2.5}}"#)]
+#[case::fractional_count(r#"{"web_search":{"num_requests":3.5}}"#)]
 #[case::list_search(r#"{"web_search":[]}"#)]
 #[case::not_a_mapping("5")]
 #[case::null_tool_usage("null")]
