@@ -1525,6 +1525,8 @@ version = "0.0.0"
 dependencies = [
  "betterlite-config",
  "betterlite-core",
+ "betterlite-models",
+ "betterlite-openai",
  "chrono",
  "jiff",
  "libfuzzer-sys",
@@ -1980,6 +1982,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "strum",
+ "subtle",
  "temp-env",
  "tempfile",
  "thiserror",
