@@ -1,11 +1,6 @@
-use std::collections::BTreeMap;
 use std::str::FromStr as _;
-use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_models::decisions::Json;
@@ -15,8 +10,6 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde_json::Number;
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
 use uuid::Uuid;
 
 use super::fixture::{AudioFixture, ConnectionOptions, Fixture, Recorder, Reply, connection};
@@ -35,7 +28,7 @@ use crate::transcription::duration::srt_vtt_duration;
 use crate::transcription::error::TranscriptionError;
 use crate::transcription::reply::{StoredDuration, TranscriptionReply};
 use crate::transcription::request::{TranscriptionData, prepare_data};
-use crate::transcription::transport::TranscriptionTransport;
+use crate::transcription::transport::TranscriptionTransport as _;
 
 #[derive(Debug, Clone, Copy)]
 enum Case {
@@ -54,7 +47,6 @@ enum Case {
     RawTranscriptionHeaders,
     NonJsonContentType,
     ModelProjection,
-    MalformedFields,
 }
 
 #[rstest]
@@ -73,7 +65,6 @@ enum Case {
 #[case::raw_transcription_headers(Case::RawTranscriptionHeaders)]
 #[case::non_json_content_type(Case::NonJsonContentType)]
 #[case::model_projection(Case::ModelProjection)]
-#[case::malformed_fields(Case::MalformedFields)]
 #[tokio::test]
 async fn transcription_cases(#[case] case: Case) {
     match case {
@@ -92,7 +83,6 @@ async fn transcription_cases(#[case] case: Case) {
         Case::RawTranscriptionHeaders => raw_transcription_headers().await,
         Case::NonJsonContentType => non_json_content_type(),
         Case::ModelProjection => model_projection().await,
-        Case::MalformedFields => malformed_fields().await,
     }
 }
 
@@ -136,10 +126,10 @@ impl SyncCall {
     }
 }
 
-struct Wire {
-    url: String,
-    headers: HeaderMap,
-    parts: Vec<MultipartPart>,
+pub(super) struct Wire {
+    pub(super) url: String,
+    pub(super) headers: HeaderMap,
+    pub(super) parts: Vec<MultipartPart>,
 }
 
 pub(super) fn text(value: &str) -> Json {
@@ -158,7 +148,7 @@ pub(super) fn value(expected: Json) -> serde_json::Value {
     serde_json::to_value(expected).expect("the expected value is JSON")
 }
 
-fn wire(fixture: &Fixture) -> Wire {
+pub(super) fn wire(fixture: &Fixture) -> Wire {
     let request = fixture.request();
     assert_eq!(request.method, http::Method::POST);
     assert_eq!(request.deadline, Duration::from_secs(30));
@@ -179,7 +169,7 @@ fn header(wire: &Wire, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn part_values(parts: &[MultipartPart], name: &str) -> Vec<String> {
+pub(super) fn part_values(parts: &[MultipartPart], name: &str) -> Vec<String> {
     parts
         .iter()
         .filter(|part| part.name == name)
@@ -233,7 +223,7 @@ pub(super) fn whisper_data(options: &IndexMap<String, Json>) -> TranscriptionDat
         .expect("the whisper data builds")
 }
 
-fn default_connection() -> TranscriptionConnection {
+pub(super) fn default_connection() -> TranscriptionConnection {
     connection(&ConnectionOptions {
         api_key: Some("sk-transcription"),
         environment_api_key: None,
@@ -925,131 +915,4 @@ fn shared_connection() -> TranscriptionConnection {
         environment_api_key: None,
         shared_session: true,
     })
-}
-
-async fn field_outcome(name: &str, value: Json) -> Result<Vec<MultipartPart>, TranscriptionError> {
-    let audio = AudioFixture::new("a.wav", b"abc", "audio/wav");
-    let fixture = Fixture::new(Reply::json(r#"{"text":"hi"}"#));
-    let call = SyncCall {
-        model: "whisper-1",
-        family: None,
-        options: IndexMap::from([(name.to_owned(), value)]),
-        data: None,
-        connection: default_connection(),
-    };
-    run(&fixture, &audio, call)
-        .await
-        .outcome
-        .map(|_reply| wire(&fixture).parts)
-}
-
-async fn assert_field_refused(name: &str, value: Json, problem: &str) {
-    let refused = field_outcome(name, value)
-        .await
-        .expect_err("the SDK cannot send this value");
-    assert!(
-        matches!(&refused, TranscriptionError::Field { field, problem: found } if field == name && *found == problem),
-        "{name}: {refused:?}"
-    );
-}
-
-// every multipart field kind: scalars, the two list fields, null, and what the SDK cannot encode
-async fn malformed_fields() {
-    let listed = "is not a list of strings";
-    let scalar = "is not a scalar";
-    assert_field_refused("include", text("logprobs"), listed).await;
-    assert_field_refused("include", number("1"), listed).await;
-    assert_field_refused("include", Json::Bool(true), listed).await;
-    assert_field_refused("include", Json::Object(IndexMap::new()), listed).await;
-    assert_field_refused(
-        "timestamp_granularities",
-        Json::List(vec![number("1")]),
-        listed,
-    )
-    .await;
-    assert_field_refused("temperature", list(&["hot"]), scalar).await;
-    assert_field_refused("temperature", Json::Object(IndexMap::new()), scalar).await;
-    assert_field_refused("bogus", text("x"), "is not one the OpenAI SDK sends").await;
-    assert_scalar_fields().await;
-    let file = prepare_data(
-        None,
-        "whisper-1",
-        &IndexMap::from([(String::from("file"), text("x"))]),
-    )
-    .expect_err("the file is the audio file");
-    assert!(matches!(&file, TranscriptionError::Field { field, .. } if field == "file"));
-}
-
-async fn serve_transcription(listener: TcpListener) -> String {
-    let (mut stream, _) = listener.accept().await.expect("the client connects");
-    let mut received = Vec::new();
-    let mut chunk = [0_u8; 1024];
-    let last = format!("--{BOUNDARY}--");
-    while !received
-        .windows(last.len())
-        .any(|window| window == last.as_bytes())
-    {
-        let read = stream.read(&mut chunk).await.expect("the request arrives");
-        received.extend_from_slice(&chunk[..read]);
-    }
-    let reply = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 13\r\nconnection: close\r\n\r\n{\"text\":\"hi\"}";
-    stream
-        .write_all(reply.as_bytes())
-        .await
-        .expect("the reply is written");
-    String::from_utf8(received).expect("the request is text")
-}
-
-#[tokio::test]
-async fn proxied_client_sends_the_transcription() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("the listener binds");
-    let address = listener.local_addr().expect("the listener has an address");
-    let audio = AudioFixture::new("a.wav", b"abc", "audio/wav");
-    let processed = audio.processed();
-    let mut connection = default_connection();
-    connection.api_base = Some(format!("http://{address}/v1"));
-    let prepared = TranscriptionCall {
-        input: get_audio_file_name(&audio.audio_file()),
-        file: &processed,
-        connection,
-        boundary: BOUNDARY,
-    };
-    let request = TranscriptionRequest {
-        model: "whisper-1",
-        family: Some(TranscriptionFamily::Whisper),
-        optional_params: IndexMap::new(),
-        atranscription: false,
-    };
-    let (outbound, pending) = audio_transcriptions(&prepared, &request, &mut Recorder::default())
-        .expect("the call begins");
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
-            .expect("the policy resolves"),
-    );
-    let client = ProxiedClient::outbound(&policy).expect("the client builds");
-    let (head, sent) = tokio::join!(
-        serve_transcription(listener),
-        TranscriptionTransport::send(&client, outbound)
-    );
-    assert!(
-        head.starts_with("POST /v1/audio/transcriptions HTTP/1.1"),
-        "{head}"
-    );
-    assert!(head.contains("filename=\"a.wav\""), "{head}");
-    let reply = finish_transcription(pending, sent, &mut Recorder::default())
-        .expect("the 200 reply is a success");
-    assert_eq!(reply.response.text.as_deref(), Some("hi"));
-}
-
-async fn assert_scalar_fields() {
-    let flag = field_outcome("stream", Json::Bool(true))
-        .await
-        .expect("a boolean is a scalar");
-    assert_eq!(part_values(&flag, "stream"), ["true"]);
-    let none = field_outcome("language", Json::Null)
-        .await
-        .expect("null sends no part");
-    assert!(part_values(&none, "language").is_empty());
 }
