@@ -1,0 +1,14 @@
+kind: helper
+name: multimodal-embedding-records-seed
+call:
+  multimodal_embedding_records:
+    requests:
+      - {input: ["seed", "gs://bucket/seed.mp4"], optional: {}}
+    replies:
+      - model: seed-model
+        status: 200
+        input: ["seed", "gs://bucket/seed.png"]
+        optional: {}
+        response: {predictions: [{textEmbedding: [0.1]}]}
+compare: {ignore: []}
+env: {}

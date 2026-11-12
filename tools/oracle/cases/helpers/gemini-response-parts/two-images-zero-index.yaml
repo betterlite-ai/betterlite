@@ -1,0 +1,23 @@
+kind: helper
+name: gemini-response-parts-two-images-zero-index
+call:
+  gemini_response_parts:
+    parts:
+      - inlineData:
+          mimeType: image/png
+          data: aW1n
+      - text: between
+      - inlineData:
+          mimeType: image/jpeg
+          data: anBn
+        text: caption
+      - inlineData:
+          mimeType: application/pdf
+          data: cGRm
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs: null
+env: {}
+compare: {ignore: []}

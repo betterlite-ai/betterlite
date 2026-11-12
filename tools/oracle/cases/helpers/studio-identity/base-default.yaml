@@ -1,0 +1,12 @@
+kind: helper
+name: studio-identity-base-default
+call:
+  studio_identity:
+    calls:
+      - model: gemini-2.0-flash
+      - model: gemini-2.0-flash
+        api_base: "https://proxy.example"
+      - model: gemini-2.0-flash
+        env: {GEMINI_API_BASE: "https://environment.example"}
+env: {}
+compare: {ignore: []}

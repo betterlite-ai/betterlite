@@ -1,0 +1,15 @@
+kind: helper
+name: langgraph-chat-response-wrapped-error
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: reply
+    cases:
+      - {model: langgraph/agent, status: 502, body: 'not json'}
+      - {model: langgraph/agent, status: 500, body: ''}
+      - {model: langgraph/agent, status: 404, body: '<html>missing</html>'}
+      - {model: langgraph/agent, status: 200, body: '[1]'}
+      - {model: langgraph/agent, status: 418, body: '"text"'}
+      - {model: langgraph/agent, status: 503, body: '5'}
+      - {model: langgraph/agent, status: 429, body: 'null'}

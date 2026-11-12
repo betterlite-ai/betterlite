@@ -1,0 +1,19 @@
+kind: helper
+name: raw-probe-coercion-and-invalid-nested-shape
+call:
+  anthropic_pricing:
+    kind: raw_probe
+    responses:
+      - usage: {server_tool_use: {web_search_requests: "3"}}
+      - usage: {server_tool_use: {web_search_requests: 3.0}}
+      - usage: {server_tool_use: {web_search_requests: 3.5}}
+      - usage: {server_tool_use: {web_search_requests: true}}
+      - usage: {server_tool_use: {web_search_requests: "abc"}}
+      - usage: {server_tool_use: x}
+      - usage: x
+      - [1, 2]
+      - text
+      - null
+      - usage: {server_tool_use: {web_search_requests: 0}}
+compare: {ignore: []}
+env: {}

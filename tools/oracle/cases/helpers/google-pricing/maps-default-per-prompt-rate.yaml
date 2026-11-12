@@ -1,0 +1,13 @@
+kind: helper
+name: google-pricing-maps-default-per-prompt-rate
+call:
+  google_pricing:
+    operation: maps_grounding_cost
+    record: {}
+    usage:
+      prompt_tokens: 3
+      completion_tokens: 0
+      prompt_tokens_details:
+        google_maps_grounding_requests: 3
+env: {}
+compare: {ignore: []}
