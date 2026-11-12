@@ -246,12 +246,12 @@ fn cerebras_snapshot_keeps_reasoning_effort_and_temperature() {
 
 #[test]
 fn snapshots_reject_fields_their_constructor_does_not_take() {
-    let unknown = serde_json::from_str::<CerebrasSettings>(r#"{"max_retries": 2}"#);
-    assert!(unknown.is_err());
-    let unknown = serde_json::from_str::<BasetenSettings>(r#"{"reasoning_effort": "low"}"#);
-    assert!(unknown.is_err());
-    let unknown = serde_json::from_str::<FeatherlessSettings>(r#"{"stream": true}"#);
-    assert!(unknown.is_err());
+    serde_json::from_str::<CerebrasSettings>(r#"{"max_retries": 2}"#)
+        .expect_err("an unknown field is rejected");
+    serde_json::from_str::<BasetenSettings>(r#"{"reasoning_effort": "low"}"#)
+        .expect_err("an unknown field is rejected");
+    serde_json::from_str::<FeatherlessSettings>(r#"{"stream": true}"#)
+        .expect_err("an unknown field is rejected");
 }
 
 #[test]
@@ -424,8 +424,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     &[],
     None,
     None,
-    None,
-    "https://api.featherless.ai/v1"
+    (None, "https://api.featherless.ai/v1")
 )]
 #[case::featherless_primary_environment(
     ChatIdentity::Featherless,
@@ -435,8 +434,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     ],
     None,
     None,
-    Some("sk-primary"),
-    "https://primary.example"
+    (Some("sk-primary"), "https://primary.example")
 )]
 #[case::featherless_secondary_environment(
     ChatIdentity::Featherless,
@@ -446,8 +444,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     ],
     None,
     None,
-    Some("sk-secondary"),
-    "https://secondary.example"
+    (Some("sk-secondary"), "https://secondary.example")
 )]
 #[case::featherless_primary_environment_wins(
     ChatIdentity::Featherless,
@@ -459,8 +456,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     ],
     None,
     None,
-    Some("sk-primary"),
-    "https://primary.example"
+    (Some("sk-primary"), "https://primary.example")
 )]
 #[case::featherless_explicit_wins(
     ChatIdentity::Featherless,
@@ -470,8 +466,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     ],
     Some("https://explicit.example"),
     Some("sk-explicit"),
-    Some("sk-explicit"),
-    "https://explicit.example"
+    (Some("sk-explicit"), "https://explicit.example")
 )]
 #[case::featherless_empty_explicit_falls_through(
     ChatIdentity::Featherless,
@@ -481,16 +476,14 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     ],
     Some(""),
     Some(""),
-    Some("sk-primary"),
-    "https://primary.example"
+    (Some("sk-primary"), "https://primary.example")
 )]
 #[case::aiml_defaults(
     ChatIdentity::Aiml,
     &[],
     None,
     None,
-    None,
-    "https://api.aimlapi.com/v1"
+    (None, "https://api.aimlapi.com/v1")
 )]
 #[case::aiml_environment(
     ChatIdentity::Aiml,
@@ -500,8 +493,7 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     ],
     None,
     None,
-    Some("sk-aiml"),
-    "https://aiml.example/v1"
+    (Some("sk-aiml"), "https://aiml.example/v1")
 )]
 #[case::aiml_explicit(
     ChatIdentity::Aiml,
@@ -511,25 +503,23 @@ fn featherless_validation_creates_headers_when_none_are_given() {
     ],
     Some("https://explicit.example/v1"),
     Some("sk-explicit"),
-    Some("sk-explicit"),
-    "https://explicit.example/v1"
+    (Some("sk-explicit"), "https://explicit.example/v1")
 )]
 #[case::aiml_image_alias_is_not_read(
     ChatIdentity::Aiml,
     &[("AIMLAPI_KEY", "sk-image-only")],
     None,
     None,
-    None,
-    "https://api.aimlapi.com/v1"
+    (None, "https://api.aimlapi.com/v1")
 )]
 fn chat_identity_resolves_its_chain(
     #[case] host: ChatIdentity,
     #[case] entries: &[(&str, &str)],
     #[case] explicit_base: Option<&str>,
     #[case] explicit_key: Option<&str>,
-    #[case] expected_key: Option<&str>,
-    #[case] expected_base: &str,
+    #[case] expected: (Option<&str>, &str),
 ) {
+    let (expected_key, expected_base) = expected;
     let settings = loaded(entries).hosted_chat_settings;
     let key_override = explicit_key.map(secret);
     let (base, key) =
