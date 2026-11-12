@@ -33,5 +33,6 @@ sub undeclared { my $id=shift; my @mods=grep { !/[*?\[{]/ } @{$scope{$id}}; push
     next if grep { owns($id,$_) } @parents; my $ok=0;
     for my $par (@parents) { open my $h,"<","../$par" or next; local $/; my $t=<$h>; $ok=1 if $t=~/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\Q$name\E\s*;/m || $t=~/=>\s*\Q$name\E\s*,/ || $t=~/^\s+(?:[a-z0-9_]+,\s+)*\Q$name\E,/m }
     return "$p needs mod $name in $parents[0]" unless $ok } "" }
+my $top=0; for my $id (keys %st) { next if $st{$id} eq "done"; my $v=height($id); $top=$v if $v>$top } print "top $top\n";
 my @ready=sort { height($b) <=> height($a) || ($unblock{$b}//0) <=> ($unblock{$a}//0) || $a cmp $b } grep { !$hold{$_} && $st{$_} eq "todo" && $file{$_} ne "null" && !grep { $st{$_} ne "done" } @{$deps{$_}} } keys %st;
 for my $id (@ready){ my $u=undeclared($id); if($u){ print "undeclared $id $u\n"; next } my @h=grep { hit($id,$_) } @run; if(!@h){ push @run,$id; print "free $id ",height($id),"\n" } else { print "wait $id ",height($id)," on @h: ",hit($id,$h[0]),"\n" } }
