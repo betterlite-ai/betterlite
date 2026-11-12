@@ -1,0 +1,13 @@
+kind: helper
+name: managed-resource-ids-seed
+call:
+  managed_resource_ids:
+    calls:
+      - {"function": "resolve_provider", "provider": "x.azure_ai"}
+      - {"function": "detect", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "decode", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ"}
+      - {"function": "parse", "value": "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxhO3Jlc291cmNlX2lkLHZzXzE7bW9kZWxfaWQsbQ=="}
+      - {"function": "model_id", "value": "llm_output_file_model_id,deploy;model_id,m"}
+      - {"function": "target_model_names", "value": 5}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,40 @@
+kind: helper
+name: managed-resource-ids-nonstring-inputs
+call:
+  managed_resource_ids:
+    calls:
+      - {"function": "detect", "value": null}
+      - {"function": "decode", "value": null}
+      - {"function": "target_model_names", "value": null}
+      - {"function": "resource_type", "value": null}
+      - {"function": "unified_uuid", "value": null}
+      - {"function": "model_id", "value": null}
+      - {"function": "provider_resource_id", "value": null}
+      - {"function": "parse", "value": null}
+      - {"function": "detect", "value": 5}
+      - {"function": "decode", "value": 5}
+      - {"function": "target_model_names", "value": 5}
+      - {"function": "resource_type", "value": 5}
+      - {"function": "unified_uuid", "value": 5}
+      - {"function": "model_id", "value": 5}
+      - {"function": "provider_resource_id", "value": 5}
+      - {"function": "parse", "value": 5}
+      - {"function": "detect", "value": 0}
+      - {"function": "decode", "value": 0}
+      - {"function": "target_model_names", "value": 0}
+      - {"function": "resource_type", "value": 0}
+      - {"function": "unified_uuid", "value": 0}
+      - {"function": "model_id", "value": 0}
+      - {"function": "provider_resource_id", "value": 0}
+      - {"function": "parse", "value": 0}
+      - {"function": "detect", "value": -1}
+      - {"function": "decode", "value": -1}
+      - {"function": "target_model_names", "value": -1}
+      - {"function": "resource_type", "value": -1}
+      - {"function": "unified_uuid", "value": -1}
+      - {"function": "model_id", "value": -1}
+      - {"function": "provider_resource_id", "value": -1}
+      - {"function": "parse", "value": -1}
+      - {"function": "detect", "value": 5, "prefix": "litellm_proxy;"}
+env: {}
+compare: {ignore: []}

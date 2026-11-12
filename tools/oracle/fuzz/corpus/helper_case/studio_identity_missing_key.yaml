@@ -1,0 +1,8 @@
+kind: helper
+name: studio-identity-missing-key
+call:
+  studio_identity:
+    calls:
+      - model: gemini-2.0-flash
+env: {}
+compare: {ignore: []}
