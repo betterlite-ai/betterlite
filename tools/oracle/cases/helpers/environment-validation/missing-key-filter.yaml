@@ -1,0 +1,70 @@
+kind: helper
+name: environment-validation-missing-key-filter
+call:
+  b5364:
+    operation: validate_environment
+    cases:
+    - {model: azure/probe-model}
+    - {model: azure/probe-model, api_key: sk-test}
+    - {model: azure/probe-model, api_key: ''}
+    - {model: azure/probe-model, api_base: 'https://example.test'}
+    - {model: azure/probe-model, api_version: '2024-01-01'}
+    - {model: azure/probe-model, api_key: sk-test, api_base: 'https://example.test', api_version: '2024-01-01'}
+    - model: azure/probe-model
+      environment: &id001 [AZURE_API_BASE]
+    - model: azure/probe-model
+      environment: *id001
+      api_key: sk-test
+    - model: azure/probe-model
+      environment: *id001
+      api_key: ''
+    - model: azure/probe-model
+      environment: *id001
+      api_base: https://example.test
+    - model: azure/probe-model
+      environment: *id001
+      api_version: '2024-01-01'
+    - model: azure/probe-model
+      environment: *id001
+      api_key: sk-test
+      api_base: https://example.test
+      api_version: '2024-01-01'
+    - {model: anthropic/probe-model}
+    - {model: anthropic/probe-model, api_key: sk-test}
+    - {model: anthropic/probe-model, api_key: ''}
+    - {model: anthropic/probe-model, api_base: 'https://example.test'}
+    - {model: anthropic/probe-model, api_version: '2024-01-01'}
+    - {model: anthropic/probe-model, api_key: sk-test, api_base: 'https://example.test', api_version: '2024-01-01'}
+    - {model: ollama/probe-model}
+    - {model: ollama/probe-model, api_key: sk-test}
+    - {model: ollama/probe-model, api_key: ''}
+    - {model: ollama/probe-model, api_base: 'https://example.test'}
+    - {model: ollama/probe-model, api_version: '2024-01-01'}
+    - {model: ollama/probe-model, api_key: sk-test, api_base: 'https://example.test', api_version: '2024-01-01'}
+    - {model: vertex_ai/probe-model}
+    - {model: vertex_ai/probe-model, api_key: sk-test}
+    - {model: vertex_ai/probe-model, api_key: ''}
+    - {model: vertex_ai/probe-model, api_base: 'https://example.test'}
+    - {model: vertex_ai/probe-model, api_version: '2024-01-01'}
+    - {model: vertex_ai/probe-model, api_key: sk-test, api_base: 'https://example.test', api_version: '2024-01-01'}
+    - {model: bedrock/probe-model}
+    - {model: bedrock/probe-model, api_key: sk-test}
+    - {model: bedrock/probe-model, api_key: ''}
+    - {model: bedrock/probe-model, api_base: 'https://example.test'}
+    - {model: bedrock/probe-model, api_version: '2024-01-01'}
+    - {model: bedrock/probe-model, api_key: sk-test, api_base: 'https://example.test', api_version: '2024-01-01'}
+    - {model: dashscope/probe-model}
+    - {model: dashscope/probe-model, api_key: sk-test}
+    - {model: dashscope/probe-model, api_key: ''}
+    - {model: dashscope/probe-model, api_base: 'https://example.test'}
+    - {model: dashscope/probe-model, api_version: '2024-01-01'}
+    - {model: dashscope/probe-model, api_key: sk-test, api_base: 'https://example.test', api_version: '2024-01-01'}
+    - {model: cloudflare/probe-model}
+    - {model: cloudflare/probe-model, api_key: sk-test}
+    - {model: cloudflare/probe-model, api_key: ''}
+    - {model: cloudflare/probe-model, api_base: 'https://example.test'}
+    - {model: cloudflare/probe-model, api_version: '2024-01-01'}
+    - {model: cloudflare/probe-model, api_key: sk-test, api_base: 'https://example.test', api_version: '2024-01-01'}
+env: {}
+compare:
+  ignore: []
