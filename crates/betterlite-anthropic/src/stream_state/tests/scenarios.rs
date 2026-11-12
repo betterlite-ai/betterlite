@@ -75,20 +75,32 @@ fn fixed_ids() -> FixedIds {
     FixedIds(Uuid::from_u128(RESPONSE_UUID))
 }
 
-fn state_with(json_mode: Option<bool>, speed: Option<&str>) -> StreamState {
+fn state_with_map(
+    json_mode: Option<bool>,
+    speed: Option<&str>,
+    tool_name_reverse_map: IndexMap<String, String>,
+) -> StreamState {
     StreamState::new(
         StreamOptions {
             sync_stream: true,
             json_mode,
             speed: speed.map(str::to_owned),
-            tool_name_reverse_map: IndexMap::from([("old".to_owned(), "new".to_owned())]),
+            tool_name_reverse_map,
         },
         &fixed_ids(),
     )
 }
 
+fn state_with(json_mode: Option<bool>, speed: Option<&str>) -> StreamState {
+    state_with_map(
+        json_mode,
+        speed,
+        IndexMap::from([("old".to_owned(), "new".to_owned())]),
+    )
+}
+
 fn default_state() -> StreamState {
-    state_with(Some(false), None)
+    state_with_map(Some(false), None, IndexMap::new())
 }
 
 fn chunk(source: &str) -> Json {

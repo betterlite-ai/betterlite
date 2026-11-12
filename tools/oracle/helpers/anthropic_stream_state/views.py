@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import cast
 
 from litellm.llms.anthropic.chat.handler import ModelResponseIterator
@@ -49,7 +50,7 @@ def results_view(decoder: Decoder) -> list[Json]:
 
 
 def state_view(decoder: Decoder) -> Json:
-    return {
+    view: dict[str, Json] = {
         "content_blocks": [block_view(block) for block in decoder.content_blocks],
         "tool_index": decoder.tool_index,
         "json_mode": decoder.json_mode,
@@ -71,3 +72,4 @@ def state_view(decoder: Decoder) -> Json:
         "container_id": decoder._container_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L602
         "accumulated_json": decoder.accumulated_json,
     }
+    return deepcopy(view)
