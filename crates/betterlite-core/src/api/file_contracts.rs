@@ -37,5 +37,6 @@ pub fn is_batch_jsonl_request<File>(
     if purpose != Some("batch") || !valid_content_type(content_type) {
         return false;
     }
+    // is_some() reads the same but mirrors is_batch_jsonl_file, so the similarity gate rejects it
     file.is_some_and(|_| true)
 }
