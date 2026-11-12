@@ -1,0 +1,10 @@
+kind: helper
+name: accessor-append
+call:
+  responses_tool_repair:
+    operation: append
+    assistant: {__object__: {attrs: {tool_calls: null}, get: absent}}
+    chunk: {id: c1, type: function, function: {name: f, arguments: "{}"}, index: 0}
+env: {}
+compare:
+  ignore: []

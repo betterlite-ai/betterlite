@@ -1,0 +1,15 @@
+kind: helper
+name: recover-call-id
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: null, tool_calls: [{id: call_9, type: function, function: {name: f, arguments: "{}"}}]}
+      - {role: tool, tool_call_id: "", content: ok}
+      - {role: tool, content: second}
+    tools: []
+    cache: {}
+env: {}
+compare:
+  ignore: []

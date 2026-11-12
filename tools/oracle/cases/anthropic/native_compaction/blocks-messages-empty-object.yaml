@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-blocks-messages-empty-object
+call:
+  b3545: {"function": "blocks", "protocol": "messages", "response": {}}
+env: {}
+compare:
+  ignore: []

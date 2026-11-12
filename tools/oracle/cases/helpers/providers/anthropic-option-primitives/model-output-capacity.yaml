@@ -1,0 +1,10 @@
+kind: helper
+name: option-model-output-capacity
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: model_output_capacity
+        models: [null, gpt-4o, claude-sonnet-4-5-20250929, not-a-real-model]
+        default_chat_max_tokens: 1234
+env: {DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS: '1234'}
+compare: {ignore: []}
