@@ -1,0 +1,22 @@
+kind: helper
+name: openai-response-params-top-p-with-reasoning
+call:
+  openai_response_params:
+    top_p_with_reasoning:
+      probes:
+      - {model: gpt-5.2, params: {top_p: 0.9}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {temperature: 0.5}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {top_p: 0.9, reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {top_p: 0.9, reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}, drop_params: true}
+      - {model: gpt-5.2, params: {top_p: 0.9, reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}, global_drop_params: true}
+      - {model: gpt-5.2, params: {top_p: null, reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {top_p: null, reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}, drop_params: true}
+      - {model: gpt-5.2, params: {top_p: null, reasoning: {effort: none}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5, params: {top_p: 0.9}, model_cost: {gpt-5: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: false}}}
+      - {model: gpt-5, params: {top_p: 0.9}, model_cost: {gpt-5: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: false}}, global_drop_params: true}
+      - {model: gpt-4o, params: {top_p: 0.9}, model_cost: {gpt-4o: {litellm_provider: openai}}}
+      - {model: gpt-5-chat-latest, params: {top_p: 0.9}, model_cost: {gpt-5-chat-latest: {litellm_provider: openai}}}
+      - {model: azure/gpt-5.2, params: {top_p: 0.9, reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5.2, params: {top_p: 0.9, reasoning: {summary: auto}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+env: {}
+compare: {ignore: []}
