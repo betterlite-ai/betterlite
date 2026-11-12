@@ -479,6 +479,7 @@ fn the_reasoning_prompt_is_the_bundled_fixture() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/mistral_reasoning.txt"),
     )
     .expect("the bundled prompt");
-    assert_eq!(REASONING_SYSTEM_PROMPT, bundled);
+    assert_eq!(REASONING_SYSTEM_PROMPT, format!("{bundled}        "));
     assert!(REASONING_SYSTEM_PROMPT.starts_with('\n'));
+    assert!(REASONING_SYSTEM_PROMPT.ends_with("[/INST]\n        "));
 }

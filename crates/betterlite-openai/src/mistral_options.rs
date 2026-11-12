@@ -6,7 +6,11 @@ use serde_json::{Map, Value};
 mod tests;
 
 pub const DEFAULT_API_BASE: &str = "https://api.mistral.ai/v1";
-pub const REASONING_SYSTEM_PROMPT: &str = include_str!("../fixtures/mistral_reasoning.txt");
+// the fixture ends at the final newline, so the 8-space closing indent of LiteLLM's literal is appended here
+pub const REASONING_SYSTEM_PROMPT: &str = concat!(
+    include_str!("../fixtures/mistral_reasoning.txt"),
+    "        "
+);
 pub const STANDALONE_MAX_RECURSE_DEPTH: i64 = 10;
 
 const BASE_OPENAI_PARAMS: [&str; 11] = [

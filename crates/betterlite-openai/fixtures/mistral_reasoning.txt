@@ -15,4 +15,3 @@
         reasoning_traces
         </think>
         assistant_response</s>[INST]user_message[/INST]
-        
