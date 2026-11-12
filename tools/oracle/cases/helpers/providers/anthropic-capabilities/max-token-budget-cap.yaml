@@ -1,0 +1,24 @@
+kind: helper
+name: max-token-budget-cap
+call:
+  anthropic_capabilities:
+    fixture:
+      model_cost: {}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    steps:
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 5000, display: summarized}, max_tokens: null}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 5000}, max_tokens: 1024}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 100}, max_tokens: 1024}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 5000}, max_tokens: 1025}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 1024}, max_tokens: 1025}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 1025}, max_tokens: 1025}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: adaptive, budget_tokens: 9000, display: omitted, extra: 1}, max_tokens: 2048}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {budget_tokens: 5000}, max_tokens: 2048}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 5000.5}, max_tokens: 2048}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: true}, max_tokens: 2048}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled}, max_tokens: 2048}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: null}, max_tokens: 2048}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 5000}, max_tokens: -5}
+env: {}
+compare: {ignore: []}
