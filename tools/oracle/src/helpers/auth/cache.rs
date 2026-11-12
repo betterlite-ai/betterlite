@@ -214,5 +214,5 @@ fn local_memory() -> Result<Arc<LocalMemoryOps>, Box<HelperError>> {
     let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 0.0_f64);
     LocalMemoryOps::new(1024, clock)
         .map(Arc::new)
-        .map_err(|_source| Box::new(HelperError::from(Failure::Memory)))
+        .map_err(|_source| Box::<HelperError>::from(Failure::Memory))
 }
