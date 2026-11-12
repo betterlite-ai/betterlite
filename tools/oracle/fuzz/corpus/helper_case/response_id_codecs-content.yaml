@@ -1,0 +1,14 @@
+kind: helper
+name: response_id_codecs-content
+call:
+  response_id_codecs:
+    operation: content_wrapper
+    contents:
+      - encrypted_content: cipher
+        model_id: dep_a
+    ids:
+      - "litellm_enc:bW9kZWxfaWQ6ZGVwX2E;cipher"
+      - "litellm_enc:a;cipher"
+env: {}
+compare:
+  ignore: []

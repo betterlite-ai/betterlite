@@ -1,0 +1,11 @@
+kind: helper
+name: langgraph-stream-messages-chunk-type
+env: {}
+compare: {ignore: []}
+call:
+  b8103:
+    cases:
+      - model: langgraph/agent
+        lines:
+          - 'data: ["messages", [[{"type": "AIMessageChunk", "content": "chunk"}, {}]]]'
+          - 'data: ["messages", [{"type": "AIMessageChunk", "content": "chunk"}]]'

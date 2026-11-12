@@ -1,0 +1,32 @@
+kind: helper
+name: deepgram-listen-metadata-addon-flags
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: addon_flags
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?redact=true&keyterm=false&detect_entities=0&diarize_model=True
+      messages: []
+    - function: addon_flags
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?diarize=false&diarize_model=1
+      messages: []
+    - function: addon_flags
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?redact=&keyterm=%20false%20&detect_entities=FALSE&diarize=no
+      messages: []
+    - function: addon_flags
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?redact=false&redact=true
+      messages: []
+    - function: addon_flags
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?model=nova-3
+      messages: []
+compare: {ignore: []}
+env: {}

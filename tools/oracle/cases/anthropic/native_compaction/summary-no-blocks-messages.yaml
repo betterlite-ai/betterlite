@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-summary-no-blocks-messages
+call:
+  b3545: {"function": "summary", "protocol": "messages", "response": {"stop_reason": "compaction", "content": []}}
+env: {}
+compare:
+  ignore: []

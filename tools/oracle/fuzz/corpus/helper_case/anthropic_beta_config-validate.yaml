@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-beta-config-validate
+call:
+  anthropic_beta_config:
+    function: validate
+    matrix: {databricks: {}}
+    provider: ignored
+env: {}
+compare:
+  ignore: []

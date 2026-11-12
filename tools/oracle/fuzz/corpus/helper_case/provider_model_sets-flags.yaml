@@ -1,0 +1,18 @@
+kind: helper
+name: provider_model_sets-flags-seed
+call:
+  b5361:
+    fixture:
+      model_cost:
+        vision-on: {litellm_provider: deepseek, supports_vision: true}
+        vision-off: {litellm_provider: deepseek, supports_vision: false}
+        silent-model: {litellm_provider: deepseek}
+    steps:
+      - {function: supports_vision, model: vision-on, custom_llm_provider: deepseek}
+      - {function: supports_vision, model: vision-off, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: vision-off, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: silent-model, custom_llm_provider: deepseek}
+      - {function: supports_web_search, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: is_vision_explicitly_disabled, model: nothing-here}
+env: {}
+compare: {ignore: []}

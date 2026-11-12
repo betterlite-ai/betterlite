@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-defaults-tool-choice-set
+call:
+  b3545: {"function": "defaults", "payload": {"tool_choice": {"x": 1}}}
+env: {}
+compare:
+  ignore: []

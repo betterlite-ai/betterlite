@@ -1,0 +1,10 @@
+kind: helper
+name: matrix-validation-null-provider
+call:
+  anthropic_beta_config:
+    function: validate
+    matrix: {anthropic: null}
+    provider: ignored
+env: {}
+compare:
+  ignore: []
