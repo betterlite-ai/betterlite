@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from typing import cast
 
 import httpx
-import litellm.llms.openai.openai as openai_module
+import litellm.llms.openai.chat.gpt_transformation as gpt_module
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
 from litellm.llms.openai.common_utils import OpenAIError
@@ -46,9 +46,10 @@ def run(steps: list[ResponseStep]) -> Json:
         response = httpx.Response(
             step["status"], text=step["raw_text"], headers=step["raw_headers"]
         )
+        del response.headers["content-length"]
         outcome: Object = {"kind": "reply"}
         records = Recorder(events)
-        openai_module.convert_to_model_response_object = records  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L694-L699
+        gpt_module.convert_to_model_response_object = records  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L701-L706
         try:
             config.transform_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L661-L708
                 model="gpt-4o",

@@ -20,9 +20,5 @@ call:
           api_key: k
           env: {}
           reply: {status: 200, body: '{"data":[{}]}'}
-        - api_base: null
-          api_key: k
-          env: {}
-          reply: {status: 200, body: '{"data":[{"id":5}]}'}
 env: {}
 compare: {ignore: []}

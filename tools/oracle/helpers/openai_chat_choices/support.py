@@ -1,9 +1,8 @@
 import time
-import uuid
 from typing import TypeAlias, TypedDict, cast
-from uuid import UUID
 
 import litellm
+from litellm._uuid import uuid as fastuuid
 
 litellm.suppress_debug_info = True
 
@@ -63,8 +62,8 @@ class Fields(TypedDict, total=False):
 
 
 class FixedUuid:
-    def __call__(self) -> UUID:
-        return UUID(int=0)
+    def __call__(self) -> fastuuid.UUID:
+        return fastuuid.UUID(hex="00000000-0000-0000-0000-000000000000")
 
 
 class FixedClock:
@@ -72,7 +71,7 @@ class FixedClock:
         return 7
 
 
-uuid.uuid4 = FixedUuid()  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L123
+fastuuid.uuid4 = FixedUuid()  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L123
 time.time = FixedClock()  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2135
 
 
