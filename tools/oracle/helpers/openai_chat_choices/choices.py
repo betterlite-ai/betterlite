@@ -25,27 +25,23 @@ def run(steps: list[Step]) -> Json:
 
 def choice_view(choice: Choices) -> Json:
     dumped = as_object(choice.model_dump())  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1644-L1697
+    message = as_object(dumped.get("message"))
+    message_view: Object = {
+        "role": message.get("role"),
+        "content": message.get("content"),
+        "tool_calls": tool_calls_view(message.get("tool_calls")),
+    }
+    reasoning = message.get("reasoning_content")
+    if reasoning is not None:
+        message_view["reasoning_content"] = reasoning
     view: Object = {
         "index": dumped.get("index"),
         "finish_reason": dumped.get("finish_reason"),
-        "message": message_view(dumped.get("message")),
+        "message": message_view,
     }
     native = dumped.get("provider_specific_fields")
     if native is not None:
         view["provider_specific_fields"] = native
-    return view
-
-
-def message_view(message: Json) -> Json:
-    fields = as_object(message)
-    view: Object = {
-        "role": fields.get("role"),
-        "content": fields.get("content"),
-        "tool_calls": tool_calls_view(fields.get("tool_calls")),
-    }
-    reasoning = fields.get("reasoning_content")
-    if reasoning is not None:
-        view["reasoning_content"] = reasoning
     return view
 
 

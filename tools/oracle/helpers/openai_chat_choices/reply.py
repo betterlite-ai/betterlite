@@ -19,12 +19,11 @@ class Logger:
 
     def post_call(self, **params: Json) -> None:
         additional = as_object(params.get("additional_args"))
-        self.events.append({
-            "name": "post_call",
-            "input": params.get("input"),
-            "original_response": params.get("original_response"),
-            "complete_input_dict": additional.get("complete_input_dict"),
-        })
+        event: Object = {"name": "post_call"}
+        event["input"] = params.get("input")
+        event["original_response"] = params.get("original_response")
+        event["complete_input_dict"] = additional.get("complete_input_dict")
+        self.events.append(event)
 
 
 class Recorder:
@@ -33,12 +32,10 @@ class Recorder:
 
     def __call__(self, **kwargs: Json) -> ModelResponse:
         hidden = as_object(kwargs.get("hidden_params"))
-        self.events.append({
-            "name": "convert",
-            "response": kwargs.get("response_object"),
-            "hidden_headers": hidden.get("headers"),
-            "response_headers": kwargs.get("_response_headers"),
-        })
+        event: Object = {"name": "convert", "response": kwargs.get("response_object")}
+        event["hidden_headers"] = hidden.get("headers")
+        event["response_headers"] = kwargs.get("_response_headers")
+        self.events.append(event)
         return ModelResponse()
 
 

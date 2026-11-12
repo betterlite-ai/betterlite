@@ -74,7 +74,7 @@ def auth(steps: list[AuthStep]) -> Json:
         headers = config.validate_environment(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L745-L762
             dict(step["headers"]), "m", [], {}, {}, api_key=step.get("api_key")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L745-L762
         )
-        outputs.append(cast(Json, headers))
+        outputs.append(cast(Json, headers))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L745-L762
     return outputs
 
 
