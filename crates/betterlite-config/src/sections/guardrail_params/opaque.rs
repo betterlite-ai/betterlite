@@ -127,11 +127,15 @@ impl<'de> Visitor<'de> for ValueVisitor {
         A: MapAccess<'de>,
     {
         let mut entries = BTreeMap::new();
+        let Some(first) = map.next_key::<String>()? else {
+            return Ok(ExactValue(GuardrailValue::Object(entries)));
+        };
+        if first == NUMBER_KEY {
+            let text = map.next_value::<String>()?;
+            return number_from_text(&text).map(ExactValue);
+        }
+        entries.insert(first, map.next_value::<ExactValue>()?.0);
         while let Some(key) = map.next_key::<String>()? {
-            if key == NUMBER_KEY && entries.is_empty() {
-                let text = map.next_value::<String>()?;
-                return number_from_text(&text).map(ExactValue);
-            }
             entries.insert(key, map.next_value::<ExactValue>()?.0);
         }
         Ok(ExactValue(GuardrailValue::Object(entries)))

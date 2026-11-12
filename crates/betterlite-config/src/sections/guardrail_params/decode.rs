@@ -37,8 +37,8 @@ pub fn decode_patch_request(body: &[u8]) -> Result<PatchGuardrailRequest, Guardr
 pub fn decode_apply_request(body: &[u8]) -> Result<ApplyGuardrailRequest, GuardrailParamsError> {
     let mut deserializer = serde_json::Deserializer::from_slice(body);
     let request = serde_path_to_error::deserialize(&mut deserializer)?;
-    deserializer
-        .end()
-        .map_err(|_trailing| GuardrailParamsError::TrailingData)?;
-    Ok(request)
+    match deserializer.end() {
+        Ok(()) => Ok(request),
+        Err(_trailing) => Err(GuardrailParamsError::TrailingData),
+    }
 }
