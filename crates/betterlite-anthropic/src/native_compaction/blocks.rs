@@ -7,22 +7,21 @@ fn objects<'response>(
     value: Option<&'response Json>,
     field: &'static str,
 ) -> Result<Vec<&'response Mapping>, NativeCompactionError> {
-    let Some(Json::List(items)) = value else {
-        return if matches!(value, None | Some(Json::Null)) {
-            Ok(Vec::new())
-        } else {
-            Err(NativeCompactionError::NotAnObjectList { field })
-        };
+    let items = match value {
+        None | Some(Json::Null) => &[],
+        Some(Json::List(list)) => list.as_slice(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            return Err(NativeCompactionError::NotAnObjectList { field });
+        }
     };
-    items
-        .iter()
-        .map(|item| match item {
-            Json::Object(found) => Ok(found),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                Err(NativeCompactionError::NotAnObjectList { field })
-            }
-        })
-        .collect()
+    let mut found = Vec::with_capacity(items.len());
+    for item in items {
+        let Json::Object(entry) = item else {
+            return Err(NativeCompactionError::NotAnObjectList { field });
+        };
+        found.push(entry);
+    }
+    Ok(found)
 }
 
 const fn object<'response>(
