@@ -1,0 +1,14 @@
+task: B713
+deviations:
+  - what: Replaced database connections are identified by native pool generation in diagnostics; no prisma-query-engine PID, signal escalation, orphan reaper or expected-process-death set exists.
+    why: tokio-postgres has no subprocess. Preserve stop-first recovery, connect-first rotation and the 90-second old-work drain deadline through owned native tasks and connections.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L262-L347
+  - what: A failed or cancelled token-refresh candidate pool is closed immediately, and the retirement of a pool without a drain tracker closes it immediately; the source schedules a retirement task for a query-engine PID that is usually absent or already dead in these paths.
+    why: A native pool has no process to kill later; closing the unpublished handle right away leaves the published generation untouched and frees its connections at the same point in the sequence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L613-L627
+  - what: A replacement with no published writer URL returns the typed MissingUrl error before any pool is built; the source constructs a Prisma client and lets its own connect raise.
+    why: The native endpoint is a typed URL snapshot rather than process environment, so a missing value is a named error instead of a client that fails later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L577-L604
+  - what: wait_for_pool_replacement takes a std Duration, so a negative timeout cannot be expressed and a zero timeout returns before inspecting the lock; the source takes a float and treats every nonpositive value as no wait.
+    why: A typed duration cannot be negative; zero keeps the source's immediate-return branch and callers compare the generation afterwards as before.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L493-L508

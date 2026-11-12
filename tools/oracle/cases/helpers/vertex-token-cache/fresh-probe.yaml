@@ -1,0 +1,38 @@
+kind: helper
+name: vertex-token-cache-fresh-probe
+call:
+  vertex_token_cache:
+    scenarios:
+      - credentials:
+          - name: reported-fresh
+            token: token-fresh
+            state: fresh
+            project_id: own-project
+          - name: flag-fresh
+            token: token-flags
+            expired: false
+            valid: true
+            project_id: own-project
+          - name: flag-without-valid
+            token: token-flags
+            expired: false
+            project_id: own-project
+        records:
+          - credential: reported-fresh
+            credentials: credential-a
+            cached_project: cached-project
+          - credential: flag-fresh
+            credentials: credential-b
+            project: requested-project
+            cached_project: cached-project
+          - credential: flag-without-valid
+            credentials: credential-c
+            cached_project: cached-project
+        probes:
+          - credentials: credential-a
+          - credentials: credential-b
+            project: requested-project
+            requested_project: requested-project
+          - credentials: credential-c
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: header-formatting-comma-separated
+call: {"b3910": {"operation": "format_headers", "auth_header": "Basic cGstbGYtMTpzay1sZi0y"}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: azure-urls-azure-header-selection-seed
+call:
+  azure_urls:
+    azure_header_selection:
+      - headers: {API-Key: seed-previous}
+        params: {api_key: seed-key}
+        globals: {}
+        environment: {}
+        token_params: {azure_ad_token: seed-token}
+env: {}
+compare: {ignore: []}

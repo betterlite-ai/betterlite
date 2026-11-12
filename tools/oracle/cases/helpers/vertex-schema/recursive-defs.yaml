@@ -1,0 +1,19 @@
+kind: helper
+name: recursive-defs
+call:
+  vertex_schema:
+    mode: build_vertex_schema
+    schema:
+      type: object
+      properties:
+        tree: {$ref: "#/$defs/Node"}
+      $defs:
+        Node:
+          type: object
+          properties:
+            next: {$ref: "#/$defs/Node"}
+            value: {type: string}
+    add_property_ordering: false
+    settings: {}
+env: {}
+compare: {ignore: []}

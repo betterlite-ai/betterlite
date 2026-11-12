@@ -1,0 +1,35 @@
+kind: helper
+name: azure-storage-key-blocks-per-call-alternative
+call:
+  tool_fees:
+    web_search: []
+    computer_use: []
+    code_interpreter: []
+    file_search:
+      - file_search: {}
+        provider: azure
+        model_info: {file_search_cost_per_gb_per_day: 0.5, file_search_cost_per_1k_calls: 7}
+        storage_gb: 2
+        days: 3
+      - file_search: {}
+        provider: azure
+        model_info: {file_search_cost_per_gb_per_day: 0.5, file_search_cost_per_1k_calls: 7}
+        storage_gb: 2
+        days: 0
+      - file_search: {}
+        provider: azure
+        model_info: {file_search_cost_per_gb_per_day: 0.5, file_search_cost_per_1k_calls: 7}
+        storage_gb: null
+        days: 3
+      - file_search: {}
+        provider: azure
+        model_info: {file_search_cost_per_gb_per_day: 0}
+        storage_gb: 2
+        days: 3
+    vector_store:
+      - {usage: {storage_gb: 2, days: 5}, provider: azure, model_info: null}
+      - {usage: {storage_gb: 2, days: 5}, provider: openai, model_info: null}
+      - {usage: {storage_gb: 2, days: 5}, provider: openai, model_info: {vector_store_cost_per_gb_per_day: 0.5}}
+      - {usage: {storage_gb: 2}, provider: azure, model_info: null}
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,30 @@
+kind: helper
+name: vertex-token-cache-seed
+call:
+  vertex_token_cache:
+    scenarios:
+      - credentials:
+          - name: seed-fresh
+            token: token-seed
+            state: fresh
+            quota_project_id: seed-quota
+            project_id: seed-project
+        records:
+          - credential: seed-fresh
+            credentials: seed-credential
+            cached_project: seed-cached
+        probes:
+          - credentials: seed-credential
+            requested_project: seed-requested
+      - credentials:
+          - name: seed-stale
+            token: token-seed
+            state: stale
+        records:
+          - credential: seed-stale
+            credentials: seed-credential
+            legacy: true
+        probes:
+          - credentials: seed-credential
+env: {}
+compare: {ignore: []}
