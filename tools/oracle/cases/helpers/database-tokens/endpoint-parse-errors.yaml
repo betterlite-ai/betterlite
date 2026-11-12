@@ -1,0 +1,52 @@
+kind: helper
+name: database-tokens-endpoint-parse-errors
+call:
+  database_tokens:
+    function: batch
+    calls:
+      - function: parse_endpoint
+        url: "postgresql://sv%40corp@DB.Example:6543/my%20db?schema=first&schema=second&schema="
+      - function: parse_endpoint
+        url: "postgresql://user@db.example/db"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example:0/db?schema="
+      - function: parse_endpoint
+        url: "postgresql://user@[::1]:5432/db"
+      - function: parse_endpoint
+        url: "postgresql://db.example/mydb"
+      - function: parse_endpoint
+        url: "postgresql://:secret@db.example/mydb"
+      - function: parse_endpoint
+        url: "postgresql:///mydb"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example/"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example:abc/db"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example:70000/db"
+      - function: parse_endpoint
+        url: "postgresql://[::1/db"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example//"
+      - function: parse_endpoint
+        url: "postgresql://user@db.example//db"
+      - function: parse_endpoint
+        url: "postgresql://u:p%zz@h/db"
+      - function: parse_endpoint
+        url: "postgresql://us%zz@h/db"
+      - function: parse_endpoint
+        url: "postgresql://u:%ff@h/db"
+      - function: parse_endpoint
+        url: "postgresql://u:a@b@h/db"
+      - function: parse_endpoint
+        url: "postgresql://u@h:/db"
+      - function: parse_endpoint
+        url: "postgresql://u@h:1:2/db"
+      - function: parse_endpoint
+        url: "postgresql://u@[FE80::1%25ETH0]:5/db"
+      - function: parse_endpoint
+        url: "postgresql://u@H%41/db"
+env: {}
+compare: {ignore: []}

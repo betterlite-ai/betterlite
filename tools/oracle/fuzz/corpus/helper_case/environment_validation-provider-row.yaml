@@ -1,0 +1,11 @@
+kind: helper
+name: environment_validation-provider-row-seed
+call:
+  b5364:
+    operation: validate_environment
+    cases:
+      - {model: azure/probe-model, environment: [AZURE_API_BASE]}
+      - {model: anthropic/probe-model, environment: [ANTHROPIC_AUTH_TOKEN]}
+      - {model: azure/probe-model, api_key: sk-test}
+env: {}
+compare: {ignore: []}

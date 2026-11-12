@@ -6,6 +6,7 @@ description: >-
 
   The Compose stack boots three services with health-checked startup ordering. The proxy service
   builds the runtime image from B5071 with arguments --config /app/tracing-config.yaml --port 4000.
+  Its build block uses context ../.., dockerfile packaging/docker/Dockerfile and additional_contexts dashboard: ../../target/dashboard/dist. LiteLLM's context .. would point at packaging/ here, and B5071's Dockerfile copies the UI from the dashboard context.
   The db service runs postgres:16 with POSTGRES_DB=litellm, POSTGRES_USER=litellm, POSTGRES_PASSWORD=litellm,
   a pg_isready health check that retries 10 times at 5s interval with 5s timeout, and persists
   to postgres_data volume. The clickhouse service runs clickhouse/clickhouse-server:26.9.6.6 with

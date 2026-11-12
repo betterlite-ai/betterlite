@@ -1,0 +1,26 @@
+kind: helper
+name: database-tokens-endpoint-encoding
+call:
+  database_tokens:
+    function: batch
+    calls:
+      - function: build_url
+        endpoint: {host: db.example, port: "5432", user: "svc@corp", name: "my db", schema: "tenant/one"}
+        token: "abc%3Ddef"
+      - function: build_url
+        endpoint: {host: db.example, port: "5432", user: "svc%40corp", name: "my%20db", schema: "tenant%2Fone"}
+        token: "abc%3Ddef"
+      - function: build_url
+        endpoint: {host: db.example, port: "5432", user: "svc name", name: "name", schema: null}
+        token: "abc%2Fdef%3D%26x%2By%3Fz"
+      - function: build_url
+        endpoint: {host: db.example, port: "6543", user: "user", name: "name", schema: null}
+        token: "token"
+      - function: build_url
+        endpoint: {host: db.example, port: "5432", user: "user", name: "name", schema: ""}
+        token: "token"
+      - function: build_url
+        endpoint: {host: db.example, port: "5432", user: "user", name: "name"}
+        token: "token"
+env: {}
+compare: {ignore: []}

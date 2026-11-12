@@ -1,0 +1,13 @@
+kind: helper
+name: model-registration-deployment-order
+call:
+  b5365:
+    function: order_filter
+    deployments:
+      - {id: a, litellm_params: {order: 2}}
+      - {id: b, model_info: {order: 1}}
+      - {id: c}
+      - {id: d, litellm_params: {order: null}, model_info: {order: 1}}
+    target_order: null
+env: {}
+compare: {ignore: []}

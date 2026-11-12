@@ -1,0 +1,160 @@
+kind: helper
+name: environment-validation-provider-rows
+call:
+  b5364:
+    operation: validate_environment
+    cases:
+    - {model: openai/probe-model}
+    - model: openai/probe-model
+      environment: [OPENAI_API_KEY]
+    - {model: azure/probe-model}
+    - model: azure/probe-model
+      environment: [AZURE_API_BASE, AZURE_API_VERSION, AZURE_API_KEY]
+    - {model: anthropic/probe-model}
+    - model: anthropic/probe-model
+      environment: [ANTHROPIC_API_KEY]
+    - {model: cohere/probe-model}
+    - model: cohere/probe-model
+      environment: [COHERE_API_KEY]
+    - {model: replicate/probe-model}
+    - model: replicate/probe-model
+      environment: [REPLICATE_API_KEY]
+    - {model: openrouter/probe-model}
+    - model: openrouter/probe-model
+      environment: [OPENROUTER_API_KEY]
+    - {model: vercel_ai_gateway/probe-model}
+    - model: vercel_ai_gateway/probe-model
+      environment: [VERCEL_AI_GATEWAY_API_KEY]
+    - {model: edenai/probe-model}
+    - model: edenai/probe-model
+      environment: [EDENAI_API_KEY]
+    - {model: datarobot/probe-model}
+    - model: datarobot/probe-model
+      environment: [DATAROBOT_API_TOKEN]
+    - {model: vertex_ai/probe-model}
+    - model: vertex_ai/probe-model
+      environment: [VERTEXAI_PROJECT, VERTEXAI_LOCATION]
+    - {model: huggingface/probe-model}
+    - model: huggingface/probe-model
+      environment: [HUGGINGFACE_API_KEY]
+    - {model: together_ai/probe-model}
+    - model: together_ai/probe-model
+      environment: [TOGETHERAI_API_KEY]
+    - {model: baseten/probe-model}
+    - model: baseten/probe-model
+      environment: [BASETEN_API_KEY]
+    - {model: nlp_cloud/probe-model}
+    - model: nlp_cloud/probe-model
+      environment: [NLP_CLOUD_API_KEY]
+    - {model: bedrock/probe-model}
+    - model: bedrock/probe-model
+      environment: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
+    - {model: sagemaker/probe-model}
+    - model: sagemaker/probe-model
+      environment: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
+    - {model: ollama/probe-model}
+    - model: ollama/probe-model
+      environment: [OLLAMA_API_BASE]
+    - {model: ollama_chat/probe-model}
+    - model: ollama_chat/probe-model
+      environment: [OLLAMA_API_BASE]
+    - {model: deepinfra/probe-model}
+    - model: deepinfra/probe-model
+      environment: [DEEPINFRA_API_KEY]
+    - {model: groq/probe-model}
+    - model: groq/probe-model
+      environment: [GROQ_API_KEY]
+    - {model: cerebras/probe-model}
+    - model: cerebras/probe-model
+      environment: [CEREBRAS_API_KEY]
+    - {model: xai/probe-model}
+    - model: xai/probe-model
+      environment: [XAI_API_KEY]
+    - {model: mistral/probe-model}
+    - model: mistral/probe-model
+      environment: [MISTRAL_API_KEY]
+    - {model: perplexity/probe-model}
+    - model: perplexity/probe-model
+      environment: [PERPLEXITYAI_API_KEY]
+    - {model: gemini/probe-model}
+    - model: gemini/probe-model
+      environment: [GEMINI_API_KEY]
+    - {model: deepseek/probe-model}
+    - model: deepseek/probe-model
+      environment: [DEEPSEEK_API_KEY]
+    - {model: voyage/probe-model}
+    - model: voyage/probe-model
+      environment: [VOYAGE_API_KEY]
+    - {model: infinity/probe-model}
+    - model: infinity/probe-model
+      environment: [INFINITY_API_KEY]
+    - {model: novita/probe-model}
+    - model: novita/probe-model
+      environment: [NOVITA_API_KEY]
+    - {model: nebius/probe-model}
+    - model: nebius/probe-model
+      environment: [NEBIUS_API_KEY]
+    - {model: wandb/probe-model}
+    - model: wandb/probe-model
+      environment: [WANDB_API_KEY]
+    - {model: dashscope/probe-model}
+    - model: dashscope/probe-model
+      environment: [DASHSCOPE_API_KEY]
+    - {model: qwencloud/probe-model}
+    - model: qwencloud/probe-model
+      environment: [QWENCLOUD_API_KEY]
+    - {model: moonshot/probe-model}
+    - model: moonshot/probe-model
+      environment: [MOONSHOT_API_KEY]
+    - {model: fireworks_ai/probe-model}
+    - model: fireworks_ai/probe-model
+      environment: [FIREWORKS_AI_API_KEY]
+    - {model: codestral/probe-model}
+    - model: codestral/probe-model
+      environment: [CODESTRAL_API_KEY]
+    - model: azure/probe-model
+      environment: [AZURE_API_BASE, AZURE_API_KEY]
+    - model: vertex_ai/probe-model
+      environment: [VERTEXAI_PROJECT]
+    - model: anthropic/probe-model
+      environment: [ANTHROPIC_AUTH_TOKEN]
+    - model: gemini/probe-model
+      environment: [GOOGLE_API_KEY]
+    - model: fireworks_ai/probe-model
+      environment: [FIREWORKS_API_KEY]
+    - model: fireworks_ai/probe-model
+      environment: [FIREWORKS_AI_TOKEN]
+    - model: fireworks_ai/probe-model
+      environment: [FIREWORKSAI_API_KEY]
+    - model: bedrock/probe-model
+      environment: [AWS_ACCESS_KEY_ID]
+    - model: bedrock/probe-model
+      environment: [AWS_PROFILE]
+    - model: bedrock/probe-model
+      environment: [AWS_ROLE_ARN]
+    - model: sagemaker/probe-model
+      environment: [AWS_WEB_IDENTITY_TOKEN_FILE]
+    - model: bedrock/probe-model
+      environment: [AWS_CONTAINER_CREDENTIALS_RELATIVE_URI]
+    - model: bedrock/probe-model
+      environment: [AWS_CONTAINER_CREDENTIALS_FULL_URI]
+    - model: cloudflare/probe-model
+      environment: [CLOUDFLARE_API_KEY, CLOUDFLARE_ACCOUNT_ID]
+    - model: cloudflare/probe-model
+      environment: [CLOUDFLARE_API_KEY, CLOUDFLARE_API_BASE]
+    - model: cloudflare/probe-model
+      environment: [CLOUDFLARE_API_KEY]
+    - {model: cloudflare/probe-model}
+    - {model: dashscope/probe-model}
+    - model: qwencloud/probe-model
+      environment: [DASHSCOPE_API_KEY]
+    - {model: qwen_ai_platform/probe-model}
+    - model: qwen_ai_platform/probe-model
+      environment: [DASHSCOPE_API_KEY]
+    - model: qwen_ai_platform/probe-model
+      environment: [QWEN_AI_PLATFORM_API_KEY]
+    - model: openai/probe-model
+      environment: [ANTHROPIC_API_KEY]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,25 @@
+kind: helper
+name: vertex-credentials-location-fallbacks
+call:
+  vertex_credentials:
+    scenarios:
+      - params: {vertex_location: params-location, vertex_ai_location: params-alias-location}
+        settings: {vertex_location: module-location}
+        environment: {VERTEXAI_LOCATION: env-location, VERTEX_LOCATION: legacy-location}
+      - params: {vertex_ai_location: params-alias-location}
+        settings: {vertex_location: module-location}
+        environment: {VERTEXAI_LOCATION: env-location}
+      - params: {}
+        settings: {vertex_location: module-location}
+        environment: {VERTEXAI_LOCATION: env-location}
+      - params: {}
+        settings: {}
+        environment: {VERTEXAI_LOCATION: env-location, VERTEX_LOCATION: legacy-location}
+      - params: {}
+        settings: {}
+        environment: {VERTEX_LOCATION: legacy-location}
+      - params: {}
+        settings: {}
+        environment: {}
+env: {}
+compare: {ignore: []}

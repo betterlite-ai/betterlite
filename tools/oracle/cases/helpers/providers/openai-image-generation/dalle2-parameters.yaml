@@ -1,0 +1,20 @@
+kind: helper
+name: openai-image-generation-dalle2-parameters
+call:
+  openai_image_generation:
+    function: dalle2_parameters
+    probes:
+      - model: ''
+        prompt: a cat
+        optional_params: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"url":"https://example.test/a.png"}]}'}
+      - model: dall-e-2
+        prompt: a red cat
+        optional_params: {size: 512x512, quality: low}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: dall-e-2-preview
+        prompt: a blue cat
+        optional_params: {quality: null}
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+env: {}
+compare: {ignore: []}

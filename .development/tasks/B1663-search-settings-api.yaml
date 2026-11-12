@@ -19,7 +19,15 @@ description: >-
   corresponding Pydantic coercions, extra-field handling and 422 validation behavior.
   All six routes authenticate with B052. Every GET requires DB, but semantic/web-search use
   detail.error while tool-search uses a detail string for the missing-DB 500. Read config and
-  project values/schema through B1656. For web-search, a stored enabled key is authoritative
+  project values/schema through B1656. The read is reload_config on B8379's ConfigOverlayPort
+  (betterlite-server's config_overlay_port), since get_config lives in the binary crate this
+  crate cannot depend on; the router this module exports takes the port as an
+  `Arc<dyn ConfigOverlayPort>` argument, and each PATCH hands the same port to B1656's shared
+  update. A port error on GET is answered as LiteLLM's unhandled-error handler does
+  (proxy_server.py L2049-L2080): DatabaseUnavailable is 503 with B1217's projection,
+  `betterlite_db::database_availability::projection::service_unavailable_error(&Chain::default())`
+  (type no_db_connection, param "None", code "503"), and Reload and PassThrough are 500
+  {"error": {"message": "Internal server error", "type": "internal_server_error"}}. For web-search, a stored enabled key is authoritative
   even when false or null; only an absent key falls back to whether B189 currently has B4116's
   WebSearchInterceptionLogger registered. Non-mapping settings sections act empty on this
   fallback path. Report active_on_this_pod separately from values.enabled so delayed reloads
@@ -29,7 +37,9 @@ description: >-
   attempt immediate B8383 reinitialization (reload_semantic_filter, reload_websearch) after a successful save when DB exists; failures
   warn and still return success. Tool-search does not perform an immediate reinitializer call.
   Retain the exact success messages promising propagation within ten seconds; scheduling is
-  owned by B8372 and B8384. Native tests cover saved/live activation disagreement and reinitializer failure.
+  owned by B8372 and B8384. Native tests cover saved/live activation disagreement and reinitializer failure;
+  tests named `reload_database_unavailable_*` and `reload_failure_*` drive the three GET routes with a
+  ConfigOverlayPort fake that returns those errors.
   HTTP cases compare all schemas/defaults, accepted boundary values, rejected bodies, role
   checks and replacement of omitted settings. Fuzz search_settings and replay
   replays_the_search_settings_corpus, plus config_yaml seeds for every block. The 222 owned
@@ -69,6 +79,8 @@ dod:
     proof: [search-settings-tests, oracle]
   - text: Administrator updates preserve replacement semantics and only the two source endpoints attempt best-effort immediate reinitialization.
     proof: [search-settings-tests, oracle, search-settings-corpora]
+  - text: The GET routes read config only through ConfigOverlayPort::reload_config and answer 503 no_db_connection for DatabaseUnavailable and 500 internal_server_error for the other port errors, and each PATCH passes the same port to B1656's shared update.
+    proof: [search-settings-tests]
 checks:
   optional: [mutants]
   commands:
