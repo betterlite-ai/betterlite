@@ -218,11 +218,11 @@ impl Transport for McpHttpTransport {
 }
 
 pub struct HttpBody {
-    state: BodyState,
-    read_timeout: Duration,
+    pub(super) state: BodyState,
+    pub(super) read_timeout: Duration,
 }
 
-enum BodyState {
+pub(super) enum BodyState {
     Live(BoxStream<'static, Result<Vec<u8>, HttpError>>),
     Buffered(Vec<u8>),
 }

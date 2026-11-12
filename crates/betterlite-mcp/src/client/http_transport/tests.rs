@@ -32,11 +32,13 @@ use tokio::time::Instant;
 use tokio_util::task::TaskTracker;
 use url::Url;
 
-use super::capture::{BodyChunks, CapturedBody, ErrorCapture, Exchange};
+use super::capture::{BodyChunks, CaptureRecord, CapturedBody, ErrorCapture, Exchange};
 use super::error::McpHttpError;
 use super::request::McpHttpRequest;
-use super::send::{HttpBase, McpHttpTransport};
-use crate::client::cleanup::http_client::{ClientError, McpHttpClient, Transport as _};
+use super::send::{BodyState, HttpBase, HttpBody, McpHttpTransport};
+use crate::client::cleanup::http_client::{
+    ClientError, McpHttpClient, ResponseHead, Transport as _,
+};
 use crate::client::cleanup::recording::ResponseBody as _;
 use crate::client::sessions::factory::{
     AuthSource, HttpClientConfig, RedirectGuard, RequestCredential, TlsSettings, TlsVerification,
@@ -749,4 +751,76 @@ fn tls_ca_file_that_cannot_be_read_fails_the_build() {
         .err()
         .unwrap();
     assert!(matches!(error, McpHttpError::Tls(_)));
+}
+
+#[rstest]
+#[case::within_the_limit(16)]
+#[case::past_the_limit(2)]
+#[tokio::test]
+async fn the_capture_stream_enforces_its_byte_limit(#[case] limit: usize) {
+    let mut body = HttpBody {
+        state: BodyState::Buffered(b"body".to_vec()),
+        read_timeout: Duration::from_secs(1),
+    };
+    let mut chunks = BodyChunks {
+        body: &mut body,
+        limit,
+        remaining: limit,
+    };
+    let chunk = chunks.next_chunk().await.unwrap();
+    if limit >= b"body".len() {
+        assert_eq!(chunk.unwrap(), b"body".to_vec());
+    } else {
+        assert!(matches!(
+            chunk.unwrap_err(),
+            McpHttpError::BodyTooLarge { limit: error_limit } if error_limit == limit
+        ));
+    }
+}
+
+#[test]
+fn exchange_debug_names_headers_without_their_values() {
+    let mut request_headers = HeaderMap::new();
+    request_headers.insert(
+        HeaderName::from_static("authorization"),
+        HeaderValue::from_static("Bearer super-secret"),
+    );
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer realm"));
+    let exchange = Exchange {
+        method: Method::POST,
+        url: Url::parse("https://user:password@mcp.example.com/mcp?token=query-secret").unwrap(),
+        request_headers,
+        request_body: Bytes::from_static(b"body-secret"),
+        status: 500,
+        response_headers,
+    };
+    let record = CaptureRecord {
+        exchange,
+        preview: "masked preview".to_owned(),
+    };
+    let rendered = format!("{record:?}");
+    assert!(rendered.contains("CaptureRecord"));
+    assert!(rendered.contains("authorization"));
+    assert!(rendered.contains("www-authenticate"));
+    assert!(!rendered.contains("super-secret"));
+    assert!(!rendered.contains("body-secret"));
+    assert!(!rendered.contains("masked preview"));
+    assert!(!rendered.contains("password"));
+    assert!(!rendered.contains("query-secret"));
+}
+
+#[test]
+fn response_head_debug_names_headers_without_their_values() {
+    let mut headers = HeaderMap::new();
+    headers.insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer secret"));
+    let head = ResponseHead {
+        status: 401,
+        headers,
+        capture: None,
+    };
+    let rendered = format!("{head:?}");
+    assert!(rendered.contains("401"));
+    assert!(rendered.contains("www-authenticate"));
+    assert!(!rendered.contains("secret"));
 }

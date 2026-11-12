@@ -147,6 +147,19 @@ fn factory_debug_output_names_the_headers_without_printing_their_values() {
     assert!(!rendered.contains("sk-secret"));
 }
 
+#[test]
+fn credential_debug_names_the_kind_and_never_the_object() {
+    let resolved: Arc<dyn ResolvedAuth> = Arc::new(PresenceAuth { header_name: None });
+    assert_eq!(
+        format!("{:?}", RequestCredential::Resolved(resolved)),
+        "Resolved"
+    );
+    assert_eq!(
+        format!("{:?}", RequestCredential::AwsSigV4(aws_signer())),
+        "AwsSigV4"
+    );
+}
+
 #[tokio::test]
 async fn factory_attaches_the_resolved_tls_settings() {
     let policy = TlsPolicy {
