@@ -159,19 +159,19 @@ fn named_choice(
 
 #[must_use]
 pub fn responses_tool_choice(tool_choice: &Json) -> Json {
-    let auto = Json::Text("auto".to_owned());
-    if matches!(tool_choice, Json::Null) {
-        return auto;
-    }
     if let Some(valid) = valid_choice(tool_choice) {
         return valid;
     }
     let normalized = chat_tool_choice(tool_choice);
-    match (tool_choice, &normalized) {
-        (_, Json::Text(mode)) if MODES.contains(&mode.as_str()) => normalized,
-        (Json::Object(original), Json::Object(fields)) => {
-            named_choice(original, fields).unwrap_or(auto)
-        }
-        _ => auto,
+    if let Json::Text(mode) = &normalized
+        && MODES.contains(&mode.as_str())
+    {
+        return normalized;
     }
+    if let (Json::Object(original), Json::Object(fields)) = (tool_choice, &normalized)
+        && let Some(named) = named_choice(original, fields)
+    {
+        return named;
+    }
+    Json::Text("auto".to_owned())
 }

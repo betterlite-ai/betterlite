@@ -2,9 +2,10 @@ use std::collections::BTreeSet;
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_codex_tools::custom_tools::{
-    ToolCall, custom_to_function_tool, extract_custom_tool_names, serialize_tool_call_arguments,
-    tool_call_item, tool_call_item_id, unwrap_custom_arguments,
+    ToolCall, ToolCallItem, custom_to_function_tool, extract_custom_tool_names,
+    serialize_tool_call_arguments, tool_call_item, tool_call_item_id, unwrap_custom_arguments,
 };
+use betterlite_core::api::responses_codex_tools::error::CustomToolsError;
 use betterlite_core::api::responses_codex_tools::records::{
     AttributeValue, attribute_fields, input_item_role,
 };
@@ -39,7 +40,26 @@ pub(crate) struct CallCase {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StringsCase {
+    values: Vec<Json>,
+    arguments: Vec<String>,
+    padded: Vec<Padded>,
+    ids: Vec<IdCase>,
+    calls: Vec<CallCase>,
+    custom_names: BTreeSet<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RecordsCase {
+    roles: Vec<IndexMap<String, Json>>,
+    plain: Vec<Json>,
+    records: Vec<IndexMap<String, Json>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum Input {
     CustomNames {
         tools: Vec<Json>,
@@ -47,22 +67,11 @@ pub(crate) enum Input {
     CustomSchema {
         custom_tools: Vec<IndexMap<String, Json>>,
     },
-    ArgumentStrings {
-        values: Vec<Json>,
-        arguments: Vec<String>,
-        padded: Vec<Padded>,
-        ids: Vec<IdCase>,
-        calls: Vec<CallCase>,
-        custom_names: BTreeSet<String>,
-    },
+    ArgumentStrings(StringsCase),
     ToolChoices {
         choices: Vec<Json>,
     },
-    RecordHelpers {
-        roles: Vec<IndexMap<String, Json>>,
-        plain: Vec<Json>,
-        records: Vec<IndexMap<String, Json>>,
-    },
+    RecordHelpers(RecordsCase),
 }
 
 #[derive(Serialize)]
@@ -87,95 +96,86 @@ impl crate::helpers::Helper for Op {
                     .or_value_error()?;
                 Ok(json!(converted))
             }
-            Input::ArgumentStrings {
-                values,
-                arguments,
-                padded,
-                ids,
-                calls,
-                custom_names,
-            } => argument_strings(values, arguments, padded, ids, calls, custom_names),
+            Input::ArgumentStrings(case) => argument_strings(case),
             Input::ToolChoices { choices } => Ok(json!(Choices {
                 request: choices.iter().map(chat_tool_choice).collect(),
                 response: choices.iter().map(responses_tool_choice).collect(),
             })),
-            Input::RecordHelpers {
-                roles,
-                plain,
-                records,
-            } => record_helpers(roles, plain, records),
+            Input::RecordHelpers(case) => record_helpers(case),
         }
     }
 }
 
-fn argument_strings(
-    values: &[Json],
-    arguments: &[String],
-    padded: &[Padded],
-    ids: &[IdCase],
-    calls: &[CallCase],
-    custom_names: &BTreeSet<String>,
-) -> crate::helpers::HelperResult {
+fn call_items(
+    case: &StringsCase,
+    limits: ApiLimits,
+) -> Result<Vec<ToolCallItem>, CustomToolsError> {
+    case.calls
+        .iter()
+        .map(|call| {
+            let request = ToolCall {
+                call_id: &call.call_id,
+                name: &call.name,
+                arguments_or_input: &call.arguments,
+                status: &call.status,
+            };
+            tool_call_item(request, &case.custom_names, limits)
+        })
+        .collect()
+}
+
+fn argument_strings(case: &StringsCase) -> crate::helpers::HelperResult {
     let limits = ApiLimits::default();
-    let serialized: Vec<String> = values
+    let serialized: Vec<String> = case
+        .values
         .iter()
         .map(|value| serialize_tool_call_arguments(value, "fallback"))
         .collect();
-    let unwrapped = arguments
+    let unwrapped = case
+        .arguments
         .iter()
         .map(|text| unwrap_custom_arguments(text.as_bytes(), limits))
         .collect::<Result<Vec<_>, _>>()
         .or_value_error()?;
-    let padded = padded
+    let padded = case
+        .padded
         .iter()
-        .map(|case| {
-            let wrapped = format!(r#"{{"content":"{}"}}"#, case.fill.repeat(case.count));
+        .map(|pad| {
+            let wrapped = format!(r#"{{"content":"{}"}}"#, pad.fill.repeat(pad.count));
             unwrap_custom_arguments(wrapped.as_bytes(), limits)
         })
         .collect::<Result<Vec<_>, _>>()
         .or_value_error()?;
-    let ids: Vec<String> = ids
+    let item_ids: Vec<String> = case
+        .ids
         .iter()
-        .map(|case| tool_call_item_id(&case.item_type, &case.tool_id))
+        .map(|id| tool_call_item_id(&id.item_type, &id.tool_id))
         .collect();
-    let items = calls
-        .iter()
-        .map(|case| {
-            let call = ToolCall {
-                call_id: &case.call_id,
-                name: &case.name,
-                arguments_or_input: &case.arguments,
-                status: &case.status,
-            };
-            tool_call_item(call, custom_names, limits)
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .or_value_error()?;
+    let items = call_items(case, limits).or_value_error()?;
     Ok(json!({
         "serialized": serialized,
         "unwrapped": unwrapped,
         "padded": padded,
-        "ids": ids,
+        "ids": item_ids,
         "items": items,
     }))
 }
 
-fn record_helpers(
-    roles: &[IndexMap<String, Json>],
-    plain: &[Json],
-    records: &[IndexMap<String, Json>],
-) -> crate::helpers::HelperResult {
-    let roles = roles
+fn record_helpers(case: &RecordsCase) -> crate::helpers::HelperResult {
+    let role_names = case
+        .roles
         .iter()
         .map(input_item_role)
         .collect::<Result<Vec<_>, _>>()
         .or_value_error()?;
-    let plain = plain
+    let plain_fields = case
+        .plain
         .iter()
         .map(|value| attribute_fields(&AttributeValue::Plain(value.clone())))
         .collect::<Result<Vec<_>, _>>()
         .or_value_error()?;
-    let records = records
+    let record_fields = case
+        .records
         .iter()
         .map(|fields| {
             let pairs = fields
@@ -186,5 +186,5 @@ fn record_helpers(
         })
         .collect::<Result<Vec<_>, _>>()
         .or_value_error()?;
-    Ok(json!({"roles": roles, "plain": plain, "records": records}))
+    Ok(json!({"roles": role_names, "plain": plain_fields, "records": record_fields}))
 }
