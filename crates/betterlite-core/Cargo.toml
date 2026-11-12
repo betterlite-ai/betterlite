@@ -14,6 +14,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
+betterlite-foundry = { path = "../betterlite-foundry" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-mcp = { path = "../betterlite-mcp" }

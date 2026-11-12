@@ -1,0 +1,16 @@
+kind: helper
+name: top-level-zero-cache-marks-anthropic-style
+call:
+  call_price:
+    model: any-model
+    prompt_tokens: 10
+    completion_tokens: 0
+    custom_llm_provider: null
+    custom_cost_per_token: {input_cost_per_token: 1, output_cost_per_token: 2, cache_read_input_token_cost: 0.5, cache_creation_cost: 3}
+    custom_cost_per_second: null
+    response_time_ms: null
+    cache_creation_input_tokens: null
+    cache_read_input_tokens: null
+    usage: {prompt_tokens: 999, completion_tokens: 999, detail_cache_read: 3, detail_cache_creation: null, top_level_cache_read: null, top_level_cache_creation: 0}
+compare: {ignore: []}
+env: {}
