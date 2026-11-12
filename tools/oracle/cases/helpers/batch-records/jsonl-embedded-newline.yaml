@@ -1,0 +1,8 @@
+kind: helper
+name: jsonl-embedded-newline
+call:
+  batch_records:
+    function: parse_jsonl
+    content: "{\"custom_id\": \"a\",\n \"body\": {\"model\": \"m\"}}\n{\"custom_id\": \"b\"}\n"
+env: {}
+compare: {ignore: []}

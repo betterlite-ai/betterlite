@@ -1,0 +1,9 @@
+kind: helper
+name: replace-body-model
+call:
+  batch_records:
+    function: replace_model
+    file: {kind: utf8, text: "{\"custom_id\": \"a\", \"method\": \"POST\", \"url\": \"/v1/chat/completions\", \"body\": {\"model\": \"alias\", \"messages\": []}}\n{\"custom_id\": \"b\", \"method\": \"POST\", \"url\": \"/v1/chat/completions\", \"body\": {\"messages\": []}}\n"}
+    new_model_name: gpt-4o
+env: {}
+compare: {ignore: []}

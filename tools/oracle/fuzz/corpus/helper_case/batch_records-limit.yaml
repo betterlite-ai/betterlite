@@ -1,0 +1,5 @@
+kind: helper
+name: batch-records-limit-seed
+call: {batch_records: {function: validate_list_limit, limit: 101}}
+env: {}
+compare: {ignore: []}
