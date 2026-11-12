@@ -121,6 +121,8 @@ pub trait BaseTranslation {
         None
     }
 
+    // the empty default is an equivalent mutant: vec![] builds the same empty Vec
+    #[cfg_attr(test, mutants::skip)]
     fn extract_request_tool_names(&self, _data: &BTreeMap<String, GuardrailValue>) -> Vec<String> {
         Vec::new()
     }

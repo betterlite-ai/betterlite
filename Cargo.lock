@@ -1730,6 +1730,7 @@ dependencies = [
  "jsonwebtoken",
  "lru",
  "mime_guess",
+ "mutants",
  "pem",
  "pkcs8",
  "rcgen",
