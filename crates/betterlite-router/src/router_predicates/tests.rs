@@ -686,6 +686,8 @@ fn mock_context_fallback_message_matches_litellm() {
         details.message,
         joined_message("Context_Window_Fallbacks", "[{'ctx': ['backup']}]")
     );
+    assert_eq!(details.model.as_deref(), Some("gpt-4"));
+    assert_eq!(details.provider.as_deref(), Some(""));
 }
 
 #[test]
@@ -702,6 +704,8 @@ fn mock_content_policy_fallback_message_matches_litellm() {
         details.message,
         joined_message("Context_Policy_Fallbacks", "[{'policy': ['deny']}]")
     );
+    assert_eq!(details.model.as_deref(), Some("gpt-4"));
+    assert_eq!(details.provider.as_deref(), Some(""));
 }
 
 #[test]
