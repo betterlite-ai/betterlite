@@ -131,6 +131,19 @@ fn unified_field_projection(#[case] id: String) {
 }
 
 #[test]
+fn nonstring_inputs() {
+    // the typed helper answers a null or integer value with exactly these empty results
+    assert_eq!(is_base64_encoded_unified_id("", "litellm_proxy:"), None);
+    assert_eq!(decode_unified_id(""), None);
+    assert!(target_model_names("").is_empty());
+    assert_eq!(resource_type(""), None);
+    assert_eq!(unified_uuid(""), None);
+    assert_eq!(model_id(""), None);
+    assert_eq!(provider_resource_id(""), None);
+    assert_eq!(parse_unified_id(""), None);
+}
+
+#[test]
 fn bare_prefix_and_raw_text_parse() {
     let empty = UnifiedIdParts {
         resource_type: None,
