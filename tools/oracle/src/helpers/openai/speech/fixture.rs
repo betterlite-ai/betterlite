@@ -63,7 +63,6 @@ impl Fixture {
             seen: OnceLock::new(),
         })
     }
-
 }
 
 impl SpeechTransport for Fixture {

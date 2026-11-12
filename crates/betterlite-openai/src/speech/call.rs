@@ -61,7 +61,6 @@ fn outbound_request(
 }
 
 // LiteLLM's audio_speech plus async_audio_speech: aspeech is True picks the async client, every other value the sync one.
-// The returned future holds no logging borrow, so it stays Send for the request task that awaits it.
 pub fn audio_speech<'call, T>(
     call: SpeechCall<'_>,
     log: &mut dyn SpeechLogger,
