@@ -128,7 +128,9 @@ where
     T: serde::Serialize,
 {
     match result {
-        Ok(value) => Answer::Value { value: json!(value) },
+        Ok(value) => Answer::Value {
+            value: json!(value),
+        },
         Err(_) => Answer::Raised { raised: true },
     }
 }
