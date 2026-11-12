@@ -3,7 +3,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::{Object, StreamItem};
 
 const DATA_PREFIX: &str = "data:";
-const DONE_MARKER: &str = "[DONE]";
 
 #[must_use]
 pub fn anthropic_stream_chunk_events(item: &StreamItem) -> Vec<Object> {
@@ -27,7 +26,7 @@ fn decode_replacing_invalid(bytes: &[u8]) -> String {
     text
 }
 
-// Python's splitlines and strip: U+001C to U+001E split lines before strip sees them, so a line never holds them.
+// Python's splitlines and strip: U+001C to U+001E split lines before strip sees them, so a line never holds them. An empty payload or [DONE] is not a JSON object, so parsing drops it.
 fn events_from_text(chunk: &str) -> Vec<Object> {
     let is_blank = |character: char| character.is_whitespace() || character == '\u{1f}';
     let is_line_break = |character: char| {
@@ -43,9 +42,6 @@ fn events_from_text(chunk: &str) -> Vec<Object> {
             continue;
         };
         let payload = raw_payload.trim_matches(is_blank);
-        if payload.is_empty() || payload == DONE_MARKER {
-            continue;
-        }
         if let Ok(event) = serde_json::from_str::<Object>(payload) {
             events.push(event);
         }

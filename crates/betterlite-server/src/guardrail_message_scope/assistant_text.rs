@@ -13,9 +13,9 @@ fn field<'value>(value: &'value GuardrailValue, key: &str) -> Option<&'value Gua
         .filter(|found| !matches!(found, GuardrailValue::Null))
 }
 
-fn non_empty_text<'value>(value: &'value GuardrailValue, key: &str) -> Option<&'value str> {
+fn text_field<'value>(value: &'value GuardrailValue, key: &str) -> Option<&'value str> {
     match field(value, key) {
-        Some(GuardrailValue::Text(text)) if !text.is_empty() => Some(text),
+        Some(GuardrailValue::Text(text)) => Some(text),
         _ => None,
     }
 }
@@ -43,14 +43,14 @@ fn chat_text(response: &GuardrailValue) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-// The non-empty texts of the blocks of one type, joined; none when no block carries text.
+// The texts of the blocks of one type, joined; none when they join to nothing.
 fn joined_texts<'value, Blocks>(blocks: Blocks, kind: &str) -> Option<String>
 where
     Blocks: Iterator<Item = &'value GuardrailValue>,
 {
     let text: String = blocks
         .filter(|block| has_type(block, kind))
-        .filter_map(|block| non_empty_text(block, "text"))
+        .filter_map(|block| text_field(block, "text"))
         .collect();
     (!text.is_empty()).then_some(text)
 }
