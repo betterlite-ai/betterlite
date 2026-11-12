@@ -11,7 +11,7 @@ use crate::database_refresh::access::{self, AccessError};
 use crate::database_refresh::endpoint::DatabaseUrlSlot;
 use crate::database_refresh::generation::{GenerationError, GenerationOptions};
 use crate::database_refresh::handle::PoolProvider as _;
-use crate::database_refresh::replacement;
+use crate::database_refresh::retirement;
 use crate::database_refresh::tracker::{DrainTracker, TransactionId};
 use crate::database_tokens::expiry::TokenAuthKind;
 
@@ -38,7 +38,7 @@ fn constructor_defaults() {
     assert_eq!(built.options.log_prefix, "");
     assert!(built.options.iam_endpoint.is_none());
     assert!(!built.options.recreate_uses_datasource);
-    assert_eq!(replacement::retirement_count(&built), 0);
+    assert_eq!(retirement::retirement_count(&built), 0);
     assert!(matches!(
         access::operation(&built),
         Err(AccessError::NotConnected)

@@ -11,6 +11,7 @@ use crate::database_refresh::endpoint::DatabaseUrlSlot;
 use crate::database_refresh::handle::PoolHandle as _;
 use crate::database_refresh::handle::PoolTransport;
 use crate::database_refresh::replacement::{self, ReplacementError};
+use crate::database_refresh::retirement::{self, wait_for_pool_replacement};
 
 use super::support::{
     ConnectStep, FakeScript, NEXT_URL, callback, capture_logs, connected_generation,
@@ -260,7 +261,7 @@ async fn missing_tracker_retires_immediately() {
     yield_now().await;
     assert_eq!(built.observe().generation, 1);
     assert!(script.has_event("close:0"));
-    assert_eq!(replacement::retirement_count(&built), 0);
+    assert_eq!(retirement::retirement_count(&built), 0);
 }
 
 #[tokio::test]
@@ -277,7 +278,7 @@ async fn completed_retirement_removed() {
     yield_now().await;
     yield_now().await;
     assert!(script.has_event("close:0"));
-    assert_eq!(replacement::retirement_count(&built), 0);
+    assert_eq!(retirement::retirement_count(&built), 0);
 }
 
 #[tokio::test]
@@ -295,9 +296,9 @@ async fn shutdown_releases_retirements() {
         .expect("the candidate replaces");
     drop(lock_guard);
     yield_now().await;
-    assert_eq!(replacement::retirement_count(&built), 1);
-    replacement::shutdown(&built).await;
-    assert_eq!(replacement::retirement_count(&built), 0);
+    assert_eq!(retirement::retirement_count(&built), 1);
+    retirement::shutdown(&built).await;
+    assert_eq!(retirement::retirement_count(&built), 0);
     drop(held);
 }
 
@@ -308,7 +309,7 @@ async fn wait_without_lock_returns() {
         connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
     timeout(
         Duration::from_secs(1),
-        replacement::wait_for_pool_replacement(&built, Duration::from_secs(300)),
+        wait_for_pool_replacement(&built, Duration::from_secs(300)),
     )
     .await
     .expect("a free lock returns at once");
@@ -322,7 +323,7 @@ async fn nonpositive_wait_returns() {
     let lock_guard = built.replacement_lock.lock().await;
     timeout(
         Duration::from_millis(50),
-        replacement::wait_for_pool_replacement(&built, Duration::ZERO),
+        wait_for_pool_replacement(&built, Duration::ZERO),
     )
     .await
     .expect("a nonpositive wait returns at once");
@@ -346,7 +347,7 @@ async fn wait_timeout_is_not_success() {
     let mut waiters = JoinSet::new();
     let waiting = Arc::clone(&built);
     waiters.spawn(async move {
-        replacement::wait_for_pool_replacement(&waiting, Duration::from_secs(90)).await;
+        wait_for_pool_replacement(&waiting, Duration::from_secs(90)).await;
     });
     yield_now().await;
     advance(Duration::from_secs(90)).await;
@@ -391,7 +392,7 @@ async fn waiter_cancel_does_not_cancel_replace() {
     let mut waiters = JoinSet::new();
     let waiting = Arc::clone(&built);
     waiters.spawn(async move {
-        replacement::wait_for_pool_replacement(&waiting, Duration::from_secs(60)).await;
+        wait_for_pool_replacement(&waiting, Duration::from_secs(60)).await;
     });
     yield_now().await;
     stop(&mut waiters).await;
