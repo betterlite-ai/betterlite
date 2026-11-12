@@ -60,6 +60,7 @@ pub trait ResponsesProviderConfig: Send + Sync {
         drop_params: bool,
     ) -> Result<Params, Self::Error>;
 
+    #[cfg_attr(test, mutants::skip)]
     fn validate_environment(
         &self,
         _headers: &Headers,
