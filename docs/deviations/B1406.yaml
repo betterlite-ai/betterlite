@@ -1,0 +1,5 @@
+task: B1406
+deviations:
+  - what: Batch timestamps are read as RFC 3339 (with T, t, space or underscore before the time) or as a bare YYYY-MM-DD date; any other spelling Python's datetime.fromisoformat would accept, such as the basic 20240102 form, is treated as no timestamp.
+    why: speedate parses the two forms xAI sends over gRPC and REST; the base and extended ISO forms datetime.fromisoformat also takes are not part of the provider's wire format and would need a hand-written parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/batches/transformation.py#L150-L156

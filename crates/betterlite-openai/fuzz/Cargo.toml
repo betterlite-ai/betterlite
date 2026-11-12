@@ -416,3 +416,10 @@ bench = false
 name = "comet_embedding_reply"
 path = "fuzz_targets/comet_embedding_reply.rs"
 test = false
+
+[[bin]]
+name = "xai_batch"
+path = "fuzz_targets/xai_batch.rs"
+test = false
+doc = false
+bench = false
