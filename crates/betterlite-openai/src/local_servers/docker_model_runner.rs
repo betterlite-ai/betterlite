@@ -69,13 +69,12 @@ pub fn transform_messages(
         .map(convert::<Message, ChatMessage>)
         .collect::<Result<Vec<_>, _>>()?;
     let environment = BTreeMap::new();
-    // provider "openai" on a local base keeps cache_control, which the base _transform_messages never strips
     let transformed = ChatContent {
         model,
         messages: &converted,
         optional_params: &PromptObject::new(),
-        provider: Some("openai"),
-        api_base: Some(DEFAULT_API_BASE),
+        provider: Some("docker_model_runner"),
+        api_base: None,
         global_api_base: None,
         openai_system_messages_first: false,
         environment: &environment,

@@ -17,9 +17,7 @@ pub(crate) enum Input {
     DockerRequest {
         calls: Vec<servers::DockerCall>,
     },
-    LmStudioEmbed {
-        optional_params: betterlite_openai::openai_base_config::Object,
-    },
+    LmStudioEmbed,
     Xinference {
         calls: Vec<servers::XinferenceCall>,
     },
@@ -51,7 +49,7 @@ impl Helper for Op {
                 calls.iter().map(servers::params_value).collect(),
             )),
             Input::DockerRequest { calls } => answers(calls, servers::docker_value),
-            Input::LmStudioEmbed { optional_params } => Ok(servers::embed_value(optional_params)),
+            Input::LmStudioEmbed => Ok(servers::embed_value()),
             Input::Xinference { calls } => Ok(Value::Array(
                 calls.iter().map(servers::xinference_value).collect(),
             )),

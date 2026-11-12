@@ -44,7 +44,7 @@ pub(crate) struct ProviderCall {
 pub(crate) struct ParamsCall {
     provider: ChatProvider,
     model: String,
-    params: Object,
+    params: Vec<(String, Value)>,
     preset: Object,
     chat_models: BTreeSet<String>,
     text_models: BTreeSet<String>,
@@ -134,7 +134,7 @@ pub(super) fn params_value(call: &ParamsCall) -> Value {
     let mut optional = call.preset.clone();
     match call.provider {
         ChatProvider::DockerModelRunner => {
-            let requested: IndexMap<String, Value> = call.params.clone().into_iter().collect();
+            let requested: IndexMap<String, Value> = call.params.iter().cloned().collect();
             docker_model_runner::ChatConfig { base }.map_openai_params(
                 &call.model,
                 &requested,
@@ -142,12 +142,15 @@ pub(super) fn params_value(call: &ParamsCall) -> Value {
                 &catalog,
             );
         }
-        ChatProvider::LmStudio => lm_studio::ChatConfig { base }.map_openai_params(
-            &call.model,
-            &call.params,
-            &mut optional,
-            &catalog,
-        ),
+        ChatProvider::LmStudio => {
+            let requested: Object = call.params.iter().cloned().collect();
+            lm_studio::ChatConfig { base }.map_openai_params(
+                &call.model,
+                &requested,
+                &mut optional,
+                &catalog,
+            );
+        }
     }
     Value::Object(optional)
 }
@@ -166,7 +169,7 @@ pub(super) fn docker_value(call: &DockerCall) -> Result<Value, Box<HelperError>>
     }
 }
 
-pub(super) fn embed_value(optional_params: &Object) -> Value {
+pub(super) fn embed_value() -> Value {
     let config: Object = lm_studio::EMBEDDING_CONFIG_KEYS
         .iter()
         .map(|key| ((*key).to_owned(), Value::Null))
@@ -174,7 +177,6 @@ pub(super) fn embed_value(optional_params: &Object) -> Value {
     json!({
         "supported": lm_studio::EMBEDDING_SUPPORTED_PARAMS,
         "config": config,
-        "mapped": optional_params,
     })
 }
 

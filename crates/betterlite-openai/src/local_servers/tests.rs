@@ -184,14 +184,20 @@ fn docker_transform_joins_text_parts_into_a_string() {
 }
 
 #[test]
-fn docker_transform_keeps_image_only_lists_and_cache_control() {
+fn docker_transform_keeps_image_only_lists_and_strips_cache_control() {
     let input = parse_json(
         r#"[
         {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "http://i/x.png"}}]},
         {"role": "user", "content": "hi", "cache_control": {"type": "ephemeral"}}
     ]"#,
     );
-    assert_eq!(docker_messages(input.clone()), input);
+    let expected = parse_json(
+        r#"[
+        {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "http://i/x.png"}}]},
+        {"role": "user", "content": "hi"}
+    ]"#,
+    );
+    assert_eq!(docker_messages(input), expected);
 }
 
 #[test]

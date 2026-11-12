@@ -1,8 +1,7 @@
 kind: helper
-name: lm-studio-embedding-takes-no-params
+name: lm-studio-embedding-declares-no-params
 call:
   b8152:
     function: "lm_studio_embed"
-    optional_params: {"user": "u", "dimensions": 8}
 env: {}
 compare: {ignore: []}

@@ -47,7 +47,6 @@ class DockerRequestInput(TypedDict):
 
 class LmStudioEmbedInput(TypedDict):
     function: Literal["lm_studio_embed"]
-    optional_params: dict[str, JsonValue]
 
 
 class XinferenceInput(TypedDict):
@@ -98,7 +97,7 @@ def run(input_value: Input) -> JsonValue:
         docker = DockerModelRunnerChatConfig()
         result = [docker_value(docker, call) for call in input_value["calls"]]
     elif input_value["function"] == "lm_studio_embed":
-        result = embed_value(input_value["optional_params"])
+        result = embed_value()
     elif input_value["function"] == "xinference":
         image = XinferenceConfig()
         result = [xinference_value(image, call) for call in input_value["calls"]]

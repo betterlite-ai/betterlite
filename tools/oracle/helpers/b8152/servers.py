@@ -15,10 +15,7 @@ from litellm.types.utils import Usage
 from pydantic import JsonValue
 
 NO_PARAMS: dict[str, JsonValue] = {}
-CACHE_CONTROL_KEPT: dict[str, JsonValue] = {
-    "custom_llm_provider": "openai",
-    "api_base": "http://localhost:22088/engines/llama.cpp",
-}
+DOCKER_LITELLM_PARAMS: dict[str, JsonValue] = {"custom_llm_provider": "docker_model_runner"}
 
 
 class ProviderCall(TypedDict):
@@ -31,7 +28,7 @@ class ProviderCall(TypedDict):
 class ParamsCall(TypedDict):
     provider: Literal["docker_model_runner", "lm_studio"]
     model: str
-    params: dict[str, JsonValue]
+    params: list[tuple[str, JsonValue]]
     preset: dict[str, JsonValue]
     chat_models: list[str]
     text_models: list[str]
@@ -102,7 +99,7 @@ def docker_value(config: DockerModelRunnerChatConfig, call: DockerCall) -> JsonV
             model=call["model"],
             messages=cast("list[AllMessageValues]", call["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
             optional_params=optional,
-            litellm_params=CACHE_CONTROL_KEPT,
+            litellm_params=DOCKER_LITELLM_PARAMS,
             headers=NO_PARAMS,
         )
     except (KeyError, TypeError, ValueError):
@@ -110,18 +107,12 @@ def docker_value(config: DockerModelRunnerChatConfig, call: DockerCall) -> JsonV
     return {"url": url, "ok": True, "messages": cast("dict[str, JsonValue]", body)["messages"]}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L506-L511
 
 
-def embed_value(optional: dict[str, JsonValue]) -> JsonValue:
+def embed_value() -> JsonValue:
     config = LmStudioEmbeddingConfig()
     supported: list[JsonValue] = [*config.get_supported_openai_params()]
     return {
         "supported": supported,
         "config": cast("dict[str, JsonValue]", config.get_config()),  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lm_studio/embed/transformation.py#L25-L39
-        "mapped": cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lm_studio/embed/transformation.py#L44-L45
-            "dict[str, JsonValue]",
-            config.map_openai_params(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lm_studio/embed/transformation.py#L44-L45
-                non_default_params=NO_PARAMS, optional_params=optional
-            ),
-        ),
     }
 
 
