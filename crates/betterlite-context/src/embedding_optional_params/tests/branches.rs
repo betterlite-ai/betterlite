@@ -78,6 +78,38 @@ fn provider_branch_without_a_supported_answer_skips_the_check() {
     assert_eq!(fixture.seen()[0].non_default, params(r#"{"user": "u"}"#));
 }
 
+#[test]
+fn branch_mapper_gets_only_the_per_call_drop_flag() {
+    let (passed, special) = parse_pair(r#"{"user": "u"}"#, "{}");
+    let fixture = FixtureMapper::mapper(&[], r#"{"mapped": true}"#);
+    let supported: [String; 0] = [];
+    let mut request = base("model-x", "triton", &passed, &special);
+    request.mapper = Some(&fixture);
+    request.supported = Some(&supported);
+    request.drop_policy = DropPolicy {
+        drop_params: None,
+        litellm_drop_params: true,
+    };
+    let result = embedding_optional_params(&request).unwrap();
+    assert_eq!(result, params(r#"{"mapped": true}"#));
+    assert!(!fixture.seen()[0].drop_params);
+}
+
+#[test]
+fn bedrock_family_mapper_gets_only_the_per_call_drop_flag() {
+    let (passed, special) = parse_pair(r#"{"user": "u"}"#, "{}");
+    let fixture = FixtureMapper::mapper(&["dimensions"], r#"{"mapped": true}"#);
+    let mut request = base("amazon.titan-embed-text-v2:0", "bedrock", &passed, &special);
+    request.mapper = Some(&fixture);
+    request.drop_policy = DropPolicy {
+        drop_params: None,
+        litellm_drop_params: true,
+    };
+    let result = embedding_optional_params(&request).unwrap();
+    assert_eq!(result, params(r#"{"mapped": true}"#));
+    assert!(!fixture.seen()[0].drop_params);
+}
+
 #[rstest]
 #[case::float_is_dropped("float", None)]
 #[case::base64_is_refused("base64", Some(400))]
