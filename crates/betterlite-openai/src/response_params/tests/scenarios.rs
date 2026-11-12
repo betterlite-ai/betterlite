@@ -222,7 +222,8 @@ pub(super) fn gpt5_temperature_default_effort() {
     let mut bundled = BundledReasoningModels::default();
     check_table(&mut bundled, &GPT5_TEMPERATURE_ROWS);
     check_table(&mut bundled, &GPT5_MODEL_ROWS);
-    assert_mapped(
+    // the provider skips only the reasoning guard; an unprefixed gpt-5 name still hits the sampling gates
+    let error = rejected(
         &mut bundled,
         Probe::new(
             json(GPT_5_CATALOG),
@@ -231,14 +232,14 @@ pub(super) fn gpt5_temperature_default_effort() {
                 &json(r#"{"temperature": 2, "reasoning": {"effort": "high"}}"#),
             ),
         ),
-        &json(r#"{"temperature": 2, "reasoning": {"effort": "high"}}"#),
     );
+    assert!(error.to_string().contains("temperature=2"), "{error}");
 }
 
 pub(super) fn top_p_with_reasoning() {
     let mut bundled = BundledReasoningModels::default();
     check_table(&mut bundled, &TOP_P_ROWS);
-    assert_mapped(
+    let error = rejected(
         &mut bundled,
         Probe::new(
             json(GPT_5_CATALOG),
@@ -247,8 +248,8 @@ pub(super) fn top_p_with_reasoning() {
                 &json(r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#),
             ),
         ),
-        &json(r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#),
     );
+    assert!(error.to_string().contains("top_p"), "{error}");
 }
 
 pub(super) fn unknown_catalog_model() {

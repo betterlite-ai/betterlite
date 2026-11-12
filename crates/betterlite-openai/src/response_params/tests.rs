@@ -217,8 +217,8 @@ pub(super) fn assert_mapped(bundled: &mut BundledReasoningModels, probe: Probe, 
 #[case::reasoning_summary_without_effort(Scenario::ReasoningSummaryWithoutEffort)]
 #[case::responses_parameter_set(Scenario::ResponsesParameterSet)]
 #[case::provider_capabilities(Scenario::ProviderCapabilities)]
-#[tokio::test]
-async fn response_params_cases(#[case] scenario: Scenario) {
+#[test]
+fn response_params_cases(#[case] scenario: Scenario) {
     match scenario {
         Scenario::MinimumOutputTokens => scenarios::minimum_output_tokens(),
         Scenario::ReasoningUnsupportedDropOrError => {
