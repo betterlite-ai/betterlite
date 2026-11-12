@@ -2,47 +2,119 @@ kind: helper
 name: gemini-embedding-records-image-only-usage
 call:
   gemini_embedding_records:
-    batch_requests: []
-    embed_content_requests: []
-    batch_replies: []
-    embed_content_replies:
-      - model: gemini-embedding-001
-        input: "data:image/png;base64,AAAA"
-        resolved_files: {}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 7}}
-      - model: gemini-embedding-001
-        input: "hello"
-        resolved_files: {}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 7}}
-      - model: gemini-embedding-001
-        input: ["data:image/png;base64,AA", "data:image/jpeg;base64,BB"]
-        resolved_files: {}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 7, totalTokenCount: 0}}
-      - model: gemini-embedding-001
-        input: [["gs://bucket/a.jpg", "files/img"]]
-        resolved_files:
-          files/img: {mime_type: image/png, uri: "https://example.com/v1beta/files/img"}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 9}}
-      - model: gemini-embedding-001
-        input: "gs://bucket/photo.PNG"
-        resolved_files: {}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 3}}
-      - model: gemini-embedding-001
-        input: "https://example.com/photo.png"
-        resolved_files: {}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 3}}
-      - model: gemini-embedding-001
-        input: ["data:image/png;base64,AA", "caption"]
-        resolved_files: {}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 3}}
-      - model: gemini-embedding-001
-        input: "data:image/gif;base64,AA"
-        resolved_files: {}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 3}}
-      - model: gemini-embedding-001
-        input: files/doc
-        resolved_files:
-          files/doc: {mime_type: application/pdf, uri: "https://example.com/v1beta/files/doc"}
-        response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 3}}
-compare: {ignore: []}
+    calls:
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input: data:image/png;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 7
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input: hello
+      optional: {}
+      resolved_files: {}
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 7
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input:
+      - data:image/png;base64,AA
+      - data:image/jpeg;base64,BB
+      optional: {}
+      resolved_files: {}
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 7
+          totalTokenCount: 0
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input:
+      - - gs://bucket/a.jpg
+        - files/img
+      optional: {}
+      resolved_files:
+        files/img:
+          mime_type: image/png
+          uri: https://example.com/v1beta/files/img
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 9
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input: gs://bucket/photo.PNG
+      optional: {}
+      resolved_files: {}
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 3
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input: https://example.com/photo.png
+      optional: {}
+      resolved_files: {}
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 3
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input:
+      - data:image/png;base64,AA
+      - caption
+      optional: {}
+      resolved_files: {}
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 3
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input: data:image/gif;base64,AA
+      optional: {}
+      resolved_files: {}
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 3
+    - kind: embed_reply
+      model: gemini-embedding-001
+      input: files/doc
+      optional: {}
+      resolved_files:
+        files/doc:
+          mime_type: application/pdf
+          uri: https://example.com/v1beta/files/doc
+      response:
+        embedding:
+          values:
+          - 0.1
+        usageMetadata:
+          promptTokenCount: 3
+compare:
+  ignore: []
 env: {}

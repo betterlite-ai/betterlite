@@ -180,13 +180,8 @@ fn batch_rejects_unsupported_data_url_media(#[case] source: &str) {
 #[case::text_dimensions(r#"{"dimensions":"8"}"#)]
 #[case::fractional_dimensions(r#"{"dimensions":8.5}"#)]
 fn batch_rejects_non_integer_dimensions(#[case] optional: &str) {
-    assert!(matches!(
-        batch(r#""hello""#, optional, "{}"),
-        Err(GeminiEmbeddingError::WrongType {
-            field: "outputDimensionality",
-            ..
-        })
-    ));
+    let error = batch(r#""hello""#, optional, "{}").unwrap_err();
+    assert!(rejection(error).contains("outputDimensionality value must be a whole number"));
 }
 
 #[rstest]
@@ -201,10 +196,8 @@ fn batch_rejects_unknown_task_types(#[case] optional: &str) {
 #[case::title(r#"{"title":5}"#)]
 #[case::task_type(r#"{"taskType":5}"#)]
 fn batch_rejects_mistyped_text_parameters(#[case] optional: &str) {
-    assert!(matches!(
-        batch(r#""hello""#, optional, "{}"),
-        Err(GeminiEmbeddingError::WrongType { .. })
-    ));
+    let error = batch(r#""hello""#, optional, "{}").unwrap_err();
+    assert!(rejection(error).contains("must be text"));
 }
 
 #[rstest]

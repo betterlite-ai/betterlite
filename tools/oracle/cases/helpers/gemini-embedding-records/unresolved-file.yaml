@@ -2,36 +2,56 @@ kind: helper
 name: gemini-embedding-records-unresolved-file
 call:
   gemini_embedding_records:
-    batch_requests:
-      - model: gemini-embedding-001
-        input: files/missing
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: ["alpha", ["files/missing"]]
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: files/present
-        optional: {}
-        resolved_files:
-          files/present: {mime_type: application/pdf, uri: "https://example.com/v1beta/files/present"}
-      - model: gemini-embedding-001
-        input: [["files/present", "caption"]]
-        optional: {}
-        resolved_files:
-          files/present: {mime_type: image/png, uri: "https://example.com/v1beta/files/present"}
-    embed_content_requests:
-      - model: gemini-embedding-001
-        input: files/missing
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: files/present
-        optional: {}
-        resolved_files:
-          files/present: {mime_type: audio/wav, uri: "https://example.com/v1beta/files/present"}
-    batch_replies: []
-    embed_content_replies: []
-compare: {ignore: []}
+    calls:
+    - kind: batch_request
+      model: gemini-embedding-001
+      input: files/missing
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - alpha
+      - - files/missing
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input: files/present
+      optional: {}
+      resolved_files:
+        files/present:
+          mime_type: application/pdf
+          uri: https://example.com/v1beta/files/present
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - - files/present
+        - caption
+      optional: {}
+      resolved_files:
+        files/present:
+          mime_type: image/png
+          uri: https://example.com/v1beta/files/present
+      response: null
+    - kind: embed_request
+      model: gemini-embedding-001
+      input: files/missing
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: embed_request
+      model: gemini-embedding-001
+      input: files/present
+      optional: {}
+      resolved_files:
+        files/present:
+          mime_type: audio/wav
+          uri: https://example.com/v1beta/files/present
+      response: null
+compare:
+  ignore: []
 env: {}

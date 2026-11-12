@@ -6,11 +6,11 @@ use std::path::Path;
 use crate::case::HelperCase;
 use crate::case::helper::validate_helper;
 
-const SECTIONS: [&str; 4] = [
-    "batch_requests",
-    "embed_content_requests",
-    "batch_replies",
-    "embed_content_replies",
+const KINDS: [&str; 4] = [
+    "batch_request",
+    "embed_request",
+    "batch_reply",
+    "embed_reply",
 ];
 
 fn seed_sources() -> Vec<String> {
@@ -46,16 +46,21 @@ fn helper_seeds_select_gemini_embedding_records() {
 }
 
 #[test]
-fn helper_seeds_cover_every_section() {
+fn helper_seeds_cover_every_call_kind() {
     let cases = seed_cases();
-    let filled = SECTIONS.map(|section| {
+    let filled = KINDS.map(|kind| {
         cases.iter().any(|case| {
-            case.call
+            let Some(calls) = case
+                .call
                 .input
-                .as_object()
-                .and_then(|input| input.get(section))
+                .get("calls")
                 .and_then(|value| value.as_array())
-                .is_some_and(|entries| !entries.is_empty())
+            else {
+                return false;
+            };
+            calls
+                .iter()
+                .any(|call| call.get("kind").and_then(|value| value.as_str()) == Some(kind))
         })
     });
     assert!(filled.iter().all(|present| *present));

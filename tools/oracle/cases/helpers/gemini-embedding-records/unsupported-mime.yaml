@@ -2,41 +2,67 @@ kind: helper
 name: gemini-embedding-records-unsupported-mime
 call:
   gemini_embedding_records:
-    batch_requests:
-      - model: gemini-embedding-001
-        input: ["data:image/gif;base64,AAAA"]
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: ["data:text/plain;base64,AAAA"]
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: ["data:IMAGE/PNG;base64,AAAA"]
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: ["gs://bucket/photo.gif"]
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: ["gs://bucket/photo.PNG", "gs://bucket/clip.MoV", "gs://bucket/doc.pdf"]
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: ["data:image/png,AAAA", "https://example.com/photo.png"]
-        optional: {}
-        resolved_files: {}
-    embed_content_requests:
-      - model: gemini-embedding-001
-        input: ["data:audio/wav;base64,UklGR", "gs://bucket/audio.mp3"]
-        optional: {}
-        resolved_files: {}
-      - model: gemini-embedding-001
-        input: ["data:image/png;base64"]
-        optional: {}
-        resolved_files: {}
-    batch_replies: []
-    embed_content_replies: []
-compare: {ignore: []}
+    calls:
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - data:image/gif;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - data:text/plain;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - data:IMAGE/PNG;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - gs://bucket/photo.gif
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - gs://bucket/photo.PNG
+      - gs://bucket/clip.MoV
+      - gs://bucket/doc.pdf
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - data:image/png,AAAA
+      - https://example.com/photo.png
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: embed_request
+      model: gemini-embedding-001
+      input:
+      - data:audio/wav;base64,UklGR
+      - gs://bucket/audio.mp3
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: embed_request
+      model: gemini-embedding-001
+      input:
+      - data:image/png;base64
+      optional: {}
+      resolved_files: {}
+      response: null
+compare:
+  ignore: []
 env: {}

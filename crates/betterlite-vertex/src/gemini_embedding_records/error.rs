@@ -6,15 +6,8 @@ use thiserror::Error;
 pub enum GeminiEmbeddingError {
     #[error("{reason}")]
     Rejected { reason: String },
-    #[error("the embeddings reply must be an object")]
-    ReplyNotObject,
-    #[error("the embeddings reply has no {field} value")]
-    MissingField { field: &'static str },
-    #[error("the {field} value must be {expected}")]
-    WrongType {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("{reason}")]
+    Reply { reason: &'static str },
     #[error("the token count {value} is outside the supported range")]
     TokenRange { value: i64 },
     #[error("the token counts overflow")]

@@ -66,12 +66,13 @@ fn a_string_embedding_is_kept_as_base64() {
 }
 
 #[rstest]
-#[case::missing_embeddings("{}", "embeddings")]
-#[case::missing_values(r#"{"embeddings":[{}]}"#, "values")]
-fn batch_replies_require_their_fields(#[case] response: &str, #[case] field: &str) {
+#[case::missing_embeddings("{}", "must hold an embeddings list")]
+#[case::missing_values(r#"{"embeddings":[{}]}"#, "has no values")]
+fn batch_replies_require_their_fields(#[case] response: &str, #[case] reason: &str) {
+    let error = batch_reply(r#""a""#, response).unwrap_err();
     assert!(matches!(
-        batch_reply(r#""a""#, response),
-        Err(GeminiEmbeddingError::MissingField { field: found }) if found == field
+        error,
+        GeminiEmbeddingError::Reply { reason: found } if found == reason
     ));
 }
 
@@ -79,7 +80,7 @@ fn batch_replies_require_their_fields(#[case] response: &str, #[case] field: &st
 fn batch_replies_that_are_not_objects_are_rejected() {
     assert!(matches!(
         batch_reply(r#""a""#, "[]"),
-        Err(GeminiEmbeddingError::ReplyNotObject)
+        Err(GeminiEmbeddingError::Reply { .. })
     ));
 }
 
@@ -87,10 +88,7 @@ fn batch_replies_that_are_not_objects_are_rejected() {
 fn batch_embeddings_must_be_a_list() {
     assert!(matches!(
         batch_reply(r#""a""#, r#"{"embeddings":{}}"#),
-        Err(GeminiEmbeddingError::WrongType {
-            field: "embeddings",
-            expected: "a list"
-        })
+        Err(GeminiEmbeddingError::Reply { .. })
     ));
 }
 
@@ -98,10 +96,7 @@ fn batch_embeddings_must_be_a_list() {
 fn batch_embedding_entries_must_be_objects() {
     assert!(matches!(
         batch_reply(r#""a""#, r#"{"embeddings":[[]]}"#),
-        Err(GeminiEmbeddingError::WrongType {
-            field: "embeddings",
-            expected: "objects"
-        })
+        Err(GeminiEmbeddingError::Reply { .. })
     ));
 }
 
@@ -113,10 +108,7 @@ fn batch_embedding_entries_must_be_objects() {
 fn batch_embedding_values_must_be_numbers(#[case] response: &str) {
     assert!(matches!(
         batch_reply(r#""a""#, response),
-        Err(GeminiEmbeddingError::WrongType {
-            field: "values",
-            ..
-        })
+        Err(GeminiEmbeddingError::Reply { .. })
     ));
 }
 
@@ -139,7 +131,9 @@ fn embed_content_replies_require_the_embedding_field() {
             r#"{"usageMetadata":{"promptTokenCount":2}}"#,
             "{}"
         ),
-        Err(GeminiEmbeddingError::MissingField { field: "embedding" })
+        Err(GeminiEmbeddingError::Reply {
+            reason: "the embedContent reply has no embedding"
+        })
     ));
 }
 
@@ -147,7 +141,7 @@ fn embed_content_replies_require_the_embedding_field() {
 fn embed_content_replies_that_are_not_objects_are_rejected() {
     assert!(matches!(
         embed_reply(r#""a""#, "[]", "{}"),
-        Err(GeminiEmbeddingError::ReplyNotObject)
+        Err(GeminiEmbeddingError::Reply { .. })
     ));
 }
 

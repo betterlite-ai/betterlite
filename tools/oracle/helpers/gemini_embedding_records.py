@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import TypeAlias, TypedDict, TypeVar, cast
+from typing import Literal, TypeAlias, TypedDict, cast
 
 import litellm.llms.vertex_ai.gemini_embeddings.batch_embed_content_transformation as transformation
 from litellm.llms.vertex_ai.gemini_embeddings.batch_embed_content_transformation import (
@@ -12,9 +12,7 @@ from litellm.llms.vertex_ai.gemini_embeddings.batch_embed_content_transformation
 from litellm.llms.vertex_ai.gemini_embeddings.batch_embed_content_transformation import (
     transform_openai_input_gemini_embed_content as transform_single,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L255
 )
-from litellm.types.llms.vertex_ai import (
-    GeminiEmbeddingInput,
-)
+from litellm.types.llms.vertex_ai import GeminiEmbeddingInput
 from litellm.types.llms.vertex_ai import (
     VertexAIBatchEmbeddingsResponseObject as BatchResponse,
 )
@@ -28,34 +26,17 @@ class FileInfo(TypedDict):
     uri: str
 
 
-class Request(TypedDict):
+class Call(TypedDict):
+    kind: Literal["batch_request", "embed_request", "batch_reply", "embed_reply"]
     model: str
     input: GeminiEmbeddingInput
     optional: dict[str, Json]
     resolved_files: dict[str, FileInfo]
-
-
-class BatchReply(TypedDict):
-    model: str
-    input: GeminiEmbeddingInput
-    response: BatchResponse
-
-
-class EmbedReply(TypedDict):
-    model: str
-    input: GeminiEmbeddingInput
-    resolved_files: dict[str, FileInfo]
-    response: dict[str, Json]
+    response: Json
 
 
 class Input(TypedDict):
-    batch_requests: list[Request]
-    embed_content_requests: list[Request]
-    batch_replies: list[BatchReply]
-    embed_content_replies: list[EmbedReply]
-
-
-Entry = TypeVar("Entry")
+    calls: list[Call]
 
 
 TRANSFORM_CONTENT = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L204
@@ -65,7 +46,7 @@ TRANSFORM_CONTENT = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a631
     ],
     transform_content,
 )
-TRANSFORM_CONTENT_SINGLE = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L255
+TRANSFORM_SINGLE = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L255
     Callable[
         [GeminiEmbeddingInput, str, dict[str, Json], dict[str, dict[str, str]] | None],
         dict[str, Json],
@@ -141,47 +122,38 @@ def reply_json(answer: EmbeddingResponse) -> Json:
     return {"model": model, "data": records, "usage": usage_json(usage)}
 
 
-def batch_request(entry: Request) -> Json:
-    return TRANSFORM_CONTENT(
-        entry["input"], entry["model"], entry["optional"], resolved(entry["resolved_files"])
-    )
-
-
-def embed_request(entry: Request) -> Json:
-    return TRANSFORM_CONTENT_SINGLE(
-        entry["input"], entry["model"], entry["optional"], resolved(entry["resolved_files"])
-    )
-
-
-def batch_reply(entry: BatchReply) -> Json:
-    answer = process_response(
-        entry["input"], EmbeddingResponse(), entry["model"], entry["response"]
-    )
-    return reply_json(answer)
-
-
-def embed_reply(entry: EmbedReply) -> Json:
-    files = resolved(entry["resolved_files"])
+def conversion(call: Call) -> Json:
+    if call["kind"] == "batch_request":
+        return TRANSFORM_CONTENT(
+            call["input"], call["model"], call["optional"], resolved(call["resolved_files"])
+        )
+    if call["kind"] == "embed_request":
+        return TRANSFORM_SINGLE(
+            call["input"], call["model"], call["optional"], resolved(call["resolved_files"])
+        )
+    if call["kind"] == "batch_reply":
+        answer = process_response(
+            call["input"],
+            EmbeddingResponse(),
+            call["model"],
+            cast("BatchResponse", call["response"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L605-L609
+        )
+        return reply_json(answer)
     answer = PROCESS_SINGLE(
-        entry["input"], EmbeddingResponse(), entry["model"], entry["response"], files
+        call["input"],
+        EmbeddingResponse(),
+        call["model"],
+        cast("dict[str, Json]", call["response"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L402-L406
+        resolved(call["resolved_files"]),
     )
     return reply_json(answer)
-
-
-def collect(entries: list[Entry], convert: Callable[[Entry], Json]) -> list[Json]:
-    results: list[Json] = []
-    for entry in entries:
-        try:
-            results.append(convert(entry))
-        except (AttributeError, KeyError, TypeError, ValueError):
-            results.append({"error": True})
-    return results
 
 
 def run(input_value: Input) -> Json:
-    return {
-        "batch_requests": collect(input_value["batch_requests"], batch_request),
-        "embed_content_requests": collect(input_value["embed_content_requests"], embed_request),
-        "batch_replies": collect(input_value["batch_replies"], batch_reply),
-        "embed_content_replies": collect(input_value["embed_content_replies"], embed_reply),
-    }
+    values: list[Json] = []
+    for call in input_value["calls"]:
+        try:
+            values.append(conversion(call))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            values.append({"error": True})
+    return {"calls": values}

@@ -5,10 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 use crate::gemini_embedding_records::input::{
-    EmbeddingInput, InputEntry, ResolvedFiles, flatten, has_nested, is_image_only, is_media,
-    is_multimodal,
+    EmbeddingInput, InputEntry, ResolvedFiles, flatten, is_image_only, is_media, shape,
 };
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ModalityTokens {
     #[serde(rename = "text_tokens")]
@@ -20,7 +18,6 @@ pub struct ModalityTokens {
     #[serde(rename = "video_tokens")]
     pub video: Option<u32>,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct EmbeddingUsage {
     pub prompt_tokens: u32,
@@ -28,11 +25,9 @@ pub struct EmbeddingUsage {
     pub total_tokens: u32,
     pub prompt_tokens_details: Option<ModalityTokens>,
 }
-
 pub trait TextTokenCounter {
     fn count_text(&self, model: &str, text: &str) -> Result<u32, CountError>;
 }
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Modality {
@@ -41,43 +36,29 @@ pub enum Modality {
     Image,
     Video,
 }
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModalityCount {
     pub modality: Modality,
-    #[serde(rename = "tokenCount")]
     pub token_count: i64,
 }
-
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct UsageMetadata {
-    #[serde(rename = "promptTokenCount")]
     pub prompt_token_count: Option<i64>,
-    #[serde(rename = "totalTokenCount")]
     pub total_token_count: Option<i64>,
-    #[serde(rename = "promptTokensDetails")]
     pub prompt_tokens_details: Option<Vec<ModalityCount>>,
-    #[serde(rename = "candidatesTokenCount")]
     pub candidates_token_count: Option<i64>,
-    #[serde(rename = "responseTokenCount")]
     pub response_token_count: Option<i64>,
-    #[serde(rename = "cachedContentTokenCount")]
     pub cached_content_token_count: Option<i64>,
-    #[serde(rename = "toolUsePromptTokenCount")]
     pub tool_use_prompt_token_count: Option<i64>,
-    #[serde(rename = "thoughtsTokenCount")]
     pub thoughts_token_count: Option<i64>,
     #[serde(rename = "toolUsePromptTokensDetails")]
     pub tool_use_details: Option<Vec<ModalityCount>>,
-    #[serde(rename = "cacheTokensDetails")]
     pub cache_tokens_details: Option<Vec<ModalityCount>>,
-    #[serde(rename = "responseTokensDetails")]
     pub response_tokens_details: Option<Vec<ModalityCount>>,
-    #[serde(rename = "candidatesTokensDetails")]
     pub candidates_tokens_details: Option<Vec<ModalityCount>>,
 }
-
 #[must_use]
 pub fn parse_usage_metadata(raw: Option<&Json>) -> Option<UsageMetadata> {
     let Json::Object(_) = raw? else {
@@ -85,13 +66,13 @@ pub fn parse_usage_metadata(raw: Option<&Json>) -> Option<UsageMetadata> {
     };
     serde_json::from_value(serde_json::to_value(raw).ok()?).ok()
 }
-
 pub fn batch_usage(
     input: &EmbeddingInput,
     model: &str,
     counter: &dyn TextTokenCounter,
 ) -> Result<EmbeddingUsage, GeminiEmbeddingError> {
-    let prompt_tokens = if is_multimodal(input) || has_nested(input) {
+    let shape = shape(input);
+    let prompt_tokens = if shape.media || shape.nested {
         let texts = text_elements(input);
         if texts.is_empty() {
             0
@@ -108,7 +89,6 @@ pub fn batch_usage(
         prompt_tokens_details: None,
     })
 }
-
 pub fn embed_content_usage(
     input: &EmbeddingInput,
     model: &str,
@@ -117,7 +97,17 @@ pub fn embed_content_usage(
     counter: &dyn TextTokenCounter,
 ) -> Result<EmbeddingUsage, GeminiEmbeddingError> {
     let Some(metadata) = parse_usage_metadata(raw_usage_metadata) else {
-        return fallback_usage(input, model, counter);
+        let prompt_tokens = if shape(input).media {
+            0
+        } else {
+            count_input(input, model, counter)?
+        };
+        return Ok(EmbeddingUsage {
+            prompt_tokens,
+            completion_tokens: 0,
+            total_tokens: prompt_tokens,
+            prompt_tokens_details: None,
+        });
     };
     let prompt_tokens = token_count(metadata.prompt_token_count.unwrap_or(0))?;
     let total_tokens = token_count(
@@ -126,10 +116,10 @@ pub fn embed_content_usage(
             .filter(|count| *count != 0)
             .unwrap_or_else(|| i64::from(prompt_tokens)),
     )?;
-    let prompt_tokens_details = match metadata
+    let details = metadata
         .prompt_tokens_details
-        .filter(|details| !details.is_empty())
-    {
+        .filter(|details| !details.is_empty());
+    let prompt_tokens_details = match details {
         None => ModalityTokens {
             text: Some(0),
             audio: None,
@@ -149,29 +139,6 @@ pub fn embed_content_usage(
         prompt_tokens_details: Some(prompt_tokens_details),
     })
 }
-
-fn fallback_usage(
-    input: &EmbeddingInput,
-    model: &str,
-    counter: &dyn TextTokenCounter,
-) -> Result<EmbeddingUsage, GeminiEmbeddingError> {
-    if is_multimodal(input) {
-        return Ok(EmbeddingUsage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-            prompt_tokens_details: None,
-        });
-    }
-    let prompt_tokens = count_input(input, model, counter)?;
-    Ok(EmbeddingUsage {
-        prompt_tokens,
-        completion_tokens: 0,
-        total_tokens: prompt_tokens,
-        prompt_tokens_details: None,
-    })
-}
-
 fn modality_tokens(details: &[ModalityCount]) -> Result<ModalityTokens, GeminiEmbeddingError> {
     let mut text = 0_i64;
     let mut audio = 0_i64;
@@ -195,14 +162,12 @@ fn modality_tokens(details: &[ModalityCount]) -> Result<ModalityTokens, GeminiEm
         video: Some(token_count(video)?),
     })
 }
-
 fn token_count(value: i64) -> Result<u32, GeminiEmbeddingError> {
     match u32::try_from(value) {
         Ok(count) => Ok(count),
         Err(_error) => Err(GeminiEmbeddingError::TokenRange { value }),
     }
 }
-
 fn count_input(
     input: &EmbeddingInput,
     model: &str,
@@ -212,9 +177,17 @@ fn count_input(
         EmbeddingInput::Text(text) => Json::Text(text.clone()),
         EmbeddingInput::Entries(entries) => Json::List(entries.iter().map(entry_value).collect()),
     };
-    count_formatted(&value, model, counter)
+    let data = FormattedPromptData {
+        messages: None,
+        prompt: None,
+        input: Some(&value),
+    };
+    let text = get_formatted_prompt(&data, PromptCallType::Embedding)
+        .map_err(|source| GeminiEmbeddingError::Formatting { source })?;
+    counter
+        .count_text(model, &text)
+        .map_err(|source| GeminiEmbeddingError::Counting { source })
 }
-
 fn entry_value(entry: &InputEntry) -> Json {
     match entry {
         InputEntry::Text(text) => Json::Text(text.clone()),
@@ -223,7 +196,6 @@ fn entry_value(entry: &InputEntry) -> Json {
         }
     }
 }
-
 fn count_formatted(
     value: &Json,
     model: &str,
@@ -240,7 +212,6 @@ fn count_formatted(
         .count_text(model, &text)
         .map_err(|source| GeminiEmbeddingError::Counting { source })
 }
-
 fn text_elements(input: &EmbeddingInput) -> Vec<Json> {
     let mut texts = Vec::new();
     for element in flatten(input) {

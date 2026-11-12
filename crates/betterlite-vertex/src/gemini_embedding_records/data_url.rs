@@ -9,7 +9,6 @@ pub const SUPPORTED_MIME_TYPES: [&str; 7] = [
     "video/mp4",
     "video/quicktime",
 ];
-
 const EXTENSION_MIME_TYPES: [(&str, &str); 8] = [
     (".jpeg", "image/jpeg"),
     (".jpg", "image/jpeg"),
@@ -20,13 +19,11 @@ const EXTENSION_MIME_TYPES: [(&str, &str); 8] = [
     (".png", "image/png"),
     (".wav", "audio/wav"),
 ];
-
 #[derive(Debug)]
 pub struct EmbeddingDataUrl<'url> {
     pub mime_type: &'url str,
     pub payload: &'url str,
 }
-
 pub fn decode_embedding_data_url(
     data_url: &str,
 ) -> Result<EmbeddingDataUrl<'_>, GeminiEmbeddingError> {
@@ -48,7 +45,6 @@ pub fn decode_embedding_data_url(
     }
     Ok(EmbeddingDataUrl { mime_type, payload })
 }
-
 pub fn infer_mime_from_gcs_url(gcs_url: &str) -> Result<&'static str, GeminiEmbeddingError> {
     let lowered = gcs_url.to_lowercase();
     for (extension, mime_type) in EXTENSION_MIME_TYPES {

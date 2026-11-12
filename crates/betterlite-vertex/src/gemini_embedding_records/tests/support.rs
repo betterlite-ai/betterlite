@@ -51,9 +51,7 @@ where
 pub(super) fn rejection(error: GeminiEmbeddingError) -> String {
     match error {
         GeminiEmbeddingError::Rejected { reason } => reason,
-        other @ (GeminiEmbeddingError::ReplyNotObject
-        | GeminiEmbeddingError::MissingField { .. }
-        | GeminiEmbeddingError::WrongType { .. }
+        other @ (GeminiEmbeddingError::Reply { .. }
         | GeminiEmbeddingError::TokenRange { .. }
         | GeminiEmbeddingError::TokenOverflow
         | GeminiEmbeddingError::IndexOverflow
