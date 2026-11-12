@@ -1,0 +1,24 @@
+kind: helper
+name: request-destination-endpoint-model-precedence
+call:
+  request_destination:
+    calls:
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: default}, cli_model: cli, endpoint_model: path, kind: completion}
+      - {function: resolve_inference_model, body_model: body, settings: {}, cli_model: cli, endpoint_model: path, kind: completion}
+      - {function: resolve_inference_model, body_model: body, settings: {}, cli_model: null, endpoint_model: path, kind: completion}
+      - {function: resolve_inference_model, body_model: body, settings: {}, cli_model: null, endpoint_model: null, kind: completion}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: completion}
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: text, image_generation_model: image}, cli_model: null, endpoint_model: null, kind: image_generation}
+      - {function: resolve_inference_model, body_model: body, settings: {image_generation_model: image}, cli_model: cli, endpoint_model: path, kind: image_generation}
+      - {function: resolve_inference_model, body_model: body, settings: {image_generation_model: image}, cli_model: null, endpoint_model: path, kind: image_generation}
+      - {function: resolve_inference_model, body_model: null, settings: {image_generation_model: image}, cli_model: null, endpoint_model: null, kind: image_generation}
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: text, image_generation_model: image}, cli_model: null, endpoint_model: null, kind: image_edit}
+      - {function: resolve_inference_model, body_model: body, settings: {image_generation_model: image}, cli_model: null, endpoint_model: path, kind: image_edit}
+      - {function: resolve_inference_model, body_model: null, settings: {image_generation_model: image}, cli_model: null, endpoint_model: null, kind: image_edit}
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: text, moderation_model: mod}, cli_model: cli, endpoint_model: null, kind: moderation}
+      - {function: resolve_inference_model, body_model: body, settings: {moderation_model: mod}, cli_model: null, endpoint_model: null, kind: moderation}
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: text}, cli_model: null, endpoint_model: null, kind: speech}
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: text}, cli_model: cli, endpoint_model: null, kind: body}
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: text}, cli_model: cli, endpoint_model: path, kind: path}
+env: {}
+compare: {ignore: []}

@@ -1108,6 +1108,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1526,6 +1527,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "strum",
  "tempfile",
  "thiserror",
  "tokio",
