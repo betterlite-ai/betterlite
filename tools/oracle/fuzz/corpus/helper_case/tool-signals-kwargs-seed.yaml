@@ -1,0 +1,15 @@
+kind: helper
+name: tool-signals-kwargs-seed
+call:
+  tool_signals:
+    responses: []
+    file_search_params: []
+    token_counts: []
+    values: []
+    kwargs:
+      - {web_search_options: {search_context_size: gigantic, extra: 1}}
+      - {tools: [{type: other, search_context_size: high}]}
+      - {tools: [{type: file_search, vector_store_ids: [vs_1]}]}
+      - {tools: null}
+env: {}
+compare: {ignore: []}
