@@ -1,0 +1,30 @@
+kind: helper
+name: chat-response-stream-tools-reasoning-end-boundary
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request:
+      tools: []
+    custom_llm_provider: null
+    litellm_metadata: null
+    logging_marker: ctx
+    steps:
+      - kind: reasoning_end
+        chunks:
+          - {}
+          - {choices: []}
+          - {choices: [{delta: {reasoning_content: r}}]}
+          - {choices: [{delta: {thinking_blocks: [{data: 1}]}}]}
+          - {choices: [{delta: {thinking_blocks: x}}]}
+          - {choices: [{delta: {content: hi}}]}
+          - {choices: [{delta: {content: ""}}]}
+          - {choices: [{delta: {function_call: {name: f}}}]}
+          - {choices: [{delta: {tool_calls: [{id: c}]}}]}
+          - {choices: [{delta: {tool_calls: []}}]}
+          - {choices: [{delta: {}, finish_reason: ""}]}
+          - {choices: [{delta: {}, finish_reason: null}]}
+          - {choices: [{delta: {}}, {delta: {content: hi}}]}
+env: {}
+compare:
+  ignore: []
