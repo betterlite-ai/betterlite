@@ -1,12 +1,21 @@
 from collections.abc import Mapping
 from enum import Enum
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, TypeAlias
 
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
+from betterlite.types.utils.media import (
+    TranscriptionUsageDurationObject,
+    TranscriptionUsageTokensObject,
+)
 from betterlite.types.utils.usage import Usage
-from betterlite.types.utils.values import JsonValue, StoredValue
+from betterlite.types.utils.values import (
+    JsonValue,
+    StoredValue,
+    ValidationError,
+    field_validator,
+)
 
 
 class BudgetConfig(ResponseObject):
@@ -27,26 +36,6 @@ class BudgetConfig(ResponseObject):
         super().__init__(**declared)
 
 
-class TranscriptionUsageDurationObject(ResponseObject):  # ast-grep-ignore: no-long-names
-    type: Literal["duration"]
-    seconds: float
-
-
-# ast-grep-ignore: no-long-names
-class TranscriptionUsageInputTokenDetailsObject(ResponseObject):
-    audio_tokens: int
-    text_tokens: int
-
-
-class TranscriptionUsageTokensObject(ResponseObject):
-    type: Literal["tokens"]
-    input_tokens: int
-    output_tokens: int
-    total_tokens: int
-    # ast-grep-ignore: no-long-names
-    input_token_details: TranscriptionUsageInputTokenDetailsObject
-
-
 class FineTuningJobError(ResponseObject):
     code: str
     message: str
@@ -59,40 +48,135 @@ class FineTuningJobHyperparameters(ResponseObject):
     n_epochs: Literal["auto"] | int | None
 
 
-class SupervisedHyperparameters(ResponseObject):
-    batch_size: Literal["auto"] | int | None
-    learning_rate_multiplier: Literal["auto"] | float | None
-    n_epochs: Literal["auto"] | int | None
-
-
 class SupervisedMethod(ResponseObject):
-    hyperparameters: SupervisedHyperparameters | None
+    hyperparameters: FineTuningJobHyperparameters | None
 
 
-class DpoHyperparameters(ResponseObject):
-    batch_size: Literal["auto"] | int | None
+class DpoHyperparameters(FineTuningJobHyperparameters):
     beta: Literal["auto"] | float | None
-    learning_rate_multiplier: Literal["auto"] | float | None
-    n_epochs: Literal["auto"] | int | None
 
 
 class DpoMethod(ResponseObject):
     hyperparameters: DpoHyperparameters | None
 
 
-class ReinforcementHyperparameters(ResponseObject):
-    batch_size: Literal["auto"] | int | None
+class GraderInput(ResponseObject):
+    content: JsonValue
+    role: Literal["user", "assistant", "system", "developer"]
+    type: Literal["message"] | None
+
+
+class SamplingParams(ResponseObject):
+    max_completions_tokens: int | None
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None
+    seed: int | None
+    temperature: float | None
+    top_p: float | None
+
+
+class StringCheckGrader(ResponseObject):
+    input: str
+    name: str
+    operation: Literal["eq", "ne", "like", "ilike"]
+    reference: str
+    type: Literal["string_check"]
+
+
+class TextSimilarityGrader(ResponseObject):
+    evaluation_metric: Literal[
+        "cosine", "fuzzy_match", "bleu", "gleu", "meteor",
+        "rouge_1", "rouge_2", "rouge_3", "rouge_4", "rouge_5", "rouge_l",
+    ]
+    input: str
+    name: str
+    reference: str
+    type: Literal["text_similarity"]
+
+
+class PythonGrader(ResponseObject):
+    name: str
+    source: str
+    type: Literal["python"]
+    image_tag: str | None
+
+
+class ScoreModelGrader(ResponseObject):
+    input: list[GraderInput]
+    model: str
+    name: str
+    type: Literal["score_model"]
+    range: list[float] | None
+    sampling_params: SamplingParams | None
+
+
+class LabelModelGrader(ResponseObject):
+    input: list[GraderInput]
+    labels: list[str]
+    model: str
+    name: str
+    passing_labels: list[str]
+    type: Literal["label_model"]
+
+
+MultiGraderKind: TypeAlias = (
+    StringCheckGrader | TextSimilarityGrader | PythonGrader | ScoreModelGrader | LabelModelGrader
+)
+
+
+class MultiGrader(ResponseObject):
+    calculate_output: str
+    graders: MultiGraderKind
+    name: str
+    type: Literal["multi"]
+
+    @field_validator("graders", mode="before")
+    def pick_nested_grader(self, value: StoredValue) -> StoredValue:
+        return grader_model(value, allow_label=True)
+
+
+GraderKind: TypeAlias = MultiGraderKind | MultiGrader
+
+
+def grader_model(value: StoredValue, *, allow_label: bool) -> StoredValue:
+    match value:
+        case Mapping() if "type" not in value:
+            raise ValidationError("grader", ("type",), "value is required")
+        case Mapping():
+            selected: ResponseObject
+            match value["type"]:
+                case "string_check":
+                    selected = StringCheckGrader(**value)
+                case "text_similarity":
+                    selected = TextSimilarityGrader(**value)
+                case "python":
+                    selected = PythonGrader(**value)
+                case "score_model":
+                    selected = ScoreModelGrader(**value)
+                case "multi":
+                    selected = MultiGrader(**value)
+                case "label_model" if allow_label:
+                    selected = LabelModelGrader(**value)
+                case _other:
+                    raise ValidationError("grader", ("type",), "unknown grader type")
+            return selected
+        case _other:
+            return value
+
+
+class ReinforcementHyperparameters(FineTuningJobHyperparameters):
     compute_multiplier: Literal["auto"] | float | None
     eval_interval: Literal["auto"] | int | None
     eval_samples: Literal["auto"] | int | None
-    learning_rate_multiplier: Literal["auto"] | float | None
-    n_epochs: Literal["auto"] | int | None
     reasoning_effort: Literal["default", "low", "medium", "high"] | None
 
 
 class ReinforcementMethod(ResponseObject):
-    grader: dict[str, JsonValue]
+    grader: GraderKind
     hyperparameters: ReinforcementHyperparameters | None
+
+    @field_validator("grader", mode="before")
+    def pick_grader(self, value: StoredValue) -> StoredValue:
+        return grader_model(value, allow_label=False)
 
 
 class FineTuningJobMethod(ResponseObject):

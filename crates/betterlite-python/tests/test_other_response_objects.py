@@ -628,8 +628,8 @@ def test_small_types_logging() -> None:
     base.post_call(original_response={})
 
 
-def test_small_types_fine_tuning() -> None:
-    job: dict[str, JsonValue] = {
+def fine_tuning_job() -> dict[str, JsonValue]:
+    return {
         "id": "job-1",
         "created_at": CREATED,
         "model": "m",
@@ -640,6 +640,10 @@ def test_small_types_fine_tuning() -> None:
         "training_file": "t",
         "hyperparameters": {"n_epochs": EPOCHS},
     }
+
+
+def test_small_types_fine_tuning() -> None:
+    job = fine_tuning_job()
     reference = litellm_utils.LiteLLMFineTuningJob(**job)
     ours = betterlite_utils.LiteLLMFineTuningJob(**job)
     assert ours.seed is None
@@ -661,6 +665,20 @@ def test_small_types_fine_tuning() -> None:
     seeded_ours = betterlite_utils.LiteLLMFineTuningJob(**job, seed=SEED)
     assert seeded_ours.seed == SEED
     assert_same("fine tuning seed", seeded_reference, seeded_ours)
+    hidden = betterlite_utils.LiteLLMFineTuningJob(**job, _hidden_params={"a": 1})
+    assert hidden._hidden_params == {"a": 1}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4307-L4317
+    assert betterlite_utils.LiteLLMFineTuningJob(**job)._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4308
+    empty_error: dict[str, JsonValue] = {}
+    empty_reference = litellm_utils.LiteLLMFineTuningJob(**job, error=empty_error)
+    empty_ours = betterlite_utils.LiteLLMFineTuningJob(**job, error=empty_error)
+    assert empty_ours.error is None
+    assert_same("fine tuning error empty", empty_reference, empty_ours)
+    with pytest.raises(ValueError, match="validation error"):
+        _ = betterlite_utils.LiteLLMFineTuningJob(id="x")
+
+
+def test_small_types_method() -> None:
+    job = fine_tuning_job()
     method: dict[str, JsonValue] = {
         "type": "supervised",
         "supervised": {"hyperparameters": {"n_epochs": EPOCHS}},
@@ -682,7 +700,7 @@ def test_small_types_fine_tuning() -> None:
     dpo_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=dpo_method)
     dpo_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=dpo_method)
     assert_same("fine tuning dpo", dpo_reference, dpo_ours)
-    grader: dict[str, JsonValue] = {
+    string_grader: dict[str, JsonValue] = {
         "type": "string_check",
         "name": "g",
         "input": "{{ sample.output_text }}",
@@ -691,7 +709,7 @@ def test_small_types_fine_tuning() -> None:
     }
     reinforcement_method: dict[str, JsonValue] = {
         "type": "reinforcement",
-        "reinforcement": {"grader": grader, "hyperparameters": {"n_epochs": "auto"}},
+        "reinforcement": {"grader": string_grader, "hyperparameters": {"n_epochs": "auto"}},
     }
     reinforcement_reference = litellm_utils.LiteLLMFineTuningJob(
         **job, method=reinforcement_method,
@@ -700,16 +718,46 @@ def test_small_types_fine_tuning() -> None:
         **job, method=reinforcement_method,
     )
     assert_same("fine tuning reinforcement", reinforcement_reference, reinforcement_ours)
-    hidden = betterlite_utils.LiteLLMFineTuningJob(**job, _hidden_params={"a": 1})
-    assert hidden._hidden_params == {"a": 1}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4307-L4317
-    assert betterlite_utils.LiteLLMFineTuningJob(**job)._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4308
-    empty_error: dict[str, JsonValue] = {}
-    empty_reference = litellm_utils.LiteLLMFineTuningJob(**job, error=empty_error)
-    empty_ours = betterlite_utils.LiteLLMFineTuningJob(**job, error=empty_error)
-    assert empty_ours.error is None
-    assert_same("fine tuning error empty", empty_reference, empty_ours)
-    with pytest.raises(ValueError, match="validation error"):
-        _ = betterlite_utils.LiteLLMFineTuningJob(id="x")
+    python_grader: dict[str, JsonValue] = {
+        "type": "python",
+        "name": "g",
+        "source": "def grade(): return 1",
+    }
+    python_method: dict[str, JsonValue] = {
+        "type": "reinforcement",
+        "reinforcement": {"grader": python_grader},
+    }
+    python_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=python_method)
+    python_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=python_method)
+    assert_same("fine tuning python grader", python_reference, python_ours)
+    score_grader: dict[str, JsonValue] = {
+        "type": "score_model",
+        "name": "g",
+        "model": "gpt-4o",
+        "input": [{"role": "user", "content": "hi"}],
+        "sampling_params": {"temperature": 0.2},
+        "range": [0.0, 1.0],
+    }
+    score_method: dict[str, JsonValue] = {
+        "type": "reinforcement",
+        "reinforcement": {"grader": score_grader},
+    }
+    score_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=score_method)
+    score_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=score_method)
+    assert_same("fine tuning score grader", score_reference, score_ours)
+    multi_grader: dict[str, JsonValue] = {
+        "type": "multi",
+        "name": "g",
+        "calculate_output": "x",
+        "graders": python_grader,
+    }
+    multi_method: dict[str, JsonValue] = {
+        "type": "reinforcement",
+        "reinforcement": {"grader": multi_grader},
+    }
+    multi_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=multi_method)
+    multi_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=multi_method)
+    assert_same("fine tuning multi grader", multi_reference, multi_ours)
 
 
 def test_small_types_realtime() -> None:

@@ -269,9 +269,7 @@ def data_selector(selector: Selection | None) -> FieldSelector | None:
         if "data" in selector:
             return selector["data"]
         return None
-    if "data" in selector:
-        return True
-    return None
+    return True if "data" in selector else None
 
 
 def top_fields(selector: Selection | None, *, is_include: bool) -> set[str] | None:
@@ -280,3 +278,23 @@ def top_fields(selector: Selection | None, *, is_include: bool) -> set[str] | No
     if is_selection_mapping(selector):
         return {key for key, value in selector.items() if is_include or value is True}
     return set(selector)
+
+
+class TranscriptionUsageDurationObject(ResponseObject):  # ast-grep-ignore: no-long-names
+    type: Literal["duration"]
+    seconds: float
+
+
+# ast-grep-ignore: no-long-names
+class TranscriptionUsageInputTokenDetailsObject(ResponseObject):
+    audio_tokens: int
+    text_tokens: int
+
+
+class TranscriptionUsageTokensObject(ResponseObject):
+    type: Literal["tokens"]
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    # ast-grep-ignore: no-long-names
+    input_token_details: TranscriptionUsageInputTokenDetailsObject
