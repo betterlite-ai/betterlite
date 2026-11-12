@@ -80,6 +80,11 @@ impl Fixture {
         self.sends.load(Ordering::Relaxed)
     }
 
+    fn record(&self, request: OutboundRequest) {
+        drop(self.seen.set(request));
+        let _previous = self.sends.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn stream_reply(&self) -> Result<StreamReply, TransportError> {
         if self.broken {
             return Err(TransportError::Closed);
@@ -112,17 +117,16 @@ impl FileTransport for Fixture {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        drop(self.seen.set(request));
-        let _previous = self.sends.fetch_add(1, Ordering::Relaxed);
-        ready(self.buffered_reply())
+        self.record(request);
+        let reply = self.buffered_reply();
+        async move { reply }
     }
 
     fn send_stream(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
-        drop(self.seen.set(request));
-        let _previous = self.sends.fetch_add(1, Ordering::Relaxed);
+        self.record(request);
         ready(self.stream_reply())
     }
 }
