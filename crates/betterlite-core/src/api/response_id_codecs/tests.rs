@@ -13,6 +13,7 @@ use super::encrypted::{
     EncryptedItemId, build_encrypted_item_id, decode_encrypted_item_id, unwrap_encrypted_content,
     wrap_encrypted_content,
 };
+use super::lenient::{Base64Error, TextDecodeError, decode_text};
 use super::response::{
     build_response_id, decode_previous_response_id, decode_response_id,
     get_model_id_from_response_id, is_encoded_response_id,
@@ -74,6 +75,51 @@ fn entry(kind: ResponseIdCodecKind, bytes: &[u8]) -> CodecDecoding {
         },
     )
     .unwrap()
+}
+
+#[test]
+fn permissive_base64_decodes_quads_and_the_full_alphabet() {
+    assert_eq!(decode_text("aGVsbG8=").unwrap(), "hello");
+    assert_eq!(decode_text("77+/").unwrap(), "\u{ffff}");
+    assert_eq!(decode_text("YWJjZGVm").unwrap(), "abcdef");
+}
+
+#[test]
+fn permissive_base64_skips_bytes_off_the_alphabet() {
+    assert_eq!(decode_text("a!G@V#s$b%G&8=").unwrap(), "hello");
+}
+
+#[test]
+fn permissive_base64_accepts_extra_trailing_padding() {
+    assert_eq!(decode_text("aGVsbG8====").unwrap(), "hello");
+    assert_eq!(decode_text("====").unwrap(), "");
+}
+
+#[test]
+fn permissive_base64_rejects_a_lone_final_character() {
+    assert!(matches!(
+        decode_text("a"),
+        Err(TextDecodeError::Base64(Base64Error::SingleCharacter))
+    ));
+}
+
+#[test]
+fn permissive_base64_requires_the_final_group_padding() {
+    assert!(matches!(
+        decode_text("aGVsbG8"),
+        Err(TextDecodeError::Base64(Base64Error::MissingPadding))
+    ));
+    assert!(matches!(
+        decode_text("AA="),
+        Err(TextDecodeError::Base64(Base64Error::MissingPadding))
+    ));
+    assert_eq!(decode_text("AA==").unwrap(), "\0");
+    assert_eq!(decode_text("AAA=").unwrap(), "\0\0");
+}
+
+#[test]
+fn permissive_base64_rejects_a_payload_that_is_not_utf8() {
+    assert!(matches!(decode_text("/w=="), Err(TextDecodeError::Utf8(_))));
 }
 
 #[test]

@@ -61,9 +61,10 @@ fn decode_envelope(response_id: &str) -> Result<DecodedResponseId, lenient::Text
 #[must_use]
 pub fn is_encoded_response_id(response_id: &str) -> bool {
     let decoded = decode_response_id(response_id);
-    let provider = decoded.custom_llm_provider.flatten();
-    let model = decoded.model_id.flatten();
-    provider.is_some() || model.is_some()
+    if decoded.custom_llm_provider.flatten().is_some() {
+        return true;
+    }
+    decoded.model_id.flatten().is_some()
 }
 
 #[must_use]
