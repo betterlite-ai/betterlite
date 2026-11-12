@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use tokio::time::timeout;
@@ -13,8 +14,9 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::registry::catalog::{CatalogError, CatalogInputs};
+use crate::s3_transport::option_value::OptionValue;
 
-use super::build;
+use super::{build, tls_policy};
 
 fn inputs(source: &str) -> CatalogInputs {
     let config = ConfigLoader {
@@ -39,7 +41,7 @@ fn inputs(source: &str) -> CatalogInputs {
 
 fn configured() -> CatalogInputs {
     inputs(
-        "callback_settings:\n  s3_v2:\n    s3_bucket_name: logs\n    s3_region_name: us-east-1\n    s3_endpoint_url: http://127.0.0.1:9000\n    s3_path: team\n    s3_batch_file_upload: true\n",
+        "callback_settings:\n  s3_v2:\n    s3_bucket_name: logs\n    s3_region_name: us-east-1\n    s3_endpoint_url: http://127.0.0.1:9000\n    s3_path: team\n    s3_batch_file_upload: true\n    s3_aws_access_key_id: AKIDTEST\n    s3_aws_secret_access_key: secrettest\n",
     )
 }
 
@@ -101,4 +103,43 @@ async fn callback_logger_refuses_an_invalid_region() {
         error,
         CatalogError::Init { message } if message.contains("NOT-A-REGION")
     ));
+}
+
+#[tokio::test]
+async fn callback_logger_applies_s3_verify_to_its_client() {
+    let inputs = configured();
+    let disabled = tls_policy(&inputs, Some(&OptionValue::Bool(false)))
+        .expect("the TLS policy resolves")
+        .expect("s3_verify sets a policy");
+    assert_eq!(disabled.verification, Verification::Disabled);
+    let enabled = tls_policy(&inputs, Some(&OptionValue::Text("true".to_owned())))
+        .expect("the TLS policy resolves")
+        .expect("s3_verify sets a policy");
+    assert_eq!(enabled.verification, Verification::Enabled);
+    assert!(
+        tls_policy(&inputs, None)
+            .expect("no s3_verify keeps the shared client")
+            .is_none()
+    );
+    let error = tls_policy(&inputs, Some(&OptionValue::Text("maybe".to_owned())))
+        .err()
+        .expect("s3_verify is not a bool");
+    assert!(matches!(
+        error,
+        CatalogError::Init { message } if message.contains("s3_verify")
+    ));
+}
+
+#[tokio::test]
+async fn callback_logger_builds_with_s3_verify_off() {
+    let inputs = inputs(
+        "callback_settings:\n  s3_v2:\n    s3_bucket_name: logs\n    s3_region_name: us-east-1\n    s3_verify: false\n    s3_aws_access_key_id: AKIDTEST\n    s3_aws_secret_access_key: secrettest\n",
+    );
+    let logger = build(&inputs).expect("the logger builds with its own client");
+    assert_eq!(logger.callback_name(), "s3_v2");
+    inputs.shutdown.cancel();
+    inputs.tracker.close();
+    timeout(Duration::from_secs(1), inputs.tracker.wait())
+        .await
+        .expect("the flush loop stops on shutdown");
 }

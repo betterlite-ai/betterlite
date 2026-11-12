@@ -53,35 +53,43 @@ fn secret(
     configured: Option<&SecretString>,
     environment: &dyn EnvironmentLookup,
     variable: &str,
-) -> SecretString {
-    configured
-        .cloned()
-        .or_else(|| environment.lookup(variable).map(SecretString::from))
-        .unwrap_or_else(|| SecretString::from(String::new()))
+) -> Option<SecretString> {
+    configured.cloned().or_else(|| {
+        environment
+            .lookup(variable)
+            .filter(|value| !value.is_empty())
+            .map(SecretString::from)
+    })
 }
+// the boto default chain (shared credentials file, instance and container roles) is not built
 fn configured_credentials(
     source: &ConnectionCredentials,
     environment: &dyn EnvironmentLookup,
-) -> Arc<StaticCredentials> {
-    Arc::new(StaticCredentials {
+) -> Result<Arc<StaticCredentials>, InitError> {
+    let access_key_id = secret(
+        source.aws_access_key_id.as_ref(),
+        environment,
+        "AWS_ACCESS_KEY_ID",
+    );
+    let secret_access_key = secret(
+        source.aws_secret_access_key.as_ref(),
+        environment,
+        "AWS_SECRET_ACCESS_KEY",
+    );
+    let (Some(access_key_id), Some(secret_access_key)) = (access_key_id, secret_access_key) else {
+        return Err(InitError::MissingCredentials);
+    };
+    Ok(Arc::new(StaticCredentials {
         credentials: Credentials {
-            access_key_id: secret(
-                source.aws_access_key_id.as_ref(),
+            access_key_id,
+            secret_access_key,
+            session_token: secret(
+                source.aws_session_token.as_ref(),
                 environment,
-                "AWS_ACCESS_KEY_ID",
+                "AWS_SESSION_TOKEN",
             ),
-            secret_access_key: secret(
-                source.aws_secret_access_key.as_ref(),
-                environment,
-                "AWS_SECRET_ACCESS_KEY",
-            ),
-            session_token: source.aws_session_token.clone().or_else(|| {
-                environment
-                    .lookup("AWS_SESSION_TOKEN")
-                    .map(SecretString::from)
-            }),
         },
-    })
+    }))
 }
 
 fn endpoint(
@@ -147,7 +155,7 @@ pub(super) fn transport(
         credentials: configured_credentials(
             &parameters.connection.credentials,
             deps.environment.as_ref(),
-        ),
+        )?,
         encryption: parameters.encryption.clone(),
         drop_on_terminal_error: parameters.features.contains(&Feature::DropOnTerminalError),
         throttle,

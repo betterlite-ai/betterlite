@@ -20,7 +20,7 @@ use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::s3_batch::Element;
 use crate::s3_batch::flush::SystemMonotonic;
-use crate::s3_batch::logger::{S3BatchDeps, S3BatchLogger};
+use crate::s3_batch::logger::{InitError, S3BatchDeps, S3BatchLogger};
 use crate::s3_transport::batch_element::ContentType;
 use crate::s3_transport::error::S3TransportError;
 use crate::s3_transport::options::PartitionGranularity;
@@ -130,13 +130,13 @@ fn source(extra: &str) -> Source<()> {
     .expect("the S3 source loads")
 }
 
-fn logger(
+fn build(
     client: Arc<ScriptedClient>,
     extra: &str,
     environment: BTreeMap<String, String>,
     cold_storage_logger: Option<&str>,
     lifecycle: Option<(&TaskTracker, &CancellationToken)>,
-) -> Arc<S3BatchLogger> {
+) -> Result<Arc<S3BatchLogger>, InitError> {
     let (tasks, shutdown) = lifecycle.map_or_else(
         || (None, CancellationToken::new()),
         |(tracker, token)| (Some(tracker.clone()), token.clone()),
@@ -157,7 +157,22 @@ fn logger(
             shutdown,
         },
     )
-    .expect("the logger builds")
+}
+
+fn logger(
+    client: Arc<ScriptedClient>,
+    extra: &str,
+    mut environment: BTreeMap<String, String>,
+    cold_storage_logger: Option<&str>,
+    lifecycle: Option<(&TaskTracker, &CancellationToken)>,
+) -> Arc<S3BatchLogger> {
+    environment
+        .entry("AWS_ACCESS_KEY_ID".to_owned())
+        .or_insert_with(|| "DEFAULTKEYID".to_owned());
+    environment
+        .entry("AWS_SECRET_ACCESS_KEY".to_owned())
+        .or_insert_with(|| "defaultsecret".to_owned());
+    build(client, extra, environment, cold_storage_logger, lifecycle).expect("the logger builds")
 }
 
 fn event(text: &str) -> Arc<LoggerEvent> {
@@ -423,6 +438,34 @@ async fn callback_logger_prefers_the_configured_credentials() {
         Some("srctoken")
     );
     drop(logger);
+}
+
+#[tokio::test]
+async fn callback_logger_refuses_missing_credentials() {
+    let empty = build(
+        ScriptedClient::with_replies(&[]),
+        "",
+        BTreeMap::from([("AWS_ACCESS_KEY_ID".to_owned(), String::new())]),
+        None,
+        None,
+    );
+    assert!(matches!(empty, Err(InitError::MissingCredentials)));
+    let without_secret = build(
+        ScriptedClient::with_replies(&[]),
+        r#","s3_aws_access_key_id":"SRCKEYID""#,
+        BTreeMap::new(),
+        None,
+        None,
+    );
+    assert!(matches!(without_secret, Err(InitError::MissingCredentials)));
+    let without_key = build(
+        ScriptedClient::with_replies(&[]),
+        "",
+        BTreeMap::from([("AWS_SECRET_ACCESS_KEY".to_owned(), "envsecret".to_owned())]),
+        None,
+        None,
+    );
+    assert!(matches!(without_key, Err(InitError::MissingCredentials)));
 }
 
 #[tokio::test]

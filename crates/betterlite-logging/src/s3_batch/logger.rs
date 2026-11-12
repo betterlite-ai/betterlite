@@ -40,6 +40,10 @@ pub enum InitError {
         "the S3 logger credential setting '{setting}' needs an AWS profile, role or web-identity flow; set s3_aws_access_key_id and s3_aws_secret_access_key instead"
     )]
     CredentialFlow { setting: &'static str },
+    #[error(
+        "the S3 logger has no AWS credentials; set s3_aws_access_key_id and s3_aws_secret_access_key or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+    )]
+    MissingCredentials,
 }
 pub struct S3BatchLogger {
     pub parameters: S3Parameters<()>,

@@ -124,7 +124,7 @@ impl Clock for FixedClock {
 
 fn source(extra: &str) -> Source<()> {
     serde_json::from_str(&format!(
-        r#"{{"s3_bucket_name":"logs","s3_region_name":"us-east-1","s3_endpoint_url":"http://127.0.0.1:9000"{extra}}}"#
+        r#"{{"s3_bucket_name":"logs","s3_region_name":"us-east-1","s3_endpoint_url":"http://127.0.0.1:9000","s3_aws_access_key_id":"AKIDTEST","s3_aws_secret_access_key":"secrettest"{extra}}}"#
     ))
     .expect("the S3 source loads")
 }
