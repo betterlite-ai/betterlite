@@ -138,6 +138,20 @@ fn the_plan_uses_the_litellm_params_api_base() {
     assert_eq!(built.initial_request.url, "http://host/v1/files");
 }
 
+#[test]
+fn a_null_parameter_counts_as_unset() {
+    let built = planned(
+        r#"{"api_key":null,"api_base":null}"#,
+        Some("global-key"),
+        &[],
+    );
+    assert_eq!(built.initial_request.url, "https://api.manus.im/v1/files");
+    assert_eq!(
+        built.initial_request.headers.get(API_KEY_HEADER),
+        Some(&String::from("global-key"))
+    );
+}
+
 #[rstest]
 #[case::api_key(r#"{"api_key":7}"#, "the api_key parameter must be text")]
 #[case::api_base(r#"{"api_base":true}"#, "the api_base parameter must be text")]
