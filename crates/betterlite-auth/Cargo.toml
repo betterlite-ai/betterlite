@@ -14,6 +14,7 @@ betterlite-db = { path = "../betterlite-db" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-redis = { path = "../betterlite-redis" }
+betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 hex.workspace = true
 lru = "0.18.4"

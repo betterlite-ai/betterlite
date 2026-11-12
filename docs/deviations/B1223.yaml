@@ -1,0 +1,11 @@
+task: B1223
+deviations:
+  - what: An invalid decrypted session record raises an error whose message, Debug output and tracing output hold neither the bearer token nor the decrypted JSON.
+    why: The pin interpolates both into its exception text; secrets-stay-secret forbids leaking credentials through errors and logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3734-L3740
+  - what: A session token over 1048576 bytes or a decrypted session record nested past JSON depth 64 fails with a typed limit error instead of being decoded.
+    why: bounded-inputs requires a finite boundary on the untrusted byte decoder; every token a working proxy mints stays far below both limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3724-L3740
+  - what: A decrypted session record with a duplicate JSON key fails as an invalid record instead of keeping the last value.
+    why: no-silent-drops and the typed-wire policy reject duplicates everywhere else; a working session token never carries one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3734-L3740
