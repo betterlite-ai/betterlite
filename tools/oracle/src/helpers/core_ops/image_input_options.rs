@@ -1,8 +1,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_core::api::image_input_options::mime::{
-    DEFAULT_MIME, image_content_type_bytes, image_content_type_seekable, image_content_type_stream,
-    mime_for_detected,
+    DEFAULT_MIME, image_content_type_seekable, image_content_type_stream, image_type_from_name,
+    mime_for_image_type,
 };
 use betterlite_core::api::image_input_options::options::ImageEditOptionalRequestParams;
 use betterlite_core::api::image_input_options::selection::{
@@ -107,7 +107,7 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
             };
             let policy = OptionalParamsPolicy {
                 global_drop_params: *global_drop_params,
-                call_drop_params: *call_drop_params,
+                call_drop_params: call_drop_params.unwrap_or(false),
                 additional_drop_params: additional_drop_params.clone().unwrap_or_default(),
             };
             match optional_params_image_edit(&provider, model, params, &policy) {
@@ -119,12 +119,12 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
         }
         Call::Content { fixture } => content_call(fixture),
         Call::Detected { detection, raises } => {
-            let mime = if *raises {
-                mime_for_detected(None)
+            let image_type = if *raises {
+                None
             } else {
-                mime_for_detected(detection.as_deref())
+                detection.as_deref().and_then(image_type_from_name)
             };
-            Ok(json!({"mime": mime}))
+            Ok(json!({"mime": mime_for_image_type(image_type)}))
         }
     }
 }
@@ -142,7 +142,7 @@ fn content_call(fixture: &Fixture) -> Result<Value, Box<HelperError>> {
     })?;
     let name = fixture.name.clone();
     if fixture.kind == FixtureKind::Bytes {
-        return Ok(json!({"mime": image_content_type_bytes(&data), "name": name}));
+        return Ok(json!({"mime": image_content_type_stream(&mut data.as_slice()), "name": name}));
     }
     if fixture.kind == FixtureKind::NoRead {
         return Ok(json!({"mime": DEFAULT_MIME, "name": name}));

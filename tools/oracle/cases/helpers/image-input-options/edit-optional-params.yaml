@@ -81,5 +81,53 @@ call:
         params:
           n: 0
           user: ""
+      - function: optional
+        model: edit-model
+        supported: [n, user]
+        global_drop_params: false
+        call_drop_params: null
+        additional_drop_params: null
+        params:
+          mask: m
+      - function: optional
+        model: edit-model
+        supported: [n, user]
+        global_drop_params: false
+        call_drop_params: null
+        additional_drop_params: null
+        params:
+          quality: low
+      - function: optional
+        model: edit-model
+        supported: [n, user]
+        global_drop_params: false
+        call_drop_params: null
+        additional_drop_params: null
+        params:
+          size: "1024x1024"
+      - function: optional
+        model: edit-model
+        supported: [n, user]
+        global_drop_params: true
+        call_drop_params: false
+        additional_drop_params: null
+        params:
+          mask: m
+      - function: optional
+        model: edit-model
+        supported: [n, user]
+        global_drop_params: true
+        call_drop_params: false
+        additional_drop_params: null
+        params:
+          quality: low
+      - function: optional
+        model: edit-model
+        supported: [n, user]
+        global_drop_params: true
+        call_drop_params: false
+        additional_drop_params: null
+        params:
+          size: "1024x1024"
 env: {}
 compare: {ignore: []}
