@@ -152,7 +152,7 @@ pub(super) const INVOKE_ROWS: [Row; 8] = [
     },
 ];
 
-const CONVERSE_ROWS: [Row; 4] = [
+const CONVERSE_ROWS: [Row; 5] = [
     Row {
         converse: true,
         ..BASE
@@ -164,6 +164,12 @@ const CONVERSE_ROWS: [Row; 4] = [
     },
     Row {
         model: "converse/us-east-1/anthropic.claude-3-haiku-20240307-v1:0",
+        ..BASE
+    },
+    // the Invoke region check never runs on a routed model, so an invalid region still plans
+    Row {
+        model: "converse/amazon.titan-text-express-v1",
+        region: Some("US_EAST_1"),
         ..BASE
     },
     Row {
@@ -220,7 +226,7 @@ fn check_routed(request: BedrockPlanRequest, operation: BedrockRoute) {
     assert_eq!(plan, BedrockPrepared::Routed { operation, model });
 }
 
-// B598 picks chat_completions for a GPT 5.6 row listing the endpoint, Converse once stop is sent, and back when stop is dropped
+// B598 picks chat_completions for a GPT 5.6 row listing the endpoint, Converse once stop is sent, back when stop is dropped, and Converse again when request metadata is owned
 fn check_params_reach_route() {
     let endpoints = ParamValue::List(vec![ParamValue::Text(String::from("/v1/chat/completions"))]);
     let entry = IndexMap::from([(String::from("supported_endpoints"), endpoints)]);
@@ -232,7 +238,9 @@ fn check_params_reach_route() {
     gpt.request_params.insert(String::from("stop"), stop);
     check_routed(gpt.clone(), BedrockRoute::Converse);
     gpt.additional_drop_params.push(String::from("stop"));
-    check_routed(gpt, BedrockRoute::ChatCompletions);
+    check_routed(gpt.clone(), BedrockRoute::ChatCompletions);
+    gpt.request_metadata_owned = true;
+    check_routed(gpt, BedrockRoute::Converse);
 }
 
 // a price entry that is not an object makes B598's route selector refuse, and the plan must keep that error as is
