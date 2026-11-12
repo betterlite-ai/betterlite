@@ -55,12 +55,14 @@ pub fn decode_audio_duration(audio: &[u8], limits: &AudioDecodeLimits) -> Option
         return None;
     }
     let declared_frames = u64::from(reader.duration());
-    let frame_bytes =
-        u64::from(spec.channels).checked_mul(u64::from(spec.bits_per_sample.div_ceil(8)))?;
-    let data_bytes = u64::try_from(audio.len())
-        .ok()?
-        .saturating_sub(reader.into_inner().position());
-    let frames = declared_frames.min(data_bytes.checked_div(frame_bytes)?);
+    let data_start = usize::try_from(reader.into_inner().position()).ok()?;
+    let length_field = audio.get(data_start.checked_sub(4)?..data_start)?;
+    let declared_bytes = u64::from(u32::from_le_bytes(length_field.try_into().ok()?));
+    let data_bytes = u64::try_from(audio.len().saturating_sub(data_start)).ok()?;
+    let frames = match declared_bytes.checked_div(declared_frames) {
+        Some(frame_bytes) => declared_frames.min(data_bytes.checked_div(frame_bytes)?),
+        None => 0,
+    };
     if frames > limits.max_frames {
         return None;
     }

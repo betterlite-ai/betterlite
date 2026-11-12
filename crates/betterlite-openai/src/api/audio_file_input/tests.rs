@@ -4,6 +4,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read};
+use std::iter;
 use std::path::{Path, PathBuf};
 
 use rstest::rstest;
@@ -173,6 +174,30 @@ fn wav_bytes(frames: u32, sample_rate: u32, channels: u16) -> Vec<u8> {
     }
     writer.finalize().unwrap();
     cursor.into_inner()
+}
+
+fn extensible_24_in_32(claimed_bytes: u32, present_bytes: usize) -> Vec<u8> {
+    let pcm_guid = [
+        1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71,
+    ];
+    let mut clip = Vec::from(*b"RIFF");
+    clip.extend_from_slice(&0_u32.to_le_bytes());
+    clip.extend_from_slice(b"WAVEfmt ");
+    clip.extend_from_slice(&40_u32.to_le_bytes());
+    clip.extend_from_slice(&0xFFFE_u16.to_le_bytes());
+    clip.extend_from_slice(&1_u16.to_le_bytes());
+    clip.extend_from_slice(&16_000_u32.to_le_bytes());
+    clip.extend_from_slice(&64_000_u32.to_le_bytes());
+    clip.extend_from_slice(&4_u16.to_le_bytes());
+    clip.extend_from_slice(&32_u16.to_le_bytes());
+    clip.extend_from_slice(&22_u16.to_le_bytes());
+    clip.extend_from_slice(&24_u16.to_le_bytes());
+    clip.extend_from_slice(&0_u32.to_le_bytes());
+    clip.extend_from_slice(&pcm_guid);
+    clip.extend_from_slice(b"data");
+    clip.extend_from_slice(&claimed_bytes.to_le_bytes());
+    clip.extend(iter::repeat_n(0, present_bytes));
+    clip
 }
 
 fn limits(max_bytes: usize, max_frames: u64, max_sample_rate: u32) -> AudioDecodeLimits {
@@ -837,6 +862,22 @@ fn decode_caps_frames_at_the_bytes_present(
 ) {
     assert_eq!(
         decode_audio_duration(&clip[..length], &native_limits()),
+        Some(expected)
+    );
+}
+
+#[rstest]
+#[case::truncated(64_000, 400, Decimal::new(625, 5))]
+#[case::cut_mid_frame(64_000, 403, Decimal::new(625, 5))]
+#[case::complete(400, 400, Decimal::new(625, 5))]
+#[case::empty(0, 0, Decimal::ZERO)]
+fn decode_measures_a_frame_by_its_container_size(
+    #[case] claimed: u32,
+    #[case] present: usize,
+    #[case] expected: Decimal,
+) {
+    assert_eq!(
+        decode_audio_duration(&extensible_24_in_32(claimed, present), &native_limits()),
         Some(expected)
     );
 }
