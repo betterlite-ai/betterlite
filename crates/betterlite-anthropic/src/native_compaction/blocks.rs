@@ -28,12 +28,13 @@ const fn object<'response>(
     value: Option<&'response Json>,
     field: &'static str,
 ) -> Result<Option<&'response Mapping>, NativeCompactionError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(found)) => Ok(Some(found)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(NativeCompactionError::NotAnObject { field })
-        }
+    if let Some(Json::Object(found)) = value {
+        return Ok(Some(found));
+    }
+    if matches!(value, None | Some(Json::Null)) {
+        Ok(None)
+    } else {
+        Err(NativeCompactionError::NotAnObject { field })
     }
 }
 

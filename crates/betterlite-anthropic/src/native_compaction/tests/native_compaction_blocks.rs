@@ -23,47 +23,48 @@ fn chat_choice(blocks: &str) -> String {
 }
 
 #[rstest]
-#[case::stopped_with_block(messages_reply(r#""compaction""#, &format!("[{BLOCK}]")), 1)]
-#[case::stopped_with_two_blocks(messages_reply(r#""compaction""#, &format!("[{BLOCK},{BLOCK}]")), 2)]
-#[case::stopped_with_no_content(r#"{"stop_reason":"compaction"}"#.to_owned(), 0)]
-#[case::stopped_with_null_content(messages_reply(r#""compaction""#, "null"), 0)]
-#[case::other_stop_reason(messages_reply(r#""end_turn""#, &format!("[{BLOCK}]")), 0)]
-#[case::null_stop_reason(messages_reply("null", &format!("[{BLOCK}]")), 0)]
-#[case::no_stop_reason(format!(r#"{{"content":[{BLOCK}]}}"#), 0)]
-fn native_compaction_blocks_messages_need_a_compaction_stop(
-    #[case] reply: String,
-    #[case] count: usize,
-) {
-    let response = mapping(&reply);
-
-    let blocks = native_blocks(CompactionProtocol::Messages, &response).unwrap();
-
-    assert_eq!(blocks.len(), count);
-}
-
-#[rstest]
-#[case::one_choice(chat_reply(&format!("[{}]", chat_choice(&format!("[{BLOCK}]")))), 1)]
-#[case::two_blocks(chat_reply(&format!("[{}]", chat_choice(&format!("[{BLOCK},{BLOCK}]")))), 2)]
-#[case::two_choices(
+#[case::stopped_with_block(CompactionProtocol::Messages, messages_reply(r#""compaction""#, &format!("[{BLOCK}]")), 1)]
+#[case::stopped_with_two_blocks(CompactionProtocol::Messages, messages_reply(r#""compaction""#, &format!("[{BLOCK},{BLOCK}]")), 2)]
+#[case::stopped_with_no_content(CompactionProtocol::Messages, r#"{"stop_reason":"compaction"}"#.to_owned(), 0)]
+#[case::stopped_with_null_content(
+    CompactionProtocol::Messages,
+    messages_reply(r#""compaction""#, "null"),
+    0
+)]
+#[case::other_stop_reason(CompactionProtocol::Messages, messages_reply(r#""end_turn""#, &format!("[{BLOCK}]")), 0)]
+#[case::null_stop_reason(CompactionProtocol::Messages, messages_reply("null", &format!("[{BLOCK}]")), 0)]
+#[case::no_stop_reason(CompactionProtocol::Messages, format!(r#"{{"content":[{BLOCK}]}}"#), 0)]
+#[case::one_choice(CompactionProtocol::Chat, chat_reply(&format!("[{}]", chat_choice(&format!("[{BLOCK}]")))), 1)]
+#[case::two_blocks(CompactionProtocol::Chat, chat_reply(&format!("[{}]", chat_choice(&format!("[{BLOCK},{BLOCK}]")))), 2)]
+#[case::two_choices(CompactionProtocol::Chat,
     chat_reply(&format!("[{0},{0}]", chat_choice(&format!("[{BLOCK}]")))),
     0
 )]
-#[case::no_choices(chat_reply("[]"), 0)]
-#[case::choices_absent("{}".to_owned(), 0)]
-#[case::choices_null(chat_reply("null"), 0)]
-#[case::choice_without_message(chat_reply("[{}]"), 0)]
-#[case::message_null(chat_reply(r#"[{"message":null}]"#), 0)]
-#[case::message_without_fields(chat_reply(r#"[{"message":{}}]"#), 0)]
-#[case::fields_null(chat_reply(r#"[{"message":{"provider_specific_fields":null}}]"#), 0)]
-#[case::fields_without_blocks(chat_reply(r#"[{"message":{"provider_specific_fields":{}}}]"#), 0)]
-#[case::blocks_null(chat_reply(&format!("[{}]", chat_choice("null"))), 0)]
-fn native_compaction_blocks_chat_needs_exactly_one_choice(
+#[case::no_choices(CompactionProtocol::Chat, chat_reply("[]"), 0)]
+#[case::choices_absent(CompactionProtocol::Chat, "{}".to_owned(), 0)]
+#[case::choices_null(CompactionProtocol::Chat, chat_reply("null"), 0)]
+#[case::choice_without_message(CompactionProtocol::Chat, chat_reply("[{}]"), 0)]
+#[case::message_null(CompactionProtocol::Chat, chat_reply(r#"[{"message":null}]"#), 0)]
+#[case::message_without_fields(CompactionProtocol::Chat, chat_reply(r#"[{"message":{}}]"#), 0)]
+#[case::fields_null(
+    CompactionProtocol::Chat,
+    chat_reply(r#"[{"message":{"provider_specific_fields":null}}]"#),
+    0
+)]
+#[case::fields_without_blocks(
+    CompactionProtocol::Chat,
+    chat_reply(r#"[{"message":{"provider_specific_fields":{}}}]"#),
+    0
+)]
+#[case::blocks_null(CompactionProtocol::Chat, chat_reply(&format!("[{}]", chat_choice("null"))), 0)]
+fn native_compaction_blocks_count_what_the_protocol_reads(
+    #[case] protocol: CompactionProtocol,
     #[case] reply: String,
     #[case] count: usize,
 ) {
     let response = mapping(&reply);
 
-    let blocks = native_blocks(CompactionProtocol::Chat, &response).unwrap();
+    let blocks = native_blocks(protocol, &response).unwrap();
 
     assert_eq!(blocks.len(), count);
 }

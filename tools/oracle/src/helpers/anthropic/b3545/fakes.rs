@@ -1,5 +1,5 @@
 use std::convert::Infallible;
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_anthropic::native_compaction::anthropic::ModelInfoLookup;
@@ -66,6 +66,17 @@ impl RecordingRouter {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn record(&self, call: serde_json::Value) -> Ready<Result<Mapping, Infallible>> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
+        ready(Ok(Mapping::from([(
+            "id".to_owned(),
+            Json::Text(self.reply_id.clone()),
+        )])))
+    }
 }
 
 impl CompactionRouter for RecordingRouter {
@@ -75,33 +86,19 @@ impl CompactionRouter for RecordingRouter {
         &self,
         payload: &Mapping,
     ) -> impl Future<Output = Result<Mapping, Infallible>> + Send {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({"route": "messages", "options": payload}));
-        ready(Ok(Mapping::from([(
-            "id".to_owned(),
-            Json::Text(self.reply_id.clone()),
-        )])))
+        self.record(json!({"route": "messages", "options": payload}))
     }
 
     fn acompletion(
         &self,
         call: &ChatCall<'_>,
     ) -> impl Future<Output = Result<Mapping, Infallible>> + Send {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({
-                "route": "chat",
-                "model": call.model,
-                "messages": call.messages,
-                "stream": call.stream,
-                "options": call.options,
-            }));
-        ready(Ok(Mapping::from([(
-            "id".to_owned(),
-            Json::Text(self.reply_id.clone()),
-        )])))
+        self.record(json!({
+            "route": "chat",
+            "model": call.model,
+            "messages": call.messages,
+            "stream": call.stream,
+            "options": call.options,
+        }))
     }
 }
