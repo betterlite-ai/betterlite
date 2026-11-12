@@ -49,8 +49,8 @@ fn plain(model: &str) -> BedrockPlanRequest {
     }
 }
 
-fn check(request: BedrockPlanRequest, expected: &Expected) {
-    let plan = dispatch(&BedrockOperation::Plan(request.clone()))
+fn check(request: &BedrockPlanRequest, expected: &Expected) {
+    let plan = dispatch(&BedrockOperation::Plan(Box::new(request.clone())))
         .expect("the plan composes the route and endpoint leaves");
     assert_eq!(plan.operation, expected.operation);
     assert_eq!(plan.model, request.model);
@@ -86,10 +86,20 @@ fn leaf_route_error(request: &BedrockPlanRequest) -> RouteError {
 }
 
 pub(super) fn invoke_plan() {
+    invoke_explicit_region();
+    invoke_prefixed_model();
+    invoke_arn_with_api_base();
+    invoke_overridden_endpoints();
+    invoke_environment_region();
+    invoke_region_errors();
+    invoke_leaf_composition();
+}
+
+fn invoke_explicit_region() {
     let mut explicit = plain(CLAUDE);
     explicit.aws_region_name = Some(String::from("us-east-1"));
     check(
-        explicit,
+        &explicit,
         &Expected {
             operation: BedrockRoute::Invoke,
             model_id: ENCODED_CLAUDE,
@@ -98,11 +108,13 @@ pub(super) fn invoke_plan() {
             proxy_endpoint_url: "https://bedrock-runtime.us-east-1.amazonaws.com",
         },
     );
+}
 
+fn invoke_prefixed_model() {
     let mut prefixed = plain("bedrock/anthropic.claude-3-haiku-20240307-v1:0");
     prefixed.settings.aws_region_name = Some(String::from("eu-west-1"));
     check(
-        prefixed,
+        &prefixed,
         &Expected {
             operation: BedrockRoute::Invoke,
             model_id: ENCODED_CLAUDE,
@@ -111,11 +123,13 @@ pub(super) fn invoke_plan() {
             proxy_endpoint_url: "https://bedrock-runtime.eu-west-1.amazonaws.com",
         },
     );
+}
 
+fn invoke_arn_with_api_base() {
     let mut arn = plain(ARN);
     arn.api_base = Some(String::from("https://bedrock-proxy.example"));
     check(
-        arn,
+        &arn,
         &Expected {
             operation: BedrockRoute::Invoke,
             model_id: ENCODED_ARN,
@@ -124,13 +138,15 @@ pub(super) fn invoke_plan() {
             proxy_endpoint_url: "https://bedrock-proxy.example",
         },
     );
+}
 
+fn invoke_overridden_endpoints() {
     let mut overrides = plain(CLAUDE);
     overrides.aws_region_name = Some(String::from("ap-south-1"));
     overrides.api_base = Some(String::from("https://bedrock-proxy.example"));
     overrides.aws_bedrock_runtime_endpoint = Some(String::from("https://bedrock-runtime.example"));
     check(
-        overrides,
+        &overrides,
         &Expected {
             operation: BedrockRoute::Invoke,
             model_id: ENCODED_CLAUDE,
@@ -139,13 +155,15 @@ pub(super) fn invoke_plan() {
             proxy_endpoint_url: "https://bedrock-runtime.example",
         },
     );
+}
 
+fn invoke_environment_region() {
     let mut environment = plain("meta.llama3-70b-instruct-v1:0");
     environment.settings.session_region = Some(String::from("ca-central-1"));
     environment.settings.aws_bedrock_runtime_endpoint =
         Some(String::from("https://env-runtime.example"));
     check(
-        environment,
+        &environment,
         &Expected {
             operation: BedrockRoute::Invoke,
             model_id: "meta.llama3-70b-instruct-v1:0",
@@ -154,11 +172,13 @@ pub(super) fn invoke_plan() {
             proxy_endpoint_url: "https://env-runtime.example",
         },
     );
+}
 
+fn invoke_region_errors() {
     let mut fallback = plain(CLAUDE);
     fallback.settings.aws_region = Some(String::new());
-    let error =
-        dispatch(&BedrockOperation::Plan(fallback)).expect_err("an empty region is invalid");
+    let error = dispatch(&BedrockOperation::Plan(Box::new(fallback)))
+        .expect_err("an empty region is invalid");
     assert!(matches!(
         error,
         BedrockDispatchError::Endpoint(AwsEndpointError::Region { .. })
@@ -166,11 +186,13 @@ pub(super) fn invoke_plan() {
 
     let mut defaulted = plain(CLAUDE);
     defaulted.aws_region_name = Some(String::from("us-west-2"));
-    let rendered = dispatch(&BedrockOperation::Plan(defaulted))
+    let rendered = dispatch(&BedrockOperation::Plan(Box::new(defaulted)))
         .expect("the plan composes the route and endpoint leaves");
     assert_eq!(rendered.region, "us-west-2");
     assert_eq!(rendered.endpoint_url, DEFAULT_ENDPOINT);
+}
 
+fn invoke_leaf_composition() {
     assert_eq!(
         invoke_provider(CLAUDE),
         Some(BedrockInvokeProvider::Anthropic)
@@ -199,11 +221,20 @@ pub(super) fn invoke_plan() {
 }
 
 pub(super) fn converse_plan() {
+    converse_catalog_model();
+    converse_prefixed_model();
+    converse_overridden_model_id();
+    converse_invoke_override();
+    converse_leaf_route();
+    converse_malformed_catalog();
+}
+
+fn converse_catalog_model() {
     let mut catalog_model = plain(CLAUDE);
     catalog_model.converse_models.insert(String::from(CLAUDE));
     catalog_model.aws_region_name = Some(String::from("us-east-1"));
     check(
-        catalog_model.clone(),
+        &catalog_model,
         &Expected {
             operation: BedrockRoute::Converse,
             model_id: ENCODED_CLAUDE,
@@ -212,11 +243,13 @@ pub(super) fn converse_plan() {
             proxy_endpoint_url: "https://bedrock-runtime.us-east-1.amazonaws.com",
         },
     );
+}
 
+fn converse_prefixed_model() {
     let mut prefixed = plain("converse/amazon.titan-text-express-v1");
     prefixed.aws_region_name = Some(String::from("eu-central-1"));
     check(
-        prefixed,
+        &prefixed,
         &Expected {
             operation: BedrockRoute::Converse,
             model_id: "amazon.titan-text-express-v1",
@@ -225,12 +258,14 @@ pub(super) fn converse_plan() {
             proxy_endpoint_url: "https://bedrock-runtime.eu-central-1.amazonaws.com",
         },
     );
+}
 
+fn converse_overridden_model_id() {
     let mut overridden = plain(CLAUDE);
     overridden.converse_models.insert(String::from(CLAUDE));
     overridden.model_id = Some(String::from(OVERRIDE_ARN));
     check(
-        overridden,
+        &overridden,
         &Expected {
             operation: BedrockRoute::Converse,
             model_id: ENCODED_OVERRIDE_ARN,
@@ -239,11 +274,13 @@ pub(super) fn converse_plan() {
             proxy_endpoint_url: "https://bedrock-runtime.us-east-2.amazonaws.com",
         },
     );
+}
 
+fn converse_invoke_override() {
     let mut invoke_override = plain(CLAUDE);
     invoke_override.model_id = Some(String::from(OVERRIDE_ARN));
     check(
-        invoke_override,
+        &invoke_override,
         &Expected {
             operation: BedrockRoute::Invoke,
             model_id: ENCODED_OVERRIDE_ARN,
@@ -252,7 +289,11 @@ pub(super) fn converse_plan() {
             proxy_endpoint_url: DEFAULT_ENDPOINT,
         },
     );
+}
 
+fn converse_leaf_route() {
+    let mut catalog_model = plain(CLAUDE);
+    catalog_model.converse_models.insert(String::from(CLAUDE));
     let expected_route = ModelRouteSelector::new(
         &catalog_model.price_map,
         &catalog_model.converse_models,
@@ -266,9 +307,11 @@ pub(super) fn converse_plan() {
     )
     .expect("the catalog lists the model for converse");
     assert_eq!(expected_route, BedrockRoute::Converse);
+}
 
+fn converse_malformed_catalog() {
     let malformed = malformed_catalog_request();
-    let error = dispatch(&BedrockOperation::Plan(malformed.clone()))
+    let error = dispatch(&BedrockOperation::Plan(Box::new(malformed.clone())))
         .expect_err("the malformed price entry refuses the plan");
     assert_eq!(error.to_string(), leaf_route_error(&malformed).to_string());
     assert!(matches!(
@@ -278,9 +321,16 @@ pub(super) fn converse_plan() {
 }
 
 pub(super) fn operation_error_propagation() {
+    invalid_explicit_region();
+    empty_environment_region();
+    malformed_catalog_region();
+}
+
+fn invalid_explicit_region() {
     let mut explicit = plain(CLAUDE);
     explicit.aws_region_name = Some(String::from("US_EAST_1"));
-    let error = dispatch(&BedrockOperation::Plan(explicit)).expect_err("an invalid region refuses");
+    let error = dispatch(&BedrockOperation::Plan(Box::new(explicit)))
+        .expect_err("an invalid region refuses");
     let leaf_error = llm_region_name(LlmRegion {
         explicit: Some("US_EAST_1"),
         model: Some(CLAUDE),
@@ -295,13 +345,20 @@ pub(super) fn operation_error_propagation() {
         BedrockDispatchError::Endpoint(AwsEndpointError::Region { region }) => {
             assert_eq!(region, "US_EAST_1");
         }
-        other => panic!("the invalid region error was rewritten: {other}"),
+        BedrockDispatchError::Route(_)
+        | BedrockDispatchError::Endpoint(_)
+        | BedrockDispatchError::Encode { .. }
+        | BedrockDispatchError::Unsupported { .. } => {
+            panic!("the invalid region error was rewritten");
+        }
     }
+}
 
+fn empty_environment_region() {
     let mut environment = plain(CLAUDE);
     environment.settings.aws_region = Some(String::new());
-    let error =
-        dispatch(&BedrockOperation::Plan(environment)).expect_err("an empty region refuses");
+    let error = dispatch(&BedrockOperation::Plan(Box::new(environment)))
+        .expect_err("an empty region refuses");
     let leaf_error = llm_region_name(LlmRegion {
         explicit: None,
         model: Some(CLAUDE),
@@ -316,17 +373,29 @@ pub(super) fn operation_error_propagation() {
         BedrockDispatchError::Endpoint(AwsEndpointError::Region { region }) => {
             assert!(region.is_empty());
         }
-        other => panic!("the empty region error was rewritten: {other}"),
+        BedrockDispatchError::Route(_)
+        | BedrockDispatchError::Endpoint(_)
+        | BedrockDispatchError::Encode { .. }
+        | BedrockDispatchError::Unsupported { .. } => {
+            panic!("the empty region error was rewritten");
+        }
     }
+}
 
+fn malformed_catalog_region() {
     let malformed = malformed_catalog_request();
-    let error = dispatch(&BedrockOperation::Plan(malformed.clone()))
+    let error = dispatch(&BedrockOperation::Plan(Box::new(malformed.clone())))
         .expect_err("the malformed price entry refuses the plan");
     assert_eq!(error.to_string(), leaf_route_error(&malformed).to_string());
     match error {
         BedrockDispatchError::Route(RouteError::MalformedPriceEntry { key }) => {
             assert_eq!(key, "openai.gpt-5.6-fixture");
         }
-        other => panic!("the catalog error was rewritten: {other}"),
+        BedrockDispatchError::Route(_)
+        | BedrockDispatchError::Endpoint(_)
+        | BedrockDispatchError::Encode { .. }
+        | BedrockDispatchError::Unsupported { .. } => {
+            panic!("the catalog error was rewritten");
+        }
     }
 }

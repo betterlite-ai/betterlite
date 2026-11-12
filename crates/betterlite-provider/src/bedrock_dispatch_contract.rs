@@ -9,7 +9,7 @@ use betterlite_bedrock::aws_endpoints::runtime::{
 };
 use betterlite_bedrock::model_routes::{BedrockRoute, ModelRouteSelector, ParamMap, RouteError};
 use indexmap::IndexSet;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 use thiserror::Error;
 
 use crate::provider::Adapter;
@@ -43,7 +43,7 @@ pub struct BedrockAwsSettings {
 }
 
 // Everything a plan reads, already normalized: the request parameters, the caller's Bedrock catalog and the settings
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BedrockPlanRequest {
     pub model: String,
     pub model_id: Option<String>,
@@ -59,9 +59,9 @@ pub struct BedrockPlanRequest {
 }
 
 // The closed set of native Bedrock operations; a family answers unsupported until its own task installs its arm
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BedrockOperation {
-    Plan(BedrockPlanRequest),
+    Plan(Box<BedrockPlanRequest>),
     Chat,
     Other,
     Services,
@@ -107,37 +107,9 @@ pub fn dispatch(operation: &BedrockOperation) -> Result<BedrockPrepared, Bedrock
 }
 
 fn plan(request: &BedrockPlanRequest) -> Result<BedrockPrepared, BedrockDispatchError> {
-    let selector = ModelRouteSelector::new(
-        &request.price_map,
-        &request.converse_models,
-        request.request_metadata_owned,
-    )?;
-    let operation = selector.route_for_request(
-        &request.model,
-        &request.request_params,
-        Some(&request.additional_drop_params),
-    )?;
-    let provider = invoke_provider(&request.model);
-    let mut optional_params: BTreeMap<String, Box<RawValue>> = BTreeMap::new();
-    if let Some(model_id) = &request.model_id {
-        let raw_id = serde_json::value::to_raw_value(model_id)
-            .map_err(|source| BedrockDispatchError::Encode { source })?;
-        optional_params.insert(String::from("model_id"), raw_id);
-    }
-    let model_id = bedrock_model_id(&mut optional_params, provider, &request.model)?;
-    // the Converse handler passes the caller's model_id override to the region resolver; every other route does not
-    let model_id_region = match operation {
-        BedrockRoute::Converse => request.model_id.as_deref(),
-        _ => None,
-    };
-    let region = llm_region_name(LlmRegion {
-        explicit: request.aws_region_name.as_deref(),
-        model: Some(&request.model),
-        model_id: model_id_region,
-        environment_region_name: request.settings.aws_region_name.as_deref(),
-        environment_region: request.settings.aws_region.as_deref(),
-        session_region: request.settings.session_region.as_deref(),
-    })?;
+    let operation = select_operation(request)?;
+    let model_id = select_model_id(request)?;
+    let region = select_region(request, operation)?;
     let endpoint = runtime_endpoint(RuntimeEndpointInput {
         api_base: request.api_base.as_deref(),
         configured_endpoint: request.aws_bedrock_runtime_endpoint.as_deref(),
@@ -153,6 +125,60 @@ fn plan(request: &BedrockPlanRequest) -> Result<BedrockPrepared, BedrockDispatch
         endpoint_url: endpoint.endpoint_url,
         proxy_endpoint_url: endpoint.proxy_endpoint_url,
     })
+}
+
+fn select_operation(request: &BedrockPlanRequest) -> Result<BedrockRoute, BedrockDispatchError> {
+    let selector = ModelRouteSelector::new(
+        &request.price_map,
+        &request.converse_models,
+        request.request_metadata_owned,
+    )?;
+    let operation = selector.route_for_request(
+        &request.model,
+        &request.request_params,
+        Some(&request.additional_drop_params),
+    )?;
+    Ok(operation)
+}
+
+fn select_model_id(request: &BedrockPlanRequest) -> Result<String, BedrockDispatchError> {
+    let provider = invoke_provider(&request.model);
+    let mut optional_params: BTreeMap<String, Box<RawValue>> = BTreeMap::new();
+    if let Some(model_id) = &request.model_id {
+        let raw_id =
+            to_raw_value(model_id).map_err(|source| BedrockDispatchError::Encode { source })?;
+        optional_params.insert(String::from("model_id"), raw_id);
+    }
+    let model_id = bedrock_model_id(&mut optional_params, provider, &request.model)?;
+    Ok(model_id)
+}
+
+fn select_region(
+    request: &BedrockPlanRequest,
+    operation: BedrockRoute,
+) -> Result<String, BedrockDispatchError> {
+    // the Converse handler passes the caller's model_id override to the region resolver; every other route does not
+    let model_id_region = match operation {
+        BedrockRoute::Converse => request.model_id.as_deref(),
+        BedrockRoute::Invoke
+        | BedrockRoute::ClaudePlatform
+        | BedrockRoute::ConverseLike
+        | BedrockRoute::Agent
+        | BedrockRoute::Agentcore
+        | BedrockRoute::AsyncInvoke
+        | BedrockRoute::Openai
+        | BedrockRoute::Mantle
+        | BedrockRoute::ChatCompletions => None,
+    };
+    let region = llm_region_name(LlmRegion {
+        explicit: request.aws_region_name.as_deref(),
+        model: Some(&request.model),
+        model_id: model_id_region,
+        environment_region_name: request.settings.aws_region_name.as_deref(),
+        environment_region: request.settings.aws_region.as_deref(),
+        session_region: request.settings.session_region.as_deref(),
+    })?;
+    Ok(region)
 }
 
 impl Adapter for Bedrock {
