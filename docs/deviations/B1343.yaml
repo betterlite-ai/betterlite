@@ -1,0 +1,11 @@
+task: B1343
+deviations:
+  - what: An input element that is neither a string nor an object is refused with a 400 invalid_request_error instead of LiteLLM's unhandled ValueError, which the proxy reports as a 500.
+    why: The caller sent a value outside the declared input type, so a 4xx is the right answer and no working setup relies on the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/transformation.py#L162
+  - what: video_length_seconds is summed with exact decimal arithmetic, where LiteLLM adds Python floats starting at 0.0.
+    why: Offset seconds are declared integers, so the total is the same for every declared input, and a float sum of many segments drifts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/transformation.py#L262
+  - what: A base64 image string longer than 32 MiB is classified as text instead of being decoded.
+    why: Classification runs on request data, and decoding an unbounded string allocates in proportion to what the caller sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8104
