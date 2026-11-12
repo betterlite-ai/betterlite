@@ -347,7 +347,7 @@ fn a_chat_response_bills_one_search() {
 fn maps_and_branch_overflow_is_typed() {
     let source =
         FakeSource::default().with_entry("gpt-4o", Some("gemini"), search_info(two_cents(), None));
-    let policy = policy(None, Some(Decimal::MAX));
+    let policy = policy(Some(Decimal::MAX), Some(Decimal::MAX));
     let reply = response(&reported_calls(1));
     let params = BuiltInToolParams::default();
     let mut asked = request(Some("gemini"), &reply, &params);
