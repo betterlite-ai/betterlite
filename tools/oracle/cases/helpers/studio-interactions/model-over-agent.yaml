@@ -1,0 +1,23 @@
+kind: helper
+name: studio-interactions-model-over-agent
+call:
+  studio_interactions:
+    calls:
+      - function: transform_request
+        model: "gemini/gemini-2.5-flash"
+        agent: "deep-research"
+        input: "hello"
+        optional_params: {}
+      - function: transform_request
+        model: ""
+        agent: "deep-research"
+        input: "hello"
+        optional_params: {}
+      - function: transform_request
+        agent: "deep-research"
+        optional_params: {}
+      - function: transform_request
+        model: "gemini/"
+        optional_params: {}
+env: {}
+compare: {ignore: []}

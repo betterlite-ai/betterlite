@@ -51,6 +51,12 @@ roles:
   worker:
     instructions: roles/worker.md
     ladder:
+      - runner: claude-worker
+        model: claude-sonnet-5-5
+        effort: high
+        attempts: 2
+        timeout_minutes: 180
+        tasks: [B068, B302, B368, B401, B568, B569, B963, B966, B1117, B1685, B1686, B1687, B1689, B2227, B3246, B3662, B3663, B3664, B3665, B3667, B3668, B3669, B3857, B3868, B3910, B5471, B5650, B8152, B9710]
       - runner: deepseek-worker
         model: deepseek-flash[1m]
         effort: max

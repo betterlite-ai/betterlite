@@ -32,7 +32,7 @@ description: >-
 
   Errors: one SessionError enum (thiserror) in oauth_sessions.rs with a variant per failure above, wrapping the upstream error types with #[from] where they exist, and a status mapping used by the route.
 
-  Tests use synthetic servers (ids like test-session-1, urls like https://mcp.example.test/sse), a fake clock, a fake Redis backend that can be set to fail each operation, a fake cipher that can fail, and an in-memory fake for the database port. The HTTP cases run the booted proxy with a master key and no database and no response cache, so they cover the in-memory path only.
+  Tests use synthetic servers (ids like test-session-1, urls like https://mcp.example.test/sse), a fake clock, a fake Redis backend that can be set to fail each operation, a fake cipher that can fail, and an in-memory fake for the database port. The route answers over HTTP only once B8702 mounts it, so its five HTTP cases live in B8702 (tools/oracle/cases/http/mcp-oauth-session/), written from this task's route steps and DoD: the booted proxy with a master key, no database and no response cache, so they cover the in-memory path only. Here the route is tested through the handler with fakes.
 
 scope:
   paths:
@@ -40,7 +40,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/mcp/oauth_sessions.rs
     - crates/betterlite-server/src/mcp/oauth_sessions/**
-    - tools/oracle/cases/mcp-oauth-session/**
     - tools/oracle/helpers/b4718.py
     - tools/oracle/helpers/b4718/**
     - tools/oracle/src/helpers/server/b4718.rs
@@ -107,14 +106,14 @@ dod:
       POST /v1/mcp/server/oauth/session answers 200 with the credential-redacted record for a master-key caller, keeps a
       supplied server_id when there is no database, mints a new id when none is supplied, and keeps scopes while dropping
       auth_value and client_secret from the response.
-    proof: [oracle]
+    proof: [session-tests]
   - text: >-
       The route validates the payload before the role check (a bad name gives 400 even for a non-admin), answers 403 with the
-      exact error text for any role except PROXY_ADMIN, answers 401 without credentials, and wraps an error from the caching
+      exact error text for any role except PROXY_ADMIN, and wraps an error from the caching
       step as 500 "Error caching temporary mcp server: <error>".
-    proof: [oracle, session-tests]
+    proof: [session-tests]
   - text: >-
-      Every default, error text and ignore-and-continue path a user can observe is in a named test or oracle case with a literal
+      Every default, error text and ignore-and-continue path a user can observe is in a named test with a literal
       input and outcome.
     proof: [session-tests]
 
@@ -126,12 +125,7 @@ checks:
       why: the session store, the three-source lookup, the Redis copy, the id rule and the route steps have no passing behavior tests
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_sessions::/)'
 
-oracle_cases:
-  - tools/oracle/cases/mcp-oauth-session/session-supplied-id-kept.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-generated-id.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-credentials-redacted.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-requires-auth.yaml
-  - tools/oracle/cases/mcp-oauth-session/session-invalid-name-400.yaml
+oracle_cases: []
 
 deviations:
   - what: The Redis copy is skipped when no backend is configured, like LiteLLM when litellm.cache is None; there is no check for a missing method on the backend.

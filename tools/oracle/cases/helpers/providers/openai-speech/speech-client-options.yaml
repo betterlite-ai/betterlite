@@ -1,0 +1,23 @@
+kind: helper
+name: openai-speech-supplied-client
+call:
+  openai_speech:
+    client:
+      api_key: sk-speech
+      api_base: 'https://speech.test/v1'
+      timeout: 30
+      max_retries: 4
+      organization: org-ignored
+      project: project-ignored
+      supplied: sync
+      shared_session: true
+    request:
+      model: tts-1
+      input: Supplied client
+      voice: fable
+    reply:
+      status: 200
+      headers: [[content-type, audio/mpeg]]
+      chunks: [[9]]
+env: {}
+compare: {ignore: []}

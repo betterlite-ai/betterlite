@@ -1,0 +1,22 @@
+kind: helper
+name: openai-speech-speed-and-instructions
+call:
+  openai_speech:
+    client:
+      api_key: sk-speech
+      api_base: 'https://speech.test/v1'
+      timeout: 15
+      max_retries: 2
+      aspeech: true
+    request:
+      model: tts-1
+      input: Say it slowly
+      voice: nova
+      speed: 1.25
+      instructions: calm and clear
+    reply:
+      status: 200
+      headers: [[content-type, audio/mpeg]]
+      chunks: [[1, 2, 3]]
+env: {}
+compare: {ignore: []}

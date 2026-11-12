@@ -1,0 +1,15 @@
+kind: helper
+name: cometapi-record-seed-chunk-reasoning
+call:
+  cometapi_record:
+    function: chunks
+    chunks:
+      - id: a
+        created: 1
+        model: m
+        choices:
+          - {index: 0, delta: {reasoning: first, content: x}}
+          - {index: 1, delta: {reasoning: null, reasoning_content: old}}
+        usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}
