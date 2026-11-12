@@ -62,6 +62,20 @@ pub struct PromptInjectionParams {
     pub reject_as_response: Option<bool>,
 }
 
+impl Default for PromptInjectionParams {
+    fn default() -> Self {
+        Self {
+            heuristics_check: false,
+            vector_db_check: false,
+            llm_api_check: false,
+            llm_api_name: None,
+            llm_api_system_prompt: None,
+            llm_api_fail_call_string: None,
+            reject_as_response: Some(false),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 struct RawPromptInjectionParams {

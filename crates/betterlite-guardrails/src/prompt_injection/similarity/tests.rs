@@ -69,15 +69,15 @@ fn a_ratio_of_one_is_not_above_a_threshold_of_one() {
 
 #[test]
 fn windows_are_cut_by_characters_not_bytes() {
-    let keywords = keywords(&["éééééééééé"]);
+    let keywords = keywords(&["\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"]);
     assert!(check_user_input_similarity(
         &keywords,
-        "zzzÉÉÉÉÉÉÉÉÉÉzzz",
+        "zzz\u{c9}\u{c9}\u{c9}\u{c9}\u{c9}\u{c9}\u{c9}\u{c9}\u{c9}\u{c9}zzz",
         threshold("0.7")
     ));
     assert!(!check_user_input_similarity(
         &keywords,
-        "ééééééééé",
+        "\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}",
         threshold("0.7")
     ));
 }

@@ -111,6 +111,10 @@ impl PromptInjectionDetection {
         if !should_scan {
             return Ok(PreCallOutcome::Pass);
         }
+        self.scan(prompt).await
+    }
+
+    async fn scan(&self, prompt: String) -> Result<PreCallOutcome, PromptInjectionError> {
         let hit = match self
             .pool
             .check(
@@ -145,12 +149,15 @@ impl PromptInjectionDetection {
         Err(PromptInjectionError::Rejected)
     }
 
-    pub async fn moderation<J: InjectionJudge>(
+    pub async fn moderation<J>(
         &self,
         judge: &J,
         call_type: HookCallType,
         request: &FormattedPromptData<'_>,
-    ) -> Result<Option<bool>, PromptInjectionError> {
+    ) -> Result<Option<bool>, PromptInjectionError>
+    where
+        J: InjectionJudge,
+    {
         let Some(params) = self.params.as_ref() else {
             return Ok(None);
         };
@@ -171,7 +178,7 @@ impl PromptInjectionDetection {
             return Ok(Some(false));
         };
         let fail_call_string = params.llm_api_fail_call_string.as_deref();
-        if fail_call_string.is_some_and(|fail_call_string| answer.contains(fail_call_string)) {
+        if fail_call_string.is_some_and(|needle| answer.contains(needle)) {
             return Err(PromptInjectionError::Rejected);
         }
         Ok(Some(false))

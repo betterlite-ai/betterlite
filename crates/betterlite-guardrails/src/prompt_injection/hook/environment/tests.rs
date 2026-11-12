@@ -18,16 +18,16 @@ fn listed_names() -> [String; 1] {
 #[test]
 fn without_params_any_model_list_is_accepted() {
     let mut detection = detection(None);
-    assert!(detection.update_environment(None).is_ok());
-    assert!(detection.update_environment(Some(&[])).is_ok());
-    assert!(detection.update_environment(Some(&listed_names())).is_ok());
+    detection.update_environment(None).unwrap();
+    detection.update_environment(Some(&[])).unwrap();
+    detection.update_environment(Some(&listed_names())).unwrap();
 }
 
 #[test]
 fn a_disabled_llm_api_check_accepts_a_missing_model_list() {
     let mut detection = detection(Some(params(Scenario::AllFalse)));
-    assert!(detection.update_environment(None).is_ok());
-    assert!(detection.update_environment(Some(&[])).is_ok());
+    detection.update_environment(None).unwrap();
+    detection.update_environment(Some(&[])).unwrap();
 }
 
 #[test]
@@ -68,5 +68,5 @@ fn an_enabled_llm_api_check_without_a_name_is_refused() {
 #[test]
 fn a_listed_model_name_is_accepted() {
     let mut detection = detection(Some(params(Scenario::LlmApi)));
-    assert!(detection.update_environment(Some(&listed_names())).is_ok());
+    detection.update_environment(Some(&listed_names())).unwrap();
 }

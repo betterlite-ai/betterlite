@@ -38,7 +38,7 @@ async fn a_held_permit_keeps_the_next_check_waiting() {
         ),
     )
     .await;
-    assert!(blocked.is_err());
+    blocked.expect_err("the held permit keeps the check waiting");
     drop(held);
     let outcome = timeout(
         Duration::from_secs(1),

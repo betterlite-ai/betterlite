@@ -33,7 +33,7 @@ pub fn matching_characters(first: &[char], second: &[char]) -> usize {
         second_low: 0,
         second_high: second.len(),
     }];
-    let mut matched = 0;
+    let mut matched: usize = 0;
     while let Some(bounds) = queue.pop() {
         let (first_start, second_start, size) = longest_match(first, second, &positions, bounds);
         if size == 0 {
@@ -86,31 +86,37 @@ fn longest_match(
         .take(bounds.first_high.saturating_sub(bounds.first_low))
     {
         let mut lengths: HashMap<usize, usize> = HashMap::new();
-        if let Some(found) = positions.get(character) {
-            for &other in found {
-                if other < bounds.second_low {
-                    continue;
-                }
-                if other >= bounds.second_high {
-                    break;
-                }
-                let previous = other
-                    .checked_sub(1)
-                    .and_then(|previous| previous_lengths.get(&previous).copied())
-                    .unwrap_or(0);
-                let size = previous.saturating_add(1);
-                lengths.insert(other, size);
-                if size > best.2 {
-                    best = (
-                        index.saturating_add(1).saturating_sub(size),
-                        other.saturating_add(1).saturating_sub(size),
-                        size,
-                    );
-                }
+        let found: &[usize] = positions.get(character).map_or(&[], Vec::as_slice);
+        for &other in found
+            .iter()
+            .skip_while(|other| **other < bounds.second_low)
+            .take_while(|other| **other < bounds.second_high)
+        {
+            let previous = other
+                .checked_sub(1)
+                .and_then(|previous| previous_lengths.get(&previous).copied())
+                .unwrap_or(0);
+            let size = previous.saturating_add(1);
+            lengths.insert(other, size);
+            if size > best.2 {
+                best = (
+                    index.saturating_add(1).saturating_sub(size),
+                    other.saturating_add(1).saturating_sub(size),
+                    size,
+                );
             }
         }
         previous_lengths = lengths;
     }
+    extend_match(first, second, bounds, best)
+}
+
+fn extend_match(
+    first: &[char],
+    second: &[char],
+    bounds: Bounds,
+    mut best: (usize, usize, usize),
+) -> (usize, usize, usize) {
     while best.0 > bounds.first_low
         && best.1 > bounds.second_low
         && first.get(best.0.saturating_sub(1)) == second.get(best.1.saturating_sub(1))

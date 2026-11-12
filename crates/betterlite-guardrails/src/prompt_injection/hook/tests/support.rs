@@ -10,6 +10,7 @@ pub(super) const JUDGE_MODEL: &str = "judge-model";
 pub(super) const SYSTEM_PROMPT: &str = "judge system prompt";
 pub(super) const FAIL_CALL_STRING: &str = "UNSAFE";
 
+#[derive(Clone, Copy)]
 pub(super) enum Scenario {
     AllFalse,
     Heuristics,
@@ -21,71 +22,33 @@ pub(super) enum Scenario {
 }
 
 pub(super) fn params(scenario: Scenario) -> PromptInjectionParams {
+    let mut params = PromptInjectionParams::default();
     match scenario {
-        Scenario::AllFalse => PromptInjectionParams {
-            heuristics_check: false,
-            vector_db_check: false,
-            llm_api_check: false,
-            llm_api_name: None,
-            llm_api_system_prompt: None,
-            llm_api_fail_call_string: None,
-            reject_as_response: Some(false),
-        },
-        Scenario::Heuristics => PromptInjectionParams {
-            heuristics_check: true,
-            vector_db_check: false,
-            llm_api_check: false,
-            llm_api_name: None,
-            llm_api_system_prompt: None,
-            llm_api_fail_call_string: None,
-            reject_as_response: Some(false),
-        },
-        Scenario::HeuristicsRejectAsResponse => PromptInjectionParams {
-            heuristics_check: true,
-            vector_db_check: false,
-            llm_api_check: false,
-            llm_api_name: None,
-            llm_api_system_prompt: None,
-            llm_api_fail_call_string: None,
-            reject_as_response: Some(true),
-        },
-        Scenario::VectorDb => PromptInjectionParams {
-            heuristics_check: false,
-            vector_db_check: true,
-            llm_api_check: false,
-            llm_api_name: None,
-            llm_api_system_prompt: None,
-            llm_api_fail_call_string: None,
-            reject_as_response: Some(false),
-        },
-        Scenario::LlmApi => PromptInjectionParams {
-            heuristics_check: false,
-            vector_db_check: false,
-            llm_api_check: true,
-            llm_api_name: Some(JUDGE_MODEL.to_owned()),
-            llm_api_system_prompt: Some(SYSTEM_PROMPT.to_owned()),
-            llm_api_fail_call_string: Some(FAIL_CALL_STRING.to_owned()),
-            reject_as_response: Some(false),
-        },
-        Scenario::LlmApiWithoutName => PromptInjectionParams {
-            heuristics_check: false,
-            vector_db_check: false,
-            llm_api_check: true,
-            llm_api_name: None,
-            llm_api_system_prompt: Some(SYSTEM_PROMPT.to_owned()),
-            llm_api_fail_call_string: Some(FAIL_CALL_STRING.to_owned()),
-            reject_as_response: Some(false),
-        },
-        Scenario::LlmApiWithoutSystemPrompt => PromptInjectionParams {
-            heuristics_check: false,
-            vector_db_check: false,
-            llm_api_check: true,
-            llm_api_name: Some(JUDGE_MODEL.to_owned()),
-            llm_api_system_prompt: None,
-            llm_api_fail_call_string: Some(FAIL_CALL_STRING.to_owned()),
-            reject_as_response: Some(false),
-        },
+        Scenario::AllFalse => {}
+        Scenario::Heuristics => params.heuristics_check = true,
+        Scenario::HeuristicsRejectAsResponse => {
+            params.heuristics_check = true;
+            params.reject_as_response = Some(true);
+        }
+        Scenario::VectorDb => params.vector_db_check = true,
+        Scenario::LlmApi => llm_api(&mut params),
+        Scenario::LlmApiWithoutName => {
+            llm_api(&mut params);
+            params.llm_api_name = None;
+        }
+        Scenario::LlmApiWithoutSystemPrompt => {
+            llm_api(&mut params);
+            params.llm_api_system_prompt = None;
+        }
     }
+    params
+}
+
+fn llm_api(params: &mut PromptInjectionParams) {
+    params.llm_api_check = true;
+    params.llm_api_name = Some(JUDGE_MODEL.to_owned());
+    params.llm_api_system_prompt = Some(SYSTEM_PROMPT.to_owned());
+    params.llm_api_fail_call_string = Some(FAIL_CALL_STRING.to_owned());
 }
 
 pub(super) fn threshold() -> Decimal {

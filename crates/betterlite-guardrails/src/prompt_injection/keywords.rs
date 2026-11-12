@@ -36,21 +36,23 @@ const PREPOSITIONS: [&str; 5] = [
 
 #[must_use]
 pub fn generate_injection_keywords() -> Vec<String> {
-    let mut keywords = Vec::new();
-    for verb in VERBS {
-        for adjective in ADJECTIVES {
-            for preposition in PREPOSITIONS {
-                let phrase = [verb, adjective, preposition]
-                    .into_iter()
-                    .filter(|part| !part.is_empty())
-                    .collect::<Vec<&str>>()
-                    .join(" ");
-                let phrase = phrase.trim();
-                if phrase.split_whitespace().count() > 2 {
-                    keywords.push(phrase.to_lowercase());
-                }
-            }
-        }
-    }
-    keywords
+    VERBS
+        .iter()
+        .flat_map(|verb| {
+            ADJECTIVES.iter().flat_map(move |adjective| {
+                PREPOSITIONS
+                    .iter()
+                    .map(move |preposition| [*verb, *adjective, *preposition])
+            })
+        })
+        .map(|parts| {
+            parts
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<&str>>()
+                .join(" ")
+        })
+        .map(|phrase| phrase.trim().to_lowercase())
+        .filter(|phrase| phrase.split_whitespace().count() > 2)
+        .collect()
 }

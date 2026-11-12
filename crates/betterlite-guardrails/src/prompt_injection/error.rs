@@ -1,7 +1,8 @@
-use betterlite_models::billing_text::BillingTextError;
+use betterlite_models::billing_text::error::BillingTextError;
 use reqwest::StatusCode;
 use serde::Serialize;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 pub const REJECTED_MESSAGE: &str = "Rejected message. This is a prompt injection attack.";
 
@@ -38,7 +39,7 @@ pub enum PromptInjectionError {
     #[error("a prompt injection heuristics check failed")]
     HeuristicsWorker {
         #[source]
-        source: tokio::task::JoinError,
+        source: JoinError,
     },
     #[error("the prompt injection judge call failed")]
     Judge,
@@ -46,7 +47,7 @@ pub enum PromptInjectionError {
 
 impl PromptInjectionError {
     #[must_use]
-    pub fn rejection(&self) -> Option<Rejection> {
+    pub const fn rejection(&self) -> Option<Rejection> {
         match self {
             Self::Rejected => Some(Rejection {
                 status: StatusCode::BAD_REQUEST,

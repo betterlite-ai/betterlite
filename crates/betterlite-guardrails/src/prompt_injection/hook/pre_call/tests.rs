@@ -186,8 +186,8 @@ async fn the_rejection_is_a_400_with_litellms_detail() {
     let rejection = error.rejection().expect("a rejection carries a status");
     assert_eq!(rejection.status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        serde_json::to_value(&rejection.detail).unwrap(),
-        serde_json::json!({"error": REJECTED_MESSAGE})
+        serde_json::to_string(&rejection.detail).unwrap(),
+        r#"{"error":"Rejected message. This is a prompt injection attack."}"#
     );
     assert_eq!(error.to_string(), REJECTED_MESSAGE);
 }

@@ -22,7 +22,7 @@ pub fn check_user_input_similarity(
             let limit = threshold.checked_mul(Decimal::from(
                 window.len().saturating_add(keyword_characters.len()),
             ));
-            let hit = limit.is_some_and(|limit| Decimal::from(matched.saturating_mul(2)) > limit);
+            let hit = limit.is_some_and(|bound| Decimal::from(matched.saturating_mul(2)) > bound);
             if hit {
                 tracing::info!(
                     keyword = %keyword,
