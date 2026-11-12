@@ -5,6 +5,7 @@ use betterlite_core::api::responses_parameters::forwarded_headers::merge_forward
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use self::reports::drop_flags;
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod optional;
@@ -38,9 +39,7 @@ impl Helper for Op {
                 )))
             }),
             Input::McpHeaders(fields) => each(&fields.steps, reports::mcp_step),
-            Input::DropFlags(fields) => {
-                each(&fields.steps, |step| Ok(reports::drop_flags_step(step)))
-            }
+            Input::DropFlags(fields) => each(&fields.steps, |step| Ok(drop_flags(step))),
         }
     }
 }

@@ -88,9 +88,8 @@ pub(super) fn step(fields: &OptionalStep) -> Result<Value, Box<HelperError>> {
     );
     let calls = fixture
         .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner);
     let (ok, status, value) = match result {
         Ok(mapped) => (true, None, json!(mapped)),
         Err(ResponsesParametersError::UnsupportedParams { .. }) => {

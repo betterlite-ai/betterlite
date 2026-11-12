@@ -147,7 +147,7 @@ pub(super) struct DropFlagsStep {
     environment: BTreeMap<String, String>,
 }
 
-pub(super) fn drop_flags_step(fields: &DropFlagsStep) -> Value {
+pub(super) fn drop_flags(fields: &DropFlagsStep) -> Value {
     let environment = fields.environment.get("LITELLM_DROP_PARAMS");
     let enabled = match &fields.value {
         None | Some(DecisionJson::Null) => drop_params_env_flag(environment.map(String::as_str)),
