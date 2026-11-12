@@ -55,7 +55,8 @@ pub fn decode_audio_duration(audio: &[u8], limits: &AudioDecodeLimits) -> Option
         return None;
     }
     let declared_frames = u64::from(reader.duration());
-    let frame_bytes = u64::from(spec.channels) * u64::from(spec.bits_per_sample.div_ceil(8));
+    let frame_bytes =
+        u64::from(spec.channels).checked_mul(u64::from(spec.bits_per_sample.div_ceil(8)))?;
     let data_bytes = u64::try_from(audio.len())
         .ok()?
         .saturating_sub(reader.into_inner().position());
