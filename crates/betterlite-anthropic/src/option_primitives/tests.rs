@@ -353,6 +353,10 @@ fn assert_context_overrides() {
             r#"[5, "x", null, {"type": "other", "compact_threshold": 1}, {"type": "compaction"}]"#,
             r#"{"edits": [{"type": "compact_20260112"}]}"#,
         ),
+        (
+            r#"[{"type": "compaction", "compact_threshold": 18446744073709551615}]"#,
+            r#"{"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 18446744073709551615}}]}"#,
+        ),
     ];
     for (input, expected) in cases {
         assert_eq!(context(input), json(expected));
