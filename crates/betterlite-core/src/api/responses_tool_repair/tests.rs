@@ -203,6 +203,30 @@ const CALL_1: &str =
     r#"{"call_1":{"__object__":{"attrs":{"id":"call_1","type":"function","function":{"__object__":{"attrs":{"name":"obj_fn","arguments":"{\"k\":1}"}}}}}}}"#,
     r#"[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"obj_fn","arguments":"{\"k\":1}"},"index":0}]},{"role":"tool","tool_call_id":"call_1"}]"#
 )]
+#[case::cached_bytes_are_a_definition(
+    r#"[{"role":"assistant"},{"role":"tool","tool_call_id":"call_1"}]"#,
+    r#"[{"name":"search"}]"#,
+    r#"{"call_1":{"__bytes__":"x"}}"#,
+    r#"[{"role":"assistant"},{"role":"tool","tool_call_id":"call_1"}]"#
+)]
+#[case::empty_cached_bytes_use_the_tools(
+    r#"[{"role":"assistant"},{"role":"tool","tool_call_id":"call_1"}]"#,
+    r#"[{"name":"search"}]"#,
+    r#"{"call_1":{"__bytes__":""}}"#,
+    r#"[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"search","arguments":"{}"},"index":0}]},{"role":"tool","tool_call_id":"call_1"}]"#
+)]
+#[case::cached_list_is_a_definition(
+    r#"[{"role":"assistant"},{"role":"tool","tool_call_id":"call_1"}]"#,
+    r#"[{"name":"search"}]"#,
+    r#"{"call_1":[1]}"#,
+    r#"[{"role":"assistant"},{"role":"tool","tool_call_id":"call_1"}]"#
+)]
+#[case::empty_cached_list_uses_the_tools(
+    r#"[{"role":"assistant"},{"role":"tool","tool_call_id":"call_1"}]"#,
+    r#"[{"name":"search"}]"#,
+    r#"{"call_1":[]}"#,
+    r#"[{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"search","arguments":"{}"},"index":0}]},{"role":"tool","tool_call_id":"call_1"}]"#
+)]
 #[case::cached_text_is_not_a_definition(
     r#"[{"role":"assistant"},{"role":"tool","tool_call_id":"call_1"}]"#,
     "[]",
@@ -372,6 +396,18 @@ fn falsy_definitions_do_not_normalize(#[case] definition: &str) {
 #[case::object_with_a_getter(
     r#"{"__object__":{"attrs":{"id":"attr"},"get":{"mapping":{"id":"mapped","type":"t"}}}}"#,
     r#"{"id":"mapped","type":"t","function":null}"#
+)]
+#[case::object_with_only_a_type(
+    r#"{"__object__":{"attrs":{"type":"t"}}}"#,
+    r#"{"id":"c","type":"t","function":null}"#
+)]
+#[case::object_with_only_a_function(
+    r#"{"__object__":{"attrs":{"function":{"name":"n"}}}}"#,
+    r#"{"id":"c","type":"function","function":{"name":"n"}}"#
+)]
+#[case::object_with_only_an_id(
+    r#"{"__object__":{"attrs":{"id":"i"}}}"#,
+    r#"{"id":"i","type":"function","function":null}"#
 )]
 #[case::function_object_becomes_a_dict(
     r#"{"id":"i","function":{"__object__":{"attrs":{"name":"n","arguments":"a"}}}}"#,
