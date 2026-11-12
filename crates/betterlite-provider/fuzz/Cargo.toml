@@ -92,3 +92,10 @@ path = "fuzz_targets/ollama_generate_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "langgraph_stream"
+path = "fuzz_targets/langgraph_stream.rs"
+test = false
+doc = false
+bench = false
