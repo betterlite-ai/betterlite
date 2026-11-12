@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-pricing-accessor-seed
+call:
+  anthropic_pricing:
+    kind: web_search_requests
+    record: {kind: attribute, value: {web_search_requests: 0}}
+compare: {ignore: []}
+env: {}

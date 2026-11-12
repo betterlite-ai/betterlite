@@ -1,0 +1,21 @@
+kind: helper
+name: batch-metadata-predicate
+call:
+  file_contracts:
+    function: batch_metadata_predicate
+    cases:
+      - {purpose: batch, content_type: text/plain, file: ""}
+      - {purpose: batch, content_type: text/plain, file: upload.bin}
+      - {purpose: batch, content_type: text/plain, file: null}
+      - {purpose: batch, content_type: text/plain}
+      - {purpose: batch, content_type: text/plain, file: {lazy: true}}
+      - {purpose: assistants, content_type: text/plain, file: upload.bin}
+      - {purpose: Batch, content_type: text/plain, file: upload.bin}
+      - {purpose: null, content_type: text/plain, file: upload.bin}
+      - {content_type: text/plain, file: upload.bin}
+      - {purpose: batch, content_type: null, file: upload.bin}
+      - {purpose: batch, content_type: text/csv, file: upload.bin}
+      - {purpose: batch, content_type: TEXT/PLAIN, file: upload.bin}
+      - {purpose: batch, content_type: "application/json;charset=utf-8", file: upload.bin}
+env: {}
+compare: {ignore: []}

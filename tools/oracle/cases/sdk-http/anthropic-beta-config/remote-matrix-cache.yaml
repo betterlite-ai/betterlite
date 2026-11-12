@@ -1,0 +1,19 @@
+kind: sdk_http
+name: anthropic-beta-config-remote-matrix-cache
+env: {}
+call:
+  anthropic_beta_config:
+    url: mock
+    steps: [load, load, reload, load]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {anthropic: {custom: renamed}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {bedrock: {custom: null}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
