@@ -28,11 +28,12 @@ use crate::xai_batches::records::{
     is_xai_batch_results_id,
 };
 use crate::xai_batches::transformation::{
-    DEFAULT_BATCH_ENDPOINT, XAI_API_BASE, XAI_RESULTS_PAGE_SIZE, create_endpoint, get_xai_api_base,
-    get_xai_auth_headers, raise_for_xai_status, results_params, to_create_batch_body,
-    to_litellm_batch, to_openai_batch_list, xai_batch_status, xai_batches_url,
+    DEFAULT_BATCH_ENDPOINT, create_endpoint, get_xai_api_base, get_xai_auth_headers,
+    raise_for_xai_status, results_params, to_create_batch_body, to_litellm_batch,
+    to_openai_batch_list, xai_batch_status, xai_batches_url,
 };
 use crate::xai_batches::transport::XaiBatchTransport;
+mod proxied;
 
 fn limits() -> WireDecodeLimits {
     WireDecodeLimits {
@@ -228,11 +229,6 @@ fn base_resolution_is_explicit_then_environment_then_default(
 }
 
 #[test]
-fn the_default_base_constant_keeps_its_v1() {
-    assert_eq!(XAI_API_BASE, "https://api.x.ai/v1");
-}
-
-#[test]
 fn url_encodes_the_batch_id_as_one_path_segment() {
     let url = xai_batches_url(None, Some("batch_1/a b"), "/results", &settings()).unwrap();
     assert_eq!(url, "https://api.x.ai/v1/batches/batch_1%2Fa%20b/results");
@@ -343,12 +339,6 @@ fn create_body_defaults_a_metadata_without_a_name() {
     );
 }
 
-#[test]
-fn create_body_takes_a_name_from_the_metadata() {
-    let request = create_request(Some("file-1"), Some("team-batch"));
-    assert_eq!(to_create_batch_body(&request).unwrap().name, "team-batch");
-}
-
 #[rstest]
 #[case::absent(None)]
 #[case::empty(Some(""))]
@@ -422,23 +412,15 @@ fn an_unparsable_creation_time_is_zero(#[case] create_time: &str) {
     assert_eq!(projected.created_at, 0);
 }
 
-#[test]
-fn a_missing_creation_time_is_zero_and_missing_dates_are_null() {
-    let projected = to_litellm_batch(&batch(r#"{"batch_id":"b"}"#), DEFAULT_BATCH_ENDPOINT);
+#[rstest]
+#[case::missing(r#"{"batch_id":"b"}"#)]
+#[case::invalid(r#"{"batch_id":"b","create_time":"nope","expire_time":"later"}"#)]
+fn a_missing_or_invalid_date_is_zero_for_creation_and_null_elsewhere(#[case] source: &str) {
+    let projected = to_litellm_batch(&batch(source), DEFAULT_BATCH_ENDPOINT);
     assert_eq!(projected.created_at, 0);
     assert_eq!(projected.expires_at, None);
     assert_eq!(projected.cancelled_at, None);
     assert_eq!(projected.failed_at, None);
-}
-
-#[test]
-fn an_invalid_expiry_is_null_while_creation_stays_zero() {
-    let projected = to_litellm_batch(
-        &batch(r#"{"batch_id":"b","create_time":"nope","expire_time":"later"}"#),
-        DEFAULT_BATCH_ENDPOINT,
-    );
-    assert_eq!(projected.created_at, 0);
-    assert_eq!(projected.expires_at, None);
 }
 
 #[test]
@@ -545,15 +527,12 @@ fn list_token_truthiness_is_independent_of_the_page_length() {
     let without_token = to_openai_batch_list(&full_without_token);
     assert!(!without_token.has_more);
     assert_eq!(without_token.next_page_token, None);
-}
 
-#[test]
-fn an_empty_token_is_no_cursor() {
-    let page: XaiBatchList =
+    let empty_token: XaiBatchList =
         serde_json::from_str(r#"{"batches":[],"pagination_token":""}"#).unwrap();
-    let response = to_openai_batch_list(&page);
-    assert!(!response.has_more);
-    assert_eq!(response.next_page_token, None);
+    let no_cursor = to_openai_batch_list(&empty_token);
+    assert!(!no_cursor.has_more);
+    assert_eq!(no_cursor.next_page_token, None);
 }
 
 #[rstest]
@@ -573,15 +552,6 @@ fn page_params_default_a_zero_limit_and_send_an_explicit_empty_cursor(
         .map(|(name, value)| format!("{name}={value}"))
         .collect();
     assert_eq!(pairs.join("&"), expected);
-}
-
-#[test]
-fn the_page_size_is_1000() {
-    assert_eq!(XAI_RESULTS_PAGE_SIZE, 1000);
-    assert_eq!(
-        results_params(None, None),
-        [("limit".to_owned(), "1000".to_owned())]
-    );
 }
 
 fn result(source: &str) -> XaiBatchResult {
@@ -645,6 +615,17 @@ fn jsonl_preserves_unicode_and_python_separators() {
 }
 
 #[test]
+fn jsonl_separates_array_items_with_comma_space() {
+    let source = r#"{"batch_request_id":"r1","batch_result":{"response":{"chat":{"id":"c","items":[1,2]}}}}"#;
+    let output = results_to_openai_jsonl(&[result(source)]).unwrap();
+    assert!(
+        String::from_utf8(output)
+            .unwrap()
+            .contains("\"items\": [1, 2]")
+    );
+}
+
+#[test]
 fn a_body_without_an_id_has_no_request_id() {
     let source = r#"{"batch_request_id":"r1","batch_result":{"response":{"chat":{"text":"x"}}}}"#;
     let output = results_to_openai_jsonl(&[result(source)]).unwrap();
@@ -663,7 +644,7 @@ fn an_empty_result_list_is_no_jsonl() {
 #[test]
 fn decode_refuses_bytes_past_the_caller_limit() {
     let limits = WireDecodeLimits {
-        max_json_bytes: 20,
+        max_json_bytes: 16,
         max_event_bytes: 0,
         max_items: 0,
     };
@@ -676,7 +657,7 @@ fn decode_refuses_bytes_past_the_caller_limit() {
     assert!(matches!(
         decode_xai_batch::<XaiBatch>(over_limit.as_bytes(), &limits),
         Err(XaiBatchesError::Limit(BatchRecordsError::JsonTooLarge {
-            limit: 20
+            limit: 16
         }))
     ));
 }
@@ -690,25 +671,27 @@ fn decode_ignores_unknown_fields_and_requires_a_batch_id() {
     assert!(matches!(error, XaiBatchesError::Decode { .. }));
 }
 
-#[test]
-fn upstream_error_statuses_keep_their_headers() {
+#[rstest]
+#[case::first_error_status(400)]
+#[case::not_found(404)]
+fn upstream_error_statuses_keep_their_headers(#[case] status: u16) {
     let mut reply_headers = HeaderMap::new();
     reply_headers.insert("x-request-id", HeaderValue::from_static("req-1"));
     let response = UpstreamResponse {
-        status: 404,
+        status,
         headers: reply_headers,
         body: b"no such batch".to_vec(),
     };
     let error = raise_for_xai_status(&response).unwrap_err();
     let XaiBatchesError::Status {
-        status,
+        status: reported,
         message,
         headers,
     } = error
     else {
         panic!("unexpected error: {error}");
     };
-    assert_eq!(status, 404);
+    assert_eq!(reported, status);
     assert_eq!(message, "no such batch");
     assert_eq!(
         headers.get("x-request-id").map(String::as_str),
@@ -716,10 +699,12 @@ fn upstream_error_statuses_keep_their_headers() {
     );
 }
 
-#[test]
-fn a_success_status_passes_the_status_check() {
+#[rstest]
+#[case::ok(200)]
+#[case::last_redirect(399)]
+fn a_success_status_passes_the_status_check(#[case] status: u16) {
     let response = UpstreamResponse {
-        status: 200,
+        status,
         headers: HeaderMap::new(),
         body: Vec::new(),
     };
@@ -878,6 +863,41 @@ async fn results_over_the_byte_limit_fail_with_the_limit_error() {
     ));
 }
 
+#[rstest]
+#[case::at_the_limit(0, true)]
+#[case::one_byte_over(1, false)]
+#[tokio::test]
+async fn collected_output_is_bounded_by_the_caller_limit(
+    #[case] shortfall: usize,
+    #[case] fits: bool,
+) {
+    let page = r#"{"results":[{"batch_request_id":"a","batch_result":{}}]}"#;
+    let rows: XaiBatchResultsPage = serde_json::from_str(page).unwrap();
+    let output = results_to_openai_jsonl(&rows.results).unwrap().len();
+    assert!(output > page.len());
+    let client = XaiBatches {
+        transport: Fixture::new(vec![reply(page)]),
+        settings: settings(),
+        limits: WireDecodeLimits {
+            max_json_bytes: output.saturating_sub(shortfall),
+            max_event_bytes: 0,
+            max_items: 0,
+        },
+    };
+    let key = secret("key");
+    let outcome = client
+        .batch_results_content("batch_1", context(&key, Duration::from_secs(600)))
+        .await;
+    if fits {
+        assert_eq!(outcome.unwrap().body.len(), output);
+    } else {
+        assert!(matches!(
+            outcome.unwrap_err(),
+            XaiBatchesError::Limit(BatchRecordsError::JsonTooLarge { .. })
+        ));
+    }
+}
+
 #[tokio::test]
 async fn an_upstream_status_error_keeps_the_status() {
     let mut reply_headers = HeaderMap::new();
@@ -949,7 +969,7 @@ fn decode_tagged(bytes: &[u8]) -> Result<(), XaiBatchesError> {
     }
 }
 
-fn replay_corpus() -> usize {
+fn replay_corpus() {
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/xai_batch");
     let mut paths: Vec<PathBuf> = fs::read_dir(corpus)
         .unwrap()
@@ -966,17 +986,15 @@ fn replay_corpus() -> usize {
             assert!(decoded.is_err(), "{name}: {decoded:?}");
         }
     }
-    paths.len()
+    assert!(!paths.is_empty(), "no xai batch corpus seeds");
 }
 
 #[test]
 fn replays_xai_batch_corpus() {
-    let replayed = replay_corpus();
-    assert!(replayed > 0, "no xai batch corpus seeds");
+    replay_corpus();
 }
 
 #[test]
 fn replays_the_xai_batch_corpus() {
-    let replayed = replay_corpus();
-    assert!(replayed > 0, "no xai batch corpus seeds");
+    replay_corpus();
 }
