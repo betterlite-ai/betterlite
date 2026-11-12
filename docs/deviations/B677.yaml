@@ -1,0 +1,18 @@
+task: B677
+deviations:
+  - what: AZURE_CREDENTIAL is a closed enum supporting ClientSecretCredential, CertificateCredential,
+      UsernamePasswordCredential, ManagedIdentityCredential, WorkloadIdentityCredential,
+      DefaultAzureCredential and DeploymentIdentityCredential; arbitrary azure.identity
+      class names fail configuration validation.
+    why: Native credential implementations are a closed set; the repository forbids
+      subprocess credential acquisition. Preserve constructor errors for supported
+      SDK names instead of inventing arguments.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L72-L130
+  - what: DefaultAzureCredential omits developer CLI, PowerShell, VS Code, shared developer
+      token caches, broker and interactive credentials. Native environment/workload/managed
+      exhaustion returns ClientAuthenticationError; AZURE_TOKEN_CREDENTIALS selecting
+      only dev or a developer/interactive name fails startup with that unsupported
+      setting named.
+    why: The repository forbids subprocess credential acquisition; B673-B676 implement
+      the native grants.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L103-L127
