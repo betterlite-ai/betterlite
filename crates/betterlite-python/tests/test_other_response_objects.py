@@ -229,6 +229,12 @@ def test_text_completion_choices() -> None:
     extra_ours = betterlite_utils.TextChoices(finish_reason="stop", extra="e")
     assert extra_ours["extra"] == "e"
     assert_same("text choices extra", extra_reference, extra_ours)
+    none_index_reference = litellm_utils.TextChoices(
+        index=None,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2380-L2387
+    )
+    none_index_ours = betterlite_utils.TextChoices(index=None)
+    assert none_index_ours.index is None
+    assert_same("text choices none index", none_index_reference, none_index_ours)
 
 
 def test_text_completion_response() -> None:
@@ -252,6 +258,15 @@ def test_text_completion_response() -> None:
     assert ours.choices[0].text == "hi"
     assert ours["extra"] == "e"
     assert_same("text completion", reference, ours)
+    none_choices: list[JsonValue] = [{"text": "x", "index": None}]
+    none_reference = litellm_utils.TextCompletionResponse(
+        id="i", created=CREATED, choices=none_choices,
+    )
+    none_ours = betterlite_utils.TextCompletionResponse(
+        id="i", created=CREATED, choices=none_choices,
+    )
+    assert none_ours.choices[0].index is None
+    assert_same("text completion none index", none_reference, none_ours)
 
 
 def test_text_completion_defaults() -> None:
@@ -646,6 +661,45 @@ def test_small_types_fine_tuning() -> None:
     seeded_ours = betterlite_utils.LiteLLMFineTuningJob(**job, seed=SEED)
     assert seeded_ours.seed == SEED
     assert_same("fine tuning seed", seeded_reference, seeded_ours)
+    method: dict[str, JsonValue] = {
+        "type": "supervised",
+        "supervised": {"hyperparameters": {"n_epochs": EPOCHS}},
+    }
+    integrations: list[JsonValue] = [
+        {"type": "wandb", "wandb": {"project": "p", "tags": ["a"]}},
+    ]
+    method_reference = litellm_utils.LiteLLMFineTuningJob(
+        **job, method=method, integrations=integrations,
+    )
+    method_ours = betterlite_utils.LiteLLMFineTuningJob(
+        **job, method=method, integrations=integrations,
+    )
+    assert_same("fine tuning method", method_reference, method_ours)
+    dpo_method: dict[str, JsonValue] = {
+        "type": "dpo",
+        "dpo": {"hyperparameters": {"beta": "auto"}},
+    }
+    dpo_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=dpo_method)
+    dpo_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=dpo_method)
+    assert_same("fine tuning dpo", dpo_reference, dpo_ours)
+    grader: dict[str, JsonValue] = {
+        "type": "string_check",
+        "name": "g",
+        "input": "{{ sample.output_text }}",
+        "operation": "eq",
+        "reference": "x",
+    }
+    reinforcement_method: dict[str, JsonValue] = {
+        "type": "reinforcement",
+        "reinforcement": {"grader": grader, "hyperparameters": {"n_epochs": "auto"}},
+    }
+    reinforcement_reference = litellm_utils.LiteLLMFineTuningJob(
+        **job, method=reinforcement_method,
+    )
+    reinforcement_ours = betterlite_utils.LiteLLMFineTuningJob(
+        **job, method=reinforcement_method,
+    )
+    assert_same("fine tuning reinforcement", reinforcement_reference, reinforcement_ours)
     hidden = betterlite_utils.LiteLLMFineTuningJob(**job, _hidden_params={"a": 1})
     assert hidden._hidden_params == {"a": 1}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4307-L4317
     assert betterlite_utils.LiteLLMFineTuningJob(**job)._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4308

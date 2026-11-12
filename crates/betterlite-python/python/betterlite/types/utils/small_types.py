@@ -59,6 +59,61 @@ class FineTuningJobHyperparameters(ResponseObject):
     n_epochs: Literal["auto"] | int | None
 
 
+class SupervisedHyperparameters(ResponseObject):
+    batch_size: Literal["auto"] | int | None
+    learning_rate_multiplier: Literal["auto"] | float | None
+    n_epochs: Literal["auto"] | int | None
+
+
+class SupervisedMethod(ResponseObject):
+    hyperparameters: SupervisedHyperparameters | None
+
+
+class DpoHyperparameters(ResponseObject):
+    batch_size: Literal["auto"] | int | None
+    beta: Literal["auto"] | float | None
+    learning_rate_multiplier: Literal["auto"] | float | None
+    n_epochs: Literal["auto"] | int | None
+
+
+class DpoMethod(ResponseObject):
+    hyperparameters: DpoHyperparameters | None
+
+
+class ReinforcementHyperparameters(ResponseObject):
+    batch_size: Literal["auto"] | int | None
+    compute_multiplier: Literal["auto"] | float | None
+    eval_interval: Literal["auto"] | int | None
+    eval_samples: Literal["auto"] | int | None
+    learning_rate_multiplier: Literal["auto"] | float | None
+    n_epochs: Literal["auto"] | int | None
+    reasoning_effort: Literal["default", "low", "medium", "high"] | None
+
+
+class ReinforcementMethod(ResponseObject):
+    grader: dict[str, JsonValue]
+    hyperparameters: ReinforcementHyperparameters | None
+
+
+class FineTuningJobMethod(ResponseObject):
+    type: Literal["supervised", "dpo", "reinforcement"]
+    dpo: DpoMethod | None
+    reinforcement: ReinforcementMethod | None
+    supervised: SupervisedMethod | None
+
+
+class WandbIntegration(ResponseObject):
+    project: str
+    entity: str | None
+    name: str | None
+    tags: list[str] | None
+
+
+class WandbIntegrationObject(ResponseObject):
+    type: Literal["wandb"]
+    wandb: WandbIntegration
+
+
 class TranscriptionResponse(ResponseObject):
     text: str | None
     # ast-grep-ignore: no-long-names
@@ -93,9 +148,9 @@ class LiteLLMFineTuningJob(ResponseObject):
     training_file: str
     validation_file: str | None
     estimated_finish: int | None
-    integrations: list[JsonValue] | None
+    integrations: list[WandbIntegrationObject] | None
     metadata: dict[str, str] | None
-    method: JsonValue
+    method: FineTuningJobMethod | None
     _hidden_params: dict[str, StoredValue]
     defaults: ClassVar[dict[str, StoredValue]] = {"_hidden_params": {}}
 

@@ -29,7 +29,7 @@ class Logprobs(ResponseObject):
 
 class TextChoices(ResponseObject):
     finish_reason: FinishReason | None
-    index: int
+    index: int | None
     text: str | None
     logprobs: Logprobs | None
 
@@ -47,7 +47,7 @@ class TextChoices(ResponseObject):
                 data["finish_reason"] = map_finish_reason(finish_reason)
             case _other:
                 raise ValidationError("TextChoices", ("finish_reason",), "wrong type")
-        data["index"] = 0 if index is None else index
+        data["index"] = index
         data["text"] = text
         data["logprobs"] = text_logprobs(logprobs)
         super().__init__(**data)
