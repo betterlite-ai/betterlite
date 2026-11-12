@@ -7,9 +7,6 @@ use std::sync::atomic::AtomicUsize;
 
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageHeaders, ImageParams};
 
-pub(super) use generation::GenerationFixture;
-pub(super) use variation::VariationFixture;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Seen {
     pub(super) model: String,
@@ -18,6 +15,10 @@ pub(super) struct Seen {
     pub(super) options: ImageParams,
     pub(super) headers: ImageHeaders,
 }
+
+pub(super) struct GenerationFixture;
+
+pub(super) struct VariationFixture;
 
 pub(super) struct EditFixture {
     pub(super) calls: AtomicUsize,

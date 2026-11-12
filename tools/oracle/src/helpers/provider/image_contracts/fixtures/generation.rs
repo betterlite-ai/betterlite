@@ -2,7 +2,7 @@ use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_provider::api::image_contracts::error::ImageContractError;
 use betterlite_provider::api::image_contracts::generation::BaseImageGenerationConfig;
 
-pub(super) struct GenerationFixture;
+use super::GenerationFixture;
 
 impl BaseImageGenerationConfig for GenerationFixture {
     type Error = ImageContractError;

@@ -5,7 +5,7 @@ use betterlite_provider::api::image_contracts::variation::{
     BaseImageVariationConfig, ImageVariationReply, ImageVariationRequest,
 };
 
-pub(super) struct VariationFixture;
+use super::VariationFixture;
 
 #[async_trait]
 impl BaseImageVariationConfig for VariationFixture {
