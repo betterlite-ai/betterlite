@@ -1,0 +1,8 @@
+kind: helper
+name: batch-retrieve-call-type
+call:
+  batch_records:
+    function: is_batch_retrieve_call_type
+    call_type: aretrieve_batch
+env: {}
+compare: {ignore: []}

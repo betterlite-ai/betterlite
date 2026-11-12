@@ -1,0 +1,22 @@
+kind: helper
+name: storage-fields-convert-independently
+call:
+  tool_signals:
+    responses: []
+    file_search_params:
+      - {storage_gb: 2.5, days: 3}
+      - {storage_gb: "2.5", days: "abc"}
+      - {storage_gb: null, days: true}
+      - {storage_gb: [1], days: {}}
+      - "not a mapping"
+      - null
+    token_counts:
+      - {input_tokens: 10, output_tokens: "7"}
+      - {input_tokens: 3.9, output_tokens: -2.7}
+      - {input_tokens: true, output_tokens: null}
+      - {input_tokens: [1], output_tokens: "abc"}
+      - null
+    values: [3, 3.9, " 1_0 ", "3.0", true, null, [], {}, -2.7]
+    kwargs: []
+compare: {ignore: []}
+env: {}

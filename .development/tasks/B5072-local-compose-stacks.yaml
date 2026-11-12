@@ -5,6 +5,7 @@ description: >-
   and health checks matching LiteLLM's pinned behavior. Build the betterlite runtime image with build.args.target=runtime.
   The admin UI ships inside that image (B5071 copies the B9091 export to /usr/local/bin/ui), so neither Compose file has a separate UI service,
   and the source build passes target/dashboard/dist as the additional context named dashboard that B5071's Dockerfile expects.
+  The proxy service's build block uses context ../.. and dockerfile packaging/docker/Dockerfile: LiteLLM's context . relies on a root Dockerfile that betterlite does not have. Its healthcheck cannot be LiteLLM's python3 urllib line, since the image has no Python; probe /health/liveliness with bash and /dev/tcp instead. Its image name must not stay docker.litellm.ai/berriai/litellm:main-stable, so name it after betterlite like the quickstart file.
   Provide docker/docker-compose.quickstart.yml for published-image deployments, using the betterlite image selected by the distribution tasks, that waits for database health and requires both
   LITELLM_MASTER_KEY and LITELLM_SALT_KEY from the environment. Create docker/.env.example documenting the required secrets.
   Copy proxy_server_config.yaml as the shared proxy configuration file, preserving its complete model list, provider-specific
