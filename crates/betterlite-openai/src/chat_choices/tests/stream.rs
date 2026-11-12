@@ -309,7 +309,7 @@ fn numbered_tool_calls() {
         value(&[("function", value(&[("name", text("f"))]))]),
         value(&[("function", value(&[("arguments", Value::Null)]))]),
         value(&[("index", Value::Null), ("function", value(&[]))]),
-        value(&[("type", text("custom")), ("custom", value(&[]))]),
+        value(&[("custom", value(&[("name", text("n"))]))]),
     ]);
     let read = parse(&envelope(delta_choices(value(&[("tool_calls", sent)])))).unwrap();
     let calls = read.choices[0].delta.tool_calls.as_ref().unwrap();
@@ -324,13 +324,17 @@ fn numbered_tool_calls() {
     assert_eq!(calls[1].function.as_ref().unwrap().arguments, "");
     assert_eq!(calls[2].function.as_ref().unwrap().arguments, "");
     assert!(calls[4].custom.is_some());
-    assert_eq!(calls[4].kind.as_deref(), Some("custom"));
+    assert_eq!(calls[4].kind, None);
 }
 
 fn invalid_tool_calls() {
     for call in [
         value(&[("id", text("a"))]),
         value(&[("type", text("custom"))]),
+        value(&[
+            ("type", text("custom")),
+            ("function", value(&[("name", text("f"))])),
+        ]),
     ] {
         let delta = value(&[("tool_calls", Value::Array(vec![call]))]);
         assert!(matches!(

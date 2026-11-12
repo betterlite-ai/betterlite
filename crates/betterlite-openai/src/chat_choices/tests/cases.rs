@@ -164,9 +164,14 @@ fn content_arguments(params: &Object) {
             None => assert_eq!(read.message.content.as_deref(), Some(content.as_str())),
         }
     }
-    let wrong_type = r#"{"type":"tool","name":"lookup"}"#;
-    let read = only(&[content_choice(wrong_type)], Some(params), false);
-    assert_eq!(read.message.content.as_deref(), Some(wrong_type));
+    for ignored in [
+        r#"{"type":"tool","name":"lookup"}"#,
+        r#"{"type":"function","name":"other"}"#,
+    ] {
+        let read = only(&[content_choice(ignored)], Some(params), false);
+        assert_eq!(read.message.content.as_deref(), Some(ignored));
+        assert!(read.message.tool_calls.is_none());
+    }
 }
 
 fn tool_calls_finish_reason() {
