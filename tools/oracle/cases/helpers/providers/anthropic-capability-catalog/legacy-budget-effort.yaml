@@ -1,0 +1,26 @@
+kind: helper
+name: legacy-budget-effort
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-6: {litellm_provider: anthropic, supports_xhigh_reasoning_effort: true}
+        anthropic/claude-sonnet-4-6: {litellm_provider: anthropic}
+      packaged: {}
+      thresholds: {medium: 1024, high: 2048, xhigh: 4096}
+    steps:
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: 4096}
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: 4095}
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: 2048}
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: 2047}
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: 1024}
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: 1023}
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: 0}
+      - {function: legacy_budget_effort, model: claude-opus-4-6, custom_llm_provider: anthropic, budget_tokens: -5}
+      - {function: legacy_budget_effort, model: claude-sonnet-4-6, custom_llm_provider: anthropic, budget_tokens: 4096}
+      - {function: legacy_budget_effort, model: claude-sonnet-4-6, custom_llm_provider: anthropic, budget_tokens: 1000000}
+env:
+  DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "1024"
+  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "2048"
+  DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET: "4096"
+compare: {ignore: []}

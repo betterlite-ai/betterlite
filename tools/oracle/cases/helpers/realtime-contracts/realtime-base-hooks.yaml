@@ -1,0 +1,9 @@
+kind: helper
+name: realtime-base-hooks
+call:
+  realtime_contracts:
+    function: hooks
+    complete_urls: [null, "https://base", ""]
+    error: {message: bad, status_code: 429, headers: {retry-after: "2"}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,66 @@
+kind: helper
+name: bedrock-converse-events-content-stop-finish
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000041
+        steps:
+          - function: check_empty
+            content_blocks: []
+          - function: check_empty
+            content_blocks: [{text: x}, {toolUse: {input: ''}}]
+          - function: converse
+            chunk: {contentBlockIndex: 3}
+          - function: check_empty
+            content_blocks: [{toolUse: {input: ''}}]
+          - function: converse
+            chunk: {contentBlockIndex: 3}
+          - function: converse
+            chunk: {contentBlockIndex: 3}
+          - function: check_empty
+            content_blocks: [{toolUse: {input: ' '}}]
+          - function: converse
+            chunk: {contentBlockIndex: 0}
+          - function: check_empty
+            content_blocks: [{toolUse: {input: a}}, {toolUse: {input: b}}]
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000042
+        steps:
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: t1, name: tool}}, contentBlockIndex: 0}
+          - function: check_empty
+            content_blocks: [{toolUse: {input: ''}}]
+          - function: converse
+            chunk: {contentBlockIndex: 7}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000043
+        steps:
+          - function: converse
+            chunk: {stopReason: end_turn}
+          - function: converse
+            chunk: {stopReason: tool_use}
+          - function: converse
+            chunk: {stopReason: max_tokens}
+          - function: converse
+            chunk: {stopReason: guardrail_intervened}
+          - function: converse
+            chunk: {stopReason: unknown-value}
+          - function: converse
+            chunk: {stopReason: null}
+          - function: converse
+            chunk: {stopReason: end_turn, additionalModelResponseFields: {usage: {output_tokens_details: {thinking_tokens: 7}}}}
+          - function: state
+          - function: converse
+            chunk: {usage: {inputTokens: 1, outputTokens: 5}}
+          - function: state
+env: {}
+compare: {ignore: []}

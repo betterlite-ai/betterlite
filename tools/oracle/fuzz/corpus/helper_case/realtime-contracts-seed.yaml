@@ -1,0 +1,13 @@
+kind: helper
+name: realtime-contracts-seed
+call:
+  realtime_contracts:
+    function: records
+    groups:
+      - kind: expiry
+        documents: [{}]
+      - kind: usage
+        usage:
+          - {type: duration, input_tokens: 0, output_tokens: 0, total_tokens: 0, text_tokens: 0, audio_tokens: 0, seconds: 0.5}
+env: {}
+compare: {ignore: []}
