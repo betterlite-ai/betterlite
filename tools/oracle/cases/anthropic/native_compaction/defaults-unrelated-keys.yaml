@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-defaults-unrelated-keys
+call:
+  b3545: {"function": "defaults", "payload": {"temperature": 0.5, "max_tokens": 10}}
+env: {}
+compare:
+  ignore: []

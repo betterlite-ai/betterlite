@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-content-next-line-messages
+call:
+  b3545: {"function": "summary", "protocol": "messages", "response": {"stop_reason": "compaction", "content": [{"type": "compaction", "signature": "sig", "content": "\u0085 \u2003"}]}}
+env: {}
+compare:
+  ignore: []
