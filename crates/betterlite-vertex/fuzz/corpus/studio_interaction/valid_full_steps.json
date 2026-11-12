@@ -1,0 +1,1 @@
+{"id":"v1_abc","status":"completed","model":"gemini-2.5-flash","created":"2026-05-20T10:00:00Z","updated":"2026-05-20T10:00:01Z","steps":[{"type":"model_output","content":[{"type":"text","text":"hi"}]}],"usage":{"total_tokens":12}}

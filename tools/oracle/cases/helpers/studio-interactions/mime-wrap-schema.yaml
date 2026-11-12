@@ -1,0 +1,31 @@
+kind: helper
+name: studio-interactions-mime-wrap-schema
+call:
+  studio_interactions:
+    calls:
+      - function: transform_request
+        model: "gemini-2.5-flash"
+        optional_params:
+          response_mime_type: "application/json"
+      - function: transform_request
+        model: "gemini-2.5-flash"
+        optional_params:
+          response_mime_type: "application/json"
+          response_format: {type: "object"}
+      - function: transform_request
+        model: "gemini-2.5-flash"
+        optional_params:
+          response_mime_type: "application/json"
+          response_format: []
+      - function: transform_request
+        model: "gemini-2.5-flash"
+        optional_params:
+          response_mime_type: "application/json"
+          response_format: {mime_type: "text/plain"}
+      - function: transform_request
+        model: "gemini-2.5-flash"
+        optional_params:
+          response_mime_type: ""
+          response_format: "json"
+env: {}
+compare: {ignore: []}
