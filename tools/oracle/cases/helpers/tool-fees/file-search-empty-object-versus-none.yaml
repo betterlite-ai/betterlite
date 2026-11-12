@@ -1,0 +1,17 @@
+kind: helper
+name: file-search-empty-object-versus-none
+call:
+  tool_fees:
+    web_search: []
+    vector_store: []
+    computer_use: []
+    code_interpreter: []
+    file_search:
+      - {file_search: {}, provider: openai, model_info: null, storage_gb: null, days: null}
+      - {file_search: null, provider: openai, model_info: null, storage_gb: null, days: null}
+      - {file_search: {}, provider: null, model_info: null, storage_gb: null, days: null}
+      - {file_search: {}, provider: azure, model_info: null, storage_gb: null, days: null}
+      - {file_search: {}, provider: azure, model_info: null, storage_gb: 2, days: 5}
+      - {file_search: {}, provider: azure, model_info: {}, storage_gb: 2, days: 0}
+compare: {ignore: []}
+env: {}

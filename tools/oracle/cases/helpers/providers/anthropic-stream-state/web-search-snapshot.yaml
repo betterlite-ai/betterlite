@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-stream-state-web-search-snapshot
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: null
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: setup, fields: {web_search_calls: {s1: {id: ws_s1, type: web_search_call, status: in_progress, action: {type: search, query: old, queries: [old], sources: []}}}, server_tool_inputs: {s1: {query: rust async}}}}
+      - {function: web_snapshot}
+      - {function: complete_web_search, result: {type: web_search_tool_result, tool_use_id: s1, content: [{type: web_search_result, url: "https://a.example"}]}}
+      - {function: complete_web_search, result: {type: web_search_tool_result, tool_use_id: 7, content: []}}
+      - {function: complete_web_search, result: {type: web_search_tool_result, tool_use_id: missing, content: []}}
+      - {function: complete_web_search, result: {type: web_search_tool_result, content: []}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

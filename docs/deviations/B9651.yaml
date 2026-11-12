@@ -1,0 +1,17 @@
+task: B9651
+deviations:
+  - what: A SigV4-signed MCP request carries an x-amz-content-sha256 header holding the request body's SHA-256 when the caller did not set one.
+    why: The transport's contract proves the signed body by that header; aws-sigv4 signs a precomputed hash only when the header is present, and a caller-provided value (such as UNSIGNED-PAYLOAD) is kept. LiteLLM's botocore SigV4Auth leaves the header off for bedrock-agentcore requests and hashes the body only inside the canonical request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L353-L373
+  - what: The client timeout bounds the connect phase and each response read; no separate write or pool timeout is set.
+    why: httpx's Timeout(timeout) applies the same value to connect, read, write and pool, while reqwest exposes only connect and read timeouts. A stalled upload is not cut at the client timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L487-L490
+  - what: A request that repeats a header name while a resolved credential is attached fails with a repeated-header error instead of being sent.
+    why: The credential request type carries one value per name, and dropping the other values silently would change the request; the error names the repeated header. httpx hands the auth flow a request whose headers may hold several values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L440-L445
+  - what: A buffered (non-streamed) response body larger than 16 MiB fails with a body-too-large error instead of being buffered without a limit.
+    why: The gateway's HTTP limits set 16 MiB for a buffered body, and MCP JSON-RPC answers stay far below it; an unbounded read would let an upstream grow the gateway's memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L461-L495
+  - what: A buffered (non-streamed) response read ends at its first empty body chunk instead of continuing to read.
+    why: A data-less chunk carries no bytes, and a source that only emits them would otherwise never end the read; reqwest's byte stream does not split a body into empty chunks on its own, so a real response reads the same bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L461-L495

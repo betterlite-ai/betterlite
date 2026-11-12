@@ -30,6 +30,16 @@ description: >-
   line, reload) and call B8374's run_proxy, or B4177's alternate launchers for `--run_gunicorn`, `--run_hypercorn` and
   `--run_granian`.
 
+  Python hooks. Where run_cli builds B8374's LifespanInputs, it builds the process's one `Arc<PythonHooks>` with B165's
+  `PythonHooks::new(path)`. path is CONFIG_FILE_PATH from the env when it is set and `--config` otherwise, because that is
+  the file B8374's config source step loads: CONFIG_FILE_PATH wins there, and the WORKER_CONFIG it falls back to is the
+  JSON built above, whose config field is `--config`. The Arc goes into LifespanInputs as `python_hooks`, and a clone
+  wrapped in B8587's `PyStartupHooks { hooks }` goes in as `startup_hooks: Some(..)`, so the startup hooks and every later
+  Python hook share one interpreter. PythonHooks::new starts no interpreter, so a proxy without Python hooks pays
+  nothing, and no other binary code calls it outside tests. A proxy_cli test sets CONFIG_FILE_PATH and a `--config` in
+  another folder, takes the LifespanInputs run_cli builds, and loads a hook from a temporary module next to the
+  CONFIG_FILE_PATH file through `python_hooks`.
+
   main.rs keeps the current JSON tracing setup and process_environment, parses with proxy_cli, and returns run_cli's
   exit code. Every side effect goes through the traits the parts already define (writers, launchers, probes), so tests run
   the order without a network, a database or a child process.
@@ -59,6 +69,8 @@ references:
     why: Port checks, NUM_WORKERS, skip_server_startup, the metrics process and the server launch branches.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9131-L9134
     why: save_worker_config writes the initialize arguments as JSON into WORKER_CONFIG.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1288-L1313
+    why: CONFIG_FILE_PATH wins over WORKER_CONFIG, and the file load_config gets becomes the config path every hook import uses.
 dod:
   - text: Every run_server flag parses with LiteLLM's name, default and env fallback, and usage errors exit 2.
     proof: [cli-tests, oracle, helper-python]
@@ -68,6 +80,8 @@ dod:
     proof: [cli-tests, oracle, helper-python]
   - text: The port checks, NUM_WORKERS, metrics process and the chosen launcher follow run_server.
     proof: [cli-tests, oracle, helper-python]
+  - text: LifespanInputs gets one PythonHooks built from CONFIG_FILE_PATH, else --config, as python_hooks and, through PyStartupHooks over the same Arc, as startup_hooks.
+    proof: [cli-tests]
 checks:
   optional: []
   commands:
@@ -91,17 +105,22 @@ deviations:
     why: They configure uvicorn logging or Python test loops that betterlite does not run; refusing them would break existing launch scripts.
   - what: Flag names keep LiteLLM's underscores, which clap would otherwise turn into dashes.
     why: Deployments pass these exact names.
+  - what: "With LITELLM_CONFIG_BUCKET_NAME set and neither CONFIG_FILE_PATH nor --config given, PythonHooks has no config path, so an s3:// or gcs:// hook module is refused at load."
+    why: LiteLLM passes the WORKER_CONFIG JSON text as config_file_path in that case. That text is no path and only gets the remote module past the provenance check by accident, so betterlite keeps B8042's refusal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1299-L1313
 out_of_scope:
   - "The diagnostic command bodies, banner and input helpers: B4175."
   - "Worker options and dev reload: B4176. Gunicorn, Hypercorn, Granian and metrics process launch: B4177."
   - "Database URL settings, TLS, token auth, migrations and recovery: B710, B711, B712, B051, B717."
   - "The proxy startup and shutdown order after launch: B8374."
+  - "The PythonHooks service and the PyStartupHooks adapter: B165 and B8587."
   - "_drop_script_dir_from_sys_path, load_dotenv and json_logs import side effects: Python import machinery; not built."
 pitfalls:
   - The database block runs before the port fallback, so skip_server_startup still runs migrations and the port and metrics checks.
   - --skip_server_startup returns after migrations and the multiprocess dir setup but before the metrics process starts.
   - --use_v2_migration_resolver now has no effect and only prints the deprecation notice, while --use_legacy_migration_resolver switches to v1 and prints its own warning.
   - The config file is read once here for database settings and again by the lifespan, so both reads must see the same env.
+  - CONFIG_FILE_PATH beats --config in the lifespan, so a PythonHooks built from --config alone would look for hook modules next to a file that was never loaded.
 review_level: security
 budget:
   max_changed_lines: 1500

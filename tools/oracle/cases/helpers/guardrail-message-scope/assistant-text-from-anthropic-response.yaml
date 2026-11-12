@@ -1,0 +1,6 @@
+kind: helper
+name: assistant-text-from-anthropic-response
+call:
+  b3663: {"function": "assistant_text", "response": {"type": "message", "content": [{"type": "text", "text": "hi"}, {"type": "tool_use", "name": "t"}, {"type": "text", "text": "there"}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: unappliable-request-rewrite-unknown-name
+call:
+  b3663: {"function": "unappliable", "guardrail_name": null}
+env: {}
+compare: {ignore: []}

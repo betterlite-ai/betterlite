@@ -1,14 +1,14 @@
 id: B1302
 milestone: M3 providers
 title: Vertex credential cache and reauthentication
-status: todo
+status: done
 depends_on: [B1301, B171]
 file: tasks/B1302-vertex-token-cache.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_llm_base.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1453

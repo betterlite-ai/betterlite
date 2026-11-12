@@ -1,0 +1,13 @@
+kind: helper
+name: reasoning-content-delta
+call:
+  openai_chat_choices:
+    reasoning_content_delta:
+      steps:
+        - chunk: {id: c1, created: 7, model: m, choices: [{index: 0, delta: {content: hi, reasoning: r1}}]}
+        - chunk: {id: c1, created: 7, model: m, choices: [{index: 0, delta: {reasoning_content: old, reasoning: new}}]}
+        - chunk: {id: c1, created: 7, model: m, choices: [{}]}
+        - chunk: {id: c1, created: 7, model: m, choices: []}
+        - chunk: {id: c1, created: 7, model: m}
+env: {}
+compare: {ignore: []}

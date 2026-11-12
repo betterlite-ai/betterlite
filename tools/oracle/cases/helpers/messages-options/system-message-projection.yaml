@@ -1,0 +1,16 @@
+kind: helper
+name: system-message-projection
+call:
+  messages_options:
+    fixture:
+      model_cost: {}
+      packaged: {}
+    steps:
+      - {function: anthropic_system_to_openai_message, system: be brief}
+      - {function: anthropic_system_to_openai_message, system: ""}
+      - {function: anthropic_system_to_openai_message, system: null}
+      - {function: anthropic_system_to_openai_message, system: [{type: text, text: be brief}]}
+      - {function: anthropic_system_to_openai_message, system: []}
+      - {function: anthropic_system_to_openai_message, system: [{type: text, text: a, cache_control: {type: ephemeral}}, {type: text, text: b}]}
+env: {}
+compare: {ignore: []}

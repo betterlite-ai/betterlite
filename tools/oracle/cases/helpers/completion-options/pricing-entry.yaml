@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-entry-prices
+call:
+  b5650: {function: pricing_entry, custom_llm_provider: openai, kwargs: {input_cost_per_token: 0.000003, output_cost_per_token: 0.000015, temperature: 0.2, model: gpt-4o}, model_info: null}
+env: {}
+compare: {ignore: []}

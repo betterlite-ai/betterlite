@@ -1,0 +1,8 @@
+model_list:
+  - model_name: azure-urls
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: os.environ/AZURE_API_BASE
+      api_version: 2024-02-01
+litellm_settings:
+  api_base: https://module.example.openai.azure.com

@@ -1,0 +1,51 @@
+kind: helper
+name: token-limit-insertion-order
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: map
+            host: baseten
+            model: baseten/abcd1234
+            config: {max_tokens: 7, stop: [a], temperature: 0.5, stream: false}
+            params:
+              - [max_completion_tokens, 5]
+              - [max_tokens, 9]
+          - op: map
+            host: baseten
+            model: baseten/abcd1234
+            config: {max_tokens: 7, stop: [a], temperature: 0.5, stream: false}
+            params:
+              - [max_tokens, 9]
+              - [max_completion_tokens, 5]
+          - op: map
+            host: baseten
+            model: baseten/abcd1234
+            config: {max_tokens: 7, stop: [a], temperature: 0.5, stream: false}
+            params:
+              - [response_format, null]
+              - [seed, 7]
+              - [unknown_field, 1]
+              - [stop, [a, b]]
+              - [stream, true]
+          - op: map
+            host: cerebras
+            model: hosted-cerebras-model
+            supports_reasoning: false
+            config: {reasoning_effort: high, temperature: 0.5}
+            params:
+              - [max_completion_tokens, null]
+              - [reasoning_effort, low]
+              - [stream_options, {include_usage: true}]
+              - [presence_penalty, 1]
+              - [max_retries, 2]
+              - [extra_headers, {x-a: b}]
+          - op: map
+            host: cerebras
+            model: hosted-cerebras-model
+            supports_reasoning: true
+            config: {reasoning_effort: high, temperature: 0.5}
+            params:
+              - [reasoning_effort, low]
+env: {}
+compare: {ignore: []}

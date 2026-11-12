@@ -83,7 +83,7 @@ deviations:
 out_of_scope:
   - "The deployment checks and the model id pin: B8378. The Python host, HookSlot, HooksError and run_startup_hooks: B165. Reading and splitting LITELLM_WORKER_STARTUP_HOOKS, calling the port, and LifespanError::StartupHooksNeedPython when no port is given: B8374."
   - "Making the one PythonHooks and passing PyStartupHooks over it in LifespanInputs: the code that builds LifespanInputs (B8375's proxy_cli)."
-  - "Calling these at config load (L5015 for a complexity router, L6978 for router_settings.plugins): the router build from config calls them, as it calls B8378's checks."
+  - "Calling resolve_complexity_plugins at config load (L5015): B8613's router step, with the PythonHooks Arc from LifespanInputs. The router_settings.plugins call (L6978): the router build from config, as it calls B8378's checks."
 pitfalls:
   - A sync `def run` or `def classify` passes Python's runtime_checkable isinstance, so the check must also require the method to be async.
   - "B8378 pins the model id from the raw params before these paths are swapped for loaded objects; keep that order when both run on one deployment."

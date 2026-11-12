@@ -19,6 +19,7 @@ betterlite-error = { path = "../betterlite-error" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+chrono.workspace = true
 fancy-regex = "0.19.2"
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
@@ -39,7 +40,7 @@ unicode-general-category = "1.1.0"
 
 [dev-dependencies]
 betterlite-http = { path = "../betterlite-http" }
-betterlite-models = { path = "../betterlite-models" }
 prometheus-client = "0.25.1"
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber.workspace = true
