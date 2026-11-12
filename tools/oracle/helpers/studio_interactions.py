@@ -36,7 +36,8 @@ class Response(TypedDict):
 
 
 class Delete(TypedDict):
-    function: Literal["delete"]
+    function: Literal["response"]
+    action: Literal["delete"]
     interaction_id: str
     status: int
     headers: NotRequired[Headers]
@@ -88,7 +89,7 @@ def resolve(call: Call) -> Json:
     reply = httpx.Response(
         call["status"], headers=call.get("headers"), content=call["body"].encode("utf-8")
     )
-    if call["function"] == "delete":
+    if call["action"] == "delete":
         deleted = CONFIG.transform_delete_interaction_response(
             reply, LOGGING, call["interaction_id"]
         )

@@ -27,7 +27,6 @@ enum Call {
     TransformRequest(Box<RequestCall>),
     Lifecycle(LifecycleCall),
     Response(ResponseCall),
-    Delete(DeleteCall),
 }
 
 #[derive(Deserialize)]
@@ -52,6 +51,7 @@ struct LifecycleCall {
 enum Reply {
     Create,
     Get,
+    Delete,
 }
 
 #[derive(Deserialize)]
@@ -62,16 +62,7 @@ struct ResponseCall {
     #[serde(default)]
     headers: IndexMap<String, String>,
     body: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DeleteCall {
-    status: u16,
-    #[serde(default)]
-    headers: IndexMap<String, String>,
-    body: String,
-    interaction_id: String,
+    interaction_id: Option<String>,
 }
 
 impl crate::helpers::Helper for Op {
@@ -120,18 +111,7 @@ fn resolve(call: &Call) -> crate::helpers::HelperResult {
             Ok(json!({ "url": url }))
         }
         Call::Response(given) => response_call(given),
-        Call::Delete(given) => delete_call(given),
     }
-}
-
-fn delete_call(call: &DeleteCall) -> crate::helpers::HelperResult {
-    let response = RawResponse {
-        status: call.status,
-        headers: &call.headers,
-        body: call.body.as_bytes(),
-    };
-    let result = transform_delete_response(&response, &call.interaction_id).or_value_error()?;
-    Ok(json!(result))
 }
 
 fn response_call(call: &ResponseCall) -> crate::helpers::HelperResult {
@@ -141,6 +121,14 @@ fn response_call(call: &ResponseCall) -> crate::helpers::HelperResult {
         body: call.body.as_bytes(),
     };
     let interaction = match call.action {
+        Reply::Delete => {
+            let id = call
+                .interaction_id
+                .as_ref()
+                .ok_or("delete needs an interaction_id");
+            let result = transform_delete_response(&response, id.or_value_error()?);
+            return Ok(json!(result.or_value_error()?));
+        }
         Reply::Create => transform_response(&response, |raw| {
             process_response_headers(HeaderSource::Upstream(raw))
         }),

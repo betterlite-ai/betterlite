@@ -24,6 +24,21 @@ use super::{API_REVISION, API_VERSION, SUPPORTED_PARAMS};
 
 const DEFAULT_BASE: &str = "https://generativelanguage.googleapis.com";
 
+fn assert_gemini_error(
+    error: StudioInteractionError,
+    expected: (u16, &str, &IndexMap<String, String>),
+) {
+    let StudioInteractionError::Gemini {
+        status,
+        body,
+        headers,
+    } = error
+    else {
+        panic!("expected a Gemini error");
+    };
+    assert_eq!((status, body.as_str(), &headers), expected);
+}
+
 fn secret(text: &str) -> SecretString {
     SecretString::from(text)
 }
@@ -518,15 +533,7 @@ fn native_content_and_unknown_fields_travel_in_order() {
 fn malformed_json_becomes_a_gemini_error_with_the_reply(#[case] status: u16) {
     let raw = headers(&[("content-type", "text/html")]);
     let error = transform_response(&reply(status, &raw, "<html>bad"), marked).unwrap_err();
-    let StudioInteractionError::Gemini {
-        status: got,
-        body,
-        headers,
-    } = error
-    else {
-        panic!("expected a Gemini error");
-    };
-    assert_eq!((got, body.as_str(), &headers), (status, "<html>bad", &raw));
+    assert_gemini_error(error, (status, "<html>bad", &raw));
 }
 
 #[test]
@@ -614,15 +621,7 @@ fn delete_2xx_succeeds_without_reading_the_body(#[case] status: u16, #[case] bod
 fn delete_outside_2xx_is_a_gemini_error(#[case] status: u16) {
     let raw = headers(&[("x-h", "v")]);
     let error = transform_delete_response(&reply(status, &raw, "gone"), "v1_a").unwrap_err();
-    let StudioInteractionError::Gemini {
-        status: got,
-        body,
-        headers,
-    } = error
-    else {
-        panic!("expected a Gemini error");
-    };
-    assert_eq!((got, body.as_str(), &headers), (status, "gone", &raw));
+    assert_gemini_error(error, (status, "gone", &raw));
 }
 
 #[test]

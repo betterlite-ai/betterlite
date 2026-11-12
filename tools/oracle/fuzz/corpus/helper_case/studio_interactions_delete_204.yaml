@@ -3,15 +3,18 @@ name: studio-interactions-delete-204
 call:
   studio_interactions:
     calls:
-      - function: delete
+      - function: response
+        action: delete
         status: 204
         body: ""
         interaction_id: "v1_a"
-      - function: delete
+      - function: response
+        action: delete
         status: 200
         body: "not json"
         interaction_id: "v1_b"
-      - function: delete
+      - function: response
+        action: delete
         status: 299
         body: "<html>"
         interaction_id: "v1_c"
