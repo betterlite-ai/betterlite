@@ -414,6 +414,14 @@ fn continuation_and_multichoice_passthrough_keeps_an_empty_tool_call_list_with_t
     assert_eq!(pieces.len(), 2);
 }
 
+#[test]
+fn continuation_and_multichoice_passthrough_keeps_a_non_text_tool_name() {
+    let continuations = chunk(
+        r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"T","reasoning_content":"R","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":[],"arguments":"{}"}},{"index":1,"id":"call-2","type":"function","function":{"name":{},"arguments":"{}"}}]}}]}"#,
+    );
+    assert_eq!(split_chunk(&continuations).len(), 1);
+}
+
 // unsigned_thinking_normalization
 
 fn thinking_chunk(thinking_blocks: &str, reasoning: &str) -> StreamChunk {
@@ -465,6 +473,19 @@ fn unsigned_thinking_normalization_keeps_fields_without_text() {
     let reasoning = pieces.first().expect("reasoning piece");
     assert_eq!(delta(reasoning).reasoning_content, None);
     assert_eq!(delta(reasoning).thinking_blocks, Some(blocks(thinking)));
+}
+
+#[test]
+fn unsigned_thinking_normalization_joins_only_thinking_blocks() {
+    let thinking =
+        r#"[{"type":"redacted_thinking","thinking":"X"},{"type":"thinking","thinking":"A"}]"#;
+    let pieces = split_chunk(&thinking_chunk(thinking, "null"));
+    assert_eq!(
+        delta(pieces.first().expect("reasoning piece"))
+            .reasoning_content
+            .as_deref(),
+        Some("A")
+    );
 }
 
 #[test]
