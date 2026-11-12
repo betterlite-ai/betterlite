@@ -17,6 +17,7 @@ use betterlite_cache::handler::retrieve::{
 };
 use betterlite_cache::handler::state::{CachingHandler, HandlerDependencies, OriginalFunction};
 use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
+use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_cache::types::semantic::SemanticCacheScope;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
@@ -62,16 +63,21 @@ fn entries(case: &Entries) -> HelperResult {
 async fn retrieve(case: &Retrieve) -> HelperResult {
     let backend = Arc::new(SeededBackend::default());
     let cache = helper_cache(Arc::clone(&backend))?;
-    let items = input_items(&case.kwargs).or_value_error()?;
-    let base = embedding_base_request(&case.kwargs).or_value_error()?;
-    for entry in &case.entries {
-        let key = embedding_entry_key(&cache, &base, &entry.input).or_value_error()?;
-        backend.seed(&key, envelope(&entry.record));
-    }
-    let mut per_input_keys = Vec::with_capacity(items.len());
-    for item in &items {
-        per_input_keys.push(embedding_entry_key(&cache, &base, item).or_value_error()?);
-    }
+    let per_input_keys = if case.call_type == CachingSupportedCallType::Aembedding {
+        let items = input_items(&case.kwargs).or_value_error()?;
+        let base = embedding_base_request(&case.kwargs).or_value_error()?;
+        for entry in &case.entries {
+            let key = embedding_entry_key(&cache, &base, &entry.input).or_value_error()?;
+            backend.seed(&key, envelope(&entry.record));
+        }
+        let mut keys = Vec::with_capacity(items.len());
+        for item in &items {
+            keys.push(embedding_entry_key(&cache, &base, item).or_value_error()?);
+        }
+        keys
+    } else {
+        Vec::new()
+    };
     let mut handler = CachingHandler::new(dependencies(case)?, case.kwargs.clone());
     let source = CacheSource {
         cache: &cache,

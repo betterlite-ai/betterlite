@@ -12,6 +12,7 @@ use super::support::{
 use crate::cache_key::derive::get_cache_key;
 use crate::cache_key::value::{KeyObject, KeyValue};
 use crate::handler::HandlerError;
+use crate::handler::kwargs::{clear_preset_key, key_request, set_input_param};
 use crate::handler::retrieve::{AsyncSupport, Retrieval, retrieve_from_cache};
 use crate::types::cache_type::CacheMode;
 use crate::types::call_type::CachingSupportedCallType;
@@ -30,16 +31,21 @@ fn stored_value() -> CacheValue {
     cache_object(&[("id", cache_text("cached-answer"))])
 }
 
+fn expected_embedding_key(request_kwargs: &KeyObject, input: &KeyValue) -> String {
+    let cache = build_cache(Arc::new(RecordingBackend::new(ReadSupport::Both)));
+    let mut request = key_request(request_kwargs).expect("the key request builds");
+    clear_preset_key(&mut request);
+    set_input_param(&mut request, input);
+    get_cache_key(&mut request, &cache.key_settings, &cache.hooks).expect("the key derives")
+}
+
 fn seed_embedding_input(
     backend: &RecordingBackend,
     request_kwargs: &KeyObject,
     input: &KeyValue,
     record: CacheValue,
 ) {
-    let model = request_kwargs
-        .get("model")
-        .expect("the request has a model");
-    let key = expected_key(&[("model", model.clone()), ("input", input.clone())]);
+    let key = expected_embedding_key(request_kwargs, input);
     backend.seed(&key, envelope(record));
 }
 
@@ -388,6 +394,43 @@ async fn embedding_hits_are_validated_per_input() {
     }
     assert_eq!(handler.preset_cache_key, None);
     assert_eq!(backend.reads().len(), 3);
+}
+
+#[tokio::test]
+async fn embedding_input_before_model_keeps_its_order() {
+    let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
+    let cache = build_cache(Arc::clone(&backend));
+    let request_kwargs = kwargs(&[
+        ("input", KeyValue::Array(vec![text("alpha"), text("beta")])),
+        ("model", text("text-embedding-3-small")),
+    ]);
+    seed_embedding_input(
+        &backend,
+        &request_kwargs,
+        &text("alpha"),
+        indexed_embedding(0),
+    );
+    seed_embedding_input(
+        &backend,
+        &request_kwargs,
+        &text("beta"),
+        indexed_embedding(1),
+    );
+    let mut handler = handler_named("aembedding", &["input", "model"], request_kwargs.clone());
+    let result = retrieve_from_cache(
+        &mut handler,
+        Some(&source(&cache, AsyncSupport::Supported)),
+        CachingSupportedCallType::Aembedding,
+        &request_kwargs,
+        &[],
+    )
+    .await
+    .expect("the retrieval runs");
+    let Retrieval::Embeddings(items) = result else {
+        panic!("expected per-input embedding hits");
+    };
+    assert_eq!(items[0].as_ref().and_then(|record| record.index), Some(0));
+    assert_eq!(items[1].as_ref().and_then(|record| record.index), Some(1));
 }
 
 #[tokio::test]

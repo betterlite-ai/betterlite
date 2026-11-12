@@ -9,3 +9,6 @@ deviations:
   - what: A flat integer array input like [1, 2, 3] is treated as one token input with one cache key instead of being rejected.
     why: LiteLLM accepts any list input and runs one cache lookup per element, but its per-token keying sends the leftover tokens to the provider and merges a wrong embedding. Keeping the whole token array as one input preserves the request without copying that bug.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L793-L796
+  - what: An aembedding request with more than 2048 inputs is rejected with a field error naming input, where LiteLLM looks up every input.
+    why: The bounded-inputs rule caps the batch so one request cannot force a quadratic number of input clones; the limit matches OpenAI's own 2048-input embedding ceiling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L793-L796

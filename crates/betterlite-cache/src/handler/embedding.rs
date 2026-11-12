@@ -44,7 +44,8 @@ pub fn input_items(kwargs: &KeyObject) -> Result<Vec<KeyValue>, HandlerError> {
 pub fn embedding_base_request(kwargs: &KeyObject) -> Result<CacheKeyRequest, HandlerError> {
     let mut request = key_request(kwargs)?;
     clear_preset_key(&mut request);
-    request.params.retain(|param| param.name != INPUT_KWARG);
+    // empty the input in place so set_input_param overwrites it in its slot instead of moving it to the end
+    set_input_param(&mut request, &KeyValue::Null);
     Ok(request)
 }
 
