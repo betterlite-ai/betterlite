@@ -10,12 +10,8 @@ from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseRespo
 from litellm.types.llms.openai import (
     ChatCompletionRedactedThinkingBlock as RedactedThinkingBlock,
 )
-from litellm.types.llms.openai import (
-    ChatCompletionThinkingBlock as ReasoningBlock,
-)
-from litellm.types.llms.openai import (
-    ResponsesAPIOptionalRequestParams as RequestParams,
-)
+from litellm.types.llms.openai import ChatCompletionThinkingBlock as ReasoningBlock
+from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
 from litellm.types.utils import (
     Delta,
     ModelResponse,
