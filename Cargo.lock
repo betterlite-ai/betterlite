@@ -2260,6 +2260,8 @@ dependencies = [
  "cookie_store",
  "flate2",
  "futures-util",
+ "google-cloud-speech-v2",
+ "google-cloud-wkt",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",

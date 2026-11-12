@@ -1,0 +1,5 @@
+task: B1358
+deviations:
+  - what: Billed durations keep the exact protobuf seconds and nanos. LiteLLM converts the protobuf Duration to a Python timedelta through proto-plus, which truncates nanos to whole microseconds before total_seconds().
+    why: The task requires the stream's maximum billed duration in exact seconds and nanos. The truncation is a proto-plus conversion artifact, not billing behavior a working setup relies on, so betterlite keeps the value Google sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L152-L157
