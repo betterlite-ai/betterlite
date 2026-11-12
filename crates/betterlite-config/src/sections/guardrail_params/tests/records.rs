@@ -1,23 +1,3 @@
-use rstest::rstest;
-
-use super::{base, dump, refused_field, text};
-use crate::sections::guardrail_identity::enums::{PiiEntityType, Role};
-use crate::sections::guardrail_identity::item::GuardrailValue;
-use crate::sections::guardrail_params::base::BaseLitellmParams;
-use crate::sections::guardrail_params::content_filter::ContentFilterConfigModel;
-use crate::sections::guardrail_params::decode::{
-    decode_apply_request, decode_litellm_params, decode_patch_request,
-};
-use crate::sections::guardrail_params::error::GuardrailParamsError;
-use crate::sections::guardrail_params::opaque::OpaqueParams;
-use crate::sections::guardrail_params::records::{
-    DynamicGuardrailParams, Guardrail, GuardrailDefinitionLocation, GuardrailEventHooks,
-    GuardrailItemSpec, LakeraCategoryThresholds, PiiEntityCategoryMap,
-};
-use crate::sections::guardrail_params::routes::{
-    ApplyGuardrailResponse, GuardrailInfoResponse, GuardrailUiAddSettings, ListGuardrailsResponse,
-};
-
 #[test]
 fn content_filter_round_trips_its_fields() {
     let body = r#"{"patterns": [{"pattern_type": "prebuilt", "pattern_name": "email", "action": "BLOCK"}, {"pattern_type": "regex", "pattern": "[0-9]+", "name": "digits", "action": "MASK"}], "blocked_words": [{"keyword": "secret", "action": "BLOCK", "description": "d"}], "blocked_words_file": "words.yaml", "categories": [{"category": "c", "enabled": false, "action": "MASK", "severity_threshold": "high", "category_file": "c.yaml"}], "severity_threshold": "low", "pattern_redaction_format": "[X]", "keyword_redaction_tag": "[Y]"}"#;
@@ -196,7 +176,7 @@ fn record_patch_request_names_only_the_bad_field() {
 }
 
 #[rstest]
-#[case::trailing(br#"{"guardrail": "g", "mode": "pre_call"} 1"#.as_slice())]
+#[case::trailing(br#"{"guardrail": "g", "mode": "pre_call", "guardrail_name": "g", "text": "t"} 1"#.as_slice())]
 fn record_decoders_refuse_trailing_data(#[case] body: &[u8]) {
     assert!(matches!(
         decode_litellm_params(body),

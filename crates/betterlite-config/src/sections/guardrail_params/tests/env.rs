@@ -1,17 +1,3 @@
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::PathBuf;
-
-use rstest::rstest;
-use secrecy::ExposeSecret as _;
-
-use super::{dump, load, minimal, text};
-use crate::sections::guardrail_identity::item::GuardrailValue;
-use crate::sections::guardrail_params::decode::{
-    decode_apply_request, decode_litellm_params, decode_patch_request,
-};
-use crate::sections::guardrail_params::environment::resolve_params;
-
 #[test]
 fn env_references_resolve_in_text_keys() {
     let settings = load(
@@ -145,16 +131,16 @@ fn env_guardrail_info_is_resolved() {
 #[case::empty("", None)]
 fn env_bool_keys_use_the_flag_parser(#[case] variable: &str, #[case] expected: Option<bool>) {
     let settings = load(
-        &minimal("      fail_on_error: os.environ/FLAG\n"),
+        &minimal("      inspect_embeddings: os.environ/FLAG\n"),
         &[("FLAG", variable)],
     );
     let parsed = &settings.guardrails[0].litellm_params.base.fields;
-    assert_eq!(parsed.fail_on_error, expected.unwrap_or(true));
+    assert_eq!(parsed.inspect_embeddings, expected);
 }
 
 #[test]
 fn env_bad_bool_text_rejects_only_that_entry() {
-    let source = "guardrails:\n  - guardrail_name: bad\n    litellm_params: {guardrail: custom, mode: pre_call, default_on: os.environ/FLAG}\n  - guardrail_name: fine\n    litellm_params: {guardrail: custom, mode: pre_call}\n";
+    let source = "guardrails:\n  - guardrail_name: bad\n    litellm_params: {guardrail: custom, mode: pre_call, inspect_embeddings: os.environ/FLAG}\n  - guardrail_name: fine\n    litellm_params: {guardrail: custom, mode: pre_call}\n";
     let settings = load(source, &[("FLAG", "perhaps")]);
     assert_eq!(settings.guardrails.len(), 1);
     assert_eq!(settings.guardrails[0].guardrail_name, "fine");
@@ -205,11 +191,13 @@ fn env_bad_number_text_names_the_variable(#[case] key: &str, #[case] variable: &
 #[test]
 fn env_missing_typed_variable_takes_the_default() {
     let settings = load(
-        &minimal("      default_on: os.environ/MISSING\n      timeout: os.environ/MISSING\n"),
+        &minimal(
+            "      sanitize_error_detail: os.environ/MISSING\n      timeout: os.environ/MISSING\n",
+        ),
         &[],
     );
     let fields = &settings.guardrails[0].litellm_params.base.fields;
-    assert_eq!(fields.default_on, Some(false));
+    assert!(fields.sanitize_error_detail);
     assert_eq!(fields.timeout, None);
 }
 

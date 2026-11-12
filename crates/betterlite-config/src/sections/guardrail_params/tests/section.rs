@@ -1,15 +1,3 @@
-use std::collections::BTreeMap;
-
-use rstest::rstest;
-use secrecy::ExposeSecret as _;
-
-use super::{load, minimal, text};
-use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::guardrail_params::base::UnreachableFallback;
-use crate::sections::guardrail_params::decision_check::GuardrailChecks;
-use crate::sections::guardrail_params::keys::{BASE_KEYS, PARAM_KEYS};
-use crate::sections::guardrail_params::mode::LitellmParamsMode;
-
 #[test]
 fn section_load_reads_a_pre_call_entry() {
     let settings = load(&minimal(""), &[]);
@@ -72,8 +60,6 @@ const EVERY_KEY: &str = r#"guardrails:
       blocked_words:
         - {keyword: secret, action: BLOCK}
       blocked_words_file: words.yaml
-      categories:
-        - {category: harmful, action: BLOCK}
       severity_threshold: medium
       pattern_redaction_format: "[R]"
       keyword_redaction_tag: "[K]"
@@ -109,7 +95,6 @@ const EVERY_KEY: &str = r#"guardrails:
       unreachable_fallback: fail_open
       max_input_chars: 100
       max_concurrent_decision_calls: 2
-      extra_headers: [x-one]
       custom_code: "def apply(): pass"
       timeout: 2.5
       on_sensitive_data: route
@@ -119,13 +104,29 @@ const EVERY_KEY: &str = r#"guardrails:
       scan_raw_request: true
 "#;
 
+// the grayswan and ibm_guardrails sections read these two keys as mappings, so a list fails the whole load
+const TYPED_ELSEWHERE: [&str; 2] = ["categories", "extra_headers"];
+
 #[test]
 fn section_load_every_declared_key() {
     let mentioned = BASE_KEYS
         .iter()
         .chain(PARAM_KEYS.iter())
+        .filter(|key| !TYPED_ELSEWHERE.contains(key))
         .all(|key| EVERY_KEY.contains(&format!("      {key}:")));
     assert!(mentioned);
+    let json = decode_litellm_params(
+        br#"{"guardrail": "custom", "mode": "pre_call", "categories": [{"category": "harmful", "action": "BLOCK"}], "extra_headers": ["x-one"]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        json.base.fields.extra_headers.as_deref(),
+        Some(["x-one".to_owned()].as_slice())
+    );
+    assert_eq!(
+        json.base.content_filter.categories.map(|list| list.len()),
+        Some(1)
+    );
     let settings = load(EVERY_KEY, &[]);
     assert!(settings.rejected.is_empty(), "{:?}", settings.rejected);
     let held = &settings.guardrails[0].litellm_params;
@@ -214,5 +215,11 @@ fn section_litellm_params_must_be_a_mapping() {
     .load(source)
     .unwrap_err();
     assert!(matches!(error, ConfigError::Yaml { .. }));
+}
+
+#[test]
+fn section_litellm_params_expecting_text_names_the_mapping() {
+    let deserializer: I64Deserializer<ValueError> = 5_i64.into_deserializer();
+    let error = KnownParams::deserialize(deserializer).unwrap_err();
     assert!(error.to_string().contains("a litellm_params mapping"));
 }

@@ -2,24 +2,36 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::fs;
 use std::num::NonZeroU64;
+use std::path::PathBuf;
 
 use rstest::rstest;
-use serde::de::Visitor as _;
-use serde::de::value::{BytesDeserializer, Error as ValueError};
+use secrecy::ExposeSecret as _;
+use serde::de::value::{BytesDeserializer, Error as ValueError, I64Deserializer};
+use serde::de::{IntoDeserializer as _, Visitor as _};
 use serde::{Deserialize as _, Serialize};
 
-use super::Settings;
 use super::base::{BaseLitellmParams, OnSensitiveData, UnreachableFallback};
+use super::content_filter::ContentFilterConfigModel;
 use super::decision_check::{DecisionCheckAction, DecisionModelCheck, GuardrailChecks};
-use super::decode::decode_litellm_params;
+use super::decode::{decode_apply_request, decode_litellm_params, decode_patch_request};
+use super::environment::resolve_params;
 use super::error::GuardrailParamsError;
 use super::keys::{BASE_KEYS, BOOL_KEYS, NUMBER_KEYS, PARAM_KEYS};
 use super::mode::{LitellmParamsMode, Mode, ModeTarget};
 use super::opaque::{ExactValue, OpaqueParams, ValueVisitor};
 use super::params::LitellmParams;
-use super::records::Guardrail;
-use crate::loader::ConfigLoader;
+use super::records::{
+    DynamicGuardrailParams, Guardrail, GuardrailDefinitionLocation, GuardrailEventHooks,
+    GuardrailItemSpec, LakeraCategoryThresholds, PiiEntityCategoryMap,
+};
+use super::routes::{
+    ApplyGuardrailResponse, GuardrailInfoResponse, GuardrailUiAddSettings, ListGuardrailsResponse,
+};
+use super::{KnownParams, Settings};
+use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::guardrail_identity::enums::{PiiEntityType, Role};
 use crate::sections::guardrail_identity::item::GuardrailValue;
 
 const ENTRY: &str = r#""guardrail": "custom", "mode": "pre_call""#;
@@ -722,6 +734,6 @@ fn debug_text_lists_the_key_names_only() {
     assert!(!held.contains("leak-"), "{held}");
 }
 
-mod env;
-mod records;
-mod section;
+include!("tests/env.rs");
+include!("tests/records.rs");
+include!("tests/section.rs");
